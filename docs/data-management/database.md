@@ -25,12 +25,19 @@ per-method `commit()` instead of one transaction per request, and
 - **`BEGIN IMMEDIATE` on every transaction**, installed via a `begin`
   event listener in the same `install_pragmas_and_immediate`. This is
   live in production (see "BEGIN IMMEDIATE" below).
-- **`NullPool`** (every operation opens a fresh aiosqlite connection;
-  see "Why NullPool" below).
+- **Pooled connections by default** — `AsyncAdaptedQueuePool(pool_size=2,
+  max_overflow=8)` (`DBConfig.pooled=True`, `db_driver.py:78`). `NullPool`
+  is the opt-out (`pooled=False`), used by the test conftest; see "Pooling"
+  below for why the original NullPool choice was reversed.
+- **Reads never take the writer lock**: SELECT-only driver methods use
+  `_session_ctx(write=False)`, which draws from a reader session factory
+  (`FLOW_WRITER_OPT=False` execution option) whose `begin` listener emits
+  no `BEGIN` at all — a WAL snapshot read, not `BEGIN IMMEDIATE`.
 - **Driver methods share a single session via `_session_ctx()`**: a
   contextvar-backed helper in `SQLiteDBDriver` that yields a request
   session if one exists, an outer standalone session if nested in the
-  same task, otherwise opens a fresh session that commits on exit.
+  same task, otherwise opens a fresh session that commits on exit. A
+  write request never reuses an ambient *reader* session.
 - **Single import for everyone**: `from flow_sdk.db import session`
   yields the request session inside a request, a fresh auto-committing
   session outside one.
@@ -44,15 +51,14 @@ per-method `commit()` instead of one transaction per request, and
   test-isolation issues. Driver methods open and commit their own
   short-lived sessions via `_session_ctx` instead. The middleware
   infrastructure is still in place (`RequestTransactionMiddleware` is
-  registered in `flow_sdk/server/flow_server.py:86`) but the
+  registered in `flow_sdk/server/flow_server.py:87`) but the
   per-request transaction binding is left unwired — see
-  `request_transaction_middleware.py:143`.
+  `request_transaction_middleware.py:154`.
 
-## Why NullPool
+## Pooling (NullPool was reversed)
 
-The SQLAlchemy default for aiosqlite + file DB is `AsyncAdaptedQueuePool`,
-and that's what every "production SQLite" guide recommends. We don't use
-it for two reasons:
+The v0.2.8 refactor picked `NullPool` — every operation opened a fresh
+aiosqlite connection — for two reasons:
 
 1. **The async-tests conftest tears down via a new event loop**. aiosqlite
    worker threads are bound to the loop they were created on; pooled
@@ -61,15 +67,31 @@ it for two reasons:
    sees `database is locked` and waits up to `busy_timeout` for nothing.
    With `NullPool`, connections are opened-and-closed per operation, so
    there is nothing to leak.
-2. **SQLite locking is database-wide**. Pool reuse for SQLite saves at
-   most a sub-millisecond connection setup; WAL mode + the page cache
-   already absorb most read cost. For a desktop app with modest
-   concurrency, the perf win is not worth the complexity.
+2. **SQLite locking is database-wide**, so pool reuse looked like a
+   sub-millisecond win not worth the complexity.
+
+Reason 2 turned out to be wrong in practice: with `NullPool` every
+operation opened a new OS thread and replayed the seven pragmas before
+doing any work — about 3.7 ms of setup per call against ~0.02 ms for the
+write itself, paid by every DB call in the app. The driver therefore now
+pools by default (`sqlite_driver.py:382`):
+
+```python
+if self.config.pooled:   # DBConfig.pooled defaults to True
+    engine = create_async_engine(url, echo=False, poolclass=AsyncAdaptedQueuePool,
+                                 pool_size=2, max_overflow=8)
+else:
+    engine = create_async_engine(url, echo=False, poolclass=NullPool)
+```
+
+Reason 1 still holds for the test scaffolding, which is why
+`tests/conftest.py` builds its driver with `DBConfig(database=..., pooled=False)`
+and records that as a known gap, not a preference. Reader sessions are an
+`execution_options()` copy of the same engine, so they share the pool and
+the pragma listeners.
 
 All the writer-lock-friendly behavior comes from the pragmas + `BEGIN
-IMMEDIATE`, not from the pool. (The driver picks `NullPool` explicitly
-in `sqlite_driver.py:329`: `create_async_engine(url, echo=False,
-poolclass=NullPool)`.)
+IMMEDIATE`, not from the pool.
 
 ## The pragmas, and why each one
 
@@ -110,13 +132,20 @@ immediately, ignoring `busy_timeout`.
 The textbook fix is to open every transaction with `BEGIN IMMEDIATE` so
 the writer lock is acquired up-front. This is wired in production via a
 `begin` event listener registered alongside the pragmas in
-`install_pragmas_and_immediate`:
+`install_pragmas_and_immediate` (`connection.py:194`):
 
 ```python
 @event.listens_for(engine.sync_engine, "begin")
 def _on_begin(conn):
-    conn.exec_driver_sql("BEGIN IMMEDIATE")
+    # reader connections (FLOW_WRITER_OPT=False) emit no BEGIN at all
+    if conn.get_execution_options().get(FLOW_WRITER_OPT, True):
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
 ```
+
+The reader exception matters: forcing SELECT-only driver methods through
+`BEGIN IMMEDIATE` queued every read behind the single writer. Reads now go
+through `_session_ctx(write=False)` → `reader_session_factory`, which
+emits no `BEGIN` and relies on the WAL snapshot.
 
 Combined with WAL + `busy_timeout=15000`, this eliminates both the
 original "close-shells flood" cascade and the read-then-write upgrade
@@ -148,11 +177,13 @@ Inside `SQLiteDBDriver`, every public method goes through one helper:
 
 ```python
 @asynccontextmanager
-async def _session_ctx(self):
+async def _session_ctx(self, *, write: bool = True):
     """Resolution order:
     1. Request-bound session (via SQLiteTransactionHandler.db_transaction)
     2. Standalone-task-bound session (set by an outer _session_ctx in same task)
-    3. New fresh session: commit on success, rollback on exception, close on exit
+       — except a write never reuses an ambient READER session
+    3. New fresh session (writer or reader factory per ``write``):
+       commit on success, rollback on exception, close on exit
     """
     ...
 ```
@@ -194,15 +225,16 @@ instance (`get_db_driver()`); the old module-level `_engine` /
 
 ## What stays sync
 
-`flow_sdk/system_tools.py:299` (`validate_db()`, PRAGMA integrity_check)
-and `:470` (`get_database_stats()`, diagnostic COUNT queries) stay sync.
-They no longer call `sqlite3.connect` directly — both route through
+`flow_sdk/system_tools.py:387` (`validate_db()`, PRAGMA integrity_check)
+and `:694` (`get_database_stats()`, diagnostic COUNT queries) use the
+sync `sqlite3` path. (`get_database_stats` is declared `async def` for its
+callers' convenience but does its work on a sync connection.) They no
+longer call `sqlite3.connect` directly — both route through
 `open_sqlite()` in `connection.py`, so the WAL + `busy_timeout` pragma
 discipline is uniform across sync and async paths (mixing pragma
 configurations on the same file is a documented SQLite corruption
-vector). They're short-lived, no transaction, run outside the async
-stack, and exist for offline diagnostics — making them async would buy
-nothing.
+vector). They're short-lived, no transaction, and exist for offline
+diagnostics.
 
 ## What landed and what didn't
 
@@ -215,15 +247,20 @@ nothing.
   IntegrityError → `HTTPException(409)` mapping for `type_uname` stays
   local.
 - Full pragma set + `BEGIN IMMEDIATE` (`begin` listener) installed via
-  `install_pragmas_and_immediate` in `connection.py`. The engine uses
-  `NullPool` (set in `sqlite_driver.py`).
+  `install_pragmas_and_immediate` in `connection.py`. The engine used
+  `NullPool` at the time; it has since moved to a small
+  `AsyncAdaptedQueuePool` with a reader session factory (see "Pooling").
 - `flow_sdk.db.session` and `Entity` / `Relationship` re-exports.
 - `AsyncLinkStore` over the shared engine. Wiki indexer and resolver
   are now async. All wiki call sites in `entity_model.py`, `fs_record.py`,
   and `wiki_action.py` use `await`. The sync `LinkStore` is deleted.
-- `FSRecord.sync_to_db` (`flow_sdk/fs_store/fs_record.py:530`) opens one
+- `FSRecord.sync_to_db` (`flow_sdk/fs_store/fs_record.py:952`) opens one
   shared session for the whole entity + FTS + wiki write so bulk indexer
-  paths don't pay per-step connection setup.
+  paths don't pay per-step connection setup. The indexer hoists one
+  session over its whole loop and **commits every 50 records**
+  (`_INDEX_COMMIT_BATCH`, `index_function.py:669`) so the writer lock is
+  released between batches; `.hash` sentinels are stamped only after each
+  commit.
 - `BEGIN IMMEDIATE` on every transaction (`begin` event listener).
 - Collapsing `database.py` to a pure facade with no engine of its own.
 

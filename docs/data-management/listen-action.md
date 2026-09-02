@@ -67,6 +67,11 @@ async def listen_action(request):
         # not here. listen_action does NOT call _broadcast_to_sniffer for hook_op.
 
     if webhook_type == WebhookType.AGENT_HOOK:
+        # Direct process hooks (the per-process hook plugin, `--process-id`)
+        # branch BEFORE any global fan-out: no sniffer, no AgentHook lookup.
+        if raw_payload.get("agentic_process_id") is not None:
+            return await handle_process_agent_hook(AgentHookData(**raw_payload))
+
         data = AgentHookData(**raw_payload)
         payload_data = {"webhook_type": "agent_hook", **raw_payload}
         skip_hook_id = raw_payload.get("agent_hook_id")
@@ -76,11 +81,14 @@ async def listen_action(request):
         return await handle_agent_hook(data)
 ```
 
+A `ClientDisconnect` while reading the body (a fire-and-forget hook process that
+hung up early) is answered with `ApiSuccessResponse(data={"status": "disconnected"})`;
+`ValueError` / `ValidationError` and any other exception become an `ApiFailResponse`.
+
 > **No skill-usage-count enrichment.** Earlier revisions of this doc described a
 > step that read the skill's usage count from `~/.claude.json` and injected
 > `hook_data_dict["skill_usage_count"]` before building `AgentHookData`. That
-> enrichment does **not** exist in the current code — there is only a stale
-> leftover comment in `listen_action`'s `AGENT_HOOK` branch. No `skill_usage_count`
+> enrichment does **not** exist in the current code. No `skill_usage_count`
 > field is ever written and `get_legacy_settings()` is not called.
 
 ### Outer Envelope
@@ -155,7 +163,8 @@ Parsed model: `AgentHookData`
 | Field | Type | Description |
 |-------|------|-------------|
 | `webhook_type` | `"agent_hook"` | Literal discriminator |
-| `agent_hook_id` | `str` or `None` | ID of the target AgentHook entity |
+| `agent_hook_id` | `str` or `None` | ID of the target AgentHook entity (global hooks) |
+| `agentic_process_id` | `str` or `None` | When set, the payload is a **direct process hook**: `listen_action` routes it to `handle_process_agent_hook` and none of the global AgentHook / sniffer machinery runs. Must be a UUID v4/v5 (`is_valid_entity_id`), else 400. |
 | `hook_data` | `dict` | Raw hook payload from the CLI |
 | `hook_entry_id` | `str` or `None` | Optional identifier for the hook entry |
 | `hook_metadata` | `dict` or `None` | Optional metadata |
@@ -164,11 +173,15 @@ Parsed model: `AgentHookData`
 
 ### agent_hook Side Effects
 
-`handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `cwd`) up-front — before loading the `AgentHook` entity — so a `CwdChanged` is still logged when the hook entity no longer exists. Beyond that it does two things: run the connected triggers (`AgentHook.handle_webhook`) and emit the converted `FlowData` to the hook entity's own watchers.
+`handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `cwd`) up-front — before loading the `AgentHook` entity — so a `CwdChanged` is still logged when the hook entity no longer exists (a missing entity returns `ApiSuccessResponse(data={})`). Beyond that it does two things: run the connected triggers via `run_triggers_for_hook(agent_hook, webhook_data)` (`flow_sdk/builtin/trigger_hook_bridge.py` — rule execution lives one layer *above* hooks; the hook entity imports neither), and emit the converted `FlowData` to the hook entity's own watchers. The conversion goes through the Claude driver's `convert_hook_event()` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/hook_to_flowdata.py`), and each resulting `FlowData` is pushed with `agent_hook.emit_flow_data(...)`. The response body is the trigger result's `model_dump()`.
 
 **No process resolution.** A global hook is harness-wide: `handle_agent_hook` never looks up the `AgenticProcess` that fired it, and never writes per-process state. That bridge — prompt annotations, ExitPlanMode auto-approve, ExitWorktree tab close, per-process FlowData fan-out — was removed; process-scoped delivery belongs to `handle_process_agent_hook` and the per-process hook plugin (`--process-id`). `tests/api/test_global_hook_has_no_process_bridge.py` pins this.
 
-Consequently no hook event carries `--wait-for-response` any more: nothing on this tier produces a `hookSpecificOutput` decision, so every global hook is fire-and-forget.
+Consequently no **global** hook event carries `--wait-for-response`: nothing on this tier produces a `hookSpecificOutput` decision, so every global hook is fire-and-forget.
+
+### Direct process hooks: `handle_process_agent_hook`
+
+When the payload carries `agentic_process_id`, `listen_action` calls `handle_process_agent_hook` instead. It loads the `AgenticProcess` (404 if missing), asks its driver to `normalize_process_hook_data(process_id, native)` (400 if the worker's driver has no such method — "process hooks are unsupported by this worker"), and hands the canonical hook to `process.on_hook(canonical)`. That call may return a typed callback answer; if so, the driver's `render_hook_response(event, answer)` turns it into an outcome (exit code / stdout / stderr), and a non-silent outcome is returned as `ApiSuccessResponse(data={HOOK_OUTCOME_KEY: outcome.to_wire()})`. The reporting CLI applies that envelope verbatim under `--wait-for-response`, which the hook projector adds only for response-capable events. No callback answer (the common observer case) means the CLI is released immediately with `{"received": true}`. This is the **only** place on the listen tier that produces a hook decision.
 
 ## handle_hook_op: CRUD Dispatch
 
@@ -231,13 +244,13 @@ The entity class is resolved via `SchemaRegistry.get_entity_cls(record_type)` (n
 2. Call `entity_cls.delete_by_id(existing.id)`.
 3. Return `ApiSuccessResponse(data={"{type}_id": existing.id, "action": "deleted"})`.
 
-### FTS Index Gap
+### FTS indexing (the former "FTS index gap" is closed)
 
-`_reflect_entity` calls `entity.save()` but does **not** call `Record.sync_to_db()` or `driver.fts_upsert()`. This means entities created or updated via the listen webhook are persisted to the SQLite `entities` table and broadcast to the frontend via `DataOpMessage`, but they are **not** added to the FTS5 full-text search index. To make webhook-created entities searchable, a manual reindex is required (the compute-node action `POST /fs-records/index` — the old `POST /api/v1/search/reindex` route no longer exists).
+`_reflect_entity` calls `entity.save()` and nothing else — no `Record.sync_to_db()`, no direct `driver.fts_upsert()`. Earlier revisions of this doc called that an FTS gap. It is not one any more: `Entity.save()` is the single save chokepoint and it owns FTS. For a normal (non-`db_only`) type, `save()` → `store()` → `_store()` writes the metadata shadow through the type's serializer and then, when the record's `search_content` is not `None`, calls `entity._fts_upsert(type_name, record)` (`FtsEntry.from_record`). For a `db_only` type whose `TypeInfo.fts_content` is set, `save()` feeds FTS straight from the row (`FtsEntry.from_entity`). So a webhook-created `task` is searchable as soon as `_reflect_entity` returns, provided the type produces search content. What `_reflect_entity` still skips relative to `sync_to_db()` is the wiki-edge re-extraction and the type's `post_sync_fn`.
 
-This is one of three parallel entity creation paths in the system:
-1. **`Record.sync_to_db()`** (fs_store layer): creates Entity + FTS entry. Used by `_broadcast_fs_record_op()` after filesystem CRUD.
-2. **`_reflect_entity()`** (listen webhook): creates Entity only, no FTS entry. Used by external agents via `POST /api/v1/webhook/listen`.
+Three entity write paths remain, and they differ in what they populate:
+1. **`FSRecord.sync_to_db()`** (fs_store layer, used by the `fs-records` action after filesystem CRUD): Entity row + FTS + wiki edges + `post_sync_fn`.
+2. **`_reflect_entity()`** (listen webhook, `POST /api/v1/webhook/listen`): `entity.save()` → Entity row + FTS (via `store()`); no wiki edges, no `post_sync_fn`.
 3. **`flow_entity_crud`** (MCP tool): delegates to the separate `plugin_records` subsystem, does not touch the core Entity model or FTS index at all.
 
 ### System Fields Protected from External Sync
@@ -284,36 +297,44 @@ The former `session_id` and `pty_pid` lookups were the `agent_hook` → process 
 
 ### Python Definition
 
-**File:** `flow_sdk/core/network/resource_tracker.py`
+**File:** `flow_sdk/api/api_types/messages.py` (re-exported by `flow_sdk/api/messages.py`)
 
 ```python
-class DataOpMessage:
-    _counter: int = 0
+class BaseMessage(BaseModel):
+    message_type: str
+    message_id: str = Field(default_factory=lambda: BaseMessage._gen_id())
+    instance_id: int = Field(default_factory=lambda: BaseMessage._increment_counter())
 
-    def __init__(self, op: str, to_entity, data: Optional[dict] = None, message_id: Optional[str] = None):
-        DataOpMessage._counter += 1
-        self.instance_id = DataOpMessage._counter
-        self.message_type = "data_op_msg"
-        self.message_id = message_id or str(uuid4())
-        self.op = op
-        # to_entity: TypeId or string. A string is kept as-is; a TypeId is
-        # rendered as "type-id".
-        if isinstance(to_entity, str):
-            self.to_entity = to_entity
-        else:
-            self.to_entity = f"{to_entity.type}-{to_entity.id}"
-        self.data = data
+class EntityMessage(BaseMessage):
+    message_type: str = WSMessageType.ENTITY_MSG.value
+    from_entity: Optional[TypeId] = None
+    to_entity: TypeId
+
+class OperationType(Enum):
+    CREATE = "create"; UPDATE = "update"; DELETE = "delete"
+    # Subtree ops: the envelope INVERTS — to_entity is the PARENT,
+    # from_entity is the changed child, data is the child.
+    CHILD_CREATED = "child_created"; CHILD_UPDATED = "child_updated"; CHILD_DELETED = "child_deleted"
+
+class DataOpMessage(EntityMessage):
+    model_config = ConfigDict(use_enum_values=True)
+    message_type: str = WSMessageType.DATA_OP_MSG.value
+    op: OperationType
+    data: Any = None
 ```
 
-Serialized wire format (`to_dict()`):
+This Pydantic model is the one definition. `resource_tracker.py` carries no plain-class twin: `_to_message_dict` accepts a plain dict or any object with `model_dump()` and runs it through `jsonable_encoder(..., exclude_none=True)`, and `_prepare_data_op_message` then overwrites `instance_id` with the next value of the process-wide `_DATA_OP_WIRE_SEQUENCE` counter at the one outbound funnel — so the wire `instance_id` is a monotonic send order, not the model's construction counter.
+
+Serialized wire format:
 
 ```json
 {
   "message_type": "data_op_msg",
   "message_id": "<uuid>",
   "instance_id": 42,
-  "op": "create" | "update" | "delete",
+  "op": "create" | "update" | "delete" | "child_created" | "child_updated" | "child_deleted",
   "to_entity": "<type>-<id>",
+  "from_entity": "<child_type>-<child_id>",
   "data": { ... }
 }
 ```
@@ -322,12 +343,11 @@ Serialized wire format (`to_dict()`):
 |-------|------|-------------|
 | `message_type` | `"data_op_msg"` | Fixed discriminator, matches `WSMessageType.DATA_OP_MSG` |
 | `message_id` | `str` | UUID for the message |
-| `instance_id` | `int` | Monotonic per-process counter (debug ordering aid) |
-| `op` | `str` | `"create"`, `"update"`, or `"delete"` |
-| `to_entity` | `str` | `"{entity_type}-{entity_id}"` in hyphen-separated TypeId format |
-| `data` | `dict` or `None` | Entity data dict (omitted when `None`, e.g. for delete) |
-
-The one definition is the Pydantic `DataOpMessage` in `flow_sdk/api/api_types/messages.py` (`DataOpMessage` extends `EntityMessage` which extends `BaseMessage`; `EntityMessage.to_entity` is a `TypeId`), re-exported by `flow_sdk/api/messages.py`. `resource_tracker.py` no longer carries a plain-class twin: `_to_message_dict` accepts a plain dict or any object with `model_dump()`, and stamps the process-wide wire `instance_id` at the one outbound funnel.
+| `instance_id` | `int` | Process-wide monotonic send order (the frontend drops a frame whose `instance_id` is not greater than the last one seen for the same entity) |
+| `op` | `str` | `"create"`, `"update"`, `"delete"`, or one of the `child_*` subtree ops |
+| `to_entity` | `str` | `"{entity_type}-{entity_id}"` in hyphen-separated TypeId format (for `child_*` ops: the **parent**) |
+| `from_entity` | `str` or absent | Only meaningful for `child_*` ops: the child that actually changed |
+| `data` | `dict` or `None` | Entity data dict (omitted when `None`, e.g. for delete; the child for `child_*` ops) |
 
 ### WSMessageType Enum
 
@@ -335,30 +355,28 @@ The one definition is the Pydantic `DataOpMessage` in `flow_sdk/api/api_types/me
 
 | Value | String | Purpose |
 |-------|--------|---------|
-| `DATA_OP_MSG` | `"data_op_msg"` | Entity CRUD notification |
-| `FLOW_DATA_MSG` | `"flow_data_msg"` | Streaming FlowData from entities |
+| `BROADCAST` | `"broadcast"` | Fan-out to all connected clients |
+| `PING` / `PONG` | `"ping"` / `"pong"` | Keepalive |
 | `ENTITY_MSG` | `"entity_msg"` | Entity-scoped message forwarding |
+| `DATA_OP_MSG` | `"data_op_msg"` | Entity CRUD notification |
 | `REST_API_MSG` | `"rest_api_msg"` | REST API call over WebSocket |
+| `OAUTH_MSG` | `"oauth_msg"` | OAuth flow message |
 | `RESPONSE_MSG` | `"response_msg"` | Response to a request message |
-| `STREAM_MSG` | `"stream_msg"` | Binary stream (msgpack) |
-| `TRANSCRIPT` | `"transcript_msg"` | Text transcript stream |
-| `EXE_MSG` | `"exe_msg"` | Command execution |
-| `CONTROL_MSG` | `"control_msg"` | Control signals |
 | `PTY_OUTPUT_MSG` | `"pty_output_msg"` | PTY terminal output |
 | `PTY_SESSION_STATUS_MSG` | `"pty_session_status_msg"` | PTY session state |
 | `LLM_CONFIG_MSG` | `"llm_config_msg"` | LLM credential change notification |
-| `OAUTH_MSG` | `"oauth_msg"` | OAuth flow message |
-| `PING` / `PONG` | `"ping"` / `"pong"` | Keepalive |
-| `ECHO` | `"echo"` | Debug echo |
-| `HANGUP` | `"hangup"` | Client disconnect request |
-| `CMD_STATUS_MSG` | `"cmd_status_msg"` | Command execution status |
-| `CLIENT_NODE_READY_MSG` | `"client_node_ready_msg"` | Compute node ready signal |
+| `FLOW_DATA_MSG` | `"flow_data_msg"` | Streaming FlowData from entities |
 | `HUB_CLIENT_ERROR_MSG` | `"hub_client_error_msg"` | Hub client error |
 | `AUTH_EXPIRED_MSG` | `"auth_expired_msg"` | Auth/session expiry notification |
 | `CLOUD_LOGIN_STATUS_MSG` | `"cloud_login_status_msg"` | Cloud login status |
 | `CLOUD_CONNECTION_STATUS_MSG` | `"cloud_connection_status_msg"` | Cloud connection status |
+| `PRIVACY_MODE_MSG` | `"privacy_mode_msg"` | Privacy-mode toggle |
+| `TOPLOG_STATE_MSG` | `"toplog_state_msg"` | Toplog tracing state |
+| `TAG_MSG` | `"tag_msg"` | The unified event-bus frame — carries one `FlowEvent` (`docs/flow-events.md`) |
 
-> `WSMessageType` is a plain `Enum` (members carry string values), not a `StrEnum`. Consumers reference `WSMessageType.X.value`.
+The websocket route additionally understands the inbound-only frames `echo`, `hangup`, `browser_context` and `presence` by raw string — they are not enum members. The previously listed `stream_msg`, `transcript_msg`, `exe_msg`, `control_msg`, `cmd_status_msg` and `client_node_ready_msg` no longer exist.
+
+> `WSMessageType` is a plain `Enum` (members carry string values), not a `StrEnum`. Consumers reference `WSMessageType.X.value`. The enum lives entirely in `api_types/messages.py`; `flow_sdk/api/messages.py` only adds the message *classes* (`PrivacyModeMessage`, `ToplogStateMessage`, `TagMessage`, `BroadcastMessage`, `LlmConfigMessage`) for some of those values.
 
 ## resource_tracker: _sync_handle_entity_op
 
@@ -371,7 +389,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
     active_connections = get_all_connections()   # from connections.py registry
     if not active_connections:
         return
-    message = _to_message_dict(op_message)       # serialize to plain dict (excludes None)
+    message = _prepare_data_op_message(op_message)  # plain dict (excludes None) + wire instance_id
     op = str(message.get("op", "")).lower()
     entity_type, entity_id, type_id = _extract_entity_parts(message.get("to_entity"))
     if type_id:
@@ -379,7 +397,8 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
 
     # Explicit watchers always win, even for non-API-visible types.
     explicit_watchers = set()
-    if entity_type and entity_id and op in ("update", "delete"):
+    if entity_type and entity_id and op in ("update", "delete",
+                                            "child_created", "child_updated", "child_deleted"):
         explicit_watchers = {c for c in get_watched_by(f"{entity_type}:{entity_id}")
                              if c in active_connections}
 
@@ -414,12 +433,12 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
 
 | Condition | Recipients |
 |-----------|-----------|
-| `op == "create"` | All active connections |
-| `op == "update"` or `op == "delete"`, explicit watchers exist | Only connections in `watch_registry.get_watched_by("{type}:{id}")` that are active |
-| `op == "update"`, no explicit watchers | All active connections (webhook fallback for desktop mode) |
-| `op == "delete"`, no explicit watchers | Empty set (no fallback for delete) |
+| `op == "create"`, or no parseable `to_entity` | All active connections |
+| `op` in `update` / `delete` / `child_*`, explicit watchers exist | Only connections in `watch_registry.get_watched_by("{type}:{id}")` that are active |
+| `op` in `update` / `delete` / `child_created` / `child_updated` / `child_deleted`, no explicit watchers | All active connections (webhook fallback for desktop mode) |
+| any other op with no explicit watchers | Empty set |
 
-The "no explicit watchers" fallback for UPDATE is specifically to handle webhook-originated entity updates where there is no user session and no watch has been explicitly registered. In desktop mode (single user), broadcasting to all connections is safe. DELETE has no equivalent fallback because spurious delete notifications to unrelated components would cause incorrect cache invalidation.
+The "no explicit watchers" fallback exists to handle webhook-originated entity operations where there is no user session and no watch has been explicitly registered. In desktop mode (single user), broadcasting to all connections is safe. Earlier revisions of this doc said DELETE had no fallback; it does now, and so do the `child_*` subtree ops — those are addressed to the parent and delivered to whoever watches it, so without the fallback a child frame with no explicit parent watcher would resolve to zero recipients and be silently dropped.
 
 ### Connection Registry
 
@@ -487,12 +506,23 @@ onMessage(data: BaseMessage) {
 onDataOpMessage(data: DataOpMessage) {
     const typeId = this.parseTypeId(data.to_entity);
     if (!typeId) return;
+    // from_entity rides as a trailing 4th arg (only meaningful for child_* ops).
+    const fromEntity = data.from_entity ? this.parseTypeId(data.from_entity) : null;
+    const key = typeId.toString();
+    // Per-entity ordering guard on the wire instance_id: a frame that is not
+    // newer than the last one seen for this entity is dropped.
+    const instanceId = data.instance_id;
+    if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
+        const previous = this.lastDataOpInstanceByEntity.get(key);
+        if (previous !== undefined && instanceId <= previous) return;
+        this.lastDataOpInstanceByEntity.set(key, instanceId);
+    }
     // NOTE: emits the STRING form (typeId.toString()), not the TypeId object.
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    this.emit('on_data_op', key, data.op, data.data, fromEntity?.toString() ?? null);
 }
 ```
 
-`parseTypeId` handles both the `"type-id"` hyphen format (current) and the legacy `"type:id"` colon format, returning a structured `TypeId` (or `null`). The `on_data_op` event then carries the **string** form (`typeId.toString()`), so every listener receives a `"type-id"` string as the first argument.
+`parseTypeId` handles both the `"type-id"` hyphen format (current) and the legacy `"type:id"` colon format, returning a structured `TypeId` (or `null`). The `on_data_op` event then carries the **string** form (`typeId.toString()`), so every listener receives a `"type-id"` string as the first argument; the optional 4th argument is the `from_entity` string for `child_*` ops, and 3-argument listeners simply ignore it.
 
 Reconnection: on unexpected close, `ConnectionManager` reconnects with exponential backoff (base 500ms, capped at 10s) **indefinitely — there is no hard attempt cap** (`reconnect()` comment: "Retries indefinitely — no hard cap").
 
@@ -520,26 +550,40 @@ manager.on('on_data_op', this.onDataOp.bind(this));
 The handler (first argument is a **string**, parsed into a `TypeId` internally):
 
 ```typescript
-private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
+private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr?: string | null) {
     const typeId = new TypeId(typeIdStr);
+
+    // child_* INVERTS the envelope: typeId is the PARENT, data is the CHILD.
+    // Emit on the tag bus and refetch the cached parent (its own projection is
+    // the authoritative membership); never merge the child into the parent ref.
+    if (op === 'child_created' || op === 'child_updated' || op === 'child_deleted') {
+        emitEntityTag(typeId, op, data ?? null);
+        if (this.hasRef(typeId)) void this.fetchByTypeId(typeId).catch(() => {});
+        return;
+    }
+
     if (op !== 'delete' && (!data || !('id' in data))) return;
 
     const ctor = EntityFactory.getEntityConstructor(typeId.type);
     if (!ctor) return;
+    emitEntityTag(typeId, op, data ?? null);   // bus wake-up before any early return below
 
-    // Query re-run gating: ALWAYS on create; on other ops only when
-    // this.dataOpQueryInvalidation is enabled.
     if (op === 'delete') {
         this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
     } else if (op === 'create' || this.dataOpQueryInvalidation) {
-        const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
-        for (const watchedQuery of watchedQueries) {
+        // Full re-run over HTTP for every watched query of this type whose filter accepts `data`.
+        for (const watchedQuery of this.watchedQueries.getWatchCallbacksByType(typeId.type)) {
             if (!watchedQuery.request.query || watchedQuery.request.query.validate(data)) {
-                void this._query(watchedQuery.request).then((queryResult) => {
-                    watchedQuery.updateResults(queryResult);
-                });
+                void this._query(watchedQuery.request).then((r) => watchedQuery.updateResults(r));
             }
         }
+    } else if (op === 'update') {
+        // Membership reconcile per watched query, without a full re-run:
+        //  - no longer matches but is in results → local splice + notify
+        //  - newly matches but absent           → re-run the query (server applies scope)
+        //  - matches and present                → notify only (the cache merge below
+        //                                          mutates the very object in `results`)
+        ...
     }
 
     switch (op) {
@@ -578,7 +622,7 @@ private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
 
 Two update concerns run per event:
 
-1. **WatchedQuery path** (list queries): on `create` (always) or on `update`/etc. when `dataOpQueryInvalidation` is enabled, all `WatchedQuery` instances for the entity type are checked. If the incoming entity data passes the query's filter, the full query is re-run via HTTP and the cached results are replaced.
+1. **WatchedQuery path** (list queries): on `create` (always) or on any non-delete op when `dataOpQueryInvalidation` is enabled, all `WatchedQuery` instances for the entity type are checked. If the incoming entity data passes the query's filter, the full query is re-run via HTTP and the cached results are replaced. On `update` with `dataOpQueryInvalidation` off, membership is still reconciled per query: a row that stops matching is spliced out locally, a row that newly matches triggers a re-run, and a row that keeps matching only gets a `notifyCallbacks()` so React re-renders the mutated object. `delete` removes the entity from every result set.
 
 2. **Subscriber/alias path** (single entity): CREATE/UPDATE/DELETE notify subscribers through `_notifyAllAliases` (and register/delete the ref via `register_new_entity` / `_deleteWithAliases`) so alias keys stay consistent. Subscribers receive the new entity, or `null` on delete.
 
