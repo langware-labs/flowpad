@@ -1349,6 +1349,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             HubEndpointBindError,
             bind_hub_llm_endpoint,
             hub_llm_endpoint_status,
+            select_llm_source,
             unbind_hub_llm_endpoint,
         )
 
@@ -1359,6 +1360,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 return ApiSuccessResponse(data=await hub_llm_endpoint_status())
             if method == "POST":
                 body = (await request_info.get_post_data() if request_info else {}) or {}
+                # ``select`` is the USER picking a source; the bare POST is the HUB binding this
+                # box and 409s without a hub key. Keeping them apart is what lets someone choose
+                # their own OpenRouter key on a box that has never talked to a hub.
+                if (request_info.sub_path or "").strip("/") == "select":
+                    return ApiSuccessResponse(data=await select_llm_source(body))
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())

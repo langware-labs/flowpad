@@ -99,6 +99,14 @@ class Capability(Entity):
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
     login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
     login_message: str | None = APIField(default=None, persist=Persist.FALSE)
+    # Has the harness ITSELF refused a turn since the last successful login?
+    # Runtime-only like the rest of the login_* block. This is the evidence
+    # ranking that keeps a weak signal from overwriting a strong one: a turn is
+    # the only thing that tests whether a credential WORKS, while the auth probe
+    # only tests whether one EXISTS (see ``probe_claude_auth`` — it never asks
+    # the server). Without this marker the probe's presence-only "yes" flipped a
+    # witnessed sign-out straight back to "authenticated" on the next poll.
+    login_denied: bool = APIField(default=False, persist=Persist.FALSE)
     # How this harness authenticates its worker: "device" (vendor device login,
     # default) or "api" (a stored LLM-provider key — see flow_sdk.cli.auth.lm_api_keys
     # and cli_drivers/api_auth.py). Persisted + user-switchable; like reference_kind
@@ -331,6 +339,10 @@ class Capability(Entity):
         """Mirror a DeviceLoginSession onto the transient login_* fields and
         broadcast (no DB write — the fields are runtime-only)."""
         snapshot = session.to_json()
+        if DeviceLoginState(snapshot["state"]) is DeviceLoginState.AUTHENTICATED:
+            # A completed login is newer and stronger evidence than the refusal
+            # that prompted it.
+            self.login_denied = False
         self._set_login_fields(
             state=DeviceLoginState(snapshot["state"]),
             url=snapshot["url"],
@@ -396,6 +408,39 @@ class Capability(Entity):
         await self.notify_updated()
         return ApiSuccessResponse(data={"cancelled": session is not None})
 
+    @action.post(action_name="report-signed-out")
+    async def report_signed_out_action(self, message: str = "") -> ApiSuccessResponse:
+        """Record a sign-out the HARNESS ITSELF reported while answering a turn.
+
+        The strongest evidence a harness is signed out is the harness saying so.
+        Claude Code answers a signed-out turn with ``"Not logged in · Please run
+        /login"`` (codex and copilot phrase theirs the same way), and
+        ``tail_status_detail`` already lifts that sentence out of the transcript
+        and ships it as ``worker_status_detail``. That is proof about THIS box at
+        the moment of use — strictly better evidence than ``auth-status``, whose
+        5s subprocess probe can time out or return output it cannot parse and
+        then, by design, leaves ``login_state`` exactly as it was.
+
+        Which is how the login modal came to open ON a "Not logged in" error and
+        greet the user with "Signed in": the sentence opened the modal and was
+        then thrown away, while a months-old ``AUTHENTICATED`` from the last
+        successful device login stood unchallenged. An undetermined probe must
+        not assert a sign-out — that is ``_mirror_probe_to_login_state``'s rule
+        and it stays — but it must not preserve a positive claim in the face of
+        the harness's own denial either. This is the writer for that denial.
+
+        A login in flight is not clobbered (the same guard the probe mirror
+        keeps): the user is mid-sign-in and the stale turn error is older than
+        what they are doing right now.
+        """
+        if self.login_state in (DeviceLoginState.AWAITING_USER, DeviceLoginState.STARTING):
+            return ApiSuccessResponse(data={"recorded": False, "reason": "login in flight"})
+        self.login_state = DeviceLoginState.IDLE
+        self.login_denied = True
+        self.login_message = message.strip() or f"{self.kind} reported that it is not logged in."
+        await self.notify_updated()
+        return ApiSuccessResponse(data={"recorded": True})
+
     async def _mirror_probe_to_login_state(self, result) -> None:
         """Mirror an auth probe onto ``login_state`` — but only when the probe
         actually DECIDED.
@@ -418,8 +463,26 @@ class Capability(Entity):
 
         if self.login_state in (DeviceLoginState.AWAITING_USER, DeviceLoginState.STARTING):
             return  # a login is in flight; don't clobber it
+
         if result.status is WorkerAuthStatus.LOGGED_IN:
+            if self.login_denied and not result.verified:
+                # The probe found a credential; the harness already told us that
+                # credential does not work. Presence loses to a witnessed
+                # refusal — otherwise the modal's own re-probe on open restores
+                # the green "Signed in" it just corrected, and the footer follows
+                # it. Only a completed login (``_apply_login_session``) or a
+                # probe that actually VERIFIED the credential clears the denial.
+                logging.getLogger(__name__).info(
+                    "Auth probe for %s reports a stored credential, but %s already refused a turn "
+                    "(%r) — keeping login_state=%r",
+                    self.kind,
+                    self.kind,
+                    self.login_message,
+                    self.login_state,
+                )
+                return
             new_state = DeviceLoginState.AUTHENTICATED
+            self.login_denied = False
         elif result.status is WorkerAuthStatus.LOGGED_OUT:
             new_state = DeviceLoginState.IDLE
         else:
@@ -439,14 +502,24 @@ class Capability(Entity):
             await self.notify_updated()
 
     @action.get(action_name="auth-status")
-    async def auth_status_action(self) -> ApiSuccessResponse | ApiFailResponse:
+    async def auth_status_action(self, force: bool = False) -> ApiSuccessResponse | ApiFailResponse:
         """Cheap login-state probe (no version run) — the startup gate's check.
 
         Mirrors a DECIDED result onto ``login_state`` and broadcasts, so every
         surface agrees without waiting for a full test. A probe that could not
         reach a verdict leaves the field alone — see
         ``_mirror_probe_to_login_state``.
+
+        ``force`` drops a recorded refusal first, and exists so the user is never
+        stuck: the probe cannot overturn a refusal on its own (presence is not
+        validity), which would otherwise leave a harness the user re-authorised
+        OUTSIDE FlowPad — ``claude /login`` in their own terminal — reading as
+        signed out with no way back. An explicit "Test" is the user saying they
+        fixed it and asking us to look again; the silent re-probe the login modal
+        runs on open is not, and passes nothing.
         """
+        if force:
+            self.login_denied = False
         worker_type = self._login_worker_type()
         if worker_type is None:
             runner = self._device_login_runner()
@@ -458,44 +531,49 @@ class Capability(Entity):
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
         from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
+            LLMSourceKind,
+            resolve_box_llm_source,
+        )
 
         spec = driver_api_auth_spec(worker_type)
-        if self.auth_mode == "api" and spec is not None:
-            # API-key auth: the harness runs on a stored LLM-provider key, not the
-            # vendor device login. "logged_in" ⇔ a key is stored (present but not
-            # vendor-validated, so never `verified`). Surface the harness's
-            # supported providers so the UI can offer only possible outcomes.
-            from flow_sdk.cli.auth.lm_api_keys import get_lm_api
+        # Report what actually FUNDS this harness, not what a field says it prefers.
+        # ``auth_mode`` is a preference now -- honoured while available -- so reading it here
+        # would claim "using openrouter" for a harness whose key was deleted, and would miss a
+        # hub endpoint the box was offered. ``resolve_box_llm_source`` is the same resolver a
+        # spawn uses, so this answer and that one cannot disagree.
+        source = await resolve_box_llm_source(worker_type) if spec is not None else None
 
-            provider = self.api_provider or spec.default_provider.value
-            has_key = bool(get_lm_api(provider))
-            details: dict = {"provider": provider}
-            if provider == "flowpad":
-                # The hub's LLMEndpoint: "key" = hub login, presence = bound + logged in.
-                from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+        # ALWAYS probe the vendor, whatever funds the harness today. This action is the only
+        # producer of ``login_state``, which is ``Persist.FALSE`` and therefore ``None`` after
+        # every restart -- and the resolver reads exactly that field to decide whether a device
+        # login is proven. Probing only when device already won closes a loop with no exit: on a
+        # box the hub has bound, the endpoint wins because device is unproven, so the probe never
+        # runs, so device stays unproven forever -- and the user's "Test sign-in" button stops
+        # asking precisely for the harnesses where the answer matters most.
+        probe = await get_driver(worker_type).auth_probe()
+        await self._mirror_probe_to_login_state(probe)
 
-                bound = get_hub_llm_endpoint()
-                details["hub_endpoint"] = bound.endpoint_typeid if bound else None
-                message = (
-                    "Using FlowPad hub endpoint"
-                    if has_key
-                    else (
-                        "FlowPad hub endpoint bound but box is not logged in"
-                        if bound
-                        else "No FlowPad hub endpoint bound"
-                    )
-                )
-            else:
-                message = f"Using {provider} API key" if has_key else f"No {provider} API key configured"
+        if source is not None and source.kind is not LLMSourceKind.DEVICE:
+            # Funded by a key or a hub endpoint: the vendor's own login state is real news about
+            # the device rung, but it is not this harness's status. ``verified`` stays False --
+            # the credential is present, not proven.
             result = WorkerAuthResult(
-                status=WorkerAuthStatus.LOGGED_IN if has_key else WorkerAuthStatus.LOGGED_OUT,
+                status=WorkerAuthStatus.LOGGED_IN if source.eligible else WorkerAuthStatus.LOGGED_OUT,
                 verified=False,
                 auth_mode="api",
-                message=message,
-                details=details,
+                message=source.reason or f"Using {source.name}",
+                details={
+                    "provider": source.provider,
+                    "hub_endpoint": source.endpoint_typeid or None,
+                    "llm_source": source.model_dump(mode="json"),
+                    "device_login": probe.status.value,
+                },
             )
         else:
-            result = await get_driver(worker_type).auth_probe()
+            result = probe
+            if source is not None:
+                result.details = {**result.details, "llm_source": source.model_dump(mode="json")}
         # Surface the harness's supported API providers regardless of mode, so the
         # modal can offer the key section / provider select for any harness.
         if spec is not None:

@@ -75,6 +75,11 @@ class OpenCodeAgentOptions(AgentOptions):
         # Remembered by ``apply_process_mcp`` for the deferred fallback write in
         # ``_sync_config_env``. Launch-time only — never serialized.
         self._config_process_id = ""
+        # ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint,
+        # stamped by ``apply_worker_api_auth``. Runtime-resolved like ``config_path``, so it
+        # is set on every spawn path rather than persisted -- a stale baseURL would point a
+        # later turn at an endpoint the process no longer names.
+        self.provider_options: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # AgentOptions contract
@@ -135,7 +140,13 @@ class OpenCodeAgentOptions(AgentOptions):
             return
         from .config_gen import config_for_assets_dir
 
-        config = config_for_assets_dir(process_id, assets_dir, self.mcp_config_fragment, self.add_dirs)
+        config = config_for_assets_dir(
+            process_id,
+            assets_dir,
+            self.mcp_config_fragment,
+            self.add_dirs,
+            provider=self.provider_options or None,
+        )
         if config is not None:
             self.config_path = str(config)
 

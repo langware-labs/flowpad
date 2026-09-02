@@ -148,6 +148,20 @@ class Project(Entity):
         persist=Persist.TRUE,
         description="Help-desk configuration; set on a project that answers support tickets.",
     )
+    # A budget every worker in this project must spend. PRIVATE and not persisted to the
+    # FS carrier: it names a hub entity this box's user has a role on, which is a fact
+    # about an account rather than about the work, so it must not travel with a shared
+    # project to someone for whom the id means nothing (or, worse, means something else).
+    llm_endpoint_typeid: str | None = APIField(
+        default=None,
+        sharing=Sharing.PRIVATE,
+        description="Hub LLMEndpoint every agentic process in this project must spend. None = no "
+        "project constraint, and the box-wide default order applies. This is a CONSTRAINT, not a "
+        "preference: when it cannot be honoured the spawn fails naming this project, because "
+        "falling back would lose the accounting the constraint exists to guarantee and silently "
+        "spend the user's own subscription instead. A process may name its own endpoint, which "
+        "wins -- see AgenticProcess.llm_endpoint_typeid.",
+    )
     last_mode: str | None = APIField(
         default=None,
         description="Last UI view mode used in this project (vibe|standard|advanced|dev). "

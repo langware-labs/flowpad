@@ -1353,10 +1353,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       }
     };
 
+    // A background subscription must own its failures: `getPlan` is a network
+    // round trip, and a backend that is down (or absent, as under vitest) would
+    // otherwise surface as an unhandled rejection with no caller to receive it.
+    // Same contract as `TabManager.refreshInBackground` — explicit callers of
+    // `getPlan()` still get the error; these event/startup polls do not.
+    // Failing to fetch a plan simply means the handler is not called.
     const unsubStatus = this.on('status', () => {
-      void check();
+      void check().catch(() => undefined);
     });
-    void check();
+    void check().catch(() => undefined);
 
     return () => unsubStatus();
   }

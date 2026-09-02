@@ -12,10 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+import flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker as sw
+from flow_sdk import toplog
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
     CANCEL_GRACE_SECONDS,
     ClaudeCLIStreamWorker,
@@ -178,7 +182,10 @@ def test_per_block_narration_released_on_continuation():
     }
     tool_use_only = {
         "type": "assistant",
-        "message": {"content": [{"type": "tool_use", "id": "toolu_9", "name": "Bash", "input": {}}], "stop_reason": None},
+        "message": {
+            "content": [{"type": "tool_use", "id": "toolu_9", "name": "Bash", "input": {}}],
+            "stop_reason": None,
+        },
     }
     narration_frames = convert_event(narration_event)
     tool_frames = convert_event(tool_use_only)
@@ -220,7 +227,6 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
     second parse of a line (the old ``convert_line`` + ``_extract_session_id``
     re-parses) would push ``json.loads`` above the per-line count.
     """
-    import flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker as sw
 
     counts = {"loads": 0, "stream_event": 0}
     real_loads = json.loads
@@ -241,7 +247,9 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
     patch_build_spawn(
         monkeypatch,
         ClaudeCLIStreamWorker,
-        fake_stream_argv([INIT_EVENT, ASSISTANT_TOOL_USE, USER_TOOL_RESULT, ASSISTANT_TEXT, RESULT_SUCCESS], delay_ms=5),
+        fake_stream_argv(
+            [INIT_EVENT, ASSISTANT_TOOL_USE, USER_TOOL_RESULT, ASSISTANT_TEXT, RESULT_SUCCESS], delay_ms=5
+        ),
     )
     ctx = AgenticContext(workdir=str(tmp_path))
 
@@ -260,7 +268,7 @@ async def test_malformed_lines_still_yield_todays_fallback(tmp_path: Path, monke
     stop valid events around them from converting normally."""
     lines = [
         "this is not json at all",  # non-JSON → []
-        json.dumps([1, 2, 3]),      # valid JSON, not a dict → []
+        json.dumps([1, 2, 3]),  # valid JSON, not a dict → []
         json.dumps(INIT_EVENT),
         json.dumps(ASSISTANT_TEXT),
         json.dumps(RESULT_SUCCESS),
@@ -276,7 +284,7 @@ async def test_malformed_lines_still_yield_todays_fallback(tmp_path: Path, monke
     types = [fd.attributes["element-type"] for fd in out]
     # Valid events around the garbage still convert.
     assert FlowElementType.STATUS in types  # init
-    assert FlowElementType.CHAT in types    # assistant answer
+    assert FlowElementType.CHAT in types  # assistant answer
     assert FlowElementType.RESULT in types
     assert out[-1].attributes["element-type"] == FlowElementType.END
     # The garbage produced no parse-error/unknown frames — it's silently dropped.
@@ -398,7 +406,9 @@ async def test_close_session_graceful_interrupt(tmp_path: Path, monkeypatch: pyt
     script = tmp_path / "fake_claude_graceful.py"
     script.write_text(GRACEFUL_FAKE_CLI, encoding="utf-8")
     worker = ClaudeCLIStreamWorker()
-    user_msg = json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}) + "\n"
+    user_msg = (
+        json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}) + "\n"
+    )
     patch_build_spawn(monkeypatch, ClaudeCLIStreamWorker, ["python3", str(script)], stdin=user_msg)
     ctx = AgenticContext(workdir=str(tmp_path))
 
@@ -506,3 +516,47 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
     payload = json.loads(stdin_payload)
     assert payload["type"] == "user"
     assert payload["message"]["content"][0]["text"] == "hi"
+
+
+# ── debug-file granularity switch ────────────────────────────────────────────
+
+
+def _debug_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, count: int) -> list[str]:
+    """``count`` consecutive ``_turn_debug_file`` names for one session id."""
+    settings = MagicMock()
+    settings.logs_dir = tmp_path / "logs"
+    monkeypatch.setattr(sw, "get_instance_settings", lambda: settings)
+    return [Path(sw._turn_debug_file("sess-1")).name for _ in range(count)]
+
+
+def test_debug_file_is_per_turn_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Default (tag off): the name is stamped per turn, so the recovery turn
+    ~30s after a failure can't clobber the failure's evidence."""
+    monkeypatch.setattr(toplog, "_enabled", True, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", set(), raising=False)
+
+    (name,) = _debug_names(tmp_path, monkeypatch, 1)
+
+    assert re.fullmatch(r"sess-1-\d{8}T\d{9}\.txt", name), name
+
+
+def test_session_debug_log_tag_collapses_a_session_onto_one_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Tag on: back to one file per session, the shape the CLI itself uses."""
+    monkeypatch.setattr(toplog, "_enabled", True, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", {sw.SESSION_DEBUG_LOG_TAG}, raising=False)
+
+    first, second = _debug_names(tmp_path, monkeypatch, 2)
+
+    assert first == second == "sess-1.txt"
+
+
+def test_master_switch_off_means_per_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The tag reads through ``toplog.is_on``, so a disabled master switch
+    yields the per-turn default regardless of the filter."""
+    monkeypatch.setattr(toplog, "_enabled", False, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", {sw.SESSION_DEBUG_LOG_TAG}, raising=False)
+
+    (name,) = _debug_names(tmp_path, monkeypatch, 1)
+
+    assert name != "sess-1.txt"
+    assert re.fullmatch(r"sess-1-\d{8}T\d{9}\.txt", name), name

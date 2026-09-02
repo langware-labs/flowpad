@@ -31,17 +31,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import {
-  BadgeCheck,
-  Bug,
-  ChevronDown,
-  Compass,
-  Mail,
-  History,
-  RadioTower,
-  Workflow,
-  Webhook,
-} from 'lucide-react';
+import { BadgeCheck, Bug, ChevronDown, Compass, History, KeyRound, Mail, RadioTower, Webhook, Workflow } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -99,6 +89,7 @@ export function CollapsedSidebar() {
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
+    'llm-sources': { title: t`LLM sources`, icon: KeyRound, viewType: ViewType.LLM_SOURCES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
     // Glyph from the type registry, never a literal — same rule the project
     // item follows, so a TypeInfo icon change reaches the rail too.

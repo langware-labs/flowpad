@@ -61,14 +61,6 @@ async def share_entity() -> ApiResponse:
     if not entity_model:
         raise HTTPException(status_code=400, detail=f"share: unknown entity type {target.type}")
 
-    entity = await entity_model.get_one({"id": target.id})
-    if entity is None:
-        return ApiFailResponse(
-            status_code=404,
-            message="share: local entity not found",
-            data={"code": "entity_not_found"},
-        )
-
     try:
         body = await request_info.get_post_data() or {}
     except JSONDecodeError:
@@ -80,6 +72,29 @@ async def share_entity() -> ApiResponse:
     recipients = body.get("recipients")
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
+
+    # Hub-only types have no local row to look up, and nothing to push: the entity already lives
+    # on the hub and this endpoint's whole job for them is the invitation. Resolved BEFORE the
+    # local fetch below, which would otherwise 404 every share of one. An ``LLMEndpoint`` is the
+    # case that forced this — it is a read-only projection of hub state (see its module docstring).
+    if entity_model._hub_only:
+        if not recipients:
+            raise HTTPException(
+                status_code=400,
+                detail=f"share: {target.type} exists only on the hub; pass 'recipients' to invite someone",
+            )
+        # A receipt, not the entity: a transient projection would serialize ~30 defaulted fields
+        # as if they were this endpoint's real state.
+        await entity_model(id=target.id).share(recipients=recipients)
+        return ApiSuccessResponse(data={"id": target.id, "recipients": recipients})
+
+    entity = await entity_model.get_one({"id": target.id})
+    if entity is None:
+        return ApiFailResponse(
+            status_code=404,
+            message="share: local entity not found",
+            data={"code": "entity_not_found"},
+        )
 
     project_git_origin = None
     if isinstance(entity, Project):
