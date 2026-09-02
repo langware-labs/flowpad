@@ -169,6 +169,9 @@ class ViewType(StrEnum):
     APP = "app"
     LLM_ENDPOINTS = "llm-endpoints"  # Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/<tab>]]
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
+    # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
+    # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>] -- the harness in focus
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -379,6 +382,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.APP: _m(_REQ),
     ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True),
     ViewType.TOKEN_PLAN: _m(_OPT, folds_pointer=True),
+    ViewType.LLM_SOURCES: _m(_OPT, folds_pointer=True),
 }
 
 

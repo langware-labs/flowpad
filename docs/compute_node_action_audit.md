@@ -34,7 +34,7 @@ id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
 | action | where | returns today | provider-leaky? | tested? |
 |---|---|---|---|---|
 | `_setup_op` | HUB `compute_node.py:463-480` | `ApiSuccessResponse(data=<provider node id str>)` (`:478`); re-hydrates from DB at `:467` because `self` is not the row it saves | **yes** (provider id on the wire) | long `long_tests/test_compute_api.py` — no unit |
-| `_setup_lm_proxy_op` | HUB `compute_node.py:655` | `ApiSuccessResponse(data={"message","key_prefix"})` | no | api `test_pentest_secrets_compute.py:532` |
+| `_setup_lm_proxy_op` | **REMOVED** — the LM proxy was replaced by the `LLMEndpoint` entity (`2c300695e`); the box is now told which endpoint to spend via the `llm-endpoint` box action | — | — | — |
 | `_workspace_ready_op` | HUB `compute_node.py:922` | `ApiSuccessResponse(data={"healthy","started_fallback","port","logged_in","login_detail"})` | no | unit `test_workspace_health_probe_gate.py`, `test_workspace_runtime_label.py` |
 | `_curl_status` | HUB `compute_node.py:697-720` | **HTTP status as a `str`**, `"000"` sentinel (`:716,:720`) | no | only via `_service_health_code` |
 | `_service_health_code` / `_workspace_health_code` | HUB `compute_node.py:722-744` / `:746` | `str` status code | no | unit `test_workspace_health_probe_gate.py:42-84` |
@@ -62,7 +62,7 @@ id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
 | `_get_logs_op` | HUB `compute_node.py:1008-1023` | provider-native object; docstring `:1009` "(E2B only)"; base returns `[]` | **yes** | **none** |
 | `_command_op` | HUB `compute_node.py:1025-1140` | `StreamingResponse` (SSE) or `ApiSuccessResponse(data=<FlowData XML string>)`; retries on provider **error-text** match at `:1069` | **yes** | api + unit `test_compute_streaming.py` — the retry branch itself untested |
 | `setup_node` | HUB `compute_node.py:199-213` | `str` provider id **and** mutates `self.node_provider_id` | no (refuted, §2 R4) | long `long_tests/test_faas_compute.py` |
-| `setup_lm_proxy_access` | HUB `compute_node.py:417-458` | `str` (full key); calls `configure_lm_proxy_env` (`:452`) | provider-owned env wiring | api `test_pentest_secrets_compute.py:532` |
+| `setup_lm_proxy_access` | **REMOVED** with `configure_lm_proxy_env` (all five providers). It wrote a provider key into the box's `~/.bashrc`; nothing crossed to the box after the `LLMEndpoint` migration but the dead code, which `ComputeNode.setup_llm_endpoint` now supersedes — it pushes an identity and a hub-relative path, never a credential | — | — | — |
 | `copy_folder` / `extract_zip` | HUB `compute_node.py:351` / `:333` | `None` | uses `provider.get_temp_folder()` + `provider.path_sep` (`:361`), `provider.extract_archive_command` (`:342`) — refuted, §2 R6 | unit `test_faas_transfer.py` |
 
 ---
@@ -172,7 +172,7 @@ class NodeUnsupported(NodeError): ...      # replaces base-returns-[] and NotImp
 @dataclass(frozen=True) class LoginResult:   ok: bool; principal_label: str|None; http_code: int
 
 # --- lifecycle ---
-async def provision(self, *, size: NodeSize|None = None, lm_proxy: bool = True) -> str
+async def provision(self, *, size: NodeSize|None = None) -> str  # the lm_proxy flag is gone with the proxy
 async def start(self)  -> None
 async def stop(self)   -> None
 async def pause(self, *, immediate: bool = True) -> None
@@ -266,7 +266,7 @@ Steps 1-5 are independently shippable and mutually non-conflicting. 6+8 are a co
 | The provider-contract evidence arrived truncated (cut off at `compute_provider.py:635-637`) — F5/F6 rest on it unverified, and the `shutdown` contract entry is missing entirely. | `grep -n "def \(shutdown\|set_node_status\|send\|restart\|get_node_connection\)" flowpad/hub/core/faas/compute/providers/*.py` in HUB, then read each body. |
 | 17 of ~25 discovery-flagged leaks never went through refutation; the refuted-8 record is itself missing 2 subject lines. | Re-run the adversarial pass over the Group C rows in §1 that are not F1-F4. |
 | Whether `_restart_workspace_app:791` actually depends on `e2b_provider._env_prefix` semantics or the comment at `:812` is stale. | `grep -n "_env_prefix" flowpad/hub/core/faas/compute/providers/e2b_provider.py` and read `run_command`'s `env` handling in both providers. |
-| Whether OSS `flow_sdk/builtin/faas/compute_node.py:76` should be refactored in the same shape or is genuinely divergent (it uses `node_provider_type`, HUB uses `node_provider`; OSS `setup_node:286` has no `setup_lm_proxy`). | `diff <(grep -n "async def \|def " /Users/shlom/Documents/dev/flowpad-oss/flow_sdk/builtin/faas/compute_node.py) <(grep -n "async def \|def " /Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/builtin/faas/compute_node.py)` |
+| Whether OSS `flow_sdk/builtin/faas/compute_node.py:76` should be refactored in the same shape or is genuinely divergent (it uses `node_provider_type`, HUB uses `node_provider`; OSS `setup_node:286` has no `setup_lm_proxy` (and the HUB one no longer does either)). | `diff <(grep -n "async def \|def " /Users/shlom/Documents/dev/flowpad-oss/flow_sdk/builtin/faas/compute_node.py) <(grep -n "async def \|def " /Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/builtin/faas/compute_node.py)` |
 | Whether the PTY handlers have *any* coverage beyond `test_pentest_identity_auth.py:159`. | `grep -rn "terminal-command\|_start_pty_session\|pty_session" flowpad/hub/tests/` in HUB. |
 | Whether `reconcile-manifest` (`compute_node_tools.py:263`, driven from OSS `use-sandboxes.ts:314`) has any test at all. | `grep -rn "reconcile_manifest\|reconcile-manifest" flowpad/hub/tests/` in HUB — discovery reports zero hits; confirm before relying on it. |
 | Whether `provider_type_id_str` (HUB `:192`, OSS `:280`) is truly dead. | `grep -rn "provider_type_id_str" /Users/shlom/Documents/dev/test_flowpad/FlowPad /Users/shlom/Documents/dev/flowpad-oss --include='*.py' --include='*.ts'` |

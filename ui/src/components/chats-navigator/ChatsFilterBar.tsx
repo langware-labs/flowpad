@@ -1,10 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FolderClock } from 'lucide-react';
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
-import { WORKER_TYPES, type WorkerType } from '@src/hooks/useWorkerHistory';
-
-/** Vendor labels — derived from the worker-history value space (single source). */
-const WORKER_LABELS: Record<WorkerType, string> = { claude: 'Claude', codex: 'Codex', copilot: 'Copilot', opencode: 'OpenCode' };
+import { WORKER_LABELS, WORKER_TYPES, type WorkerType } from '@src/hooks/useWorkerHistory';
 
 interface ChatsFilterBarProps {
   /** Start a fresh chat with the given vendor. */

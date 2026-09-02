@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgentOptions,
     AgenticContext,
     AgenticProcessContextKey,
+    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
     ProcessMcpRuntime,
@@ -23,10 +23,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
     to_opencode_mcp,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
     SKILLS_SUBDIR,
@@ -258,7 +258,7 @@ class OpenCodeDriver:
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
         await apply_worker_secret_env(env_vars, process)
 
-        config_path = self._write_config(process, instruction_assets)
+        config_path = await self._write_config(process, instruction_assets)
 
         context = AgenticContext(
             workdir=process.workdir,
@@ -371,18 +371,26 @@ class OpenCodeDriver:
     # Internals
     # ------------------------------------------------------------------
 
-    def _write_config(self, process: "AgenticProcess", instruction_assets) -> Path | None:
-        """Generate the per-process ``opencode.json`` (instructions + skills + MCP).
+    async def _write_config(self, process: "AgenticProcess", instruction_assets) -> Path | None:
+        """Generate the per-process ``opencode.json`` (instructions + skills + MCP + provider).
 
         ``instruction_assets`` may be None — a process with only mounted roots
         or attached servers still needs a config, and the generator returns None
         when there is genuinely nothing to say.
+
+        Async because the provider block depends on the resolved API auth: when this process spends
+        a hub ``LLMEndpoint`` the redirect can only reach opencode through this file, since its
+        OpenRouter provider honours no base-URL environment variable.
         """
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth  # noqa: PLC0415
+
+        auth = await resolve_worker_api_auth(process)
         return config_for_assets_dir(
             process.id,
             getattr(instruction_assets, "assets_dir", None),
             dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment),
             list(process.resolved_add_dirs or []),
+            provider=dict(auth.provider_options) if auth and auth.provider_options else None,
         )
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:

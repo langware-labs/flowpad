@@ -46,12 +46,20 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
 **where the project lives on your disk never leaves your machine.** So do
 `presence`, `session_code` and the other local session state.
+
+`llm_endpoint_typeid` is the non-obvious one, because it names a *hub* entity and
+so looks like it ought to travel. It must not. It is the budget THIS user's
+workers spend, and a role on that endpoint is a fact about an account rather than
+about the work: a recipient either has no role on it (so the id means nothing and
+every spawn in the shared project fails against a budget they cannot reach) or —
+worse — holds a role on a different endpoint that happens to share the id space.
+A recipient's project gets funded by their own ladder.
 
 ### The exception worth knowing
 

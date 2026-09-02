@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PATH = "/api/v1/graph/compute_node/@local/llm-endpoint"
@@ -56,7 +58,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     assert data["invoke_path"] == INVOKE_PATH
     assert data["invoke_url"].endswith(INVOKE_PATH)
     assert data["hub_logged_in"] is True
-    assert len(data["active_for"]) == 3
+    assert len(data["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
     r = await bootstrapped_client.get(PATH)
     assert r.json()["data"]["endpoint_typeid"] == "llm_endpoint:ep1"
@@ -71,7 +73,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["was_bound"] is True
-    assert len(data["reverted"]) == 3
+    assert "reverted" not in data, "binding no longer writes to Capability, so nothing is reverted"
     assert data["endpoint_typeid"] is None
 
     r = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/lm_keys")
@@ -96,3 +98,34 @@ async def test_bind_malformed_is_400(bootstrapped_client, hub_login):
     body = r.json()
     assert body["status"] == "FAIL"
     assert body.get("status_code") == 400 or r.status_code == 400
+
+
+async def test_select_lets_a_user_choose_a_source_without_a_hub(bootstrapped_client) -> None:
+    """The picker's one write. It must work on a box that has never talked to a hub -- which is
+    why it is a sub-action and not the bare POST, whose 409 would otherwise tell someone picking
+    their own OpenRouter key that the box is not logged in."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
+
+    for payload, expected in (
+        ({"harness": "claude", "kind": "api_key", "provider": "openrouter"}, ("api", "openrouter")),
+        ({"harness": "claude", "kind": "device"}, ("device", None)),
+    ):
+        body = (await bootstrapped_client.post(path, json=payload)).json()
+        assert body["status"] == "SUCCESS", body
+        cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+        assert (cap.auth_mode, cap.api_provider) == expected, payload
+
+
+async def test_select_rejects_what_it_cannot_honour(bootstrapped_client) -> None:
+    path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
+    for payload in (
+        {"kind": "device"},  # no harness
+        {"harness": "claude", "kind": "nonsense"},
+        {"harness": "claude", "kind": "api_key", "provider": "nonsense"},
+        {"harness": "claude", "kind": "endpoint"},  # logged out, nothing bound
+    ):
+        body = (await bootstrapped_client.post(path, json=payload)).json()
+        assert body["status"] != "SUCCESS", f"{payload} should have been refused: {body}"

@@ -1142,6 +1142,19 @@ class AgenticProcess(Entity):
             "live process must flip ``restart_required``."
         ),
     )
+    llm_endpoint_typeid: str | None = APIField(
+        default=None,
+        description=(
+            "Hub LLMEndpoint this process spends, overriding the box-wide binding the hub pushed. "
+            "None = use the box default, which is what every process did before this field and what "
+            "agent deploys still rely on (an agent has no UI to choose). Enters the restart "
+            "snapshot: on the PTY path the endpoint is baked into the worker's spawn env, so "
+            "changing it on a live process flips ``restart_required``; on the headless path each "
+            "turn re-spawns and re-resolves auth, so the next turn simply uses the new endpoint. "
+            "Not validated locally -- the hub authorizes every invoke against the endpoint in the "
+            "URL, so a stale value earns a 401/403 rather than reaching a budget it may not spend."
+        ),
+    )
     process_hook_events: list[str] = APIField(
         default_factory=list,
         description="Process-local worker hook events enabled for this process.",
@@ -6510,6 +6523,19 @@ class AgenticProcess(Entity):
             return sorted(AgenticProcess._normalize_restart_value(item) for item in value)
         return value
 
+    async def set_llm_endpoint(self, endpoint) -> "AgenticProcess":
+        """Point this process at a hub ``LLMEndpoint``; ``None`` reverts to the box-wide binding.
+
+        Accepts an ``LLMEndpoint``, a typeid, or ``None``. All the bookkeeping that matters lives in
+        the save hook: ``llm_endpoint_typeid`` is part of the restart snapshot, so changing it on a
+        RUNNING process flips ``restart_required`` and the existing Restart affordance handles the
+        rest. A headless process needs no restart -- its next turn re-spawns and re-resolves auth.
+        """
+        typeid = getattr(endpoint, "typeid", endpoint)
+        self.llm_endpoint_typeid = str(typeid) if typeid else None
+        await self.save()
+        return self
+
     def _restart_driver(self) -> WorkerDriver | None:
         """Resolve the driver from the current worker_type value."""
         try:
@@ -6671,6 +6697,9 @@ class AgenticProcess(Entity):
             "process_hook_events": list(hook_events),
             "process_hooks": hook_snapshot,
             "mcp_servers": mcp_snapshot,
+            # Baked into the worker's spawn env, so a live worker keeps spending the endpoint it
+            # started with until it is restarted -- same contract as mcp_servers above.
+            "llm_endpoint_typeid": self.llm_endpoint_typeid,
         }
 
     def _restart_snapshot_payload(self) -> dict[str, Any]:
