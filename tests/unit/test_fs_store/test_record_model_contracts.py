@@ -180,11 +180,40 @@ async def test_create_with_a_healthy_sync_carries_no_warnings(tmp_records_root, 
 
 
 @pytest.mark.asyncio
-async def test_create_without_an_id_is_a_400_not_a_conflict(tmp_records_root, monkeypatch):
+async def test_create_without_an_id_mints_one(tmp_records_root, monkeypatch):
+    """The route mints for a record born over HTTP — it has no file to derive
+    from, so the minter's no-key (v4) form applies. What it must never do is
+    fall back to the content fingerprint FSRecord.save() now refuses."""
     _request(monkeypatch, method="post", sub_path="markdown", body={"name": "no-id"})
 
     resp = await _Handler()._fs_records_action()
+    dumped = resp.model_dump()
 
-    assert resp.status_code == 400
-    assert "mint_entity_id" in (resp.message or "")
-    assert not any(tmp_records_root.rglob("metadata.json"))
+    assert dumped["status"] == "SUCCESS"
+    assert is_valid_entity_id(dumped["data"]["id"])
+    assert any(tmp_records_root.rglob("metadata.json"))
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_foreign_id_normalizes_it(tmp_records_root, monkeypatch):
+    """A hand-authored v7 never becomes an entity id: it is normalized to a
+    stable v5, the same order `Entity.allocate_id` uses on the row side."""
+    foreign = "018f8c8a-7a4e-7c3e-8b1a-2f6d4e5a9c11"
+    _request(monkeypatch, method="post", sub_path="markdown", body={"id": foreign, "name": "v7"})
+
+    dumped = (await _Handler()._fs_records_action()).model_dump()
+
+    assert dumped["status"] == "SUCCESS"
+    minted = dumped["data"]["id"]
+    assert minted != foreign
+    assert is_valid_entity_id(minted)
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_conforming_id_adopts_it(tmp_records_root, monkeypatch):
+    rid = mint_uuid()
+    _request(monkeypatch, method="post", sub_path="markdown", body={"id": rid, "name": "ok"})
+
+    dumped = (await _Handler()._fs_records_action()).model_dump()
+
+    assert dumped["data"]["id"] == rid
