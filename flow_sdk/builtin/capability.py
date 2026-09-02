@@ -531,18 +531,17 @@ class Capability(Entity):
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
         from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
-        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
-            LLMSourceKind,
-            resolve_box_llm_source,
-        )
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_box_llm_endpoint
+        from flow_sdk.builtin.llm_endpoint import LLMEndpointKind
 
         spec = driver_api_auth_spec(worker_type)
         # Report what actually FUNDS this harness, not what a field says it prefers.
         # ``auth_mode`` is a preference now -- honoured while available -- so reading it here
         # would claim "using openrouter" for a harness whose key was deleted, and would miss a
-        # hub endpoint the box was offered. ``resolve_box_llm_source`` is the same resolver a
+        # hub endpoint the box was offered. ``resolve_box_llm_endpoint`` is the same resolver a
         # spawn uses, so this answer and that one cannot disagree.
-        source = await resolve_box_llm_source(worker_type) if spec is not None else None
+        candidate = await resolve_box_llm_endpoint(worker_type) if spec is not None else None
+        endpoint, source = candidate if candidate is not None else (None, None)
 
         # ALWAYS probe the vendor, whatever funds the harness today. This action is the only
         # producer of ``login_state``, which is ``Persist.FALSE`` and therefore ``None`` after
@@ -554,7 +553,7 @@ class Capability(Entity):
         probe = await get_driver(worker_type).auth_probe()
         await self._mirror_probe_to_login_state(probe)
 
-        if source is not None and source.kind is not LLMSourceKind.DEVICE:
+        if source is not None and endpoint.kind != LLMEndpointKind.DEVICE:
             # Funded by a key or a hub endpoint: the vendor's own login state is real news about
             # the device rung, but it is not this harness's status. ``verified`` stays False --
             # the credential is present, not proven.

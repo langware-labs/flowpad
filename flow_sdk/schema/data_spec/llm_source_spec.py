@@ -24,10 +24,19 @@ Three fields exist because one boolean cannot carry what callers need:
   hub endpoint we merely believe is reachable is not the same claim, and a caller that
   cannot tell them apart will treat an assumption as a fact.
 
-**Identity is the tuple** ``(kind, provider, endpoint_typeid)`` — see ``ref``. This is a
-value, not a row: do not mint an id for it. What a process or project *stores* is the
-endpoint typeid, a durable hub reference; storing a serialized source would freeze
-transient status into a persisted row.
+**Identity is the endpoint** — see ``ref``. Every funding source is an ``LLMEndpoint``
+now (kind ``device`` / ``api_key`` / ``hub``), so this type carries no identity of its own:
+it names one and adds the verdict. It used to duplicate ``kind``/``provider`` because a
+stored key had no row to point at; it does now. What a process or project *stores* is the
+endpoint typeid; storing a serialized source would freeze transient status into a
+persisted row.
+
+This stays a separate value rather than fields on the endpoint because a verdict is
+**per harness**, and the endpoint is not. The same stored OpenRouter key is eligible for
+one harness and refused by another whose spec does not accept its provider, so the box
+status screen holds several verdicts naming the same endpoint id at once. Folded onto the
+row, ``eligible`` would have no answer without knowing which list it came from — and the
+row is the one thing here that is durable and saveable.
 
 The harness is deliberately NOT a field. Device login is per-harness by definition, a
 key is only usable by harnesses whose spec accepts its provider, and an endpoint only by
@@ -92,21 +101,15 @@ class LLMSource(DataSpec):
     spec_kind: ClassVar[str] = "llm.source"
     model_config = ConfigDict(frozen=True)
 
-    kind: LLMSourceKind
-    #: ``LMApiProvider`` value. Empty for a device source, which has no provider.
-    provider: str = ""
-    #: ``llm_endpoint-<uuid>``. Empty unless ``kind`` is ENDPOINT.
-    endpoint_typeid: str = ""
+    #: The endpoint this verdict is about — ``llm_endpoint-<uuid>``, always set. Look the
+    #: row up for anything else you need (kind, provider, base URL, model slugs); this type
+    #: deliberately mirrors none of it.
+    endpoint_typeid: str
     name: str = ""
     #: Secondary display line -- a masked key hint, a sign-in caveat, and so on. Display
     #: ONLY: never a credential, and never branched on. Anything a caller must decide from
     #: gets its own field, so improving a label cannot change behaviour.
     detail: str = ""
-    #: For an ENDPOINT source, the provider its root talks to (``openrouter`` / ``anthropic``
-    #: / ``openai``). The spawn binding needs it because the tier slugs and wire quirks are
-    #: OpenRouter's, so a root that is not OpenRouter is worth saying out loud.
-    root_provider: str = ""
-
     eligible: bool = False
     #: Why not, when not -- and ONLY when not; an eligible source has no reason. Rendered
     #: verbatim by every consumer, so a caveat carried here on a usable source surfaces as
@@ -123,13 +126,22 @@ class LLMSource(DataSpec):
     def _reason_only_when_ineligible(self):
         """``reason`` explains a refusal, so an eligible source must not carry one."""
         if self.eligible and self.reason:
-            raise ValueError(f"{self.kind}: an eligible source must not carry a reason ({self.reason!r})")
+            raise ValueError(
+                f"{self.name or self.endpoint_typeid}: an eligible source must not carry a "
+                f"reason ({self.reason!r})"
+            )
+        if not self.endpoint_typeid:
+            raise ValueError("an LLMSource must name the endpoint it is a verdict about")
         return self
 
     @property
-    def ref(self) -> tuple[str, str, str]:
-        """This source's identity. A tuple, deliberately -- see the module docstring."""
-        return (str(self.kind), self.provider, self.endpoint_typeid)
+    def ref(self) -> str:
+        """This source's identity: the endpoint it names.
+
+        Was a ``(kind, provider, typeid)`` tuple back when a stored key had no row and the
+        tuple was the only way to say which source this was.
+        """
+        return self.endpoint_typeid
 
     def ineligible(self, reason: str) -> "LLMSource":
         """This source, ruled out, carrying the sentence that says why.

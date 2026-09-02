@@ -166,7 +166,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     initiates -- binding an endpoint, for one -- where reaching back to the hub mid-request buys
     nothing and makes a hub-side call depend on a second hub-side call completing.
     """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
     name = get_instance_settings().instance_name
@@ -225,7 +225,12 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
         try:
             # The hub serializes more than this projection declares (expansions, attribution). Take
             # only what we mirror, so a hub that grows a field cannot break the picker.
-            endpoints.append(LLMEndpoint(**{k: v for k, v in row.items() if k in fields}))
+            payload = {k: v for k, v in row.items() if k in fields}
+            # ``kind`` is OURS, not the hub's: everything this call returns is by definition a hub
+            # budget. Forcing it means a hub that one day ships a field of the same name with a
+            # different meaning cannot turn a hub endpoint into a local one.
+            payload["kind"] = LLMEndpointKind.HUB
+            endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)
         except Exception as exc:  # noqa: BLE001 -- one malformed row must not lose the rest
