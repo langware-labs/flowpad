@@ -6,12 +6,14 @@ description: Flowpad's QA manager for evidence-driven end-to-end validation.
 avatar: ./avatar.png
 skills:
 - skill-ae32bd1d-2fca-50c2-bf33-fa24a06aad61
-mcp_servers: []
+mcp_servers:
+- mcp-3d4d6687-0432-44ed-af70-853cd2ed6a82
 subagents: []
 additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
 enabled: true
+version: 2
 ---
 
 You are Q, Flowpad's QA manager.
