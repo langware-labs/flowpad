@@ -1,4 +1,5 @@
 import { CheckCircle, Circle, Loader2, XCircle } from 'lucide-react';
+import { cn } from '@src/lib/utils';
 import type { Step, StepStatus } from '@src/hooks/use-step-flow';
 
 /**
@@ -7,6 +8,11 @@ import type { Step, StepStatus } from '@src/hooks/use-step-flow';
  * Extracted from the two near-identical copies that lived in `HubHome` (desktop
  * launch) and `LaunchLanding` (`/launch?repo=…`) so a third consumer doesn't
  * fork the pattern again.
+ *
+ * It also renders a checklist that is not a `useStepFlow` pass at all — one
+ * whose steps REFLECT state the user fixes elsewhere (`AgentDeployChecklist`).
+ * That is what `Step.action` is for: the row's own remediation control, opt-in
+ * and absent from every flow-driven caller.
  */
 
 function StepIcon({ status }: { status: StepStatus }) {
@@ -35,13 +41,17 @@ export function StepList({
       {steps.map((step) => (
         <li
           key={step.id}
-          className="flex items-center gap-2 text-xs"
+          // A finished step recedes: the list is read for what is LEFT, and a
+          // completed row competing for attention with the one that still needs
+          // doing is the thing that makes a checklist hard to scan.
+          className={cn('flex items-center gap-2 text-xs', step.status === 'success' && 'opacity-60')}
           data-status={step.status}
           data-testid={testIdPrefix ? `${testIdPrefix}-step-${step.id}` : undefined}
         >
           <StepIcon status={step.status} />
           <span className={step.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{step.label}</span>
           {step.detail && <span className="truncate text-muted-foreground/70">— {step.detail}</span>}
+          {step.action && <span className="ms-auto shrink-0">{step.action}</span>}
         </li>
       ))}
     </ul>
