@@ -29,13 +29,17 @@ import { ViewType } from '@src/types/ViewType';
 //: between selecting and the first request when the view was already mounted.
 const REQUEST_EVERY_MS = 25_000;
 
-function isSelectedConversation(conversationId: string): boolean {
+function isSelectedSourceView(conversationId?: string, agentId?: string): boolean {
   try {
     const dock = DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`);
-    return (
-      dock?.viewType === ViewType.CONVERSATION &&
-      DockPointer.parseConversationPointer(dock?.pointer).conversationId === conversationId
-    );
+    if (conversationId) {
+      return (
+        dock?.viewType === ViewType.CONVERSATION &&
+        DockPointer.parseConversationPointer(dock?.pointer).conversationId === conversationId
+      );
+    }
+    const agent = DockPointer.parseAgentPointer(dock?.pointer);
+    return dock?.viewType === ViewType.AGENT && agent.view === 'inbox' && agent.agentId === agentId;
   } catch {
     return false;
   }
@@ -51,11 +55,12 @@ async function requestPoll(sourceId: string): Promise<void> {
 export function useAttentionPolling(
   sourceId: string | undefined,
   conversationId: string | undefined,
+  agentId?: string,
 ): void {
   useEffect(() => {
-    if (!sourceId || !conversationId) return;
+    if (!sourceId || (!conversationId && !agentId)) return;
     const tick = () => {
-      if (!isSelectedConversation(conversationId)) return;
+      if (!isSelectedSourceView(conversationId, agentId)) return;
       void requestPoll(sourceId).catch(() => {
         // Best effort: a failed request just means the standing cadence.
       });
@@ -63,5 +68,5 @@ export function useAttentionPolling(
     tick();
     const timer = setInterval(tick, REQUEST_EVERY_MS);
     return () => clearInterval(timer);
-  }, [sourceId, conversationId]);
+  }, [sourceId, conversationId, agentId]);
 }

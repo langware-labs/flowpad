@@ -7,13 +7,14 @@ root or one of its direct context roots.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
-from flow_sdk.builtin.helpdesk import Helpdesk
-from flow_sdk.builtin.project import Project
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
+from flow_sdk.builtin.helpdesk import Helpdesk
+from flow_sdk.builtin.project import Project, mount_key, scoped_assets
+from flow_sdk.fs_store.path_utils import is_path_under
 
 log = logging.getLogger(__name__)
 
@@ -61,16 +62,25 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     if not roots:
         return None
 
-    desks = sorted(
-        (desk for desk in await Helpdesk.get_all() if desk.asset_ref),
-        key=lambda desk: (canonical_posix_path(desk.asset_ref), str(desk.id)),
-    )
-    projects_by_mount = await Project.index_by_mount()
+    # Independent reads: neither feeds the other, so pay one round trip, not two.
+    all_desks, projects_by_mount = await asyncio.gather(Helpdesk.get_all(), Project.index_by_mount())
+
+    # Canonicalize and order the desks ONCE. `assets_under_roots(all_desks, [root])`
+    # inside the loop re-ran a realpath syscall per desk for every root; filtering the
+    # prepared rows keeps the identical (path, id) first-wins rule at roots x desks
+    # string comparisons instead.
+    desk_rows = scoped_assets(all_desks)
 
     for root in roots:
-        portal = projects_by_mount.get(root)
-        for desk in desks:
-            if not is_path_under(canonical_posix_path(desk.asset_ref), root):
+        # ``mount_key`` on both sides: ``index_by_mount`` builds its keys with it,
+        # and a root that differs only by a trailing slash would otherwise miss
+        # and read as "this checkout has no Project" — see ``no_portal_project``.
+        portal = projects_by_mount.get(mount_key(root))
+        # `scoped_assets` owns the (canonical path, id) ordering. Sorting here too
+        # would be a second copy of the rule that decides which company receives a
+        # ticket. Root-major iteration is deliberate: an earlier root wins outright.
+        for canonical, _desk_id, desk in desk_rows:
+            if not is_path_under(canonical, root):
                 continue
             queue_id = desk.desk_project_id
             queue_id = queue_id.strip() if isinstance(queue_id, str) else ""

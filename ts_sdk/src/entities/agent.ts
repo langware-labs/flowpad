@@ -1,10 +1,12 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import type { TypeId } from '../models/TypeId';
+import { TypeId } from '../models/TypeId';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
+import { DataSource, type IDataSource } from './data-source';
+import { EmailInbox, type IEmailInbox } from './email-inbox';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -240,6 +242,82 @@ export class Agent extends APIEntity<Agent> {
   async deploy(): Promise<AgentDeployResult> {
     return (await this.post('deploy')) as AgentDeployResult;
   }
+
+  async emailState(): Promise<AgentEmailState> {
+    return normalizeAgentEmailState(await this.get<AgentEmailStateWire>('email_state'));
+  }
+
+  async enableEmail(): Promise<AgentEmailState> {
+    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('enable_email'));
+  }
+
+  async disableEmail(): Promise<AgentEmailState> {
+    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('disable_email'));
+  }
+
+  async configureEmail(options: AgentEmailConfiguration): Promise<AgentEmailState> {
+    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('configure_email', { ...options }));
+  }
+
+  async inboxScope(): Promise<AgentInboxScope> {
+    return this.get<AgentInboxScope>('inbox_scope');
+  }
+}
+
+export interface AgentEmailConfiguration {
+  allowed_senders?: string[];
+  poll_interval_seconds?: number;
+}
+
+interface AgentEmailStateWire {
+  agent_id: string;
+  enabled: boolean;
+  inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
+  source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
+  allowed_senders: string[];
+}
+
+export interface AgentEmailState {
+  agent_id: string;
+  enabled: boolean;
+  inbox: EmailInbox | null;
+  source: DataSource | null;
+  allowed_senders: string[];
+}
+
+export interface AgentInboxScope {
+  agent_id: string;
+  source_id: string | null;
+  conversation_ids: string[];
+  thread_ids: string[];
+  flow_message_ids: string[];
+}
+
+function entityId(value: { id?: string; typeid?: string } | null): string | undefined {
+  if (!value) return undefined;
+  return value.id ?? (value.typeid ? new TypeId(value.typeid).id : undefined);
+}
+
+function normalizeAgentEmailState(state: AgentEmailStateWire): AgentEmailState {
+  const inboxId = entityId(state.inbox);
+  const sourceId = entityId(state.source);
+  return {
+    agent_id: state.agent_id,
+    enabled: state.enabled,
+    inbox:
+      state.inbox && inboxId
+        ? new EmailInbox({
+            ...state.inbox,
+            id: inboxId,
+            agent_typeid:
+              typeof state.inbox.agent_typeid === 'string'
+                ? new TypeId(state.inbox.agent_typeid)
+                : state.inbox.agent_typeid,
+          })
+        : null,
+    source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
+    allowed_senders: [...(state.allowed_senders ?? [])],
+  };
 }
 
 /**

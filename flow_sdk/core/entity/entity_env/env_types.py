@@ -5,8 +5,8 @@ from typing import Generic, List, Optional, TypeVar
 from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 
 TEST_PROVIDER = "test_provider"
 
@@ -39,6 +39,12 @@ class EnvVar(BaseModel):
         None  # name of the sod in the location, for oauth this is None, bcs we don't point to ourselves
     )
     icon: Optional[str] = None  # icon to show in UI
+
+    # OAuth catalogue protocol metadata. ``1`` is the correlated auth/wait/
+    # cancel + strict verification contract consumed by every connection UI.
+    oauth_display_name: Optional[str] = None
+    oauth_verifiable: Optional[bool] = None
+    oauth_protocol: Optional[int] = None
 
     # API Key reference
     key_id: Optional[str] = None  # Reference to ApiKey entity ID (connects env_var to its API key in SOD)

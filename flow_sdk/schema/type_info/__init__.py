@@ -119,6 +119,11 @@ class TypeMetadata:
     identity_key_fn: Any = None
     id_namespace: Any = None
     asset_hash_fn: Any = None
+    # One callable, or several. A type may need more than one thing to happen after a record
+    # syncs — markdown reconciles its folder edges AND tells a RAG index it went stale — and a
+    # single slot forced the second consumer to wrap the first by hand, which is how one of
+    # them quietly gets dropped in a later edit. Normalized to a tuple by
+    # ``TypeInfo.post_sync_callbacks``; declare either shape.
     post_sync_fn: Any = None
     # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
     # the backing file on create. None ⇒ no auto-created body. Without this wired

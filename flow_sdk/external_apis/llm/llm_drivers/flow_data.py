@@ -5,10 +5,11 @@ import random
 import re
 import time
 from datetime import datetime, timezone
-from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, computed_field
+
+from flow_sdk._compat import StrEnum
 
 
 def _escape_xml_attribute(value: str) -> str:

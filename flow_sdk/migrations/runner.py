@@ -27,6 +27,8 @@ import asyncio
 import importlib.util
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,6 +55,34 @@ class Recipe:
 
     script_path: Path | None = None  # <version>/scripts/migrate.py
     skill_dir: Path | None = None  # <version>/skill/ (contains SKILL.md)
+
+
+@contextmanager
+def load_script_module(mod_name: str, script_path: Path) -> "Iterator[Any]":
+    """Import a migration script by PATH under ``mod_name``, yield it, and drop
+    it from ``sys.modules`` on the way out.
+
+    The registration order is the load-bearing part and the easy thing to get
+    wrong: the module must be in ``sys.modules`` BEFORE ``exec_module``, because
+    dataclasses (and anything else resolving type annotations) look themselves up
+    via ``sys.modules[cls.__module__]`` — a missing entry raises
+    ``AttributeError("'NoneType' object has no attribute '__dict__'")`` when the
+    decorator runs at module top level. ``mod_name`` must be unique per load so a
+    re-run doesn't hit the import cache.
+
+    Shared by the runner itself, by a recipe re-driving stranded sibling recipes,
+    and by the test that reads a recipe's ``STRANDED`` declaration.
+    """
+    spec = importlib.util.spec_from_file_location(mod_name, script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load migration script spec from {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
+    try:
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        sys.modules.pop(mod_name, None)
 
 
 def _is_process_alive(pid: int | None) -> bool:
@@ -200,22 +230,10 @@ def _drive_migration_script(
     try:
         # Unique module name per version so re-runs don't hit sys.modules cache.
         mod_name = f"_flowpad_migration_{version.replace('.', '_').replace('-', '_')}"
-        spec = importlib.util.spec_from_file_location(mod_name, script_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"could not load migration script spec from {script_path}")
-        module = importlib.util.module_from_spec(spec)
-        # Register in sys.modules BEFORE exec_module: dataclasses (and others)
-        # resolve type annotations via sys.modules[cls.__module__], and a missing
-        # entry raises AttributeError("'NoneType' object has no attribute '__dict__'")
-        # when the dataclass decorator runs at module top-level.
-        sys.modules[mod_name] = module
-        try:
-            spec.loader.exec_module(module)
+        with load_script_module(mod_name, script_path) as module:
             if not hasattr(module, "run"):
                 raise AttributeError(f"{script_path} has no run() entry point")
             module.run()
-        finally:
-            sys.modules.pop(mod_name, None)
     except (KeyboardInterrupt, asyncio.CancelledError):
         terminal = running.transition(MigrationStatus.ERROR, error_msg="interrupted")
         migration_status.write(status_dir, terminal)

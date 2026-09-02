@@ -28,6 +28,8 @@ interface MessageComposerProps {
   /** When set, this conversation caches a cloud thread and Send pushes the
    *  reply back into that channel instead of the hub. */
   channel?: string;
+  /** Agent scope required by channel reply authorization. */
+  agentId?: string;
   /** Fires when a channel send is accepted (dispatched, not delivered). */
   onChannelSent?: (text: string) => void;
   /** Live-session composer: every send is stamped with this session id (the
@@ -130,6 +132,7 @@ export function MessageComposer({
   disabled,
   placeholder,
   channel,
+  agentId,
   onChannelSent,
   liveSessionId,
   onSent,
@@ -323,7 +326,7 @@ export function MessageComposer({
         // through a Flowpad-Cloud login to send an email. Branch on the CALL
         // only — an early return here would have to restate the cleanup below,
         // and the first version of it restated one quarter of it.
-        await sendToChannel(effectiveConversationId, messageBody);
+        await sendToChannel(effectiveConversationId, messageBody, agentId);
         onChannelSent?.(messageBody);
       } else {
         // Cloud reply needs an authenticated hub token; otherwise the hub POST

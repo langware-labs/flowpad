@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
-from flow_sdk.cli.auth.lm_api_keys import get_lm_api
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.flowpad_types.vendors import vendor_or_none
 
@@ -311,10 +310,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     )
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
         LLMSourceError,
-        LLMSourceKind,
-        resolve_llm_source,
+        resolve_llm_endpoint,
     )
     from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
 
     worker_type = getattr(process.driver, "name", None)
@@ -323,24 +322,29 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
         return None
 
     try:
-        source = await resolve_llm_source(process)
+        endpoint, source = await resolve_llm_endpoint(process)
     except LLMSourceError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
-    if source.kind is LLMSourceKind.DEVICE:
+    if endpoint.kind == LLMEndpointKind.DEVICE:
         return None
 
+    is_hub = endpoint.kind == LLMEndpointKind.HUB
+    # A hub endpoint is spent through the harness's FLOWPAD binding whatever its root
+    # provider is: the hub relays verbatim, so the box speaks the binding's protocol to the
+    # hub and the hub speaks the root's upstream.
+    provider_value = LMApiProvider.FLOWPAD.value if is_hub else endpoint.provider
     try:
-        provider = LMApiProvider(source.provider)
+        provider = LMApiProvider(provider_value)
     except ValueError as exc:
-        raise WorkerSpawnError(worker_type, f"{worker_type} is bound to unknown provider {source.provider!r}") from exc
+        raise WorkerSpawnError(worker_type, f"{worker_type} is bound to unknown provider {provider_value!r}") from exc
     if provider not in spec.supported_providers:
         raise WorkerSpawnError(worker_type, f"{worker_type} cannot use provider {provider.value!r}")
 
     # For FLOWPAD the endpoint and the key are one question: the "key" IS the hub login,
     # and what makes it usable is having an endpoint to point it at.
     hub_invoke_url = None
-    if provider is LMApiProvider.FLOWPAD:
+    if is_hub:
         from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
 
@@ -352,7 +356,7 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
         # therefore about to be sent a slug it does not know. We do not refuse -- an
         # endpoint's own ``filters.model_map`` can legitimately remap it, and refusing
         # would break a working setup -- but this must not be a silent field-only failure.
-        root_provider = source.root_provider.strip().lower()
+        root_provider = (endpoint.provider or "").strip().lower()
         if root_provider and root_provider != LMApiProvider.OPENROUTER.value:
             logger.warning(
                 "%s is spending hub endpoint %s whose root provider is %r, not openrouter; the "
@@ -363,7 +367,9 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
                 root_provider,
             )
     else:
-        key = get_lm_api(provider)
+        # Stored only, matching what the resolver judged eligible — a spawn must not be
+        # funded by an environment variable the picker never counted.
+        key = endpoint.resolve_api_key(allow_environment=False)
     if not key:
         raise WorkerSpawnError(worker_type, f"{worker_type}: {source.name} is unusable (no credential available)")
     try:
@@ -376,6 +382,12 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     # an unknown value still passes through as a literal slug.
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     overrides = (getattr(cap, "model_map", None) or {}).get(provider.value) or {}
+    # Deliberately NOT merged with ``endpoint.models``. Those are the slugs for calling this
+    # credential directly (an embedding model, a general-purpose chat model); the harness
+    # tier map is what THIS CLI should run, and codex asking for its small tier must get
+    # gpt-5-mini rather than whatever general-purpose model the endpoint happens to name.
+    # Folding them made every harness inherit the endpoint's defaults and silently
+    # re-pointed codex at a Claude slug.
     merged = {**spec.tier_models, **overrides}
     tier = (process.cli_config or {}).get("model")
     slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"

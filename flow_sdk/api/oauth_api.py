@@ -1,6 +1,6 @@
-from flow_sdk._compat import StrEnum
-
 from pydantic import BaseModel
+
+from flow_sdk._compat import StrEnum
 
 
 class OAuthAction(StrEnum):
@@ -8,6 +8,7 @@ class OAuthAction(StrEnum):
 
     Ported from FlowPad: flowpad/hub/app/actions/oauth/oauth_types.py
     """
+
     Auth = "auth"
     Callback = "callback"
     WaitCallback = "wait-callback"
@@ -15,6 +16,10 @@ class OAuthAction(StrEnum):
     Detach = "detach"
     Status = "status"
     Disconnect = "disconnect"
+    Catalogue = "catalogue"
+    Token = "token"
+    Test = "test"
+    Cancel = "cancel"
 
 
 class OAuthErrorCode(StrEnum):
@@ -22,6 +27,7 @@ class OAuthErrorCode(StrEnum):
 
     Ported from FlowPad: flowpad/hub/app/actions/oauth/oauth_types.py
     """
+
     NO_REQUEST_CONTEXT = "no_request_context"
     USER_NOT_FOUND = "user_not_found"
     NO_TARGET_ENTITY = "no_target_entity"
@@ -33,6 +39,7 @@ class OAuthErrorCode(StrEnum):
 
 class OAuthProvider(StrEnum):
     """Known OAuth provider identifiers."""
+
     FLOWPAD_CLOUD = "flowpad_cloud"
 
 

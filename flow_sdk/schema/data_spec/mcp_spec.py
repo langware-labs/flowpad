@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, ClassVar
 
-from pydantic import ConfigDict, StringConstraints
+from pydantic import StringConstraints
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -41,7 +41,6 @@ class McpSpec(DataSpec):
     """The launch payload for one MCP server. Frozen: it is a value."""
 
     spec_kind: ClassVar[str] = "mcp.server"
-    model_config = ConfigDict(frozen=True)
 
     name: NonBlank
     transport: str = STDIO

@@ -13,6 +13,7 @@ written under, and every test here pins one of the breaks:
 A stubbed httpx client would let all three pass while broken, so this uses the
 same loopback server the other driver tests do.
 """
+
 from __future__ import annotations
 
 import json
@@ -59,9 +60,11 @@ class _Slack:
     def __init__(self, replies: list[dict]):
         self.replies = replies
         self.requests: list[str] = []
+        self.bodies: list[str] = []
 
-    def __call__(self, path, _headers):
+    def __call__(self, path, headers):
         self.requests.append(path)
+        self.bodies.append(str(headers.get("_body") or ""))
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         # 200 even for errors — Slack's convention, and the whole point.
         return 200, json.dumps(reply).encode(), {"Content-Type": "application/json"}
@@ -116,10 +119,14 @@ async def test_a_bare_string_channel_is_accepted_as_the_id():
 async def test_a_page_becomes_items_oldest_first(serve):
     """Slack returns newest-first. Ingested in that order a conversation reads
     backwards, so the driver reverses before handing anything on."""
-    serve([{
-        "ok": True,
-        "messages": [_message("200.000200", "second"), _message("100.000100", "first")],
-    }])
+    serve(
+        [
+            {
+                "ok": True,
+                "messages": [_message("200.000200", "second"), _message("100.000100", "first")],
+            }
+        ]
+    )
 
     result = await SlackDriver().fetch(_source(), _view())
 
@@ -141,12 +148,16 @@ async def test_the_cursor_resumes_from_the_last_ts(serve):
 
 
 async def test_ts_advances_numerically_not_lexically(serve):
-    """"90" > "100" as strings. Sorted that way the cursor would go BACKWARDS
+    """ "90" > "100" as strings. Sorted that way the cursor would go BACKWARDS
     and the same page would re-fetch forever."""
-    serve([{
-        "ok": True,
-        "messages": [_message("100.000000", "newer"), _message("90.000000", "older")],
-    }])
+    serve(
+        [
+            {
+                "ok": True,
+                "messages": [_message("100.000000", "newer"), _message("90.000000", "older")],
+            }
+        ]
+    )
 
     result = await SlackDriver().fetch(_source(), _view(state={"last_ts": "89.0"}))
 
@@ -166,12 +177,16 @@ async def test_the_first_run_is_bounded_by_the_window(serve):
 async def test_it_asks_for_one_page_and_never_paginates(serve):
     """One request per poll is the entire minute's budget. A second page here
     would 429 — and the driver would have spent the next poll's budget too."""
-    slack = serve([{
-        "ok": True,
-        "messages": [_message(f"{n}.0", str(n)) for n in range(15)],
-        "has_more": True,
-        "response_metadata": {"next_cursor": "dXNlcjpVMDYxTkZUVDI="},
-    }])
+    slack = serve(
+        [
+            {
+                "ok": True,
+                "messages": [_message(f"{n}.0", str(n)) for n in range(15)],
+                "has_more": True,
+                "response_metadata": {"next_cursor": "dXNlcjpVMDYxTkZUVDI="},
+            }
+        ]
+    )
 
     result = await SlackDriver().fetch(_source(), _view())
 
@@ -195,14 +210,18 @@ async def test_an_empty_page_reports_unchanged(serve):
 async def test_joins_and_leaves_are_not_messages(serve):
     """They are real events, but nobody wrote them — each would land in the
     inbox as a conversation entry with no author and no content."""
-    serve([{
-        "ok": True,
-        "messages": [
-            _message("100.0", "hello"),
-            _message("110.0", "x joined", subtype="channel_join"),
-            _message("120.0", "renamed", subtype="channel_name"),
-        ],
-    }])
+    serve(
+        [
+            {
+                "ok": True,
+                "messages": [
+                    _message("100.0", "hello"),
+                    _message("110.0", "x joined", subtype="channel_join"),
+                    _message("120.0", "renamed", subtype="channel_name"),
+                ],
+            }
+        ]
+    )
 
     result = await SlackDriver().fetch(_source(), _view())
 
@@ -215,13 +234,17 @@ async def test_a_threaded_reply_joins_its_parents_thread(serve):
     """Both messages must resolve to ONE conversation — the thread key is what
     the inbox projection groups on."""
     # Newest-first, the way Slack actually answers.
-    serve([{
-        "ok": True,
-        "messages": [
-            _message("150.0", "reply", thread_ts="100.0"),
-            _message("100.0", "parent"),
-        ],
-    }])
+    serve(
+        [
+            {
+                "ok": True,
+                "messages": [
+                    _message("150.0", "reply", thread_ts="100.0"),
+                    _message("100.0", "parent"),
+                ],
+            }
+        ]
+    )
 
     parent, reply = (await SlackDriver().fetch(_source(), _view())).items
 
@@ -303,10 +326,12 @@ async def test_verify_is_all_or_nothing_across_channels(serve):
     to start: it looks like it works, so nobody looks for the missing two."""
     source = _source()
     source.config = {"channels": [CHANNEL, "C9999999999"]}
-    serve([
-        {"ok": True, "messages": []},
-        {"ok": False, "error": "not_in_channel"},
-    ])
+    serve(
+        [
+            {"ok": True, "messages": []},
+            {"ok": False, "error": "not_in_channel"},
+        ]
+    )
 
     verdict = await SlackDriver().verify(source)
 
@@ -337,3 +362,117 @@ async def test_verify_refuses_a_source_with_no_channels():
 
     assert verdict.ready is False
     assert "channel" in verdict.detail.lower()
+
+
+# ── send ─────────────────────────────────────────────────────────────────────
+
+
+async def test_send_posts_into_the_thread_and_returns_the_ts(serve):
+    """``to`` is the channel, ``thread_key`` becomes ``thread_ts``; the outcome
+    carries Slack's ``ts`` — the same namespace an inbound ``external_id``
+    lives in, so the echoed copy converges on it."""
+    slack = serve(
+        [
+            {"ok": True, "ts": "300.000300", "channel": CHANNEL},
+            {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"},
+        ]
+    )
+    source = _source()
+    await source.save()
+
+    outcome = await SlackDriver().send(
+        source, thread_key="100.000100", to=CHANNEL, text="on it", in_reply_to="100.000100"
+    )
+
+    assert outcome.external_id == "300.000300"
+    assert outcome.recorded is False, "Slack echoes bot posts; the driver must not record a second copy"
+    assert slack.requests[0] == "/chat.postMessage"
+    posted = json.loads(slack.bodies[0])
+    assert posted == {"channel": CHANNEL, "text": "on it", "thread_ts": "100.000100"}
+
+
+async def test_send_stamps_the_bots_own_identity_once(serve):
+    """After a send the source knows who "me" is, so the echoed copy is
+    attributed as ours and a listening loop never answers itself."""
+    from flow_sdk.inbox.projection import is_self_address
+
+    serve(
+        [
+            {"ok": True, "ts": "1.1"},
+            {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"},
+        ]
+    )
+    source = _source()
+    await source.save()
+
+    await SlackDriver().send(source, thread_key="", to=CHANNEL, text="hi")
+
+    assert source.account_key == "@flowpad"
+    assert is_self_address(source, "UBOT")
+    assert is_self_address(source, "B1")
+    assert not is_self_address(source, "U1")
+
+
+async def test_a_refused_post_is_a_value_error_not_source_health(serve):
+    serve([{"ok": False, "error": "not_in_channel"}])
+    source = _source()
+    with pytest.raises(ValueError, match="not_in_channel"):
+        await SlackDriver().send(source, thread_key="", to=CHANNEL, text="hi")
+
+
+async def test_send_without_a_channel_or_text_is_refused_before_any_request(serve):
+    slack = serve([{"ok": True}])
+    with pytest.raises(ValueError):
+        await SlackDriver().send(_source(), thread_key="1.1", to="", text="hi")
+    with pytest.raises(ValueError):
+        await SlackDriver().send(_source(), thread_key="1.1", to=CHANNEL, text="  ")
+    assert slack.requests == []
+
+
+# ── identity / reuse ─────────────────────────────────────────────────────────
+
+
+async def test_a_bare_string_channels_config_names_one_channel():
+    """``blocks.Inbox("C0…", provider="slack")`` writes ``channels`` as a
+    string; iterated raw it would yield the id's characters as channels."""
+    source = DataSource(provider="slack", name="s", config={"channels": CHANNEL})
+    (stream,) = await SlackDriver().segments(source)
+    assert stream.key == CHANNEL
+
+
+async def test_find_for_account_matches_a_channel_inside_the_list():
+    import uuid
+
+    from flow_sdk.builtin.data_source import DataSource as DS
+
+    mine = "C0" + uuid.uuid4().hex[:9].upper()
+    row = _source()
+    row.config = {"channels": ["C0AAAAAAAAA", mine]}
+    await row.save()
+    try:
+        found = await DS.find_for_account("slack", "channels", mine)
+        assert found is not None and found.id == row.id
+        assert await DS.find_for_account("slack", "channels", "C0" + uuid.uuid4().hex[:9].upper()) is None
+    finally:
+        await row.delete()
+
+
+async def test_slack_message_spec_replies_into_the_channel_thread():
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.source_item import SlackMessageSpec
+
+    m = SimpleNamespace(
+        segment_key=CHANNEL,
+        thread_key="100.000100",
+        external_id="100.000100",
+        author_external_id="U1",
+        name="",
+        body="ship it?",
+    )
+    r = SlackMessageSpec.reply_to(m, body="shipping")
+    assert r.to == [CHANNEL]
+    assert r.thread_key == "100.000100"
+    assert r.reply_to_external_id == "100.000100"
+    with pytest.raises(Exception):
+        r.body = "edited"

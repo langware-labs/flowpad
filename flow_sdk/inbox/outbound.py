@@ -78,7 +78,7 @@ def _authored_here(message, local_id: str) -> bool:
     return bool(sender) and (sender == local_id or is_agent_sender(sender))
 
 
-async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
+async def resolve_reply_target(conversation_id: str, *, source_id: str | None = None) -> ReplyTarget:
     """Everything a send needs, or raise saying which part is missing.
 
     Resolution deliberately reads the SOURCE ITEM for the thread handle rather
@@ -107,6 +107,12 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
         }
     )
     channel_messages = [m for m in recent if m.origin and m.origin.kind]
+    if source_id is not None:
+        channel_messages = [
+            message
+            for message in channel_messages
+            if message.origin_local and message.origin_local.data_source_id == source_id
+        ]
     if not channel_messages:
         raise ChannelSendUnavailable("this conversation did not come from a channel")
 
@@ -141,6 +147,8 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     )
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
+    if source_id is not None and source.id != source_id:
+        raise ChannelSendUnavailable("this conversation does not belong to that Agent inbox")
     if item is None:
         # Distinct from "no sender address" below — collapsing the two made a
         # missing record report as a missing address.
@@ -167,12 +175,17 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     )
 
 
-async def dispatch_channel_reply(conversation_id: str, *, text: str):
+async def dispatch_channel_reply(
+    conversation_id: str,
+    *,
+    text: str,
+    source_id: str | None = None,
+):
     """Accept a reply and start it. Returns once DISPATCHED."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
-        target = await resolve_reply_target(conversation_id)
+        target = await resolve_reply_target(conversation_id, source_id=source_id)
     except ChannelSendUnavailable as exc:
         return ApiFailResponse(message=str(exc))
 

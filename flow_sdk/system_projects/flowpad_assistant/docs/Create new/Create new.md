@@ -39,5 +39,9 @@ context.
 - [[Shared context folders]] — travel with the project, by location not by copy.
 - [[Git context folders]] — set up a Git repository as a context folder.
 
+**Add help desk** — support published by someone else:
+
+- [[Help desks]] — adopt a support desk from its Git repository.
+
 Most of these are scoped to the active [[Flowpad project]]. Sessions and
 conversations are not — see each page for what it needs.

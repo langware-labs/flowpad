@@ -2,7 +2,7 @@
  * The three retired credential views resolve forward.
  *
  * `environment`, `connections`, and `api-keys` were sibling view types
- * rendering what are now tabs of one view. They stay decodable — links,
+ * rendering what is now the single Connections surface. They stay decodable — links,
  * bookmarks, and saved tabs are already out there — and land on the tab that
  * replaced them.
  */
@@ -14,9 +14,9 @@ import { normalizeRetiredDockPointer } from '@sdk';
 
 describe('canonicalCredentialsDockPath', () => {
   it.each([
-    ['/dock/environment', '/dock/credentials/environment'],
+    ['/dock/environment', '/dock/credentials/connections'],
     ['/dock/connections', '/dock/credentials/connections'],
-    ['/dock/api-keys', '/dock/credentials/api-keys'],
+    ['/dock/api-keys', '/dock/credentials/connections'],
   ])('redirects %s', (from, to) => {
     expect(canonicalCredentialsDockPath(from, '')).toBe(to);
   });
@@ -26,22 +26,22 @@ describe('canonicalCredentialsDockPath', () => {
   });
 
   it('handles the dev and win dock prefixes', () => {
-    expect(canonicalCredentialsDockPath('/dev/environment', '')).toBe('/dev/credentials/environment');
-    expect(canonicalCredentialsDockPath('/win/hub/api-keys', '')).toBe('/win/hub/credentials/api-keys');
+    expect(canonicalCredentialsDockPath('/dev/environment', '')).toBe('/dev/credentials/connections');
+    expect(canonicalCredentialsDockPath('/win/hub/api-keys', '')).toBe('/win/hub/credentials/connections');
   });
 
   it('preserves the query string, which may hold unrelated dock options', () => {
     expect(canonicalCredentialsDockPath('/dock/environment', '?layout=split')).toBe(
-      '/dock/credentials/environment?layout=split',
+      '/dock/credentials/connections?layout=split',
     );
   });
 
   it('drops a trailing segment — none of the three ever carried a pointer', () => {
-    expect(canonicalCredentialsDockPath('/dock/environment/whatever', '')).toBe('/dock/credentials/environment');
+    expect(canonicalCredentialsDockPath('/dock/environment/whatever', '')).toBe('/dock/credentials/connections');
   });
 
   it('leaves everything else alone, including the view that replaced them', () => {
-    expect(canonicalCredentialsDockPath('/dock/credentials/environment', '')).toBeNull();
+    expect(canonicalCredentialsDockPath('/dock/credentials/connections', '')).toBeNull();
     expect(canonicalCredentialsDockPath('/dock/home', '')).toBeNull();
     expect(canonicalCredentialsDockPath('/dock/hub/worldview/world', '')).toBeNull();
     // Not a dock URL at all.
@@ -51,9 +51,9 @@ describe('canonicalCredentialsDockPath', () => {
 
 describe('normalizeRetiredDockPointer', () => {
   it.each([
-    [ViewType.ENVIRONMENT, CredentialsSubview.ENVIRONMENT],
+    [ViewType.ENVIRONMENT, CredentialsSubview.CONNECTIONS],
     [ViewType.CONNECTIONS, CredentialsSubview.CONNECTIONS],
-    [ViewType.API_KEYS, CredentialsSubview.API_KEYS],
+    [ViewType.API_KEYS, CredentialsSubview.CONNECTIONS],
   ])('resolves a saved %s tab', (retired, subview) => {
     expect(normalizeRetiredDockPointer({ viewType: retired })).toEqual({
       viewType: ViewType.CREDENTIALS,

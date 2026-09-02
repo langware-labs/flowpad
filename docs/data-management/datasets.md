@@ -135,9 +135,9 @@ agentic-assets/dataset/<slug>/
   data.csv            # one row per example
 ```
 
-`data.csv` columns map onto the canonical example fields. By default the parser
-looks for columns named `input`, `expected`, and `kind`. If your headers differ,
-remap them with `field_spec` (canonical → your header):
+`data.csv` columns map onto the canonical example fields. By default the layout
+(`CsvLayout`) looks for columns named `input`, `expected`, and `kind`. If your
+headers differ, remap them with `field_spec` (canonical → your header):
 
 ```jsonc
 // dataset.json
@@ -148,9 +148,14 @@ question,answer,difficulty
 capital of France?,Paris,easy
 ```
 
-- `input` → `Example.input`, `expected` → `Example.expected`, `kind` →
-  `Example.kind` (`train` | `eval` | `test`; default `train`).
-- **Any column not mapped lands in `Example.metadata`** (here: `difficulty`).
+- `input` → `ExampleSpec.input` as a `TextSpec` cell, `expected` →
+  `ExampleSpec.ground_truth` as a `TextSpec` (the column keeps its legacy name;
+  the row field is the gold slot — there is no `expected` field on the row),
+  `kind` → `ExampleSpec.kind` (`train` | `eval` | `test`; default `train`).
+- **Any column not mapped lands in `ExampleSpec.metadata`** (here: `difficulty`).
+- A CSV row never holds a file or a folder: `CsvLayout.write` refuses anything
+  but a `TextSpec` cell, and the per-example verbs (`promote` / `annotate`) are
+  `io_folder` only.
 
 `field_spec` is a column **rename map only** — it is not a schema and is ignored
 by the `io_folder` layout.
@@ -168,16 +173,17 @@ agentic-assets/dataset/<slug>/
     ...
 ```
 
-Each `examples/<name>/` folder describes **one example** through up to three
+Each `examples/<name>/` folder describes **one example** through up to four
 **slots** plus metadata.
 
-### 3.1 Slots: `input`, `output`, `ground_truth`
+### 3.1 Slots: `input`, `output`, `ground_truth`, `context`
 
 | Slot | Meaning |
 |---|---|
 | `input` | what the system is given (the prompt / scan / document). **Required** — a folder with no input in any form is skipped. |
 | `output` | candidate / produced result(s). Informational; **never** treated as the gold. |
 | `ground_truth` | the **gold** — the correct/expected answer; multiple = several annotations (consensus). |
+| `context` | what surrounds the input (history, retrieved documents). Optional; the `C` of `ExampleSpec[I, O, C]`. |
 
 Each slot's **data** may take any of these forms:
 
@@ -227,7 +233,9 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
   `Example.kind` / `Example.layout`, and the whole metadata section is kept on
   `Example.metadata`; the data section is kept on `Example.data`.
 - An example-level `id` is **ignored** — example ids are derived deterministically
-  from the dataset id + folder name so re-indexing is idempotent.
+  (`example_id`: a uuid5 of `<dataset id>:<folder name>`, or the CSV row index) so
+  re-indexing is idempotent. An example is a value inside the dataset row, not an
+  entity, which is why a derived id is allowed here.
 
 ### 3.4 Resolution rules (the fine print)
 
@@ -238,9 +246,9 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
 - **File beats folder**: if both a bare file and a same-named folder claim one
   slot+index (e.g. `input.txt` *and* `input/`), the file wins and the folder is
   ignored.
-- **Binary-safe**: data files are referenced by relative path and never eagerly
-  read; only small `.txt`/`.md` files are decoded into text. PDFs/images carry a
-  path but no text.
+- **Binary-safe**: data files are referenced by relative path and never read —
+  not even `.txt`. The `.txt`/`.md` extension matters only to `is_binary`, which
+  feeds the `num_binary_inputs` count. Decoding a file is the consumer's job.
 
 ### 3.5 Canonical example
 
@@ -279,6 +287,10 @@ class ExampleSpec(DataSpec, Generic[I, O, C]):
     data: dict                       # example.json `data` section (free, use-case-owned)
 ```
 
+`layout` is a property reading `metadata["layout"]`, not a field. `ExampleSpec`
+is generic in `I, O, C`; the index pass reads every row as
+`DEFAULT_DATASET_SPEC.example_type()` (`ExampleSpec[Artifact, Artifact, DataSpec]`).
+
 The slots hold the three leaves. **The type IS the file/folder distinction:**
 
 | On disk | In the row |
@@ -292,12 +304,16 @@ The slots hold the three leaves. **The type IS the file/folder distinction:**
 ```python
 # examples/0001/ from §3.5
 ExampleSpec(
+    kind=ExampleKind.EVAL,           # lifted from example.json metadata.kind
     input=FileRef(path="input.pdf"),
     output=[FileRef(path="output-1.txt"), FileRef(path="output-2.txt")],
     ground_truth=[FolderSpec(path="ground_truth", files={"grade.json": FileRef(path="ground_truth/grade.json")}),
                   FolderSpec(path="ground_truth-2", files={"grade.json": FileRef(path="ground_truth-2/grade.json")})],
-    metadata={"input.json": {"metadata": {"pages": 3}, "data": {}},
-              "ground_truth.json": {"metadata": {"rater": "A"}, "data": {}}},
+    metadata={"kind": "eval", "layout": "pages",                       # the whole example.json metadata section …
+              "input.json": {"metadata": {"pages": 3}, "data": {}},   # … plus every sidecar under its filename
+              "ground_truth.json": {"metadata": {"rater": "A"}, "data": {}},
+              "ground_truth-2.json": {"metadata": {"rater": "B"}, "data": {}}},
+    data={},
 )
 ```
 
@@ -351,12 +367,16 @@ Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
 
 | Action | Body | Writes |
 | --- | --- | --- |
-| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance |
-| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape; `metadata.annotations += {by, at}` |
-| `GET /graph/dataset/<id>/examples` | — | `[{example_id, item_id, kind, annotated}]` read from the folder |
+| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance; replies `{example_ids, num_examples}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
+| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
+| `GET /graph/dataset/<id>/examples` | — | `{"examples": [{example_id, item_id, kind, annotated}]}` read from the folder |
 
-Both are per-example writes (`FolderLayout.append` / `annotate`) — the other
-rows are never rewritten — and both re-derive the counts through the indexer's
-discovery, so `num_examples` / `num_annotated` on the row follow the disk. The
-builtin `spec` editor of every source definition carries the pane that drives
-them; the `connect-data-source` skill's `define` mode drives them for an agent.
+Both are per-example writes (`FolderLayout.append_many` / `annotate`) — the
+other rows are never rewritten — and both re-derive the counts from the cheap
+per-example index (`FolderLayout.index`: one `example.json` per dir plus an
+`exists` on `ground_truth/`, never the payloads) and save the row, so
+`num_examples` / `num_annotated` follow the disk without a full reindex. Numbering
+follows the highest existing `NNNN`, never the count, so a gap is preserved. The
+editor webapp nested in every shipped source definition carries the pane that
+drives them; the `connect-data-source` skill's `define` mode drives them for an
+agent.

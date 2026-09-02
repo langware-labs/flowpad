@@ -184,7 +184,7 @@ async def build_asset_menu(
         AgenticProcess,
         AssetSource,
     )
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project, mount_key  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -230,7 +230,11 @@ async def build_asset_menu(
                 child_path,
                 AssetSource.CONTEXT_DIR,
                 depth + 1,
-                by_mount.get(child_path),
+                # `mount_key`, not the bare canonical path: `index_by_mount` keys both
+                # sides through it, and a trailing-slash mismatch here reads as "no
+                # project is mounted at this context folder" — indistinguishable from
+                # the real thing. This call site was missed when the rule was introduced.
+                by_mount.get(mount_key(child_path)),
                 child_info,
             )
             if child is not None:

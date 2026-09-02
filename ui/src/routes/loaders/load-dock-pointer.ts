@@ -26,6 +26,7 @@ import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
+import { loadAgentInboxRoute } from './load-agent-inbox';
 
 export interface DockLoaderContext {
   requestPath: string;
@@ -257,6 +258,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.CONVERSATION:
         await loadConversationRoute(dock.pointer);
+        break;
+      case ViewType.AGENT:
+        await loadAgentInboxRoute(dock.pointer);
         break;
       case ViewType.ASSETS:
         await adoptScopeProject(dock);

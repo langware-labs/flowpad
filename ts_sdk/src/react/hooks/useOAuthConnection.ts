@@ -8,6 +8,7 @@ import {
   dataContext,
   dataManager,
   oauthService,
+  oauthProviderDisplayName,
   type EntityEnvVars,
   type EnvVarStatus,
   type OAuthDetachResult,
@@ -189,18 +190,9 @@ export const useOAuthConnection = ({
     userTable.values
       .filter((envVar) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID)
       .forEach((envVar) => {
-        // Extract display_name from description: "OAuth integration for {DisplayName}"
-        let displayName = envVar.name;
-        if (envVar.description) {
-          const match = envVar.description.match(/OAuth integration for (.+)/);
-          if (match) {
-            displayName = match[1];
-          }
-        }
-
         providers.push({
           name: envVar.name,
-          display_name: displayName,
+          display_name: oauthProviderDisplayName(envVar),
           icon: providerIconUrl(envVar.name, envVar.icon),
           kind: (envVar.oauth_kind as OAuthProvider['kind']) || undefined,
           scopes: envVar.oauth_scopes?.length ? envVar.oauth_scopes : undefined,
@@ -267,9 +259,9 @@ export const useOAuthConnection = ({
         } else {
           onConnectionConnect?.(connectionId);
         }
-      } else if (data.status === OAuthStatus.ERROR && currentOAuthFlow) {
-        console.error('[useOAuthConnection] OAuth error:', data);
-        // Clear the current OAuth flow on error
+      } else if (data.status !== OAuthStatus.SUCCESS && currentOAuthFlow) {
+        if (data.status === OAuthStatus.ERROR) console.error('[useOAuthConnection] OAuth error:', data);
+        // Denial, failure and correlated cancellation all terminate the flow.
         setCurrentOAuthFlow(null);
         setConnectingConnectionId(null);
       }

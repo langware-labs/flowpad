@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { ALL_SECTIONS, QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
+import { ADOPTION_SECTIONS, ALL_SECTIONS, QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
 
 interface QuickCreateModalProps {
   open: boolean;
@@ -35,7 +35,12 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
   // users clicked expecting to make a project and got a project picker. The
   // section lives on where it reads correctly: project home's own folders card
   // and the Assets navigator's "+".
-  const sections = useMemo(() => ALL_SECTIONS.filter((s) => s !== 'folder'), []);
+  //
+  // Adopting a help desk is the same act — a desk is authored in someone
+  // else's repo, never created here — so it is excluded by the same rule
+  // rather than by a second literal. `ADOPTION_SECTIONS` is where that rule
+  // lives; adding a section to it is all a future adoption source has to do.
+  const sections = useMemo(() => ALL_SECTIONS.filter((s) => !ADOPTION_SECTIONS.has(s)), []);
 
   const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 

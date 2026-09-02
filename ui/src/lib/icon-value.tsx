@@ -1,7 +1,7 @@
 import React, { type ReactNode } from 'react';
 import * as lucideIcons from 'lucide-react';
 import { isIconPath } from '@sdk';
-import { lucideByName } from './lucide-by-name';
+import { isCustomIconName, lucideByName } from './lucide-by-name';
 
 /**
  * Single renderer for stored entity icon values (Group/Prompt `icon` fields).
@@ -19,6 +19,12 @@ import { lucideByName } from './lucide-by-name';
 
 export function isLucideName(value: string | null | undefined): boolean {
   if (!value || !/^[A-Za-z][A-Za-z0-9]*$/.test(value)) return false;
+  // The bespoke brand marks (`ClaudeCode`, `Codex`) are resolved by
+  // `lucideByName` ahead of lucide's own table, so a predicate that consulted
+  // only lucide answered NO for them — and every caller gated on it fell
+  // through to a monogram or to literal text, with the app's own Claude logo
+  // sitting unused. One predicate, both tables.
+  if (isCustomIconName(value)) return true;
   return value in (lucideIcons as unknown as Record<string, unknown>);
 }
 

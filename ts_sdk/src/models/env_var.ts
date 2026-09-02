@@ -46,6 +46,12 @@ export interface EnvVarStatus {
   oauth_kind?: string;
   /** OAUTH_PROVIDER_ID rows: the scopes the flow requests, when published. */
   oauth_scopes?: string[];
+  /** Explicit provider label; older servers encoded it in `description`. */
+  oauth_display_name?: string;
+  /** True only when the owning provider declares a live read-only verifier. */
+  oauth_verifiable?: boolean;
+  /** Version of the correlated wait/cancel + strict verification protocol. */
+  oauth_protocol?: number;
   /** Epoch seconds the access token expires. The hub carries this from the user's
    *  token row onto the provider row (`_carry_oauth_freshness`); absent means the
    *  provider never said, which the hub treats as "never expires". */
@@ -61,6 +67,14 @@ export interface EnvVarStatus {
 
 export interface EntityEnvVars {
   values: EnvVarStatus[];
+}
+
+/** Provider label from the explicit protocol field, with the legacy description fallback. */
+export function oauthProviderDisplayName(
+  envVar: Pick<EnvVarStatus, 'name' | 'description' | 'oauth_display_name'>,
+): string {
+  if (envVar.oauth_display_name) return envVar.oauth_display_name;
+  return envVar.description?.match(/OAuth integration for (.+)/)?.[1] || envVar.name;
 }
 
 // ============================================================================

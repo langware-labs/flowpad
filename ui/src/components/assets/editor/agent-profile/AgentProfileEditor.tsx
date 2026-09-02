@@ -1,7 +1,7 @@
 import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Mail, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -24,6 +24,8 @@ import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 interface AgentProfileEditorProps {
   /** Always resolved — AssetEditorRouter renders this inside an
@@ -46,6 +48,7 @@ interface AgentProfileEditorProps {
  */
 export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEditorProps) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
 
   // Keyed on the STABLE typeId so a save() (which hands back a fresh ref)
   // doesn't churn local field state — same reason TaskAssetEditor does it.
@@ -233,14 +236,23 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
         <div className="flex shrink-0 items-center gap-3 pt-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
-              {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
+              {agent.enabled ? <Trans>Agent enabled</Trans> : <Trans>Agent disabled</Trans>}
             </span>
             <Switch
               checked={agent.enabled}
               onCheckedChange={(v) => void save({ enabled: v })}
-              aria-label={t`Enabled`}
+              aria-label={t`Enable Agent`}
             />
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigation.openDock(DockPointer.forAgentInbox(agent.id))}
+            data-testid="agent-inbox-button"
+          >
+            <Mail className="me-1.5 h-3.5 w-3.5" />
+            <Trans>Email inbox</Trans>
+          </Button>
           <Button
             size="sm"
             disabled={!agent.enabled || using}

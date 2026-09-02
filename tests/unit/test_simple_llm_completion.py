@@ -46,7 +46,21 @@ def _install_fake(monkeypatch, reply):
     import openai
 
     monkeypatch.setattr(openai, "AsyncOpenAI", _factory)
+    _install_keys(monkeypatch)
     return recorder
+
+
+def _install_keys(monkeypatch):
+    """Give both providers a key.
+
+    The client refuses to call an endpoint it has no credential for, rather than sending
+    ``api_key=None`` and reading the provider's 401 back as an empty answer. These tests pin
+    routing, so they need a key present for the call to get as far as the fake client.
+    """
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "openrouter_api_key", "sk-or-test", raising=False)
+    monkeypatch.setattr(default_service_config, "groq_api_key", "gsk-test", raising=False)
 
 
 def _text_reply(text: str):
@@ -127,7 +141,33 @@ async def test_a_failing_request_answers_empty(monkeypatch):
     import openai
 
     monkeypatch.setattr(openai, "AsyncOpenAI", lambda **_kw: _Boom())
+    _install_keys(monkeypatch)
     assert await llm_completion("sys", "user") == ""
+
+
+@pytest.mark.asyncio
+async def test_a_missing_key_answers_empty_without_calling_out(monkeypatch):
+    """No credential is a failure like any other at this layer, and never a request."""
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "openrouter_api_key", None, raising=False)
+    assert await llm_completion("sys", "user") == ""
+
+
+@pytest.mark.asyncio
+async def test_the_primitive_raises_what_the_wrapper_swallows(monkeypatch):
+    """``openai_compatible_completion`` reports failures; ``llm_completion`` absorbs them."""
+    from flow_sdk.external_apis.llm.errors import LLMNoCredential
+    from flow_sdk.external_apis.llm.simple_llm import openai_compatible_completion
+
+    with pytest.raises(LLMNoCredential):
+        await openai_compatible_completion(
+            base_url="https://example.invalid/v1",
+            api_key=None,
+            model="vendor/model",
+            system="sys",
+            user="user",
+        )
 
 
 def test_unknown_prefix_falls_back_to_openrouter():

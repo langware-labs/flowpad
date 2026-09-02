@@ -81,10 +81,10 @@ describe('ConnectionsManager', () => {
 
   it('hides its heading when the host supplies one', () => {
     const { rerender } = render(<ConnectionsManager projectTypeId={PROJECT} />);
-    expect(screen.queryByText('OAuth Connections')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Connections' })).toBeTruthy();
 
     rerender(<ConnectionsManager projectTypeId={PROJECT} header={false} />);
-    expect(screen.queryByText('OAuth Connections')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Connections' })).toBeNull();
   });
 
   it('grants without a project instead of refusing — the token is the user’s', async () => {
@@ -93,7 +93,7 @@ describe('ConnectionsManager', () => {
     // not raise "No project selected" at a user who has no project to select.
     render(<ConnectionsManager />);
 
-    await userEvent.click(screen.getByRole('button', { name: /connect/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^connect$/i }));
 
     expect(h.connect).toHaveBeenCalledTimes(1);
     expect(h.attach).not.toHaveBeenCalled();
@@ -125,7 +125,7 @@ describe('ConnectionsManager', () => {
   it('separates the grant from the placement', async () => {
     // No credential → Connect runs the full flow.
     const { rerender } = render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByRole('button', { name: /connect/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^connect$/i }));
     expect(h.connect).toHaveBeenCalledTimes(1);
     expect(h.attach).not.toHaveBeenCalled();
 
@@ -151,11 +151,13 @@ describe('ConnectionsManager', () => {
     expect(h.disconnect).not.toHaveBeenCalled();
   });
 
-  it('says so when there are no providers', () => {
+  it('says so when there is nothing connected', () => {
+    // The table holds credentials as well as OAuth providers now, so the empty
+    // state can no longer speak only of OAuth.
     h.providers = [];
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    expect(screen.getByText(/No OAuth providers available/i)).toBeTruthy();
+    expect(screen.getByText(/No connections yet/i)).toBeTruthy();
   });
 
   it('names the grant and lists the scopes it will request', () => {

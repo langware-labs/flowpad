@@ -1,5 +1,6 @@
 import {
   ConnectionStatus,
+  type CredentialSpec,
   TypeId,
   type OAuthConnection,
   type OAuthDetachResult,
@@ -28,6 +29,10 @@ import { ConfirmDialog } from './ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
+import { useCredentialConnections } from './connections-manager/use-credential-connections';
+import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
+import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
+import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
@@ -37,6 +42,14 @@ export interface ConnectionsManagerProps {
    * disabled without one — a token has to be granted TO something.
    */
   projectTypeId?: TypeId;
+  /**
+   * The selected project, when the host already resolved it. Credential rows
+   * are project-scoped (`SecretOrigin` identity is `(project_id, env_var)`) and
+   * need the entity to call its two actions — and `useProjects()` is a
+   * recency-limited list, so re-finding it by id here misses on an instance
+   * with many projects.
+   */
+  project?: Project | null;
   className?: string;
   /** Render the "OAuth Connections" heading. */
   header?: boolean;
@@ -117,9 +130,11 @@ const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: strin
   const Mark = providerMark(providerName);
   if (Mark) return <Mark className="h-4 w-4 shrink-0" />;
 
-  // `isLucideName` checks the real export table; guessing from punctuation would
-  // misfile any name containing a dot.
-  if (icon && isLucideName(icon)) {
+  // `isLucideName` now covers the bespoke brand marks too, which is what makes
+  // Anthropic render its Claude logo instead of a monogram. Guessing from
+  // punctuation would misfile any name containing a dot, so this goes through
+  // the real tables.
+  if (isLucideName(icon)) {
     const Icon = lucideByName(icon);
     return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }
@@ -132,6 +147,7 @@ const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: strin
 
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   projectTypeId,
+  project,
   className,
   header = true,
   onConnectionConnect,
@@ -203,6 +219,20 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // arrival; the delete dialog force-enables it, because blast radius must never
   // be guessed.
   const { projects } = useProjects();
+
+  // The credential half of the table. An API credential is project-scoped
+  // (`SecretOrigin` identity is `(project_id, env_var)`), so it needs the
+  // Project entity — `projectTypeId` alone cannot call the two actions.
+  // The host always passes the resolved entity; `useProjects()` is a
+  // recency-limited list, so a lookup by id here could only ever miss on an
+  // instance with many projects.
+  const selectedProject = project ?? null;
+
+  const { rows: credentialRows, specs: credentialSpecs, declareCredential, provide: provideCredentialValue } =
+    useCredentialConnections(selectedProject);
+
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [addBusy, setAddBusy] = React.useState<string | null>(null);
   const [usageForced, setUsageForced] = React.useState(false);
   const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
   const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
@@ -385,16 +415,71 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     }
   };
 
+  // The catalogue is whatever the table is not already showing: the table lists
+  // what exists, the dialog lists what you could add. Memoized because this
+  // component re-renders on usage polling and grant-status changes, and a fresh
+  // array each time defeats the dialog's own memoization.
+  const addableSpecs = React.useMemo(() => {
+    const shown = new Set(credentialRows.map((r) => r.key));
+    return credentialSpecs.filter((spec) => !shown.has(String(spec.name ?? '')));
+  }, [credentialRows, credentialSpecs]);
+  const addableProviders = React.useMemo(
+    () =>
+      availableProviders.filter(
+        (p) => (grantStatuses[p.name] ?? GrantStatus.NONE) === GrantStatus.NONE,
+      ),
+    [availableProviders, grantStatuses],
+  );
+
+  const pickProvider = (providerName: string) => {
+    setAddOpen(false);
+    void handleConnect(providerName.toLowerCase());
+  };
+
+  const pickCredential = async (spec: CredentialSpec) => {
+    setAddBusy(String(spec.name ?? ''));
+    try {
+      await declareCredential(spec);
+      setAddOpen(false);
+    } catch (error) {
+      notify.error({
+        title: t`Could not add ${spec.title || String(spec.name ?? '')}`,
+        message: errorMessage(error, t`The credential could not be declared.`),
+      });
+    } finally {
+      setAddBusy(null);
+    }
+  };
+
   return (
     // No frame of its own — the host supplies height and padding.
     <div className={cn('flex min-h-0 flex-col', className)} data-testid="connections-manager">
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         {header && (
           <h2 className="text-xl font-semibold">
-            <Trans>OAuth Connections</Trans>
+            <Trans>Connections</Trans>
           </h2>
         )}
+        <Button
+          size="sm"
+          className="ms-auto h-8 gap-1.5"
+          onClick={() => setAddOpen(true)}
+          data-testid="add-connection-open"
+        >
+          <Plus className="h-4 w-4" />
+          <Trans>Add connection</Trans>
+        </Button>
       </div>
+
+      <AddConnectionDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        providers={addableProviders}
+        specs={addableSpecs}
+        onPickProvider={pickProvider}
+        onPickCredential={pickCredential}
+        busyKey={addBusy}
+      />
 
       <div className="flex-1 overflow-auto">
         {/* Capped: the columns are all short, so a full-width dock strands the
@@ -638,10 +723,31 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </TableRow>
               );
             })}
-            {allConnections.length === 0 && (
+            <CredentialConnectionRows
+              rows={credentialRows}
+              adoptingKey={addBusy}
+              onAdopt={async (rowKey) => {
+                const spec = credentialSpecs.find((c) => String(c.name ?? '') === rowKey);
+                if (spec) await pickCredential(spec);
+              }}
+              onProvide={async (envVar, value) => {
+                try {
+                  await provideCredentialValue({ envVar, value });
+                  notify.success({ title: t`${envVar} saved` });
+                } catch (error) {
+                  // `write_env_local` refuses when `.env.local` is committable —
+                  // a security gate, so surface it rather than swallow it.
+                  notify.error({
+                    title: t`Could not save ${envVar}`,
+                    message: errorMessage(error, t`The value could not be written.`),
+                  });
+                }
+              }}
+            />
+            {allConnections.length === 0 && credentialRows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                  <Trans>No OAuth providers available</Trans>
+                  <Trans>No connections yet</Trans>
                 </TableCell>
               </TableRow>
             )}
