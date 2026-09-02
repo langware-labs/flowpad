@@ -971,6 +971,11 @@ class SchemaRegistry:
                 existing.identity_carrier = info.identity_carrier
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
+            # Both key spellings must survive a re-registration. Dropping this
+            # one silently reverts the type to the `uuid5(resolved path)`
+            # fallback — an id that moves with the install (FLOWPAD-2070).
+            if info.identity_key_fn is not None:
+                existing.identity_key_fn = info.identity_key_fn
             if info.id_namespace != uuid.NAMESPACE_URL:
                 existing.id_namespace = info.id_namespace
             if info.asset_hash_fn is not None:
@@ -1081,6 +1086,19 @@ class SchemaRegistry:
     def get_all_types(cls) -> list[str]:
         cls._ensure_loaded()
         return list(cls._types.keys())
+
+    @classmethod
+    def browseable_type_names(cls) -> list[str]:
+        """Every type that has its own asset-tree root (``browseable_by`` set).
+
+        The containment predicate both tiers share: an asset whose parent is one
+        of THESE is already reachable under that parent's row, so it is not a
+        top-level row of its own type. ``project`` is deliberately absent — it
+        has no tree root, so a project's assets have nowhere else to show and
+        stay top-level. See ``apply_containment_filter``.
+        """
+        cls._ensure_loaded()
+        return [k for k, v in cls._types.items() if v.browseable_by is not None]
 
     @classmethod
     def get_entity_cls(cls, type_name: str) -> type | None:
@@ -1441,12 +1459,13 @@ class SchemaRegistry:
             return {t: FSRecord.type_has_pending_changes(t) for t in target_types}
 
         stale_by_type = await asyncio.to_thread(_stale_by_type)
+        nested = await cls._nested_counts(driver, scope)
 
         for type_name in target_types:
             type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
             if type_last and (latest_iso is None or type_last > latest_iso):
                 latest_iso = type_last
-            count = await cls._safe_count(driver, type_name, scope)
+            count = await cls._safe_count(driver, type_name, scope, nested)
             per_type.append(
                 TypeIndexStatus(
                     type_name=type_name,
@@ -1482,17 +1501,45 @@ class SchemaRegistry:
         )
 
     @staticmethod
-    async def _safe_count(driver, type_name: str, scope: "object | None") -> int:
+    async def _safe_count(
+        driver,
+        type_name: str,
+        scope: "object | None",
+        nested: "dict[str, int] | None" = None,
+    ) -> int:
         """Per-type live count, tolerant of a driver whose
         ``count_entities_by_type`` predates the ``scope`` kwarg. Shared by
         ``get_index_status`` and ``get_asset_stats`` so there is one counting
-        path, not two."""
+        path, not two.
+
+        ``nested`` (from ``_nested_counts``) is subtracted so the badge agrees
+        with the list the user actually sees: ``/search?top_level=true`` drops
+        assets nested inside another browseable asset, and a count that still
+        included them would read 8 over a 4-row list. Clamped at 0 — the two
+        queries are separate reads, so a concurrent write must not go negative.
+        """
         try:
-            return await driver.count_entities_by_type(type_name, scope=scope)
+            total = await driver.count_entities_by_type(type_name, scope=scope)
         except TypeError:
-            return await driver.count_entities_by_type(type_name)
+            total = await driver.count_entities_by_type(type_name)
         except Exception:
             return 0
+        return max(0, total - (nested or {}).get(type_name, 0))
+
+    @classmethod
+    async def _nested_counts(cls, driver, scope: "object | None") -> dict[str, int]:
+        """Per-type count of rows nested inside a browseable asset, or ``{}``.
+
+        Fetched ONCE per status/stats call (one grouped query), not per type.
+        Fails soft to ``{}`` — a driver without the method, or a query error,
+        degrades to today's raw counts rather than blanking the sidebar.
+        """
+        try:
+            return await driver.count_nested_entities_by_type(
+                tuple(cls.browseable_type_names()), scope=scope
+            )
+        except Exception:
+            return {}
 
     @classmethod
     async def get_asset_stats(cls, scope: "object | None" = None) -> AssetStats:
@@ -1502,8 +1549,9 @@ class SchemaRegistry:
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
         driver = get_db_driver()
+        nested = await cls._nested_counts(driver, scope)
         per_type = {
-            str(type_name): await cls._safe_count(driver, type_name, scope)
+            str(type_name): await cls._safe_count(driver, type_name, scope, nested)
             for type_name in cls.get_default_index_types()
         }
         return AssetStats(per_type=per_type, total=sum(per_type.values()))
