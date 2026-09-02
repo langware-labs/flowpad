@@ -158,13 +158,86 @@ async def test_the_agent_owns_the_nested_mcp(home, agent_name):
     assert [s.name for s in await agent.resolved_mcp_specs()] == ["dummy"]
 
 
-async def test_agent_has_no_mcp_servers_list():
-    """The folder is the ONLY source of truth — a second list would drift."""
-    assert "mcp_servers" not in Agent.model_fields
+async def test_the_declaration_and_the_folder_are_two_layers():
+    """``mcp_servers`` is the AUTHORED intent; the folder is what a launch reads.
 
+    Both exist on purpose. The list can name an asset living anywhere (the
+    project's own ``agentic-assets/mcp/``), which is what the editor writes;
+    ``attach_declared_mcp_servers`` turns it into the folder form, and nothing
+    else in a launch consults the list.
+    """
     from flow_sdk.builtin.agent import AgentSpec
 
-    assert "mcp_servers" not in AgentSpec.model_fields
+    assert "mcp_servers" in Agent.model_fields
+    assert "mcp_servers" in AgentSpec.model_fields
+
+
+async def test_a_declared_id_attaches_and_is_idempotent(home, agent_name):
+    """An id on agent.md becomes an Mcp asset in the agent's OWN folder."""
+    _write_agent(home, agent_name)
+    await _index(home)
+    agent = await (await Agent.get_one({"name": agent_name})).save()
+
+    # Lives outside the agent — the project-level shape the editor points at.
+    outside = await Mcp(name="outside", command="/bin/true").save(notify=False)
+    agent.mcp_servers = [str(outside.typeid)]
+
+    assert await agent.attach_declared_mcp_servers() == 1
+    assert sorted(m.name for m in await agent.mcp_assets()) == ["dummy", "outside"]
+    # A re-launch of an unchanged agent must write nothing.
+    assert await agent.attach_declared_mcp_servers() == 0
+
+
+async def test_a_process_inherits_a_declared_server(home, agent_name):
+    """The wiring create_process does: declared -> attached -> copied."""
+    _write_agent(home, agent_name)
+    await _index(home)
+    agent = await (await Agent.get_one({"name": agent_name})).save()
+    outside = await Mcp(name="outside", command="/bin/true").save(notify=False)
+    agent.mcp_servers = [str(outside.typeid)]
+
+    process = await agent.create_process("go", workdir=str(home))
+
+    assert sorted(s.name for s in process.resolved_mcp_servers()) == ["dummy", "outside"]
+
+
+async def test_a_dangling_declared_id_does_not_break_a_launch(home, agent_name):
+    """The list is authored by a UI that can outlive the asset it named."""
+    _write_agent(home, agent_name)
+    await _index(home)
+    agent = await (await Agent.get_one({"name": agent_name})).save()
+    agent.mcp_servers = [f"mcp-{uuid.uuid4()}", "not-a-typeid"]
+
+    assert await agent.attach_declared_mcp_servers() == 0
+    assert [m.name for m in await agent.mcp_assets()] == ["dummy"]
+
+
+async def test_attaching_a_bundled_server_keeps_pointing_at_the_original_code(home, agent_name):
+    """The subtle one. ``to_spec`` has ALREADY resolved the entrypoint into an
+    absolute path in ``args``, so the attachment must not carry the entrypoint
+    across: a nested row that kept it would append its own folder's path a
+    second time AND scaffold a fresh hello-world beside it — launching a
+    template instead of the server the user wrote."""
+    from flow_sdk.builtin.mcp import MCP_DEFAULT_ENTRYPOINT
+
+    _write_agent(home, agent_name)
+    await _index(home)
+    agent = await (await Agent.get_one({"name": agent_name})).save()
+
+    source = await Mcp(
+        name="bundled", command="fastmcp", args=["run"], entrypoint=MCP_DEFAULT_ENTRYPOINT
+    ).save(notify=False)
+    (source.folder / MCP_DEFAULT_ENTRYPOINT).write_text("# the real server\n", encoding="utf-8")
+
+    agent.mcp_servers = [str(source.typeid)]
+    await agent.attach_declared_mcp_servers()
+
+    attached = next(m for m in await agent.mcp_assets() if m.name == "bundled")
+    assert attached.entrypoint == "", "resolved at attach, never carried"
+    assert attached.to_spec().args == ["run", str(source.folder / MCP_DEFAULT_ENTRYPOINT)]
+    assert not (attached.folder / MCP_DEFAULT_ENTRYPOINT).exists(), (
+        "a template scaffolded beside the attachment would shadow the real server"
+    )
 
 
 # ── agent → process ──────────────────────────────────────────────────────────

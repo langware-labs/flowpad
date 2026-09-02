@@ -3655,8 +3655,12 @@ msgid "Configure your account, app preferences, and notifications"
 msgstr "הגדר את החשבון שלך, העדפות היישום והודעות"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Configured by worker"
-msgstr ""
+#~ msgid "Configured by worker"
+#~ msgstr ""
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured in Data sources — no file on disk"
+msgstr "מוגדר במקורות נתונים — אין קובץ בדיסק"
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -6430,6 +6434,10 @@ msgstr "לכל שורה {scopeType} יש קובץ מקור בדיסק."
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every indexed row has a source file on disk."
 msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק."
+
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
@@ -9460,6 +9468,10 @@ msgstr "טוען את הסשן החי…"
 msgid "Loading logs..."
 msgstr "טוען יומנים..."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Loading MCP servers…"
+msgstr ""
+
 #: src/components/show-view/ShowView.tsx
 msgid "Loading MCP UI component..."
 msgstr "טוען רכיב MCP UI..."
@@ -9912,6 +9924,7 @@ msgid "MCP server created"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
@@ -10443,6 +10456,7 @@ msgstr "שם תיקייה חדשה"
 msgid "New group"
 msgstr "קבוצה חדשה"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "New MCP server"
 msgstr ""
@@ -10969,6 +10983,10 @@ msgstr "אין סשנים תואמים"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "No MCP servers in this project yet"
 msgstr ""
 
 #: src/components/token-plan/MembersTable.tsx
@@ -11998,6 +12016,10 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Open in Data sources"
+msgstr "פתיחה במקורות נתונים"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -15169,8 +15191,8 @@ msgid "Select a version to install:"
 msgstr "בחר גרסה להתקנה:"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Select a worker to see the MCP servers available to it"
-msgstr ""
+#~ msgid "Select a worker to see the MCP servers available to it"
+#~ msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
