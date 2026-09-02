@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import ConfigDict, model_validator
+from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -99,7 +99,6 @@ class LLMSource(DataSpec):
     """One way this harness could be funded, and whether it can be. Frozen: a value."""
 
     spec_kind: ClassVar[str] = "llm.source"
-    model_config = ConfigDict(frozen=True)
 
     #: The endpoint this verdict is about — ``llm_endpoint-<uuid>``, always set. Look the
     #: row up for anything else you need (kind, provider, base URL, model slugs); this type
