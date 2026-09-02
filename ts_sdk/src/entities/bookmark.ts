@@ -14,6 +14,14 @@ export enum BookmarkType {
   PLAN = 'plan',
 }
 
+/**
+ * `Bookmark.source` on a row the `flow show` auto-bookmark tree built
+ * (`Auto / <type> / item`). Mirrors `AUTO_SOURCE` in
+ * `flow_sdk/builtin/bookmark.py` — the machine-built tree is project-keyed,
+ * which is what separates it from a favorite the user starred by hand.
+ */
+export const AUTO_BOOKMARK_SOURCE = 'auto';
+
 export interface IBookmark extends IEntity {
   bookmark_type?: BookmarkType;
   source?: string;
