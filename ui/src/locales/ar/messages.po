@@ -2297,6 +2297,10 @@ msgstr "تقدم bash"
 msgid "Bash Timeout (ms)"
 msgstr "مهلة انتظار Bash (مللي ثانية)"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Before you can deploy"
+msgstr "قبل أن تتمكن من النشر"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour"
 msgstr "السلوك"
@@ -2774,6 +2778,10 @@ msgstr "التغييرات"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Changes ({0})"
 msgstr "التغييرات ({0})"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Changes committed and pushed"
+msgstr "تم تثبيت التغييرات ودفعها"
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "Channel IDs"
@@ -3690,6 +3698,7 @@ msgstr "مُهيأ في مصادر البيانات — لا يوجد ملف ع�
 msgid "Confirm"
 msgstr "تأكيد"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -4120,6 +4129,8 @@ msgstr "تعذر تغيير طريقة تسجيل الدخول"
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -4390,6 +4401,8 @@ msgstr ""
 msgid "Could not send report to the Flowpad team"
 msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/hooks/use-git-share-gate.ts
@@ -4400,6 +4413,10 @@ msgstr "تعذر إعداد Git"
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not set up the budget"
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Could not sign in to the cloud"
+msgstr "تعذر تسجيل الدخول إلى السحابة"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not sign the sandbox out"
@@ -4541,6 +4558,10 @@ msgstr "تعذر الوصول إلى الخادم"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Couldn't read this folder's Git status."
 msgstr "تعذر قراءة حالة Git لهذا المجلد."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Couldn't read this project's Git status."
+msgstr "تعذرت قراءة حالة Git لهذا المشروع."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -5823,6 +5844,7 @@ msgstr "عدم السؤال مرة أخرى"
 msgid "done"
 msgstr "تم"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -7248,6 +7270,10 @@ msgstr ""
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
 
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Finish the setup above before deploying"
+msgstr "أكمل الإعداد أعلاه قبل النشر"
+
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Finishing asset load…"
 msgstr "إنهاء تحميل الملف…"
@@ -7671,6 +7697,7 @@ msgstr "تغييرات Git"
 msgid "Git is required to share files"
 msgstr "Git مطلوب لمشاركة الملفات"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git is set up"
 msgstr "تم إعداد Git"
@@ -7689,10 +7716,15 @@ msgstr "جاهزية Git"
 msgid "Git repository"
 msgstr "مستودع Git"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Git repository ready"
+msgstr "مستودع Git جاهز"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git setup cancelled"
 msgstr "تم إلغاء إعداد Git"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git setup failed."
 msgstr "فشل إعداد Git."
@@ -7713,12 +7745,15 @@ msgstr "تم تثبيت أدوات Git"
 msgid "Git URL"
 msgstr "عنوان Git URL"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "GitHub authorization did not complete."
 msgstr "لم تكتمل عملية التفويض مع GitHub."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "تم ربط GitHub"
@@ -13185,6 +13220,7 @@ msgstr "الصفحة الرئيسية للمشروع"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "المشروع ثابت بعد الرسالة الأولى — يمكن بدء جلسة جديدة لتغييره."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Project linked to cloud"
 msgstr "تم ربط المشروع بالسحابة"
@@ -13450,6 +13486,7 @@ msgid "Pulling…"
 msgstr "جاري السحب…"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -15562,6 +15599,7 @@ msgstr "تعيين مشروع المحادثة"
 msgid "Set project"
 msgstr "تعيين المشروع"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
@@ -15600,6 +15638,10 @@ msgstr "إعداد Git"
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Set up Git for cloud linking"
 msgstr "إعداد Git للربط السحابي"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Set up Git for deploying"
+msgstr "إعداد Git للنشر"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Set up Git for project sharing"
@@ -15977,6 +16019,7 @@ msgid "Sigma graph view"
 msgstr "عرض Sigma للرسم البياني"
 
 #: src/components/account/user-info.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/notifications/ingest.ts
@@ -16071,6 +16114,10 @@ msgstr "تم تسجيل الدخول"
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
 msgstr "مسجّل الدخول باسم {loggedInUser}"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Signed in to Flowpad cloud"
+msgstr "تم تسجيل الدخول إلى سحابة Flowpad"
 
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"

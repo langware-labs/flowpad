@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 /**
@@ -22,6 +23,13 @@ export interface Step<TId extends string = string> {
   status: StepStatus;
   /** Sub-line under the label: progress hints while running, the error on failure. */
   detail?: string;
+  /**
+   * A control rendered at the end of the row — the one thing the user can do
+   * about this step. Never set by {@link useStepFlow}, which drives its own
+   * steps; it exists for a checklist that REFLECTS state the user fixes
+   * elsewhere (see `AgentDeployChecklist`) and shares this renderer.
+   */
+  action?: React.ReactNode;
 }
 
 export interface StepFlow<TId extends string> {
