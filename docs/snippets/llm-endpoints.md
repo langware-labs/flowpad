@@ -1,7 +1,7 @@
 # LLM endpoints — snippets
 
-An `LLMEndpoint` is one answer to "who pays for these tokens". There are three kinds and
-they differ only in where the credential lives:
+An `LLMEndpoint` is one answer to "who pays for these tokens". There are three kinds
+(`LLMEndpointKind`) and they differ only in where the credential lives:
 
 | `kind` | Credential | Stored here? | Callable in-process? |
 | --- | --- | --- | --- |
@@ -9,10 +9,10 @@ they differ only in where the credential lives:
 | `hub` | this box's hub login; the hub swaps in the real provider key | no — a projection of a hub row | yes |
 | `device` | a vendor CLI's own OAuth session, per harness | no — derived from `Capability` | no |
 
-Every kind exposes the same four calls: `create_completion`, `create_embeddings`,
-`list_models`, `probe`. Failures raise (`flow_sdk.external_apis.llm.errors`) rather than
-answering an empty string, so "your key is wrong" and "the model said nothing" are
-different things.
+Both callable kinds expose the same four calls: `create_completion`, `create_embeddings`,
+`list_models`, `probe`. A device endpoint raises `LLMNotInvocable` instead. Failures raise
+(`flow_sdk.external_apis.llm.errors`) rather than answering an empty string, so "your key is
+wrong" and "the model said nothing" are different things.
 
 Pinned by `tests/unit/test_llm_endpoint_rows.py` and `tests/unit/test_llm_client.py`; the
 live legs are `tests/long_tests/test_llm_endpoint_live.py`, which skip without a key.
@@ -62,15 +62,18 @@ it keeps the id from encoding a fact about the thing it names.
 ## 3. List what can fund this box
 
 ```python
-from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind
+from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
 
-local = await LLMEndpoint.get_all({"kind": LLMEndpointKind.API_KEY.value})   # keys on this machine
-hub = await fetch_hub_llm_endpoints()                                        # budgets the hub offers
+local = await LLMEndpoint.key_endpoints()    # {secret_name: endpoint}, keys on this machine
+hub = await fetch_hub_llm_endpoints()        # budgets the hub offers
 ```
 
 `fetch_hub_llm_endpoints` answers `[]` when logged out or unreachable, and serves a 30-second
 memo — a picker that cannot reach the hub should show nothing, not fail the screen it sits on.
+
+Both are Python-side reads. `llm_endpoint` is not API-visible yet, so a local key endpoint has
+no live entity query behind it; the frontend gets these through the funding status action.
 
 ## 4. What a harness will actually use
 
@@ -144,3 +147,6 @@ except LLMRateLimited:
   on this machine is not one.
 * **The embedding dimension is part of the model.** Changing `models["embedding"]` on an
   endpoint something already indexed against means a full re-embed, not an incremental one.
+* **A hub endpoint carries no slugs of its own.** The hub does not serialize model names, so
+  a hub endpoint falls back to its root provider's defaults. Name a model explicitly when the
+  budget's root is not OpenRouter.
