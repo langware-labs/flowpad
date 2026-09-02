@@ -378,7 +378,11 @@ class LLMEndpoint(Entity):
                 self.provider or "openrouter",
                 api_key=self.resolve_api_key(),
                 base_url=base_url,
-                models=models,
+                # ``or None`` so an empty map falls back to the ROOT provider's slugs. The hub
+                # serializes no model names, so a hub endpoint carries none of its own, and
+                # without this every hub call had to name a model explicitly — which the docs
+                # said it did not.
+                models=models or None,
                 extra_headers={},
                 label=self.name or "hub endpoint",
             )

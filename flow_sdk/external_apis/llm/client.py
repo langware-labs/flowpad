@@ -45,6 +45,11 @@ OPENAI_EMBEDDING_BATCH = 2048
 #: answers or does not — never widened to ride past a symptom.
 PROBE_TIMEOUT_SECONDS = 10.0
 
+#: How many embedding batches may be in flight at once. Not a timeout and not a retry: a
+#: corpus of 100k chunks is 49 batches, and firing all of them concurrently earns a 429 from
+#: the provider rather than going faster.
+EMBEDDING_CONCURRENCY = 4
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -75,6 +80,10 @@ class LLMClient:
         self.models = dict(models or {})
         self.extra_headers = dict(extra_headers or {})
         self.label = label or dialect.provider.value
+        #: Built once per client. A fresh ``AsyncOpenAI`` rebuilds the TLS context and reloads
+        #: the CA bundle from disk; ``cloud_client/transport/hub_http.py`` measured that at
+        #: ~40% of a request, and an embedder calls this per query.
+        self._sdk_client: Any = None
 
     @classmethod
     def for_dialect(
@@ -215,9 +224,16 @@ class LLMClient:
         slug = self._model_for(model, "embedding")
         client = self._openai_client()
         batches = [items[i : i + OPENAI_EMBEDDING_BATCH] for i in range(0, len(items), OPENAI_EMBEDDING_BATCH)]
+        gate = asyncio.Semaphore(EMBEDDING_CONCURRENCY)
+
+        async def _embed(batch: list[str]) -> Any:
+            async with gate:
+                return await client.embeddings.create(model=slug, input=batch)
+
+        # ``timeout`` still covers the WHOLE call, not each batch: a per-batch ceiling would
+        # quietly multiply the caller's budget by the number of batches.
         results = await self._await_upstream(
-            asyncio.gather(*(client.embeddings.create(model=slug, input=batch) for batch in batches)),
-            timeout=timeout,
+            asyncio.gather(*(_embed(batch) for batch in batches)), timeout=timeout
         )
         out: list[list[float]] = []
         for result in results:
@@ -254,12 +270,16 @@ class LLMClient:
         from openai import AsyncOpenAI  # noqa: PLC0415
 
         key = self._require_key()
-        # Passed only when non-empty: the plain two-argument construction is what the shared
-        # primitive has always used, and callers' fakes are built for that shape.
+        if self._sdk_client is not None:
+            return self._sdk_client
+        # ``default_headers`` passed only when non-empty: the plain two-argument construction
+        # is what the shared primitive has always used, and callers' fakes are built for it.
         base_url = self.dialect.openai_base(self.base_url)
         if self.extra_headers:
-            return AsyncOpenAI(base_url=base_url, api_key=key, default_headers=dict(self.extra_headers))
-        return AsyncOpenAI(base_url=base_url, api_key=key)
+            self._sdk_client = AsyncOpenAI(base_url=base_url, api_key=key, default_headers=dict(self.extra_headers))
+        else:
+            self._sdk_client = AsyncOpenAI(base_url=base_url, api_key=key)
+        return self._sdk_client
 
     async def _request_json(
         self, method: str, sub_path: str, *, json_body: dict | None = None, timeout: float
