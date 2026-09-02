@@ -7,6 +7,13 @@
  * sent through `setCredential`; on edit, the `CredentialField` talks to the hub
  * directly. Nothing here ever puts the key into an entity payload — see
  * `buildEntityJson`.
+ *
+ * The two kinds are created by DIFFERENT calls, and that is not symmetry lost for nothing. A root
+ * is an ordinary entity create. A chain is `allocate` POSTed to the endpoint it draws from, because
+ * the hub authorizes delegation against the budget being delegated — the parent has to be the URL
+ * for that check to land on the right entity. Creating a chain as an entity with a `sources` field
+ * silently produced a keyless ROOT: the hub drops fields it does not recognise and still answers
+ * 200. Editing is an ordinary save for both; the parent is fixed at allocation.
  */
 import { LLMEndpoint, dataManager, llmEndpointsService, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -30,8 +37,10 @@ import { notify } from '@src/notifications';
 import { CredentialField } from './CredentialField';
 import { FiltersEditor } from './FiltersEditor';
 import { LimitsEditor } from './LimitsEditor';
-import { SourcesPicker } from './SourcesPicker';
+import { endpointIdFromTypeId } from './llm-endpoints-pointer';
+import { SourcePicker } from './SourcePicker';
 import {
+  buildAllocateBody,
   buildEntityJson,
   canConfigure,
   draftFrom,
@@ -69,7 +78,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }:
     setShowAdvanced(!!editing && editing.kind === 'chain');
   }, [open, editing]);
 
-  const problems = useMemo(() => validateDraft(draft, all), [draft, all]);
+  const problems = useMemo(() => validateDraft(draft), [draft]);
   const isEdit = !!editing;
   const readOnly = !!editing && !canConfigure(editing);
 
@@ -85,11 +94,15 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }:
       if (editing) {
         saved = await dataManager.save<LLMEndpoint>(editing.typeId, [], json as never);
         notify.success({ title: t`Updated ${draft.name.trim()}` });
+      } else if (draft.kind === 'chain') {
+        // The parent is the URL, not a field — see the module note.
+        saved = await llmEndpointsService.allocate(endpointIdFromTypeId(draft.source), buildAllocateBody(draft));
+        notify.success({ title: t`Allocated ${draft.name.trim()}` });
       } else {
         const fresh = new LLMEndpoint(json as never);
         saved = await dataManager.save<LLMEndpoint>(fresh.typeId, [], json as never);
         const id = saved?.id ?? fresh.id;
-        if (draft.kind === 'root' && draft.key.trim() && id) {
+        if (draft.key.trim() && id) {
           try {
             await llmEndpointsService.setCredential(id, draft.key.trim());
             notify.success({ title: t`Added ${draft.name.trim()} and stored its key` });
@@ -126,7 +139,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }:
             {draft.kind === 'root' ? (
               <Trans>A root talks to a provider with its own key.</Trans>
             ) : (
-              <Trans>A chain is fed from other endpoints, in fallback order, and can only narrow what passes.</Trans>
+              <Trans>A chain draws on another endpoint and can only narrow what passes.</Trans>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -226,12 +239,11 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }:
             </>
           )}
 
-          {draft.kind === 'chain' && (
-            <SourcesPicker
-              value={draft.sources}
-              onChange={(sources) => setDraft((d) => ({ ...d, sources }))}
+          {draft.kind === 'chain' && !isEdit && (
+            <SourcePicker
+              value={draft.source}
+              onChange={(source) => setDraft((d) => ({ ...d, source }))}
               all={all}
-              selfId={editing?.id}
               disabled={readOnly}
             />
           )}

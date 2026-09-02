@@ -199,6 +199,13 @@ msgstr "{0}"
 msgid "{0} — opened \"{fallbackName}\" instead."
 msgstr "{0} — opened \"{fallbackName}\" instead."
 
+#. placeholder {0}: verdict.status
+#. placeholder {1}: verdict.model
+#. placeholder {2}: verdict.latency_ms
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "{0} · {1} · {2}ms"
+msgstr "{0} · {1} · {2}ms"
+
 #. placeholder {0}: truncateLabel(sessionLabel)
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "{0} · new run"
@@ -821,12 +828,16 @@ msgid "80% Alert Threshold"
 msgstr "80% Alert Threshold"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
-msgstr "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+msgid "A chain draws on another endpoint and can only narrow what passes."
+msgstr "A chain draws on another endpoint and can only narrow what passes."
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#~ msgid "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+#~ msgstr "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "A chain needs at least one source."
-msgstr "A chain needs at least one source."
+#~ msgid "A chain needs at least one source."
+#~ msgstr "A chain needs at least one source."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
@@ -1001,7 +1012,6 @@ msgstr "Activity"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -1052,12 +1062,12 @@ msgid "Add a prompt to your reply"
 msgstr "Add a prompt to your reply"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Add a source"
-msgstr "Add a source"
+#~ msgid "Add a source"
+#~ msgstr "Add a source"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Add a source…"
-msgstr "Add a source…"
+#~ msgid "Add a source…"
+#~ msgstr "Add a source…"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -1465,6 +1475,11 @@ msgstr "All tasks"
 msgid "All types"
 msgstr "All types"
 
+#. placeholder {0}: draft.name.trim()
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Allocated {0}"
+msgstr "Allocated {0}"
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -1569,8 +1584,8 @@ msgid "An <0>orphan</0> is a row in the search index whose source file is gone f
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "An endpoint cannot source itself."
-msgstr "An endpoint cannot source itself."
+#~ msgid "An endpoint cannot source itself."
+#~ msgstr "An endpoint cannot source itself."
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
@@ -2709,8 +2724,7 @@ msgid "Capability"
 msgstr "Capability"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
+#: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
 msgstr "chain"
 
@@ -2872,6 +2886,10 @@ msgstr "Choose a task from the sidebar to view details"
 msgid "Choose an artifact to open"
 msgstr "Choose an artifact to open"
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Choose an endpoint…"
+msgstr "Choose an endpoint…"
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
 msgstr "Choose another worker"
@@ -2883,6 +2901,10 @@ msgstr "Choose avatar image"
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "Choose folder…"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Choose the endpoint this one draws from."
+msgstr "Choose the endpoint this one draws from."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -5889,6 +5911,10 @@ msgstr "Drag to pan · scroll to zoom · click a node to read"
 msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Draws from"
+msgstr "Draws from"
+
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Drill by"
 msgstr "Drill by"
@@ -5968,8 +5994,8 @@ msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "Each source may appear once."
-msgstr "Each source may appear once."
+#~ msgid "Each source may appear once."
+#~ msgstr "Each source may appear once."
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -6621,6 +6647,10 @@ msgstr "Extra Known Marketplaces"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "extra rows fetched (limit + overfetch)"
+
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "failed"
+msgstr "failed"
 
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "Failed"
@@ -7288,6 +7318,10 @@ msgstr "Fix It"
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "Fix the web app"
+
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
+msgstr "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -10222,12 +10256,12 @@ msgid "mounted"
 msgstr "mounted"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Move down"
-msgstr "Move down"
+#~ msgid "Move down"
+#~ msgstr "Move down"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Move up"
-msgstr "Move up"
+#~ msgid "Move up"
+#~ msgstr "Move up"
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Moved"
@@ -10796,6 +10830,10 @@ msgstr "No emoji found"
 msgid "No endpoint sources from this one."
 msgstr "No endpoint sources from this one."
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "No endpoints to draw from"
+msgstr "No endpoints to draw from"
+
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "No endpoints yet."
 msgstr "No endpoints yet."
@@ -11054,8 +11092,8 @@ msgid "No orphans right now. Click to re-scan and confirm."
 msgstr "No orphans right now. Click to re-scan and confirm."
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "No other endpoints"
-msgstr "No other endpoints"
+#~ msgid "No other endpoints"
+#~ msgstr "No other endpoints"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "No page exists with this name yet."
@@ -11590,8 +11628,8 @@ msgid "not visible"
 msgstr "not visible"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "not visible to you"
-msgstr "not visible to you"
+#~ msgid "not visible to you"
+#~ msgstr "not visible to you"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Note"
@@ -13931,8 +13969,8 @@ msgid "Remove row"
 msgstr "Remove row"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Remove source"
-msgstr "Remove source"
+#~ msgid "Remove source"
+#~ msgstr "Remove source"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
@@ -15322,6 +15360,10 @@ msgstr "Send failed."
 msgid "Send message"
 msgstr "Send message"
 
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "Send one minimal call through this endpoint"
+msgstr "Send one minimal call through this endpoint"
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Send the reply for just this message"
 msgstr "Send the reply for just this message"
@@ -16275,8 +16317,8 @@ msgid "Sources"
 msgstr "Sources"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Sources (fallback order)"
-msgstr "Sources (fallback order)"
+#~ msgid "Sources (fallback order)"
+#~ msgstr "Sources (fallback order)"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Sources + filters + limits"
@@ -17061,11 +17103,13 @@ msgstr "Terminal Sessions"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test"
 msgstr "Test"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "Test failed"
 
@@ -17338,8 +17382,8 @@ msgid "These conversations exist only on this device."
 msgstr "These conversations exist only on this device."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "These sources would form a cycle."
-msgstr "These sources would form a cycle."
+#~ msgid "These sources would form a cycle."
+#~ msgstr "These sources would form a cycle."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."

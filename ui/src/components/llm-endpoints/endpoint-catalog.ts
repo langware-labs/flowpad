@@ -15,7 +15,6 @@ import {
   type FiltersForm,
   type LimitsForm,
 } from './filters-limits-forms';
-import { endpointTypeId } from './llm-endpoints-pointer';
 
 /**
  * A base URL must be http(s). This used to be imported from the data-sources
@@ -77,8 +76,12 @@ export interface EndpointDraft {
   provider: LLMEndpointProvider;
   /** Root only. */
   base_url: string;
-  /** Chain only: ordered source typeids. */
-  sources: string[];
+  /** Chain only: the typeid of the endpoint this one draws from.
+   *
+   *  One parent, not a list. The hub makes the link a `source_llmendpoint` relationship written
+   *  only by `allocate`, which takes a single endpoint to draw from — an ordered fallback list is
+   *  no longer expressible, so offering one would be a form that lies. */
+  source: string;
   filters: FiltersForm;
   limits: LimitsForm;
   /** Root only, create only; NEVER part of the entity payload. */
@@ -93,7 +96,7 @@ export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
     enabled: true,
     provider: provider.id,
     base_url: provider.defaultBaseUrl,
-    sources: [],
+    source: '',
     filters: filtersToForm(null),
     limits: limitsToForm(null),
     key: '',
@@ -118,7 +121,9 @@ export function draftFrom(entity: LLMEndpoint): EndpointDraft {
     enabled: entity.enabled ?? true,
     provider,
     base_url: entity.base_url || providerSpec(provider)?.defaultBaseUrl || '',
-    sources: [...(entity.sources ?? [])],
+    // Only ever read back from a hub that still serialized the field; a current one does not, and
+    // the parent is fixed at allocation anyway, so this is display-only on edit.
+    source: entity.sources?.[0] ?? '',
     filters: filtersToForm(entity.filters),
     limits: limitsToForm(entity.limits),
     key: '',
@@ -126,48 +131,27 @@ export function draftFrom(entity: LLMEndpoint): EndpointDraft {
 }
 
 /**
- * Does adding `sources` to `selfTypeId` create a cycle in the graph made of
- * `all`'s `sources` edges? Follows edges from each proposed source; reaching
- * self means a loop.
+ * What the form can judge on its own.
+ *
+ * Cycles and filter-narrowing are NOT checked here any more. Both are properties of the resolved
+ * graph, and the client can no longer see one: sources are edges the entity does not serialize. The
+ * hub judges them in `allocate` (`validate_child_write`) against the source's own graph, before
+ * anything is written, and the dialog surfaces that message verbatim. A client-side check over the
+ * endpoints this user happens to see would have been a guess wearing the costume of a guarantee.
  */
-export function wouldCycle(
-  selfTypeId: string | undefined,
-  sources: readonly string[],
-  all: readonly Pick<LLMEndpoint, 'id' | 'sources'>[],
-): boolean {
-  if (!selfTypeId) return false;
-  const edges = new Map<string, readonly string[]>();
-  for (const e of all) edges.set(endpointTypeId(e.id), e.sources ?? []);
-  const seen = new Set<string>();
-  const stack = [...sources];
-  while (stack.length) {
-    const cur = stack.pop() as string;
-    if (cur === selfTypeId) return true;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-    for (const next of edges.get(cur) ?? []) stack.push(next);
-  }
-  return false;
-}
-
-/** Problems with a draft, as message descriptors (the dialog renders them
- *  through `t`). Empty means submittable. */
-export function validateDraft(
-  draft: EndpointDraft,
-  all: readonly Pick<LLMEndpoint, 'id' | 'sources'>[],
-): MessageDescriptor[] {
+export function validateDraft(draft: EndpointDraft): MessageDescriptor[] {
   const problems: MessageDescriptor[] = [];
   if (!draft.name.trim()) problems.push(msg`Name is required.`);
 
   if (draft.kind === 'root') {
     if (!isProvider(draft.provider)) problems.push(msg`Pick a provider.`);
     if (!isHttpUrl(draft.base_url.trim())) problems.push(msg`Base URL must be an http(s) URL.`);
-  } else {
-    const selfTypeId = draft.id ? endpointTypeId(draft.id) : undefined;
-    if (draft.sources.length === 0) problems.push(msg`A chain needs at least one source.`);
-    if (selfTypeId && draft.sources.includes(selfTypeId)) problems.push(msg`An endpoint cannot source itself.`);
-    else if (wouldCycle(selfTypeId, draft.sources, all)) problems.push(msg`These sources would form a cycle.`);
-    if (new Set(draft.sources).size !== draft.sources.length) problems.push(msg`Each source may appear once.`);
+  } else if (!draft.id && !draft.source) {
+    // Create only: the parent is the `allocate` target, so without it there is nothing to POST to.
+    // On edit it is immutable and not re-sent, so an absent one is not a problem to report. There is
+    // no self-source check because there is no self yet — the entity the parent is chosen for does
+    // not exist until `allocate` returns it.
+    problems.push(msg`Choose the endpoint this one draws from.`);
   }
 
   if (badNonNegative(draft.filters, NUMERIC_FILTER_KEYS).length) {
@@ -184,12 +168,16 @@ export function validateDraft(
  * `credential` action, write-only), and when `editing` omits the immutable
  * `provider`/`base_url` so an unchanged echo cannot trip the hub's immutability
  * guard. A chain never carries provider/base_url at all.
+ *
+ * It never carries `sources` either. That field no longer exists on the hub, and an entity create
+ * DROPS fields it does not recognise while still answering 200 — so sending it produced a green
+ * toast and a keyless root where a chain was asked for. Allocation goes through
+ * `buildAllocateBody` and the `allocate` action instead.
  */
 export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<string, unknown> {
   const json: Record<string, unknown> = {
     name: draft.name.trim(),
     enabled: draft.enabled,
-    sources: draft.kind === 'chain' ? [...draft.sources] : [],
     filters: formToFilters(draft.filters),
     limits: formToLimits(draft.limits),
   };
@@ -198,6 +186,20 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
     json.base_url = draft.base_url.trim();
   }
   return json;
+}
+
+/** The `allocate` body for a chain create: everything the child gets, minus the parent — which is
+ *  the URL. `enabled` is not here because a freshly allocated endpoint is enabled. */
+export function buildAllocateBody(draft: EndpointDraft): {
+  name: string;
+  filters: ReturnType<typeof formToFilters>;
+  limits: ReturnType<typeof formToLimits>;
+} {
+  return {
+    name: draft.name.trim(),
+    filters: formToFilters(draft.filters),
+    limits: formToLimits(draft.limits),
+  };
 }
 
 /**

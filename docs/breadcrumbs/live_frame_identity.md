@@ -1,7 +1,12 @@
 ---
+id: 17d1ac70-32de-4a23-b66b-b3faa4c3ccec
 title: Live frames must name their transcript entry
-tags: [breadcrumb.test.live_frame_identity.rules]
-description: process_entry rides the history JSON but NOT the live wire — to_xml serializes attributes and content only — so without a transcript-entry-id attribute an observing client's resume position freezes at its last history load and observe-turn replays every turn since.
+tags:
+- breadcrumb.test.live_frame_identity.rules
+description: process_entry rides the history JSON but NOT the live wire — to_xml serializes
+  attributes and content only — so without a transcript-entry-id attribute an observing
+  client's resume position freezes at its last history load and observe-turn replays
+  every turn since.
 ---
 
 # Live frames must name their transcript entry
@@ -205,9 +210,3 @@ watermark premise really is false, and now it has a lever.
   two are ever mounted for the same process in practice was **never observed**: a
   probe counting concurrent observations was installed and never recorded a peak
   above 1. Treat parallel streams as an untested hypothesis, not a rule.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 17d1ac70-32de-4a23-b66b-b3faa4c3ccec
-flowpad:endcapsule identity -->

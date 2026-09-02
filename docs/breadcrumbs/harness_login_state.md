@@ -1,7 +1,12 @@
 ---
+id: 35bc6735-fdea-4467-bfdb-19dca62eb0ee
 title: What evidence may write a harness login state
-tags: [breadcrumb.test.harness_login_state.rules]
-description: login_state is written from evidence of unequal strength, and both directions have burned us. An undetermined probe was recorded as signed out; separately, a probe that only checks a credential EXISTS overturned a refusal the harness itself made, so the login modal opened on "Not logged in" and showed a green "Signed in".
+tags:
+- breadcrumb.test.harness_login_state.rules
+description: login_state is written from evidence of unequal strength, and both directions
+  have burned us. An undetermined probe was recorded as signed out; separately, a
+  probe that only checks a credential EXISTS overturned a refusal the harness itself
+  made, so the login modal opened on "Not logged in" and showed a green "Signed in".
 ---
 
 # What evidence may write a harness login state
@@ -188,9 +193,3 @@ mistake, so an undecided probe stays silent.
   returned `NOT_INSTALLED` before checking what it was filed as. Without that
   guard it goes green whenever the environment happens to resolve the CLI, and
   proves nothing.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 35bc6735-fdea-4467-bfdb-19dca62eb0ee
-flowpad:endcapsule identity -->
