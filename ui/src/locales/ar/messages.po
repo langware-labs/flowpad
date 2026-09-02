@@ -8789,10 +8789,6 @@ msgstr "فهرس الرسائل المرسلة في هذه الجلسة"
 msgid "Index project on selection"
 msgstr "فهرسة المشروع عند تحديده"
 
-#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "Index this folder for search"
-msgstr ""
-
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "متى تتم الفهرسة"
@@ -15361,6 +15357,10 @@ msgstr "فهرس البحث قيد التهيئة. يمكن تشغيل تحدي�
 #: src/components/rag/RagView.tsx
 #: src/types/ViewType.ts
 msgid "Search indexes"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+msgid "Search indexing for this folder"
 msgstr ""
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx

@@ -8789,10 +8789,6 @@ msgstr "אינדקס הפרומפטים שנשלחו בסשן זה"
 msgid "Index project on selection"
 msgstr "אינדוקס פרויקט בעת בחירתו"
 
-#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "Index this folder for search"
-msgstr ""
-
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "מתי לבצע אינדוקס"
@@ -15361,6 +15357,10 @@ msgstr "אינדקס החיפוש מתחמם. הריץ Refresh Index כדי לא
 #: src/components/rag/RagView.tsx
 #: src/types/ViewType.ts
 msgid "Search indexes"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+msgid "Search indexing for this folder"
 msgstr ""
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
