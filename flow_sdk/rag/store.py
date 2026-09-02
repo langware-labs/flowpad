@@ -88,7 +88,11 @@ class RagStore:
         growing file five hundred times. Callers batch a build and flush once; ``close`` (and
         so the context manager) flushes for them.
         """
-        if self._index is not None:
+        # A width-less index must never reach disk. Opening the store to read a count creates
+        # a handle with ndim=0; saving that leaves a zero-width file, and the next real add
+        # loads it and hands 1536-float vectors to a metric expecting none. usearch does not
+        # raise at that point — it segfaults, taking the whole backend with it.
+        if self._index is not None and self.dimensions:
             self._index.save(str(self.dir / INDEX_FILE))
         self._db.commit()
 
@@ -121,13 +125,21 @@ class RagStore:
     def model(self) -> str:
         return self._get_meta("model")
 
-    @property
-    def tree_hash(self) -> str:
-        """The corpus hash this store currently reflects. The freshness comparison."""
-        return self._get_meta("tree_hash")
+    def tree_hash(self, root: str = "") -> str:
+        """The hash of *root* as this store last reflected it. The freshness comparison.
 
-    def stamp(self, *, tree_hash: str) -> None:
-        self._set_meta("tree_hash", tree_hash)
+        Per root, because one index covers several folders and they go stale independently —
+        editing a file under one must not make the others look out of date and re-walk.
+        """
+        return self._get_meta(f"tree_hash:{root}")
+
+    def stamp(self, *, tree_hash: str, root: str = "") -> None:
+        self._set_meta(f"tree_hash:{root}", tree_hash)
+        self._db.commit()
+
+    def forget_tree(self, root: str) -> None:
+        """Drop *root*'s recorded hash, so a re-added root indexes from scratch."""
+        self._db.execute("DELETE FROM meta WHERE k = ?", (f"tree_hash:{root}",))
         self._db.commit()
 
     # ── the usearch half ────────────────────────────────────────────────────
@@ -140,7 +152,7 @@ class RagStore:
             return self._index
         index = Index(ndim=self.dimensions, metric=METRIC, dtype="f32")
         path = self.dir / INDEX_FILE
-        if path.exists():
+        if path.exists() and self.dimensions:
             index.load(str(path))
         self._index = index
         return index
@@ -159,6 +171,16 @@ class RagStore:
         placeholders = ",".join("?" * len(chunk_ids))
         rows = self._db.execute(f"SELECT chunk_id FROM chunks WHERE chunk_id IN ({placeholders})", list(chunk_ids))
         return {r["chunk_id"] for r in rows}
+
+    def unknown(self, chunks: Sequence[RagChunk]) -> list[RagChunk]:
+        """The chunks this store has never seen. What a caller must actually embed.
+
+        ``add`` skips known ids too, but by then the embedding has been paid for. Filtering
+        first is the difference between a no-op re-index costing nothing and costing a full
+        pass over the corpus.
+        """
+        known = self._existing_ids([c.chunk_id for c in chunks])
+        return [c for c in chunks if c.chunk_id not in known]
 
     def document_hashes(self) -> dict[str, str]:
         """``doc_ref -> doc_hash`` as last indexed. Lets a caller skip whole files.
@@ -212,6 +234,12 @@ class RagStore:
             return 0
 
         index = self._open_index()
+        if index.ndim != width:
+            # Reached only if a store on disk disagrees with its own sidecar. Say so, rather
+            # than letting the native side read past the end of every vector.
+            raise DimensionMismatch(
+                f"the vector index is {index.ndim}-dimensional and was handed {width}"
+            )
         row = self._db.execute("SELECT COALESCE(MAX(key), 0) AS m FROM chunks").fetchone()
         next_key = int(row["m"]) + 1
 
@@ -229,6 +257,32 @@ class RagStore:
         index.add(np.array(keys, dtype=np.uint64),
                   np.array([v for _, v in fresh], dtype=np.float32))
         return len(fresh)
+
+    def retain(self, doc_ref: str, keep_ids: Iterable[str]) -> int:
+        """Drop this document's chunks EXCEPT *keep_ids*. Returns how many went.
+
+        The set difference, not remove-then-add. A re-chunked document mostly produces the ids
+        it produced last time — that is the whole point of keying a chunk on its text — and
+        deleting the document wholesale would throw those vectors away and bill for them again
+        on the way back in.
+        """
+        keep = set(keep_ids)
+        rows = self._db.execute("SELECT key, chunk_id FROM chunks WHERE doc_ref = ?", (doc_ref,)).fetchall()
+        doomed = [r for r in rows if r["chunk_id"] not in keep]
+        if not doomed:
+            return 0
+        if self.dimensions:
+            index = self._open_index()
+            for row in doomed:
+                try:
+                    index.remove(int(row["key"]))
+                except Exception:  # noqa: BLE001 -- a key the index never held is already gone
+                    pass
+        placeholders = ",".join("?" * len(doomed))
+        self._db.execute(
+            f"DELETE FROM chunks WHERE key IN ({placeholders})", [int(r["key"]) for r in doomed]
+        )
+        return len(doomed)
 
     def remove_document(self, doc_ref: str) -> int:
         """Drop every chunk of one document. Returns how many went."""

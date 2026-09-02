@@ -229,6 +229,20 @@ class TypeInfo:
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
     # parent/child edges) that the base sync doesn't know about.
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
+
+    @property
+    def post_sync_callbacks(self) -> tuple:
+        """``post_sync_fn`` as a tuple, whichever shape it was declared in.
+
+        One callable, several, or none. Callers iterate and nobody branches on the shape — the
+        field held a single value for years, and a second consumer should not have to know that.
+        """
+        declared = self.post_sync_fn
+        if declared is None:
+            return ()
+        if callable(declared):
+            return (declared,)
+        return tuple(fn for fn in declared if callable(fn))
     # Per-type indexer dispatch callables, registered next to their definitions
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
@@ -952,7 +966,13 @@ class SchemaRegistry:
             if info.pack_exclude:
                 existing.pack_exclude = tuple(info.pack_exclude)
             if info.post_sync_fn is not None:
-                existing.post_sync_fn = info.post_sync_fn
+                # Appended, not replaced: two modules may each register an observer for one
+                # type, and whichever registered second used to silently win.
+                already = existing.post_sync_callbacks
+                existing.post_sync_fn = (
+                    *already,
+                    *(fn for fn in info.post_sync_callbacks if fn not in already),
+                )
             if info.from_disk_fn is not None:
                 existing.from_disk_fn = info.from_disk_fn
             if info.capsules:

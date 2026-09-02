@@ -21,6 +21,7 @@ import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLogi
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
+import { RagRootsProvider } from '@src/hooks/use-rag-roots';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
@@ -143,7 +144,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
-            <FloatingChatProvider>{children}</FloatingChatProvider>
+            <RagRootsProvider>
+              <FloatingChatProvider>{children}</FloatingChatProvider>
+            </RagRootsProvider>
           </SnifferProvider>
         </HarnessCapabilitiesProvider>
       </TooltipProvider>

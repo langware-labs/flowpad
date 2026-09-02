@@ -437,6 +437,14 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  // `Brain` matches RAG_INDEX.icon in the backend TypeInfo, so the tab chip and the type glyph
+  // (which comes from the registry via iconForType) agree.
+  [ViewType.RAG]: {
+    title: msg`Search indexes`,
+    iconName: 'Brain',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PROCESS_RUNS]: {
     title: msg`Runs`,
     iconName: 'History',
@@ -467,6 +475,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+  },
+  [ViewType.AGENT]: {
+    title: msg`Agent`,
+    iconName: 'Bot',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
   },
   [ViewType.INBOX]: {
     title: msg`Inbox`,

@@ -95,3 +95,4 @@ export * from './git-workdir';
 export * from './inbox-manager';
 export * from './journey';
 export * from './wiki';
+export * from './rag-index';

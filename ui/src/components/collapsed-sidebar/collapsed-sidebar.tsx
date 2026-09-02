@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { AgenticProcess, DataSource, PageId } from '@sdk';
+import { AgenticProcess, DataSource, PageId, RagIndex } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
@@ -98,6 +98,8 @@ export function CollapsedSidebar() {
       icon: iconForType(DataSource.type),
       viewType: ViewType.DATA_SOURCES,
     },
+    // Glyph from the type registry, never a literal — same rule the data-sources item follows.
+    rag: { title: t`Search indexes`, icon: iconForType(RagIndex.type), viewType: ViewType.RAG },
     'process-runs': { title: t`Runs`, icon: History, viewType: ViewType.PROCESS_RUNS },
   };
 
