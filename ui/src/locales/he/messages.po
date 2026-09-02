@@ -1341,6 +1341,14 @@ msgstr "סוכן"
 msgid "Agent created"
 msgstr "סוכן נוצר"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent disabled"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent enabled"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "הוק סוכן"
@@ -5813,8 +5821,6 @@ msgstr "השבתת טלמטריה וניתוח נתונים"
 msgid "disabled"
 msgstr "מכובה"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Disabled"
 msgstr "מבוטל"
@@ -6285,6 +6291,15 @@ msgid "Effort"
 msgstr "רמת מאמץ"
 
 #: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email disabled"
+msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email enabled"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Email inbox"
 msgstr ""
 
@@ -6343,6 +6358,10 @@ msgstr "עקבה ריקה"
 msgid "Empty uses the variable name."
 msgstr "שדה ריק ישתמש בשם המשתנה."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Enable Agent"
+msgstr ""
+
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Enable agent email"
 msgstr ""
@@ -6390,13 +6409,10 @@ msgstr "הפעלת סביבה מבודדת מקוננת חלשה יותר"
 msgid "Enable/Disable hook"
 msgstr "הפעלה או השבתה של הוק"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -8724,7 +8740,6 @@ msgstr "בתוך האפליקציה בלבד"
 msgid "Inactive"
 msgstr "לא פעיל"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
