@@ -88,7 +88,15 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
     if (!processTab) return;
     const closing = [...children, processTab]; // children first, then the anchor
     const closingIds = new Set(closing.map((t) => t.id));
-    const remaining = allTabs.filter((t) => !closingIds.has(t.id));
+    // Skip tabs that are mid-close. A close is async: `closeTabWithLifecycle`
+    // marks `Closing` synchronously but the row stays in the snapshot until a
+    // post-close `list_all` lands (and `adoptGlobal` can even re-adopt a
+    // pre-close response). Ranked by `last_active_at`, the tab the user just
+    // closed is by definition the MOST recent candidate — so without this
+    // filter it wins, and navigating to it re-mints the tab (`ensure_tab`) and
+    // respawns its worker: "I close the tab and it keeps reopening".
+    // Same filter the children above and the global strip already apply.
+    const remaining = tabManager.lifecycle.excludeClosing(allTabs).filter((t) => !closingIds.has(t.id));
     const next = tabManager.resolveNext(remaining, undefined, projectId);
     if (next?.dockPointer) navigation.openDock(next.dockPointer);
     else if (projectId) navigation.openDock(DockPointer.forProject(projectId));

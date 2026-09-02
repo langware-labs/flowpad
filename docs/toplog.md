@@ -117,6 +117,21 @@ Key properties:
   toggle takes effect immediately in-process; only cross-process / cross-client propagation is async
   (and is driven explicitly, e.g. by calling the callback in tests). Tests never wait on `awatch`.
 
+## Tags that switch behavior, not just logging
+
+A tag is just a runtime boolean, so a few of them gate *behavior* rather than emit lines. They
+read through `toplog.is_on(...)`, which means the master switch gates them too — with toplog
+disabled you always get the default.
+
+| Tag | Off (default) | On |
+| --- | --- | --- |
+| `claude_debug_session_log` | The Claude CLI's `--debug-file` is one file per **turn** (`<session>-<utc-stamp>.txt`) | one file per **session** (`<session>.txt`) — every turn appends to the same path |
+
+`claude_debug_session_log` lives in `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`
+(`SESSION_DEBUG_LOG_TAG`, read per turn by `_turn_debug_file`, so a flip lands on the next turn
+without a restart). Per-turn is the default deliberately: the failure worth capturing is the first
+turn after an idle gap, and the recovery turn ~30s behind it would clobber a session-keyed file.
+
 ## Components
 
 | Concern | File |
