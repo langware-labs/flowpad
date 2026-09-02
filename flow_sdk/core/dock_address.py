@@ -171,24 +171,10 @@ class ViewType(StrEnum):
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
-    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/device|key|endpoint/<id>|mapping|defaults]
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>] -- the harness in focus
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
-
-
-class LlmSourcesSection(StrEnum):
-    """``/dock/llm-sources/<section>[/<key>]`` — the leading segment only.
-
-    ``device``/``key``/``endpoint`` each take a key (a worker, a provider, an endpoint id);
-    ``mapping`` and ``defaults`` are whole-screen destinations.
-    """
-
-    DEVICE = "device"
-    KEY = "key"
-    ENDPOINT = "endpoint"
-    MAPPING = "mapping"
-    DEFAULTS = "defaults"
 
 
 class CredentialsSubview(StrEnum):

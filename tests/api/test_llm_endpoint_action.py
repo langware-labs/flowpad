@@ -109,15 +109,14 @@ async def test_select_lets_a_user_choose_a_source_without_a_hub(bootstrapped_cli
 
     path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
 
-    body = (await bootstrapped_client.post(path, json={"harness": "claude", "kind": "api_key", "provider": "openrouter"})).json()
-    assert body["status"] == "SUCCESS", body
-    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
-    assert (cap.auth_mode, cap.api_provider) == ("api", "openrouter")
-
-    body = (await bootstrapped_client.post(path, json={"harness": "claude", "kind": "device"})).json()
-    assert body["status"] == "SUCCESS", body
-    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
-    assert (cap.auth_mode, cap.api_provider) == ("device", None)
+    for payload, expected in (
+        ({"harness": "claude", "kind": "api_key", "provider": "openrouter"}, ("api", "openrouter")),
+        ({"harness": "claude", "kind": "device"}, ("device", None)),
+    ):
+        body = (await bootstrapped_client.post(path, json=payload)).json()
+        assert body["status"] == "SUCCESS", body
+        cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+        assert (cap.auth_mode, cap.api_provider) == expected, payload
 
 
 async def test_select_rejects_what_it_cannot_honour(bootstrapped_client) -> None:

@@ -1,55 +1,32 @@
 /**
- * The LLM sources view's pointer: `[<section>[/<key>]]`.
+ * The LLM sources view's pointer: `[<worker>]` — the harness in focus.
  *
- * Empty → the list. `device/<worker>`, `key/<provider>` and `endpoint/<id>` select one source.
- * The selection lives in the URL rather than component state (reload lands where you were,
- * drill-down is a navigation), and `foldsPointer` on the registry entry keeps every combination
- * in one tab chip — the credentials view's pattern.
+ * Empty → the first harness. The focus lives in the URL rather than component state (reload
+ * lands where you were, and the chip strip is a navigation), and `foldsPointer` on the registry
+ * entry keeps every harness in one tab chip — the credentials view's pattern.
  *
- * No React here: the version popover and the warnings popover both import this file, so it must
- * stay a leaf (same rule as `llm-endpoints-pointer.ts`).
+ * A worker, not a section: the page shows every source for ONE harness, so that is the only
+ * thing the address has to carry. An earlier draft declared a `device|key|endpoint|mapping|
+ * defaults` vocabulary across `dock_address.py`, `view-types.ts` and the contract fixture — five
+ * members of which the view read one.
+ *
+ * No React here: the version popover imports this file, so it must stay a leaf (same rule as
+ * `llm-endpoints-pointer.ts`).
  */
-import { LlmSourcesSection, PageId, ViewType } from '@sdk';
+import { PageId, ViewType } from '@sdk';
 
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 
-export const LLM_SOURCES_SECTIONS: readonly LlmSourcesSection[] = [
-  LlmSourcesSection.Device,
-  LlmSourcesSection.Key,
-  LlmSourcesSection.Endpoint,
-  LlmSourcesSection.Mapping,
-  LlmSourcesSection.Defaults,
-];
-
-const SECTIONS = new Set<string>(LLM_SOURCES_SECTIONS);
-
-export interface LlmSourcesPointer {
-  section?: LlmSourcesSection;
-  /** The worker / provider / endpoint id the section selects, when it takes one. */
-  key?: string;
+/** The worker the pointer selects, or `undefined` for "whichever is first". */
+export function parseLlmSourcesPointer(pointer?: string | null): string | undefined {
+  return (pointer ?? '').split('/').filter(Boolean)[0] || undefined;
 }
 
-export function parseLlmSourcesPointer(pointer?: string | null): LlmSourcesPointer {
-  const [rawSection, ...rest] = (pointer ?? '').split('/').filter(Boolean);
-  if (!SECTIONS.has(rawSection)) return {};
-  const section = rawSection as LlmSourcesSection;
-  const key = rest.join('/') || undefined;
-  return key ? { section, key } : { section };
+export function llmSourcesPointer(worker?: string): string {
+  return worker ?? '';
 }
 
-export function llmSourcesPointer(section?: LlmSourcesSection, key?: string): string {
-  if (!section) return '';
-  return key ? `${section}/${key}` : section;
-}
-
-/** Navigate to the LLM sources page (page=desk). */
-export function openLlmSources(navigation: NavigationActions, section?: LlmSourcesSection, key?: string): void {
-  navigation.openPage(PageId.DESK, ViewType.LLM_SOURCES, llmSourcesPointer(section, key));
-}
-
-/** The pointer that selects a given source, so a row and a deep link agree on one spelling. */
-export function pointerForSource(source: { kind: string; provider: string; endpoint_typeid: string }): string {
-  if (source.kind === LlmSourcesSection.Device) return '';
-  if (source.kind === 'api_key') return llmSourcesPointer(LlmSourcesSection.Key, source.provider);
-  return llmSourcesPointer(LlmSourcesSection.Endpoint, source.endpoint_typeid);
+/** Navigate to the LLM sources page (page=desk), optionally focused on one harness. */
+export function openLlmSources(navigation: NavigationActions, worker?: string): void {
+  navigation.openPage(PageId.DESK, ViewType.LLM_SOURCES, llmSourcesPointer(worker));
 }

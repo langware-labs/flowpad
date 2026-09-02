@@ -18,6 +18,21 @@ interface ErrorEnvelope {
   message?: string;
 }
 
+/**
+ * The server's own sentence, or '' — the ENVELOPE only.
+ *
+ * Differs from {@link errorMessage} in exactly one way, and it matters: no `Error.message`
+ * fallback. An AxiosError is both an Error and an envelope carrier, and its message is always
+ * "Request failed with status code 4xx" — so a failure the server did not explain would put the
+ * status line in front of the user as if it were an explanation. Callers that want to substitute
+ * their own wording for an unexplained failure need to be able to tell "no detail" apart from
+ * "detail happens to be boilerplate".
+ */
+export function errorDetail(error: unknown): string {
+  const e = typeof error === 'object' && error !== null ? (error as ErrorEnvelope) : null;
+  return e?.response?.data?.detail || e?.response?.data?.message || '';
+}
+
 export function errorMessage(error: unknown, fallback: string): string {
   const e = typeof error === 'object' && error !== null ? (error as ErrorEnvelope) : null;
 
@@ -26,7 +41,7 @@ export function errorMessage(error: unknown, fallback: string): string {
   // with status code 500", carrying the server's actual explanation at
   // `response.data`. Testing `instanceof Error` first threw that away and put
   // the status line in front of the user.
-  const fromEnvelope = e?.response?.data?.detail || e?.response?.data?.message;
+  const fromEnvelope = errorDetail(error);
   if (fromEnvelope) return fromEnvelope;
 
   if (error instanceof Error && error.message) return error.message;
@@ -43,6 +58,7 @@ export function errorMessage(error: unknown, fallback: string): string {
  * to absorb an expected 409. `client.ts`'s interceptor also stamps `status`
  * directly for the network-failure case, so both shapes are read here.
  */
+
 export function errorStatus(error: unknown): number {
   const e =
     typeof error === 'object' && error !== null ? (error as { status?: number; response?: { status?: number } }) : null;

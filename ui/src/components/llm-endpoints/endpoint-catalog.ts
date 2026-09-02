@@ -201,26 +201,38 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
 }
 
 /**
- * Admin gating off the hub's permission expansion. `readOnly`/`canDelete`
- * THROW when the entity was fetched without `expand: ['permissions']`; the
- * list query always expands them, but an entity reached another way (or a
- * fresh, unsaved one) must not crash the screen — it just gets no admin
- * controls.
+ * Gating off the hub's own permission expansion.
+ *
+ * `readOnly` / `canInvite` / `canDelete` THROW when the entity was fetched without
+ * `expand: ['permissions']`; the list query always expands them, but an entity reached another way
+ * (or a fresh, unsaved one) must not crash the screen — it just gets no admin controls. One guard
+ * so the next gate added here cannot forget the try.
  */
-export function canConfigure(entity: Pick<LLMEndpoint, 'readOnly' | 'saved'> | null | undefined): boolean {
+function permits(entity: { saved?: boolean } | null | undefined, ask: () => boolean): boolean {
   if (!entity || !entity.saved) return false;
   try {
-    return !entity.readOnly;
+    return ask();
   } catch {
     return false;
   }
 }
 
+export function canConfigure(entity: Pick<LLMEndpoint, 'readOnly' | 'saved'> | null | undefined): boolean {
+  return permits(entity, () => !entity!.readOnly);
+}
+
+/**
+ * Who may hand this budget to someone else.
+ *
+ * Deliberately NOT `canConfigure`. On an `llm_endpoint` the hub gives `members` to `owner` alone —
+ * an `admin` may re-budget it, replace its provider key and allocate from it, and still cannot give
+ * it away. `canInvite` asks the hub's own permission expansion for exactly that action, so the
+ * button is absent rather than present-and-403 for the admin case.
+ */
+export function canShare(entity: Pick<LLMEndpoint, 'canInvite' | 'saved'> | null | undefined): boolean {
+  return permits(entity, () => entity!.canInvite);
+}
+
 export function canRemove(entity: Pick<LLMEndpoint, 'canDelete' | 'saved'> | null | undefined): boolean {
-  if (!entity || !entity.saved) return false;
-  try {
-    return entity.canDelete;
-  } catch {
-    return false;
-  }
+  return permits(entity, () => entity!.canDelete);
 }
