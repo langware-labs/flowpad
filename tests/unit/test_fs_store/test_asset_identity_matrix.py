@@ -27,7 +27,7 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
-    "data_source_spec",
+    "credential_spec", "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
@@ -89,12 +89,14 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     derived_types = INDEXED_TYPES - capsule_types - native_types
     # 19 capsule: base's 17 + `agent` + `mcp` (an MCP we AUTHOR carries its own
     # v4; the sibling `mcp_server` SCAN is derived, because its source is a
-    # vendor config file we cannot write an id into). 16 derived: + `micro_app`,
-    # whose webapp.json carries no id — which is only half an answer: a derived
+    # vendor config file we cannot write an id into). 17 derived: + `micro_app`,
+    # whose webapp.json carries no id, and + `credential_spec`, whose
+    # credential.json deliberately carries none either so a shipped definition
+    # has the same id on every machine. Both are only half an answer: a derived
     # carrier says the id is NOT in the file, so the type still owes an
     # install-independent key. See
     # `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (19, 3, 16)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (19, 3, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -391,11 +393,16 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
 #: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
 #: change from FLOWPAD-2070; xfail keeps the defect visible until then.
 SHIPPED_RELOCATABLE_TYPES = (
-    "data_source_spec",
+    "credential_spec", "data_source_spec",
     pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
 )
 
 _SHIPPED_MANIFEST = {
+    "credential_spec": (
+        "credential",
+        "credential.json",
+        {"schema": 1, "name": "gmail", "title": "Gmail", "vars": {"GMAIL_ADDRESS": {}}},
+    ),
     "data_source_spec": ("data_source", "data_source.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }

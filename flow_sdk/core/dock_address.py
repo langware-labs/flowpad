@@ -240,10 +240,14 @@ class RetiredTarget:
 #: bookmarks and links people already sent each other — and resolves forward
 #: here. The retired trio never carried a pointer of their own, so the subview
 #: REPLACES the pointer outright rather than merging with it.
+#: All three land on CONNECTIONS: it is the only subview that still renders.
+#: Forwarding a saved tab onto `environment` / `api-keys` would resolve it to a
+#: pointer that is itself retired, leaving anything that reads `dock.pointer`
+#: without a second hop on a blank pane. One hop, one table.
 RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
-    ViewType.ENVIRONMENT: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.ENVIRONMENT.value),
+    ViewType.ENVIRONMENT: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     ViewType.CONNECTIONS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
-    ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.API_KEYS.value),
+    ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
 }
 
 

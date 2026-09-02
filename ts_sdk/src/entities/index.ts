@@ -26,6 +26,8 @@ export * from './capability';
 export * from './data-source';
 export * from './data-source-cursor';
 export * from './data-source-spec';
+export * from './credential-spec';
+export * from './email-inbox';
 export * from './source-item';
 export * from './dataset';
 export * from './llm-endpoint';

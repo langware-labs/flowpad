@@ -147,6 +147,8 @@ class EntityType(StrEnum):
     # (alongside its files/assets): guest sends Prompts, host's worker returns
     # PromptCompletions. See builtin/remote_worker_session.py.
     REMOTE_WORKER_SESSION = "remote_worker_session"
+    # A searchable vector index over a set of project folders. See builtin/rag_index.py.
+    RAG_INDEX = "rag_index"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"
     REAL_PROJECT_CWD = "real_project_cwd"
@@ -239,6 +241,11 @@ class EntityType(StrEnum):
     #: The AUTHORED half of a source — a folder asset describing what a source
     #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
     DATA_SOURCE_SPEC = "data_source_spec"
+    #: The authored definition of a NAMED SET OF ENV VARS a provider needs
+    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD). ``SECRET_ORIGIN`` is one
+    #: project's declaration of ONE variable; this is the global definition of
+    #: the group. Same split as DATA_SOURCE_SPEC : DATA_SOURCE.
+    CREDENTIAL_SPEC = "credential_spec"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.

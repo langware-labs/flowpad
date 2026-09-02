@@ -107,7 +107,7 @@
   "retired_views": {
     "environment": {
       "view_type": "credentials",
-      "pointer": "environment"
+      "pointer": "connections"
     },
     "connections": {
       "view_type": "credentials",
@@ -115,7 +115,7 @@
     },
     "api-keys": {
       "view_type": "credentials",
-      "pointer": "api-keys"
+      "pointer": "connections"
     }
   },
   "view_meta": {
