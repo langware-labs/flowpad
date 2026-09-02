@@ -227,20 +227,34 @@ class DataSource(Entity):
         """
         return self.status == SourceStatus.ACTIVE.value
 
-    def may_poll(self) -> bool:
-        """The ONE copy of the "is polling this source allowed at all" gate.
+    def poll_refusal(self) -> str:
+        """Why this source may not be polled, or ``""`` when it may.
 
+        The ONE copy of the "is polling this source allowed at all" gate.
         ``is_due``, ``request_poll`` and the poller's attention fast lane all
         ask the same question; hand-copies drift the moment a new status or
         health state lands. NEW and SETUP have not finished being configured
         and DISABLED is a person's decision — none of them touch health.
         ``config_error`` needs a human; polling it every minute would burn
         quota to re-learn something we already know.
+
+        Answers the SENTENCE, not a boolean. Every caller that refuses has to
+        tell somebody why, and a bare yes/no leaves each of them to invent its
+        own wording: ``request_poll`` used to answer "attention never wakes a
+        parked or non-active source", which is four different reasons wearing
+        one coat and tells the reader nothing about which applied. One author
+        for the sentence, so the pill, the log line and the API payload cannot
+        disagree.
         """
-        return (
-            self.status == SourceStatus.ACTIVE.value
-            and self.health != SourceHealth.CONFIG_ERROR.value
-        )
+        if self.status == SourceStatus.NEW.value:
+            return "this source has not been evaluated yet"
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "this source is waiting on a setup step"
+        if self.status == SourceStatus.DISABLED.value:
+            return "this source is disabled"
+        if self.health == SourceHealth.CONFIG_ERROR.value:
+            return "this source is parked on a configuration error"
+        return ""
 
     @classmethod
     async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
@@ -254,7 +268,11 @@ class DataSource(Entity):
         """
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
-            if str((row.config or {}).get(key) or "").strip() == value:
+            current = (row.config or {}).get(key)
+            # A `lines` field (Slack's ``channels``) is a list; the source
+            # serves the account when the value is one of its entries.
+            members = current if isinstance(current, list) else [current]
+            if any(str(m or "").strip() == value for m in members):
                 return row
         return None
 
@@ -327,7 +345,7 @@ class DataSource(Entity):
 
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if not self.may_poll():
+        if self.poll_refusal():
             return False
         if self.next_poll_at is None:
             return True
@@ -429,10 +447,11 @@ class DataSource(Entity):
         loudly in the payload, for anything that is not a healthy ACTIVE
         source. Idempotent: an already-due source is left due.
         """
-        if not self.may_poll():
+        refusal = self.poll_refusal()
+        if refusal:
             return ApiSuccessResponse(data={
                 "status": "ignored", "health": self.health, "source_status": self.status,
-                "detail": "attention never wakes a parked or non-active source",
+                "detail": refusal,
             })
         if self.next_poll_at is not None:
             self.next_poll_at = None
