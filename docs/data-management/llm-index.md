@@ -36,6 +36,8 @@ The one shared dependency is the **walk**. `core.scan_tree` delegates to `flow_s
 
 The Merkle hash is **content-derived only** — it never hashes a rendered `index.md` (which carries a timestamp), so re-running with no content change yields identical hashes and nothing is spuriously stale. `own_hash` (files only) is what lets a driver reuse a folder's self-summary when only a *descendant* changed. A folder is stale when its on-disk `existing_hash` (read from `index.md` frontmatter `inputs_hash`) is missing or differs from the freshly computed `inputs_hash`.
 
+Two `index.md` frontmatter flags opt a folder out of generation, and `FolderNode.protected` is their union: `manual: true` ("I maintain this index by hand" — the file IS an index) and `ground_truth: true` ("this is human-authored content, not a generated index at all"). The second exists because a hand-written `index.md` has no `inputs_hash`, so it reads as stale and a rebuild would overwrite it. `is_generator_authored` (an `index.md` exists AND carries an `inputs_hash`) is the positive proof that the generator wrote a file; `existing_hash == ""` alone cannot distinguish "no index.md" from "someone's own index.md".
+
 ---
 
 ## `LLMIndexer` — the engine
@@ -85,8 +87,8 @@ An `index.md` file **is** a `MarkdownIndex` entity (a subclass of `Markdown`). I
 This is the one place the ordinary scan walk touches the pipeline. `MARKDOWN_INDEX` registers a `TypeMetadata` with:
 
 - `from_disk_fn = extract_markdown_index` — reads an `index.md` and parses it into a `MARKDOWN_INDEX` record via `flow_sdk.fs_store.operations.markdown_index.from_markdown`. This lets `FSIndexer` re-parse an already-existing `index.md` (e.g. after a restart).
-- a derived identity backend plus `id_stable_key_fn = markdown_index_identity_key` — `TypeInfo.mint_entity_id()` derives `uuid5(NAMESPACE_URL, resolved_path)`, the same formula `LLMIndexer.typeid_for` uses. `extract_markdown_index(ref, resolved_id)` receives that authoritative id; payload/frontmatter values cannot override it.
-- `indexed_by_default=False`, `browseable=False` — a **system entity**. It is not crawled by the default indexer sweep and does not appear in the records browser; the rebuild AgenticProcess is the only writer, and callers parse via the operations module.
+- a derived identity carrier (`derived_identity()`) plus `id_stable_key_fn = markdown_index_identity_key` (the resolved path) — `TypeInfo.mint_entity_id()` mints `uuid5(NAMESPACE_URL, resolved_path)` through `mint_uuid`, the same formula `llm_index.typeid_for` computes with a hand-rolled `uuid.uuid5` (the library stays DB-free, so the two are kept in step by convention, not by a shared call). `extract_markdown_index(ref, resolved_id)` receives that authoritative id; payload/frontmatter values cannot override it.
+- `indexed_by_default=False`, no `browseable_by` (never browseable), `creatable=True`, `api_visible=True`, `asset_class="docs"` — a **system entity**. It has a `from_disk_fn` but **no walker function is registered for `MARKDOWN_INDEX`** in `build_default_indexer()`, so a full walk never discovers an `index.md` on its own; rows are produced by the create path (`default_body` stub) and by the single-path discover route. The rebuild AgenticProcess is the only writer of the file, and callers parse via the operations module.
 
 Because the id is a deterministic `uuid5` of the folder path, re-indexing a rebuilt `index.md` updates the original entity row instead of allocating a duplicate.
 
@@ -156,4 +158,6 @@ These routes wire `LLMIndexer` to the vault's per-entity data dir (`_indexer()` 
 | **Invocation** | `POST /fs-records/index`, scan actions | `markdown_index` skill (AgenticProcess) for LLM rebuild; `docs-graph` routes for structural ops |
 | **Walk** | `gitignore_walk` | **Same** `gitignore_walk` — the single shared seam |
 
-The two also connect one-directionally: after the `LLMIndexer` (or the rebuild skill) writes an `index.md`, a normal `FSIndexer` pass discovers it as a `MARKDOWN_INDEX` record through `extract_markdown_index`. Nothing flows the other way — `FSIndexer` never triggers a summary or a rebuild.
+The two also connect one-directionally: after the `LLMIndexer` (or the rebuild skill) writes an `index.md`, the `MARKDOWN_INDEX` type's `extract_markdown_index` can re-parse it into the row — via the single-path `POST /fs-records/markdown_index/discover?path=` route or an entity refresh, since no default walker reaches `index.md` files (see above). Nothing flows the other way — `FSIndexer` never triggers a summary or a rebuild.
+
+A small sibling, `flow_sdk/llm_index/sizes.py`, is the single home for the three summary size tiers (one-line `FileRef.summary`, the ≤60-word `self_summary`, the full document) and `resolve_doc_summaries`, which maps a markdown document onto those tiers with **no LLM call** — the content-addressed `.summary.md` cache first, then frontmatter `description`/`summary`, then H1 + first paragraph.

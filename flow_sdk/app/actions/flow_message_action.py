@@ -41,6 +41,11 @@ from flow_sdk.fs_store.operations.conversation import (
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.inbox.agent_scope import (
+    AgentInboxScope,
+    AgentInboxScopeError,
+    resolve_agent_inbox_scope,
+)
 from flow_sdk.inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
@@ -60,6 +65,12 @@ _BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" 
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
+
+
+async def _optional_agent_inbox_scope(agent_id: object) -> AgentInboxScope | None:
+    """Resolve an explicitly requested Agent scope; blank preserves legacy behavior."""
+    value = str(agent_id or "").strip()
+    return await resolve_agent_inbox_scope(value) if value else None
 
 
 def _body_status_value(status: str | BodyStatus | None) -> str | None:
@@ -608,7 +619,12 @@ async def conversation_dismiss() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
-async def handle_conversation_archive(conversation_id: str, someone_typeid: str) -> ApiResponse:
+async def handle_conversation_archive(
+    conversation_id: str,
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Stamp ``Conversation.archived_at = now()``.
 
     Both Inbox and Recent strip hide the row when set; a FlowMessage newer
@@ -621,6 +637,8 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
     conversation_id = (conversation_id or "").strip()
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
@@ -635,7 +653,12 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
     )
 
 
-async def handle_conversation_unarchive(conversation_id: str, someone_typeid: str) -> ApiResponse:
+async def handle_conversation_unarchive(
+    conversation_id: str,
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Clear ``Conversation.archived_at`` (back to ``None``).
 
     The manual inverse of :func:`handle_conversation_archive` — the same effect
@@ -646,6 +669,8 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
     conversation_id = (conversation_id or "").strip()
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
@@ -660,7 +685,11 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
     )
 
 
-async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
+async def handle_conversation_archive_all(
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Stamp ``archived_at = now()`` on every Conversation that isn't
     already archived.
 
@@ -670,6 +699,8 @@ async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
     that were freshly archived.
     """
     convs = await Conversation.get_all({})
+    if allowed_conversation_ids is not None:
+        convs = [conv for conv in convs if conv.id in allowed_conversation_ids]
     now = datetime.now(UTC)
     archived = 0
     for conv in convs or []:
@@ -696,7 +727,14 @@ async def conversation_archive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        return await handle_conversation_archive(conv_id, request_info.someone_typeid)
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_archive(
+            conv_id,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -710,7 +748,14 @@ async def conversation_unarchive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        return await handle_conversation_unarchive(conv_id, request_info.someone_typeid)
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_unarchive(
+            conv_id,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-unarchive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -722,7 +767,14 @@ async def conversation_archive_all() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_conversation_archive_all(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_archive_all(
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive-all error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -940,7 +992,11 @@ async def _hub_leave_conversation(conv_id: str) -> None:
     )
 
 
-async def handle_conversation_delete_archived(someone_typeid: str) -> ApiResponse:
+async def handle_conversation_delete_archived(
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Best-effort bulk delete: classify each archived conversation, apply
     the correct hub-side action, then hard-delete locally for items that
     succeeded hub-side — including the "hub has nothing for us" answer
@@ -954,6 +1010,8 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
       }
     """
     convs = await Conversation.get_all({})
+    if allowed_conversation_ids is not None:
+        convs = [conv for conv in convs if conv.id in allowed_conversation_ids]
     targets = [c for c in (convs or []) if c.archived_at is not None]
     cloud_user_id = await _current_cloud_user_id()
 
@@ -1021,7 +1079,14 @@ async def conversation_delete_archived() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_conversation_delete_archived(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_delete_archived(
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete-archived error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -1031,6 +1096,8 @@ async def handle_conversation_delete(
     conversation_id: str,
     mode: str,
     someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
 ) -> ApiResponse:
     """Per-row delete with explicit semantics (mode in {delete_for_all, leave, local}).
 
@@ -1047,6 +1114,8 @@ async def handle_conversation_delete(
         return ApiFailResponse(message=f"Unknown delete mode: {mode}")
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
 
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
@@ -1098,7 +1167,15 @@ async def conversation_delete() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
         mode = (body.get("mode") or "").strip()
-        return await handle_conversation_delete(conv_id, mode, request_info.someone_typeid)
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_delete(
+            conv_id,
+            mode,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -1969,7 +2046,7 @@ async def _download_and_unpack_bundle_locked(
         tmp_path.unlink(missing_ok=True)
 
 
-async def handle_inbox_list() -> ApiResponse:
+async def handle_inbox_list(*, scope: AgentInboxScope | None = None) -> ApiResponse:
     """Return non-archived received FlowMessages whose Conversation exists locally, newest first.
 
     FMs whose ``conversation_id`` does not resolve to a locally-known Conversation
@@ -1992,6 +2069,7 @@ async def handle_inbox_list() -> ApiResponse:
         m
         for m in all_messages
         if not m.is_archived and m.sender_id not in self_ids and m.conversation_id in known_conv_ids
+        and (scope is None or m.id in scope.flow_message_ids)
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
@@ -2000,7 +2078,12 @@ async def handle_inbox_list() -> ApiResponse:
 @action.get(action_name="inbox-list", types=None)
 async def inbox_list() -> ApiResponse:
     try:
-        return await handle_inbox_list()
+        request_info = get_current_request_info()
+        agent_id = request_info.request.query_params.get("agent_id") if request_info else None
+        scope = await _optional_agent_inbox_scope(agent_id)
+        return await handle_inbox_list(scope=scope)
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] inbox-list error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to list inbox: {str(e)}")
@@ -2344,6 +2427,7 @@ async def inbox_search() -> ApiResponse:
         if not request_info:
             return ApiFailResponse(message="No request info")
         body = await request_info.get_post_data() or {}
+        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
         if not needle:
             return ApiSuccessResponse(data={"conversation_ids": []})
@@ -2386,7 +2470,11 @@ async def inbox_search() -> ApiResponse:
                 hydrate=False,
             )
             conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
+        if scope is not None:
+            conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] inbox-search error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Search failed: {str(e)}")
@@ -2403,7 +2491,12 @@ async def inbox_update() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         fm_id = str(request_info.target_entity_typeid.id)
         patch = await request_info.get_post_data() or {}
+        scope = await _optional_agent_inbox_scope(patch.pop("agent_id", None))
+        if scope is not None:
+            scope.require_message(fm_id)
         return await handle_inbox_update(fm_id, patch, request_info.someone_typeid)
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] inbox-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Update failed: {str(e)}")
@@ -2542,12 +2635,19 @@ async def send_draft() -> ApiResponse:
         return ApiFailResponse(message=f"Send draft failed: {str(e)}")
 
 
-async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiResponse:
+async def handle_inbox_bulk_update(
+    patch: dict,
+    someone_typeid: str,
+    *,
+    allowed_flow_message_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Apply is_read / is_archived patch to all FlowMessages."""
     from flow_sdk.db.drivers.query import QueryFilter
 
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     messages = await FlowMessage.get_all(flt)
+    if allowed_flow_message_ids is not None:
+        messages = [message for message in messages if message.id in allowed_flow_message_ids]
     count = 0
     for fm in messages:
         changed = False
@@ -2572,7 +2672,14 @@ async def inbox_bulk_update() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         patch = await request_info.get_post_data() or {}
-        return await handle_inbox_bulk_update(patch, request_info.someone_typeid)
+        scope = await _optional_agent_inbox_scope(patch.pop("agent_id", None))
+        return await handle_inbox_bulk_update(
+            patch,
+            request_info.someone_typeid,
+            allowed_flow_message_ids=scope.flow_message_ids if scope else None,
+        )
+    except AgentInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Bulk update failed: {str(e)}")

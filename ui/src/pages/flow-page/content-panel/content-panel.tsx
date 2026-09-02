@@ -34,6 +34,7 @@ import { CredentialsView } from '@src/components/credentials-view/CredentialsVie
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
+import { AgentInboxView } from '@src/components/inbox-view/AgentInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
@@ -106,6 +107,7 @@ const EventsView = lazy(() => import('@src/components/events/EventsView').then((
 const DataSourcesView = lazy(() =>
   import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
+const RagView = lazy(() => import('@src/components/rag/RagView').then((m) => ({ default: m.RagView })));
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
 const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
@@ -444,6 +446,12 @@ export function ContentPanel({
             <DataSourcesView />
           </Suspense>
         );
+      case ViewType.RAG:
+        return (
+          <Suspense fallback={null}>
+            <RagView />
+          </Suspense>
+        );
       case ViewType.PROCESS_RUNS:
         return (
           <Suspense fallback={null}>
@@ -499,6 +507,8 @@ export function ContentPanel({
       }
       case ViewType.INBOX:
         return <InboxView />;
+      case ViewType.AGENT:
+        return <AgentInboxView />;
       case ViewType.CONVERSATION:
         return <ConversationRoute />;
       case ViewType.SPEC:

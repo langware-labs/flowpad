@@ -34,7 +34,7 @@ async def _project(tmp_path):
 async def test_add_secret_pointer_writes_value_free_convergent_asset(tmp_path):
     project = await _project(tmp_path)
     resp = await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
     )
     assert resp.status == "SUCCESS", resp
@@ -57,13 +57,13 @@ async def test_redeclaring_an_env_var_updates_in_place(tmp_path):
     stores without becoming a different secret."""
     project = await _project(tmp_path)
     await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
     )
     first_id = project.secret_origins[0]["typeid"]
 
     await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "local", "sod_name": "openai"},
     )
 
@@ -89,8 +89,10 @@ async def test_same_env_var_in_two_projects_is_two_secrets(tmp_path):
 @pytest.mark.asyncio
 async def test_resolve_status_and_provide_env_local_then_worker_resolves(tmp_path):
     project = await _project(tmp_path)
+    # SHARED, because the assertion below is about the sidecar: a private
+    # declaration writes none, which would make "the value is not in it" vacuous.
     await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
     )
 
@@ -270,3 +272,63 @@ async def test_provide_secret_succeeds_once_the_block_clears(tmp_path):
     assert resp.status == "SUCCESS", resp
     assert "sk-fine" in (tmp_path / ".env.local").read_text()
     assert ".env.local" in (tmp_path / ".gitignore").read_text()
+
+
+@pytest.mark.asyncio
+async def test_a_private_declaration_writes_no_sidecar(tmp_path):
+    """The reference json is a SHARING artifact — it tells a receiver which
+    secrets a project needs. A private declaration has no receiver, so writing
+    one only puts committable files in the author's own tree."""
+    project = await _project(tmp_path)
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+    )
+
+    assert not (tmp_path / "assets" / "sodot").exists()
+    # The declaration itself is unaffected — it is a row, not a file.
+    assert [r["env_var"] for r in project.secret_origins] == ["OPENAI_API_KEY"]
+
+
+@pytest.mark.asyncio
+async def test_add_secret_pointers_declares_a_whole_credential_at_once(tmp_path):
+    """A credential bundles env vars, so adding one is inherently plural.
+
+    Declaring them one call at a time saves the whole project per call, and a
+    write from a copy loaded before the previous one landed drops its link — the
+    declarations survive as rows while the project forgets them. One save, no
+    window."""
+    project = await _project(tmp_path)
+    resp = await project.add_secret_pointers(pointers=[
+        {"env_var": "GMAIL_ADDRESS", "locator": {"kind": "env-local", "env_key": "GMAIL_ADDRESS"}},
+        {"env_var": "GMAIL_APP_PASSWORD", "locator": {"kind": "env-local", "env_key": "GMAIL_APP_PASSWORD"}},
+    ])
+    assert resp.status == "SUCCESS", resp
+
+    assert sorted(r["env_var"] for r in project.secret_origins) == [
+        "GMAIL_ADDRESS",
+        "GMAIL_APP_PASSWORD",
+    ]
+
+    # Adding a SECOND credential must not unlink the first.
+    await project.add_secret_pointers(pointers=[
+        {"env_var": "TWILIO_AUTH_TOKEN", "locator": {"kind": "env-local", "env_key": "TWILIO_AUTH_TOKEN"}},
+    ])
+    assert sorted(r["env_var"] for r in project.secret_origins) == [
+        "GMAIL_ADDRESS",
+        "GMAIL_APP_PASSWORD",
+        "TWILIO_AUTH_TOKEN",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_secret_pointers_rejects_a_bad_env_var_before_writing(tmp_path):
+    project = await _project(tmp_path)
+    resp = await project.add_secret_pointers(pointers=[
+        {"env_var": "GOOD_KEY", "locator": {"kind": "env-local", "env_key": "GOOD_KEY"}},
+        {"env_var": "9bad", "locator": {"kind": "env-local", "env_key": "9bad"}},
+    ])
+
+    assert resp.status != "SUCCESS"
+    # Validation happens before any linking, so the good one is not half-applied.
+    assert project.secret_origins == []

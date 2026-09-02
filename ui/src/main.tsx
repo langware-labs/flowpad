@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { isElectronShell, toplog } from '@sdk';
+import { toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -9,7 +9,6 @@ import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
-import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
 import { DiagnoseErrorModal } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
@@ -23,41 +22,13 @@ function defineGlobals() {
   });
 }
 
-// Mouse back/forward buttons (X1/X2) → history navigation. Real browsers map
-// these natively in their own UI layer (not the web platform), so Electron
-// windows never get it — wire it up ourselves, Electron only, to avoid
-// double-navigation in the browser.
-function bindMouseNavButtons() {
-  // Runs before bootstrap, so it asks the shell directly rather than reading
-  // `runtimeKind` — this is the same probe the SDK sends to the server.
-  if (!isElectronShell()) return;
-  // These stay on `window.history` rather than routing through
-  // NavigationActions: this binds before React mounts, and the browser's own
-  // popstate already reaches react-router — which is what keeps the nav bar's
-  // buttons in sync with a mouse click. The position store is consulted only to
-  // guard the edges and to say WHY nothing happened in the trace.
-  window.addEventListener('mouseup', (e) => {
-    if (e.button === 3) {
-      e.preventDefault();
-      const { canGoBack, idx } = getHistoryPosition();
-      toplog.log('navigation', 'mouse X1 (back)', {
-        canGoBack,
-        idx,
-        url: location.pathname + location.search,
-      });
-      if (canGoBack) window.history.back();
-    } else if (e.button === 4) {
-      e.preventDefault();
-      const { canGoForward, idx } = getHistoryPosition();
-      toplog.log('navigation', 'mouse X2 (forward)', {
-        canGoForward,
-        idx,
-        url: location.pathname + location.search,
-      });
-      if (canGoForward) window.history.forward();
-    }
-  });
-}
+// NOTE: the renderer deliberately does NOT bind the X1/X2 mouse buttons.
+// The Electron main process is the single navigator for them
+// (`electron/main.js`: macOS `input-event` + `swipe`, Windows/Linux
+// `app-command`). A renderer-side `mouseup` button 3/4 handler used to exist
+// here on the assumption that macOS never delivers the raw button to the web
+// layer — false on hardware that sends a real X1: BOTH fired and one press
+// stepped history twice. One gesture, one navigator.
 
 // Ground-truth trace of every history transition the renderer sees — fires for
 // real back/forward (browser, Electron gesture, mouse buttons) AND for the
@@ -80,7 +51,6 @@ function bindNavigationTrace() {
 // mount after `loadRoot` has finished `initSdk()`.
 async function init() {
   defineGlobals();
-  bindMouseNavButtons();
   bindNavigationTrace();
   await initDesktopBackend(sdkConfig);
   // Seed toplog state + subscribe to live tag toggles. Without this the

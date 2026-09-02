@@ -40,9 +40,11 @@ only when something calls it. There are three triggers:
 ### a. GET-time refresh (lazy, per-entity)
 
 Every entity GET schedules a non-blocking freshness check:
-`handle_get_by_id` → `entity.check_and_refresh_record()`
-(`flow_sdk/app/actions/graph_crud_actions.py`). If `record.index_required` is
-true (source hash differs from the `.hash` sentinel), it re-syncs and re-stamps.
+`handle_get_by_id` → `asyncio.create_task(entity.check_and_refresh_record())`
+(`flow_sdk/app/actions/graph_crud_actions.py:110`). Under `record_sync_guard`,
+if `record.index_required` is true (source hash **or path digest** differs from
+the `.hash` sentinel), it re-syncs and re-stamps; any error in the re-sync is
+swallowed silently (`entity_model.py:1530`).
 This covers navigation/open, but **not** a file that changed while already open —
 nothing re-GETs it.
 
@@ -57,8 +59,12 @@ POST /api/v1/graph/compute_node/@local/fs-records/invalidate
   → { reindexed, minted, orphaned, skipped, counts }
 ```
 
-Handler `_handle_fs_records_invalidate` → `reindex_paths()`
-(`flow_sdk/fs_store/reindex.py`). Per changed path, `reindex_paths`:
+Handler `_handle_fs_records_invalidate` (`fs_records_actions.py:1945`) →
+`reindex_paths(paths, deleted_paths=..., mint=True)` (`flow_sdk/fs_store/reindex.py:143`).
+`mint=False` makes the call resolution-only (a path with no owning entity is
+left alone) — the `fs/write` resync passes it, because minting there would
+stamp an identity capsule into a file the user just wrote. Per changed path,
+`reindex_paths`:
 
 1. resolves the path to its owning entity via
    `Entity.get_by_asset_ref(path, resolve_containing=True)` — an inner file of a
@@ -87,9 +93,9 @@ one helper — `_schedule_turn_end_reindex` — from **three** seams
 
 | Seam | Transport |
 |------|-----------|
-| `_flush_transcript_change` busy→not-busy edge | PTY / TranscriptStreamer turns |
-| `end_headless_turn` | headless `driver.headless_prompt` (executeInstruction) |
-| `_http_prompt` `_run_turn` finally | the streaming SDK `worker.prompt()` path |
+| `_flush_transcript_change` busy→not-busy edge (`_schedule_turn_end_reindex("flush")`) | PTY / TranscriptStreamer turns |
+| `end_headless_turn` (`_schedule_turn_end_reindex("headless")`) | headless `driver.headless_prompt` (executeInstruction) |
+| `_http_prompt` `_run_turn` `finally` → `end_headless_turn("prompt")` | the streaming SDK `worker.prompt()` path — shares the headless seam rather than calling the helper itself |
 
 The touched-file set is read from the **watermarked transcript tail**
 (`_collect_touched_from_transcript_tail` → `_iter_touched_paths`), so each turn
@@ -151,10 +157,11 @@ The token is threaded through the editor wrappers:
 - **Pull, not push.** Nothing re-indexes an open file on a bare disk write —
   a trigger (edge 1) must fire. For out-of-band edits, use `/fs-records/invalidate`
   or the agentic turn-end seam.
-- **Freshness token is mtime+size** (plus inner-file mtimes for folder types).
-  A same-mtime, same-size content edit evades `index_required` on the GET-time
-  path — but the explicit `/invalidate` and turn-end paths force a re-parse
-  regardless of the sentinel, so they still refresh.
+- **Freshness token is mtime+size** (plus inner-file mtimes for folder types),
+  plus a digest of the asset path so a relocated file re-indexes. A same-mtime,
+  same-size content edit at the same path evades `index_required` on the
+  GET-time path — but the explicit `/invalidate` and turn-end paths force a
+  re-parse regardless of the sentinel, so they still refresh.
 - **Force re-parse, not `sync_to_db` on a loaded record.** The shadow metadata
   body is stale; always route a forced re-index through
   `discover_record_by_path(..., notify=True)`.

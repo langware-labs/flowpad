@@ -1,10 +1,12 @@
 /**
- * `CredentialsView` — the tabbed shell.
+ * `CredentialsView` — the shell around the one credential surface.
  *
- * These are about WIRING, so the three panes are stubbed: what matters is that
- * navigation preserves the page (openTab would silently drop it back to desk),
- * that the selected project reaches the Environment pane, and that a logged-out
- * user meets one guard rather than three.
+ * There is no tab bar any more: Connections is the only pane, and the retired
+ * `environment` / `api-keys` subviews forward to it so old saved tabs and
+ * bookmarks still land somewhere real. These are about WIRING, so the pane and
+ * the project selector are stubbed: what matters is that navigation preserves
+ * the page (openTab would silently drop it back to desk), that the selected
+ * project reaches the pane, and that a logged-out user meets one guard.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -38,18 +40,17 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: h.contex
 vi.mock('@src/hooks/use-projects', () => ({
   useProjects: () => ({ projects: h.projects, isLoading: false, refetch: vi.fn() }),
 }));
-vi.mock('@src/components/credentials-view/ProjectEnvironmentTab', () => ({
-  ProjectEnvironmentTab: ({ project }: { project: { typeId: unknown } }) => (
-    <div data-testid="pane-environment">{String(project?.typeId)}</div>
-  ),
-}));
 vi.mock('@src/components/connections-manager', () => ({
   ConnectionsManager: ({ projectTypeId }: { projectTypeId: unknown }) => (
     <div data-testid="pane-connections">{String(projectTypeId)}</div>
   ),
 }));
-vi.mock('@src/components/api-keys-view/api-keys-view', () => ({
-  ApiKeysView: () => <div data-testid="pane-api-keys" />,
+vi.mock('@src/components/project-selector', () => ({
+  ProjectSelector: ({ onSelect }: { onSelect: (id: string) => void }) => (
+    <button data-testid="pick-proj-b" onClick={() => onSelect('proj-b')}>
+      Beta
+    </button>
+  ),
 }));
 
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
@@ -63,30 +64,41 @@ describe('CredentialsView', () => {
   });
   afterEach(() => cleanup());
 
-  it('opens on Environment with the most recent project', () => {
+  it('mounts Connections with the most recent project', () => {
     render(<CredentialsView />);
 
-    expect(screen.getByTestId('pane-environment').textContent).toBe('project-a');
+    expect(screen.getByTestId('pane-connections').textContent).toBe('project-a');
   });
 
-  it('navigates on tab change, preserving the page', async () => {
+  it('forwards a retired subview to Connections rather than blanking', () => {
+    // `environment` and `api-keys` are still in the cross-language enum and
+    // still reachable from persisted tabs, so they must land somewhere real.
+    h.pointer = 'environment/proj-b';
     render(<CredentialsView />);
 
-    await userEvent.click(screen.getByRole('tab', { name: /connections/i }));
+    expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
+  });
+
+  it('navigates on project pick, preserving the page', async () => {
+    render(<CredentialsView />);
+
+    await userEvent.click(screen.getByTestId('credentials-project-picker'));
+    await userEvent.click(screen.getByTestId('pick-proj-b'));
 
     // openTab / openDock are desk-only and would silently drop page=hub.
     expect(h.openTab).not.toHaveBeenCalled();
     expect(h.openDock).not.toHaveBeenCalled();
-    expect(h.openPage).toHaveBeenCalledWith('hub', 'credentials', 'connections/proj-a');
+    expect(h.openPage).toHaveBeenCalledWith('hub', 'credentials', 'connections/proj-b');
   });
 
   it('carries the page through even on desk', async () => {
     h.page = 'desk';
     render(<CredentialsView />);
 
-    await userEvent.click(screen.getByRole('tab', { name: /api keys/i }));
+    await userEvent.click(screen.getByTestId('credentials-project-picker'));
+    await userEvent.click(screen.getByTestId('pick-proj-b'));
 
-    expect(h.openPage).toHaveBeenCalledWith('desk', 'credentials', 'api-keys/proj-a');
+    expect(h.openPage).toHaveBeenCalledWith('desk', 'credentials', 'connections/proj-b');
   });
 
   it('reads the selected project from the pointer', () => {
@@ -96,29 +108,26 @@ describe('CredentialsView', () => {
     expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
   });
 
-  it('hides the project picker on the user-scoped tab', () => {
-    h.pointer = 'api-keys';
-    render(<CredentialsView />);
-
-    expect(screen.queryByTestId('credentials-project-picker')).toBeNull();
-    expect(screen.getByTestId('pane-api-keys')).toBeTruthy();
-  });
-
   it('shows one login guard and no panes when logged out', () => {
     h.user = null;
     render(<CredentialsView />);
 
     expect(screen.getByTestId('login-required')).toBeTruthy();
-    expect(screen.queryByTestId('pane-environment')).toBeNull();
-    expect(screen.queryByTestId('pane-api-keys')).toBeNull();
+    // The pane, not the retired ones — asserting testids that no longer exist
+    // anywhere passes vacuously and guards nothing.
+    expect(screen.queryByTestId('pane-connections')).toBeNull();
   });
 
-  it('does not mount the env table with no project to scope it to', () => {
+  it('still mounts Connections with no project — a machine credential needs none', () => {
+    // The old Environment pane demanded a project and showed a "no projects"
+    // panel without one. Connections does not: an OAuth credential is
+    // user-scoped, so the table has something to say either way. Only the
+    // project-scoped credential rows go quiet.
     h.projects = [];
     render(<CredentialsView />);
 
-    expect(screen.queryByTestId('pane-environment')).toBeNull();
-    expect(screen.getByTestId('credentials-no-project')).toBeTruthy();
+    expect(screen.getByTestId('pane-connections')).toBeTruthy();
+    expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
     h.projects = [
       { id: 'proj-a', name: 'Alpha', typeId: 'project-a', fs_storage_mount_path: '/a' },
       { id: 'proj-b', name: 'Beta', typeId: 'project-b', fs_storage_mount_path: '/b' },

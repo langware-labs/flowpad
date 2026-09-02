@@ -89,6 +89,7 @@ async def login_callback(
     next: str = Query(None),
     cookie_gate: str = Query(None, alias="cookie-gate"),
     runtime: str = Query(None),
+    oauth_request_id: str = Query(None),
 ):
     """Cloud-redirect callback. Validates the api-key and finalizes the login.
 
@@ -137,7 +138,13 @@ async def login_callback(
         # write — we fall through to _finalize_login and accept the raw
         # system prompt attributed to python3.x as the CLI/web posture.
         if not secrets_enabled and os.environ.get("FLOWPAD_DESKTOP") == "1":
-            qs = urlencode({"flowpad-api-key": flowpad_api_key, "next": next or ""})
+            qs = urlencode(
+                {
+                    "flowpad-api-key": flowpad_api_key,
+                    "next": next or "",
+                    "oauth_request_id": oauth_request_id or "",
+                }
+            )
             return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 
         user_info = await validate_api_key_async(flowpad_api_key)
@@ -149,6 +156,8 @@ async def login_callback(
                 user=user_info,
             )
         )
+        if oauth_request_id:
+            state.finish_cloud_login_session(oauth_request_id, success=True)
 
         # Arm strictly AFTER the api-key validates. Arming on an unvalidated
         # request would let an anonymous caller lock the instance with a secret
@@ -204,6 +213,8 @@ async def login_callback(
 
         state.login_result = {"success": False, "error": str(e), "message": "Login failed"}
         state.login_received.set()
+        if oauth_request_id:
+            state.finish_cloud_login_session(oauth_request_id, success=False, detail=str(e))
         await _broadcast_oauth_error(str(e))
 
         detail_html = f'<div class="detail-box"><strong>Error Details:</strong><br>{e}</div>'

@@ -40,7 +40,7 @@ Two public coroutines:
 | `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No payload parse and no DB write. Callers that project scan results resolve identity through `TypeInfo`, which may persist a missing portable id. |
 | `index(opts)` | Runs `scan()`, then for each visited ref whose type declares a `from_disk_fn`, parses it into `FSRecord`s and persists them (`rec.sync_to_db(...)`) plus an FTS upsert. Returns an `IndexResult`. |
 
-`IndexerOptions` (frozen dataclass) controls a run: `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `scope_filter`, and `on_progress`.
+`IndexerOptions` (frozen dataclass) controls a run: `verbose`, `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `dedup_on_adopt` (arms the same-path duplicate sweep), `scope_filter`, and `on_progress`.
 
 ### Roots
 
@@ -51,16 +51,16 @@ Two public coroutines:
 | Root | `record_type` | Path | Scope |
 |---|---|---|---|
 | User home | `USER_HOME_FOLDER` | `InstanceSettings.user_home` (`~`; sandboxed in test mode) | `user` |
-| Project cwd | `CWD_ROOT` | `Path.cwd()` — **only** when cwd is not the user's home dir | `project` |
+| Project cwd | `CWD_ROOT` | `Path.cwd()` — **only** when cwd is not the user's home dir (or an ancestor of it) **and** the special-folder gate answers `WALK` for it (`indexing_decision(cwd, foreground=False)`) | `project` |
 | System root | `SYSTEM_ROOT` | `flowpad_assistant_project_root()` (if it exists) | `system` |
 
-`CWD_ROOT` is deliberately skipped when `cwd == user_home` (the desktop app can launch the backend with `cwd=$HOME`): treating `$HOME` as a project root would make `project_folder_walker_fn` recurse the entire home tree and trip macOS TCC prompts. Env vars `FLOWPAD_DOC_DIRS` / `FLOWPAD_PLAN_DIRS` / `FLOWPAD_SKILL_DIRS` / `FLOWPAD_AGENT_DIRS` / `FLOWPAD_WORKFLOW_DIRS` add extra roots, tagged `CWD_ROOT` with `scope="user"`.
+`CWD_ROOT` is deliberately skipped when `cwd` is `$HOME` or an ancestor of it (`is_home_or_ancestor`; the desktop app can launch the backend with `cwd=$HOME`): treating `$HOME` as a project root would make `project_folder_walker_fn` recurse the entire home tree and trip macOS TCC prompts. It is also skipped when the cwd sits inside a protected folder whose consent state is not `allow` — `default_roots()` is a pure decision and never queues a consent request; that is owned by the request-time `_resolve_scoped_roots`. Env vars `FLOWPAD_DOC_DIRS` / `FLOWPAD_PLAN_DIRS` / `FLOWPAD_SKILL_DIRS` / `FLOWPAD_AGENT_DIRS` add extra roots, tagged `CWD_ROOT` with `scope="user"`.
 
 `classify_path(path)` is the inverse: it classifies a path back into `"system"` / `"user"` / `"project"` / `None`, used by HTTP create handlers to stamp scope at create time so POST-created records match indexer-discovered ones.
 
 ### Transient waypoint types
 
-**Source:** `flow_sdk/schema/types.py` (lines ~104–109)
+**Source:** `flow_sdk/schema/types.py` (lines ~148–152)
 
 These types are **fan-out scaffolding** — they are never persisted as records. They exist only so the walker can reach indexable children:
 
@@ -91,22 +91,31 @@ idx.add_function(RecordType.PROJECT, claude_sessions_fn, RecordType.CLAUDE_SESSI
 idx.add_function(RecordType.PROJECT, claude_memory_fn,   RecordType.CLAUDE_MEMORY)
 # REAL_PROJECT_CWD expanders
 idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
-idx.add_function(RecordType.REAL_PROJECT_CWD, spec_project_fn,          RecordType.SPEC)
+idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
 ...
+# Repo assets (agentic-assets/<type>/…): ONE multi-output walker per scope root
+repo_output_types = frozenset(RecordType(t) for t in SchemaRegistry.get_repo_types())
+for _root in (USER_HOME_FOLDER, REAL_PROJECT_CWD, SYSTEM_ROOT, CWD_ROOT):
+    idx.add_function(_root, repo_assets_fn, repo_output_types)
 # FOLDER (transient scaffold) expanders
-idx.add_function(RecordType.FOLDER, markdown_in_folder_fn,    RecordType.MARKDOWN)
-idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn,  RecordType.WORKFLOW)
+idx.add_function(RecordType.FOLDER, markdown_in_folder_fn,      RecordType.MARKDOWN)
+idx.add_function(RecordType.FOLDER, skill_in_folder_fn,         RecordType.SKILL)
+idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn,   RecordType.SPREADSHEET)
+idx.add_function(RecordType.FOLDER, secret_origin_in_folder_fn, RecordType.SECRET_ORIGIN)
 # Stage-2 into-file walks
 idx.add_function(RecordType.CLAUDE_HOOK_SOURCE, hooks_in_settings_fn,  RecordType.CLAUDE_HOOK)
 idx.add_function(RecordType.MCP_SERVER_SOURCE,  mcp_servers_in_file_fn, RecordType.MCP_SERVER)
 ```
+
+`output_type` accepts a single `RecordType` or a collection of them (normalized to a `frozenset`); `None` means "unknown" and disables type-gated pruning for the whole indexer.
 
 Notable structural facts:
 
 - **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
 - **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
 - **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
-- **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias.
+- **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias (it still sits in `INDEXABLE_TYPES`, but no walker emits it).
+- **Repo assets have exactly one walker.** `repo_assets_fn` (`functions/repo_assets.py`) recurses the `agentic-assets/<type>/<name>` hierarchy (children nest in an asset's own `agentic-assets/` subfolder) and is the ONLY discovery path for every flowpad-native asset — `task`, `spec`, `deck`, `deck_template`, `dataset`, `data_source_spec`, `whiteboard`, `spreadsheet`, `journey`, `graph_workflow`, `agent`, `agent_trace`, `prompt`, `plan`, `mcp`, `micro_app`, `helpdesk`, the two report types, and installed (received) `claude_session` / `codex_session` / `copilot_session` transcripts. A new repo type enrolls by declaring `asset_class="repo"` on its `TypeMetadata`; nothing in `build_default_indexer()` changes. Its output set is `SchemaRegistry.get_repo_types()`, so typed scans stay prunable.
 
 ### Type-gating the dispatch
 
@@ -129,7 +138,13 @@ Two details are load-bearing:
 * **Candidates carry their parent link** (`parent_i` / `parent_ref`), not just resolved `scope` / `project_id` / `read_only`. `index()` derives a record's enclosure `parent_type_id` from `ref._parent` directly (`ref_typeid(getattr(ref, "_parent", None))`), so a purely flattened candidate silently unparents every received asset.
 * **The terminal result line is a safety mechanism.** Without it a child killed mid-stream is indistinguishable from a clean scan, and a truncated candidate set reaching `index()` would let the orphan sweep delete every record the child never emitted. Its absence is a hard failure.
 
-Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk, mirroring `_maybe_rs_indexer`. Note the child pays full interpreter + `flow_sdk` import startup (~1.5s), so `thread` is faster for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
+Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk, mirroring `_maybe_rs_indexer`. A spawn/interpreter failure (`OSError`/`ValueError`) additionally latches `_CHILD_UNAVAILABLE` for the rest of the process so every later scan does not pay a doomed spawn; `reset_shared_indexer()` clears the latch. Note the child pays full interpreter + `flow_sdk` import startup (~1.5s), so `thread` is faster for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
+
+The mode is resolved by `selected_scan_mode()` (`builtin.py`): env `FLOWPAD_INDEX_SCAN_MODE` > `preferences.auto_index.index_function` > `subprocess`. It applies **only to the auto-index path** — `get_auto_scan_indexer()` builds a `SubprocessScanIndexer` when the mode is `subprocess`, while `get_shared_indexer()` (a manual "Index" click, every other caller) always stays the in-process `FSIndexer`, so an auto-index preference never silently changes how a user-initiated index walks the disk.
+
+### Rust backend (`RSIndexerAdapter`)
+
+`build_default_indexer()` honors a second, independent toggle: `indexer_backend` (env `FLOWPAD_INDEXER_BACKEND` > `preferences.advanced.indexer_backend` > `python`). With `rust`, `_maybe_rs_indexer()` returns an `RSIndexerAdapter` (`flow_sdk/fs_store/indexer/rs_adapter.py`) that drives the external `fsindexer-rs` binary resolved from `FLOWPAD_RS_INDEXER_BIN` — the binary is **not vendored**. The adapter presents the same `scan()` / `index()` / `add_function()` / `add_root()` surface (the walk graph lives in the binary; `add_function` is recorded for parity only) and speaks the same NDJSON protocol as the subprocess scan. Selection is fail-open: a selected-but-unresolvable binary logs one warning and falls back to the Python `FSIndexer`. Two documented limits: the custom-slice builders (`project_list`, the single-file self-heal) always construct a Python `FSIndexer` directly, and a destructive `orphan_action` combined with a `scope_filter` is downgraded to `INDEX` because the Rust sweep has no scope-filter narrowing.
 
 ---
 
@@ -143,9 +158,9 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. Defaults to the generic `spec_extractor` for any type with an `asset_spec`. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. Defaults to the generic `spec_extractor(type_name)` for any type with an `asset_spec` that is not `db_only` (`SchemaRegistry.register` fills it post-merge). |
 | `capsules` / `identity_carrier` | `tuple[CapsuleSpec, ...]`, carrier | Declare named capsules and WHERE the id lives (frontmatter / folder json / native json / derived); legacy carriers are read and converted. |
-| `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
+| `identity_key_fn` / `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `(FSRef) -> str`, `UUID` | Optional deterministic v5 identity. `identity_key_fn` is the preferred form — the key text becomes `f"{type}:{identity_key_fn(ref)}"`; `id_stable_key_fn` is the escape hatch for a different key shape and wins when both are set (`TypeInfo.stable_key_for`). `id_namespace` defaults to `NAMESPACE_URL`. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for a type with no `asset_spec` (`dynamic_workflow`) on create. |
@@ -155,14 +170,20 @@ Example (`flow_sdk/schema/type_info/skill_type_info.py`):
 ```python
 SKILL = TypeMetadata(
     type=EntityType.SKILL,
-    icon="Sparkles", browseable=True, creatable=True,
+    icon="FileBadge", displayName="Skills",
+    browseable_by=ViewMode.STANDARD, creatable=True,
     indexed_by_default=True, api_visible=True,
+    cloud_file_transport="git",
     index_fields=["description"],
-    main_subdir=".claude/skills", main_layout="folder",
-    fts_content=("name", "description", "body"),   # from_disk_fn defaults to spec_extractor
-    capsules=(CapsuleSpec("identity"),),
+    asset_class="shared", family="skills",          # placement axis; main_subdir is DERIVED
+    main_layout="folder", main_file="SKILL.md", hub_main_file="SKILL.md",
+    fts_content=("name", "description", "body"),
+    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_md_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
+    asset_spec=SkillSpec,                           # from_disk_fn defaults to spec_extractor
+    derive_fields_fn=derive_skill,
+    setup_skill=EntityType.SKILL.value, reception_verb="Run",
 )
 ```
 
@@ -170,7 +191,7 @@ SKILL = TypeMetadata(
 
 For each visited ref of a type that has a `from_disk_fn`:
 
-1. **Resolve id** via `TypeInfo.mint_entity_id(ref, owner_id=..., live_ids=..., derive=True, overwrite=True)` — ONE call, never a read-then-mint pair. The order is carrier → the row that already owns this path (`owner_id`, supplied from the walk's preload) → derive. A read-then-mint pair forks the entity whenever a full-content rewrite has wiped the carrier, so it is banned by an AST lint. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
+1. **Resolve id** via `TypeInfo.mint_entity_id(ref, owner_id=..., live_ids=...)` — ONE call, never a read-then-mint pair (`owner_id` comes from the `PathOwnerIndex` built off the same per-type preload that feeds skip-fresh; `live_ids` is that type's preloaded DB id set). The order is carrier → the row that already owns this path (`owner_id`, supplied from the walk's preload) → derive. A read-then-mint pair forks the entity whenever a full-content rewrite has wiped the carrier, so it is banned by an AST lint. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
 2. **Resolve live occurrences** across the complete candidate set before parsing. `resolve_asset_collisions()` groups canonical filesystem paths by `type+id` and chooses one primary deterministically: earliest Git introduction commit, then trusted filesystem birth time (`st_birthtime`, never `ctime`), then persisted `first_seen_at`, then canonical path. Git is probed only for groups with multiple live paths and failures fall through to the next rank. Every losing path is warned and skipped; no source bytes, capsules, or ids are rewritten.
 3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
 4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
@@ -298,11 +319,11 @@ recent = q.apply(all_sessions)
 `SchemaRegistry` is the single source of truth for types: every type name registers there (via `TypeMetadata.register()` / `Entity.__init_subclass__`). It does **not** orchestrate the walk anymore — there is no `SchemaRegistry.discover()` / `incremental()` / `rebuild_index()`. The walk is `FSIndexer`. The registry's surviving roles:
 
 - **Type metadata lookup:** `get(type)`, `get_icon`, `is_browseable`, `is_creatable`, `is_api_visible`, `is_indexed_by_default`, `get_entity_cls`, `get_subtypes`, etc.
-- **Default index types:** `get_default_index_types()` returns `_BUILTIN_DEFAULT_TYPES`:
+- **Default index types:** `get_default_index_types()` returns the types registered with `indexed_by_default=True` (accumulated in `_default_index_types` as `TypeMetadata` instances register), falling back to the hardcoded `_BUILTIN_DEFAULT_TYPES` only when that list is empty:
 
   ```python
   _BUILTIN_DEFAULT_TYPES = [
-      SKILL, AGENT, TASK, MARKDOWN, PLAN,
+      SKILL, SUBAGENT, AGENT, TASK, MARKDOWN, PLAN,
       CLAUDE_MD, CLAUDE_MEMORY, CLAUDE_RULES, CLAUDE_HOOK, COMMAND,
   ]
   ```
@@ -323,9 +344,9 @@ There is **no filesystem-watcher-triggered indexer walk** — a file changing on
 | **Explicit request** (UI refresh button, `flow record index`, API call) | `FSIndexer.index()` via `POST /fs-records/index` and the sibling scan endpoints below | `flow_sdk/builtin/faas/fs_records_actions.py` |
 | **Server startup** (once per process, detached background task) | System content only: system projects, their markdown docs, and the SDK-shipped assistant assets (hash-gated, skipped if another index is running). Never inline in the bootstrap request. | `flow_sdk/server/app.py` (`_start_system_content_index`) → `flow_sdk/server/routes/bootstrap.py` (`index_system_content`) |
 | **GET-time lazy refresh** (per entity) | If the record's `index_required` says the source changed, re-run `sync_to_db()` + stamp the sentinel — one record, no walk | `Entity.check_and_refresh_record()` (`flow_sdk/core/entity/entity_model.py`) |
-| **404 self-heal** (dock loader) | A single-file, single-type forced index when a navigation carries `?hint_path=` for an entity the DB doesn't have | `_try_self_heal_missing_entity` (`flow_sdk/app/actions/graph.py`) → `flow_sdk/fs_store/transcript_indexer/handlers/single_file_indexers.py` |
+| **404 self-heal** (dock loader) | A single-file, single-type forced index when a navigation carries `?hint_path=` for an entity the DB doesn't have | `_try_self_heal_missing_entity` (`flow_sdk/server/routes/graph.py`; also invoked from `flow_sdk/server/middleware/request_transaction_middleware.py`) → `flow_sdk/fs_store/transcript_indexer/handlers/single_file_indexers.py` |
 | **Resource-browser scans** | Read-only `FSIndexer.scan()` projections (no DB writes) | `flow_sdk/builtin/faas/scan_indexer.py` |
-| **Project selection / creation** (opt-out, `preferences.auto_index.*`) | A project-scoped `index()` when the user enters a project, so its assets are present without a manual run. Detached from the `activate` response; silently skips when another index holds the activity | `flow_sdk/fs_store/indexer/auto_index.py` → `ComputeNode._auto_index_project` |
+| **Project selection / creation** (opt-out, `preferences.auto_index.*`) | A project-scoped `index()` when the user enters a project, so its assets are present without a manual run. Detached from the `activate` / `save` response (`schedule_auto_index`, `flow_sdk/builtin/project.py`); silently skips when another index holds the activity; never mints a compute node (`ComputeNode.get_local(create=False)`) | `flow_sdk/fs_store/indexer/auto_index.py` → `FsRecordsActionsMixin._auto_index_project` (`flow_sdk/builtin/faas/fs_records_actions.py`, on the ComputeNode) |
 
 Auto-indexing on project selection is **on by default** and controlled by the four
 `preferences.auto_index.*` keys (the "Auto Index" preferences tab):
@@ -361,6 +382,7 @@ automatic run can never delete records.
 | `GET` | `/fs-records/scan[?type=X]` | `_handle_fs_records_scan` | `FSIndexer.scan()`; aggregate stats or per-type list |
 | `POST` | `/fs-records/index[?type=X&rebuild=&force=&user=&projects=&orphan_action=]` | `_handle_fs_records_index` | `FSIndexer.index()`; index all / one type / rebuild / scoped |
 | `GET` | `/fs-records/index-status[?user=&projects=]` | `_handle_fs_records_index_status` | Read-only status (no walk) |
+| `GET` | `/fs-records/asset-stats[?user=&projects=]` | `_handle_fs_records_asset_stats` | Live per-type asset counts for a scope (`AssetStats`; counts only, no freshness) |
 | `DELETE` | `/fs-records/index` | `_handle_fs_records_index_clear` | Clear the index |
 | `POST` | `/fs-records/{type}/discover?path=<P>` | `_handle_fs_records_discover_by_path` | Single-path index for one type |
 

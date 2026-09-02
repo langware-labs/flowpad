@@ -174,16 +174,10 @@ async def project_source_item(
     lands exactly once without a lane having to know who won.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-    from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
-        ensure_conversation_entity,
-        materialize_flow_message,
-    )
-    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -284,6 +278,7 @@ async def _place_message(
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
+    first_placement = existing_fm is None
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
@@ -297,9 +292,9 @@ async def _place_message(
     else:
         fm_id = mint_uuid()
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
 
     payload: dict[str, Any] = {
@@ -360,7 +355,7 @@ async def _place_message(
     )
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
-    if announce:
+    if announce and first_placement:
         from flow_sdk.inbox.inbox_on_tag import emit_projected_tag  # noqa: PLC0415
 
         emit_projected_tag(item)

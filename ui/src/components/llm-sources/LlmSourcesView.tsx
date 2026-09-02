@@ -10,11 +10,19 @@
  * screen never authors ineligibility text, because a second author drifts from the resolver and
  * then the picker and the spawn disagree.
  */
-import { LLMSourceAuthority, LLMSourceKind, llmSourceRef, type LLMSource } from '@sdk';
+import {
+  LLMFundingKind,
+  LLMSourceAuthority,
+  llmSourceRef,
+  selectKindFor,
+  type LLMEndpointOffer,
+  type LLMSource,
+} from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
+import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
@@ -38,6 +46,19 @@ const AUTHORITY_DOT: Record<LLMSourceAuthority, string> = {
   [LLMSourceAuthority.Presumed]: 'bg-amber-400/70',
 };
 
+/** The dot for one row.
+ *
+ *  Ineligibility wins over authority, and that ordering is the whole point.
+ *  `_key_sources` reports `PROVEN` for a provider with NO key — correctly, since
+ *  it listed the store and an absence is as authoritative as a presence — so
+ *  reading authority alone put a confident green dot beside "no openrouter key
+ *  is stored on this machine" next to a disabled button. Authority says how much
+ *  the answer is worth; the dot has to say what the answer WAS. */
+function dotFor(source: LLMSource): string {
+  if (!source.eligible) return 'bg-muted-foreground/40';
+  return AUTHORITY_DOT[source.authority] ?? 'bg-muted-foreground/40';
+}
+
 /** Vendor label from the ONE table, falling back to the raw worker so a harness added to the
  *  capability registry renders as itself rather than not at all. */
 function labelFor(worker: string): string {
@@ -46,12 +67,16 @@ function labelFor(worker: string): string {
 
 function SourceRow({
   source,
+  endpoint,
   harness,
   navigation,
   onSelect,
   busy,
 }: {
   source: LLMSource;
+  /** The row the verdict names. Undefined only if the backend listed a verdict whose endpoint
+   *  it did not also send, which it never should — the row degrades rather than throwing. */
+  endpoint: LLMEndpointOffer | undefined;
   harness: string;
   navigation: NavigationActions;
   onSelect: (s: LLMSource) => void;
@@ -62,14 +87,21 @@ function SourceRow({
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
-  const needsSignIn = source.kind === LLMSourceKind.Device && !source.eligible;
+  const needsSignIn = endpoint?.kind === LLMFundingKind.Device && !source.eligible;
+  // The same escape hatch, one kind over. An unkeyed provider used to render the
+  // problem ("no openrouter key is stored on this machine") beside a disabled
+  // button and nothing else — a row that states a fix it will not let you make.
+  // Adding the key belongs to Connections, which owns declaring a credential and
+  // storing its value, so this sends you there rather than growing a second
+  // place to type one.
+  const needsKey = endpoint?.kind === LLMFundingKind.ApiKey && !source.eligible;
   return (
     <li
       className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2"
-      data-testid={`llm-source-row-${worker}-${source.kind}${source.provider ? `-${source.provider}` : ''}`}
+      data-testid={`llm-source-row-${worker}-${endpoint?.kind ?? 'unknown'}${endpoint?.provider ? `-${endpoint.provider}` : ''}`}
     >
       <span
-        className={`h-2 w-2 shrink-0 rounded-full ${AUTHORITY_DOT[source.authority] ?? 'bg-muted-foreground/40'}`}
+        className={`h-2 w-2 shrink-0 rounded-full ${dotFor(source)}`}
         title={source.authority}
       />
       <div className="min-w-0 flex-1">
@@ -95,7 +127,7 @@ function SourceRow({
           </div>
         )}
       </div>
-      {source.kind === LLMSourceKind.Endpoint && source.endpoint_typeid && (
+      {endpoint?.kind === LLMFundingKind.Hub && source.endpoint_typeid && (
         <Button
           variant="ghost"
           size="sm"
@@ -109,13 +141,23 @@ function SourceRow({
         <Button size="sm" variant="outline" onClick={() => openHarnessLoginModal()} data-testid={`llm-source-signin-${worker}`}>
           <Trans>Sign in</Trans>
         </Button>
+      ) : needsKey ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openCredentials(navigation)}
+          title={t`Add this key under Connections`}
+          data-testid={`llm-source-addkey-${worker}-${endpoint?.provider ?? 'unknown'}`}
+        >
+          <Trans>Add key</Trans>
+        </Button>
       ) : (
         <Button
           size="sm"
           variant={source.auto ? 'secondary' : 'outline'}
           disabled={!source.eligible || source.auto || busy}
           onClick={() => onSelect(source)}
-          data-testid={`llm-source-use-${worker}-${source.kind}`}
+          data-testid={`llm-source-use-${worker}-${endpoint?.kind ?? 'unknown'}`}
         >
           {source.auto ? <Trans>Using</Trans> : <Trans>Use</Trans>}
         </Button>
@@ -131,6 +173,13 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const select = useSelectSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);
+  // A verdict names an endpoint and mirrors none of its fields, so every render that wants a
+  // kind, a provider or a model looks the row up here. Undefined only if the backend listed a
+  // verdict whose endpoint it did not also send; callers degrade rather than throw.
+  const endpointFor = useCallback(
+    (source: LLMSource) => status?.endpoints?.[source.endpoint_typeid],
+    [status],
+  );
   const worker = parseLlmSourcesPointer(pointer);
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
@@ -144,7 +193,13 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
       try {
         const next = await select.mutateAsync({
           harness,
-          source: { kind: source.kind, provider: source.provider, endpoint_typeid: source.endpoint_typeid },
+          // The pick endpoint still speaks the pre-endpoint vocabulary, so the row's kind is
+          // translated back into it here. Phase 3 replaces the whole payload with the typeid.
+          source: {
+            kind: selectKindFor(endpointFor(source)?.kind ?? ''),
+            provider: endpointFor(source)?.provider,
+            endpoint_typeid: source.endpoint_typeid,
+          },
         });
         // Report what the resolver LANDED on, not what was asked for. A preference the ladder
         // cannot honour (picking an unproven device login on a box the hub has bound, say) is a
@@ -158,6 +213,15 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
     [select, t],
   );
 
+  const GROUPS: [LLMFundingKind, string][] = useMemo(
+    () => [
+      [LLMFundingKind.Device, t`Device logins`],
+      [LLMFundingKind.ApiKey, t`LLM keys`],
+      [LLMFundingKind.Hub, t`Hub endpoints`],
+    ],
+    [t],
+  );
+
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t`Loading…`}</div>;
   if (!status) {
     return (
@@ -166,15 +230,6 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
       </div>
     );
   }
-
-  const GROUPS: [LLMSourceKind, string][] = useMemo(
-    () => [
-      [LLMSourceKind.Device, t`Device logins`],
-      [LLMSourceKind.ApiKey, t`LLM keys`],
-      [LLMSourceKind.Endpoint, t`Hub endpoints`],
-    ],
-    [t],
-  );
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6" data-testid="llm-sources-view">
@@ -213,12 +268,12 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
       {focused && (
         <section className="flex flex-col gap-3" data-testid="llm-sources-list">
           {GROUPS.map(([kind, heading]) => {
-            const rows = (status.sources[focused] ?? []).filter((s) => s.kind === kind);
+            const rows = (status.sources[focused] ?? []).filter((s) => endpointFor(s)?.kind === kind);
             if (!rows.length) return null;
             return (
               <div key={kind}>
                 <h2 className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {kind === LLMSourceKind.Endpoint ? <Waypoints className="h-3 w-3" /> : <KeyRound className="h-3 w-3" />}
+                  {kind === LLMFundingKind.Hub ? <Waypoints className="h-3 w-3" /> : <KeyRound className="h-3 w-3" />}
                   {heading}
                 </h2>
                 <ul className="flex flex-col gap-1.5">
@@ -226,6 +281,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
                     <SourceRow
                       key={llmSourceRef(source)}
                       source={source}
+                      endpoint={endpointFor(source)}
                       harness={focused}
                       navigation={navigation}
                       busy={select.isPending}

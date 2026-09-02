@@ -392,6 +392,7 @@ async def hub_post(
     scope: list[tuple[str, str]] | None = None,
     files: dict | None = None,
     on_progress: ProgressCallback | None = None,
+    params: dict[str, str] | None = None,
 ) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success.
 
@@ -429,9 +430,9 @@ async def hub_post(
                 list(payload.keys()) if not files and payload else None,
             )
             if files:
-                resp = await client.request("POST", url, files=files, timeout=timeout)
+                resp = await client.request("POST", url, files=files, params=params or {}, timeout=timeout)
             else:
-                resp = await client.request("POST", url, json=payload, timeout=timeout)
+                resp = await client.request("POST", url, json=payload, params=params or {}, timeout=timeout)
     except HubAuthExpiredError as e:
         logger.warning("[hub] POST %s auth expired: %s", url, e)
         raise HubError(401, "auth expired")

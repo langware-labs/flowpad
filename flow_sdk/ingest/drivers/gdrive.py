@@ -30,6 +30,7 @@ rather than inferred, so a deletion here is observed rather than guessed.
 syncs *from* a system of record; writing back is `send`, and this driver has no
 `send`.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,7 @@ import httpx
 
 from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ def _safe_name(name: str) -> str:
 
 class GoogleDriveDriver(IngestDriver):
     provider = "gdrive"
+    #: Read with the machine's Google connection.
+    connection = "google"
     kind = "datasource.fs.gdrive"
 
     #: The cache is OURS, and the next download overwrites it. A capsule stamped
@@ -205,16 +208,13 @@ class GoogleDriveDriver(IngestDriver):
         """
         token = await self._token(source)
         if not token:
-            return SetupVerdict.waiting(
-                "No Google credential on this machine. Connect Google, then verify the source."
-            )
+            return SetupVerdict.waiting("No Google credential on this machine. Connect Google, then verify the source.")
         try:
             async with http.client() as client:
                 await self._call(client, source, token, "/about", {"fields": "user(emailAddress)"})
         except SourceError as exc:
             return SetupVerdict.waiting(
-                f"Google refused the stored credential ({exc}). Reconnect Google, "
-                f"granting {DRIVE_SCOPE}."
+                f"Google refused the stored credential ({exc}). Reconnect Google, granting {DRIVE_SCOPE}."
             )
         return SetupVerdict.ok()
 
@@ -241,13 +241,9 @@ class GoogleDriveDriver(IngestDriver):
         # through a fetch for exactly this reason.
         async with http.client() as client:
             if page_token:
-                changed, removed, next_token = await self._delta(
-                    client, source, token, cursor.segment_key, page_token
-                )
+                changed, removed, next_token = await self._delta(client, source, token, cursor.segment_key, page_token)
             else:
-                changed, removed, next_token = await self._first_pass(
-                    client, source, token, cursor.segment_key
-                )
+                changed, removed, next_token = await self._first_pass(client, source, token, cursor.segment_key)
 
             # The layout is flat (`_safe_name` collapses separators), so the
             # destination directory is loop-invariant.
@@ -279,9 +275,7 @@ class GoogleDriveDriver(IngestDriver):
         if skipped:
             # Never a silent drop: a Drive Form or a shortcut has no bytes, and
             # a source that quietly ingested 40 of 45 files reads as complete.
-            logger.info(
-                "[gdrive] %s: skipped %d item(s) with no downloadable bytes", source.id, skipped
-            )
+            logger.info("[gdrive] %s: skipped %d item(s) with no downloadable bytes", source.id, skipped)
         self._write_index(source, index)
 
         return FetchResult(
@@ -423,9 +417,7 @@ class GoogleDriveDriver(IngestDriver):
     async def _call(self, client, source, token: str, path: str, params: dict) -> dict[str, Any]:
         """The same GET as ``_get``, decoded by the house transport."""
         url = httpx.URL(f"{self._base(source)}{path}").copy_merge_params(params)
-        return await http.request_json(
-            client, "GET", str(url), headers={"Authorization": f"Bearer {token}"}
-        )
+        return await http.request_json(client, "GET", str(url), headers={"Authorization": f"Bearer {token}"})
 
     async def _token(self, source) -> Optional[str]:
         """This machine's Google token. The precedence lives in one place."""

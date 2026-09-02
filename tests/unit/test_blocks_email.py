@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, RunOutput
+from flow_sdk.builtin.data_source import DataSource
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -113,7 +114,11 @@ class TestInboxSend:
     @pytest.fixture
     def inbox(self, monkeypatch):
         ib = Inbox("me@agentmail.to", api_key="k")
-        ib._source = SimpleNamespace(provider="agentmail", config={"inbox": "me@agentmail.to"})
+        ib._source = DataSource(
+            name="Inbox me@agentmail.to",
+            provider="agentmail",
+            config={"inbox": "me@agentmail.to"},
+        )
         return ib
 
     @pytest.mark.asyncio

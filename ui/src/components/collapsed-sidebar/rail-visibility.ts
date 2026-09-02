@@ -35,6 +35,7 @@ export type RailItemId =
   | 'capabilities'
   | 'graph-workflows'
   | 'data-sources'
+  | 'rag'
   | 'process-runs';
 
 /**
@@ -105,6 +106,9 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   // source is created, so gating it on "a source exists" would make it
   // unreachable from empty — the one state where it matters most.
   { id: 'data-sources', from: ViewMode.Advanced, placement: 'top' },
+  // Ungated for the same reason as data sources: this screen is where the first index is
+  // created, so a gate on "an index exists" would make it unreachable from empty.
+  { id: 'rag', from: ViewMode.Advanced, placement: 'top' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
   // Rules and the events they fire on, merged. Took BOTH the old `signals`

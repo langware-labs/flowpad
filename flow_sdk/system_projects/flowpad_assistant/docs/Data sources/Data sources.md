@@ -28,7 +28,10 @@ A source shows one of four states, and they answer *should this be running*:
 - **active** — running on its schedule.
 - **paused** — you stopped it. Nothing polls until you resume it.
 
-That is a separate question from **health**, which answers *does it work*: `ok`,
-`retrying`, `needs attention`. A paused source has no meaningful health, and an
-active one can still be unhealthy — so the card shows the lifecycle first and
-health once the source is actually running.
+That is a separate question from **health**, which answers *does it work*:
+`never synced` (no poll has completed yet), `ok`, `retrying` (a transient error;
+it is retried on the normal cadence), `needs attention` (a configuration error;
+the scheduler skips the source until you fix it and press **Verify** or poll it
+again). A paused source has no meaningful health, and an active one can still be
+unhealthy — so the card shows the lifecycle first and health once the source is
+actually running.

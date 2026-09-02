@@ -23,6 +23,7 @@ import {
   type FsFolderDrop,
 } from './fsFolderRoot';
 import { ContextFolderGitBadge } from '@src/components/assets/ContextFolderGitBadge';
+import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { matchContextDir } from '@src/hooks/use-context-folder-for-rel';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
@@ -247,11 +248,7 @@ function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: 
     id: assetContextFolderNodeId(dir),
     kind: 'folder',
     label: basename(rel) || rel,
-    icon: isGit ? (
-      <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-    ) : (
-      <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-    ),
+    icon: <RagFolderIcon Base={isGit ? GitBranch : Folder} path={`/${rel}`} />,
     hasChildren: !!fsNode || menuRows.length > 0,
     listChildren: menuRows.length
       ? async (opts) => [...menuRows, ...(fsChildren ? await fsChildren(opts) : [])]

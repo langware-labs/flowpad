@@ -6,6 +6,7 @@ import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 
 /**
  * fsFolderRoot — a real-filesystem browseable root.
@@ -186,7 +187,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     id,
     kind: 'folder',
     label,
-    icon: <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
+    icon: <RagFolderIcon Base={Folder} path={vfsForRel(ctx, rel).machinePath} />,
     hasChildren: true,
     pointer: ctx.pointerFor(vfsForRel(ctx, rel)),
     listChildren: (opts) => listChildrenAt(ctx, rel, opts),
@@ -318,7 +319,7 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     id: fsRootNodeId(typeId, anchor),
     kind: 'root',
     label,
-    icon: rootIcon ?? <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
+    icon: rootIcon ?? <RagFolderIcon Base={Folder} path={vfsForRel(ctx, anchor).machinePath} size="h-4 w-4" />,
     hasChildren: true,
     pointer: ctx.pointerFor(vfsForRel(ctx, anchor)),
     listChildren: (opts) => listChildrenAt(ctx, anchor, opts),

@@ -22,12 +22,12 @@ There are three distinct "index" concepts in the codebase:
 
 DB Entities are SQLite-backed queryable indexes. The filesystem Record is the source of truth for domain data. These two layers are linked but deliberately kept separate: the Entity stores only a small, indexed subset of Record metadata, while the Record holds the full domain content.
 
-The Entity and its Record share the same `id` (derived from the same `uuid5`/natural key on both sides — see `docs/CLAUDE.md` rule 20), so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
+The Entity and its Record share the same `id` — minted once (`TypeInfo.mint_entity_id` for a filesystem asset, `Entity.allocate_id` for a row-only entity) and carried by both sides — so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
 
 ```
 Record (filesystem, source of truth)
     |
-    |  shared (type, id)  <-- same uuid5 on both sides; Entity also mirrors asset_ref path
+    |  shared (type, id)  <-- one minted id carried by both; Entity also mirrors asset_ref path
     |
     |  Record.sync_to_db()   <-- explicit async call after CRUD
     |
@@ -62,7 +62,7 @@ The Entity layer answers "which ones" and "how many"; the Record layer answers "
 
 The `Entity` base class (`flow_sdk/core/entity/entity_model.py`) does **not** carry a `record_data_ref` or `indexed_content` field anymore. (A legacy `record_data_ref` *column* still exists on the SQLite `entities` table from an old migration in `sqlite_driver.py`, but the model no longer reads or writes it.)
 
-The link is implicit: the Entity and its Record share the same `(type, id)` pair, where the `id` is the same `uuid5` derived from the same natural key on both sides (`Entity.allocate_id` ↔ `Record.fingerprint`; see `docs/CLAUDE.md` rules 9 and 20). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
+The link is implicit: the Entity and its Record share the same `(type, id)` pair. The id is minted exactly once — by `TypeInfo.mint_entity_id` (carrier → owning row → mint) for a filesystem asset, or `Entity.allocate_id` for a row-only entity — and both sides carry it. `FSRecord.content_fingerprint` is **not** an id and does not participate in the link (see [Record Model](record-model.md#identity)). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
 
 ### Loading the Record from an Entity
 
@@ -111,13 +111,13 @@ Defined on `FSRecord` in `flow_sdk/fs_store/fs_record.py`. **The way to get a Re
 
 ### Step-by-Step Algorithm
 
-The whole pipeline runs inside a single shared DB session (`async with _db_session()`) for cache coherence:
+The whole pipeline runs inside a single shared DB session (`async with _db_session()`) for cache coherence, and under `record_sync_guard(type, id)` (`fs_record.py:214`) — the per-record lock that `Entity.save()` also takes, so a disk→DB sync and a DB→disk save of the same record never interleave. The guard is reentrant within one asyncio task (step 1 re-enters `Entity.save`):
 
 1. **Entity row via `Entity.from_record(self, notify=notify)`.** Looks up the entity by deterministic id (or creates it), copies `meta_dict()` fields plus any missing domain fields and the FSRef-derived `scope`/`project_id`, then saves. The DataOp WebSocket emission happens here, via `entity.save(notify=notify)` (NOT in `sync_to_db` directly).
 
 2. **Mirror DB state back to disk.** `await asyncio.to_thread(self.sync_from_entity, entity)` pulls canonical `id`, `scope`, `project_id`, `asset_ref`, `updated_date` from the DB row back into the in-memory record (and onto `metadata.json`).
 
-3. **FTS5 upsert.** Builds an `FtsEntry(entity_id, entity_type, name, title, description, content)` — populated from the record's `search_title` / `search_description` / `search_content` readers (no per-record re-parse). If `fts_batch` is provided the entry is appended for a later bulk flush; otherwise `driver.fts_upsert(entry)` runs immediately.
+3. **FTS5 upsert.** Builds an `FtsEntry` via `FtsEntry.from_record(entity.id, entity.type, name, record)` — populated from the record's `search_title` / `search_description` / `search_content` readers (no per-record re-parse); an entry with no text in any column is dropped by `fts_upsert`. If `fts_batch` is provided the entry is appended for a later bulk flush; otherwise `driver.fts_upsert(entry)` runs immediately.
 
 4. **Wiki edge re-extraction.** `await wiki.index(self.type, self.id, self.wiki_body())`. Failures here are logged as warnings, not fatal.
 
@@ -125,7 +125,7 @@ The whole pipeline runs inside a single shared DB session (`async with _db_sessi
 
 6. **Error handling.** On any exception in the pipeline, `from_exception(self, exc, trigger="sync_to_db")` (in `flow_sdk/fs_store/operations/record_error.py`) builds and `.save()`s a `RecordError` before re-raising.
 
-> Note: the index sentinel (`write_hash` / the `<ts>_<hash>.hash` file) is **not** stamped by `sync_to_db` itself — it is written by the indexer (`FSIndexer`) after a successful index pass. `sync_to_db` updates the Entity row, FTS, and wiki only.
+> Note: the index sentinel (`write_hash` / the `<epoch>_<contenthash>_<pathdigest>.hash` file) is **not** stamped by `sync_to_db` itself — it is written by the indexer (`FSIndexer`, only after the batch's DB commit — `_commit_batch` in `index_function.py`) and by `Entity.check_and_refresh_record()` after a GET-time re-sync. `sync_to_db` updates the Entity row, FTS, and wiki only.
 
 ### Removing a Record from the Index
 
@@ -151,9 +151,11 @@ documented separately in [Content Invalidation](invalidation.md) — this docume
 covers the middle (`sync_to_db` pipeline + `DataOpMessage`); that one covers the
 outer edges (trigger + FE `useFSRefContent` `reloadKey` re-read).
 
-### Entities NOT FTS-indexed
+### The other writer: `Entity.save()` → `store()`
 
-Entities created via `_reflect_entity()` (the listen/webhook path in `flow_sdk/app/actions/listen.py`) do NOT get FTS-indexed: that path calls `entity.save()` directly, writing the Entity row without an `fts_upsert`. Only the `sync_to_db()` / `FSIndexer` path performs full indexing (Entity row + FTS5 + wiki).
+`sync_to_db()` is the disk→DB direction. The DB→disk direction, `Entity.save()` (`entity_model.py:2454`), also feeds the index: after the row is written, `store()` (`_store`, `entity_model.py:1349`) loads-or-creates the shadow `FSRecord`, writes `metadata_payload()` into `metadata.json`, lets the type's serializer render the asset, and then upserts an FTS entry built from the row (`_fts_upsert` → `FtsEntry.from_record`). DB-only types (`TypeInfo.db_only`) skip the shadow and feed FTS straight from the row via `TypeInfo.fts_content`.
+
+Entities created via `_reflect_entity()` (the listen/webhook path in `flow_sdk/app/actions/listen.py`) take this second route: they call `entity.save(scope)` and are therefore FTS-indexed from the row's `name`/`title`/`description`/`content`, but **no wiki edges and no `post_sync_fn`** run for them — only the `sync_to_db()` / `FSIndexer` path does the full Entity row + FTS5 + wiki + hook pipeline.
 
 ---
 
@@ -176,8 +178,8 @@ Scan/index *orchestration* lives in `FSIndexer` (`flow_sdk/fs_store/indexer/inde
 | `get()` | `(type_name) -> TypeInfo \| None` | Look up the registered `TypeInfo` for a type |
 | `register()` | `(info: TypeInfo)` | Register a type (called by `TypeMetadata.register()`) |
 | `get_entity_cls()` | `(type_name) -> type \| None` | Resolve the `Entity` subclass for a type |
-| `clear_index()` | `async (types)` | Delete Entity rows + FTS entries + clear hash sentinels for the given types |
-| `get_index_status()` | `async (types)` | Per-type status: `last_indexed_at`, `stale` (= `index_required`) |
+| `clear_index()` | `async (types)` | Delete Entity rows + FTS entries, the per-type `index_log.jsonl`, and persisted `RecordError`s. It does **not** touch the on-disk `.hash` sentinels — the `DELETE /fs-records/index` handler and `?rebuild=true` call `FSRecord.clear_hashes_for_type()` themselves (`fs_records_actions.py:1188`, `:1656`) |
+| `get_index_status()` | `async (types, scope)` | Per-type status: `last_indexed_at` (JSONL run history), `entity_count`, `stale` (= `FSRecord.type_has_pending_changes`). Single-project scope answers from the project record's own sentinel |
 | `get_errors()` | `(type_name)` | List `RecordError`s from failed indexing |
 | `append_scan()` / `append_index()` | `(...)` | Append a scan/index log entry |
 | `get_default_index_types()` | `()` | Types to index by default (see below) |
@@ -188,7 +190,7 @@ Scan/index *orchestration* lives in `FSIndexer` (`flow_sdk/fs_store/indexer/inde
 
 ### Staleness
 
-`get_index_status()` reports `stale = index_required`, i.e. the record's current source hash differs from the hash captured in the `.hash` sentinel at last index. It is **not** a wall-clock (e.g. 24h) threshold — staleness means "the source changed since the last index", evaluated via `FSRecord.index_required`.
+`get_index_status()` reports `stale` per type as `FSRecord.type_has_pending_changes(type)` — true if any record of the type has `index_required` (current source hash or path digest differs from the `.hash` sentinel). The top-level `stale` is the OR of the per-type answers; a single-project scope reads the project record's own sentinel instead. It is **not** a wall-clock (e.g. 24h) threshold — staleness means "the source changed (or moved) since the last index".
 
 ### Logging
 
@@ -220,6 +222,7 @@ Rows are written via the `FtsEntry` dataclass (`entity_id`, `entity_type`, `name
 |--------|-----------|-------|
 | `fts_upsert` | `(entry: FtsEntry \| list[FtsEntry], batch_size=500)` | Delete + insert (full replace). Called by `sync_to_db()`; accepts a batch. |
 | `fts_delete` | `(entity_id)` | Remove a row from FTS table. Called on record deletion. |
+| `fts_clear` | `()` | Delete every FTS row; returns the count. Used by `SchemaRegistry.clear_index()`. |
 | `fts_search` | `(query, limit, record_type, status, calibration)` | FTS5 MATCH, joins `entities_fts` to `entities`. Returns hydrated Entity objects. |
 | `browse_by_type` | `(entity_type, limit, status)` | Filter-only browsing (no query) with FTS metadata, ordered by recency. |
 
@@ -241,6 +244,8 @@ DELETE /fs-records/{type}/{uid}  -> fts_delete + entity.delete() + remove from d
 - **`_broadcast_fs_record_op()`** is **notification-only**: it constructs `DataOpMessage(op=..., to_entity=TypeId(type, uid), data=...)` and calls `handle_entity_op()` for WebSocket delivery to watching frontend connections. It performs no Entity/FTS work (the docstring states this explicitly).
 
 For `delete`, the handler removes the Entity row + FTS entry directly (`fts_delete(entity.id)` then `entity.delete()`), deletes the record folder and the live `asset_ref` file/folder from disk, then broadcasts the delete DataOp. There is no `Record.deindex()`.
+
+For `create`/`update`, a failing `sync_to_db()` is caught and logged at DEBUG (`fs_records_actions.py:2302`, `:2332`); the record stays on disk, the response is still a success, and the DataOp is still broadcast — so a record can exist on disk without an Entity row until the next index pass.
 
 ---
 
@@ -324,7 +329,7 @@ No sync needed -- `entity.get_record()` loads the Record from disk by `(type, id
 | Find entities under a directory | `Entity.assets_by_path(opts)` -- `asset_ref` lex-range pushdown |
 | Find entities modified in the last hour | `Entity.get_all()` with `updated_date` filter |
 | Scan all records in a directory tree not yet indexed | `FSIndexer.index(...)` over the roots |
-| Rebuild the full index after corruption | `SchemaRegistry.clear_index()` then `FSIndexer.index(...)` |
+| Rebuild the full index after corruption | `POST /fs-records/index?rebuild=true` (= `clear_index()` + `FSRecord.clear_hashes_for_type()` + `FSIndexer.index(...)`) |
 | Check if index is stale | `SchemaRegistry.get_index_status()` -- `stale` = source changed since last index |
 
 ---
@@ -334,7 +339,7 @@ No sync needed -- `entity.get_record()` loads the Record from disk by `(type, id
 | File | Relevant Contents |
 |------|-------------------|
 | `flow_sdk/core/entity/entity_model.py` | `Entity` base (no `record_data_ref`/`indexed_content`); `search()`, `browse()`, `assets_by_path()`; `from_record()`; `get_record()`, `destroy()`, `updateSearchIndex()`/`removeSearchIndex()`; `allocate_id()` |
-| `flow_sdk/fs_store/fs_record.py` | `FSRecord` -- `async def sync_to_db()`, `sync_from_entity()`, `index_required`, `write_hash()`, `meta_dict()`, `search_*` readers |
+| `flow_sdk/fs_store/fs_record.py` | `FSRecord` -- `async def sync_to_db()`, `sync_from_entity()`, `index_required`, `write_hash()`, `meta_dict()`, `search_*` readers; `record_sync_guard()` per-record lock |
 | `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry`, `TypeInfo` -- type metadata, `clear_index()`, `get_index_status()`, `get_errors()`, index logging |
 | `flow_sdk/fs_store/indexer/index_function.py` | `FSIndexer.index()` / `.scan()` -- scan/index orchestration |
 | `flow_sdk/schema/types.py` | `EntityType` -- single consolidated type-name enum (was `RecordType` + `BuiltinEntityType`) |
