@@ -24,6 +24,15 @@ independent and idempotent, so one failing leaves the others' work valid; the
 failure is printed where the user sees it on start. The migration this version
 is actually FOR is strict — it raises, exactly as any other version's would.
 
+**INCIDENT (0.2.152): the catch-up is disabled on the launch path.** Re-driving six
+recipes at once took **249s** on a real install, and `flow start` blocks on it with no
+progress output — indistinguishable from a hang. Worse, it is not resumable: a user who
+interrupts it leaves an orphaned attempt, and the next start restarts the whole 4 minutes
+from the top ("Previous attempt … appears orphaned … retrying best-effort"), so an
+impatient user loops forever and never gets a server. Shipped in 0.2.152, reverted in
+0.2.153. Do not re-enable this on start: give it a progress signal AND make it resumable
+first, or drive it from an explicit maintenance command instead.
+
 Entry point: ``run()``.
 """
 
@@ -65,15 +74,23 @@ def _catch_up() -> int:
     return failed
 
 
+#: The catch-up is DISABLED — see the incident note in the module docstring.
+#: Kept as a switch rather than deleted so the recipes can be re-driven
+#: deliberately (a maintenance command, a flag), never on a user's launch path.
+CATCH_UP_ON_START = False
+
+
 def run() -> dict[str, int]:
     from flow_sdk.migrations.migration_2026_09_auto_favorite_duplicate_roots import dedupe
 
-    failed = _catch_up()
-    if failed:
-        print(  # noqa: T201
-            f"{failed} catch-up migration(s) failed; they will be retried on the next "
-            "upgrade that carries them. Startup continues."
-        )
+    failed = 0
+    if CATCH_UP_ON_START:
+        failed = _catch_up()
+        if failed:
+            print(  # noqa: T201
+                f"{failed} catch-up migration(s) failed; they will be retried on the next "
+                "upgrade that carries them. Startup continues."
+            )
 
     report = dedupe(dry_run=False)
     summary = {
