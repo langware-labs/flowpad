@@ -28,7 +28,14 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
       if (!el) return;
       const targetScrollTop = el.scrollHeight - el.clientHeight;
 
-      if (instant) {
+      // `scrollTo` is the smooth-animation path; assigning `scrollTop` is the
+      // same destination without it. jsdom implements the property but not the
+      // method, so a chat pane mounting under vitest threw
+      // "el.scrollTo is not a function" and took the whole suite down with it
+      // (CI only — whether jsdom has the method varies by patch version).
+      // Falling back keeps the scroll itself working rather than skipping it,
+      // which an optional call (`el.scrollTo?.(…)`) would silently do.
+      if (instant || typeof el.scrollTo !== 'function') {
         el.scrollTop = targetScrollTop;
       } else {
         el.scrollTo({ top: targetScrollTop, behavior: smooth ? 'smooth' : 'auto' });

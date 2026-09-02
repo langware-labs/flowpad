@@ -1,25 +1,50 @@
 ---
-title: Signed-in harness reported as signed out
+title: What evidence may write a harness login state
 tags: [breadcrumb.test.harness_login_state.rules]
-description: The footer warned "a coding agent CLI is installed but not signed in" over a CLI that was both. The auth probe distinguishes four verdicts, but the capability mirrored them into two — filing NOT_INSTALLED and UNKNOWN as login_state "idle", the same value a real sign-out writes. A probe that never reached a verdict was being reported as one.
+description: login_state is written from evidence of unequal strength, and both directions have burned us. An undetermined probe was recorded as signed out; separately, a probe that only checks a credential EXISTS overturned a refusal the harness itself made, so the login modal opened on "Not logged in" and showed a green "Signed in".
 ---
 
-# Signed-in harness reported as signed out
+# What evidence may write a harness login state
 
-> Ground truth. Proven by RCA on 2026-08-30. Do not edit without the user's approval.
+> Ground truth. Proven by RCA on 2026-08-30 (undetermined probe → signed out) and
+> 2026-08-31 (presence-only probe → signed in). Do not edit without the user's approval.
 
 ```breadcrumb
 tag: breadcrumb.test.harness_login_state.rules
 sites:
   - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
-    line: 41
+    line: 43
     note: "FAILING? an undetermined auth probe is being recorded as signed out - read this tag's rules before touching _mirror_probe_to_login_state or the probe status mapping"
+  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    line: 73
+    note: "FAILING? the harness's own 'Not logged in' refusal is no longer recorded - read this tag's rules before touching report_signed_out_action"
+  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    line: 137
+    note: "FAILING? a presence-only auth probe is overturning a sign-out the harness itself reported - read this tag's rules before touching _mirror_probe_to_login_state or probe_claude_auth's verified flag"
+  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    line: 219
+    note: "FAILING? a user-invoked Test can no longer clear a recorded refusal - read this tag's rules before touching auth_status_action's force flag"
 ```
 
 ## Expected behavior
 
 FlowPad may tell the user they are signed out **only when it asked and was told
 so**. Failing to reach an answer is not an answer.
+
+And the converse, which cost us the same bug pointing the other way: FlowPad may
+tell the user they are signed **in** only on evidence that the credential
+actually WORKS. Evidence here is not all one strength, and that ranking is the
+rule:
+
+| Evidence | Proves | Strength |
+|---|---|---|
+| A turn refused with "Not logged in · Please run /login" | the credential does not work | **strong** — the harness tried it |
+| A completed device login | the credential works | **strong** |
+| `claude auth status` says `loggedIn: true` | a credential is stored | **weak** — presence only |
+| `claude auth status` says `loggedIn: false` | no credential is stored | strong (absence is conclusive) |
+
+A weak positive may set the state when nothing stronger contradicts it. It may
+never overturn a strong negative.
 
 The cost is asymmetric, and that asymmetry is the whole rule. Telling a user
 their working, authenticated harness is signed out sends them to re-run a login
@@ -58,6 +83,31 @@ mistake, so an undecided probe stays silent.
   executable, because `worker_bin_folder` (`:1051`) reads only the folder
   capability discovery recorded and never falls back to a PATH lookup.
 
+* **The probe measures presence, not validity.** `claude auth status` reads the
+  credential off disk and never contacts the server — proven: with
+  `ANTHROPIC_BASE_URL` pointed at a dead port it still answers `loggedIn: true`,
+  and with a deliberately invalid `ANTHROPIC_AUTH_TOKEN` it answers
+  `{"loggedIn": true, "authMethod": "oauth_token"}` while the SAME binary answers
+  a real turn with `Not logged in · Please run /login`. So `probe_claude_auth`
+  (`auth_probe.py:159`) reports its `LOGGED_IN` with `verified=False`; only
+  `LOGGED_OUT` is verified, because absence cannot be a working credential.
+
+* **The refusal is recorded, and it sticks.** `Capability.login_denied`
+  (`capability.py`, `Persist.FALSE` like the rest of the `login_*` block) is set
+  by `report_signed_out_action` — which the frontend calls from
+  `useHarnessLoginOnAuthError` (`ui/src/components/harness-login/use-harness-login-on-auth-error.ts`)
+  when `worker_status_detail` carries the refusal. While it is set,
+  `_mirror_probe_to_login_state` refuses to promote an *unverified* `LOGGED_IN`
+  back to `AUTHENTICATED`. Without it the modal's own re-probe on open restored
+  the green badge it had just corrected, one render later.
+
+* **`force` is the user's way out.** `auth_status_action(force=True)` drops the
+  recorded refusal before probing, and only the user-invoked **Test** button
+  passes it (`HarnessLoginModal.tsx` → `Capability.authStatus(force)`). Without
+  it a harness the user re-authorised OUTSIDE FlowPad — `claude /login` in their
+  own terminal — would read as signed out forever, since no turn had yet proven
+  the new credential and the probe alone is not allowed to.
+
 * **Availability and login come from different clocks.** `available` is served
   from a persisted row (`last_setup ?? last_test ?? last_check`), while
   `login_state` comes from a live probe and is `Persist.FALSE`
@@ -87,6 +137,16 @@ mistake, so an undecided probe stays silent.
    (`auth_probe.py:46`) is a `str` subclass, so the wire format is five plain
    strings and `ts_sdk/src/entities/capability.ts:32` matches it exactly.
 6. **Broadcast only on change**, so a repeated identical probe emits no WS frame.
+7. **A presence-only positive never overturns a witnessed refusal.** An
+   *unverified* `LOGGED_IN` may write `AUTHENTICATED` only while `login_denied`
+   is false. This qualifies invariant 1: `LOGGED_IN` → `AUTHENTICATED` is
+   conditional, not unconditional.
+8. **Only stronger evidence clears `login_denied`.** A completed device login
+   (`_apply_login_session` on `AUTHENTICATED`), a probe that is genuinely
+   `verified`, or an explicit user-invoked `force`. Never a background probe.
+9. **The silent re-probe and the Test button are not the same call.** The modal's
+   on-open refresh must never pass `force`; the Test button must. Collapsing them
+   reintroduces the bug, because on-open is exactly when the stale positive won.
 
 ## Failure modes
 
@@ -108,6 +168,21 @@ mistake, so an undecided probe stays silent.
 
 * **Widening the probe timeout to make `UNKNOWN` rarer.** Banned. A probe that
   needs more than 5s is itself the signal; the repo's timeout rule applies.
+
+* **Trusting `claude auth status` as a login check.** It is a presence check
+  wearing a login check's name. Any code that treats its `loggedIn: true` as
+  proof the harness can run — a startup gate, a footer, a launch precondition —
+  reintroduces this. The tell is the mirror image of the older bug: the user is
+  told they are signed in while every turn fails with "Not logged in".
+
+* **Making the probe validate instead.** Rejected: `auth-status` is documented as
+  the cheap, no-network check, and the vendor CLI exposes no validate command —
+  the only way to test a credential is to spend a turn on it. Rank the evidence
+  instead of strengthening the weak source.
+
+* **Clearing `login_denied` on any probe to "unstick" a user.** That is the bug
+  again with a friendlier motive. The unsticking path is `force`, gated on an
+  explicit user action.
 
 * **Believing the test passed because it ran.** The test asserts the probe really
   returned `NOT_INSTALLED` before checking what it was filed as. Without that

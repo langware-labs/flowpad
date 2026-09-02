@@ -95,7 +95,7 @@ export function ChatActivityLine({ process, trailing }: ChatActivityLineProps) {
   // A signed-out harness is the one failure the user can fix themselves, and
   // the CLI already named it. Called before the visibility branch so the hook
   // order stays stable whether or not the activity line renders.
-  useHarnessLoginOnAuthError(process.worker_status_detail);
+  useHarnessLoginOnAuthError(process.worker_status_detail, process.worker_type);
 
   if (!active) return null;
 

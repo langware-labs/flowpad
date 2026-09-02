@@ -177,15 +177,19 @@ def probe_claude_auth(
             details={"returncode": proc.returncode},
         )
     if parsed["loggedIn"]:
+        # NOT ``verified``. ``claude auth status`` reads the credential off disk
+        # and never asks the server whether it still works — with
+        # ``ANTHROPIC_BASE_URL`` pointed at a dead port it still answers
+        # ``loggedIn: true``. So an expired, revoked or signed-out-elsewhere
+        # credential reports "logged in" here while the very same binary answers
+        # a real turn with "Not logged in · Please run /login". Presence is all
+        # this proves, and callers must weigh it as such — same class as
+        # copilot's heuristic below, which has always said so.
         return WorkerAuthResult(
             status=WorkerAuthStatus.LOGGED_IN,
-            verified=True,
-            message="claude CLI has stored credentials.",
-            details={
-                k: parsed[k]
-                for k in ("email", "authMethod", "subscriptionType", "apiProvider")
-                if k in parsed
-            },
+            verified=False,
+            message="claude CLI has stored credentials (not validated).",
+            details={k: parsed[k] for k in ("email", "authMethod", "subscriptionType", "apiProvider") if k in parsed},
         )
     return WorkerAuthResult(
         status=WorkerAuthStatus.LOGGED_OUT,
