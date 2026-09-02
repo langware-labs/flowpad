@@ -60,6 +60,7 @@
     "cron",
     "assets",
     "project",
+    "agent",
     "inbox",
     "conversation",
     "spec",
@@ -571,6 +572,13 @@
       "addressable": true,
       "pointer": "optional",
       "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "agent": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"
     }
