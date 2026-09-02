@@ -28,7 +28,7 @@ from typing import Optional
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.driver import SegmentCursorView, channel_of_driver, get_driver
-from flow_sdk.ingest.health import SourceError, SourceHealth, classify, worst_of
+from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
@@ -63,6 +63,22 @@ async def sync_source(
             source,
             "capability_unavailable",
             f"requires {', '.join(source.required_capabilities)}",
+            now,
+        )
+        return combined
+
+    # `reflect` is a property of the SOURCE, knowable before any I/O, so it is
+    # checked here rather than per segment after a fetch: a driver that places
+    # files has no record destination, and with a mode that has no reflector
+    # the files would be dropped while the cursor advanced past them — a source
+    # that reads healthy and ingests nothing. Asked once, so a five-segment
+    # folder source does not burn five fetches (and stamp five cursor rows) to
+    # learn one config fact.
+    if driver.origin_for is not None and get_reflector(source.reflect) is None:
+        await _fail_source(
+            source,
+            "reflect_mode",
+            f"reflect={source.reflect!r} cannot place files; pick a filesystem mode",
             now,
         )
         return combined
@@ -137,17 +153,8 @@ async def _place(source: DataSource, result, view: SegmentCursorView) -> Optiona
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
         )
     if result.refs or result.tombstones:
-        if get_reflector(source.reflect) is None:
-            # A driver that fills `refs` has no record destination; with
-            # `record` (or any mode without a reflector) the files would be
-            # dropped on the floor while the cursor advanced past them — a
-            # source that looks healthy and ingests nothing. Raised BEFORE the
-            # cursor moves, so it is classified like any other config error and
-            # the window is re-read once the mode is fixed.
-            raise SourceError.config(
-                "reflect_mode",
-                f"reflect={source.reflect!r} cannot place files; pick a filesystem mode",
-            )
+        # `sync_source` refused the run before enumerating segments if this
+        # source cannot place files, so a reflector exists here.
         await reflect_refs(source, result.refs, result.tombstones, result.renames)
     return report
 
@@ -177,7 +184,7 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         health, code, detail = classify(exc)
         cursor.health = health.value
         cursor.error_code = code
-        cursor.error_detail = detail[:500]
+        cursor.error_detail = detail[:ERROR_DETAIL_MAX]
         cursor.consecutive_failures = (cursor.consecutive_failures or 0) + 1
         # Cursor position deliberately NOT advanced.
         await cursor.save()
@@ -308,7 +315,7 @@ def _stamp_source(
     """
     source.health = health.value
     source.error_code = code
-    source.error_detail = detail[:500] if detail else detail
+    source.error_detail = detail[:ERROR_DETAIL_MAX] if detail else detail
     if segment_count is not None:
         # Free: this row is being written anyway, and it saves every list
         # surface from watching the cursor table live just to render a count.

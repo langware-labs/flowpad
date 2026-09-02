@@ -268,20 +268,23 @@ async def test_a_parked_segment_does_not_park_the_source(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
-    """A driver that returns file refs has no record destination; `record`
-    used to log a warning, drop the files, and advance the cursor past them."""
+    """A driver that places files has no record destination; `record` used to
+    log a warning, drop the files, and advance the cursor past them.
+
+    Refused BEFORE any segment is fetched: `reflect` is a property of the
+    source, so learning it from a fetch would cost one round trip per segment
+    to discover the same config fact."""
     src = await _source(reflect="record")
     key = "root"
-    register_driver(
-        _FakeDriver([key], {key: FetchResult(refs=["a.md"], next_state={"seen": "1"}, high_water="1")})
-    )
+    driver = _FakeDriver([key], {key: FetchResult(refs=["a.md"], next_state={"seen": "1"}, high_water="1")})
+    driver.origin_for = lambda _s: None  # a file-placing driver
+    register_driver(driver)
 
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
+    assert driver.calls == [], "the config fact was knowable without fetching"
 
     cursor = await DataSourceCursor.ensure_for(src.id, key)
-    assert cursor.health == SourceHealth.CONFIG_ERROR.value
-    assert cursor.error_code == "reflect_mode"
     assert cursor.state == {} and cursor.high_water is None, "the cursor advanced past dropped files"
     refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.CONFIG_ERROR.value

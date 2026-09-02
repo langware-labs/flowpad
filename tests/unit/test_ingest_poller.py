@@ -164,3 +164,31 @@ async def test_a_change_event_and_a_poll_on_one_source_run_sync_once(monkeypatch
     assert calls == [src.id], f"one source was synced {len(calls)} times concurrently"
     assert sorted(ran) == [False, True], "exactly one entrant runs; the other reports it did not"
     assert src.id not in poller._inflight, "the slot must be released afterwards"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_change_event_does_not_wake_a_disabled_source(monkeypatch):
+    """Disabled is a person's decision, and a provider nudge must not override
+    it. The gate is deliberately narrower than `may_poll`: a source still in
+    SETUP does reconcile from a bare event (a git watch is exactly that)."""
+    import flow_sdk.ingest.sync as sync_mod
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.data_source import SourceStatus
+    from flow_sdk.ingest.change_event import handle_change
+
+    calls: list[str] = []
+
+    async def _fake_sync(source, **_kw):
+        calls.append(source.id)
+
+    monkeypatch.setattr(sync_mod, "sync_source", _fake_sync)
+
+    src = await _source(status=SourceStatus.DISABLED.value)
+    assert await handle_change(SimpleNamespace(data={"source_id": src.id})) is False
+    assert calls == []
+
+    awake = await _source(status=SourceStatus.SETUP.value)
+    assert await handle_change(SimpleNamespace(data={"source_id": awake.id})) is True
+    assert calls == [awake.id], "a source mid-setup still reconciles from a nudge"

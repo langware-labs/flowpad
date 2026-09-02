@@ -480,10 +480,11 @@ class FSIndexer:
         """The record types this indexer WRITES — derived from its own graph.
 
         Union of every registered function's declared outputs, kept when the
-        type has a ``from_disk_fn`` (``_has_dispatch`` — the walker emits it AND
-        the registry can turn the ref into a row) and is an ``EntityType``
-        member (drops the traversal scaffolds ``folder``, ``claude_hook_source``,
-        ``mcp_server_source``, which are emitted only to be walked further).
+        type has a ``from_disk_fn``: the walker emits it AND the registry can
+        turn the ref into a row. That parser slot is the whole test, and it is
+        what drops the traversal scaffolds ``folder``, ``claude_hook_source``
+        and ``mcp_server_source`` — they are emitted only to be walked further,
+        and nothing parses them into a record.
 
         Returned in registry order, so positional slices (``[:limit_types]``)
         are deterministic across processes. A function registered with
@@ -498,10 +499,9 @@ class FSIndexer:
                 if output_types is None:
                     continue
                 emitted.update(str(t) for t in output_types)
-        members = {str(t) for t in RecordType}
         out: list[RecordType] = []
         for name in SchemaRegistry.get_all_types():
-            if name not in emitted or name not in members:
+            if name not in emitted:
                 continue
             info = SchemaRegistry.get(name)
             if info is None or not _has_dispatch(info):

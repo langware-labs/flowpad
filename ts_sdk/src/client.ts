@@ -212,6 +212,23 @@ export function getErrorMessages(error: AxiosError): string {
 
 export const apiClient = getApiClient(); // Initialize the default API client
 
+/**
+ * GET a route that answers with a BARE body instead of the `{status,data}`
+ * envelope — a hub route, or anything else we do not own.
+ *
+ * The response interceptor unwraps `data.data`, so such a body arrives as
+ * `undefined` unless it is wrapped first. Callers were each spelling the same
+ * `transformResponse` to do that; it belongs here, next to the interceptor
+ * that makes it necessary. A route we DO own should return the envelope
+ * instead of being read through this.
+ */
+export async function getRaw<T>(path: string, config: AxiosRequestConfig = {}): Promise<T> {
+  return apiClient.get<T>(path, {
+    ...config,
+    transformResponse: (raw: string) => ({ data: raw ? JSON.parse(raw) : null }),
+  }) as unknown as Promise<T>;
+}
+
 export default apiClient;
 
 // For playwright client global variable

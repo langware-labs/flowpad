@@ -2354,8 +2354,23 @@ class FsRecordsActionsMixin:
                 # upsert_main_ref chokepoint this FSRecord create path bypasses.
                 try:
                     await self._materialize_main_body(rec, record_type)
-                except Exception as e:  # best-effort — never fail the create
-                    logging.debug(f"[fs-records] main-body materialize skipped: {e}")
+                except Exception as exc:  # never fail the create — the row exists
+                    # Reported like a failed `sync_to_db` (above), not at DEBUG:
+                    # both are the same half-completed write — the caller got a
+                    # record back, and part of what "created" means did not
+                    # happen. An asset with no main body on disk is invisible to
+                    # a disk-walking scan.
+                    logging.getLogger(__name__).warning(
+                        "[fs-records] create of %s/%s wrote no main body; the asset "
+                        "is not discoverable by a scan until it is rewritten: %s",
+                        record_type, rec.id, exc, exc_info=True,
+                    )
+                    warnings = (warnings or []) + [{
+                        "error_code": "main_body_missing",
+                        "message": f"{record_type}/{rec.id} has no main body on disk: {exc}",
+                        "type": record_type,
+                        "id": rec.id,
+                    }]
                 # scope is stamped from the resolved asset path inside
                 # Entity._prepare_for_storage (the single save chokepoint), so
                 # HTTP-created records are born with a scope just like

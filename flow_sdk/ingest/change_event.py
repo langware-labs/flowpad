@@ -83,7 +83,7 @@ async def handle_change(event: Any) -> bool:
     Never raises: an event handler that throws takes down nothing, because the
     bus deliberately does not await consumers and would only log the failure.
     """
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
     from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
     data = getattr(event, "data", None) or {}
@@ -97,6 +97,15 @@ async def handle_change(event: Any) -> bool:
         logger.warning("[ingest] could not load source %s", source_id, exc_info=True)
         return False
     if source is None:
+        return False
+    if source.status == SourceStatus.DISABLED.value:
+        # DELIBERATELY narrower than `may_poll`, which also refuses NEW/SETUP
+        # and `config_error`. Those exist to stop the heartbeat spending a
+        # tick a minute on a source that cannot answer; a change event is the
+        # opposite case — the provider says there IS something, once, on
+        # evidence, and a source mid-setup still reconciles from a bare nudge.
+        # What a nudge must never override is a person turning the source off.
+        logger.debug("[ingest] change event for a disabled source: %s", source_id)
         return False
     # Through the poller, never `sync_source` directly: the heartbeat may have
     # this source in flight, and a second run would race the first's cursor
