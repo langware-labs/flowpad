@@ -1052,6 +1052,36 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
+    async def count_nested_entities_by_type(
+        self,
+        parent_types: "tuple[str, ...] | list[str]",
+        scope: "object | None" = None,
+    ) -> dict[str, int]:
+        """Per-type count of rows nested inside an entity of one of *parent_types*.
+
+        One grouped query for EVERY type, not one per type, so the caller keeps
+        its single-round-trip shape. ``parent_type_id`` is ``"<type>-<uuid>"``;
+        the type half is everything before the first ``-``. Rows with no parent
+        (json_extract → NULL) and rows whose pointer carries no ``-`` (instr → 0,
+        so substr yields '') both fall out of the IN-list naturally, which is
+        exactly the "not nested" answer.
+        """
+        if not self.session_factory or not parent_types:
+            return {}
+        bindings: dict = {}
+        placeholders = []
+        for i, name in enumerate(parent_types):
+            key = f"pt{i}"
+            bindings[key] = name
+            placeholders.append(f":{key}")
+        ptid = "json_extract(data, '$.parent_type_id')"
+        nested_clause = f"substr({ptid}, 1, instr({ptid}, '-') - 1) IN ({', '.join(placeholders)})"
+        scope_clause = self._scope_sql_clause(scope, bindings, None)
+        sql = f"SELECT type, COUNT(*) FROM entities WHERE {nested_clause}{scope_clause} GROUP BY type"
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(text(sql), bindings)
+            return {str(row[0]): int(row[1] or 0) for row in result.fetchall()}
+
     async def list_entity_sources_by_type(
         self,
         type_name: str,

@@ -90,8 +90,10 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # 19 capsule: base's 17 + `agent` + `mcp` (an MCP we AUTHOR carries its own
     # v4; the sibling `mcp_server` SCAN is derived, because its source is a
     # vendor config file we cannot write an id into). 16 derived: + `micro_app`,
-    # whose webapp.json carries no id so a shipped app has the same id on every
-    # machine.
+    # whose webapp.json carries no id — which is only half an answer: a derived
+    # carrier says the id is NOT in the file, so the type still owes an
+    # install-independent key. See
+    # `test_shipped_asset_declares_an_install_independent_key`.
     assert (len(capsule_types), len(native_types), len(derived_types)) == (19, 3, 16)
 
     for name in sorted(INDEXED_TYPES):
@@ -284,6 +286,11 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder = root / "raw-copilot"
         folder.mkdir()
         return FSRef(folder / "events.jsonl"), "copilot_session:raw-copilot", uuid.NAMESPACE_DNS
+    if type_name == "data_source_spec":
+        folder = root / "rss"
+        folder.mkdir()
+        (folder / "data_source.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
+        return FSRef(folder), "data_source_spec:rss", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
         return FSRef(path), f"dynamic_workflow:{path.resolve()}", namespace
@@ -326,8 +333,9 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
-    "dynamic_workflow", "markdown_index", "mcp_server", "plugin", "project",
-    "secret_origin", "spreadsheet", "todo_file", "workflow_run",
+    "data_source_spec", "dynamic_workflow", "markdown_index", "mcp_server",
+    "plugin", "project", "secret_origin", "spreadsheet", "todo_file",
+    "workflow_run",
 )
 
 
@@ -360,3 +368,93 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
         path.write_text(json.dumps({"data": {"id": V4}}))
         ref = FSRef(path)
     assert _info(type_name).mint_entity_id(ref) == V4
+
+
+# ── Shipped assets survive an install relocation ──────────────────────────────
+#
+# A REPO asset that ships inside the wheel lives under `site-packages`, so its
+# absolute path is a property of the INSTALL, not of the asset: it differs
+# between a uv tool dir, a plain python prefix and uv's own cache archive — all
+# three of which coexist on one machine — and it changes on every upgrade.
+# `mint_entity_id` falls back to `uuid5(resolved path)` for a derived-identity
+# type that declares no stable key, so each install location mints a SEPARATE
+# row for the same shipped asset and the Data Sources picker renders one button
+# per row.
+
+#: Derived-identity types whose assets SHIP with the SDK, so their absolute path
+#: is the install's and never the asset's.
+#:
+#: `micro_app` still fails: it has the same missing-key defect, but `name` is not
+#: its natural key — every shipped source nests an editor at
+#: `data_source/<name>/agentic-assets/webapp/editor`, so nine of them are called
+#: `editor` and keying on the bare name would collapse nine assets into one. It
+#: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
+#: change from FLOWPAD-2070; xfail keeps the defect visible until then.
+SHIPPED_RELOCATABLE_TYPES = (
+    "data_source_spec",
+    pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
+)
+
+_SHIPPED_MANIFEST = {
+    "data_source_spec": ("data_source", "data_source.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
+    "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
+}
+
+
+def _shipped_asset(install_root: Path, type_name: str) -> FSRef:
+    """The SAME authored asset, materialized under one install root.
+
+    Mirrors the on-disk shape the walker finds:
+    ``<install>/flow_sdk/system_projects/flowpad_assistant/agentic-assets/<family>/<name>/``.
+    """
+    family, main_file, manifest = _SHIPPED_MANIFEST[type_name]
+    folder = (
+        install_root / "Lib" / "site-packages" / "flow_sdk" / "system_projects"
+        / "flowpad_assistant" / "agentic-assets" / family / manifest["name"]
+    )
+    folder.mkdir(parents=True)
+    (folder / main_file).write_text(json.dumps(manifest), encoding="utf-8")
+    return FSRef(folder, scope="system")
+
+
+@pytest.mark.parametrize("type_name", SHIPPED_RELOCATABLE_TYPES)
+def test_shipped_asset_keeps_one_id_across_install_locations(
+    tmp_path: Path, type_name: str,
+) -> None:
+    """One shipped asset is one entity, wherever the wheel was unpacked.
+
+    Reinstalling/upgrading relocates `site-packages`; the three roots below are
+    the shape actually observed on a dev box (uv tool dir, python prefix, uv
+    cache archive). A path-keyed id turns one source into three, which the
+    picker renders as three identical providers.
+    """
+    info = _info(type_name)
+    refs = [
+        _shipped_asset(tmp_path / install, type_name)
+        for install in ("uv-tools-flowpad", "pythoncore-3.14-64", "uv-cache-archive-v0")
+    ]
+    assert [info.read_id(ref) for ref in refs] == [None] * len(refs), "no carrier — identity is derived"
+
+    ids = {info.mint_entity_id(ref) for ref in refs}
+    assert len(ids) == 1, (
+        f"{type_name}: the same shipped asset minted {len(ids)} ids across install "
+        f"locations, so an upgrade forks it into {len(ids)} rows — {sorted(ids)}"
+    )
+
+
+@pytest.mark.parametrize("type_name", SHIPPED_RELOCATABLE_TYPES)
+def test_shipped_asset_declares_an_install_independent_key(
+    tmp_path: Path, type_name: str,
+) -> None:
+    """The mechanism behind the test above: with no stable key, `mint_entity_id`
+    falls through to `uuid5(NAMESPACE_URL, resolved path)`."""
+    info = _info(type_name)
+    ref = _shipped_asset(tmp_path / "uv-tools-flowpad", type_name)
+    stable_key = info.stable_key_for(ref)
+    assert stable_key is not None, (
+        f"{type_name} declares neither id_stable_key_fn nor identity_key_fn, so its id "
+        f"is uuid5 of the absolute install path"
+    )
+    assert str(Path(getattr(ref, "_path", ref)).resolve()) not in stable_key, (
+        f"{type_name}: the stable key still embeds the install path — {stable_key!r}"
+    )

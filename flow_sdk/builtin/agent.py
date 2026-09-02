@@ -20,6 +20,7 @@ NOT the same thing as a ``SubAgent``: that is the provider-owned
 may *reference* SubAgents through ``subagents`` — they render to that path
 verbatim and are never absorbed here.
 """
+import logging
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
@@ -36,6 +37,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+
+logger = logging.getLogger(__name__)
 
 #: The two vocabularies for "which CLI": an agent.md declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -78,6 +81,7 @@ class AgentSpec(FrontMatter):
     tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
     skills: Optional[list[str]] = None
+    mcp_servers: Optional[list[str]] = None
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
     load_flowpad_assistant: Optional[bool] = None
@@ -121,10 +125,20 @@ class Agent(Entity):
     tools: Optional[list[str]] = APIField(default=None)
     disallowed_tools: Optional[list[str]] = APIField(default=None)
     skills: list[TypeId] = APIField(default_factory=list)
-    # NOTE: no ``mcp_servers`` list. An agent's MCP servers are ASSETS in its own
-    # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` — so
-    # the 1:1 is structural rather than a second list to keep in sync, and a
-    # RECEIVED agent carries its servers with it instead of dangling TypeIds.
+    # DECLARATION, not the attachment. An agent's servers are ASSETS in its own
+    # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` —
+    # that structural 1:1 is still what a launch reads, and it is what makes a
+    # RECEIVED agent carry its servers instead of dangling TypeIds. This list is
+    # the AUTHORED intent that produces it: ids the editor writes into agent.md,
+    # materialized into the folder by ``attach_declared_mcp_servers`` at process
+    # creation. Two layers on purpose — the list can name an asset that lives
+    # anywhere (the project's own ``agentic-assets/mcp/``), while the folder
+    # holds the self-contained copy that travels.
+    mcp_servers: list[TypeId] = APIField(
+        default_factory=list,
+        description="Mcp assets this agent declares, as TypeIds. Attached to the agent's own "
+        "folder at process creation; mcp_assets() remains what a launch resolves.",
+    )
     subagents: list[str] = APIField(
         default_factory=list,
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
@@ -271,6 +285,55 @@ class Agent(Entity):
                 await asset.delete()
                 return True
         return False
+
+    async def attach_declared_mcp_servers(self) -> int:
+        """Materialize the declared ``mcp_servers`` ids as attached assets.
+
+        The bridge between the two layers: ``mcp_servers`` is the AUTHORED
+        intent (ids the editor writes into ``agent.md``, pointing at Mcp assets
+        that typically live in the project, not under this agent), while
+        ``mcp_assets()`` is the structural attachment a launch actually reads.
+        This walks the first and produces the second. Returns how many
+        attachments changed.
+
+        Called from ``Deployment.create_process`` so the copy onto the process
+        sees them. Idempotent — ``add_mcp`` answers False when the row already
+        matches, so re-launching an unchanged agent writes nothing.
+
+        A declared id that no longer resolves is SKIPPED with a warning rather
+        than raised: a dangling reference must not make an agent unlaunchable,
+        and the list is authored by a UI that can outlive the asset it named.
+
+        ``entrypoint`` is deliberately CLEARED on the way through. ``to_spec()``
+        has already resolved a bundled server's entrypoint into an absolute path
+        in ``args``, so the attached copy is a plain command that runs the
+        ORIGINAL asset's code. Carrying the entrypoint across instead would
+        break it twice over: the nested row would append its own folder's path a
+        second time, and ``save`` would scaffold a fresh hello-world
+        ``server.py`` beside it — so the agent would launch a template, not the
+        server the user wrote.
+        """
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+        changed = 0
+        for declared in self.mcp_servers or []:
+            # Coerced here, not trusted: the field validates on CONSTRUCTION
+            # (a row read back from disk holds TypeIds), but ``Agent`` does not
+            # set ``validate_assignment``, so an in-memory ``agent.mcp_servers =
+            # [...]`` leaves plain strings behind. Both shapes reach this loop.
+            try:
+                ref = declared if isinstance(declared, TypeId) else TypeId(str(declared))
+            except ValueError:
+                logger.warning("agent %s declares an unparseable MCP id %r — skipped", self.name, declared)
+                continue
+            row = await Mcp.get_by_id(ref.id) if ref.id else None
+            if row is None:
+                logger.warning("agent %s declares MCP %s, which does not resolve — skipped", self.name, ref)
+                continue
+            spec = row.to_spec().model_copy(update={"entrypoint": ""})
+            if await self.add_mcp(spec):
+                changed += 1
+        return changed
 
     # ── running this agent ────────────────────────────────────────────────
     # The Python surface. ``run_action`` / ``use_action`` are thin HTTP wrappers

@@ -6,6 +6,9 @@ One builder now serves every provider. Before that, the E2B copy was annotated
 break that "unit tests must pass on both providers" exists to catch.
 """
 
+import subprocess
+import sys
+
 import pytest
 from pydantic import SecretStr
 
@@ -52,16 +55,18 @@ def test_secretstr_is_unwrapped_not_stringified():
     assert "*" not in prefix
 
 
-def test_windows_prefix_uses_set_and_caret_escapes():
+def test_windows_prefix_quotes_the_assignment():
+    """`set "NAME=value"` — the closing quote terminates the value, which is what
+    keeps the ` && ` separator out of it."""
     prefix = build_env_prefix(_env(A="a&b|c<d>e"), windows=True)
 
-    assert prefix == "set A=a^&b^|c^<d^>e && "
+    assert prefix == 'set "A=a&b|c<d>e" && '
 
 
-def test_windows_caret_is_escaped_first():
-    """Escaping `^` last would double-escape the carets the other replacements
-    just introduced."""
-    assert build_env_prefix(_env(A="^&"), windows=True) == "set A=^^^& && "
+def test_windows_metacharacters_are_not_caret_escaped():
+    """cmd treats `& | < > ^` literally inside the quotes, so escaping them
+    there would put literal carets INTO the value."""
+    assert build_env_prefix(_env(A="^&"), windows=True) == 'set "A=^&" && '
 
 
 def test_entries_without_a_name_are_skipped():
@@ -101,3 +106,57 @@ async def test_e2b_background_flag_is_forwarded_verbatim(any_provider, compute_p
     await provider.run_command(node_id, "true", background=False)
 
     assert provider.fake_sandbox.backgrounds == [False]
+
+
+# ---------------------------------------------------------------------------
+# The Windows separator-space defect.
+#
+# `set NAME=value && cmd` is not an assignment PREFIX — it is a cmd.exe
+# statement, and `set` takes the rest of the statement verbatim, INCLUDING the
+# space before the `&&`. So every value this builder passes on a Windows node
+# arrives with a trailing space. POSIX (line 71) is immune: `NAME='value' cmd`
+# is a real assignment prefix whose value the shell delimits on whitespace.
+#
+# Observed consequence in production: `GIT_INDEX_FILE=<path> ` made every git
+# call in `GitFolder._commit` read an EMPTY index (Win32 strips the trailing
+# space when CREATING the file, so writes landed on the clean name while reads
+# of the space-suffixed path found nothing). `read-tree` seeded nothing, `add`
+# staged nothing, `diff --cached` read empty-vs-HEAD as a change, and `commit`
+# wrote the empty tree — deleting every file in the repository. The existing
+# GitFolder tests never saw it: they drive `_LocalCommandExecutor`, which passes
+# env through `subprocess(env=...)`, while production drives
+# `ComputeNodeCommandExecutor`, which goes through THIS builder.
+# ---------------------------------------------------------------------------
+
+INDEX_PATH = r"C:\repo with space\.git\flowpad-index-2242434178864"
+
+
+def test_windows_prefix_terminates_the_value_before_the_separator():
+    """cmd's only delimiting form is `set "NAME=value"` — the closing quote is
+    what keeps the ` && ` separator out of the value."""
+    prefix = build_env_prefix(_env(GIT_INDEX_FILE=INDEX_PATH), windows=True)
+
+    assert prefix == f'set "GIT_INDEX_FILE={INDEX_PATH}" && '
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe semantics")
+def test_windows_prefix_assigns_the_exact_value_in_cmd():
+    """The real mechanism, in a real cmd.exe: compose `prefix + command` the way
+    `ComputeNodeCommandExecutor.run` does and ask cmd what it actually assigned.
+
+    `set NAME` (no `=`) prints `NAME=value` from cmd's own environment — the
+    environment it hands to every child it then runs. Only line endings are
+    stripped: a trailing SPACE in the value is the defect under test.
+    """
+    prefix = build_env_prefix(_env(GIT_INDEX_FILE=INDEX_PATH), windows=True)
+
+    # `shell=True` IS the production invocation: the desktop provider runs the
+    # composed string through `asyncio.create_subprocess_shell`
+    # (compute/providers/desktop/provider.py:558), which on Windows hands it to
+    # cmd.exe verbatim. Passing it as an argv element instead would re-quote it
+    # and test Python's quoting rather than cmd's.
+    out = subprocess.run(
+        prefix + "set GIT_INDEX_FILE", shell=True, capture_output=True, text=True
+    ).stdout
+
+    assert out.strip("\r\n") == f"GIT_INDEX_FILE={INDEX_PATH}"
