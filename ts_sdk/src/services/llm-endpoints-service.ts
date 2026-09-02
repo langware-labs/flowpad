@@ -159,6 +159,27 @@ export class LlmEndpointsService {
     return dataManager.callAction<undefined, LLMChain>(action('chain', id, 'GET'));
   }
 
+  /**
+   * Create an endpoint that draws on `parentId` — the only way a source link comes into being.
+   *
+   * The parent is the URL, not a field, and that is the whole point: the hub authorizes this
+   * against the endpoint being drawn FROM, so delegating a budget requires administering it. The
+   * `sources` field it replaces was checked against nothing, which let anyone who could merely
+   * spend a pool hang an uncapped sibling off it.
+   *
+   * `grant_to` is a principal typeid (`user-<id>`, `team-<id>`) that may SPEND the result — the
+   * allocation and the grant land in one authorized call. It needs an account that already
+   * exists; inviting an address that does not is `inviteMember` on the allocation afterwards.
+   */
+  allocate(
+    parentId: string,
+    body: { name: string; limits?: LLMEndpointLimits; filters?: LLMEndpointFilters; grant_to?: string },
+  ): Promise<LLMEndpoint> {
+    const info = action('allocate', parentId, 'POST');
+    info.bodyParameters = { ...body };
+    return dataManager.callAction<undefined, LLMEndpoint>(info);
+  }
+
   getUsage(id: string, query: LLMUsageQuery): Promise<LLMUsageReport> {
     const info = action('usage', id, 'GET');
     info.queryParameters = {

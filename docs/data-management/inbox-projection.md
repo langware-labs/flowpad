@@ -1,3 +1,7 @@
+---
+id: fbe83c6d-65fb-4299-9d53-bd17dd9b7570
+---
+
 # Inbox projection — ingested messages become conversations
 
 The one-way projection from ingested cloud records to Inbox conversations, and
@@ -73,8 +77,3 @@ from there exactly once regardless of which lane won. See the module docstring
 for the storm-cap reasoning and `data-sources.md` for the ingest side of the
 fence.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: fbe83c6d-65fb-4299-9d53-bd17dd9b7570
-flowpad:endcapsule identity -->
