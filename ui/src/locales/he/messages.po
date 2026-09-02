@@ -199,6 +199,13 @@ msgstr "{0}"
 msgid "{0} — opened \"{fallbackName}\" instead."
 msgstr "{0} — נפתח \"{fallbackName}\" במקומו."
 
+#. placeholder {0}: verdict.status
+#. placeholder {1}: verdict.model
+#. placeholder {2}: verdict.latency_ms
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "{0} · {1} · {2}ms"
+msgstr ""
+
 #. placeholder {0}: truncateLabel(sessionLabel)
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "{0} · new run"
@@ -821,12 +828,16 @@ msgid "80% Alert Threshold"
 msgstr "סף התראה 80%"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+msgid "A chain draws on another endpoint and can only narrow what passes."
 msgstr ""
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#~ msgid "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+#~ msgstr ""
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "A chain needs at least one source."
-msgstr ""
+#~ msgid "A chain needs at least one source."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
@@ -1001,7 +1012,6 @@ msgstr "פעילות"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -1052,12 +1062,12 @@ msgid "Add a prompt to your reply"
 msgstr "הוסף פרומפט לתשובתך"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Add a source"
-msgstr ""
+#~ msgid "Add a source"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Add a source…"
-msgstr ""
+#~ msgid "Add a source…"
+#~ msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -1465,6 +1475,11 @@ msgstr "כל המשימות"
 msgid "All types"
 msgstr "כל הסוגים"
 
+#. placeholder {0}: draft.name.trim()
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Allocated {0}"
+msgstr ""
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -1569,8 +1584,8 @@ msgid "An <0>orphan</0> is a row in the search index whose source file is gone f
 msgstr "רשומה <0>יתומה</0> היא שורה במדד החיפוש שקובץ המקור שלה כבר לא קיים בדיסק. המדד מגלה אותן בכל הפעלה ומסמן אותן עם <1>orphan_since</1>. הקובץ כבר אבד; ייחוף פשוט מסיר את השורה הישנה מהחיפוש כדי שהתוצאות יישארו נקיות."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "An endpoint cannot source itself."
-msgstr ""
+#~ msgid "An endpoint cannot source itself."
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
@@ -2709,8 +2724,7 @@ msgid "Capability"
 msgstr "יכולת"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
-#: src/components/llm-endpoints/SourcesPicker.tsx
+#: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
 msgstr ""
 
@@ -2872,6 +2886,10 @@ msgstr "בחר משימה מסרגל הצד כדי להציג פרטים"
 msgid "Choose an artifact to open"
 msgstr "בחרו artifact לפתיחה"
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Choose an endpoint…"
+msgstr ""
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
 msgstr "בחרו עובד אחר"
@@ -2883,6 +2901,10 @@ msgstr "בחרו תמונת פרופיל"
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "בחר תיקייה…"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Choose the endpoint this one draws from."
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -3655,8 +3677,12 @@ msgid "Configure your account, app preferences, and notifications"
 msgstr "הגדר את החשבון שלך, העדפות היישום והודעות"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Configured by worker"
-msgstr ""
+#~ msgid "Configured by worker"
+#~ msgstr ""
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured in Data sources — no file on disk"
+msgstr "מוגדר במקורות נתונים — אין קובץ בדיסק"
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -5885,6 +5911,10 @@ msgstr "גרור כדי להזיז · גלול כדי להגדיל/הקטין ·
 msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 msgstr "צייר עם העט או החץ, הוסף תיבות טקסט, ואז שמור כדי לצרף את ההעתק עם ההערות."
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Draws from"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Drill by"
 msgstr "התמקד לפי"
@@ -5964,8 +5994,8 @@ msgid "Each selected project's folder is added as a context folder."
 msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "Each source may appear once."
-msgstr ""
+#~ msgid "Each source may appear once."
+#~ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -6431,6 +6461,10 @@ msgstr "לכל שורה {scopeType} יש קובץ מקור בדיסק."
 msgid "Every indexed row has a source file on disk."
 msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "כל הפרויקטים נבחרים"
@@ -6613,6 +6647,10 @@ msgstr "שווקים ידועים נוספים"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "שורות נוספות שהובאו (limit + overfetch)"
+
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "failed"
+msgstr ""
 
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "Failed"
@@ -7280,6 +7318,10 @@ msgstr "תקן זאת"
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "תקנו את אפליקציית הווב"
+
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -9460,6 +9502,10 @@ msgstr "טוען את הסשן החי…"
 msgid "Loading logs..."
 msgstr "טוען יומנים..."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Loading MCP servers…"
+msgstr ""
+
 #: src/components/show-view/ShowView.tsx
 msgid "Loading MCP UI component..."
 msgstr "טוען רכיב MCP UI..."
@@ -9912,6 +9958,7 @@ msgid "MCP server created"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
@@ -10209,12 +10256,12 @@ msgid "mounted"
 msgstr "מעודכן"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Move down"
-msgstr ""
+#~ msgid "Move down"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Move up"
-msgstr ""
+#~ msgid "Move up"
+#~ msgstr ""
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Moved"
@@ -10443,6 +10490,7 @@ msgstr "שם תיקייה חדשה"
 msgid "New group"
 msgstr "קבוצה חדשה"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "New MCP server"
 msgstr ""
@@ -10782,6 +10830,10 @@ msgstr "לא נמצא אמוג'י"
 msgid "No endpoint sources from this one."
 msgstr ""
 
+#: src/components/llm-endpoints/SourcePicker.tsx
+msgid "No endpoints to draw from"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "No endpoints yet."
 msgstr ""
@@ -10971,6 +11023,10 @@ msgstr "אין סשנים תואמים"
 msgid "No MCP servers found"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "No MCP servers in this project yet"
+msgstr ""
+
 #: src/components/token-plan/MembersTable.tsx
 msgid "No member usage yet."
 msgstr ""
@@ -11036,8 +11092,8 @@ msgid "No orphans right now. Click to re-scan and confirm."
 msgstr "אין יתומים כרגע. לחץ כדי לסרוק מחדש ולאשר."
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "No other endpoints"
-msgstr ""
+#~ msgid "No other endpoints"
+#~ msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "No page exists with this name yet."
@@ -11572,8 +11628,8 @@ msgid "not visible"
 msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "not visible to you"
-msgstr ""
+#~ msgid "not visible to you"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Note"
@@ -11998,6 +12054,10 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Open in Data sources"
+msgstr "פתיחה במקורות נתונים"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -13909,8 +13969,8 @@ msgid "Remove row"
 msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Remove source"
-msgstr ""
+#~ msgid "Remove source"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
@@ -15169,8 +15229,8 @@ msgid "Select a version to install:"
 msgstr "בחר גרסה להתקנה:"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Select a worker to see the MCP servers available to it"
-msgstr ""
+#~ msgid "Select a worker to see the MCP servers available to it"
+#~ msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -15299,6 +15359,10 @@ msgstr "השליחה נכשלה."
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
 msgstr "שלח הודעה"
+
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "Send one minimal call through this endpoint"
+msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Send the reply for just this message"
@@ -16253,8 +16317,8 @@ msgid "Sources"
 msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
-msgid "Sources (fallback order)"
-msgstr ""
+#~ msgid "Sources (fallback order)"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Sources + filters + limits"
@@ -17039,11 +17103,13 @@ msgstr "סשני טרמינל"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test"
 msgstr "בדיקה"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "בדיקה נכשלה"
 
@@ -17316,8 +17382,8 @@ msgid "These conversations exist only on this device."
 msgstr "שיחות אלה קיימות רק בהתקן זה."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "These sources would form a cycle."
-msgstr ""
+#~ msgid "These sources would form a cycle."
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."

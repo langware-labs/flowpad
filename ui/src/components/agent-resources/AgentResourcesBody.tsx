@@ -1,14 +1,26 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { Markdown, Skill, type AssetDescriptor } from '@sdk';
+import { DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
-import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
+import {
+  AssetRow,
+  assetScope,
+  basename,
+  descriptorKey,
+  displayLabelForDescriptor,
+  type AssetScope,
+} from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
+import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { useStagedAssets } from './useStagedAssets';
-import { useWirableMcpServers } from './useWirableMcpServers';
-import { useEditedAgentWorker } from './useEditedAgentWorker';
 import { useQuickCreatePick } from '@src/components/quick-create';
+
+/** Stable while loading — a fresh `[]` per render would re-run the row memo. */
+const NO_SOURCES: DataSource[] = [];
 
 /** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
  *  pane never caches Skill entities); a skill's identity IS its folder, so the
@@ -16,17 +28,6 @@ import { useQuickCreatePick } from '@src/components/quick-create';
 function labelForAsset(d: AssetDescriptor): string {
   const label = displayLabelForDescriptor(d);
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
-}
-
-/** MCP servers are declared in the worker's own config, so they apply to every
- *  run the way a user-level skill does — `user_dir`, not `inline`, which reads
- *  as "this agent". Module-scope: a fresh object per render would churn. */
-const MCP_SCOPE = assetScope({ typeid: '', source: 'user_dir', posix_path: null });
-
-/** A capability rendered as an asset row. The typeid is its real entity id; the
- *  null path is the honest answer — a server has no file of its own. */
-function mcpDescriptor(server: { typeid: string }): AssetDescriptor {
-  return { typeid: server.typeid, source: 'user_dir', posix_path: null };
 }
 
 /** Muted one-liner for a section with nothing in it. */
@@ -72,10 +73,20 @@ export function AgentResourcesBody() {
   const skillAssets = useStagedAssets(Skill.type);
   const { descriptors: skillDescriptors, isLoading: skillsLoading } = skillAssets;
   const docAssets = useStagedAssets(Markdown.type);
-  // The MCP list is scoped to the worker the agent is set to; the editor's
-  // worker field commits to `agent.md`, which is what this observes.
-  const { workerType, isLoading: workerLoading } = useEditedAgentWorker();
-  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
+  // FlowPad's OWN MCP assets (`agentic-assets/mcp/<name>/mcp.json`), and the
+  // only population here. Listed regardless of worker: an `mcp` is an
+  // EXECUTABLE_ASSET_TYPE the process renders into every harness's config at
+  // launch, so it carries no worker dimension to filter on.
+  const mcpAssets = useStagedAssets(Mcp.type);
+
+  // The connected sources, read through the ONE named query the Data sources
+  // view uses, so the two can't disagree about what exists. Not
+  // `useStagedAssets` like its three neighbours: a DataSource is a DB row and a
+  // property of the INSTANCE (`scope: []`, see flow_sdk/builtin/data_source.py),
+  // not a file the project-level path scan could find.
+  const { data: sources = NO_SOURCES, isLoading: sourcesLoading } = useEntitiesQuery<DataSource>(sourcesQuery);
+
+  const { navigation } = useDockNavigation();
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   // Project home's own creation seam: `onPick(type)` opens the same name/scope
@@ -94,21 +105,65 @@ export function AgentResourcesBody() {
     [docAssets.descriptors],
   );
 
+  // A source row leads to the Data sources view — where a source is edited,
+  // replayed and deleted — because `data_source` has no asset editor to route
+  // to (`editorForType` returns none) and the derived route would dead-end in
+  // the markdown fallback.
+  const openInDataSources = useMemo(
+    () => ({ label: t`Open in Data sources`, run: () => navigation.openTab(ViewType.DATA_SOURCES) }),
+    [navigation, t],
+  );
+
+  const sourceRows = useMemo(
+    () =>
+      [...sources]
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map((source) => {
+          const typeid = source.typeId.toString();
+          const label = source.name || source.provider || typeid;
+          const d: AssetDescriptor = {
+            typeid,
+            // A source lives in the remote system it syncs, which is none of
+            // this process's source dirs and not writable from it.
+            source: 'external',
+            posix_path: null,
+          };
+          // Hand-built rather than `assetScope(d)`: that reads a FILE's location
+          // off `source_dir`, and this row has no file. The scope axis still
+          // answers "where does this live" — for a source that is the remote it
+          // speaks to. `channel` is the driver-written user-facing word (gmail,
+          // slack); `provider` is what shows before the first poll fills it in.
+          const scope: AssetScope = {
+            kind: 'external',
+            label: source.channel || source.provider || 'external',
+            revealPath: null,
+            tooltip: [label, source.channel || source.provider, `status: ${source.status}`, `health: ${source.health}`]
+              .filter(Boolean)
+              .join('\n'),
+          };
+          return { d, key: typeid, label, scope };
+        }),
+    [sources],
+  );
+
+  const mcpAssetRows = useMemo(
+    () => mcpAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    [mcpAssets.descriptors],
+  );
+
   return (
     <div className="flex flex-col py-1">
-      {/* Deliberately listless. What this section used to render was the
-          installed `DataSourceSpec` CATALOG — the nine provider types the
-          machine can connect, not anything this agent has or could be given.
-          They were neither viewable (no row opened anything) nor selectable
-          (the Agent has no data-sources field, and adding one is out of
-          scope), so every row was decoration. The one real affordance is
-          connecting a source, which is what `+` does.
-          `itemCount={0}` also means the section settles collapsed — the `+`
-          stays reachable in the header regardless. */}
+      {/* The CONNECTED sources — what an agent here can actually read from —
+          and never again the installed `DataSourceSpec` catalog this section
+          used to list. That catalog was the nine provider types the machine
+          *can* connect: neither viewable nor selectable, so every row was
+          decoration. Same shape as the three sections below it: rows are what
+          is available, `+` adds one more. */}
       <NavigatorSection
         id="data-sources"
         label={t`Data sources`}
-        itemCount={0}
+        isLoading={sourcesLoading}
+        itemCount={sourceRows.length}
         action={
           <IconButton
             icon={Plus}
@@ -122,48 +177,61 @@ export function AgentResourcesBody() {
             <Trans>Connect a data source to make it available here</Trans>
           </Empty>
         }
-      />
+      >
+        {sourceRows.map((row) => (
+          <AssetRow
+            key={row.key}
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
+            selected={false}
+            improvable={false}
+            busy={false}
+            openAction={openInDataSources}
+            cannotOpenReason={t`Configured in Data sources — no file on disk`}
+          />
+        ))}
+      </NavigatorSection>
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so
           the pane never loses the agent being edited. */}
       <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
 
+      {/* The project's OWN `mcp` assets, and nothing else. This used to also
+          list the servers configured in the selected worker's vendor files
+          (`capability` rows, read-only). They are gone: the agent's MCP slot
+          attaches project assets by id, so a vendor row sitting in the same
+          list looked attachable and never was — it describes a definition site
+          we do not own and cannot hand a worker. One list, one meaning. */}
       <NavigatorSection
         id="mcp-servers"
         label={t`MCP servers`}
-        isLoading={mcpLoading || workerLoading}
-        itemCount={mcpServers.length}
+        isLoading={mcpAssets.isLoading}
+        itemCount={mcpAssetRows.length}
+        action={
+          <IconButton
+            icon={Plus}
+            label={t`New MCP server`}
+            onClick={() => panelProps.onPick(Mcp.type)}
+            testId="agent-resource-new-mcp"
+          />
+        }
         emptyState={
-          // Two different empty states, because they mean different things and
-          // the fix for each differs: with no worker resolved the list is
-          // unanswerable, whereas with one resolved it is a real answer — that
-          // worker genuinely has none configured.
-          workerType ? (
-            <Empty>
-              <Trans>No MCP servers found</Trans>
-            </Empty>
-          ) : (
-            <Empty>
-              <Trans>Select a worker to see the MCP servers available to it</Trans>
-            </Empty>
-          )
+          <Empty>
+            <Trans>No MCP servers found</Trans>
+          </Empty>
         }
       >
-        {mcpServers.map((server) => (
+        {mcpAssetRows.map((row) => (
           <AssetRow
-            key={server.id}
-            descriptor={mcpDescriptor(server)}
-            scope={MCP_SCOPE}
-            label={server.name}
+            key={row.key}
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
             selected={false}
             improvable={false}
             busy={false}
-            // The capability id resolves, so the derived answer is "openable" —
-            // but no editor is registered for `capability`, and a live control
-            // that dead-ends is worse than a greyed one.
-            canOpen={false}
-            cannotOpenReason={t`Configured by worker`}
           />
         ))}
       </NavigatorSection>

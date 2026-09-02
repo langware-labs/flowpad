@@ -1,8 +1,14 @@
 /**
- * `LlmEndpointDialog`: root vs chain validation gates the submit, immutable
- * fields are disabled on edit, and the payload that reaches `dataManager.save`
- * is `buildEntityJson`'s — provider/base_url on create only, never the key —
- * with the key going through `setCredential` AFTER the entity exists.
+ * `LlmEndpointDialog`: root vs chain validation gates the submit, immutable fields are disabled on
+ * edit, and the payload that reaches `dataManager.save` is `buildEntityJson`'s — provider/base_url
+ * on create only, never the key — with the key going through `setCredential` AFTER the entity
+ * exists.
+ *
+ * The two kinds take DIFFERENT calls on create, and that is the sharpest thing here. A root is an
+ * entity create. A chain is `allocate` POSTed to the endpoint it draws from, because the hub
+ * authorizes delegation against the budget being delegated. Creating a chain as an entity carrying
+ * `sources` silently made a keyless ROOT — the hub drops unrecognised fields and still answers 200 —
+ * so `save` must NOT be what a chain create reaches.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -11,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   save: vi.fn(),
   setCredential: vi.fn(() => Promise.resolve({ ok: true, credential_hint: '****1234' })),
+  allocate: vi.fn(),
   onOpenChange: vi.fn(),
 }));
 
@@ -19,7 +26,11 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     dataManager: { ...(actual.dataManager as object), save: h.save },
-    llmEndpointsService: { ...(actual.llmEndpointsService as object), setCredential: h.setCredential },
+    llmEndpointsService: {
+      ...(actual.llmEndpointsService as object),
+      setCredential: h.setCredential,
+      allocate: h.allocate,
+    },
   };
 });
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
@@ -72,8 +83,8 @@ describe('LlmEndpointDialog', () => {
       enabled: true,
       provider: 'anthropic',
       base_url: 'https://api.anthropic.com',
-      sources: [],
     });
+    expect(json).not.toHaveProperty('sources');
     expect(JSON.stringify(json)).not.toContain('sk-ant-secret');
 
     // The key travels through the credential action, to the id the save returned.
@@ -94,48 +105,44 @@ describe('LlmEndpointDialog', () => {
     expect(h.setCredential).not.toHaveBeenCalled();
   });
 
-  it('chain create: needs a source; the payload has sources in order and no provider', async () => {
+  it('chain create: needs a parent, then allocates on it instead of creating an entity', async () => {
     const rootA = saved({ id: uuid(), name: 'Root A', provider: 'openai' });
     const rootB = saved({ id: uuid(), name: 'Root B', provider: 'anthropic' });
+    h.allocate.mockResolvedValueOnce(saved({ id: uuid(), name: 'Team chain' }));
     render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[rootA, rootB]} />);
 
     await userEvent.click(screen.getByTestId('kind-chain'));
     await userEvent.type(screen.getByTestId('llm-name'), 'Team chain');
-    expect(screen.getByTestId('llm-problems').textContent).toContain('A chain needs at least one source.');
+    expect(screen.getByTestId('llm-problems').textContent).toContain('Choose the endpoint this one draws from.');
     expect(screen.queryByTestId('credential-field')).toBeNull();
 
     await userEvent.selectOptions(screen.getByTestId('source-select'), `llm_endpoint-${rootB.id}`);
-    await userEvent.click(screen.getByTestId('source-add'));
-    await userEvent.selectOptions(screen.getByTestId('source-select'), `llm_endpoint-${rootA.id}`);
-    await userEvent.click(screen.getByTestId('source-add'));
     expect(screen.queryByTestId('llm-problems')).toBeNull();
 
     await userEvent.click(screen.getByTestId('llm-submit'));
-    await waitFor(() => expect(h.save).toHaveBeenCalledOnce());
-    const json = h.save.mock.calls[0][2] as unknown as Record<string, unknown>;
-    expect(json.sources).toEqual([`llm_endpoint-${rootB.id}`, `llm_endpoint-${rootA.id}`]);
-    expect(json).not.toHaveProperty('provider');
-    expect(json).not.toHaveProperty('base_url');
+    await waitFor(() => expect(h.allocate).toHaveBeenCalledOnce());
+
+    // The parent is the URL — a bare uuid, not a typeid — and the body is the CHILD's budget.
+    const [parentId, body] = h.allocate.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(parentId).toBe(rootB.id);
+    expect(body.name).toBe('Team chain');
+    expect(body).not.toHaveProperty('sources');
+    expect(body).not.toHaveProperty('provider');
+
+    // The entity-create door is the one that silently produced a keyless root.
+    expect(h.save).not.toHaveBeenCalled();
     expect(h.setCredential).not.toHaveBeenCalled();
   });
 
-  it('chain edit refuses a cycle and self-sourcing', async () => {
+  it('chain edit: the parent is fixed at allocation, so it is not offered', async () => {
     const r = saved({ id: uuid(), name: 'R', provider: 'openai' });
     const b = saved({ id: uuid(), name: 'B', sources: [`llm_endpoint-${r.id}`] });
-    const a = saved({ id: uuid(), name: 'A', sources: [`llm_endpoint-${b.id}`] });
-    // A → B → R already; editing B to also source A closes the loop.
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={b} all={[r, b, a]} />);
+    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={b} all={[r, b]} />);
 
+    // Re-sourcing is not a thing any more: the link is an edge only `allocate` writes.
+    expect(screen.queryByTestId('source-picker')).toBeNull();
     expect(screen.queryByTestId('llm-problems')).toBeNull();
-    // B itself is never offered as a source.
-    const options = Array.from(screen.getByTestId<HTMLSelectElement>('source-select').options).map((o) => o.value);
-    expect(options).not.toContain(`llm_endpoint-${b.id}`);
-    expect(options).toContain(`llm_endpoint-${a.id}`);
-
-    await userEvent.selectOptions(screen.getByTestId('source-select'), `llm_endpoint-${a.id}`);
-    await userEvent.click(screen.getByTestId('source-add'));
-    expect(screen.getByTestId('llm-problems').textContent).toContain('These sources would form a cycle.');
-    expect(screen.getByTestId('llm-submit')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('llm-submit')).toHaveProperty('disabled', false);
   });
 
   it('root edit: provider/base_url disabled, key field talks to the hub, save omits immutables', async () => {

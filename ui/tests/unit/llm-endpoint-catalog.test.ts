@@ -1,7 +1,16 @@
 /**
- * The endpoint dialog's rules, without the dialog: root vs chain validation,
- * the cycle check, and — the one that matters most — the entity payload never
- * carrying the key and never re-sending the immutable root fields on edit.
+ * The endpoint dialog's rules, without the dialog: root vs chain validation, and — the two that
+ * matter most — the entity payload never carrying the key, and never carrying `sources`.
+ *
+ * That second one is a regression guard with a scar behind it. The hub removed the `sources` field
+ * (it is a relationship now, written only by `allocate`) but an entity create DROPS unrecognised
+ * fields and still answers 200, so a "create chain" came back green having made a keyless ROOT.
+ * Nothing failed anywhere.
+ *
+ * The cycle tests are gone with `wouldCycle`. Cycles and narrowing are properties of the resolved
+ * graph, and the client cannot see one any more — sources are edges the entity does not serialize,
+ * so a client-side walk over the visible endpoints could only ever return false. The hub judges
+ * them in `allocate`, against the source's own graph, before anything is written.
  */
 import { LLMEndpoint } from '@sdk';
 import { describe, expect, it } from 'vitest';
@@ -13,22 +22,15 @@ import {
   endpointTypeId,
   PROVIDERS,
   providerSpec,
+  buildAllocateBody,
   validateDraft,
   withProvider,
-  wouldCycle,
   type EndpointDraft,
 } from '@src/components/llm-endpoints/endpoint-catalog';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
-const C = '33333333-3333-4333-8333-333333333333';
 
-// Plain rows, not entities: `validateDraft` only reads `id`/`sources`, and the
-// SDK registers every constructed entity by typeid (a second construction of
-// the same id logs a warning).
-const ep = (id: string, sources: string[] = []) => ({ id, sources });
-
-const ids = (problems: { id?: string }[]) => problems.map((p) => p.id);
 const messages = (problems: { message?: string }[]) => problems.map((p) => p.message);
 
 describe('emptyDraft / withProvider', () => {
@@ -72,46 +74,20 @@ describe('validateDraft — root', () => {
 });
 
 describe('validateDraft — chain', () => {
-  it('needs at least one source', () => {
-    expect(messages(validateDraft({ ...emptyDraft('chain'), name: 'c' }, []))).toContain(
-      'A chain needs at least one source.',
+  it('needs a parent to draw from', () => {
+    expect(messages(validateDraft({ ...emptyDraft('chain'), name: 'c' }))).toContain(
+      'Choose the endpoint this one draws from.',
     );
   });
 
-  it('accepts a chain over a root', () => {
-    const d: EndpointDraft = { ...emptyDraft('chain'), name: 'c', sources: [endpointTypeId(A)] };
-    expect(validateDraft(d, [ep(A)])).toEqual([]);
+  it('accepts a chain with a parent chosen', () => {
+    const d: EndpointDraft = { ...emptyDraft('chain'), name: 'c', source: endpointTypeId(A) };
+    expect(validateDraft(d)).toEqual([]);
   });
 
-  it('refuses sourcing itself', () => {
-    const d: EndpointDraft = { ...emptyDraft('chain'), id: B, name: 'c', sources: [endpointTypeId(B)] };
-    expect(messages(validateDraft(d, [ep(A), ep(B)]))).toContain('An endpoint cannot source itself.');
-  });
-
-  it('refuses a cycle through another endpoint (A→B, editing B to source A)', () => {
-    // A already sources B; making B source A closes the loop.
-    const all = [ep(A, [endpointTypeId(B)]), ep(B), ep(C)];
-    expect(wouldCycle(endpointTypeId(B), [endpointTypeId(A)], all)).toBe(true);
-    const d: EndpointDraft = { ...emptyDraft('chain'), id: B, name: 'b', sources: [endpointTypeId(A)] };
-    expect(messages(validateDraft(d, all))).toContain('These sources would form a cycle.');
-    // ...but B may source C, which is a root.
-    expect(wouldCycle(endpointTypeId(B), [endpointTypeId(C)], all)).toBe(false);
-  });
-
-  it('a longer cycle (A→B→C, editing C to source A)', () => {
-    const all = [ep(A, [endpointTypeId(B)]), ep(B, [endpointTypeId(C)]), ep(C)];
-    expect(wouldCycle(endpointTypeId(C), [endpointTypeId(A)], all)).toBe(true);
-  });
-
-  it('a new (unsaved) chain has no self and cannot cycle', () => {
-    const all = [ep(A, [endpointTypeId(B)]), ep(B)];
-    expect(wouldCycle(undefined, [endpointTypeId(A)], all)).toBe(false);
-  });
-
-  it('flags a duplicated source', () => {
-    const d: EndpointDraft = { ...emptyDraft('chain'), name: 'c', sources: [endpointTypeId(A), endpointTypeId(A)] };
-    expect(ids(validateDraft(d, [ep(A)])).length).toBeGreaterThan(0);
-    expect(messages(validateDraft(d, [ep(A)]))).toContain('Each source may appear once.');
+  it('does not ask an EDIT for a parent — it is fixed at allocation and never re-sent', () => {
+    const d: EndpointDraft = { ...emptyDraft('chain'), id: B, name: 'c', source: '' };
+    expect(validateDraft(d)).toEqual([]);
   });
 });
 
@@ -131,7 +107,6 @@ describe('buildEntityJson', () => {
     expect(buildEntityJson(d, false)).toMatchObject({
       name: 'r',
       enabled: true,
-      sources: [],
       provider: 'anthropic',
       base_url: 'https://api.anthropic.com',
     });
@@ -140,18 +115,21 @@ describe('buildEntityJson', () => {
     expect(edited).not.toHaveProperty('base_url');
   });
 
-  it('a chain never carries provider/base_url and keeps source order', () => {
-    const d: EndpointDraft = { ...emptyDraft('chain'), name: 'c', sources: [endpointTypeId(B), endpointTypeId(A)] };
+  it('never carries provider/base_url on a chain, and never carries sources at all', () => {
+    // `sources` is the field the hub drops in silence — see the module note.
+    const d: EndpointDraft = { ...emptyDraft('chain'), name: 'c', source: endpointTypeId(B) };
     const json = buildEntityJson(d, false);
     expect(json).not.toHaveProperty('provider');
-    expect(json.sources).toEqual([endpointTypeId(B), endpointTypeId(A)]);
+    expect(json).not.toHaveProperty('base_url');
+    expect(json).not.toHaveProperty('sources');
+    expect(buildEntityJson({ ...emptyDraft('root'), name: 'r' }, false)).not.toHaveProperty('sources');
   });
 
   it('serialises filters and limits through the form round-trip', () => {
     const d: EndpointDraft = {
       ...emptyDraft('chain'),
       name: 'c',
-      sources: [endpointTypeId(A)],
+      source: endpointTypeId(A),
       filters: { ...emptyDraft().filters, models_allow: 'a/*\n\nb/*', max_tokens_ceiling: '4096' },
       limits: { ...emptyDraft().limits, cost_usd_total: '5' },
     };
@@ -180,11 +158,29 @@ describe('draftFrom', () => {
     expect(JSON.stringify(d)).not.toContain('****abcd');
   });
 
-  it('a chain entity yields a chain draft with its sources', () => {
+  it('a chain entity yields a chain draft carrying the parent it draws from', () => {
     const d = draftFrom(
       new LLMEndpoint({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'chain', sources: [endpointTypeId(A)] }),
     );
     expect(d.kind).toBe('chain');
-    expect(d.sources).toEqual([endpointTypeId(A)]);
+    expect(d.source).toBe(endpointTypeId(A));
+  });
+});
+
+describe('buildAllocateBody', () => {
+  it('carries the child budget and NOT the parent — the parent is the URL', () => {
+    const d: EndpointDraft = {
+      ...emptyDraft('chain'),
+      name: '  gadi+20 budget  ',
+      source: endpointTypeId(A),
+      filters: { ...emptyDraft().filters, models_allow: 'anthropic/claude-*' },
+      limits: { ...emptyDraft().limits, cost_usd_total: '1' },
+    };
+    const body = buildAllocateBody(d);
+    expect(body.name).toBe('gadi+20 budget');
+    expect(body.filters.models_allow).toEqual(['anthropic/claude-*']);
+    expect(body.limits.cost_usd_total).toBe(1);
+    expect(body).not.toHaveProperty('source');
+    expect(body).not.toHaveProperty('sources');
   });
 });

@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
+import { AgentMcpField } from './AgentMcpField';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
@@ -329,6 +330,15 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                   aria-label={t`Load Flowpad assistant`}
                 />
               </div>
+              {/* Runtime, not Advanced: unlike the declared-only fields there,
+                  this one REACHES the worker — create_process attaches each id
+                  and the harness launches with it. */}
+              <div className="mt-4">
+                <AgentMcpField
+                  value={agent.mcp_servers}
+                  onCommit={(ids) => void save({ mcp_servers: ids })}
+                />
+              </div>
             </TabsContent>
 
             <TabsContent value="deploy" className="mt-4">
@@ -362,10 +372,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     value={agent.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  {/* Skills and MCP servers are wired in the agent-resources
-                      pane (Zone B), which lists what actually exists instead of
-                      asking for typed ids. They are deliberately not duplicated
-                      here — two editors for one field is how they drift. */}
+                  {/* Skills are wired in the agent-resources pane (Zone B),
+                      which lists what actually exists instead of asking for
+                      typed ids, and is deliberately not duplicated here — two
+                      editors for one field is how they drift. MCP servers have
+                      their own derived slot on the Runtime tab, because unlike
+                      everything in this section they do reach the worker. */}
                   <AgentListField
                     label={t`Additional directories`}
                     value={agent.additional_dirs}

@@ -21,7 +21,7 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
 import { tagListChildren } from './tagRoot';
-import { config } from '@sdk';
+import { config, dataManager } from '@sdk';
 
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
@@ -43,6 +43,10 @@ export interface AssetTypeRootDeps {
   /** Called after a successful asset delete so the parent can refresh counts + tree. */
   onDeleteComplete?: (typeName: string) => void;
 }
+
+/** How many owned assets one row loads on expand. An asset owning more than
+ *  this is pathological; the type's own root remains the full listing. */
+const CHILD_ASSET_PAGE_SIZE = 200;
 
 interface AssetPointerParts {
   mode: 'editor' | 'list' | 'wiki' | null;
@@ -104,6 +108,71 @@ async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: n
   } catch {
     return [];
   }
+}
+
+/**
+ * Registry metadata for one type, read synchronously (no fetch) so a row can be
+ * built on the first render. `undefined` when the registry isn't loaded yet.
+ */
+function typeInfoOf(typeName: string) {
+  return dataManager?.getAllTypeInfos?.().find((t) => t.type_name === typeName);
+}
+
+/**
+ * True when an asset of this type can OWN other assets — i.e. a folder-LAYOUT
+ * type, the shape the backend `repo_assets_fn` walker recurses into
+ * (`<asset>/agentic-assets/<type>/<name>`). Deliberately NOT `folder_backed`:
+ * an Agent is folder-layout (it owns its copies of the Mcps it declares) but is
+ * not folder-backed, because its `asset_ref` is the inner `agent.md`. Gating on
+ * layout is also what keeps a chevron off the 400-odd file-layout markdown rows.
+ */
+function canOwnAssets(typeName: string): boolean {
+  return typeInfoOf(typeName)?.main_layout === 'folder';
+}
+
+/**
+ * The assets nested under one owner, as tree rows.
+ *
+ * The other half of the `top_level` filter: a type root asks for rows with no
+ * asset parent, and this asks for one owner's children — across EVERY type, so
+ * an Agent's Mcp and (once one is attached) its Skill both show up without a
+ * per-type branch here. Containment comes from `parent_type_id`, never from the
+ * path; see the backend `apply_containment_filter`.
+ */
+async function fetchChildAssets(parentTypeId: string, parentNodeId: string, limit: number): Promise<Browseable[]> {
+  const params = new URLSearchParams();
+  params.set('parent_type_id', parentTypeId);
+  params.set('offset', '0');
+  params.set('limit', String(limit));
+  let results: SearchResult[] = [];
+  try {
+    const data = await apiClient.get<{ results?: SearchResult[] }>(`/search?${params.toString()}`);
+    results = data?.results ?? [];
+  } catch {
+    return [];
+  }
+  // Deleting a child refreshes the OWNER's row (not the type root it no longer
+  // appears in), so the removed row drops out of the list it was rendered in.
+  const onAfterDelete = () => refreshNode(parentNodeId);
+  const seen = new Set<string>();
+  const children: Browseable[] = [];
+  for (const r of results) {
+    // A row claiming itself as its own parent would expand forever. Deeper
+    // cycles self-limit — each level costs a click and a fetch, unlike the
+    // eager `buildTaskTree`, which needs a full ancestry set for the same job.
+    if (resultTypeId(r)?.toString() === parentTypeId) continue;
+    const child = buildAssetChild(
+      r.record_type,
+      r,
+      !!typeInfoOf(r.record_type)?.folder_backed,
+      parentNodeId,
+      onAfterDelete,
+    );
+    if (seen.has(child.id)) continue;
+    seen.add(child.id);
+    children.push(child);
+  }
+  return children;
 }
 
 /**
@@ -172,20 +241,31 @@ export function buildAssetChild(
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 
-  // Folder-backed types (asset_ref is a bare folder, e.g. skill) expand the row
-  // to browse/create/delete their files inline — one unified tree, no second
-  // panel. The flag comes from TypeInfo.folder_backed (derived from the folder
-  // layout), so any such type gets this without a per-type string branch.
-  if (folderBacked && result.asset_ref) {
-    return {
-      ...node,
-      hasChildren: 'unknown',
-      toolbar: [...skillCreateActions(result.asset_ref, node.id), ...toolbar],
-      listChildren: skillFolderListChildren(result.asset_ref, node.id),
-    };
-  }
+  // Two independent reasons a row expands, merged into one child list:
+  //  * folder-BACKED (asset_ref is a bare folder, e.g. skill) browses its own
+  //    files inline — one unified tree, no second panel;
+  //  * folder-LAYOUT owns nested assets (an Agent's own copies of the Mcps it
+  //    declares), which the type root no longer lists because `top_level`
+  //    filtered them out — this row is where they live now.
+  // Both come from TypeInfo, so no per-type string branch. A row with neither
+  // returns unchanged and keeps `hasChildren: false` (no chevron).
+  const folderList = folderBacked && result.asset_ref ? skillFolderListChildren(result.asset_ref, node.id) : null;
+  const ownerTypeId = canOwnAssets(typeName) ? node.selectionKey : undefined;
+  if (!folderList && !ownerTypeId) return node;
 
-  return node;
+  return {
+    ...node,
+    hasChildren: 'unknown',
+    toolbar:
+      folderList && result.asset_ref ? [...skillCreateActions(result.asset_ref, node.id), ...toolbar] : node.toolbar,
+    // Owned assets first, then the row's own files — the same ordering
+    // `buildTaskTree` uses for member tasks ahead of task.md/spec.md.
+    listChildren: async (opts) => {
+      const childRows = ownerTypeId ? await fetchChildAssets(ownerTypeId, node.id, CHILD_ASSET_PAGE_SIZE) : [];
+      const folderRows = folderList ? await folderList(opts) : [];
+      return [...childRows, ...folderRows];
+    },
+  };
 }
 
 function basename(p: string): string {
