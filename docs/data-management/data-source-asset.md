@@ -284,8 +284,8 @@ inside the indexer's worker threads deadlocked on the import lock.
 
 A definition's **editor** is not declared in the manifest either: a webapp asset
 at `<name>/agentic-assets/webapp/editor/` is found by the same walker and becomes
-the definition's child. Nine of the ten shipped definitions carry one;
-`telegram` does not.
+the definition's child. Nine of the eleven shipped definitions carry one;
+`gmail` and `telegram` do not.
 
 A script or persona referenced **by name** resolves against the author's machine.
 Shared, it arrives broken — and silently, because a failed subagent load is
@@ -327,4 +327,3 @@ Still open, and named where it bites:
 * **`FETCH.md` (agent runtime) is reserved, not implemented.** A folder carrying
   one is refused at load with that message, rather than indexing and then failing
   every poll.
-

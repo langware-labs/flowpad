@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "name": "gmail",
+  "title": "Gmail",
+  "icon_name": "Mail",
+  "description": "A Gmail mailbox read over IMAP and sent through SMTP using an app password from the environment.",
+  "auth": {
+    "env": [
+      "GMAIL_ADDRESS",
+      "GMAIL_APP_PASSWORD"
+    ]
+  },
+  "config": {
+    "address": {
+      "type": "text",
+      "label": "Gmail address",
+      "placeholder": "you@gmail.com",
+      "account_key": true,
+      "hint": "Optional when GMAIL_ADDRESS is set. The app password is read only from GMAIL_APP_PASSWORD and is never stored on the source."
+    }
+  }
+}

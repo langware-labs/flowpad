@@ -29,6 +29,9 @@ class EntityType(StrEnum):
     # from SUBAGENT, which is the provider's `.claude/agents/*.md` prompt asset
     # this may delegate to.
     AGENT = "agent"
+    # The Hub's server-minted mailbox row. The value deliberately differs from
+    # the Agent action name ("email_inbox") so graph paths remain unambiguous.
+    EMAIL_INBOX = "agent_mailbox"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

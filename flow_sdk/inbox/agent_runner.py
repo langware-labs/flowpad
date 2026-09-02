@@ -7,9 +7,9 @@ same thread.
 
 **One process per conversation, not per message.** The thread IS the session —
 that is what makes an email exchange a conversation rather than a series of
-strangers. `_reuse_or_spawn_headless` is the existing find-or-make for exactly
-this ("share one process per conversation — no proliferation"), and continuity
-across days and restarts is already solved by the process's own `session_id`
+strangers. The process is created through the owning Agent's local Deployment,
+so its system prompt, model, permissions and MCP servers reach every mail turn.
+Continuity across days and restarts is solved by the process's own `session_id`
 plus the vendor's on-disk transcript. Nothing here has to remember anything.
 
 **The allowlist is also the loop breaker.** The hub files an agent's sent copy
@@ -80,6 +80,71 @@ def _is_own_outgoing(item, source) -> bool:
     return is_self_address(source, item.author_external_id or "")
 
 
+async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: str):
+    """One headless process for this Agent deployment and conversation.
+
+    The generic conversation runner creates a bare ``AgenticProcess``. Mail is
+    different: the mailbox belongs to a formal Agent, so creation must go
+    through that Agent's Deployment to project its complete launch bundle.
+    Including ``deployment_id`` in the lookup also prevents adopting a bare or
+    differently configured process that happens to target the same thread.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    target = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation_id))
+    deployment = await agent.local_deployment()
+    existing = await AgenticProcess.get_all(
+        {
+            "match": {
+                "target_typeid_str": target,
+                "deployment_id": deployment.id,
+            },
+            "order_by": {"created_date": "desc"},
+        }
+    )
+    process = next(
+        (
+            candidate
+            for candidate in existing
+            if str(getattr(candidate, "status", "")) != ProcessStatus.FAILED.value
+        ),
+        None,
+    )
+    if process is not None:
+        if getattr(process, "shell_id", None):
+            try:
+                await process.exit()
+            except Exception:  # noqa: BLE001 — stale shells do not break reuse
+                pass
+        changed = False
+        if process.workdir != workdir:
+            process.workdir = workdir
+            changed = True
+        if process.visible is not False:
+            process.visible = False
+            changed = True
+        if process.pty_mode is not False:
+            process.pty_mode = False
+            changed = True
+        if changed:
+            await process.save()
+        return process
+
+    process = await agent.create_process(
+        "",
+        deployment=deployment,
+        target_typeid_str=target,
+        workdir=workdir,
+        visible=False,
+        pty_mode=False,
+    )
+    await process.save()
+    return process
+
+
 async def handle_inbound(item) -> bool:
     """Run the agent on one inbound message. Returns whether a turn ran.
 
@@ -87,13 +152,10 @@ async def handle_inbound(item) -> bool:
     and already-ours are all ordinary outcomes, not errors, and the message has
     already been ingested and projected either way — the owner can see it.
     """
-    from flow_sdk.app.actions.execute_prompt import (  # noqa: PLC0415
-        _capture_assistant_reply,
-        _reuse_or_spawn_headless,
-    )
+    from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
@@ -121,17 +183,22 @@ async def handle_inbound(item) -> bool:
         return False
 
     workdir = await _workdir_for(agent)
-    ap = await _reuse_or_spawn_headless(str(TypeId(type="conversation", id=conversation_id)), workdir)
-    await ap.prompt(body)
+    ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir)
+    prompt_result = await ap.prompt(body)
+    if isinstance(prompt_result, ApiFailResponse):
+        logger.warning(
+            "[agent-mail] prompt for %s was refused: %s",
+            conversation_id,
+            prompt_result.message or "unknown reason",
+        )
+        return False
     reply = await _capture_assistant_reply(ap)
     if not reply:
         logger.info("[agent-mail] turn produced no reply for %s", conversation_id)
         return False
 
     # Body and recipients only. The reply path deliberately passes NO headers:
-    # outbound headers reach the provider verbatim (no allowlist, no CRLF
-    # stripping — a known, open hub finding), so anything a correspondent could
-    # influence must not be able to reach them.
+    # a correspondent's input must not influence transport metadata.
     # A refusal here is REPORTED, not swallowed. `dispatch_channel_reply`
     # answers with a fail response rather than raising when it cannot work out
     # who to answer, and the turn has already run at that point — so dropping

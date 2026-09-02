@@ -33,8 +33,8 @@ from typing import Any, Optional
 from flow_sdk.builtin.email_inbox_driver import EmailInboxError
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
-    IngestDriver,
     FetchResult,
+    IngestDriver,
     SegmentCursorView,
     SegmentRef,
     SendOutcome,
@@ -63,6 +63,9 @@ class CloudEmailDriver(IngestDriver):
     provider = "cloud_email"
     kind = "datasource.cloud.email"
     record_kind = "content.message.email"
+    #: One source per Hub Agent mailbox. The address is mutable attribution
+    #: data; the Agent id is the Hub API's stable mailbox key.
+    identity_config_key = "agent_id"
     #: The hub sends and replies for us — see `send`.
     sends = True
 

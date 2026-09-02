@@ -214,6 +214,14 @@ class IngestDriver:
     origin_id_for: Optional[Callable[..., str]] = None
     #: OPTIONAL ``(source) -> FSOrigin`` — where the source's tree lives; stamped on save.
     origin_for: Optional[Callable[..., Any]] = None
+    #: OPTIONAL targeted reply lookup for transports that can query headers.
+    #: This keeps a caller waiting on one response from backfilling an unrelated
+    #: mailbox before it can observe that response.
+    find_reply: Optional[Callable[..., Any]] = None
+    #: OPTIONAL blocking reply lookup. A transport with a durable session can
+    #: wait without reconnecting on every probe; the caller still owns the
+    #: outer deadline and cancellation.
+    wait_for_reply: Optional[Callable[..., Any]] = None
 
     async def send(
         self,
