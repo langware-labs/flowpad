@@ -921,6 +921,7 @@ class FsRecordsActionsMixin:
             IndexerOptions,
             IndexProgressTable,
             get_shared_indexer,
+            indexable_types,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
