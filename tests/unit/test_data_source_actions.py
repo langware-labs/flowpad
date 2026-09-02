@@ -90,6 +90,32 @@ async def test_poll_now_is_the_only_unlatch_for_config_error():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_poll_now_unlatches_the_parked_segments_too():
+    """The latch has two halves: `is_due` refuses a parked SOURCE, and
+    `_round_robin` skips a parked CURSOR. Clearing only the row would let an
+    operator fix a credential and watch the segment sit out every tick while
+    the roll-up re-stamps the source from it."""
+    src = await _source(health=SourceHealth.CONFIG_ERROR.value, error_code="auth_failed")
+    parked = DataSourceCursor(
+        data_source_id=src.id,
+        segment_key="feed-a",
+        health=SourceHealth.CONFIG_ERROR.value,
+        error_code="auth_failed",
+        error_detail="401",
+        consecutive_failures=3,
+    )
+    await parked.save()
+
+    await src.poll_now_action()
+
+    (refreshed,) = await DataSourceCursor.get_all({"data_source_id": src.id})
+    assert refreshed.health == SourceHealth.OK.value, "the segment is still parked"
+    assert refreshed.error_code is None and refreshed.error_detail is None
+    assert refreshed.consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_poll_now_does_not_wake_a_disabled_source():
     """Disabled is a user decision; 'poll now' must not override it."""
     src = await _source(status=SourceStatus.DISABLED.value)

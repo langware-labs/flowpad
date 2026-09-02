@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
-import { describeApiError } from '@src/hooks/use-transcript';
+import { describeApiError } from '@src/lib/error-message';
 import type { AgentTraceDoc } from './trace-types';
 
 interface UseTraceSkeletonReturn {

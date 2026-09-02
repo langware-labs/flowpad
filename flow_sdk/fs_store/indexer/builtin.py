@@ -27,27 +27,24 @@ def indexable_types() -> list[RecordType]:
     its type here with no edit — rebuild mode, orphan detection and
     ``?limit_types`` slicing all read this one derivation. Registry order.
 
-    The Rust backend (``RSIndexerAdapter``) records the same registrations but
-    is not an ``FSIndexer``; the set is then derived from a throwaway Python
-    indexer carrying the identical function graph.
+    Memoized: the registration graph is fixed once an indexer is built, and
+    ``reset_shared_indexer`` is the single invalidation point for both.
     """
-    idx = get_shared_indexer()
-    derive = getattr(idx, "terminal_output_types", None)
-    if derive is None:
-        idx = FSIndexer(roots=[])
-        register_default_functions(idx)
-        derive = idx.terminal_output_types
-    return derive()
-
-
-def __getattr__(name: str):
-    # ``INDEXABLE_TYPES`` was a hand-maintained literal for one release; the
-    # alias keeps old importers working while they migrate to
-    # ``indexable_types()``. Module-level ``__getattr__`` keeps it lazy so
-    # importing this module never constructs the shared indexer.
-    if name == "INDEXABLE_TYPES":
-        return indexable_types()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    global _derived_types
+    if _derived_types is None:
+        idx = get_shared_indexer()
+        derive = getattr(idx, "terminal_output_types", None)
+        if derive is None:
+            # The Rust adapter is not an FSIndexer, so the set comes from a
+            # throwaway Python indexer carrying the identical graph. Building
+            # one is ~50 `add_function` calls, and this is asked several times
+            # per scan request — hence the memo, dropped by
+            # `reset_shared_indexer` alongside the indexers themselves.
+            idx = FSIndexer(roots=[])
+            register_default_functions(idx)
+            derive = idx.terminal_output_types
+        _derived_types = derive()
+    return list(_derived_types)
 
 
 def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
@@ -77,13 +74,6 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
                 "(the Rust binary already scans out-of-process)", scan_mode.value,
             )
         return rs
-    # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
-    # registered before any indexing/sync runs. Type metadata now lives in
-    # schema/type_info/<type>_info.py (registered by register_all) rather than
-    # self-registering on functions-module import, so building the indexer is
-    # the chokepoint that guarantees a complete registry. Idempotent.
-    import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
-
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
     # Default is the in-process walk. The auto-index preference is applied only
@@ -372,6 +362,7 @@ def _maybe_rs_indexer():
 
 
 _shared: FSIndexer | None = None
+_derived_types: list[RecordType] | None = None
 
 
 def get_shared_indexer() -> FSIndexer:
@@ -393,9 +384,10 @@ def reset_shared_indexer() -> None:
     ``index_function`` takes effect without a restart even if a previous child
     spawn had latched as unavailable.
     """
-    global _shared, _auto_scan_shared
+    global _shared, _auto_scan_shared, _derived_types
     _shared = None
     _auto_scan_shared = None
+    _derived_types = None
     try:
         from flow_sdk.fs_store.indexer.subprocess_scan import (  # noqa: PLC0415
             reset_child_availability,

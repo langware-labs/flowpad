@@ -245,12 +245,16 @@ class Inbox:
         """
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
-        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+        from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
         source = await self._ensure_source()
         seen = {str(i.id) for i in await SourceItem.get_all({"data_source_id": source.id})}
         while True:
-            await sync_source(source, now=datetime.now(timezone.utc))
+            # Through the poller's slot, not `sync_source` directly: this loop
+            # polls the same source the heartbeat does, and two runs race each
+            # other's cursor writes. A skipped round is latency, not loss —
+            # the run already in flight lands the same items.
+            await poll_source(source, datetime.now(timezone.utc))
             items = await SourceItem.get_all({"data_source_id": source.id})
             items.sort(key=lambda i: str(i.occurred_at or ""))
             for item in items:

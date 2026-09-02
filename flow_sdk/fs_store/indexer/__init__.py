@@ -35,7 +35,6 @@ __all__ = [
     "PerTypeIndexResult",
     "ProgressCallback",
     "TypeProgressRow",
-    "INDEXABLE_TYPES",
     "indexable_types",
     "ScanMode",
     "build_default_indexer",
@@ -46,8 +45,3 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    # Lazy alias for the retired ``INDEXABLE_TYPES`` literal — see ``builtin``.
-    if name == "INDEXABLE_TYPES":
-        return indexable_types()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

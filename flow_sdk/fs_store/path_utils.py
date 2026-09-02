@@ -301,9 +301,9 @@ def is_path_under(path: str, root: str) -> bool:
 
     Pure string check over already-canonical posix paths (see
     ``canonical_posix_path``) — ``/a/bc`` is NOT under ``/a/b``. The single
-    containment predicate shared by the nested-project root dedup
-    (``_resolve_scoped_roots``: outermost-wins) and the deepest-project-wins
-    association (``deepest_project_id_for_path``) so the two can never drift.
+    containment predicate every nesting question goes through, so they cannot
+    drift: deepest-project-wins association (``deepest_project_id_for_path``),
+    descendant queries, and the placement checks.
     """
     r = root.rstrip("/")
     p = path.rstrip("/")
