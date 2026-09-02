@@ -3658,6 +3658,10 @@ msgstr "إعداد حسابك وتفضيلات التطبيق والإشعارا
 #~ msgid "Configured by worker"
 #~ msgstr ""
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured in Data sources — no file on disk"
+msgstr "مُهيأ في مصادر البيانات — لا يوجد ملف على القرص"
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -12012,6 +12016,10 @@ msgstr "فتح في علامة تبويب جديدة"
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr "فتح في علامة تبويب جديدة"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Open in Data sources"
+msgstr "فتح في مصادر البيانات"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx

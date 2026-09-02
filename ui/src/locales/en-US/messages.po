@@ -3658,6 +3658,10 @@ msgstr "Configure your account, app preferences, and notifications"
 #~ msgid "Configured by worker"
 #~ msgstr "Configured by worker"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured in Data sources — no file on disk"
+msgstr "Configured in Data sources — no file on disk"
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -12012,6 +12016,10 @@ msgstr "Open in a new browser tab"
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Open in Data sources"
+msgstr "Open in Data sources"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
