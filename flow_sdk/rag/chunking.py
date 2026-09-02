@@ -30,6 +30,12 @@ from flow_sdk.schema.data_spec.rag_spec import RagChunk
 #: An ATX heading: one to six hashes, a space, then the title.
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 #: A fenced block delimiter: three or more backticks or tildes, with an optional info string.
+#:
+#: There is a second fence authority in Python, ``flow_sdk/wiki/parser.py::_FENCE_RE``, and the
+#: two agree on the rule below. They are not shared because the shapes differ: that one is a
+#: whole-document regex matching a complete block in order to BLANK it, and this one is a
+#: line-by-line state machine that must keep the fenced text in its output. If the rule ever
+#: changes, change both.
 #: Anything inside is literal text — a ``# comment`` in a Python fence is not a heading, and
 #: treating it as one splits a code sample down the middle.
 #:
@@ -64,28 +70,24 @@ class _Para:
     tokens: int
 
 
-def _encoder():
-    """The shared tiktoken encoder. ``get_encoding`` memoizes, so this is a dict hit."""
-    import tiktoken  # noqa: PLC0415
-
-    return tiktoken.get_encoding("cl100k_base")
-
-
 def _count(text: str) -> int:
-    """Tokens in one string.
+    """Tokens in one string."""
+    from flow_sdk.utils.text import sync_count_tokens  # noqa: PLC0415
 
-    ``encode`` rather than ``flow_sdk.utils.text.sync_count_tokens``: that helper wraps
-    ``encode_batch``, whose thread-pool dispatch costs ~86 µs for a single string against
-    ~22 µs for ``encode``. At eighty-odd calls per document that is most of the chunker's time.
-    """
-    return len(_encoder().encode(text))
+    return sync_count_tokens(text)
 
 
 def _count_all(texts: list[str]) -> list[int]:
-    """Tokens for many strings, in one batch. This is where the dispatch pays for itself."""
+    """Tokens for each of many strings, in one batch.
+
+    Not ``sync_count_tokens``: that answers the SUM across a list, and this needs the counts
+    itemized so a section's size and a piece's size are both derivable without re-measuring.
+    """
+    import tiktoken  # noqa: PLC0415
+
     if not texts:
         return []
-    return [len(e) for e in _encoder().encode_batch(texts)]
+    return [len(e) for e in tiktoken.get_encoding("cl100k_base").encode_batch(texts)]
 
 
 def split_sections(body: str) -> list[Section]:
