@@ -25,22 +25,32 @@ from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.builtin.source_item import MessageSpec, SourceItemSpec
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
-from flow_sdk.utils.serialization import iso_to_utc
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
 MIN_POLL_INTERVAL_SECONDS = 60
+
+
+def _normalize_message_id(value: object) -> str:
+    """Comparable form of an RFC message id from a send or received header."""
+    normalized = "".join(str(value or "").split()).casefold()
+    if len(normalized) >= 2 and normalized[0] == "<" and normalized[-1] == ">":
+        return normalized[1:-1]
+    return normalized
 
 
 class SourceStatus(StrEnum):
@@ -217,20 +227,34 @@ class DataSource(Entity):
         """
         return self.status == SourceStatus.ACTIVE.value
 
-    def may_poll(self) -> bool:
-        """The ONE copy of the "is polling this source allowed at all" gate.
+    def poll_refusal(self) -> str:
+        """Why this source may not be polled, or ``""`` when it may.
 
+        The ONE copy of the "is polling this source allowed at all" gate.
         ``is_due``, ``request_poll`` and the poller's attention fast lane all
         ask the same question; hand-copies drift the moment a new status or
         health state lands. NEW and SETUP have not finished being configured
         and DISABLED is a person's decision — none of them touch health.
         ``config_error`` needs a human; polling it every minute would burn
         quota to re-learn something we already know.
+
+        Answers the SENTENCE, not a boolean. Every caller that refuses has to
+        tell somebody why, and a bare yes/no leaves each of them to invent its
+        own wording: ``request_poll`` used to answer "attention never wakes a
+        parked or non-active source", which is four different reasons wearing
+        one coat and tells the reader nothing about which applied. One author
+        for the sentence, so the pill, the log line and the API payload cannot
+        disagree.
         """
-        return (
-            self.status == SourceStatus.ACTIVE.value
-            and self.health != SourceHealth.CONFIG_ERROR.value
-        )
+        if self.status == SourceStatus.NEW.value:
+            return "this source has not been evaluated yet"
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "this source is waiting on a setup step"
+        if self.status == SourceStatus.DISABLED.value:
+            return "this source is disabled"
+        if self.health == SourceHealth.CONFIG_ERROR.value:
+            return "this source is parked on a configuration error"
+        return ""
 
     @classmethod
     async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
@@ -244,13 +268,84 @@ class DataSource(Entity):
         """
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
-            if str((row.config or {}).get(key) or "").strip() == value:
+            current = (row.config or {}).get(key)
+            # A `lines` field (Slack's ``channels``) is a list; the source
+            # serves the account when the value is one of its entries.
+            members = current if isinstance(current, list) else [current]
+            if any(str(m or "").strip() == value for m in members):
                 return row
         return None
 
+    async def send(self, spec: MessageSpec) -> SendOutcome:
+        """Deliver one outbound message through this source's driver.
+
+        Message-shape validation belongs here rather than on each workflow
+        surface: a direct SDK caller and ``blocks.Inbox`` must reject the same
+        unsupported attachment or recipient shape before provider I/O begins.
+        """
+        from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        if spec.attachments:
+            raise NotImplementedError(
+                "attachments are not supported on this channel yet — "
+                "the driver send contract carries text only"
+            )
+        if len(spec.to) != 1:
+            raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
+
+        driver = get_driver(self.provider)
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        return await driver.send(
+            self,
+            thread_key=spec.thread_key,
+            to=spec.to[0],
+            text=spec.body,
+            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
+            in_reply_to=spec.reply_to_external_id,
+        )
+
+    async def expect_reply(self, sent: SendOutcome) -> SourceItemSpec:
+        """Sync until this source contains a reply to ``sent``.
+
+        The caller owns the outer deadline. This method deliberately carries
+        no second timeout, retry budget, or sleep that could disagree with it.
+        Existing rows are checked before the first provider call so an already
+        ingested reply returns without needless network I/O.
+        """
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+
+        expected = _normalize_message_id(sent.external_id)
+        if not expected:
+            raise ValueError("cannot expect a reply to a send with no external_id")
+        driver = get_driver(self.provider)
+
+        while True:
+            items = await SourceItem.get_all({"data_source_id": self.id})
+            for item in items:
+                if _normalize_message_id(item.reply_to_external_id) == expected:
+                    return SourceItemSpec.model_validate(
+                        {key: getattr(item, key) for key in SourceItemSpec.model_fields}
+                    )
+            if driver is not None and driver.wait_for_reply is not None:
+                reply = await driver.wait_for_reply(self, str(sent.external_id))
+                await ingest_items([reply])
+                return reply
+            if driver is not None and driver.find_reply is not None:
+                reply = await driver.find_reply(self, str(sent.external_id))
+                if reply is not None:
+                    await ingest_items([reply])
+                    return reply
+            else:
+                await sync_source(self, now=datetime.now(timezone.utc))
+
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if not self.may_poll():
+        if self.poll_refusal():
             return False
         if self.next_poll_at is None:
             return True
@@ -352,10 +447,11 @@ class DataSource(Entity):
         loudly in the payload, for anything that is not a healthy ACTIVE
         source. Idempotent: an already-due source is left due.
         """
-        if not self.may_poll():
+        refusal = self.poll_refusal()
+        if refusal:
             return ApiSuccessResponse(data={
                 "status": "ignored", "health": self.health, "source_status": self.status,
-                "detail": "attention never wakes a parked or non-active source",
+                "detail": refusal,
             })
         if self.next_poll_at is not None:
             self.next_poll_at = None

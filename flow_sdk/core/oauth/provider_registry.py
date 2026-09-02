@@ -70,6 +70,21 @@ class TokenShape(str, Enum):
 
 
 @dataclass(frozen=True)
+class OAuthProbeSpec:
+    """A declarative, read-only proof that a provider token works."""
+
+    method: str
+    url: str
+    query: tuple[tuple[str, str], ...] = ()
+    headers: tuple[tuple[str, str], ...] = ()
+    success_field: Optional[str] = None
+    error_field: Optional[str] = None
+    identity_fields: tuple[str, ...] = ()
+    account_key_fields: tuple[str, ...] = ()
+    account_key_parts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class OAuthEndpoints:
     """Where a provider's flow actually goes.
 
@@ -114,6 +129,12 @@ class LocalOAuthProvider:
     #: dataclass frozen and hashable.
     extra_authorize_params: tuple[tuple[str, str], ...] = ()
     token_shape: TokenShape = TokenShape.BEARER_STRING
+    probe: Optional[OAuthProbeSpec] = None
+    #: The standard route is delegated to the Hub; local endpoints/client id
+    #: are therefore intentionally absent and are not publication defects.
+    hub_required: bool = False
+    #: Whether a Hub grant is copied into local SOD for non-Hub consumers.
+    copy_hub_credential: bool = False
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -136,6 +157,13 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         client_id_env="GITHUB_CLIENT_ID",
         client_id_default="Ov23li9fNEH5ulTFINOZ",
         token_shape=TokenShape.BEARER_STRING,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.github.com/user",
+            identity_fields=("login", "name"),
+            account_key_fields=("id",),
+        ),
+        copy_hub_credential=True,
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
@@ -155,6 +183,16 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # `response_type=code`. Provider-specific and must not leak.
         extra_authorize_params=(("code", "true"),),
         token_shape=TokenShape.CREDENTIAL_DICT,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.anthropic.com/v1/organizations/me",
+            headers=(
+                ("anthropic-version", "2023-06-01"),
+                ("anthropic-beta", "oauth-2025-04-20"),
+            ),
+            identity_fields=("name", "display_name", "email"),
+            account_key_fields=("id", "uuid"),
+        ),
     ),
     GOOGLE: LocalOAuthProvider(
         name=GOOGLE,
@@ -183,6 +221,13 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # Google returns access_token + refresh_token + expiry, and the refresh
         # token is the half that matters — an access token lasts an hour.
         token_shape=TokenShape.CREDENTIAL_DICT,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://www.googleapis.com/drive/v3/about",
+            query=(("fields", "user(permissionId,displayName,emailAddress)"),),
+            identity_fields=("user.emailAddress", "user.displayName"),
+            account_key_fields=("user.permissionId",),
+        ),
     ),
     SLACK: LocalOAuthProvider(
         name=SLACK,
@@ -203,6 +248,16 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # into local SOD — without it the desktop ends a successful flow holding
         # a row and nothing else. Slack's token is a bearer string.
         token_shape=TokenShape.BEARER_STRING,
+        probe=OAuthProbeSpec(
+            method="POST",
+            url="https://slack.com/api/auth.test",
+            success_field="ok",
+            error_field="error",
+            identity_fields=("user", "team"),
+            account_key_parts=("team_id", "user_id"),
+        ),
+        hub_required=True,
+        copy_hub_credential=False,
     ),
 }
 
@@ -233,6 +288,25 @@ def get_local_provider(name: str) -> Optional[LocalOAuthProvider]:
 def local_providers() -> list[LocalOAuthProvider]:
     """Every locally-known provider, in a stable order."""
     return [_PROVIDERS[name] for name in sorted(_PROVIDERS)]
+
+
+def publishable_local_providers() -> list[LocalOAuthProvider]:
+    """Providers whose complete local connection contract is executable."""
+    return [
+        provider
+        for provider in local_providers()
+        if provider.probe is not None
+        and bool(provider.user_credentials_name)
+        and (
+            provider.hub_required
+            or (
+                provider.endpoints is not None
+                and bool(provider.endpoints.token_url)
+                and (provider.kind == OAuthFlowKind.DEVICE or bool(provider.endpoints.authorize_url))
+                and bool(client_id_for(provider.name))
+            )
+        )
+    ]
 
 
 def user_credentials_name(name: str) -> Optional[str]:

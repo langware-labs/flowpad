@@ -54,6 +54,8 @@ interface ConversationPanelProps {
   threadId?: string | null;
   /** Open a thread (id) or return to the packed list (null). */
   onThreadNavigate?: (threadId: string | null) => void;
+  /** Agent mailbox scope preserved from the URL. */
+  agentId?: string | null;
 }
 
 /**
@@ -169,6 +171,7 @@ export function ConversationPanel({
   onMessageNavigate,
   threadId,
   onThreadNavigate,
+  agentId,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
@@ -342,6 +345,7 @@ export function ConversationPanel({
                 onOpenRun={openRun}
                 threadId={threadId}
                 onThreadNavigate={onThreadNavigate}
+                agentId={agentId}
               />
             </ChipsExcludeProvider>
           </div>

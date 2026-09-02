@@ -1,4 +1,3 @@
-import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -21,6 +20,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
 import {
   Conversation,
+  Agent,
   FlowMessage,
   Invitation,
   QueryRequest,
@@ -41,6 +41,7 @@ import {
   unarchiveConversation,
   type HelpdeskTicket,
   latestPointer,
+  type AgentInboxScope,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -134,6 +135,8 @@ interface ConversationListRowProps {
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
   refSetter: (el: HTMLDivElement | null) => void;
+  agentId?: string;
+  allowedMessageIds?: ReadonlySet<string>;
 }
 
 export function ConversationListRow({
@@ -151,13 +154,17 @@ export function ConversationListRow({
   cloudUserId,
   onVisibilityChange,
   refSetter,
+  agentId,
+  allowedMessageIds,
 }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
   // rows we want the latest message preview but still need to peek at the
   // first to detect ``kind === 'invitation'``.
-  const pointers = conv.conversationMessageIds ?? [];
+  const pointers = (conv.conversationMessageIds ?? []).filter(
+    (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
+  );
   const firstPtr = pointers[0];
   // Newest by ts, not last-appended — an ingested mailbox backfills
   // newest-first, so the last pointer there is the OLDEST mail.
@@ -313,7 +320,7 @@ export function ConversationListRow({
     // moved to the mounted ConversationView (open-to-read effect), so direct
     // links, banner clicks, and Inbox clicks all behave identically and the
     // backend reconciles InboxManager.unread after the mutation.
-    navigation.openDock(DockPointer.forConversation(conv.id));
+    navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
   };
 
   const handleAccept = async () => {
@@ -424,7 +431,7 @@ export function ConversationListRow({
 
 // ── InboxView ───────────────────────────────────────────────────────────────
 
-export function InboxView() {
+export function InboxView({ agentId }: { agentId?: string } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
   // 'inbox' (default) shows active conversations; 'archived' shows only
@@ -460,6 +467,39 @@ export function InboxView() {
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
+  const [agentScope, setAgentScope] = useState<AgentInboxScope | null>(null);
+  const refreshAgentScope = useCallback(async () => {
+    if (!agentId) return;
+    const scope = await new Agent({ id: agentId }).inboxScope();
+    setAgentScope(scope);
+  }, [agentId]);
+  useEffect(() => {
+    setAgentScope(null);
+  }, [agentId]);
+  const conversationKey = conversations
+    .map((conversation) => `${conversation.id}:${conversation.updated_date}:${conversation.message_ids}`)
+    .join(',');
+  useEffect(() => {
+    if (agentId) void refreshAgentScope().catch(() => setAgentScope({
+      agent_id: agentId,
+      source_id: null,
+      conversation_ids: [],
+      thread_ids: [],
+      flow_message_ids: [],
+    }));
+  }, [agentId, conversationKey, refreshAgentScope]);
+  const agentConversationIds = useMemo(
+    () => new Set(agentScope?.conversation_ids ?? []),
+    [agentScope?.conversation_ids],
+  );
+  const agentFlowMessageIds = useMemo(
+    () => new Set(agentScope?.flow_message_ids ?? []),
+    [agentScope?.flow_message_ids],
+  );
+  const scopedConversations = useMemo(
+    () => (agentId ? conversations.filter((conversation) => !!conversation.id && agentConversationIds.has(conversation.id)) : conversations),
+    [agentConversationIds, agentId, conversations],
+  );
 
   // Only the FIRST load gets the full-screen "Loading…" state. Every
   // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
@@ -469,7 +509,7 @@ export function InboxView() {
   // a background refetch keeps the existing rows on screen.
   const hasLoadedOnce = useRef(false);
   if (isSuccess) hasLoadedOnce.current = true;
-  const initialLoading = isLoading && !hasLoadedOnce.current;
+  const initialLoading = (isLoading && !hasLoadedOnce.current) || (agentId !== undefined && agentScope === null);
 
   // Text search over message bodies — server-side, via the `inbox-search`
   // action rather than a `$LIKE` entity query: under the reference model a
@@ -485,7 +525,7 @@ export function InboxView() {
     if (!searchActive) return;
     let stale = false;
     const timer = setTimeout(() => {
-      void searchInbox(needle).then((ids) => {
+      void searchInbox(needle, agentId).then((ids) => {
         if (!stale) setMatchIds(ids);
       });
     }, 200);
@@ -493,13 +533,13 @@ export function InboxView() {
       stale = true;
       clearTimeout(timer);
     };
-  }, [needle, searchActive]);
+  }, [agentId, needle, searchActive]);
 
   const sorted = useMemo(() => {
-    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
+    const list = searchActive ? scopedConversations.filter((c) => c.id && matchIds.has(c.id)) : [...scopedConversations];
     list.sort(compareConversationsByRecency);
     return list;
-  }, [conversations, searchActive, matchIds]);
+  }, [scopedConversations, searchActive, matchIds]);
 
   const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
     setVisibleIds((prev) => {
@@ -520,57 +560,58 @@ export function InboxView() {
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
-      await fetchConversations();
+      await fetchConversations(agentId);
+      await refreshAgentScope();
       void refetch();
     } finally {
       setFetching(false);
     }
-  }, [refetch]);
+  }, [agentId, refetch, refreshAgentScope]);
 
   const handleArchive = useCallback(
     async (convId: string) => {
-      await archiveConversation({ conversation_id: convId });
+      await archiveConversation({ conversation_id: convId, ...(agentId ? { agent_id: agentId } : {}) });
       void refetch();
     },
-    [refetch],
+    [agentId, refetch],
   );
 
   const handleUnarchive = useCallback(
     async (convId: string) => {
-      await unarchiveConversation({ conversation_id: convId });
+      await unarchiveConversation({ conversation_id: convId, ...(agentId ? { agent_id: agentId } : {}) });
       void refetch();
     },
-    [refetch],
+    [agentId, refetch],
   );
 
   const handleToggleRead = useCallback(
     async (id: string, isRead: boolean) => {
-      await updateMessage(id, { is_read: isRead });
+      await updateMessage(id, { is_read: isRead }, agentId);
       void refetch();
     },
-    [refetch],
+    [agentId, refetch],
   );
 
   const handleMarkAllRead = useCallback(async () => {
     // No optimistic zero: the backend reconciles InboxManager.unread after the
     // bulk update (pending invitations legitimately keep it > 0).
-    await bulkUpdateMessages({ is_read: true });
+    await bulkUpdateMessages({ is_read: true }, agentId);
     void refetch();
-  }, [refetch]);
+  }, [agentId, refetch]);
 
   const handleArchiveAll = useCallback(async () => {
     // Conversation-level archive — O(threads), not O(messages). Includes
     // empties (zero-message conversations) since archive is now a property
     // of the conversation itself, independent of FlowMessage state.
-    await archiveAllConversations();
+    await archiveAllConversations(agentId);
     void refetch();
-  }, [refetch]);
+  }, [agentId, refetch]);
 
   // Compute the bulk-delete bucket breakdown from the locally-known
   // archived conversations. Drives the BulkConfirmDialog summary and the
   // hub-reachability gate. Mirrors the server-side classification in
   // ``handle_conversation_delete_archived``.
-  const archivedConvs = useMemo(() => conversations.filter((c) => c.archived_at), [conversations]);
+  const archivedConvs = useMemo(() => scopedConversations.filter((c) => c.archived_at), [scopedConversations]);
   // Classify a conversation by the user's relationship to it — drives both the
   // bulk-delete confirm summary and the hub-reachability gate. Shared by the
   // "Delete all archived" flow and the multi-select "Delete" flow.
@@ -644,20 +685,24 @@ export function InboxView() {
   const handleBulkMarkRead = useCallback(
     async (isRead: boolean) => {
       const ids = selectedConvs.map(latestMessageId).filter((id): id is string => !!id);
-      await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead })));
+      await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead }, agentId)));
       clearSelection();
       void refetch();
     },
-    [selectedConvs, clearSelection, refetch],
+    [agentId, selectedConvs, clearSelection, refetch],
   );
 
   const handleBulkArchive = useCallback(async () => {
     await Promise.all(
-      selectedConvs.map((c) => (c.id ? archiveConversation({ conversation_id: c.id }) : Promise.resolve())),
+      selectedConvs.map((c) =>
+        c.id
+          ? archiveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) })
+          : Promise.resolve(),
+      ),
     );
     clearSelection();
     void refetch();
-  }, [selectedConvs, clearSelection, refetch]);
+  }, [agentId, selectedConvs, clearSelection, refetch]);
 
   const handleBulkDelete = useCallback(() => {
     if (selectedConvs.length === 0) return;
@@ -683,13 +728,13 @@ export function InboxView() {
         if (seemsInvitationConv(c)) {
           // Hide without notifying the inviter — the selection UI has no place
           // to surface the decline-vs-dismiss choice the per-row dialog offers.
-          await dismissConversation({ conversation_id: c.id });
+          await dismissConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
         } else if (!c.remote) {
-          await deleteConversation({ conversation_id: c.id, mode: 'local' });
+          await deleteConversation({ conversation_id: c.id, mode: 'local', ...(agentId ? { agent_id: agentId } : {}) });
         } else if (cloudUserId && c.created_by === cloudUserId) {
-          await deleteConversation({ conversation_id: c.id, mode: 'delete_for_all' });
+          await deleteConversation({ conversation_id: c.id, mode: 'delete_for_all', ...(agentId ? { agent_id: agentId } : {}) });
         } else {
-          await leaveConversation({ conversation_id: c.id });
+          await leaveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
         }
         ok += 1;
       } catch {
@@ -706,7 +751,7 @@ export function InboxView() {
     }
     clearSelection();
     void refetch();
-  }, [selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch, t]);
+  }, [agentId, selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch, t]);
 
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
@@ -722,7 +767,7 @@ export function InboxView() {
 
   const runBulkDelete = useCallback(async () => {
     try {
-      const res = await deleteArchivedConversations();
+      const res = await deleteArchivedConversations(agentId);
       const ok = res.deleted?.length ?? 0;
       const failed = res.failed ?? [];
       if (failed.length === 0) {
@@ -745,7 +790,7 @@ export function InboxView() {
     } finally {
       void refetch();
     }
-  }, [refetch, t]);
+  }, [agentId, refetch, t]);
 
   const handleRowDelete = useCallback(
     (action: RowDeleteAction) => {
@@ -771,15 +816,17 @@ export function InboxView() {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'delete_for_all',
+          ...(agentId ? { agent_id: agentId } : {}),
         });
         notify.success({ title: t`Conversation deleted` });
       } else if (rowDelete.kind === 'leave') {
-        await leaveConversation({ conversation_id: rowDelete.conversationId });
+        await leaveConversation({ conversation_id: rowDelete.conversationId, ...(agentId ? { agent_id: agentId } : {}) });
         notify.success({ title: t`Left conversation` });
       } else {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'local',
+          ...(agentId ? { agent_id: agentId } : {}),
         });
         notify.success({ title: t`Conversation deleted` });
       }
@@ -791,13 +838,13 @@ export function InboxView() {
     } finally {
       void refetch();
     }
-  }, [refetch, rowDelete, t]);
+  }, [agentId, refetch, rowDelete, t]);
 
   const dismissInvitationRow = useCallback(
     async (action: RowDeleteAction) => {
       if (action.kind !== 'invitation') return;
       try {
-        await dismissConversation({ conversation_id: action.conversationId });
+        await dismissConversation({ conversation_id: action.conversationId, ...(agentId ? { agent_id: agentId } : {}) });
         notify.success({ title: t`Invitation dismissed` });
       } catch (e) {
         notify.error({
@@ -808,7 +855,7 @@ export function InboxView() {
         void refetch();
       }
     },
-    [refetch, t],
+    [agentId, refetch, t],
   );
 
   const setView = useCallback((next: InboxViewMode) => {
@@ -918,7 +965,7 @@ export function InboxView() {
             {renderViewPill('inbox', t`Inbox`, InboxIcon)}
             {renderViewPill('unread', t`Unread`, MailPlus)}
             {renderViewPill('archived', t`Archived`, Archive)}
-            {renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
+            {!agentId && renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
           {/* Text search — filters the list below to conversations whose
               messages contain the query, spanning archived rows. Hidden in
@@ -950,7 +997,7 @@ export function InboxView() {
           )}
         </div>
         {/* CENTER — new conversation / new contacts group */}
-        <div className="flex shrink-0 items-center">
+        {!agentId && <div className="flex shrink-0 items-center">
           <Button
             variant="ghost"
             size="sm"
@@ -973,7 +1020,7 @@ export function InboxView() {
             <UsersRound className="me-1 h-3.5 w-3.5" />
             <Trans>New group</Trans>
           </Button>
-        </div>
+        </div>}
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
           {selectedCount > 0 && !inHelpdeskView ? (
@@ -1204,7 +1251,7 @@ export function InboxView() {
           </div>
         )}
 
-        {!inHelpdeskView && !inArchivedView && !initialLoading && (
+        {!agentId && !inHelpdeskView && !inArchivedView && !initialLoading && (
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
@@ -1229,13 +1276,15 @@ export function InboxView() {
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}
+              agentId={agentId}
+              allowedMessageIds={agentId ? agentFlowMessageIds : undefined}
             />
           ))}
       </div>
 
-      <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />
+      {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}
 
-      <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />
+      {!agentId && <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

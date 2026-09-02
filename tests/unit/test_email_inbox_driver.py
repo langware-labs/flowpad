@@ -17,10 +17,10 @@ import pytest
 
 from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
 from flow_sdk.builtin.email_inbox_driver import (
+    EMAIL_INBOX_DRIVERS,
     EmailInboxDriver,
     EmailInboxError,
     get_email_inbox_driver,
-    EMAIL_INBOX_DRIVERS,
 )
 from flow_sdk.cloud_client.shared.errors import HubError
 
@@ -61,6 +61,23 @@ class TestTheFamily:
 
 
 class TestTheHubMember:
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_enable_and_disable_use_the_lifecycle_subpaths(self, monkeypatch):
+        seen: list[tuple[str, dict]] = []
+
+        async def fake_post(_type, body, _entity_id, _action, sub_path):
+            seen.append((sub_path, body))
+            return DESCRIPTOR
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
+        driver = HubEmailInboxDriver()
+
+        await driver.enable_inbox(AGENT_ID)
+        await driver.disable_inbox(AGENT_ID)
+
+        assert seen == [("enable", {}), ("disable", {})]
+
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_get_inbox_unwraps_the_envelope(self, monkeypatch):
@@ -141,12 +158,9 @@ class TestTheAgentVerb:
         fail — so asking twice must never bill twice."""
         from flow_sdk.builtin.agent import Agent
 
-        # Patch the CLASS: an Entity is a pydantic model, so it refuses an
-        # instance attribute that is not a declared field.
-        monkeypatch.setattr(Agent, "ensure_on_hub", _noop_ensure)
         allocated = _patch_mailbox(monkeypatch, existing=DESCRIPTOR)
 
-        result = await Agent(name="mailer").provision_inbox(
+        result = await Agent(name="mailer", remote=True).provision_inbox(
             actor=SimpleNamespace(type="user", id="u1")
         )
 
@@ -159,10 +173,9 @@ class TestTheAgentVerb:
     async def test_an_agent_without_one_gets_a_mailbox(self, monkeypatch):
         from flow_sdk.builtin.agent import Agent
 
-        monkeypatch.setattr(Agent, "ensure_on_hub", _noop_ensure)
         _patch_mailbox(monkeypatch, existing=None)
 
-        result = await Agent(name="mailer").provision_inbox(
+        result = await Agent(name="mailer", remote=True).provision_inbox(
             actor=SimpleNamespace(type="user", id="u1")
         )
 
@@ -202,8 +215,3 @@ def _patch_mailbox(monkeypatch, *, existing):
         "flow_sdk.builtin.email_inbox_driver.get_email_inbox_driver", lambda *_a, **_k: _Driver()
     )
     return allocated
-
-
-async def _noop_ensure(_self, _actor):
-    """The agent is already published — publishing has its own coverage."""
-    return False

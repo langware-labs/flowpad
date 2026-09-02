@@ -55,7 +55,16 @@ class DataSpec(BaseModel):
     #: dumps back to. ``None`` on hand-written subclasses.
     __authoring__: ClassVar[Any] = None
 
-    model_config = ConfigDict(extra="forbid")
+    #: ``frozen``: a spec is a VALUE — a launch payload, a file header, an
+    #: ingestion envelope. Nothing downstream may edit one in place and hand it
+    #: on, because the next reader would have no way to tell what it was handed.
+    #: Build a changed one with ``model_copy(update=...)``.
+    #:
+    #: ``extra="forbid"``: a misspelled key must fail loudly rather than yield a
+    #: row with an empty field. The corollary is that a constructor reading a
+    #: FOREIGN dict must project field by field rather than splat it — the hop is
+    #: deliberately lossy, and that is the contract.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="before")
     @classmethod

@@ -32,6 +32,10 @@ def test_oauth_action_enum_values():
     assert OAuthAction.Detach == "detach"
     assert OAuthAction.Status == "status"
     assert OAuthAction.Disconnect == "disconnect"
+    assert OAuthAction.Catalogue == "catalogue"
+    assert OAuthAction.Token == "token"
+    assert OAuthAction.Test == "test"
+    assert OAuthAction.Cancel == "cancel"
 
 
 def test_oauth_error_code_enum_values():
@@ -91,9 +95,7 @@ async def test_oauth_status_check(bootstrapped_client, user):
     client = bootstrapped_client
 
     # Check status for a generic provider
-    response = await client.get(
-        f"/api/v1/graph/user/{user.id}/oauth/test_provider/status"
-    )
+    response = await client.get(f"/api/v1/graph/user/{user.id}/oauth/test_provider/status")
 
     assert response.status_code == 200, f"OAuth status check failed: {response.text}"
     res = response.json()
@@ -209,15 +211,45 @@ async def test_oauth_missing_provider(bootstrapped_client, user):
     client = bootstrapped_client
 
     # Request with no sub_path at all (just /oauth)
-    response = await client.get(
-        f"/api/v1/graph/user/{user.id}/oauth"
-    )
+    response = await client.get(f"/api/v1/graph/user/{user.id}/oauth")
 
     # Should fail - no provider specified
     # The graph handler may return 400 or the action may return FAIL status
     if response.status_code == 200:
         res = response.json()
         assert res["status"] == "FAIL"
+
+
+@pytest.mark.asyncio
+async def test_hub_oauth_cancel_forwards_exact_provider_and_request(bootstrapped_client, user, monkeypatch):
+    from flow_sdk.app.actions import oauth_action
+
+    async def no_desktop_session(_state):
+        return False
+
+    seen = []
+
+    async def hub_cancel(provider, request_id):
+        seen.append((provider, request_id))
+        return {
+            "oauth_request_id": request_id,
+            "provider": provider,
+            "status": "cancelled",
+        }
+
+    monkeypatch.setattr(oauth_action, "cancel_desktop_oauth_flow", no_desktop_session)
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_oauth.hub_cancel_auth", hub_cancel)
+
+    response = await bootstrapped_client.post(f"/api/v1/graph/user/{user.id}/oauth/slack/cancel?state=opaque-request")
+
+    assert response.status_code == 200
+    assert seen == [("slack", "opaque-request")]
+    assert response.json()["data"] == {
+        "oauth_request_id": "opaque-request",
+        "provider": "slack",
+        "status": "cancelled",
+        "cancelled": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -230,9 +262,7 @@ async def test_oauth_anthropic_status(bootstrapped_client, user, _test_sod_drive
     """
     client = bootstrapped_client
 
-    response = await client.get(
-        f"/api/v1/graph/user/{user.id}/oauth/anthropic/status"
-    )
+    response = await client.get(f"/api/v1/graph/user/{user.id}/oauth/anthropic/status")
 
     assert response.status_code == 200, f"Anthropic OAuth status failed: {response.text}"
     res = response.json()
@@ -254,9 +284,7 @@ async def test_oauth_anthropic_status_reflects_flowpad_sod(bootstrapped_client, 
         user.id,
     )
 
-    response = await bootstrapped_client.get(
-        f"/api/v1/graph/user/{user.id}/oauth/anthropic/status"
-    )
+    response = await bootstrapped_client.get(f"/api/v1/graph/user/{user.id}/oauth/anthropic/status")
 
     assert response.status_code == 200, response.text
     res = response.json()

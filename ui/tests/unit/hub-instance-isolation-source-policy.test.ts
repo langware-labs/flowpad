@@ -267,7 +267,10 @@ describe('hub launched-instance isolation source policy', () => {
   it('keeps full-history inbox reconciliation behind the explicit refresh action', () => {
     expect(INBOX_VIEW).not.toMatch(/useEffect\(\(\) => \{\s*void fetchConversations\(\)/);
     expect(INBOX_VIEW).toContain('const handleRefresh = useCallback(async () => {');
-    expect(INBOX_VIEW).toContain('await fetchConversations();');
+    // The call is scoped per agent now (`fetchConversations(agentId)`); what this
+    // guards is WHERE it happens — inside the explicit handler, never a mount
+    // effect — so match the call, not its argument list.
+    expect(INBOX_VIEW).toContain('await fetchConversations(');
     expect(INBOX_VIEW).toContain('onClick={() => void handleRefresh()}');
   });
 

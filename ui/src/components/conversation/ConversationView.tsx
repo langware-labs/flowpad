@@ -3,6 +3,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Radio, RefreshCw } from 'lucide-react';
 import {
+  Agent,
   Conversation,
   DataSource,
   fetchConversations,
@@ -16,7 +17,7 @@ import {
   TypeId,
   latestPointer,
 } from '@sdk';
-import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
+import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
@@ -80,6 +81,8 @@ interface ConversationViewProps {
   /** Open a thread (id) or return to the packed list (null). URL-first — the
    *  view never filters itself, it asks the host to navigate. */
   onThreadNavigate?: (threadId: string | null) => void;
+  /** Restrict this view and every mutation to one Agent's formal inbox. */
+  agentId?: string | null;
 }
 
 export function ConversationView({
@@ -92,6 +95,7 @@ export function ConversationView({
   onOpenRun,
   threadId,
   onThreadNavigate,
+  agentId,
 }: ConversationViewProps) {
   const { t } = useLingui();
   const conversationTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
@@ -126,11 +130,28 @@ export function ConversationView({
   const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
   const participants = memberRoster;
 
+  const [agentScope, setAgentScope] = useState<Awaited<ReturnType<Agent['inboxScope']>> | null>(null);
+  const refreshAgentScope = useCallback(async () => {
+    if (!agentId) {
+      setAgentScope(null);
+      return;
+    }
+    try {
+      setAgentScope(await new Agent({ id: agentId }).inboxScope());
+    } catch {
+      setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
+    }
+  }, [agentId]);
+  useEffect(() => void refreshAgentScope(), [conversation?.message_ids, refreshAgentScope]);
+  const allowedMessageIds = useMemo(
+    () => (agentId ? new Set(agentScope?.flow_message_ids ?? []) : null),
+    [agentId, agentScope?.flow_message_ids],
+  );
   const pointers = useMemo(
-    () => conversation?.conversationMessageIds ?? [],
+    () => (conversation?.conversationMessageIds ?? []).filter((pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id)),
     // conversationMessageIds is a parsed view over the message_ids JSON field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversation?.message_ids],
+    [conversation?.message_ids, allowedMessageIds],
   );
 
   // Local-only drafts attached to this conversation. Filtered to the local
@@ -183,16 +204,27 @@ export function ConversationView({
       }),
     [conversationId],
   );
-  const { data: conversationMessages = [] } = useEntitiesQuery<FlowMessage>(messagesRequest, {
+  const { data: conversationMessages = [], refetch: refetchConversationMessages } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
+  const conversationMessagesKey = conversationMessages.map((message) => message.id).sort().join(',');
+  useEffect(() => {
+    if (!agentId || !conversationMessagesKey) return;
+    // Source projection writes the FlowMessage and the conversation pointer in
+    // one backend pass, but their live-query frames are independent. A new raw
+    // message is therefore the reliable prompt to pull both the pointer list
+    // and the Agent's formal source scope before rendering it.
+    void Promise.all([refetch(), refreshAgentScope()]).catch(() => {
+      // Keep the already-rendered thread during a transient refresh failure.
+    });
+  }, [agentId, conversationMessagesKey, refetch, refreshAgentScope]);
   const messagesById = useMemo(() => {
     const entries: Array<[string, FlowMessage]> = [];
     for (const message of conversationMessages) {
-      if (message.id) entries.push([message.id, message]);
+      if (message.id && (!allowedMessageIds || allowedMessageIds.has(message.id))) entries.push([message.id, message]);
     }
     return new Map(entries);
-  }, [conversationMessages]);
+  }, [allowedMessageIds, conversationMessages]);
 
   // Pull this conversation's hub messages once per open (and whenever the
   // pointer set changes — a new reply landed). The backend syncs only the
@@ -201,13 +233,13 @@ export function ConversationView({
   // backfill loop or remount-keying is needed.
   useEffect(() => {
     if (!conversationId) return;
-    void syncConversationMessages(conversationId).catch(() => {
+    void syncConversationMessages(conversationId, agentId ?? undefined).catch(() => {
       // Hub offline / not configured — the local query still renders what we
       // already have; avoid surfacing transient sync failures to the user.
     });
     // Re-sync when the pointer set changes so brand-new replies pull through.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, pointers.map((p) => p.id).join(',')]);
+  }, [agentId, conversationId, pointers.map((p) => p.id).join(',')]);
 
   // Execute is backend-owned now; the hook is just the trigger.
   const { executePrompt } = useApproveAndExecute();
@@ -305,12 +337,34 @@ export function ConversationView({
   // Source resolution is the SAME rule the attribution chip uses.
   const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
   const attentionSourceId = useMemo(() => {
+    if (agentId) return agentScope?.source_id ?? undefined;
     const withPointer = [...messagesById.values()].find((fm) => fm.origin_local?.data_source_id);
     return sourceForOrigin(
       attentionSources, channelOrigin, withPointer?.origin_local ?? null,
     )?.id;
-  }, [channelOrigin, messagesById, attentionSources]);
+  }, [agentId, agentScope?.source_id, channelOrigin, messagesById, attentionSources]);
   useAttentionPolling(attentionSourceId, conversationId);
+
+  // The ingest sync boundary is too early: inbox projection runs as a detached
+  // subscriber and writes the FlowMessage + conversation pointer afterward.
+  // Refresh on the existing post-projection event instead, scoped to this
+  // Agent's DataSource so another active source cannot disturb this thread.
+  useOnTag(
+    'inbox.*.message.projected',
+    () => {
+      if (!agentId || !attentionSourceId) return;
+      void Promise.all([
+        refetch(),
+        refetchConversationMessages(),
+        refreshAgentScope(),
+      ]).catch(() => {
+        // Keep the already-rendered thread during a transient refresh failure.
+      });
+    },
+    {
+      scope: [attentionSourceId ? `data_source:${attentionSourceId}` : 'data_source:__inactive__'],
+    },
+  );
 
   // What is in flight. Local state, because the line must appear the instant
   // the user hits Send — the worker's process does not exist yet. Cleared when
@@ -343,8 +397,8 @@ export function ConversationView({
     enabled: !!conversationId && !threadId,
   });
   const threadCounts = useMemo(
-    () => new Map(threads.map((th) => [th.id ?? '', th.message_count ?? 0])),
-    [threads],
+    () => new Map(threads.filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? '')).map((th) => [th.id ?? '', th.message_count ?? 0])),
+    [agentId, agentScope?.thread_ids, threads],
   );
 
   // Two views of one feed, chosen by the URL:
@@ -415,6 +469,7 @@ export function ConversationView({
           isHelpdesk={isHelpdeskConversation}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
+          showEmailHeaders={!!agentId}
         />
       );
     }
@@ -560,14 +615,14 @@ export function ConversationView({
       const key = `${conversationId}:${latest.id}`;
       if (readMarkedRef.current === key) return;
       readMarkedRef.current = key;
-      void updateMessage(latest.id, { is_read: true }).catch(() => {
+      void updateMessage(latest.id, { is_read: true }, agentId ?? undefined).catch(() => {
         readMarkedRef.current = null; // transient failure — retry on next tick/focus
       });
     };
     markLatestRead();
     window.addEventListener('focus', markLatestRead);
     return () => window.removeEventListener('focus', markLatestRead);
-  }, [conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
+  }, [agentId, conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
@@ -588,12 +643,12 @@ export function ConversationView({
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      await Promise.allSettled([fetchConversations(), syncConversationMessages(conversationId), refreshMembers()]);
+      await Promise.allSettled([fetchConversations(agentId ?? undefined), syncConversationMessages(conversationId, agentId ?? undefined), refreshMembers()]);
       await refetch();
     } finally {
       setHubSyncing(false);
     }
-  }, [refetch, refreshMembers, conversationId]);
+  }, [agentId, refetch, refreshMembers, conversationId]);
 
   // Staff "pick up" affordance for a helpdesk ticket: shown only on a
   // helpdesk conversation the local cloud user hasn't joined and didn't open
@@ -811,6 +866,7 @@ export function ConversationView({
         channel={channelOrigin?.kind}
         onChannelSent={setSendingText}
         placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
+        agentId={agentId ?? undefined}
       />
 
       {executeTarget && (

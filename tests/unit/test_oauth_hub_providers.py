@@ -35,6 +35,11 @@ def _hub_payload(*names: str) -> dict:
                     "var_type": EnvVarType.OAUTH_PROVIDER_ID.value,
                     "ref_name": f"{name}_credentials",
                     "icon": None,
+                    "oauth_display_name": name.title(),
+                    "oauth_kind": "code",
+                    "oauth_scopes": ["read"],
+                    "oauth_verifiable": True,
+                    "oauth_protocol": 1,
                 }
                 for name in names
             ]
@@ -56,11 +61,11 @@ def test_union_keeps_the_local_row_on_a_collision():
 
 def test_union_adds_providers_the_local_registry_lacks():
     local = oauth_provider_rows()
-    hub = EntityEnvVars(values=[hp._row_from_hub({"name": "slack", "ref_name": "slack_credentials"})])
+    hub = EntityEnvVars(values=[hp._row_from_hub(_hub_payload("googledrive")["data"]["values"][0])])
 
     merged = hp.union_providers(local, hub)
 
-    assert "slack" in {r.name for r in merged.values}
+    assert "googledrive" in {r.name for r in merged.values}
 
 
 @pytest.mark.asyncio
@@ -107,10 +112,15 @@ async def test_a_hub_failure_degrades_to_local_only(monkeypatch):
 @pytest.mark.asyncio
 async def test_non_provider_rows_from_the_hub_are_ignored(monkeypatch):
     async def fake_get(*a, **k):
-        return {"data": {"values": [
-            {"name": "SOME_KEY", "var_type": EnvVarType.API_KEY.value, "ref_name": "x"},
-            {"name": "slack", "var_type": EnvVarType.OAUTH_PROVIDER_ID.value, "ref_name": "slack_credentials"},
-        ]}}
+        provider = _hub_payload("slack")["data"]["values"][0]
+        return {
+            "data": {
+                "values": [
+                    {"name": "SOME_KEY", "var_type": EnvVarType.API_KEY.value, "ref_name": "x"},
+                    provider,
+                ]
+            }
+        }
 
     monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
     monkeypatch.setattr(hp, "_cloud_user_id", lambda: "u")

@@ -533,9 +533,9 @@ export interface FetchConversationsResult {
  *  background message fetches keyed off ``message_count`` deltas. Returns
  *  fast (the merged list); new messages arrive via WS ``data_op_msg``
  *  frames as the background fetchers complete. */
-export async function fetchConversations(): Promise<FetchConversationsResult> {
+export async function fetchConversations(agentId?: string): Promise<FetchConversationsResult> {
   const action = new ActionInfo('conversation-list', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, FetchConversationsResult>(action);
   return res ?? { conversations: [], bg_fetch_dispatched: [], hub_reachable: false, auth_required: false };
 }
@@ -566,6 +566,7 @@ export interface AcceptInvitationResult {
 
 export type DismissConversationParams = {
   conversation_id: string;
+  agent_id?: string;
 }
 
 export interface DismissConversationResult {
@@ -587,6 +588,7 @@ export async function dismissConversation(
 
 export type ArchiveConversationParams = {
   conversation_id: string;
+  agent_id?: string;
 }
 
 export interface ArchiveConversationResult {
@@ -628,9 +630,9 @@ export async function unarchiveConversation(
 
 /** Archive every conversation that isn't already archived. Skips already-
  *  archived rows server-side, so it stays cheap on repeat clicks. */
-export async function archiveAllConversations(): Promise<ArchiveAllConversationsResult> {
+export async function archiveAllConversations(agentId?: string): Promise<ArchiveAllConversationsResult> {
   const action = new ActionInfo('conversation-archive-all', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, ArchiveAllConversationsResult>(action);
   return res!;
 }
@@ -648,9 +650,9 @@ export interface DeleteArchivedConversationsResult {
  *  row, the server classifies the user's role and either calls the hub
  *  delete/leave/decline action or just deletes locally. Per-item status is
  *  returned so the caller can surface partial failures. */
-export async function deleteArchivedConversations(): Promise<DeleteArchivedConversationsResult> {
+export async function deleteArchivedConversations(agentId?: string): Promise<DeleteArchivedConversationsResult> {
   const action = new ActionInfo('conversation-delete-archived', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, DeleteArchivedConversationsResult>(action);
   return res!;
 }
@@ -659,6 +661,7 @@ export type DeleteConversationMode = 'delete_for_all' | 'leave' | 'local';
 
 export type DeleteConversationParams = {
   conversation_id: string;
+  agent_id?: string;
   /** Caller picks the mode based on the user's relationship to the conv:
    *    - ``delete_for_all``: owner cascade-delete (rule 1)
    *    - ``leave``:          non-owner participant leaves (rule 3)
@@ -685,9 +688,9 @@ export async function deleteConversation(
 
 /** Thin alias: leave a shared conversation you don't own. */
 export async function leaveConversation(
-  params: { conversation_id: string },
+  params: { conversation_id: string; agent_id?: string },
 ): Promise<DeleteConversationResult> {
-  return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave' });
+  return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave', agent_id: params.agent_id });
 }
 
 /** Accept a pending invitation on the hub and download just the unlocked bundle.

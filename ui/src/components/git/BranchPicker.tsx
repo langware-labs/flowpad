@@ -7,8 +7,18 @@ import { ArrowLeft, GitBranch, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
+/** The three fields this picker actually needs.
+ *
+ * Widened from the full `RepoSummary` so a repo the user PASTED as a URL can
+ * drive it too — synthesize `git_origin` with `gitOriginFromUrl` and the rest
+ * follows. `getBranches` only ever wanted `{git_origin}`, and the backend reads
+ * public branches anonymously, so this path needs no GitHub connection. The
+ * alternative — a free-text branch box — cannot show which branches exist,
+ * which is exactly the mistake that lands a vendor desk on `main`. */
+export type BranchPickerRepo = Pick<RepoSummary, 'git_origin' | 'default_branch' | 'full_name'>;
+
 interface BranchPickerProps {
-  repo: RepoSummary;
+  repo: BranchPickerRepo;
   onSelect: (branch: BranchSummary) => void;
   onBack: () => void;
 }

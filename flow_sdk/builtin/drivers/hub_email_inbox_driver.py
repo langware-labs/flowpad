@@ -54,8 +54,16 @@ class HubEmailInboxDriver:
         body = {k: v for k, v in options.items() if v}
         return await self._post(agent_id, "provision", body)
 
+    async def enable_inbox(self, agent_id: str) -> dict:
+        """Provision or reactivate the agent's existing Hub allocation."""
+        return await self._post(agent_id, "enable", {})
+
+    async def disable_inbox(self, agent_id: str) -> dict:
+        """Pause the Hub allocation without deleting the provider mailbox."""
+        return await self._post(agent_id, "disable", {})
+
     async def get_inbox(self, agent_id: str) -> Optional[dict]:
-        """The active mailbox, or None.
+        """The non-deleted mailbox, or None.
 
         The hub wraps this one (``{"inbox": … | null}``) because a bare ``None``
         does not survive its envelope — so unwrap here and let callers see the

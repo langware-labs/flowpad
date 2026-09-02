@@ -2,7 +2,9 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { APIEntity, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
+import { Agent, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
+import { VIEWER_REGISTRY } from '@src/types/ViewType';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
@@ -71,9 +73,20 @@ export interface EntityBreadcrumbs {
   targetTitle: string;
 }
 
-/** The "this dock has no entity at all" glyph. Not a per-type icon map — there
- *  is no type here to look up. */
+/** The "this dock has no entity at all, and its view declares no glyph either"
+ *  fallback. Not a per-type icon map — there is no type here to look up. */
 const VIEW_CRUMB_ICON = LayoutGrid;
+
+/**
+ * The glyph for a dock with no target entity: the VIEW's own registry icon, the
+ * same `iconName` the tab strip and the navigator read. A view is a thing with
+ * an identity — Files is a folder everywhere it appears — so the address bar
+ * must not invent a second glyph for it.
+ */
+function viewIcon(dock: DockPointer | null): LucideIcon {
+  const iconName = dock?.viewType ? VIEWER_REGISTRY[dock.viewType as ViewType]?.iconName : null;
+  return iconName ? lucideByName(iconName) : VIEW_CRUMB_ICON;
+}
 
 /** A label good enough for a crumb, never a raw `type-uuid`. `displayName`
  *  falls back to a fabricated id string when an entity has no real name; the
@@ -117,6 +130,7 @@ const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 /** The org graph addresses as "Organization › Graph" — see the crumb builder. */
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
+const INBOX_CRUMB_LABEL = msg`Inbox`;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
@@ -169,6 +183,34 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     entity: null,
   });
   const [ancestors, setAncestors] = useState<AncestorNode[]>([]);
+  const agentRoute = useMemo(
+    () => (dock?.viewType === ViewType.AGENT ? DockPointer.parseAgentPointer(dock.pointer) : null),
+    [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const scopedAgentId = agentRoute?.agentId ?? dock?.agentScopeId ?? null;
+  const scopedAgentTypeId = useMemo(() => {
+    if (!scopedAgentId) return null;
+    try {
+      return new TypeId(Agent.type, scopedAgentId);
+    } catch {
+      return null;
+    }
+  }, [scopedAgentId]);
+  const [scopedAgent, setScopedAgent] = useState<Agent | null>(null);
+  useEffect(() => {
+    let live = true;
+    setScopedAgent(null);
+    if (!scopedAgentTypeId) return;
+    void dataManager
+      .getByTypeId<Agent>(scopedAgentTypeId)
+      .then((agent) => {
+        if (live) setScopedAgent(agent);
+      })
+      .catch(() => null);
+    return () => {
+      live = false;
+    };
+  }, [scopedAgentTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
   // active project's default wiki rather than an id, so it takes the same
@@ -262,6 +304,9 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
 
   const crumbs = useMemo<Crumb[]>(() => {
     const out: Crumb[] = [];
+    const isAgentInbox = agentRoute?.view === 'inbox' && !!agentRoute.agentId;
+    const isAgentConversation = dock?.viewType === ViewType.CONVERSATION && !!dock.agentScopeId;
+    const isAgentScoped = isAgentInbox || isAgentConversation;
 
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
@@ -270,7 +315,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // list, which is what the chip it replaced did. Opening the project itself
     // is the briefcase button up in the nav cluster — a destination, next to
     // the other destinations, rather than a second meaning for this click.
-    if (project) {
+    if (project && !isAgentScoped) {
       out.push({
         key: 'project',
         label: project.displayName,
@@ -297,7 +342,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
 
     // Walked nearest-first; the address reads outermost-first.
-    for (const node of [...ancestors].reverse()) {
+    for (const node of isAgentScoped ? [] : [...ancestors].reverse()) {
       out.push({
         key: node.typeId.toString(),
         label: entityLabel(node.entity, node.typeId),
@@ -308,6 +353,27 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         ),
         kind: 'ancestor',
       });
+    }
+
+    if (isAgentScoped && scopedAgentId && scopedAgentTypeId) {
+      const agentEntity = scopedAgent ?? (isAgentInbox ? (resolved.entity as Agent | null) : null);
+      out.push({
+        key: `agent-${scopedAgentId}`,
+        label: agentEntity ? entityLabel(agentEntity, scopedAgentTypeId) : labelForType(Agent.type),
+        Icon: iconForType(Agent.type),
+        pointer: agentEntity
+          ? buildDockPointer({ ...(agentEntity as object), type: Agent.type, id: scopedAgentId }, undefined)
+          : null,
+        kind: 'ancestor',
+      });
+      out.push({
+        key: `agent-inbox-${scopedAgentId}`,
+        label: i18n._(INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.INBOX)),
+        pointer: isAgentInbox ? null : DockPointer.forAgentInbox(scopedAgentId),
+        kind: isAgentInbox ? 'current' : 'ancestor',
+      });
+      if (isAgentInbox) return out;
     }
 
     // The organization GRAPH is a lens on the People & teams screen, not a
@@ -364,7 +430,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             // A wiki word that hasn't resolved yet (or resolves to nothing) is
             // still a wiki word, not an unidentified view — the registry has a
             // glyph for exactly that. `iconForType`, so it moves with TypeInfo.
-            Icon: isProjectHome ? iconForType(Project.type) : wikiRef ? iconForType(WikiEntry.type) : VIEW_CRUMB_ICON,
+            Icon: isProjectHome ? iconForType(Project.type) : wikiRef ? iconForType(WikiEntry.type) : viewIcon(dock),
             pointer: null,
             kind: 'current',
             path,
@@ -375,13 +441,16 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     return out;
   }, [
     project,
+    agentRoute,
+    scopedAgentId,
+    scopedAgentTypeId,
+    scopedAgent,
+    dock,
     ancestors,
     wikiCrumb,
     wikiRef,
     targetTypeId,
     targetTitle,
-    dock?.isProjectShell,
-    dockKey,
     resolved.entity,
   ]);
 

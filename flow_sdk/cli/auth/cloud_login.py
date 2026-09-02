@@ -68,12 +68,16 @@ async def cloud_login() -> dict[str, Any]:
             return await _login_by_window(settings.cloud_login_timeout_seconds)
 
         if kind == "local":
-            if not (settings.cloud_user_email and settings.cloud_user_pass):
+            has_email = bool(settings.cloud_user_email)
+            has_password = bool(settings.cloud_user_pass)
+            if has_email != has_password:
                 raise ValueError(
-                    "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
-                    "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
+                    "Local Hub login is partially configured. Set both "
+                    "FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD, or neither."
                 )
-            return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+            if has_email and has_password:
+                return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+            return await _login_local()
 
         raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
     except Exception as exc:
@@ -83,6 +87,17 @@ async def cloud_login() -> dict[str, Any]:
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
     login_data = await _post_cloud_login(email, password)
+    await _finalize_login(login_data)
+    return {"status": "logged_in", "user": login_data.user}
+
+
+async def _login_local() -> dict[str, Any]:
+    """Use the local Hub's no-popup test/development login."""
+    async with FlowpadClient(ApiConfig.from_env()) as client:
+        data = await client.post("/login/local", {})
+    login_data = LoginData.model_validate(data)
+    if not login_data.token or not login_data.user:
+        raise RuntimeError("Local Hub sign-in returned an unexpected response.")
     await _finalize_login(login_data)
     return {"status": "logged_in", "user": login_data.user}
 

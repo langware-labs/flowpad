@@ -58,6 +58,68 @@ export interface ReconcileBootstrapResult {
   }>;
 }
 
+/** What `adoptHelpdeskFromGit` found after attaching the repo.
+ *
+ * A closed set rather than a handful of booleans, because each value is a
+ * different sentence to a person — and two of them are outright warnings:
+ *
+ * - `adopted` / `already_adopted` — a desk arrived and it IS the one that will
+ *   serve this project.
+ * - `shadowed` — a desk arrived but ANOTHER desk resolves first and keeps every
+ *   ticket. Never render this as success: the customer would believe their
+ *   requests now reach the new vendor when they do not.
+ * - `no_manifest` — the repo carries no desk. The folder stays attached (it is
+ *   still a fine context folder); offer `removeContextDir` rather than
+ *   detaching for them.
+ * - `invalid_desk_project_id` — a desk is here but names no usable queue, so
+ *   tickets would fall through to the hub's default desk, i.e. someone else.
+ * - `no_portal_project` — a desk is here but its checkout has no Project row,
+ *   so the portal cannot be opened.
+ */
+export type AdoptHelpdeskOutcome =
+  | 'adopted'
+  | 'already_adopted'
+  | 'shadowed'
+  | 'no_manifest'
+  | 'invalid_desk_project_id'
+  | 'no_portal_project';
+
+export interface AdoptHelpdeskResult {
+  outcome: AdoptHelpdeskOutcome;
+  /** Local checkout of the repo that was attached. Always present. */
+  path: string;
+  folder_id: string | null;
+  scope: 'private' | 'shared';
+  already_linked: boolean;
+  scope_changed: boolean;
+  /** Null for `no_manifest`; set for every other outcome. */
+  helpdesk_id: string | null;
+  /** Repo-controlled — never proof of who the desk is. */
+  display_name: string | null;
+  welcome_message: string | null;
+  avatar_url: string | null;
+  /** Hub project that owns the ticket queue. Null when the manifest named none. */
+  desk_project_id: string | null;
+  /** The local Project bound to the portal checkout — what you navigate to.
+   *  Null for `no_manifest` / `invalid_desk_project_id` / `no_portal_project`. */
+  portal_project_id: string | null;
+  /** Only on `shadowed`: the desk that actually serves, and keeps serving. */
+  shadowed_by: {
+    path: string;
+    display_name: string | null;
+    desk_project_id: string;
+  } | null;
+}
+
+export interface AddContextDirFromGitResult {
+  folder_id: string;
+  path: string;
+  scope: 'private' | 'shared';
+  cloned_url: string;
+  already_linked: boolean;
+  scope_changed: boolean;
+}
+
 export type SecretPointerScope = 'private' | 'shared';
 
 export interface LocalSecretRef {
@@ -572,6 +634,40 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(await this.post('add-context-dir', { path, scope }));
   }
 
+  /** Clone a git repo and attach it as a context folder, in one call.
+   *
+   * The branch is always PINNED — to `branch` when given, else to the remote's
+   * default. An unpinned origin silently adopts whatever checkout of that URL
+   * happens to be on the machine, on any branch.
+   *
+   * Unlike `addContextDir` this returns a small summary rather than the whole
+   * project, so `include_dirs` on this entity is NOT refreshed — refetch the
+   * project if a surface renders its context folders. */
+  async addContextDirFromGit(
+    url: string,
+    branch: string = '',
+    scope: 'private' | 'shared' = 'private',
+  ): Promise<AddContextDirFromGitResult> {
+    return this.post<AddContextDirFromGitResult>('add-context-dir-from-git', { url, branch, scope });
+  }
+
+  /** Attach a help desk's repo and report the desk it carries.
+   *
+   * Attaches through `addContextDirFromGit` unchanged — a desk is adopted by
+   * being a context folder, not by a separate mechanism — and adds the answer
+   * the UI cannot work out for itself: which desk arrived, whether it is the
+   * one that will actually serve, and where its portal is.
+   *
+   * Read `outcome` before saying anything to the user; see
+   * {@link AdoptHelpdeskOutcome}. Same `include_dirs` caveat as above. */
+  async adoptHelpdeskFromGit(
+    url: string,
+    branch: string = '',
+    scope: 'private' | 'shared' = 'private',
+  ): Promise<AdoptHelpdeskResult> {
+    return this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, scope });
+  }
+
   /** Converge the live content dependencies declared by this Project's
    * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
   async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
@@ -617,6 +713,41 @@ export class Project extends APIEntity<Project> {
       locator: options.locator,
       ...(options.sodStore ? { sod_store: options.sodStore } : {}),
       ...(options.description !== undefined ? { description: options.description } : {}),
+    };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /**
+   * Declare several secrets in one act.
+   *
+   * A credential bundles env vars, so adding one is inherently plural. Calling
+   * `addSecretPointer` per variable does NOT work: each call mutates the
+   * project's context buckets and saves the whole entity, so the second write
+   * can land from a copy that predates the first and silently drop its link —
+   * the declarations survive as rows while the project forgets them. One call,
+   * one save.
+   */
+  async addSecretPointers(
+    pointers: Array<{
+      name?: string;
+      envVar: string;
+      locator: SecretOriginLocator;
+      scope?: SecretPointerScope;
+      sodStore?: SodStore;
+      description?: string;
+    }>,
+  ): Promise<void> {
+    const actionInfo = new ActionInfo('add-secret-pointers', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      pointers: pointers.map((p) => ({
+        name: p.name ?? p.envVar,
+        env_var: p.envVar,
+        scope: p.scope ?? 'private',
+        kind: p.locator.kind,
+        locator: p.locator,
+        ...(p.sodStore ? { sod_store: p.sodStore } : {}),
+        ...(p.description !== undefined ? { description: p.description } : {}),
+      })),
     };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }

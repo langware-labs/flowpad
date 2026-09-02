@@ -36,6 +36,24 @@ async def _source(**kw) -> DataSource:
     return src
 
 
+@pytest.fixture(autouse=True)
+def _clean_attention_state():
+    """The lane keeps its lease and in-flight sets in MODULE globals, so they
+    outlive a test and are shared with every other file in the run.
+
+    Clearing on teardown alone is not enough: a neighbour that leaves an entry
+    behind hands this file a lane that is already busy, and a test waiting for
+    its own source to drop off waits forever. Clear on the way in as well.
+    """
+    from flow_sdk.ingest import poller
+
+    poller._attention.clear()
+    poller._inflight.clear()
+    yield
+    poller._attention.clear()
+    poller._inflight.clear()
+
+
 class TestRequestPoll:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval

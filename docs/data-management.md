@@ -1,6 +1,6 @@
 ---
 id: b67adcb2-5fd1-52b8-9ae2-21dabce099fc
-version: 3
+version: 4
 ---
 
 # Data Management
@@ -13,7 +13,7 @@ Flow-cli uses a two-layer data model:
 
 * **Filesystem Records** (`flow_sdk/fs_store/`) -- the source of truth for all domain data. The base class is `FSRecord` (`flow_sdk/fs_store/fs_record.py`), a lean on-disk manifest (the old `Record` class and `record.py` were removed). Each record lives at `<records_root>/<type>/<id>/metadata.json`, holding an `asset_ref` (`FSRef` to the user-facing source file) plus free-form meta fields stored as direct instance attributes (per-type typed metadata models are opt-in via `TypeInfo.meta_model`). They are the canonical store for things like Claude sessions, settings, MCP configs, and agent-created entities. `FSRecord` itself knows nothing about types — per-type parsing and identity policy are registered on `TypeInfo`; portable named metadata is stored through the independent `flow_sdk/capsules/` package. `TypeInfo.mint_entity_id()` owns filesystem identity resolution — carrier → owning row → derive — and passes the result into `from_disk_fn(ref, resolved_id)`. See [Asset capsules](data-management/asset-capsules.md).
 
-* **Database Entities** (`flow_sdk/core/entity/`) -- SQLite-backed, queryable indexes that mirror key metadata from Records. Entities support fast filtered queries (by status, date, project) that would require O(N) filesystem scans if done directly against Records. The FTS5 virtual table (`entities_fts`) provides full-text search over records that opt in via the `content` property.
+* **Database Entities** (`flow_sdk/core/entity/`) -- SQLite-backed, queryable indexes that mirror key metadata from Records. Entities support fast filtered queries (by status, date, project) that would require O(N) filesystem scans if done directly against Records. The FTS5 virtual table (`entities_fts`) provides full-text search over records whose `name` / `search_title` / `search_description` / `search_content` readers yield any text (`FtsEntry.has_content`).
 
 **Record is primary — Entity is cache.** The write path always goes disk first:
 
@@ -28,7 +28,9 @@ The two layers are kept in sync through a combination of:
 
 * Entity deletion by id before disk deletion on DELETE
 
-* `_reflect_entity()` in the listen/webhook pipeline (FTS is updated downstream via `Entity.from_record()`/`sync_to_db()`, not by a dedicated `_fts_sync_entity()` call in listen.py)
+* `_reflect_entity()` in the listen/webhook pipeline saves through `Entity.save()`, whose `store()` mirrors the row down to the shadow `metadata.json` and upserts the FTS entry from the row's own fields (`entity_model.py` `_store` → `_fts_upsert`). It never calls `sync_to_db()`, so no wiki edges and no `post_sync_fn` run on that path.
+
+* Opposite-direction writes — `Entity.save()` (DB → disk) and `FSRecord.sync_to_db()` (disk → DB) — are serialized per `(type, id)` by `record_sync_guard` (`flow_sdk/fs_store/fs_record.py`), a same-task-reentrant asyncio lock.
 
 * Lazy mtime staleness checks on API GET (Entity refreshes from Record if stale)
 
@@ -62,7 +64,7 @@ The codebase uses the word "index" for two related systems (a third, the per-rec
 | ----------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Hash sentinel** | Per-record index-staleness token (`<epoch>_<hash>_<pathdigest>.hash` file in the record shadow folder) | `flow_sdk/fs_store/fs_record.py` (`write_hash`, `index_required`) | The indexer, after the DB batch commits (write-ahead ordering); also `Entity.check_and_refresh_record()` after a GET-time re-sync |
 | **Entity Index**  | SQLite rows mirroring Record metadata                                                                  | `flow_sdk/core/entity/entity_model.py`                            | `FSRecord.sync_to_db()` via `Entity.from_record()`                                                                                |
-| **FTS Index**     | Full-text search virtual table                                                                         | `entities_fts` in SQLite                                          | `FSRecord.sync_to_db()` via `fts_upsert()` (only if `content` is not None)                                                        |
+| **FTS Index**     | Full-text search virtual table                                                                         | `entities_fts` in SQLite                                          | `FSRecord.sync_to_db()` via `fts_upsert()` (skipped when name/title/description/content are all empty); also `Entity.save()` → `store()` → `_fts_upsert` |
 
 See [Entity-Index Sync](data-management/entity-index-sync.md) for details on this naming distinction.
 
@@ -73,10 +75,10 @@ Entities can be created through three independent paths:
 | Path                           | Trigger                       | Creates Record?                    | Creates Entity?                 | Updates FTS?        |
 | ------------------------------ | ----------------------------- | ---------------------------------- | ------------------------------- | ------------------- |
 | **ComputeNode fs-records**     | HTTP CRUD on Records          | Yes                                | Yes (via `rec.sync_to_db()`)    | Yes                 |
-| **Listen webhook**             | `POST /api/v1/webhook/listen` | No                                 | Yes (via `_reflect_entity()`)   | No — see note below |
+| **Listen webhook**             | `POST /api/v1/webhook/listen` | Shadow `metadata.json` via `Entity.save()` → `store()` | Yes (via `_reflect_entity()`)   | Yes — from the row's fields, via `store()`; no wiki / `post_sync_fn` |
 | **MCP** **`flow_entity_crud`** | Claude Code MCP tool          | Via optional `plugin_records` only | No (does not touch core SQLite) | No                  |
 
-Only the ComputeNode fs-records path produces fully FTS-indexed core entities. The listen webhook path (`_reflect_entity()`) writes Entity rows directly without an FTS upsert, so those entities are not visible to FTS search until a manual reindex. The MCP `flow_entity_crud` tool delegates to an optional `plugin_records` layer separate from the core Entity model and does not write to core SQLite or FTS at all. See [Entity-Index Sync](data-management/entity-index-sync.md) and [Record Search](data-management/record-search.md) for details on the webhook gap.
+Only the ComputeNode fs-records path runs the full `sync_to_db()` pipeline (Entity row + FTS + wiki edges + `post_sync_fn`). The listen webhook path (`_reflect_entity()`) goes through `Entity.save()`: the row is written, `store()` mirrors it to the shadow record and upserts an FTS entry built from the row's `name`/`title`/`description`/`content`, but wiki edges and the type's `post_sync_fn` are not run. The MCP `flow_entity_crud` tool delegates to an optional `plugin_records` layer separate from the core Entity model and does not write to core SQLite or FTS at all. See [Entity-Index Sync](data-management/entity-index-sync.md) and [Record Search](data-management/record-search.md).
 
 ### Data Flow
 
@@ -87,7 +89,8 @@ Claude CLI / external tool
        v
   listen_action()
        |  _reflect_entity()     -> Entity CREATE/UPDATE/DELETE in SQLite
-       |                           (FTS upsert/delete happens inside Entity.from_record/sync_to_db)
+       |                           (entity.save() -> store(): shadow metadata.json + FTS upsert;
+       |                            no wiki edges, no post_sync_fn)
        |  DataOpMessage         -> WebSocket broadcast
        v
   Frontend (TypeScript)
@@ -130,7 +133,7 @@ All record and entity types are managed by the **SchemaRegistry** (`flow_sdk/fs_
 
 The single canonical type enum is **`EntityType`** (`flow_sdk/schema/types.py`). It replaced the two historical enums — `RecordType` (formerly `fs_store/record_types.py`) and `BuiltinEntityType` (db layer) — which are now thin aliases re-exported for backward compatibility (`flow_sdk/fs_store/record_types.py` aliases `RecordType = EntityType`). String values are DB/filesystem-persisted and must never change.
 
-The **TypeId** (`flow_sdk/fs_store/type_id.py`; also re-exported from `flow_sdk/api/api_types/type_id.py`) is the universal identifier format: `{type}-{id}`. It is a plain Python class (not a Pydantic BaseModel) with Pydantic v2 compatibility hooks. Five identifier types are supported: UUID, Namespace, PropId, Named (`@uname`), and Unknown.
+The **TypeId** (`flow_sdk/fs_store/type_id.py`; the API layer imports it from there — there is no `api_types/type_id.py` re-export) is the universal identifier format: `{type}-{id}`. It is a plain Python class (not a Pydantic BaseModel) with Pydantic v2 compatibility hooks. Five identifier types are supported: UUID, Namespace, PropId, Named (`@uname`), and Unknown.
 
 One legacy type registry shim remains: the Entity `type_registry` (`schema/entity_factory.py`), which fully delegates to SchemaRegistry. (The FS Record `type_registry` shim at `fs_store/factory/type_registry.py` was removed — `factory/` is now empty.) `SchemaRegistry` is authoritative for all Record and Entity lookups.
 
@@ -152,9 +155,27 @@ How something that is not the local filesystem gets into the graph. The `DataSou
 
 ***
 
+### [Data Source Assets](data-management/data-source-asset.md)
+
+A data source as a **folder asset**: `data_source.json` is the manifest and everything else in the folder is discovered by convention, so a source is loaded from disk rather than registered per source in `flow_sdk`.
+
+***
+
+### [Inbox Projection](data-management/inbox-projection.md)
+
+The one-way projection from ingested cloud records (`SourceItem`) to Inbox conversations (`FlowMessage` reference rows whose `text` is hydrated at read time), owned by `flow_sdk/inbox/projection.py`.
+
+***
+
+### [Filesystem Discovery Benchmark](data-management/fs_find.md)
+
+A cross-platform benchmark of four ways to recursively find files (two Python walkers, an OS-native walker, an OS-native index query) and the bootstrap-latency finding that motivated it.
+
+***
+
 ### [Record Model](data-management/record-model.md)
 
-The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_root>/<type>/<id>/metadata.json`, free-form meta fields as instance attributes (typed `meta_model` opt-in via `TypeInfo`), `asset_ref`/`self_ref` FSRefs, the `<epoch>_<digest>.hash` index sentinel, per-type behavior via free functions on `TypeInfo`, `StorageLayout` (FILE/FOLDER), entity-side auto-registration via `DBBaseRecord.__init_subclass__` → `SchemaRegistry`, `RecordRef`/`RecordDataRef`, `RecordList`, `RecordQuery` filtering, and `CollectionManifest` for O(1) staleness checks. (The removed `Record` machinery — `_data` dict, `_META_FIELDS`, `RecordStatus`, `RecordState`/`state.json`, `ResourceRecordList`/`SourceFileRecordList`, `data.json`/`_data.json` split — no longer applies; see the `FSRecord` module docstring for the full removal list.)
+The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_root>/<type>/<id>/metadata.json`, free-form meta fields as instance attributes (typed `meta_model` opt-in via `TypeInfo`), `asset_ref`/`main_ref` FSRefs, the `<epoch>_<contenthash>_<pathdigest>.hash` index sentinel (content **and** location aware), the `record_sync_guard` per-record lock, per-type behavior via free functions on `TypeInfo`, `StorageLayout` (legacy, unused), entity-side auto-registration via `DBBaseRecord.__init_subclass__` → `SchemaRegistry`, `RecordRef`/`RecordDataRef`, `RecordList`, `RecordQuery` filtering, and `CollectionManifest` for O(1) staleness checks. (The removed `Record` machinery — `_data` dict, `_META_FIELDS`, `RecordStatus`, `RecordState`/`state.json`, `ResourceRecordList`/`SourceFileRecordList`, `data.json`/`_data.json` split — no longer applies; see the `FSRecord` module docstring for the full removal list.)
 
 **Key source files:** `flow_sdk/fs_store/fs_record.py`, `record_types.py`, `storage_layout.py`, `record_ref.py`, `record_list.py`, `source_file_records.py`, `record_query.py`, `manifest.py`
 
@@ -162,9 +183,9 @@ The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_roo
 
 ### [Folder Layout](data-management/folder-layout.md)
 
-On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<digest>.hash` sentinel), project directory encoding, all `EntityType` constants grouped by category, and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
+On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<contenthash>_<pathdigest>.hash` sentinel), project directory encoding, the commonly used `EntityType` constants grouped by category (and which of them the indexer actually walks — `INDEXABLE_TYPES`), and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
 
-**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/fs_records/` (claude/, codex/ submodules)
+**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`INDEXABLE_TYPES`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
 
 ***
 
@@ -226,7 +247,7 @@ Project-scoped Wiki namespaces plus the `[[wiki-link]]` occurrence graph: `Wiki`
 
 ### [Record Search](data-management/record-search.md)
 
-FTS5-backed full-text search for Records. Covers the `search_content` opt-in property (default: `content` or `body` field), inline indexing via `FSRecord.sync_to_db()` (no background worker), the FTS status post-filter limitation, and the FTS gap for webhook-created entities.
+FTS5-backed full-text search for Records. Covers the `search_*` readers (default: `content` or `body` field), inline indexing via `FSRecord.sync_to_db()` (no background worker), the second FTS writer (`Entity.save()` → `store()` → `_fts_upsert`, and `TypeInfo.fts_content` for DB-only types), the FTS status post-filter limitation, and what the listen-webhook path does and does not index.
 
 **Key source files:** `flow_sdk/server/routes/search.py`, `flow_sdk/db/drivers/sqlite/sqlite_driver.py` (`fts_upsert`, `fts_search`, `fts_delete`), `flow_sdk/fs_store/fs_record.py` (`search_content`, `sync_to_db`)
 
@@ -242,7 +263,7 @@ The `fs-records` custom action on `ComputeNode` -- the primary HTTP API for read
 
 ### [Entity-Index Sync](data-management/entity-index-sync.md)
 
-How SQLite Entities stay in sync with filesystem Records. Covers the "index" naming disambiguation (hash sentinel vs Entity Index vs FTS Index), the `Record.sync_to_db()` pipeline (`Entity.from_record()` → `sync_from_entity` mirror-back → FTS upsert → wiki edges → `post_sync_fn`), when `sync_to_db()` is called, `RecordError` on indexing failure, `DataOpMessage` structure and the fs-records CRUD → broadcast flow, `SchemaRegistry` index bookkeeping (`clear_index()`, `get_index_status()`, JSONL scan/index logs), staleness semantics (`index_required`), and the FTS gap for webhook-created entities.
+How SQLite Entities stay in sync with filesystem Records. Covers the "index" naming disambiguation (hash sentinel vs Entity Index vs FTS Index), the `Record.sync_to_db()` pipeline (`Entity.from_record()` → `sync_from_entity` mirror-back → FTS upsert → wiki edges → `post_sync_fn`), when `sync_to_db()` is called, `RecordError` on indexing failure, `DataOpMessage` structure and the fs-records CRUD → broadcast flow, `SchemaRegistry` index bookkeeping (`clear_index()`, `get_index_status()`, JSONL scan/index logs), staleness semantics (`index_required`, content + path digest), the `record_sync_guard` per-record lock, and what the listen-webhook path does and does not index.
 
 **Key source files:** `flow_sdk/core/entity/entity_model.py`, `flow_sdk/app/actions/graph_crud_actions.py`, `flow_sdk/builtin/faas/fs_records_actions.py` (`_broadcast_fs_record_op`), `flow_sdk/core/network/resource_tracker.py`, `flow_sdk/api/messages.py`, `flow_sdk/fs_store/schema_registry.py`, `flow_sdk/fs_store/operations/record_error.py`
 
@@ -274,7 +295,7 @@ The `flow-sdk-mcp` stdio server built on FastMCP. All five registered tools: `fl
 
 ### [Listen Action and CRUD Event Pipeline](data-management/listen-action.md)
 
-The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entity synchronization. Covers the two webhook types (`hook_op` and `agent_hook`), `_reflect_entity()` idempotent create/update/delete algorithm (note: does NOT update FTS index), `_broadcast_to_sniffer()` for the annotation gutter, `_route_to_source_process()` for AgenticProcess routing, skill usage enrichment, annotation auto-creation side effects, write path tracking, `DataOpMessage` broadcast, `resource_tracker` recipient resolution, the WebSocket connection lifecycle, TypeScript-side `FlowSyncStore.onDataOp()` and `FsRecordDataOpHandler`, and the full end-to-end flow from CLI hook to React re-render.
+The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entity synchronization. Covers the two webhook types (`hook_op` and `agent_hook`), `_reflect_entity()` idempotent create/update/delete algorithm (saves via `Entity.save()`, which mirrors to the shadow record and upserts FTS, but runs no wiki/`post_sync_fn`), `_broadcast_to_sniffer()` for the annotation gutter, `_route_to_source_process()` for AgenticProcess routing, skill usage enrichment, annotation auto-creation side effects, write path tracking, `DataOpMessage` broadcast, `resource_tracker` recipient resolution, the WebSocket connection lifecycle, TypeScript-side `FlowSyncStore.onDataOp()` and `FsRecordDataOpHandler`, and the full end-to-end flow from CLI hook to React re-render.
 
 **Key source files:** `flow_sdk/app/actions/listen.py`, `flow_sdk/api/messages.py`, `flow_sdk/core/network/resource_tracker.py`, `server/routes/websocket.py`, `ts_sdk/src/` (ConnectionManager, FlowSyncStore, FsRecordDataOpHandler)
 
@@ -312,7 +333,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | How do `[[wiki links]]` and backlinks work? | [Wiki Link Graph](llm_wiki.md)                                                                                                                              |
 | How do frontend components get live updates?                              | [Listen Action and CRUD Event Pipeline](data-management/listen-action.md)                                                                                   |
 | What are the three "index" systems?                                       | [Entity-Index Sync](data-management/entity-index-sync.md)                                                                                                   |
-| Why don't webhook entities appear in search?                              | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md)                                               |
+| What does the listen-webhook path index (and skip)?                       | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md)                                               |
 | How do I trigger backup/clear/scan/index from the UI?                     | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
 | How does the search refresh button work?                                  | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
 | Where does an asset's bytes / a record's truth / a secret's value live?   | [Items & Origins](data-management/items_origins.md)                                                                                                         |

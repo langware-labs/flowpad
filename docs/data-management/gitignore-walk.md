@@ -52,9 +52,9 @@ When `gitignore=True`, each entry passes through `is_ignored(path, is_dir, stack
 | Python build/cache | `__pycache__`, `.tox`, `dist`, `build`, `.eggs`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache` |
 | JS build/cache | `.next`, `.nuxt`, `coverage`, `.cache` |
 | macOS junk | `__MACOSX` (holds only AppleDouble `._*` resource-fork sidecars) |
-| Flowpad state dirs | `.flowpad`, `.markdown_index`, `.llm_index` (llm_index summary caches, markdown-index sidecars, instance state — never content) |
+| Flowpad state dirs | `.flow`, `.flowpad`, `.markdown_index`, `.llm_index` (asset-local capsule metadata, llm_index summary caches, markdown-index sidecars, instance state — never content) |
 
-`is_denylisted` is exported as a standalone predicate so walkers that want to skip generated/vendor dirs *without* honoring `.gitignore` can use it directly (this is what `gitignore=False, denylist=True` selects).
+`is_denylisted` is exported as a standalone predicate so walkers that want to skip generated/vendor dirs *without* honoring `.gitignore` can use it directly (this is what `gitignore=False, denylist=True` selects). Its sibling `is_under_denylisted_dir(path)` answers the same question for a path that was *stored* earlier and has no walk to ride along with — it checks every ancestor segment against `_WALK_IGNORED` (plus the worktree rule) as pure string work, so retention can apply the same policy discovery does over thousands of stored paths.
 
 ### Stage 2 — the `.gitignore` stack
 
@@ -94,7 +94,7 @@ Everything that recurses a real project tree routes through the shared walk:
 
 | Consumer | Source | Notes |
 |---|---|---|
-| Project folder walker | `flow_sdk/fs_store/indexer/functions/project_folder_walker.py` | Emits one transient `FOLDER` `FSRef` per surviving directory (root included). Passes `include_files=False` (downstream FOLDER functions do their own file matching) and threads `opts.gitignore`. |
+| Project folder walker | `flow_sdk/fs_store/indexer/functions/project_folder_walker.py` | Emits one transient `FOLDER` `FSRef` per surviving directory (root included). Passes `include_files=False` (downstream FOLDER functions do their own file matching) and threads `opts.gitignore`. Before walking a root that sits in a tri-state protected folder (Documents/Desktop/Downloads) it probes one `os.scandir` read; a `PermissionError` there marks the folder `denied` (`special_folders.mark_denied`) and skips the root, so an OS refusal is recorded once instead of re-prompting on every scan. |
 | Markdown-dirs discovery | `flow_sdk/fs_store/operations/markdown_dirs.py` (`walk_markdown_files`) | Collects every `.md` under a root as sorted relative POSIX paths; walks the whole subtree, not just `docs/`. |
 | llm_index Merkle scanner | `flow_sdk/llm_index/core.py` | Folds the pre-order walk into a post-order content-hash tree; the `gitignore` toggle honors `.gitignore` while the denylist always applies. |
 | fsop watcher filter | `flow_sdk/server/fsop_filters.py` | Does **not** call `gitignore_walk()` — it runs its own bounded `os.walk` but reuses the matching primitives directly (`_WALK_IGNORED`, `load_gitignore_stack`, `push_gitignore`, `is_ignored`) so its skip decisions match the shared policy. |

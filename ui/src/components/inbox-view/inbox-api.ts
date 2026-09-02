@@ -38,8 +38,9 @@ export interface BulkUpdateResult {
 }
 
 /** Load all non-archived FlowMessages from local DB */
-export async function listInboxMessages(): Promise<InboxMessage[]> {
+export async function listInboxMessages(agentId?: string): Promise<InboxMessage[]> {
   const action = new ActionInfo('inbox-list', null, null, 'GET');
+  if (agentId) action.queryParameters = { agent_id: agentId };
   const result = await dataManager.callAction<null, InboxMessage[]>(action);
   return result ?? [];
 }
@@ -48,9 +49,10 @@ export async function listInboxMessages(): Promise<InboxMessage[]> {
 export async function updateMessage(
   messageId: string,
   patch: { is_read?: boolean; is_archived?: boolean },
+  agentId?: string,
 ): Promise<UpdateResult | null> {
   const action = new ActionInfo('inbox-update', 'flow_message', messageId, 'POST');
-  action.bodyParameters = patch;
+  action.bodyParameters = { ...patch, ...(agentId ? { agent_id: agentId } : {}) };
   return dataManager.callAction<typeof patch, UpdateResult>(action);
 }
 
@@ -72,18 +74,19 @@ export async function openInboxMessage(messageId: string): Promise<OpenResult | 
  * updated_date), so the local live query reflects the hub on resolve. Replaces
  * the old per-message backfill loop (one `openInboxMessage` per pointer).
  */
-export async function syncConversationMessages(conversationId: string): Promise<void> {
+export async function syncConversationMessages(conversationId: string, agentId?: string): Promise<void> {
   const action = new ActionInfo('conversation-message-sync', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId };
+  action.bodyParameters = { conversation_id: conversationId, ...(agentId ? { agent_id: agentId } : {}) };
   await dataManager.callAction(action);
 }
 
 /** Bulk mark all read / unread / archive all */
 export async function bulkUpdateMessages(
   patch: { is_read?: boolean; is_archived?: boolean },
+  agentId?: string,
 ): Promise<BulkUpdateResult> {
   const action = new ActionInfo('inbox-bulk-update', null, null, 'POST');
-  action.bodyParameters = patch;
+  action.bodyParameters = { ...patch, ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<typeof patch, BulkUpdateResult>(action);
   return result ?? { updated: 0 };
 }
@@ -96,9 +99,9 @@ export async function bulkUpdateMessages(
  * client-side match over FlowMessage.text would go blind to every ingested
  * message. The action searches both residences and returns the union.
  */
-export async function searchInbox(q: string): Promise<Set<string>> {
+export async function searchInbox(q: string, agentId?: string): Promise<Set<string>> {
   const action = new ActionInfo('inbox-search', null, null, 'POST');
-  action.bodyParameters = { q };
+  action.bodyParameters = { q, ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
   return new Set(result?.conversation_ids ?? []);
 }

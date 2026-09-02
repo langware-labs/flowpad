@@ -77,8 +77,13 @@ def _process(worker_type: str = "claude", *, endpoint: str | None = None, projec
     )
 
 
-def _by_kind(sources, kind):
-    return [s for s in sources if str(s.kind) == kind]
+def _by_kind(candidates, kind):
+    """The verdicts whose endpoint is of *kind*.
+
+    The kind lives on the endpoint now, not on the verdict — a verdict names an endpoint
+    and says nothing about what sort of thing it is.
+    """
+    return [c.source for c in candidates if str(c.endpoint.kind) == kind]
 
 
 # ── the device rung, as a pure function ──────────────────────────────────────────
@@ -114,7 +119,7 @@ def test_the_device_rung_only_asserts_what_it_was_told(state, bound, eligible, a
     have none."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    source = _device_source("claude", state, bound)
+    source = _device_source("claude", state, bound).source
     assert (source.eligible, source.auto) == (eligible, auto)
     # a verdict we were GIVEN is cached evidence; no verdict is only a presumption
     assert str(source.authority) == ("presumed" if state is None else "cached")
@@ -128,43 +133,43 @@ def test_the_device_rung_says_nothing_about_being_installed() -> None:
     """Presence is ``build_worker_spawn_env``'s question, and it answers it better."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    assert _device_source("claude", None, False).eligible
+    assert _device_source("claude", None, False).source.eligible
 
 
 # ── the default order ────────────────────────────────────────────────────────────
 
 
 async def test_nothing_configured_falls_back_to_the_device_login(env) -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
 
-    assert str((await resolve_llm_source(_process())).kind) == "device"
+    assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
 
 
 async def test_a_stored_key_does_not_outrank_an_unprobed_device_login(env) -> None:
     """Ascending marginal cost: a subscription already paid for beats spending money."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
-    assert str((await resolve_llm_source(_process())).kind) == "device"
+    assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
 
 
 async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monkeypatch) -> None:
     """The sandbox case: claude installed, never signed in, an endpoint pushed after login."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
 
     _bind(monkeypatch)
-    chosen = await resolve_llm_source(_process())
-    assert str(chosen.kind) == "endpoint" and chosen.endpoint_typeid == EP1
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
 async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    listed = await list_llm_sources("claude")
+    listed = await list_llm_candidates("claude")
     assert _by_kind(listed, "device"), "the device rung is always listed, eligible or not"
-    out = _device_source("claude", "idle", False)
+    out = _device_source("claude", "idle", False).source
     assert not out.eligible and "signed out" in out.reason
 
 
@@ -174,15 +179,15 @@ async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None
 async def test_a_process_endpoint_rules_every_other_source_out_with_a_reason(env, monkeypatch) -> None:
     """A constraint is rendered ONTO the list, so the picker's greyed rows and the spawn
     error are the same data and cannot disagree."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, resolve_llm_endpoint
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     _bind(monkeypatch)
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     process = _process(endpoint=EP2)
 
-    chosen = await resolve_llm_source(process)
-    assert str(chosen.kind) == "endpoint" and chosen.endpoint_typeid == EP2
+    endpoint, chosen = await resolve_llm_endpoint(process)
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP2
     assert str(chosen.origin) == "process"
 
     listed = await list_llm_sources("claude", process)
@@ -196,7 +201,7 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     """The project rung. A process that names its own endpoint still wins over it -- most
     specific first -- which is what keeps the override per-process rather than a way to
     change what every other process on the box spends."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_source
     from flow_sdk.builtin.project import Project
 
     _bind(monkeypatch)
@@ -205,7 +210,7 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     chosen = await resolve_llm_source(_process(project_id=project.id))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "project"
 
-    device = _by_kind(await list_llm_sources("claude", _process(project_id=project.id)), "device")[0]
+    device = _by_kind(await list_llm_candidates("claude", _process(project_id=project.id)), "device")[0]
     assert not device.eligible and "this project requires" in device.reason
 
     # a process naming its own endpoint outranks the project's
@@ -216,9 +221,9 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
 async def test_a_process_without_a_project_is_not_constrained(env) -> None:
     """``project_id`` is legitimately ``None`` for embedded and inline processes; a missing
     project contributes no constraint rather than failing closed."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
 
-    assert str((await resolve_llm_source(_process(project_id=None))).kind) == "device"
+    assert str((await resolve_llm_endpoint(_process(project_id=None))).endpoint.kind) == "device"
 
 
 async def test_an_endpoint_nobody_has_heard_of_still_resolves(env, monkeypatch) -> None:
@@ -237,7 +242,7 @@ async def test_an_endpoint_nobody_has_heard_of_still_resolves(env, monkeypatch) 
 
 async def test_an_explicit_preference_wins_and_rules_the_rest_out(env) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
@@ -246,11 +251,11 @@ async def test_an_explicit_preference_wins_and_rules_the_rest_out(env) -> None:
     cap.auth_mode, cap.api_provider = "api", "openrouter"
     await cap.save(notify=False)
 
-    chosen = await resolve_llm_source(_process())
-    assert str(chosen.kind) == "api_key" and chosen.provider == "openrouter"
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "api_key" and endpoint.provider == "openrouter"
     assert str(chosen.origin) == "user"
 
-    device = _by_kind(await list_llm_sources("claude"), "device")[0]
+    device = _by_kind(await list_llm_candidates("claude"), "device")[0]
     assert not device.eligible and "set to use openrouter" in device.reason
 
 
