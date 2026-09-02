@@ -1,6 +1,6 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
-import apiClient from '../client';
+import apiClient, { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
@@ -910,12 +910,7 @@ export class Project extends APIEntity<Project> {
       // envelope). Wrap the raw body in {data} so apiClient's interceptor
       // (`.data.data`) yields the parsed payload — same approach as
       // dataManager.callAction for raw responses.
-      return (await apiClient.get<ResolveProjectResult>(
-        `/project/resolve/${encodeURIComponent(normalized)}`,
-        {
-          transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
-        },
-      )) as ResolveProjectResult;
+      return await getRaw<ResolveProjectResult>(`/project/resolve/${encodeURIComponent(normalized)}`);
     } catch {
       return null;
     }

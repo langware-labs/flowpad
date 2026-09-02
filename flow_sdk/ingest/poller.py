@@ -169,7 +169,9 @@ async def poll_source(source: DataSource, now: Optional[datetime] = None) -> boo
     Returns whether it ran. The one entry point for an out-of-band poll — a
     change event, a CLI — so nothing polls a source the heartbeat is already
     polling: two `sync_source` runs on one source race each other's cursor
-    writes. A source already in flight is skipped, not queued; the running
+    writes. Concurrency only: whether polling this source is ALLOWED
+    (`may_poll`) is the dispatching caller's question, since a local listen
+    loop legitimately drives a source the heartbeat would not. A source already in flight is skipped, not queued; the running
     poll (or the next tick) picks the change up, which is all a change event
     ever promised (`change_event.py`: a lost event is latency, never loss).
     """

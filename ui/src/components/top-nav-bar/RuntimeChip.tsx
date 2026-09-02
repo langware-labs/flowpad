@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
 import { Layout, RuntimeKind } from '@sdk';
-import apiClient from '@sdk/client';
+import { getRaw } from '@sdk/client';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -54,14 +54,11 @@ function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
 
 /** Fetch the page body from the hub's legacy wiki route. The hub returns the
  *  raw `{type, id, asset_ref, content} | null` shape — NO ApiResponse envelope
- *  (hub code is not ours to change) — so wrap the raw body in `{data}` before
- *  apiClient's `.data.data` interceptor sees it, the way `Project.resolveByCode`
- *  does. apiClient carries the hub base URL and auth; no URL is built here. */
+ *  (hub code is not ours to change), so it is read through `getRaw`, which
+ *  wraps the bare body for the client's unwrapping interceptor. The client
+ *  carries the hub base URL and auth; no URL is built here. */
 async function fetchHubWikiContent(name: string): Promise<string | null> {
-  const body = await apiClient.get<{ content?: unknown } | null>('/api/v1/wiki/resolve', {
-    params: { name },
-    transformResponse: (raw: string) => ({ data: raw ? JSON.parse(raw) : null }),
-  });
+  const body = await getRaw<{ content?: unknown } | null>('/api/v1/wiki/resolve', { params: { name } });
   const content = body && typeof body === 'object' ? body.content : null;
   return typeof content === 'string' ? content : null;
 }
