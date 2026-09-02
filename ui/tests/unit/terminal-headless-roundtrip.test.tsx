@@ -19,6 +19,19 @@
  * Note the tri-state skin: the Standard-view chat OVERLAY (chatUiOverride)
  * deliberately keeps the xterm mounted underneath (same `!isHeadless` gate),
  * so only the pty_mode TRANSPORT flip exercises this unmount/remount path.
+ *
+ * Regression 2 (Hebrew reversed for the rest of a session) rides the SAME
+ * re-mount. The RTL/bidi contract `.xterm-rtl-grid` is stamped on the
+ * container by applyRtlGridContract(), and it was stamped ONLY from the
+ * layout effect keyed on `[process?.worker_type]`. worker_type does not change
+ * across the round trip, so that effect never re-fires and the FRESH container
+ * comes back bare — on Windows + Claude Code, whose Hebrew is pre-reversed
+ * into visual order, the browser then reorders every RTL run a second time and
+ * the session reads backwards until a new terminal is opened. Re-mount and
+ * vendor-resolution are independent triggers; the contract has to be stamped
+ * at term.open() as well. What the bare container then PAINTS is asserted in
+ * tests/browser_render/xterm-rtl.spec.ts — jsdom has no bidi engine, so this
+ * tier can only assert the contract itself.
  */
 import { act, cleanup, render } from '@testing-library/react';
 import { ProcessStatus, type AgenticProcess } from '@sdk';
@@ -191,11 +204,11 @@ vi.mock('@src/components/terminal/interactive-terminal/pty-replay', () => ({
   fetchPtyStream: () => Promise.resolve(null),
   replayPtyStream: () => Promise.resolve(null),
 }));
-vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', () => ({
-  FONT_FAMILY: 'monospace',
-  FONT_SIZE_PX: 12,
-  applyRtlGridContract: () => {},
-  openTerminalLink: () => {},
+// terminalConfig is REAL: applyRtlGridContract is under test below. Only the
+// OSC 52 registration is stubbed — it installs an OSC handler on the terminal,
+// and the xterm stand-in above exposes `parser.registerCsiHandler` alone.
+vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/terminal/interactive-terminal/terminalConfig')>()),
   registerOsc52ClipboardWrite: () => {},
 }));
 
@@ -288,13 +301,19 @@ afterEach(() => {
 // pty_mode/isHeadless from it, exactly like the entity after switchMode.
 let headless = false;
 
+// The CLI in the terminal. Only the RTL contract reads it, and only `claude`
+// takes the pre-reversed buffer-order contract — see applyRtlGridContract.
+let workerType = 'codex';
+
 const mockProcess = {
   id: '0b54c9f6-8f6e-4f0a-9a4e-2f0d64f7c111',
   typeId: null,
   status: ProcessStatus.RUNNING,
   busy: false,
   session_id: 'shell-sess-1',
-  worker_type: 'codex',
+  get worker_type() {
+    return workerType;
+  },
   workdir: '/tmp/proj',
   project_id: null,
   plan_path: null,
@@ -373,5 +392,41 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
       vi.advanceTimersByTime(15);
     });
     expect(xtermSpies.dispose.calls).toBe(1);
+  });
+});
+
+describe('InteractiveTerminal — the round trip re-applies the RTL grid contract', () => {
+  let savedPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    // The reporting host: applyRtlGridContract reads navigator.platform, and
+    // Windows + claude is the one pair that takes the buffer-order contract.
+    savedPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true });
+    workerType = 'claude';
+  });
+  afterEach(() => {
+    if (savedPlatform) Object.defineProperty(navigator, 'platform', savedPlatform);
+    workerType = 'codex';
+  });
+
+  it('leaves the re-mounted container carrying .xterm-rtl-grid after chat → terminal', () => {
+    headless = false;
+    const { rerender } = render(ui('c1'));
+
+    const first = xtermSpies.open.lastContainer!;
+    expect(first.classList.contains('xterm-rtl-grid')).toBe(true);
+
+    headless = true;
+    rerender(ui('c2'));
+
+    // chat → terminal: a FRESH container, and worker_type never moved — so the
+    // vendor-keyed effect cannot be what stamps it. Bare here means every
+    // pre-reversed Hebrew row is reordered a second time by the browser.
+    headless = false;
+    rerender(ui('c3'));
+    const second = xtermSpies.open.lastContainer!;
+    expect(second).not.toBe(first);
+    expect(second.classList.contains('xterm-rtl-grid')).toBe(true);
   });
 });
