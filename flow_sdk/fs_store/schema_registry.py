@@ -3,7 +3,6 @@
 Files:
   ~/.flow/schema/scan_log.jsonl                          — global scan log
   ~/.flow/schema/index_log.jsonl                         — global index log
-  ~/.flow/schema/types/<sanitized_type>/type_info.json   — per-type TypeInfo
   ~/.flow/schema/types/<sanitized_type>/scan_log.jsonl   — per-type scan log
   ~/.flow/schema/types/<sanitized_type>/index_log.jsonl  — per-type index log
 
@@ -24,8 +23,8 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
@@ -143,9 +142,11 @@ class AssetStats:
 # ---------------------------------------------------------------------------
 
 _BUILTIN_DEFAULT_TYPES: list[str] = [
-    # Filesystem-scannable types (must overlap with INDEXABLE_TYPES in
-    # flow_sdk/fs_store/indexer/builtin.py — the indexer can't walk types
-    # not registered there). Runtime-only types like BOOKMARK, ANNOTATION,
+    # Bootstrap fallback only: the types ``get_default_index_types()`` answers
+    # before any type has registered itself as ``indexed_by_default``. The set
+    # the indexer actually writes is derived from its walker graph
+    # (``flow_sdk.fs_store.indexer.builtin.indexable_types``), not kept in
+    # step with this list. Runtime-only types like BOOKMARK, ANNOTATION,
     # AGENTIC_PROCESS, RECORD_ERROR, CLAUDE_ERROR are written to the DB by
     # Record.save and intentionally excluded from this list.
     RecordType.SKILL,
@@ -1246,7 +1247,7 @@ class SchemaRegistry:
 
         if type_name:
             entry = {
-                "id": str(uuid.uuid4()),
+                "id": mint_uuid(),
                 "type": "scan_log",
                 "scan_trigger": trigger,
                 "duration_ms": duration_ms,
@@ -1259,7 +1260,7 @@ class SchemaRegistry:
             _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", entry)
         else:
             global_entry = {
-                "id": str(uuid.uuid4()),
+                "id": mint_uuid(),
                 "type": "scan_log",
                 "scan_trigger": trigger,
                 "duration_ms": duration_ms,
@@ -1274,7 +1275,7 @@ class SchemaRegistry:
                 if not t_name:
                     continue
                 t_entry = {
-                    "id": str(uuid.uuid4()),
+                    "id": mint_uuid(),
                     "type": "scan_log",
                     "scan_trigger": trigger,
                     "duration_ms": t.get("scan_ms", 0.0),
@@ -1308,7 +1309,7 @@ class SchemaRegistry:
 
         if type_name:
             entry = {
-                "id": str(uuid.uuid4()),
+                "id": mint_uuid(),
                 "type": "index_log",
                 "index_trigger": trigger,
                 "duration_ms": duration_ms,
@@ -1324,7 +1325,7 @@ class SchemaRegistry:
                 if not t_name:
                     continue
                 t_entry = {
-                    "id": str(uuid.uuid4()),
+                    "id": mint_uuid(),
                     "type": "index_log",
                     "index_trigger": trigger,
                     # The caller's per-type dict already carries a measured
