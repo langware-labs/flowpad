@@ -22,6 +22,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
+import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
@@ -44,6 +45,19 @@ const AUTHORITY_DOT: Record<LLMSourceAuthority, string> = {
   [LLMSourceAuthority.Cached]: 'bg-emerald-400/50',
   [LLMSourceAuthority.Presumed]: 'bg-amber-400/70',
 };
+
+/** The dot for one row.
+ *
+ *  Ineligibility wins over authority, and that ordering is the whole point.
+ *  `_key_sources` reports `PROVEN` for a provider with NO key — correctly, since
+ *  it listed the store and an absence is as authoritative as a presence — so
+ *  reading authority alone put a confident green dot beside "no openrouter key
+ *  is stored on this machine" next to a disabled button. Authority says how much
+ *  the answer is worth; the dot has to say what the answer WAS. */
+function dotFor(source: LLMSource): string {
+  if (!source.eligible) return 'bg-muted-foreground/40';
+  return AUTHORITY_DOT[source.authority] ?? 'bg-muted-foreground/40';
+}
 
 /** Vendor label from the ONE table, falling back to the raw worker so a harness added to the
  *  capability registry renders as itself rather than not at all. */
@@ -74,13 +88,20 @@ function SourceRow({
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
   const needsSignIn = endpoint?.kind === LLMFundingKind.Device && !source.eligible;
+  // The same escape hatch, one kind over. An unkeyed provider used to render the
+  // problem ("no openrouter key is stored on this machine") beside a disabled
+  // button and nothing else — a row that states a fix it will not let you make.
+  // Adding the key belongs to Connections, which owns declaring a credential and
+  // storing its value, so this sends you there rather than growing a second
+  // place to type one.
+  const needsKey = endpoint?.kind === LLMFundingKind.ApiKey && !source.eligible;
   return (
     <li
       className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2"
       data-testid={`llm-source-row-${worker}-${endpoint?.kind ?? 'unknown'}${endpoint?.provider ? `-${endpoint.provider}` : ''}`}
     >
       <span
-        className={`h-2 w-2 shrink-0 rounded-full ${AUTHORITY_DOT[source.authority] ?? 'bg-muted-foreground/40'}`}
+        className={`h-2 w-2 shrink-0 rounded-full ${dotFor(source)}`}
         title={source.authority}
       />
       <div className="min-w-0 flex-1">
@@ -119,6 +140,16 @@ function SourceRow({
       {needsSignIn ? (
         <Button size="sm" variant="outline" onClick={() => openHarnessLoginModal()} data-testid={`llm-source-signin-${worker}`}>
           <Trans>Sign in</Trans>
+        </Button>
+      ) : needsKey ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openCredentials(navigation)}
+          title={t`Add this key under Connections`}
+          data-testid={`llm-source-addkey-${worker}-${endpoint?.provider ?? 'unknown'}`}
+        >
+          <Trans>Add key</Trans>
         </Button>
       ) : (
         <Button
@@ -182,15 +213,6 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
     [select, t],
   );
 
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t`Loading…`}</div>;
-  if (!status) {
-    return (
-      <div className="p-6 text-sm text-muted-foreground" data-testid="llm-sources-unavailable">
-        <Trans>The funding picture is only available on a desktop instance.</Trans>
-      </div>
-    );
-  }
-
   const GROUPS: [LLMFundingKind, string][] = useMemo(
     () => [
       [LLMFundingKind.Device, t`Device logins`],
@@ -199,6 +221,15 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
     ],
     [t],
   );
+
+  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t`Loading…`}</div>;
+  if (!status) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground" data-testid="llm-sources-unavailable">
+        <Trans>The funding picture is only available on a desktop instance.</Trans>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6" data-testid="llm-sources-view">
