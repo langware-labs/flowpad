@@ -20,6 +20,20 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 PROJECT = "11111111-2222-4333-8444-555555555555"
 
 
+@pytest.fixture(autouse=True)
+async def _empty_box():
+    """Start every test with no indexes on the box.
+
+    ``ensure_default`` answers a question about the WHOLE instance, so a row a previous test
+    left behind is the row it finds. The suite shares one database; without this the toggle
+    tests pass or fail depending on which siblings ran first.
+    """
+    for status in RagStatus:
+        for index in await RagIndex.get_all({"status": status.value}):
+            await index.destroy()
+    yield
+
+
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
     (tmp_path / "docs" / "auth").mkdir(parents=True)
@@ -253,3 +267,62 @@ async def test_two_holders_of_one_store_are_serialized(tmp_path):
 
     await asyncio.gather(holder(), latecomer())
     assert order == ["first-in", "first-out", "second-in"]
+
+
+# ── the toggle the tree offers ───────────────────────────────────────────────
+
+
+async def test_the_first_toggle_creates_the_box_index(tmp_path):
+    """A folder row asks "make this searchable" and that is the whole interaction.
+
+    Requiring a visit to the Search indexes screen first would make the common case — one index,
+    a few folders — a two-screen errand.
+    """
+    root = tmp_path / "docs"
+    root.mkdir()
+    index, covered = await RagIndex.toggle_root(str(root))
+
+    assert covered is True
+    assert index.roots == [str(root)]
+    assert len(await RagIndex.get_all({"name": index.name})) == 1
+
+
+async def test_toggling_again_uncovers_it(tmp_path):
+    root = tmp_path / "docs"
+    root.mkdir()
+    await RagIndex.toggle_root(str(root))
+    index, covered = await RagIndex.toggle_root(str(root))
+
+    assert covered is False
+    assert index.roots == []
+
+
+async def test_a_second_folder_joins_the_same_index(tmp_path):
+    """One index until there is a reason for two; the toggle never mints a second."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    first, _ = await RagIndex.toggle_root(str(a))
+    second, _ = await RagIndex.toggle_root(str(b))
+
+    assert first.id == second.id
+    assert sorted(second.roots) == sorted([str(a), str(b)])
+
+
+async def test_ensure_default_answers_the_oldest_row(tmp_path):
+    """Two rows minted by a race must not make the toggle flip between them."""
+    older = RagIndex(status=RagStatus.ACTIVE, name="older")
+    await older.save(notify=False)
+    newer = RagIndex(status=RagStatus.ACTIVE, name="newer")
+    await newer.save(notify=False)
+
+    assert (await RagIndex.ensure_default()).id == older.id
+    assert (await RagIndex.ensure_default()).id == older.id
+
+
+async def test_ensure_default_reuses_a_setup_index_rather_than_adding_one(tmp_path):
+    """SETUP just means nothing funds it yet — it is still the box's index."""
+    existing = RagIndex(status=RagStatus.SETUP, name="waiting")
+    await existing.save(notify=False)
+
+    assert (await RagIndex.ensure_default()).id == existing.id

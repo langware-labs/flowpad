@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 #: machine, and a receiver of a shared project has no such directory. Coverage is a local fact.
 _BUCKET = "private"
 
+#: What the box's single index is called until someone renames it.
+DEFAULT_INDEX_NAME = "Default RAG"
+
 #: One asyncio lock per index id, guarding its usearch handle. See ``RagIndex.open_store``.
 _STORE_LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -66,7 +69,7 @@ class RagIndex(Entity):
     _icon: ClassVar[str | None] = "Brain"
 
     type: str = APIField(default=EntityType.RAG_INDEX.value)
-    name: str = APIField(default="Default RAG")
+    name: str = APIField(default=DEFAULT_INDEX_NAME)
     description: str = APIField(default="")
 
     status: RagStatus = APIField(default=RagStatus.SETUP)
@@ -329,4 +332,44 @@ class RagIndex(Entity):
         return best
 
 
-__all__ = ["RagIndex", "RagStatus"]
+    @classmethod
+    async def ensure_default(cls) -> "RagIndex":
+        """The box's one index, created on first use.
+
+        Coverage is a per-folder decision and, until there is a reason to split, a per-folder
+        decision does not need the person making it to first choose WHICH index. So the toggle
+        in the tree finds this one or mints it, exactly as ``LLMEndpoint.ensure_for_secret``
+        does — a lookup, never a derived id, so it converges on the row that already exists.
+
+        Deliberately the OLDEST row rather than any row: two indexes minted by a race would
+        otherwise flip which one a toggle lands on between calls.
+        """
+        rows = await cls.get_all({"status": RagStatus.ACTIVE.value})
+        rows += await cls.get_all({"status": RagStatus.SETUP.value})
+        if rows:
+            return min(rows, key=lambda row: (row.created_date, str(row.id)))
+        index = cls(name=DEFAULT_INDEX_NAME)
+        await index.save()
+        await index.settle_status()
+        return index
+
+    @classmethod
+    async def toggle_root(cls, path: str) -> tuple["RagIndex", bool]:
+        """Cover *path*, or stop covering it. Returns the index and whether it is now covered.
+
+        One verb because the tree offers one button, and the button's meaning is "is this
+        folder searchable". Toggling on the exact root only: a folder INSIDE a root is already
+        covered, and removing it would need an exclusion list, which is a different feature.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        index = await cls.ensure_default()
+        canonical = canonical_posix_path(path)
+        if canonical in index.roots:
+            await index.remove_root(canonical)
+            return index, False
+        await index.add_root(canonical)
+        return index, True
+
+
+__all__ = ["DEFAULT_INDEX_NAME", "RagIndex", "RagStatus"]
