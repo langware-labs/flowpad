@@ -5,6 +5,7 @@ import { LLM_ENDPOINT_PROVIDERS } from '@sdk';
 
 import {
   badNonNegative,
+  MODELS_ALLOW_DEFAULT,
   filtersToForm,
   formToFilters,
   formToLimits,
@@ -98,7 +99,10 @@ export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
     provider: provider.id,
     base_url: provider.defaultBaseUrl,
     source: '',
-    filters: filtersToForm(null),
+    // A REAL value, not a placeholder: what the field shows is what the save sends. An endpoint
+    // created without touching this is narrowed to the families we actually use, rather than
+    // inheriting a 400-model aggregator catalogue by saying nothing.
+    filters: { ...filtersToForm(null), models_allow: MODELS_ALLOW_DEFAULT },
     limits: limitsToForm(null),
     key: '',
   };

@@ -18517,6 +18517,14 @@ msgstr "Use AWS Bedrock as the backend"
 msgid "Use Bedrock"
 msgstr "Use Bedrock"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Use defaults"
+msgstr "Use defaults"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+#~ msgid "Use example"
+#~ msgstr "Use example"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
 msgstr "Use Google Vertex AI as the backend"
