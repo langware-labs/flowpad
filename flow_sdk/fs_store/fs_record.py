@@ -1,7 +1,7 @@
 """FSRecord — the lean filesystem manifest for an Entity's on-disk shadow.
 
 Replaces ``Record``. Construct as ``FSRecord(type, id)``; the shadow
-lives at ``<records_root>/<type>/<type>-@<id>/metadata.json``. Holds the
+lives at ``<records_root>/<type>/<id>/metadata.json``. Holds the
 asset_ref (FSRef to the user-facing source file) and a free-form
 collection of meta fields as direct instance attributes (default).
 Per-type typed metadata models are opt-in via ``TypeInfo.meta_model``.
@@ -497,22 +497,18 @@ class FSRecord(Generic[M]):
         return self
 
     def _meta_path_for_write(self, caller: str) -> Path:
-        """Shadow ``metadata.json`` path, ensuring the record has an id first.
+        """Shadow ``metadata.json`` path, refusing a record that has no id.
 
         An id-less record reaching disk used to silently mint a FIFTH identity
         formula (``content_fingerprint``), invisible to every identity guard.
-        Identity must come from ``TypeInfo.mint_entity_id`` before save. Logged
-        for one release (removal: 0.2.123), then this becomes a raise —
-        ``shadow_dir`` below already refuses an id-less record.
+        Identity comes from ``TypeInfo.mint_entity_id`` before save — the
+        fallback was logged for one release and is now a hard error.
         """
         if self.id is None:
-            logging.warning(
-                "[asset-id] FSRecord(%s) reached %s with no id; falling back to the "
-                "content fingerprint, which is NOT an entity id.",
-                self.type,
-                caller,
+            raise ValueError(
+                f"FSRecord({self.type}) reached {caller} with no id; "
+                "mint through TypeInfo.mint_entity_id first"
             )
-            self.__dict__["id"] = self.content_fingerprint
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
         return folder / _METADATA_JSON
@@ -520,7 +516,7 @@ class FSRecord(Generic[M]):
     # ── Save / Load ───────────────────────────────────────────────────────
 
     def save(self) -> Path:
-        """Write metadata.json into the shadow folder. Mints id if absent."""
+        """Write metadata.json into the shadow folder. Raises if the record has no id."""
         meta_path = self._meta_path_for_write("save()")
         meta_path.write_text(
             json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=_json_default),
@@ -1047,7 +1043,13 @@ class FSRecord(Generic[M]):
             try:
                 self.save()
             except Exception:
-                pass
+                logging.getLogger(__name__).warning(
+                    "[record-sync] FSRecord(%s/%s) could not persist the entity mirror; "
+                    "metadata.json is stale until the next sync",
+                    self.type,
+                    self.id,
+                    exc_info=True,
+                )
         return changed
 
     async def get_links(self) -> list:
