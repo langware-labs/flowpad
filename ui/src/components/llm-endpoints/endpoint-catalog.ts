@@ -1,6 +1,6 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import type { LLMEndpoint, LLMEndpointKind, LLMEndpointProvider } from '@sdk';
+import type { LLMChain, LLMEndpoint, LLMEndpointKind, LLMEndpointProvider } from '@sdk';
 import { LLM_ENDPOINT_PROVIDERS } from '@sdk';
 
 import {
@@ -15,6 +15,7 @@ import {
   type FiltersForm,
   type LimitsForm,
 } from './filters-limits-forms';
+import { endpointTypeId } from './llm-endpoints-pointer';
 
 /**
  * A base URL must be http(s). This used to be imported from the data-sources
@@ -112,11 +113,34 @@ export function withProvider(draft: EndpointDraft, provider: LLMEndpointProvider
   return { ...draft, provider, base_url: keepUrl ? draft.base_url : (next?.defaultBaseUrl ?? '') };
 }
 
-export function draftFrom(entity: LLMEndpoint): EndpointDraft {
+/**
+ * Root ⇔ no source — answered by the CHAIN report, not by the entity.
+ *
+ * `LLMEndpoint.kind` derives from `sources`, and the hub does not serialize that field: a source is
+ * a `source_llmendpoint` EDGE, deliberately not a field, because a client-writable list was
+ * authorized against nothing — a create could name any endpoint the caller could merely spend
+ * through, hanging an uncapped sibling off a pool. So `entity.kind` answers `root` for EVERY
+ * endpoint that has ever existed, and a correctly allocated chain is indistinguishable from a
+ * keyless orphan.
+ *
+ * `chain` resolves the real graph, so its entry hop carries the true answer. Returns `null` while
+ * the report has not arrived: a caller shows nothing rather than guessing `root`, which is the
+ * wrong guess in exactly the case this exists to fix.
+ */
+export function kindFromChain(chain: LLMChain | undefined, endpointId: string): LLMEndpointKind | null {
+  const hop = chain?.hops.find((h) => h.id === endpointTypeId(endpointId));
+  if (!hop) return null;
+  return hop.is_root ? 'root' : 'chain';
+}
+
+export function draftFrom(entity: LLMEndpoint, kind?: LLMEndpointKind | null): EndpointDraft {
   const provider = isProvider(entity.provider) ? entity.provider : PROVIDERS[0].id;
   return {
     id: entity.id,
-    kind: entity.kind,
+    // `entity.kind` is `root` for everything (see `kindFromChain`), which opened the edit form on a
+    // chain with provider, base URL and key fields — none of which a chain has. The caller passes
+    // the chain-resolved kind when it has one.
+    kind: kind ?? entity.kind,
     name: entity.name ?? '',
     enabled: entity.enabled ?? true,
     provider,
