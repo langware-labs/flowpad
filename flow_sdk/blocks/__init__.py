@@ -275,31 +275,12 @@ class Inbox:
             await asyncio.sleep(poll_every)
 
     async def send(self, spec: MessageSpec) -> str:
-        """Deliver an outbound spec through the source's driver.
+        """Deliver an outbound spec through the source's messaging seam.
 
         Returns the provider's id for the created message — identity is born
         at the provider. The sent copy re-ingests on a later sync and joins
         its thread like any other message.
         """
-        if spec.attachments:
-            raise NotImplementedError(
-                "attachments are not supported on this channel yet — "
-                "the driver send contract carries text only"
-            )
-        if len(spec.to) != 1:
-            raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
-
         source = await self._ensure_source()
-        driver = get_driver(source.provider)
-        if driver is None or not driver.sends:
-            raise RuntimeError(f"the {source.provider} driver cannot send")
-        outcome = await driver.send(
-            source,
-            thread_key=spec.thread_key,
-            to=spec.to[0],
-            text=spec.body,
-            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
-            in_reply_to=spec.reply_to_external_id,
-        )
+        outcome = await source.send(spec)
         return str(outcome.external_id or "")

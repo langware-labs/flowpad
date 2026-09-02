@@ -7,7 +7,7 @@ pinned by a test so it cannot drift silently.
 | --- | --- | --- |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder | `tests/unit/test_ingest_end_to_end.py`, `tests/unit/test_folder_source/`, `tests/unit/test_ingest_write_route.py` |
 | [Gmail message source](gmail-message-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_driver.py` |
-| [Agent email](agent-email.md) | email a pirate Agent from Gmail and receive its reply | `tests/hub_tests/test_gmail_agent_email_roundtrip.py` |
+| [Agent email](agent-email.md) | email a pirate Agent from Gmail and receive its reply | `tests/hub_tests/test_agent_email_conversation.py` |
 | [Workflows](workflows.md) | the plain-Python `blocks` surface: an inbox, an agent runner, a typed reply, on email, Telegram and Slack | `tests/long_tests/test_blocks_email_workflow.py`, `tests/unit/test_blocks_email.py`, `tests/unit/test_slack_driver.py` |
 | [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
 | [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer | `tests/long_tests/test_process_mcp_multi_vendor.py` |
@@ -20,8 +20,8 @@ pinned by a test so it cannot drift silently.
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
 * **Import the drivers once.** `import flow_sdk.ingest.drivers` registers the
-  ten shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
-  `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
+  eleven shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
+  `gmail`, `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
   `get_driver()` returns `None` and a source parks on `config_error`.
 * **Values travel as `DataSpec`.** What a driver emits is a `SourceItemSpec`,
   what you send back is a `MessageSpec` subclass, what an agent returns is a

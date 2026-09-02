@@ -23,17 +23,19 @@ verbatim and are never absorbed here.
 import logging
 from typing import TYPE_CHECKING, ClassVar, Optional
 
+from pydantic import PrivateAttr
+
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pathlib import Path
-
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
@@ -98,6 +100,7 @@ class Agent(Entity):
     and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
 
     type: str = APIField(default=EntityType.AGENT.value)
+    _inbox: EmailInbox | None = PrivateAttr(default=None)
 
     # ── identity / presentation ───────────────────────────────────────────
     # `name` / `title` / `uname` come from Entity. `name` is the addressable
@@ -251,12 +254,11 @@ class Agent(Entity):
         need a root-scoped reindex to get parented — ``reindex_paths`` is
         resolution-only and would leave the asset orphaned.
         """
+        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
         from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
 
         # Rendering is the validation: refuse a spec this agent's harness cannot
         # express (a dotted name under codex) at author time, not at spawn.
-        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
-
         get_driver(driver_key(self.worker_type)).prepare_process_mcp([spec])
 
         existing = {asset.name: asset for asset in await self.mcp_assets()}
@@ -476,13 +478,91 @@ class Agent(Entity):
 
     # ── the mailbox ───────────────────────────────────────────────────────
 
-    async def provision_inbox(self, actor: TypeId, **options) -> dict:
+    @property
+    def inbox(self) -> EmailInbox | None:
+        """The mailbox resolved for this Agent in the current SDK process."""
+        return self._inbox
+
+    async def enableEmail(self) -> EmailInbox:
+        """Enable this Agent's Hub mailbox and its local ingest source.
+
+        The Hub inbox is the formal identity; the ``cloud_email`` DataSource is
+        the local polling projection. Both sides converge on ``agent_id``, so a
+        retry adopts the existing mailbox and source rather than allocating or
+        creating either one twice.
+        """
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+
+        if not hub_auth_available():
+            raise LoginRequired("FlowPad cloud login required to enable email")
+        inbox = self._inbox
+        if inbox is None:
+            try:
+                result = await self.provision_inbox()
+            except EmailInboxError as exc:
+                if exc.status_code == 401:
+                    raise LoginRequired("FlowPad cloud login required to enable email") from exc
+                raise
+            inbox = EmailInbox.from_hub_descriptor(
+                result["inbox"],
+                agent_typeid=self.typeid,
+            )
+
+        await self._ensure_email_source(inbox)
+        await self._mark_email_enabled()
+        self._inbox = inbox
+        return inbox
+
+    async def _mark_email_enabled(self) -> None:
+        """Persist the policy switch after allocation and source creation."""
+        if not self.email_enabled:
+            self.email_enabled = True
+            await self.save()
+
+    async def _ensure_email_source(self, inbox: EmailInbox):
+        """Find or create the one local source that polls ``inbox``.
+
+        ``agent_id`` is the natural key because the Hub addresses a mailbox by
+        Agent. The allocated address is attribution data: it names the account
+        and lets the projection recognize the Agent's own sent copies.
+        """
+        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+
+        key = CloudEmailDriver.identity_config_key
+        source = await DataSource.find_for_account(CloudEmailDriver.provider, key, self.id)
+        config = {
+            key: self.id,
+            "address": inbox.address,
+            "inbox_typeid": str(inbox.typeid),
+            "provider_inbox_id": inbox.provider_inbox_id,
+        }
+        if source is None:
+            source = DataSource(
+                name=f"Inbox {inbox.address}",
+                provider=CloudEmailDriver.provider,
+                kind=CloudEmailDriver.kind,
+                config=config,
+                account_key=inbox.address,
+                account_identities=[inbox.address],
+            )
+        else:
+            source.config = {**(source.config or {}), **config}
+            source.kind = CloudEmailDriver.kind
+            source.account_key = inbox.address
+            source.account_identities = [inbox.address]
+        await source.save()
+        return source
+
+    async def provision_inbox(self, actor: TypeId | None = None, **options) -> dict:
         """Give this agent an email address of its own.
 
-        Publish is implicit for the same reason it is on ``deploy_to_cloud``: the
-        mailbox hangs off the agent's row at the backend, so that row has to
-        exist before anything can be allocated against it. ``ensure_on_hub`` is a
-        no-op for an already-published agent.
+        The mailbox needs an Agent row on the Hub, but not a Git deployment.
+        A local-only Agent is registered through the ordinary share path first;
+        this intentionally does not require a Project, GitHub, or Git publish.
 
         **Adopt before allocating.** An agent that already has an active mailbox
         gets that one back — never a second address. This is not just tidiness:
@@ -493,8 +573,9 @@ class Agent(Entity):
         """
         from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
-        await self.ensure_on_hub(actor)
         driver = get_email_inbox_driver()
+        if not self.remote:
+            await self.share()
 
         existing = await driver.get_inbox(self.id)
         if existing:
@@ -536,7 +617,9 @@ class Agent(Entity):
         """
         from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
-        return await get_email_inbox_driver().delete_inbox(self.id)
+        deleted = await get_email_inbox_driver().delete_inbox(self.id)
+        self._inbox = None
+        return deleted
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 

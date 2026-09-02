@@ -17,10 +17,10 @@ import pytest
 
 from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
 from flow_sdk.builtin.email_inbox_driver import (
+    EMAIL_INBOX_DRIVERS,
     EmailInboxDriver,
     EmailInboxError,
     get_email_inbox_driver,
-    EMAIL_INBOX_DRIVERS,
 )
 from flow_sdk.cloud_client.shared.errors import HubError
 
@@ -141,12 +141,9 @@ class TestTheAgentVerb:
         fail — so asking twice must never bill twice."""
         from flow_sdk.builtin.agent import Agent
 
-        # Patch the CLASS: an Entity is a pydantic model, so it refuses an
-        # instance attribute that is not a declared field.
-        monkeypatch.setattr(Agent, "ensure_on_hub", _noop_ensure)
         allocated = _patch_mailbox(monkeypatch, existing=DESCRIPTOR)
 
-        result = await Agent(name="mailer").provision_inbox(
+        result = await Agent(name="mailer", remote=True).provision_inbox(
             actor=SimpleNamespace(type="user", id="u1")
         )
 
@@ -159,10 +156,9 @@ class TestTheAgentVerb:
     async def test_an_agent_without_one_gets_a_mailbox(self, monkeypatch):
         from flow_sdk.builtin.agent import Agent
 
-        monkeypatch.setattr(Agent, "ensure_on_hub", _noop_ensure)
         _patch_mailbox(monkeypatch, existing=None)
 
-        result = await Agent(name="mailer").provision_inbox(
+        result = await Agent(name="mailer", remote=True).provision_inbox(
             actor=SimpleNamespace(type="user", id="u1")
         )
 
@@ -202,8 +198,3 @@ def _patch_mailbox(monkeypatch, *, existing):
         "flow_sdk.builtin.email_inbox_driver.get_email_inbox_driver", lambda *_a, **_k: _Driver()
     )
     return allocated
-
-
-async def _noop_ensure(_self, _actor):
-    """The agent is already published — publishing has its own coverage."""
-    return False

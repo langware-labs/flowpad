@@ -25,22 +25,32 @@ from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.builtin.source_item import MessageSpec, SourceItemSpec
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
-from flow_sdk.utils.serialization import iso_to_utc
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
 MIN_POLL_INTERVAL_SECONDS = 60
+
+
+def _normalize_message_id(value: object) -> str:
+    """Comparable form of an RFC message id from a send or received header."""
+    normalized = "".join(str(value or "").split()).casefold()
+    if len(normalized) >= 2 and normalized[0] == "<" and normalized[-1] == ">":
+        return normalized[1:-1]
+    return normalized
 
 
 class SourceStatus(StrEnum):
@@ -247,6 +257,73 @@ class DataSource(Entity):
             if str((row.config or {}).get(key) or "").strip() == value:
                 return row
         return None
+
+    async def send(self, spec: MessageSpec) -> SendOutcome:
+        """Deliver one outbound message through this source's driver.
+
+        Message-shape validation belongs here rather than on each workflow
+        surface: a direct SDK caller and ``blocks.Inbox`` must reject the same
+        unsupported attachment or recipient shape before provider I/O begins.
+        """
+        from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        if spec.attachments:
+            raise NotImplementedError(
+                "attachments are not supported on this channel yet — "
+                "the driver send contract carries text only"
+            )
+        if len(spec.to) != 1:
+            raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
+
+        driver = get_driver(self.provider)
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        return await driver.send(
+            self,
+            thread_key=spec.thread_key,
+            to=spec.to[0],
+            text=spec.body,
+            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
+            in_reply_to=spec.reply_to_external_id,
+        )
+
+    async def expect_reply(self, sent: SendOutcome) -> SourceItemSpec:
+        """Sync until this source contains a reply to ``sent``.
+
+        The caller owns the outer deadline. This method deliberately carries
+        no second timeout, retry budget, or sleep that could disagree with it.
+        Existing rows are checked before the first provider call so an already
+        ingested reply returns without needless network I/O.
+        """
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+
+        expected = _normalize_message_id(sent.external_id)
+        if not expected:
+            raise ValueError("cannot expect a reply to a send with no external_id")
+        driver = get_driver(self.provider)
+
+        while True:
+            items = await SourceItem.get_all({"data_source_id": self.id})
+            for item in items:
+                if _normalize_message_id(item.reply_to_external_id) == expected:
+                    return SourceItemSpec.model_validate(
+                        {key: getattr(item, key) for key in SourceItemSpec.model_fields}
+                    )
+            if driver is not None and driver.wait_for_reply is not None:
+                reply = await driver.wait_for_reply(self, str(sent.external_id))
+                await ingest_items([reply])
+                return reply
+            if driver is not None and driver.find_reply is not None:
+                reply = await driver.find_reply(self, str(sent.external_id))
+                if reply is not None:
+                    await ingest_items([reply])
+                    return reply
+            else:
+                await sync_source(self, now=datetime.now(timezone.utc))
 
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
