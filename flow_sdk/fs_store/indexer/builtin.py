@@ -17,47 +17,37 @@ from flow_sdk.fs_store.record_types import RecordType
 if TYPE_CHECKING:
     from flow_sdk.fs_store.indexer.auto_index import ScanMode
 
-# Terminal record types the indexer writes via Record.from_fsref.
-# Used by rebuild mode in the index handler to know what to clear.
-INDEXABLE_TYPES: list[RecordType] = [
-    RecordType.CLAUDE_SESSION,
-    RecordType.DYNAMIC_WORKFLOW,
-    RecordType.PROJECT,
-    RecordType.CODEX_SESSION,
-    RecordType.CODEX_PROJECT,
-    RecordType.COPILOT_SESSION,
-    RecordType.PLAN,
-    RecordType.CLAUDE_MD,
-    RecordType.CLAUDE_RULES,
-    RecordType.SPEC,
-    RecordType.SKILL,
-    RecordType.SUBAGENT,
-    # The launchable agent. Must be listed here as well as in
-    # SchemaRegistry._BUILTIN_DEFAULT_TYPES — the two lists are required to
-    # overlap (see the comment there). Omitting it indexed an agent to a row
-    # carrying `name` and nothing else: no system_prompt, no model, no
-    # asset_ref.
-    RecordType.AGENT,
-    RecordType.COMMAND,
-    RecordType.CLAUDE_MEMORY,
-    RecordType.MARKDOWN,
-    RecordType.CLAUDE_HOOK,
-    RecordType.MCP_SERVER,
-    RecordType.PLUGIN,
-    RecordType.TODO_FILE,
-    RecordType.TASK,
-    RecordType.WHITEBOARD,
-    RecordType.DATASET,
-    RecordType.DECK_TEMPLATE,
-    RecordType.DECK,
-    RecordType.SPREADSHEET,
-    RecordType.USAGE_REPORT,
-    RecordType.ASSET_CLEANUP_REPORT,
-    # Webapp assets. Safe alongside the rows `flow app serve` registers for a
-    # folder in the user's checkout: those carry no asset_ref, and a row with no
-    # asset_ref is not file-backed, so it is never an orphan candidate.
-    RecordType.MICRO_APP,
-]
+
+def indexable_types() -> list[RecordType]:
+    """Terminal record types the production indexer writes.
+
+    Derived from the shared indexer's registration graph
+    (``FSIndexer.terminal_output_types``): every declared walker output that
+    the registry can parse from disk. A new walker + ``from_disk_fn`` enrolls
+    its type here with no edit — rebuild mode, orphan detection and
+    ``?limit_types`` slicing all read this one derivation. Registry order.
+
+    The Rust backend (``RSIndexerAdapter``) records the same registrations but
+    is not an ``FSIndexer``; the set is then derived from a throwaway Python
+    indexer carrying the identical function graph.
+    """
+    idx = get_shared_indexer()
+    derive = getattr(idx, "terminal_output_types", None)
+    if derive is None:
+        idx = FSIndexer(roots=[])
+        register_default_functions(idx)
+        derive = idx.terminal_output_types
+    return derive()
+
+
+def __getattr__(name: str):
+    # ``INDEXABLE_TYPES`` was a hand-maintained literal for one release; the
+    # alias keeps old importers working while they migrate to
+    # ``indexable_types()``. Module-level ``__getattr__`` keeps it lazy so
+    # importing this module never constructs the shared indexer.
+    if name == "INDEXABLE_TYPES":
+        return indexable_types()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
@@ -92,6 +82,27 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     # schema/type_info/<type>_info.py (registered by register_all) rather than
     # self-registering on functions-module import, so building the indexer is
     # the chokepoint that guarantees a complete registry. Idempotent.
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+
+    # Transcript handlers are opt-in (full-JSONL parse is expensive — see
+    # flow_sdk/fs_store/transcript_indexer/).
+    # Default is the in-process walk. The auto-index preference is applied only
+    # by get_auto_scan_indexer(), so a manual index is never silently displaced.
+    cls = FSIndexer if scan_mode is None else _indexer_class_for(scan_mode)
+    idx = cls(
+        roots=default_roots(),
+    )
+    register_default_functions(idx)
+    return idx
+
+
+def register_default_functions(idx: FSIndexer) -> None:
+    """Wire every production walker onto ``idx`` — the one registration graph.
+
+    Split from ``build_default_indexer`` so a caller that needs the graph but
+    not the roots (``indexable_types`` under the Rust backend) does not walk
+    anything to get it.
+    """
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
     from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
@@ -135,22 +146,13 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-    # Transcript handlers are opt-in (full-JSONL parse is expensive — see
-    # flow_sdk/fs_store/transcript_indexer/).
-    # Default is the in-process walk. The auto-index preference is applied only
-    # by get_auto_scan_indexer(), so a manual index is never silently displaced.
-    cls = FSIndexer if scan_mode is None else _indexer_class_for(scan_mode)
-    idx = cls(
-        roots=default_roots(),
-    )
-
     # USER_HOME_FOLDER expanders.
     #
-    # NOTE: ``real_project_cwd_fn`` is intentionally NOT registered here.
-    # Project-cwd fanout was previously implicit (any scan over USER_HOME would
-    # silently discover + walk every Claude/Codex project tree), which made
+    # NOTE: there is deliberately NO USER_HOME_FOLDER -> REAL_PROJECT_CWD
+    # expander. Project-cwd fanout was once implicit (any scan over USER_HOME
+    # silently discovered + walked every Claude/Codex project tree), which made
     # ``?limit_types=N`` and ``scope_filter=None`` mean "walk the universe".
-    # Project-cwd roots are now contributed explicitly by the scope filter via
+    # Project-cwd roots are contributed explicitly by the scope filter via
     # ``_resolve_scoped_roots``: callers that want all-projects pass
     # ``ScopeFilter`` materialised by ``get_all_scope_filter()``, narrower
     # callers pass a narrower filter, and the indexer only walks what the
@@ -185,10 +187,10 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     # Plugins + todos are user-global single-file registries.
     idx.add_function(RecordType.USER_HOME_FOLDER, plugin_fn, RecordType.PLUGIN)
     idx.add_function(RecordType.USER_HOME_FOLDER, todo_fn, RecordType.TODO_FILE)
-    # codex_projects_fn consolidates codex cwds into RecordType.PROJECT
-    # (CODEX_PROJECT is a deprecated alias). Annotating it CODEX_PROJECT here
-    # makes the type-gating dispatcher skip it for ``?type=project`` queries
-    # and silently drop every Codex-discovered project.
+    # codex_projects_fn consolidates codex cwds into RecordType.PROJECT.
+    # Annotating it with anything else makes the type-gating dispatcher skip it
+    # for ``?type=project`` queries and silently drop every Codex-discovered
+    # project.
     idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn, RecordType.PROJECT)
     idx.add_function(RecordType.USER_HOME_FOLDER, codex_sessions_fn, RecordType.CODEX_SESSION)
     idx.add_function(RecordType.USER_HOME_FOLDER, copilot_sessions_fn, RecordType.COPILOT_SESSION)

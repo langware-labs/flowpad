@@ -16,8 +16,20 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.real_project_cwd import _dedup_nested
 from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor
+from flow_sdk.fs_store.path_utils import is_path_under
+
+
+def _dedup_nested(cwds: list[str]) -> list[str]:
+    """Outermost-wins walk-coverage dedup — the shape ``_resolve_scoped_roots``
+    applies when it builds one REAL_PROJECT_CWD root per project. Kept here
+    (the retired ``real_project_cwd_fn`` walker was its only home) so the bug
+    shape below stays reproducible."""
+    kept: list[str] = []
+    for cwd in sorted(cwds, key=len):
+        if not any(is_path_under(cwd, k) for k in kept):
+            kept.append(cwd)
+    return kept
 
 
 @pytest.mark.parametrize(

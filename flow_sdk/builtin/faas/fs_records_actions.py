@@ -693,12 +693,12 @@ class FsRecordsActionsMixin:
         bracket only ``indexer.scan``, so a 34s request advertised 0.5s.
         """
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer import INDEXABLE_TYPES  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import indexable_types  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         terminal_names = {str(record_type) for record_type in types_filter} if types_filter is not None else None
-        all_indexable_names = {str(record_type) for record_type in INDEXABLE_TYPES}
+        all_indexable_names = {str(record_type) for record_type in indexable_types()}
 
         # Bucket only requested terminal types. The walk may also contain
         # scaffolds needed to reach them, but those are traversal details.
@@ -916,7 +916,6 @@ class FsRecordsActionsMixin:
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
-            INDEXABLE_TYPES,
             PROGRESS_TEXT_COMPLETE,
             IndexerOptions,
             IndexProgressTable,
@@ -967,7 +966,7 @@ class FsRecordsActionsMixin:
                     status_code=400,
                 )
         elif limit_types is not None:
-            types_filter = list(INDEXABLE_TYPES)[:limit_types]
+            types_filter = indexable_types()[:limit_types]
 
         try:
             activity = self._start_activity("scan", timeout_seconds=600)
@@ -1455,8 +1454,8 @@ class FsRecordsActionsMixin:
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
-            INDEXABLE_TYPES,
             OrphanAction,
+            indexable_types,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -1490,7 +1489,7 @@ class FsRecordsActionsMixin:
                     status_code=400,
                 )
         elif limit_types is not None:
-            types_filter = list(INDEXABLE_TYPES)[:limit_types]
+            types_filter = indexable_types()[:limit_types]
 
         from pathlib import Path as _Path  # noqa: PLC0415
 
@@ -1650,7 +1649,7 @@ class FsRecordsActionsMixin:
         if rebuild:
             from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
 
-            targets = types_filter or INDEXABLE_TYPES
+            targets = types_filter or indexable_types()
             for t in targets:
                 await driver.delete_entities_by_type(str(t))
                 FSRecord.clear_hashes_for_type(str(t))
