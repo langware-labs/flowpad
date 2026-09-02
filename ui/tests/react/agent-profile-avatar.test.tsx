@@ -101,6 +101,14 @@ beforeEach(() => {
 });
 
 describe('Agent profile avatar', () => {
+  it('distinguishes the Agent launch switch from its Email inbox', () => {
+    render(<MemoryRouter><AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} /></MemoryRouter>);
+
+    expect(screen.getByText('Agent enabled')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Enable Agent' })).toBeChecked();
+    expect(screen.getByTestId('agent-inbox-button')).toHaveTextContent('Email inbox');
+  });
+
   it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', () => {
     const withImage = qAgent(AGENT_AVATAR_REF);
     const first = render(<MemoryRouter><AgentProfileEditor agent={withImage} mainRef={agentMainRef()} /></MemoryRouter>);

@@ -51,7 +51,9 @@ async def test_agent_enables_email_once():
         assert source.account_key == inbox.address
         assert source.account_identities == [inbox.address]
 
+        agent.remote = False
         same_inbox = await agent.enableEmail()
+        assert agent.remote is True, "a retry must adopt an Agent already published to the Hub"
         assert same_inbox is inbox
         assert same_inbox.typeid == inbox.typeid
         assert same_inbox.provider_inbox_id == inbox.provider_inbox_id

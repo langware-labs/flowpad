@@ -500,10 +500,22 @@ class Agent(Entity):
 
         if not hub_auth_available():
             raise LoginRequired("FlowPad cloud login required to enable email")
+        driver = get_email_inbox_driver()
         if not self.remote:
-            await self.share()
+            try:
+                await driver.get_inbox(self.id)
+            except EmailInboxError as exc:
+                if exc.status_code == 401:
+                    raise LoginRequired("FlowPad cloud login required to enable email") from exc
+                if exc.status_code != 404:
+                    raise
+                await self.share()
+            else:
+                # A previous attempt can publish the Agent and then fail while
+                # allocating its mailbox. Adopt that Hub row on retry.
+                self.remote = True
         try:
-            descriptor = await get_email_inbox_driver().enable_inbox(self.id)
+            descriptor = await driver.enable_inbox(self.id)
         except EmailInboxError as exc:
             if exc.status_code == 401:
                 raise LoginRequired("FlowPad cloud login required to enable email") from exc

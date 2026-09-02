@@ -148,7 +148,9 @@ export function AgentInboxView() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{activeState?.enabled ? t`Enabled` : t`Disabled`}</span>
+            <span className="text-xs text-muted-foreground">
+              {activeState?.enabled ? t`Email enabled` : t`Email disabled`}
+            </span>
             <Switch
               checked={activeState?.enabled ?? false}
               disabled={saving}
