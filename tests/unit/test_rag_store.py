@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.rag.chunking import chunk_markdown
-from flow_sdk.rag.store import DimensionMismatch, RagStore
+from flow_sdk.rag.store import INDEX_FILE, DimensionMismatch, RagStore
 from flow_sdk.schema.data_spec.rag_spec import RagChunk
 from tests.unit.rag_embedder import DIMENSIONS, embed, embed_all
 
@@ -165,10 +165,27 @@ def test_a_mid_build_flush_persists_without_closing(tmp_path):
 
 def test_the_tree_hash_round_trips(tmp_path):
     with _store(tmp_path) as store:
-        assert store.tree_hash == ""
+        assert store.tree_hash() == ""
         store.stamp(tree_hash="merkle-1")
     with _store(tmp_path) as reopened:
-        assert reopened.tree_hash == "merkle-1"
+        assert reopened.tree_hash() == "merkle-1"
+
+
+def test_roots_go_stale_independently(tmp_path):
+    """One index covers several folders; editing under one must not re-walk the others."""
+    with _store(tmp_path) as store:
+        store.stamp(tree_hash="a1", root="/docs")
+        store.stamp(tree_hash="b1", root="/notes")
+        assert (store.tree_hash("/docs"), store.tree_hash("/notes")) == ("a1", "b1")
+        store.stamp(tree_hash="a2", root="/docs")
+        assert store.tree_hash("/notes") == "b1"
+
+
+def test_forgetting_a_root_makes_it_index_from_scratch(tmp_path):
+    with _store(tmp_path) as store:
+        store.stamp(tree_hash="a1", root="/docs")
+        store.forget_tree("/docs")
+        assert store.tree_hash("/docs") == ""
 
 
 # ── the dimension contract ───────────────────────────────────────────────────
@@ -217,3 +234,35 @@ def test_a_chunked_document_is_searchable_by_its_heading(tmp_path):
         store.add(chunks, embed_all([c.text for c in chunks]), model="ngram-test")
         hit = store.search(embed("how do I revert a release"), top_k=1)[0]
         assert hit.heading_path == ["Deployment", "Rollback"]
+
+
+# ── the width-less index ─────────────────────────────────────────────────────
+
+
+def test_opening_a_store_to_read_a_count_writes_no_index_file(tmp_path):
+    """A store opened before anything was embedded must leave no vector index behind.
+
+    Reading a count opens a handle whose width is still unknown. Saving that leaves a
+    zero-dimension file on disk, and the next real add loads it and hands 1536-float vectors to
+    a metric expecting none — usearch does not raise there, it segfaults and takes the backend
+    with it. That is how a coverage edit killed a running instance.
+    """
+    with RagStore(tmp_path / "store") as store:
+        assert store.chunk_count() == 0
+        assert store.document_refs() == set()
+    assert not (tmp_path / "store" / INDEX_FILE).exists()
+
+
+def test_a_store_reopened_after_a_bare_read_still_takes_its_first_vectors(tmp_path):
+    """The sequence that crashed, end to end: read, close, then embed."""
+    with RagStore(tmp_path / "store") as store:
+        store.chunk_count()
+
+    with RagStore(tmp_path / "store") as store:
+        chunk = _chunk("doc.md", "hello there")
+        assert store.add([chunk], [[0.1, 0.2, 0.3, 0.4]], model="m") == 1
+        assert store.dimensions == 4
+
+    with RagStore(tmp_path / "store") as store:
+        assert store.chunk_count() == 1
+        assert store.search([0.1, 0.2, 0.3, 0.4], top_k=1)[0].doc_ref == "doc.md"
