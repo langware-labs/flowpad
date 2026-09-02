@@ -63,6 +63,23 @@ class TestTheFamily:
 class TestTheHubMember:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_enable_and_disable_use_the_lifecycle_subpaths(self, monkeypatch):
+        seen: list[tuple[str, dict]] = []
+
+        async def fake_post(_type, body, _entity_id, _action, sub_path):
+            seen.append((sub_path, body))
+            return DESCRIPTOR
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
+        driver = HubEmailInboxDriver()
+
+        await driver.enable_inbox(AGENT_ID)
+        await driver.disable_inbox(AGENT_ID)
+
+        assert seen == [("enable", {}), ("disable", {})]
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_get_inbox_unwraps_the_envelope(self, monkeypatch):
         """The hub wraps this one (`{"inbox": …|null}`) because a bare null does
         not survive its envelope. Callers should see a descriptor or nothing."""

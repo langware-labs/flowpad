@@ -492,34 +492,95 @@ class Agent(Entity):
         creating either one twice.
         """
         from flow_sdk.auth import LoginRequired  # noqa: PLC0415
-        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
+            EmailInboxError,
+            get_email_inbox_driver,
+        )
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
         if not hub_auth_available():
             raise LoginRequired("FlowPad cloud login required to enable email")
-        inbox = self._inbox
-        if inbox is None:
-            try:
-                result = await self.provision_inbox()
-            except EmailInboxError as exc:
-                if exc.status_code == 401:
-                    raise LoginRequired("FlowPad cloud login required to enable email") from exc
-                raise
-            inbox = EmailInbox.from_hub_descriptor(
-                result["inbox"],
-                agent_typeid=self.typeid,
-            )
+        if not self.remote:
+            await self.share()
+        try:
+            descriptor = await get_email_inbox_driver().enable_inbox(self.id)
+        except EmailInboxError as exc:
+            if exc.status_code == 401:
+                raise LoginRequired("FlowPad cloud login required to enable email") from exc
+            raise
+        inbox = self._adopt_inbox_descriptor(descriptor)
 
         await self._ensure_email_source(inbox)
-        await self._mark_email_enabled()
-        self._inbox = inbox
+        await self._set_email_enabled(True)
         return inbox
 
-    async def _mark_email_enabled(self) -> None:
-        """Persist the policy switch after allocation and source creation."""
-        if not self.email_enabled:
-            self.email_enabled = True
+    async def disableEmail(self) -> EmailInbox | None:
+        """Pause this Agent's Hub mailbox and local ingest source.
+
+        This is deliberately reversible: the Hub allocation, address, local
+        DataSource id and cursor all survive. A later :meth:`enableEmail`
+        resumes the source from its last committed position.
+        """
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
+            EmailInboxError,
+            get_email_inbox_driver,
+        )
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+        from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+
+        if not hub_auth_available():
+            raise LoginRequired("FlowPad cloud login required to disable email")
+        try:
+            descriptor = await get_email_inbox_driver().disable_inbox(self.id)
+        except EmailInboxError as exc:
+            if exc.status_code == 401:
+                raise LoginRequired("FlowPad cloud login required to disable email") from exc
+            if exc.status_code == 404:
+                descriptor = None
+            else:
+                raise
+
+        await self._set_email_enabled(False)
+        source = await DataSource.find_for_account(
+            CloudEmailDriver.provider,
+            CloudEmailDriver.identity_config_key,
+            self.id,
+        )
+        if source is not None and source.status != SourceStatus.DISABLED.value:
+            source.status = SourceStatus.DISABLED.value
+            await source.save()
+
+        self._inbox = self._adopt_inbox_descriptor(descriptor) if descriptor else None
+        return self._inbox
+
+    def _adopt_inbox_descriptor(self, descriptor) -> EmailInbox:
+        """Refresh the formal projection without replacing the same entity object."""
+        current = EmailInbox.from_hub_descriptor(descriptor, agent_typeid=self.typeid)
+        if self._inbox is None or self._inbox.id != current.id:
+            self._inbox = current
+            return current
+        for field in (
+            "address",
+            "display_name",
+            "provider",
+            "provider_inbox_id",
+            "status",
+            "agent_typeid",
+        ):
+            setattr(self._inbox, field, getattr(current, field))
+        return self._inbox
+
+    async def _set_email_enabled(self, enabled: bool) -> None:
+        """Persist the local execution gate after lifecycle reconciliation."""
+        if self.email_enabled != enabled:
+            self.email_enabled = enabled
             await self.save()
+
+    async def _mark_email_enabled(self) -> None:
+        """Compatibility seam for callers/tests predating reversible disable."""
+        await self._set_email_enabled(True)
 
     async def _ensure_email_source(self, inbox: EmailInbox):
         """Find or create the one local source that polls ``inbox``.
@@ -529,7 +590,7 @@ class Agent(Entity):
         and lets the projection recognize the Agent's own sent copies.
         """
         import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
         from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
 
         key = CloudEmailDriver.identity_config_key
@@ -554,8 +615,246 @@ class Agent(Entity):
             source.kind = CloudEmailDriver.kind
             source.account_key = inbox.address
             source.account_identities = [inbox.address]
+            source.status = SourceStatus.ACTIVE.value
+            source.next_poll_at = None
         await source.save()
         return source
+
+    async def _email_source(self):
+        """The one local polling projection for this Agent, if it exists."""
+        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+
+        return await DataSource.find_for_account(
+            CloudEmailDriver.provider,
+            CloudEmailDriver.identity_config_key,
+            self.id,
+        )
+
+    async def _resolve_inbox(self) -> EmailInbox | None:
+        """Refresh the formal Hub Inbox projection for this SDK process."""
+        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+
+        if not self.remote:
+            self._inbox = None
+            return None
+        descriptor = await get_email_inbox_driver().get_inbox(self.id)
+        self._inbox = self._adopt_inbox_descriptor(descriptor) if descriptor else None
+        return self._inbox
+
+    async def email_state(self) -> dict:
+        """Reconcile and return the narrow state rendered by Agent Inbox UI."""
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+
+        if not hub_auth_available():
+            raise LoginRequired("FlowPad cloud login required to load agent email")
+
+        inbox = await self._resolve_inbox()
+        source = await self._email_source()
+        if inbox is not None and inbox.is_active:
+            source = await self._ensure_email_source(inbox)
+            await self._set_email_enabled(True)
+        else:
+            await self._set_email_enabled(False)
+            if source is not None and source.status != SourceStatus.DISABLED.value:
+                source.status = SourceStatus.DISABLED.value
+                await source.save()
+
+        source_data = None
+        if source is not None:
+            source_data = {
+                "id": source.id,
+                "typeid": str(source.typeid),
+                "status": source.status,
+                "poll_interval_seconds": source.poll_interval_seconds,
+                "last_synced_at": (
+                    source.last_synced_at.isoformat()
+                    if hasattr(source.last_synced_at, "isoformat")
+                    else source.last_synced_at
+                ),
+                "health": getattr(source.health, "value", source.health),
+            }
+        inbox_data = None
+        if inbox is not None:
+            inbox_data = {
+                "typeid": str(inbox.typeid),
+                "address": inbox.address,
+                "display_name": inbox.display_name,
+                "provider": inbox.provider,
+                "provider_inbox_id": inbox.provider_inbox_id,
+                "status": inbox.status,
+                "agent_typeid": str(inbox.agent_typeid),
+            }
+        return {
+            "agent_id": self.id,
+            "enabled": bool(
+                inbox
+                and inbox.is_active
+                and source
+                and source.status == SourceStatus.ACTIVE.value
+                and self.email_enabled
+            ),
+            "inbox": inbox_data,
+            "source": source_data,
+            "allowed_senders": list(self.email_allowed_senders),
+        }
+
+    async def configure_email(
+        self,
+        *,
+        allowed_senders: list[str] | None = None,
+        poll_interval_seconds: int | None = None,
+    ) -> dict:
+        """Update private Agent policy and the paired source's standing cadence."""
+        from flow_sdk.builtin.data_source import MIN_POLL_INTERVAL_SECONDS  # noqa: PLC0415
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+        if allowed_senders is not None:
+            normalized: list[str] = []
+            for raw in allowed_senders:
+                address = normalize_email(str(raw))
+                if address and address not in normalized:
+                    normalized.append(address)
+            if normalized != self.email_allowed_senders:
+                self.email_allowed_senders = normalized
+                await self.save()
+
+        if poll_interval_seconds is not None:
+            if poll_interval_seconds < MIN_POLL_INTERVAL_SECONDS:
+                raise ValueError(
+                    f"poll_interval_seconds must be at least {MIN_POLL_INTERVAL_SECONDS}"
+                )
+            source = await self._email_source()
+            if source is None:
+                raise ValueError("enable email before configuring its refresh interval")
+            if source.poll_interval_seconds != poll_interval_seconds:
+                source.poll_interval_seconds = poll_interval_seconds
+                await source.save()
+        return await self.email_state()
+
+    @action.get(action_name="email_state")
+    async def email_state_action(self):
+        """Browser projection of the formal Inbox and its local DataSource."""
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await self.email_state())
+        except LoginRequired as exc:
+            return ApiFailResponse(message=str(exc), status_code=401)
+        except EmailInboxError as exc:
+            return ApiFailResponse(
+                message=exc.reason or "could not load agent inbox",
+                status_code=exc.status_code or 503,
+            )
+
+    @action.post(action_name="enable_email")
+    async def enable_email_action(self):
+        """Enable the Hub Inbox and paired local source."""
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required", status_code=401)
+        body = await request_info.get_post_data() or {}
+        if body:
+            return ApiFailResponse(message="enable_email does not accept settings", status_code=400)
+        try:
+            await self.enableEmail()
+            return ApiSuccessResponse(data=await self.email_state())
+        except LoginRequired as exc:
+            return ApiFailResponse(message=str(exc), status_code=401)
+        except EmailInboxError as exc:
+            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 503)
+        except Exception as exc:  # noqa: BLE001 — UI gets a stable action failure
+            return ApiFailResponse(message=f"could not enable email: {exc}")
+
+    @action.post(action_name="disable_email")
+    async def disable_email_action(self):
+        """Pause Hub Inbox + local source without releasing the address."""
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        if body:
+            return ApiFailResponse(message="disable_email does not accept settings", status_code=400)
+        try:
+            await self.disableEmail()
+            return ApiSuccessResponse(data=await self.email_state())
+        except LoginRequired as exc:
+            return ApiFailResponse(message=str(exc), status_code=401)
+        except EmailInboxError as exc:
+            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 503)
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"could not disable email: {exc}")
+
+    @action.post(action_name="configure_email")
+    async def configure_email_action(self):
+        """Update private senders and the paired DataSource cadence."""
+        from flow_sdk.auth import LoginRequired  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        body = body or {}
+        unknown = sorted(set(body) - {"allowed_senders", "poll_interval_seconds"})
+        if unknown:
+            return ApiFailResponse(
+                message=f"unknown email setting(s): {', '.join(unknown)}",
+                status_code=400,
+            )
+        allowed = body.get("allowed_senders")
+        if allowed is not None and (
+            not isinstance(allowed, list) or not all(isinstance(v, str) for v in allowed)
+        ):
+            return ApiFailResponse(message="allowed_senders must be a list of addresses")
+        interval = body.get("poll_interval_seconds")
+        if interval is not None:
+            if isinstance(interval, bool):
+                return ApiFailResponse(message="poll_interval_seconds must be an integer")
+            try:
+                interval = int(interval)
+            except (TypeError, ValueError):
+                return ApiFailResponse(message="poll_interval_seconds must be an integer")
+        try:
+            return ApiSuccessResponse(
+                data=await self.configure_email(
+                    allowed_senders=allowed,
+                    poll_interval_seconds=interval,
+                )
+            )
+        except LoginRequired as exc:
+            return ApiFailResponse(message=str(exc), status_code=401)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"could not configure email: {exc}")
+
+    @action.get(action_name="inbox_scope")
+    async def inbox_scope_action(self):
+        """IDs admitted to this Agent's local Inbox and Conversation views."""
+        from flow_sdk.inbox.agent_scope import (  # noqa: PLC0415
+            AgentInboxScopeError,
+            resolve_agent_inbox_scope,
+        )
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        try:
+            scope = await resolve_agent_inbox_scope(self.id)
+            return ApiSuccessResponse(data=scope.as_dict())
+        except AgentInboxScopeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
 
     async def provision_inbox(self, actor: TypeId | None = None, **options) -> dict:
         """Give this agent an email address of its own.

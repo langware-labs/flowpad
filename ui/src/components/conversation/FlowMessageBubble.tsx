@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
+import { APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, SourceItem, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -114,6 +114,8 @@ interface FlowMessageBubbleProps {
    *  query (one request for all messages, replacing the per-bubble fetch).
    *  When omitted the bubble falls back to fetching by id. */
   fm?: FlowMessage | null;
+  /** Show the original email envelope, resolved from SourceItem provenance. */
+  showEmailHeaders?: boolean;
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
@@ -207,6 +209,7 @@ export function FlowMessageBubble({
   isHelpdesk = false,
   attachmentProjectId,
   messageAttachments,
+  showEmailHeaders = false,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -214,6 +217,11 @@ export function FlowMessageBubble({
   // fetch — the same pattern the creator lookup below uses.
   const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
   const fm = fmProp ?? fetchedFm;
+  const { data: sourceItem } = useEntity<SourceItem>(
+    showEmailHeaders && fm?.source_item_id && isValidIdentifier(fm.source_item_id)
+      ? new TypeId(SourceItem.type, fm.source_item_id)
+      : null,
+  );
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
   // the invitation-kind placeholder, whose author is the inviter.
@@ -620,6 +628,25 @@ export function FlowMessageBubble({
 
   return (
     <>
+      {showEmailHeaders && sourceItem && (
+        <dl
+          className="ms-10 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-[11px] text-muted-foreground"
+          data-testid="email-message-headers"
+        >
+          <dt><Trans>From</Trans></dt>
+          <dd className="truncate">
+            {sourceItem.author_display || sourceItem.author_external_id || fm.sender_name || '—'}
+            {sourceItem.author_display && sourceItem.author_external_id &&
+              sourceItem.author_display !== sourceItem.author_external_id
+              ? ` <${sourceItem.author_external_id}>`
+              : ''}
+          </dd>
+          <dt><Trans>To</Trans></dt><dd className="truncate">{fm.receiver_address || '—'}</dd>
+          <dt><Trans>Subject</Trans></dt><dd className="truncate">{sourceItem.name || '—'}</dd>
+          <dt><Trans>Time</Trans></dt>
+          <dd>{new Date(sourceItem.occurred_at || timestamp).toLocaleString()}</dd>
+        </dl>
+      )}
       <MessageBubble
         message={message}
         flowMessageId={messageId}

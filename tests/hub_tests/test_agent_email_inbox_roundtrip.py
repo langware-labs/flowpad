@@ -8,7 +8,7 @@ import flow_sdk
 from flow_sdk import LoginRequired
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
@@ -62,6 +62,35 @@ async def test_agent_enables_email_once():
             agent.id,
         )
         assert same_source is not None and same_source.id == source.id
+
+        disabled_inbox = await agent.disableEmail()
+        assert disabled_inbox is not None
+        assert disabled_inbox.typeid == inbox.typeid
+        assert disabled_inbox.address == inbox.address
+        assert disabled_inbox.status == "disabled"
+        assert agent.inbox is disabled_inbox
+        assert agent.email_enabled is False
+        paused_source = await DataSource.find_for_account(
+            CloudEmailDriver.provider,
+            CloudEmailDriver.identity_config_key,
+            agent.id,
+        )
+        assert paused_source is not None
+        assert paused_source.id == source.id
+        assert paused_source.status == SourceStatus.DISABLED.value
+
+        resumed_inbox = await agent.enableEmail()
+        assert resumed_inbox.typeid == inbox.typeid
+        assert resumed_inbox.address == inbox.address
+        assert resumed_inbox.status == "active"
+        resumed_source = await DataSource.find_for_account(
+            CloudEmailDriver.provider,
+            CloudEmailDriver.identity_config_key,
+            agent.id,
+        )
+        assert resumed_source is not None
+        assert resumed_source.id == source.id
+        assert resumed_source.status == SourceStatus.ACTIVE.value
     finally:
         try:
             if source is not None:

@@ -1,4 +1,5 @@
 import {
+  Agent,
   AgenticProcess,
   ClaudeSession,
   CredentialsSubview,
@@ -65,6 +66,8 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 export const RUN_PARAM = 'run';
 /** Which MessageThread a conversation view is filtered to (`?thread=<id>`). */
 export const THREAD_PARAM = 'thread';
+/** Agent mailbox scope carried from an Agent Inbox into its conversation. */
+export const AGENT_PARAM = 'agent';
 export const NODE_PARAM = 'node';
 export const PANEL_PARAM = 'panel';
 
@@ -1410,6 +1413,21 @@ export class DockPointer implements IDockPointer {
     );
   }
 
+  /** The one address for an Agent's mailbox surface. */
+  static forAgentInbox(agentId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.AGENT, `${agentId}/inbox`, undefined, layout);
+  }
+
+  static parseAgentPointer(pointer: string | undefined | null): {
+    agentId: string | null;
+    view: 'inbox' | null;
+  } {
+    const parts = pointer?.split('/').filter(Boolean) ?? [];
+    return parts.length === 2 && parts[0] && parts[1] === 'inbox'
+      ? { agentId: parts[0], view: 'inbox' }
+      : { agentId: null, view: null };
+  }
+
   /**
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
@@ -1861,7 +1879,7 @@ export class DockPointer implements IDockPointer {
    */
   static forConversation(
     conversationId: string,
-    sub?: { messageId?: string | null; thread?: string | null },
+    sub?: { messageId?: string | null; thread?: string | null; agentId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const pointer = sub?.messageId ? `${conversationId}/message/${sub.messageId}` : conversationId;
@@ -1871,12 +1889,17 @@ export class DockPointer implements IDockPointer {
     // make, for the same reason.
     const options: Record<string, string> = {};
     if (sub?.thread) options[THREAD_PARAM] = sub.thread;
+    if (sub?.agentId) options[AGENT_PARAM] = sub.agentId;
     return new DockPointer(ViewType.CONVERSATION, pointer, options, layout);
   }
 
   /** The thread this conversation dock is filtered to, or null for all. */
   get threadId(): string | null {
     return this.options?.[THREAD_PARAM] ?? null;
+  }
+
+  get agentScopeId(): string | null {
+    return this.options?.[AGENT_PARAM] ?? null;
   }
 
   /**
@@ -2202,6 +2225,10 @@ export class DockPointer implements IDockPointer {
       return separator > 0
         ? DockPointer.tryTypeId(focus!.slice(0, separator), focus!.slice(separator + TypeId.DELIMITER.length))
         : null;
+    }
+    if (this.viewType === ViewType.AGENT) {
+      const { agentId, view } = DockPointer.parseAgentPointer(pointer);
+      return view === 'inbox' && agentId ? DockPointer.tryTypeId(Agent.type, agentId) : null;
     }
     if (this.viewType === ViewType.GRAPH) {
       const parsed = DockPointer.parseGraphPointer(pointer);
