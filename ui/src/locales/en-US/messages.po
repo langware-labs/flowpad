@@ -531,6 +531,10 @@ msgstr "{name} avatar"
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} said: {statusReason}"
+msgstr "{name} said: {statusReason}"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "{pct}% of your token budget used {windowText}"
 msgstr "{pct}% of your token budget used {windowText}"
@@ -15925,6 +15929,10 @@ msgstr "Sign this sandbox out"
 msgid "Sign-in"
 msgstr "Sign-in"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign-in not confirmed"
+msgstr "Sign-in not confirmed"
+
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
@@ -18739,6 +18747,10 @@ msgstr "Watch"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "We couldn't confirm this sign-in: {statusReason}"
+msgstr "We couldn't confirm this sign-in: {statusReason}"
 
 #: src/notifications/ingest.ts
 msgid "We couldn't find what you were looking for on the cloud."

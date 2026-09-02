@@ -529,11 +529,15 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
-msgstr "لم يتم تثبيت {name} على هذا الجهاز حتى الآن. يُرجى اتباع دليل الإعداد السريع، ثم العودة إلى هنا لتسجيل الدخول."
+msgstr "لم يتم تثبيت {name} على هذا الجهاز حتى الآن. يُرجى اتباع دليل الإعداد السريع، ثم العودة إلى هنا لتسجيل الدخول.<<<<<<< HEAD"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} said: {statusReason}"
+msgstr "{name} يقول: {statusReason}======="
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{pct}% of your token budget used {windowText}"
-msgstr ""
+msgstr ">>>>>>> origin/release/v0.2"
 
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
@@ -15925,6 +15929,10 @@ msgstr "تسجيل الخروج من هذا الصندوق"
 msgid "Sign-in"
 msgstr "طريقة الدخول"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign-in not confirmed"
+msgstr "لم يتم تأكيد تسجيل الدخول"
+
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
@@ -18739,6 +18747,10 @@ msgstr "المراقبة"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "تسجل المراقبات الأنماط عبر <0>Shell.addTrigger</0>؛ وتظهر الأسطر المطابقة هنا."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "We couldn't confirm this sign-in: {statusReason}"
+msgstr "تعذّر تأكيد تسجيل الدخول: {statusReason}"
 
 #: src/notifications/ingest.ts
 msgid "We couldn't find what you were looking for on the cloud."
