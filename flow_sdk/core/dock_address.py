@@ -141,11 +141,13 @@ class ViewType(StrEnum):
     GRAPH_WORKFLOWS = "graph-workflows"  # Flow-graph editor/observatory — dev mode
     SIGNALS = "signals"  # Alias of EVENTS
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
+    RAG = "rag"  # Search indexes and the folders they cover
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
+    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/inbox
     INBOX = "inbox"  # Received FlowMessages from hub
     CONVERSATION = "conversation"  # Single Conversation viewer
     SPEC = "spec"  # Single Spec viewer
@@ -240,10 +242,14 @@ class RetiredTarget:
 #: bookmarks and links people already sent each other — and resolves forward
 #: here. The retired trio never carried a pointer of their own, so the subview
 #: REPLACES the pointer outright rather than merging with it.
+#: All three land on CONNECTIONS: it is the only subview that still renders.
+#: Forwarding a saved tab onto `environment` / `api-keys` would resolve it to a
+#: pointer that is itself retired, leaving anything that reads `dock.pointer`
+#: without a second hop on a blank pane. One hop, one table.
 RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
-    ViewType.ENVIRONMENT: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.ENVIRONMENT.value),
+    ViewType.ENVIRONMENT: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     ViewType.CONNECTIONS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
-    ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.API_KEYS.value),
+    ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
 }
 
 
@@ -359,11 +365,14 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.GRAPH_WORKFLOWS: _m(_OPT),
     ViewType.SIGNALS: _m(_NONE),
     ViewType.DATA_SOURCES: _m(_NONE),
+    ViewType.RAG: _m(_NONE),
     ViewType.PROCESS_RUNS: _m(_OPT),
     ViewType.PLAN: _m(_REQ),
     ViewType.CRON: _m(_NONE),
     ViewType.ASSETS: _m(_REQ, scope_keyed=True),
     ViewType.PROJECT: _m(_REQ),
+    # `<agentId>/inbox` — the id leads, so the pointer is required.
+    ViewType.AGENT: _m(_REQ),
     ViewType.INBOX: _m(_NONE),
     ViewType.CONVERSATION: _m(_REQ),
     ViewType.SPEC: _m(_REQ),

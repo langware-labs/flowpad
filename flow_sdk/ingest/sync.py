@@ -243,7 +243,7 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
 
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
     # A parked segment stays parked on its own row; it must not park the
-    # SOURCE. `may_poll` refuses a `config_error` source outright, so rolling
+    # SOURCE. `poll_refusal` refuses a `config_error` source outright, so rolling
     # one bad channel up here used to stop every healthy sibling from polling
     # — the opposite of the per-stream isolation this module promises. The
     # source is `config_error` only when there is nothing left that could run,

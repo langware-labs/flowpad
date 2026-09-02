@@ -34,6 +34,11 @@ except Exception as e:
     print(f"[WARN] Failed to import DataSourceSpec: {e}")
 
 try:
+    from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: F401
+except Exception as e:
+    print(f"[WARN] Failed to import CredentialSpec: {e}")
+
+try:
     from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import SecretOrigin: {e}")
@@ -282,6 +287,11 @@ try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")
+
+try:
+    from flow_sdk.builtin.rag_index import RagIndex  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import RagIndex: {e}")
 
 try:
     from flow_sdk.builtin.file import File  # noqa: F401

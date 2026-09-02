@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 from pydantic import (
     BaseModel,
@@ -22,7 +22,7 @@ from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
-from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -32,7 +32,6 @@ from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -40,6 +39,7 @@ from flow_sdk.fs_store.path_utils import (
     is_protected_path,
     is_valid_project_cwd,
 )
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
@@ -58,6 +58,58 @@ def _generate_session_code() -> str:
     left = "".join(random.choices(alphabet, k=4))
     right = "".join(random.choices(alphabet, k=4))
     return f"{left}-{right}"
+
+
+def mount_key(path: str | None) -> str:
+    """The canonical lookup key for a project mount path.
+
+    One spelling for BOTH sides of the ``index_by_mount`` dictionary — the keys
+    it builds and the paths callers look it up with. They used to differ by a
+    trailing-slash strip applied only on the build side, so a root-ish path
+    could be stored as ``/x`` and looked up as ``/x/``. That miss reads as "no
+    project is mounted here", which is indistinguishable from the real thing at
+    every call site.
+    """
+    return canonical_posix_path(path).rstrip("/") if path else ""
+
+
+def assets_under_roots(entities: list[Any], roots: list[str]) -> list[Any]:
+    """Asset-backed ``entities`` whose ``asset_ref`` lives under one of ``roots``.
+
+    Ordered by canonical asset path, then entity id, so database ROW ORDER can
+    never decide which asset a caller treats as "the first one". That is a
+    correctness property, not tidiness: for ``Helpdesk``, first-wins picks the
+    company a customer's support ticket is delivered to. ``helpdesk_resolver``
+    sorts by this same key and calls this helper rather than restating the rule,
+    so the two places that decide "the first desk" cannot drift apart.
+
+    The sort key is explicitly ``(path, id)`` — sorting the raw tuples would
+    fall through to comparing the entities themselves on a tie, which raises.
+    """
+    return [
+        entity
+        for canonical, _entity_id, entity in scoped_assets(entities)
+        if any(is_path_under(canonical, root) for root in roots)
+    ]
+
+
+def scoped_assets(entities: list[Any]) -> list[tuple[str, str, Any]]:
+    """``(canonical asset path, id, entity)`` for asset-backed ``entities``, in that order.
+
+    The prepared form behind :func:`assets_under_roots`, exposed because
+    canonicalizing is a ``realpath`` syscall per entity: a caller asking about
+    SEVERAL roots prepares the rows once and filters them per root, instead of
+    re-canonicalizing and re-sorting the whole list for every root. Filtering a
+    sorted list preserves order, so the "(path, id) decides first-wins" rule is
+    the same one either way.
+    """
+    scoped: list[tuple[str, str, Any]] = []
+    for entity in entities:
+        asset_ref = getattr(entity, "asset_ref", "")
+        if not asset_ref:
+            continue
+        scoped.append((canonical_posix_path(asset_ref), str(entity.id), entity))
+    return sorted(scoped, key=lambda row: row[:2])
 
 
 def _detach_git_history(repo_root: Path) -> None:
@@ -664,7 +716,7 @@ class Project(Entity):
             mount = proj.fs_storage_mount_path
             if not mount or not is_valid_project_cwd(mount, include_temp=True):
                 continue
-            key = canonical_posix_path(mount).rstrip("/")
+            key = mount_key(mount)
             if key and key not in out:
                 out[key] = proj
         return out
@@ -1387,8 +1439,80 @@ class Project(Entity):
         secret_id: str | None = None,
         description: str | None = None,
     ) -> "ApiResponse":
-        """Attach a value-free secret pointer to this project and write its
-        reference json under ``assets/sodot/<name>.json`` (indexed + travels)."""
+        """Attach ONE value-free secret pointer to this project.
+
+        Nothing but the back-compat shim now: the convenience params
+        (``kind`` + ``sod_name``/``secret_id``) become an explicit locator, and
+        the declaration itself goes through :meth:`add_secret_pointers`. Keeping
+        a second copy of validate → mint → bucket → sidecar had already let the
+        two diverge — the batch path silently accepted a ``local`` locator with
+        no ``sod_name``, which mints a declaration nothing can ever resolve.
+        """
+        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+
+        name = (name or "").strip()
+        # Build the value-free locator from an explicit ``locator`` dict, or the
+        # convenience kind + sod_name/secret_id params (back-compat). This is the
+        # only genuinely singular part; everything after it is the batch's job.
+        raw_locator = dict(locator or {})
+        if not raw_locator:
+            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
+            raw_locator = {"kind": resolved_kind}
+            if resolved_kind == "local":
+                raw_locator["sod_name"] = (sod_name or name or "").strip()
+            elif resolved_kind == "flowpad-hub":
+                raw_locator["secret_id"] = (secret_id or "").strip()
+
+        return await self.add_secret_pointers(pointers=[{
+            "name": name,
+            "env_var": env_var,
+            "scope": scope,
+            "locator": raw_locator,
+            "sod_store": sod_store,
+            "description": description,
+        }])
+
+    def _sync_secret_reference(self, secret, env_var: str, scope: str) -> None:
+        """Make the on-disk reference json agree with the declaration.
+
+        The sidecar exists so a receiver of a shared project learns which secrets
+        it needs (docs/secret_share.md) — it is a SHARING artifact. A private
+        declaration has no receiver, so writing one only puts committable files
+        in the author's tree for a credential nobody else will ever see.
+
+        Write-if-shared alone is not enough, which is why this SYNCS rather than
+        writes: re-declaring a previously shared env var as private would leave
+        the old sidecar sitting in git, still indexed, still asserting a shared
+        declaration for a secret that is now private. The file is a function of
+        the current declaration, never of its history.
+        """
+        sodot_dir = self._assets_sodot_dir()
+        if sodot_dir is None:
+            return
+        path = sodot_dir / f"{env_var}.json"
+        try:
+            if scope == "shared":
+                secret.to_json_asset(path)
+            else:
+                path.unlink(missing_ok=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("[secret] could not sync reference asset for %s: %s", env_var, e)
+
+    @action.post(action_name="add-secret-pointers")
+    async def add_secret_pointers(self, pointers: list[dict[str, Any]] | None = None) -> "ApiResponse":
+        """Declare SEVERAL secrets in one act, saving the project ONCE.
+
+        A credential bundles env vars (gmail is an address and an app password),
+        so adding one is inherently a multi-declaration act. Calling
+        ``add-secret-pointer`` N times does NOT work: each call mutates this
+        project's context buckets and then saves the whole entity, so two calls
+        racing — or one issued from a copy loaded before the other landed —
+        writes back a bucket missing the other's link. The declarations survive
+        as rows while the project forgets them, which reads as "the connection I
+        just added went away".
+
+        One mint loop, one save, so there is no window to lose a link in.
+        """
         from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
             SecretOrigin,
             is_valid_secret_origin_env_var,
@@ -1399,62 +1523,54 @@ class Project(Entity):
         )
         from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
-        name = (name or "").strip()
-        env_var = (env_var or "").strip()
-        scope = (scope or "private").strip().lower()
-        if not env_var:
-            return ApiFailResponse(message="env_var is required")
-        if not is_valid_secret_origin_env_var(env_var):
-            return ApiFailResponse(message="env_var must be a valid environment variable name")
-        if scope not in ("private", "shared"):
-            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+        entries = pointers or []
+        if not entries:
+            return ApiFailResponse(message="pointers is required")
 
-        # Build the value-free locator from an explicit ``locator`` dict, or the
-        # convenience kind + sod_name/secret_id params (back-compat).
-        raw_locator = dict(locator or {})
-        if not raw_locator:
-            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
-            raw_locator = {"kind": resolved_kind}
-            if resolved_kind == "local":
-                raw_locator["sod_name"] = (sod_name or name or "").strip()
-            elif resolved_kind == "flowpad-hub":
-                raw_locator["secret_id"] = (secret_id or "").strip()
-        try:
-            loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
-            get_secret_origin_driver(loc.kind)  # ensure a driver is registered for this kind
-        except Exception as e:  # noqa: BLE001
-            return ApiFailResponse(message=f"Invalid secret locator: {e}")
-
-        if loc.kind == "local" and not getattr(loc, "sod_name", ""):
-            return ApiFailResponse(message="sod_name is required for local secret pointers")
-        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or env_var
-
-        # No uniqueness CHECK is needed any more: the id is (project_id, env_var),
-        # so re-declaring an env var mints the same row and updates it in place.
-        # The name is the key — pointing it at a different provider is an edit,
-        # not a second secret.
-        secret = await SecretOrigin.mint_for(
-            project_id=str(self.id),
-            env_var=env_var,
-            locator=loc,
-            name=name,
-            sod_store=sod_store,
-            description=description,
-        )
-        data = secret.context_data(scope=scope)
-        if scope == "shared":
-            self.add_shared_context_entities(secret.typeid, data=data)
-        else:
-            self.add_private_context_entities(secret.typeid, data=data)
-
-        # Write the value-free reference json so it's indexed like any asset and
-        # travels with the project's git-backed folder (see docs/secret_share.md).
-        sodot_dir = self._assets_sodot_dir()
-        if sodot_dir is not None:
+        minted: list[tuple[Any, str, str]] = []
+        for entry in entries:
+            env_var = str(entry.get("env_var") or "").strip()
+            if not is_valid_secret_origin_env_var(env_var):
+                return ApiFailResponse(message=f"invalid env_var: {env_var!r}")
+            scope = (str(entry.get("scope") or "private")).strip().lower()
+            if scope not in ("private", "shared"):
+                return ApiFailResponse(message="scope must be 'private' or 'shared'")
+            raw_locator = dict(entry.get("locator") or {})
+            if not raw_locator:
+                raw_locator = {"kind": normalize_secret_origin_kind(entry.get("kind") or "local")}
             try:
-                secret.to_json_asset(sodot_dir / f"{env_var}.json")
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
+                get_secret_origin_driver(loc.kind)
             except Exception as e:  # noqa: BLE001
-                log.warning("[secret] could not write reference asset for %s: %s", name, e)
+                return ApiFailResponse(message=f"Invalid secret locator for {env_var}: {e}")
+            # A `local` pointer with no sod_name names nothing — it would mint a
+            # declaration no driver can ever resolve.
+            if loc.kind == "local" and not getattr(loc, "sod_name", ""):
+                return ApiFailResponse(message=f"sod_name is required for local secret pointers ({env_var})")
+            secret = await SecretOrigin.mint_for(
+                project_id=str(self.id),
+                env_var=env_var,
+                locator=loc,
+                # The coordinate is the better name when one was not given: it is
+                # what the author actually typed.
+                name=(
+                    str(entry.get("name") or "").strip()
+                    or getattr(loc, "sod_name", "")
+                    or getattr(loc, "secret_id", "")
+                    or env_var
+                ),
+                sod_store=str(entry.get("sod_store") or ""),
+                description=entry.get("description"),
+            )
+            minted.append((secret, env_var, scope))
+
+        for secret, env_var, scope in minted:
+            data = secret.context_data(scope=scope)
+            if scope == "shared":
+                self.add_shared_context_entities(secret.typeid, data=data)
+            else:
+                self.add_private_context_entities(secret.typeid, data=data)
+            self._sync_secret_reference(secret, env_var, scope)
 
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
@@ -1523,6 +1639,7 @@ class Project(Entity):
                 continue
             env_var = entry.get("env_var") or ""
             found_in = await self._where_is_secret_value(env_var, loc, driver, env_local_names, sodot_names)
+            resolvable = await self._can_resolve_declaration(loc, driver, found_in)
             hint = driver.setup_hint(loc)
             rows.append(
                 {
@@ -1533,11 +1650,29 @@ class Project(Entity):
                     "scope": entry.get("scope"),
                     "description": entry.get("description") or "",
                     "sod_store": entry.get("sod_store") or hint.get("sod_store"),
-                    "status": "available" if found_in else "missing",
+                    # For a declaration that names a LOCAL store, its own driver
+                    # is the last word — see ``_can_resolve_declaration``.
+                    # ``resolve_project_secrets`` resolves through that driver, so
+                    # a value in the OTHER local store is not one any worker will
+                    # be handed. Answering from the union reported an OpenRouter
+                    # key "Connected" off an ``OPENROUTER_API_KEY`` in
+                    # ``.env.local`` while the declaration pointed at the
+                    # encrypted store, where there was nothing — green in
+                    # Connections, "no key is stored" on LLM sources, and no key
+                    # in the process either.
+                    "status": "available" if resolvable else "missing",
+                    # Kept as the UNION, and kept deliberately: "the value is in
+                    # .env.local, but this credential reads the encrypted store"
+                    # is the sentence that tells someone what to do next, and it
+                    # needs both halves.
                     "found_in": found_in,
                     # The receiver-facing warning: a declaration this machine
-                    # cannot satisfy. Computed, never stored.
-                    "warning": None if found_in else "missing-value",
+                    # cannot satisfy. Computed, never stored. ``wrong-store``
+                    # separates "there is no value anywhere" from "there is one,
+                    # somewhere this declaration does not read".
+                    "warning": None
+                    if resolvable
+                    else ("wrong-store" if found_in else "missing-value"),
                     "setup_hint": hint,
                 }
             )
@@ -1563,6 +1698,29 @@ class Project(Entity):
         except Exception:  # noqa: BLE001
             sodot = set()
         return env_local, sodot
+
+    #: The declarations whose own driver is the LAST word on availability.
+    #: Both name a local store directly, so "the value is in the other local
+    #: store" says nothing about them — ``resolve_project_secrets`` resolves
+    #: through the named driver and would hand a worker nothing. Every other
+    #: kind is an external slot that cannot resolve locally AT ALL yet
+    #: (``ProviderStubDriver.can_resolve`` is ``False``), and for those the
+    #: local-store union below is the stopgap that keeps a usable secret from
+    #: reporting missing.
+    _AUTHORITATIVE_LOCAL_KINDS: ClassVar[frozenset[str]] = frozenset({"local", "env-local"})
+
+    async def _can_resolve_declaration(self, loc, driver, found_in: str | None) -> bool:
+        """Can THIS declaration be satisfied on this machine?
+
+        The question a status must answer, because it is the question the spawn
+        path asks. Existence only — no value is fetched.
+        """
+        try:
+            if await driver.can_resolve(loc, project=self):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        return bool(found_in) and loc.kind not in self._AUTHORITATIVE_LOCAL_KINDS
 
     async def _where_is_secret_value(
         self, env_var: str, loc, driver, env_local: set[str], sodot: set[str]
@@ -2053,6 +2211,127 @@ class Project(Entity):
             }
         )
 
+    @action.post(action_name="adopt-helpdesk-from-git")
+    async def adopt_helpdesk_from_git(
+        self,
+        url: str,
+        branch: str = "",
+        scope: str = "private",
+    ) -> "ApiResponse":
+        """Attach a repo as a context folder and report the help desk it carries.
+
+        This does NOT attach differently from ``add_context_dir_from_git`` — it
+        delegates to it verbatim and adds only a REPORT. That distinction is the
+        whole design: a repo becomes a desk by shipping a manifest and being
+        indexed, so forking the attach would create a second way for a folder to
+        arrive and a second thing to keep correct. What the UI actually lacked
+        was an answer to "did I just get a desk, and which one?", which needs
+        path→entity resolution and therefore belongs on this side.
+
+        ``outcome`` is a closed set rather than a handful of booleans, because
+        each value is a different sentence to a person:
+
+        * ``adopted`` — a desk was found and it is the one that will serve this
+          project.
+        * ``already_adopted`` — same, but the folder was already linked.
+        * ``shadowed`` — a desk was found, but ANOTHER desk resolves first and
+          keeps the tickets. See below; this is the dangerous one.
+        * ``no_manifest`` — the repo carries no desk. The folder stays attached
+          (it is still a perfectly good context folder) and the caller is told.
+        * ``invalid_desk_project_id`` — a desk IS here but names no usable queue,
+          so tickets would fall through to somebody else's desk.
+        * ``no_portal_project`` — a desk IS here but its checkout has no Project
+          row, so the portal cannot be opened.
+
+        **Why the shadowing check exists.** ``resolve_adopted_helpdesk`` walks
+        ``direct_context_roots()`` — this project's own mount first, then context
+        roots in declaration order — and stops at the first root holding a desk.
+        "The desk under the root I just attached" is a DIFFERENT question. Report
+        the second one and a project that already had a desk gets a success
+        dialog naming the new vendor while every ticket keeps going to the old
+        one, with nothing anywhere saying so. Routing a customer's support
+        request to a company they did not choose is the worst failure this area
+        has (see ``helpdesk_resolver``), so it is named, not smoothed over.
+        """
+        from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk  # noqa: PLC0415
+        from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+
+        attached = await self.add_context_dir_from_git(url, branch=branch, scope=scope)
+        if not isinstance(attached, ApiSuccessResponse):
+            # The attach failures are already well-worded and carry their own
+            # status codes — the 409 branch conflict in particular names both
+            # branches. Re-wrapping them here would only blur them.
+            return attached
+
+        data = dict(attached.data or {})
+        root = mount_key(data.get("path"))
+        base = {
+            "folder_id": data.get("folder_id"),
+            "path": root,
+            "scope": data.get("scope", scope),
+            "already_linked": bool(data.get("already_linked")),
+            "scope_changed": bool(data.get("scope_changed")),
+            "helpdesk_id": None,
+            "display_name": None,
+            "welcome_message": None,
+            "avatar_url": None,
+            "desk_project_id": None,
+            "portal_project_id": None,
+            "shadowed_by": None,
+        }
+
+        all_desks = await Helpdesk.get_all({})
+        desks = assets_under_roots(all_desks, [root]) if root else []
+        if not desks:
+            return ApiSuccessResponse(data={**base, "outcome": "no_manifest"})
+        desk = desks[0]
+
+        queue_id = desk.desk_project_id
+        queue_id = queue_id.strip() if isinstance(queue_id, str) else ""
+        found = {
+            **base,
+            "helpdesk_id": str(desk.id),
+            "display_name": desk.display_name,
+            "welcome_message": desk.welcome_message,
+            "avatar_url": desk.avatar_url,
+            "desk_project_id": queue_id or None,
+        }
+        if not is_valid_entity_id(queue_id):
+            return ApiSuccessResponse(data={**found, "outcome": "invalid_desk_project_id"})
+
+        # The portal's Project row is minted as a side effect of the git driver's
+        # materialize; recover_by_path is the same belt-and-braces reconcile_bootstrap
+        # carries, and for the same reason — index_by_mount never mints.
+        projects_by_mount = await Project.index_by_mount()
+        portal = projects_by_mount.get(root) or await Project.recover_by_path(root)
+        if portal is None:
+            # Not cosmetic: without a Project row `helpdesk-ensure` skips its
+            # adopted branch and silently opens the hub's DEFAULT desk instead.
+            return ApiSuccessResponse(data={**found, "outcome": "no_portal_project"})
+        found["portal_project_id"] = str(portal.id)
+
+        serving = await resolve_adopted_helpdesk(str(self.id))
+        if serving is not None and mount_key(serving.mount_path) != root:
+            # Same helper, same first-wins rule the resolver itself used, so the
+            # desk we NAME as the shadow is the desk that actually serves.
+            shadowing = assets_under_roots(all_desks, [mount_key(serving.mount_path)])
+            shadow = shadowing[0] if shadowing else None
+            return ApiSuccessResponse(
+                data={
+                    **found,
+                    "outcome": "shadowed",
+                    "shadowed_by": {
+                        "path": mount_key(serving.mount_path),
+                        "display_name": shadow.display_name if shadow is not None else None,
+                        "desk_project_id": serving.queue_project_id,
+                    },
+                }
+            )
+
+        return ApiSuccessResponse(
+            data={**found, "outcome": "already_adopted" if found["already_linked"] else "adopted"}
+        )
+
     @action.post(action_name="reconcile-bootstrap")
     async def reconcile_bootstrap(self) -> "ApiResponse":
         """Converge this Project to the live dependencies in its manifest.
@@ -2142,7 +2421,7 @@ class Project(Entity):
                 )
                 continue
             data = dict(response.data or {})
-            root = canonical_posix_path(data.get("path") or "")
+            root = mount_key(data.get("path"))
             attached.append((dependency, data, root))
 
         # One Project table read for every attached root. The old per-root
@@ -2187,24 +2466,14 @@ class Project(Entity):
                 status_code=502,
             )
 
-        def assets_in_roots(entities: list[Any]) -> list[Any]:
-            scoped: list[tuple[str, str, Any]] = []
-            for entity in entities:
-                if not entity.asset_ref:
-                    continue
-                asset_ref = canonical_posix_path(entity.asset_ref)
-                if any(is_path_under(asset_ref, root) for root in roots):
-                    scoped.append((asset_ref, str(entity.id), entity))
-            return [entity for _asset_ref, _entity_id, entity in sorted(scoped)]
-
         all_journeys, all_skills, all_desks = await asyncio.gather(
             Journey.get_all({}),
             Skill.get_all({}),
             Helpdesk.get_all({}),
         )
-        journeys = assets_in_roots(all_journeys)
-        skills = assets_in_roots(all_skills)
-        desks = assets_in_roots(all_desks)
+        journeys = assets_under_roots(all_journeys, roots)
+        skills = assets_under_roots(all_skills, roots)
+        desks = assets_under_roots(all_desks, roots)
 
         declared_journeys = [
             (root, preferred) for root in roots if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)

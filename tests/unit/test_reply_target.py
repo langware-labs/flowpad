@@ -19,12 +19,12 @@ AGENT_SENDER = f"agent:{AGENT_ID}"
 CONVERSATION = "023f16d6-ba1d-5f8b-8337-78bf9a2e9264"
 
 
-def _message(sender_id: str, item_id: str, kind: str = "agentmail"):
+def _message(sender_id: str, item_id: str, kind: str = "agentmail", source_id: str = "ds-1"):
     # Two halves, mirroring the entity: `origin` travels, `origin_local` does not.
     return SimpleNamespace(
         sender_id=sender_id,
         origin=SimpleNamespace(kind=kind),
-        origin_local=SimpleNamespace(data_source_id="ds-1", source_item_id=item_id),
+        origin_local=SimpleNamespace(data_source_id=source_id, source_item_id=item_id),
     )
 
 
@@ -115,6 +115,22 @@ class TestItRepliesToTheCorrespondent:
         wire["items"] = {"mine": _item("mine", "me@x.to", "Hello")}
         with pytest.raises(ChannelSendUnavailable, match="no one else"):
             await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_agent_scope_ignores_a_newer_message_from_another_source(self, wire):
+        wire["messages"] = [
+            _message("agentmail:wrong@x.to", "wrong", source_id="ds-2"),
+            _message("agentmail:right@x.to", "right", source_id="ds-1"),
+        ]
+        wire["items"] = {
+            "wrong": _item("wrong", "wrong@x.to", "x"),
+            "right": _item("right", "right@x.to", "x"),
+        }
+
+        target = await resolve_reply_target(CONVERSATION, source_id="ds-1")
+
+        assert target.source.id == "ds-1"
+        assert target.to == "right@x.to"
 
 
 class TestItRefusesRatherThanGuess:

@@ -3,7 +3,9 @@ Shared state for the local server.
 """
 
 import logging
+import secrets
 import threading
+import time
 from typing import Any, Dict
 
 from .reporters import BufferReporter, ReporterRegistry, WebSocketReporter
@@ -11,6 +13,82 @@ from .reporters import BufferReporter, ReporterRegistry, WebSocketReporter
 # Shared state for login
 login_result: Dict[str, Any] | None = None
 login_received = threading.Event()
+
+# Correlated browser login shared by every provider waiting on Hub auth. One
+# active request is joined; terminal state is keyed by the opaque request id so
+# a stale callback cannot satisfy a retry.
+cloud_login_lock = threading.Lock()
+cloud_login_sessions: Dict[str, Dict[str, Any]] = {}
+active_cloud_login_id: str | None = None
+_CLOUD_LOGIN_SESSION_CAPACITY = 64
+
+
+def start_cloud_login_session(url_for_request, timeout_seconds: float) -> Dict[str, Any]:
+    global active_cloud_login_id
+    with cloud_login_lock:
+        if active_cloud_login_id:
+            active = cloud_login_sessions.get(active_cloud_login_id)
+            if active and active.get("status") == "pending" and time.monotonic() < active["expires_at"]:
+                return {**active, "present": False}
+        request_id = secrets.token_urlsafe(24)
+        while len(cloud_login_sessions) >= _CLOUD_LOGIN_SESSION_CAPACITY:
+            oldest = next(iter(cloud_login_sessions))
+            if oldest == active_cloud_login_id:
+                # The active entry is newest in normal insertion order. If it
+                # is the only candidate, retain it and the join above wins.
+                break
+            cloud_login_sessions.pop(oldest, None)
+        session = {
+            "oauth_request_id": request_id,
+            "status": "pending",
+            "url": url_for_request(request_id),
+            "expires_at": time.monotonic() + timeout_seconds,
+        }
+        cloud_login_sessions[request_id] = session
+        active_cloud_login_id = request_id
+        return {**session, "present": True}
+
+
+def finish_cloud_login_session(request_id: str, *, success: bool, detail: str | None = None) -> bool:
+    global active_cloud_login_id
+    with cloud_login_lock:
+        session = cloud_login_sessions.get(request_id)
+        if not session or session.get("status") != "pending":
+            return False
+        session["status"] = "success" if success else "error"
+        session["detail"] = detail
+        if active_cloud_login_id == request_id:
+            active_cloud_login_id = None
+        return True
+
+
+def cloud_login_session_result(request_id: str) -> Dict[str, Any] | None:
+    global active_cloud_login_id
+    with cloud_login_lock:
+        session = cloud_login_sessions.get(request_id)
+        if session is None:
+            return None
+        if session.get("status") == "pending" and time.monotonic() >= session["expires_at"]:
+            session["status"] = "error"
+            session["code"] = "timeout"
+            session["detail"] = "Cloud login timed out"
+            if active_cloud_login_id == request_id:
+                active_cloud_login_id = None
+        return dict(session)
+
+
+def cancel_cloud_login_session(request_id: str) -> bool:
+    global active_cloud_login_id
+    with cloud_login_lock:
+        session = cloud_login_sessions.get(request_id)
+        if not session or session.get("status") != "pending":
+            return False
+        session["status"] = "cancelled"
+        session["code"] = "cancelled"
+        if active_cloud_login_id == request_id:
+            active_cloud_login_id = None
+        return True
+
 
 # Shared state for ping
 ping_results = []

@@ -19,6 +19,7 @@ whenever the content digest moves. ``read`` and ``starred`` are ours, outside
 the header, and so survive re-delivery structurally rather than by a hand-kept
 field map.
 """
+
 from __future__ import annotations
 
 from typing import ClassVar, Optional
@@ -123,6 +124,31 @@ class TelegramMessageSpec(MessageSpec):
         )
 
 
+class SlackMessageSpec(MessageSpec):
+    """Outbound Slack message: the generic shape, thread-targeted replies.
+
+    No extra fields — Slack has no subject; blocks, attachments and mentions
+    are explicit non-goals for now (the driver posts plain text).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "SlackMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Slack replies target the CHANNEL, in the message's thread: ``to``
+        carries the channel id, which on an inbound record is ``segment_key``
+        (a Slack ``thread_key`` is a bare ``ts`` and names no channel), and
+        ``thread_key`` rides through so the post lands as a threaded reply.
+        """
+        return cls(
+            to=[str(getattr(m, "segment_key", "") or "")],
+            body=body,
+            thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
+
+
 class SourceItem(Entity):
     """The ROW; the snapshot the medium persists is ``SourceItemSpec``
     (``TypeInfo.asset_spec``)."""
@@ -181,9 +207,7 @@ class SourceItem(Entity):
         record would fail to resolve and the next poll would mint a duplicate
         of it. Same shape as ``DataSource._adopt_legacy_enabled``.
         """
-        return adopt_renamed(
-            data, {"stream_key": "segment_key", "stream_label": "segment_label"}
-        )
+        return adopt_renamed(data, {"stream_key": "segment_key", "stream_label": "segment_label"})
 
     def as_example_input(self) -> "tuple[dict, dict]":
         """``(contents, provenance)`` for one dataset example row: this item's
@@ -194,14 +218,16 @@ class SourceItem(Entity):
         envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
         return (
             {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
-            {"data_source_id": self.data_source_id, "segment_key": self.segment_key,
-             "external_id": self.external_id, "item_id": self.id},
+            {
+                "data_source_id": self.data_source_id,
+                "segment_key": self.segment_key,
+                "external_id": self.external_id,
+                "item_id": self.id,
+            },
         )
 
     @classmethod
-    async def find_existing(
-        cls, data_source_id: str, segment_key: str, external_id: str
-    ) -> Optional["SourceItem"]:
+    async def find_existing(cls, data_source_id: str, segment_key: str, external_id: str) -> Optional["SourceItem"]:
         """THE identity lookup — the row for this natural key, or None.
 
         ``segment_key`` is part of the key because provider ids are frequently

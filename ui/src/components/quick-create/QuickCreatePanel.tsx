@@ -16,6 +16,7 @@ import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
+import { useAddHelpdesk } from '@src/hooks/use-add-helpdesk';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -55,6 +56,7 @@ const OPENCODE_WIKI = 'OpenCode sessions';
 const SECRET_WIKI = 'Project secrets';
 const CONVERSATION_WIKI = 'Conversations';
 const PROJECT_WIKI = 'Flowpad project';
+const HELPDESK_WIKI = 'Help desks';
 
 /** A dense grid — a card under every tile the pointer crosses is noise. */
 const TILE_TIP_DELAY = 500;
@@ -196,6 +198,7 @@ export function useQuickCreatePick() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
   const ctxFolder = useAddContextFolder({ project });
+  const helpdesk = useAddHelpdesk({ project });
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
 
   // Creating a project is the same flow the home surfaces run (ProjectActionsRow):
@@ -251,6 +254,7 @@ export function useQuickCreatePick() {
       )}
       <BindSecretDialog project={project ?? null} open={bindSecretOpen} onOpenChange={setBindSecretOpen} />
       {ctxFolder.dialogs}
+      {helpdesk.dialogs}
       <NewConversationDialog open={newMessageOpen} onClose={() => setNewMessageOpen(false)} />
       <NewProjectDialog
         open={newProjectOpen}
@@ -273,6 +277,7 @@ export function useQuickCreatePick() {
     onPick,
     onBindSecret: () => setBindSecretOpen(true),
     onAddFolder: ctxFolder.pick,
+    onAddHelpdesk: helpdesk.open,
     onNewMessage,
     onNewProject: () => setNewProjectOpen(true),
     onNewProjectFromGit: () => setNewGitProjectOpen(true),
@@ -286,8 +291,13 @@ export function useQuickCreatePick() {
 export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
 
 /** The tile groups this panel can render, in order. */
-export type QuickCreateSection = 'session' | 'message' | 'project' | 'asset' | 'folder';
-export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'project', 'asset', 'folder'];
+export type QuickCreateSection = 'session' | 'message' | 'project' | 'asset' | 'folder' | 'helpdesk';
+export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'project', 'asset', 'folder', 'helpdesk'];
+
+/** Sections that point the project at something that ALREADY EXISTS rather than
+ *  creating it. `QuickCreateModal` excludes them wholesale — see the reason in
+ *  its own header. Expressed once so the two cannot drift. */
+export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['folder', 'helpdesk']);
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
@@ -296,6 +306,8 @@ export interface QuickCreatePanelProps {
   onBindSecret: () => void;
   /** Run a context-folder source at the given scope. */
   onAddFolder: (source: ContextFolderSource, scope: ContextFolderScope) => void;
+  /** Open the adopt-a-help-desk dialog. */
+  onAddHelpdesk: () => void;
   /** Open the new-conversation dialog (behind the cloud-login gate). */
   onNewMessage: () => void;
   /** Open the create-a-project dialog (name + parent folder). */
@@ -343,6 +355,7 @@ export function QuickCreatePanel({
   onPick,
   onBindSecret,
   onAddFolder,
+  onAddHelpdesk,
   onNewMessage,
   onNewProject,
   onNewProjectFromGit,
@@ -599,6 +612,24 @@ export function QuickCreatePanel({
             }}
           />
         ))}
+      </TileSection>
+    ),
+    helpdesk: (
+      <TileSection title={<Trans>Add help desk</Trans>}>
+        <TippedTile
+          wikiword={HELPDESK_WIKI}
+          // From the type registry, like every per-type glyph — `HelpdeskTypeInfo`
+          // declares it, so a change there reaches this tile with no edit here.
+          Icon={iconForType('helpdesk')}
+          label={t`Help desk`}
+          tip={t`Adopt a support desk published as a git repository`}
+          data-testid="quick-create-add-helpdesk"
+          disabled={!currentProject}
+          onClick={() => {
+            onDone?.();
+            onAddHelpdesk();
+          }}
+        />
       </TileSection>
     ),
   };

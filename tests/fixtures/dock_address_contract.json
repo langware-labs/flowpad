@@ -55,11 +55,13 @@
     "graph-workflows",
     "signals",
     "data-sources",
+    "rag",
     "process-runs",
     "plan",
     "cron",
     "assets",
     "project",
+    "agent",
     "inbox",
     "conversation",
     "spec",
@@ -107,7 +109,7 @@
   "retired_views": {
     "environment": {
       "view_type": "credentials",
-      "pointer": "environment"
+      "pointer": "connections"
     },
     "connections": {
       "view_type": "credentials",
@@ -115,7 +117,7 @@
     },
     "api-keys": {
       "view_type": "credentials",
-      "pointer": "api-keys"
+      "pointer": "connections"
     }
   },
   "view_meta": {
@@ -571,6 +573,20 @@
       "addressable": true,
       "pointer": "optional",
       "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "agent": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "rag": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"
     }

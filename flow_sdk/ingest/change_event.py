@@ -99,7 +99,7 @@ async def handle_change(event: Any) -> bool:
     if source is None:
         return False
     if source.status == SourceStatus.DISABLED.value:
-        # DELIBERATELY narrower than `may_poll`, which also refuses NEW/SETUP
+        # DELIBERATELY narrower than `poll_refusal`, which also refuses NEW/SETUP
         # and `config_error`. Those exist to stop the heartbeat spending a
         # tick a minute on a source that cannot answer; a change event is the
         # opposite case — the provider says there IS something, once, on

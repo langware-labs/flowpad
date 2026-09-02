@@ -45,9 +45,16 @@ logger = logging.getLogger(__name__)
 # token. The Runs view needs it because a run launched outside a flow (an
 # ingest driver's worker, an agent started from its profile) produces no
 # `graph_workflow.*` at all.
+#
+# `inbox.*.message.projected` is the post-commit lane for message placement.
+# Unlike `ingest.*.item.*`, projection already suppresses this event when a
+# batch exceeds the ingest storm cap. The UI needs this exact boundary: a sync
+# completion races the detached projection handler, while this event fires only
+# after the FlowMessage and its conversation pointer have both been written.
 FORWARDED_TAG_PATTERNS: list[str] = [
     "graph_workflow.*",
     "ingest.*.sync.*",
+    "inbox.*.message.projected",
     "agent.status",
 ]
 

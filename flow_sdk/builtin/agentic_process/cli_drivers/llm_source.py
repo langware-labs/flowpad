@@ -54,16 +54,18 @@ verdict, and we honour verdicts.
 from __future__ import annotations
 
 import logging
-from typing import NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.llm_source_spec import (
     LLMSource,
     LLMSourceAuthority,
-    LLMSourceKind,
     LLMSourceOrigin,
 )
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -74,16 +76,33 @@ _RANK_KEY = 10
 _RANK_ENDPOINT = 20
 _RANK_DEVICE_UNPROVEN = 30
 
-#: Namespace stored provider keys live under (``flow_sdk.cli.auth.lm_api_keys._PREFIX``).
-_LM_PREFIX = "lm_api."
+def _hub_stub(typeid: str, *, name: str = "", provider: str = "") -> "LLMEndpoint":
+    """A hub endpoint we know only by typeid.
 
-class _Endpoint(NamedTuple):
-    """The three things a source needs off an endpoint, from EITHER the hub listing or the
-    pushed binding — so the builder below reads one shape instead of branching per field."""
+    Used for the two cases where a budget is named before any listing describes it: the
+    pushed binding arriving ahead of the cache, and a constraint naming an endpoint this box
+    has never seen. The row's own id is incidental — the authoritative string is the
+    verdict's ``endpoint_typeid``, which is what every consumer invokes against — so it is
+    derived from that string rather than parsed out of it. Derived, never random: two reads
+    of the same status must answer the same rows, and a fresh id made every poll look like a
+    change.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
-    name: str
-    provider: str
-    enabled: bool
+    return LLMEndpoint.projection("hub", typeid, name=name, provider=provider)
+
+
+class Candidate(NamedTuple):
+    """One endpoint and this harness's verdict on it.
+
+    The pair travels together because the verdict names an endpoint and almost every caller
+    needs both: the picker renders the row's provider beside the verdict's reason, and a
+    spawn reads the row's key and model slugs after the verdict chose it. Returning them
+    separately would make every consumer rebuild the join.
+    """
+
+    endpoint: "LLMEndpoint"
+    source: LLMSource
 
 
 class LLMSourceError(Exception):
@@ -97,13 +116,13 @@ class LLMSourceError(Exception):
     def __init__(self, worker_type: str, sources: list[LLMSource]):
         self.worker_type = worker_type
         self.sources = list(sources)
-        lines = [f"  - {s.name or s.kind}: {s.reason or 'unavailable'}" for s in self.sources]
+        lines = [f"  - {s.name or s.endpoint_typeid}: {s.reason or 'unavailable'}" for s in self.sources]
         body = "\n".join(lines) if lines else "  (no source of any kind is configured)"
         super().__init__(f"{worker_type} has no usable LLM source:\n{body}")
 
 # ── inventory ────────────────────────────────────────────────────────────────────
 
-def _device_source(worker_type: str, login_state, box_bound: bool) -> LLMSource:
+def _device_source(worker_type: str, login_state, box_bound: bool) -> Candidate:
     """The vendor device login for *worker_type*, and what we actually know about it.
 
     Deliberately says nothing about whether the CLI is INSTALLED. That is a different
@@ -112,7 +131,11 @@ def _device_source(worker_type: str, login_state, box_bound: bool) -> LLMSource:
     "nothing is installed". Answering it here too would only mean an uninstalled harness
     failed earlier, in a different place, with a worse sentence.
     """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+
     name = f"{worker_type} device login"
+    endpoint = LLMEndpoint.device_projection(worker_type, name=name)
+    typeid = str(endpoint.typeid)
     # ``.value``, never ``str()``: ``DeviceLoginState`` is a plain ``(str, Enum)``, not a
     # ``StrEnum``, so ``str(DeviceLoginState.AUTHENTICATED)`` is the REPR
     # ``"DeviceLoginState.AUTHENTICATED"``. Comparing that to ``"authenticated"`` never
@@ -121,21 +144,21 @@ def _device_source(worker_type: str, login_state, box_bound: bool) -> LLMSource:
     # turn to a vendor login picker and hangs it.
     state = getattr(login_state, "value", login_state) or ""
     if state == "authenticated":
-        return LLMSource(
-            kind=LLMSourceKind.DEVICE, name=name, rank=_RANK_DEVICE, eligible=True, auto=True,
+        return Candidate(endpoint, LLMSource(
+            endpoint_typeid=typeid, name=name, rank=_RANK_DEVICE, eligible=True, auto=True,
             authority=LLMSourceAuthority.CACHED, detail="signed in",
-        )
+        ))
     if state in ("idle", "error"):
         # A probe positively said so. We only assert signed-out when we were told.
-        return LLMSource(
-            kind=LLMSourceKind.DEVICE, name=name, rank=_RANK_DEVICE, eligible=False,
+        return Candidate(endpoint, LLMSource(
+            endpoint_typeid=typeid, name=name, rank=_RANK_DEVICE, eligible=False,
             reason=f"{worker_type} is signed out", authority=LLMSourceAuthority.CACHED,
-        )
+        ))
     # Nobody has asked (the common case: the field does not survive a restart). Usable, so
     # no ``reason`` -- the caveat is display, and putting it in ``reason`` made a perfectly
     # good device login report it as its status message.
-    return LLMSource(
-        kind=LLMSourceKind.DEVICE,
+    return Candidate(endpoint, LLMSource(
+        endpoint_typeid=typeid,
         name=name,
         rank=_RANK_DEVICE_UNPROVEN if box_bound else _RANK_DEVICE,
         eligible=True,
@@ -146,35 +169,50 @@ def _device_source(worker_type: str, login_state, box_bound: bool) -> LLMSource:
             if box_bound
             else "sign-in state not checked"
         ),
-    )
+    ))
 
-def _key_sources(spec, configured: set[str]) -> list[LLMSource]:
-    """One source per provider this harness supports AND has a stored key for.
+def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
+    """One candidate per provider this harness supports, over that provider's endpoint row.
 
-    Validity is deliberately NOT checked: ``validate_lm_api`` is a network call, and a
-    spawn must never wait on a provider's account API to find out whether it may start.
-    A bad key fails at the first request, loudly and quickly.
+    *rows* is the local ``api_key`` endpoints keyed by secret name and *stored* is the set of
+    secret names present in the store — both read ONCE by the caller, because this runs per
+    harness and the answers do not vary between them.
+
+    Presence is tested against those NAMES, never by decrypting a value. Reading a secret
+    opens, decrypts and re-parses the whole sod blob; asking four harnesses whether a key
+    exists would do that four times to learn something the listing already knows.
+
+    A provider with no row yet gets an unsaved projection with a stable id, so the picker can
+    offer it greyed and a selection cannot flap between reads.
+
+    Validity is deliberately NOT checked: probing a provider is a network call, and a spawn
+    must never wait on a provider's account API to find out whether it may start. A bad key
+    fails at the first request, loudly and quickly.
     """
-    out: list[LLMSource] = []
+    from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint  # noqa: PLC0415
+
+    out: list[Candidate] = []
     for provider in spec.supported_providers:
         if provider is LMApiProvider.FLOWPAD:
             continue  # the hub endpoint is its own kind, not a "key"
-        has_key = provider.value in configured
-        out.append(
-            LLMSource(
-                kind=LLMSourceKind.API_KEY,
-                provider=provider.value,
-                name=f"{provider.value} key",
-                rank=_RANK_KEY,
-                eligible=has_key,
-                auto=has_key,
-                authority=LLMSourceAuthority.PROVEN,
-                reason="" if has_key else f"no {provider.value} key is stored on this machine",
-            )
-        )
+        secret_name = f"{LM_SECRET_PREFIX}{provider.value}"
+        endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider.value)
+        # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
+        # not a statement about what this box is configured to spend, so it is not consulted.
+        has_key = secret_name in stored
+        out.append(Candidate(endpoint, LLMSource(
+            endpoint_typeid=str(endpoint.typeid),
+            name=endpoint.name or f"{provider.value} key",
+            rank=_RANK_KEY,
+            eligible=has_key,
+            auto=has_key,
+            authority=LLMSourceAuthority.PROVEN,
+            reason="" if has_key else f"no {provider.value} key is stored on this machine",
+        )))
     return out
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[LLMSource]:
+
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -182,59 +220,61 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[LLMSo
     ``auto`` -- the others are offers, and choosing between budgets is not a decision to
     make silently on someone's behalf.
     """
+
     if spec.hub_endpoint_binding is None:
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
-    known: dict[str, _Endpoint] = {
-        str(e.typeid): _Endpoint(str(getattr(e, "name", "")), str(getattr(e, "provider", "")), bool(getattr(e, "enabled", True)))
-        for e in endpoints
-    }
-    if bound_typeid and bound_typeid not in known:
+    rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
+    if bound_typeid and bound_typeid not in rows:
         # The push is authoritative even when the listing has not caught up: a freshly
         # bound (or freshly shared) endpoint must work before any cache has heard of it.
-        # Projected to the same shape rather than left as a sentinel, so the loop below
-        # never has to ask which of two places a field came from.
-        known[bound_typeid] = _Endpoint(bound.name if bound else "", bound.provider if bound else "", True)
-    out: list[LLMSource] = []
-    for typeid, endpoint in known.items():
+        rows[bound_typeid] = _hub_stub(
+            bound_typeid,
+            name=bound.name if bound else "",
+            provider=bound.provider if bound else "",
+        )
+    out: list[Candidate] = []
+    for typeid, endpoint in rows.items():
         name = endpoint.name or "hub endpoint"
         reason = ""
         if not hub_logged_in:
             reason = "this box is not logged in to the hub"
         elif not endpoint.enabled:
             reason = f"endpoint {name} is disabled"
-        out.append(
-            LLMSource(
-                kind=LLMSourceKind.ENDPOINT,
-                endpoint_typeid=typeid,
-                provider=LMApiProvider.FLOWPAD.value,
-                name=name,
-                detail=endpoint.provider,
-                root_provider=endpoint.provider,
-                rank=_RANK_ENDPOINT,
-                eligible=not reason,
-                auto=(not reason) and typeid == bound_typeid,
-                authority=LLMSourceAuthority.PRESUMED,
-                reason=reason,
-            )
-        )
+        out.append(Candidate(endpoint, LLMSource(
+            endpoint_typeid=typeid,
+            name=name,
+            detail=endpoint.provider,
+            rank=_RANK_ENDPOINT,
+            eligible=not reason,
+            auto=(not reason) and typeid == bound_typeid,
+            authority=LLMSourceAuthority.PRESUMED,
+            reason=reason,
+        )))
     return out
 
-async def _inventory(worker_type: str) -> list[LLMSource]:
-    """Every source that EXISTS for *worker_type*, with what we know about each.
 
-    No context, no ranking decisions beyond the static bands -- and no network calls:
-    the endpoint listing is read from the memo (``cached_only``), because this runs in
-    the spawn path.
+async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
+    """Every endpoint that EXISTS for *worker_type*, with what we know about each, and the
+    harness ``Capability`` it was read from.
+
+    The capability comes back because the caller needs it for the preference overlay and it
+    is the same row: fetching it twice per harness is four wasted round trips on a status
+    the picker polls.
+
+    No context, no ranking decisions beyond the static bands -- and no network calls: the
+    endpoint listing is read from the memo (``cached_only``), because this runs in the spawn
+    path. Secret NAMES are listed rather than read, so nothing here decrypts the store.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.cli.auth.secrets import get_secrets
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, get_hub_llm_endpoint
 
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
-        return []
+        return [], None
 
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     bound = get_hub_llm_endpoint()
@@ -242,19 +282,17 @@ async def _inventory(worker_type: str) -> list[LLMSource]:
     # question here is "is there a key to sign with" -- a box holding a key without a user
     # record can still spend its endpoint, and must.
     hub_logged_in = _hub_logged_in()
-    # ``get_secrets`` rather than ``list_lm_api``: the latter appends a "managed" flowpad row
-    # that costs a second sod decrypt to build, and it is the one row this filter discards.
-    configured = {
-        str(rec.get("name", ""))[len(_LM_PREFIX) :]
-        for rec in get_secrets()
-        if str(rec.get("name", "")).startswith(_LM_PREFIX)
-    }
     endpoints = await fetch_hub_llm_endpoints(cached_only=True)
+    rows = await LLMEndpoint.key_endpoints()
+    # Names only. ``get_secrets`` lists the shadow records and never opens the sod, whereas
+    # reading each value would decrypt and re-parse the whole blob once per provider.
+    stored = {str(rec.get("name", "")) for rec in get_secrets()}
 
-    sources = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
-    sources += _key_sources(spec, configured)
-    sources += _endpoint_sources(spec, endpoints, bound, hub_logged_in)
-    return sources
+    candidates = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
+    candidates += _key_sources(spec, rows, stored)
+    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in)
+    return candidates, cap
+
 
 # ── overlay ──────────────────────────────────────────────────────────────────────
 
@@ -299,47 +337,29 @@ async def _constraint(process) -> tuple[str, LLMSourceOrigin] | None:
         return typeid, LLMSourceOrigin.PROJECT
     return None
 
-def _preferred(cap) -> str:
-    """The provider the user explicitly asked for, or ``""``.
-
-    ``auth_mode == "device"`` is the FIELD DEFAULT and therefore indistinguishable from
-    "never touched" -- so it is read as no preference, and the default order applies.
-    Only an explicit ``api`` mode names a provider.
-
-    A stated preference is a CONSTRAINT, not a hint: when the named provider has no
-    usable credential the spawn fails loudly rather than quietly spending something else.
-    Silently substituting another funding source would spend a subscription or a budget
-    the user did not choose -- and the fall-through it replaces (the vendor device-login
-    picker) hangs the turn rather than failing it.
-
-    Known limitation: there is no way to say "device, explicitly". ``device`` is the
-    field's default, so a user who wants it on a box the hub has bound cannot currently
-    express that; the box binding wins. Expressing it needs a third state, which the
-    picker in the next phase is the right place to introduce.
-    """
-    if cap is None or getattr(cap, "auth_mode", "device") != "api":
-        return ""
-    return str(getattr(cap, "api_provider", "") or "")
-
 def _apply_constraint(
-    sources: list[LLMSource], typeid: str, origin: LLMSourceOrigin, hub_logged_in: bool
-) -> list[LLMSource]:
+    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, hub_logged_in: bool
+) -> list[Candidate]:
     """Render the constraint ONTO the list: the named endpoint stays, everything else
     comes back ineligible carrying the sentence that says why.
 
     This is what makes the list self-explaining -- the failure message and the picker's
     greyed rows are the same data, so they cannot disagree.
     """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
     scope = "this process" if origin is LLMSourceOrigin.PROCESS else "this project"
     why = f"{scope} requires hub endpoint {typeid}"
-    out: list[LLMSource] = []
+    out: list[Candidate] = []
     named = False
-    for source in sources:
-        if source.kind is LLMSourceKind.ENDPOINT and source.endpoint_typeid == typeid:
+    for endpoint, source in candidates:
+        if endpoint.kind == LLMEndpointKind.HUB and source.endpoint_typeid == typeid:
             named = True
-            out.append(source.model_copy(update={"rank": -1, "auto": source.eligible, "origin": origin}))
+            out.append(Candidate(endpoint, source.model_copy(
+                update={"rank": -1, "auto": source.eligible, "origin": origin}
+            )))
         else:
-            out.append(source.ineligible(why))
+            out.append(Candidate(endpoint, source.ineligible(why)))
     if not named:
         # Not in the inventory is not a refusal: the hub authorizes every invoke against
         # the endpoint in the URL, so a typeid we have not heard of can only earn a
@@ -348,82 +368,144 @@ def _apply_constraint(
         # binding: a box that cannot sign for the endpoint cannot spend it, however
         # emphatically it was named.
         unusable = "" if hub_logged_in else "this box is not logged in to the hub"
-        out.append(
-            LLMSource(
-                kind=LLMSourceKind.ENDPOINT,
-                endpoint_typeid=typeid,
-                provider=LMApiProvider.FLOWPAD.value,
-                name=typeid,
-                rank=-1,
-                eligible=not unusable,
-                auto=not unusable,
-                authority=LLMSourceAuthority.PRESUMED,
-                origin=origin,
-                reason=unusable,
-            )
-        )
+        stub = _hub_stub(typeid, name=typeid)
+        out.append(Candidate(stub, LLMSource(
+            endpoint_typeid=typeid,
+            name=typeid,
+            rank=-1,
+            eligible=not unusable,
+            auto=not unusable,
+            authority=LLMSourceAuthority.PRESUMED,
+            origin=origin,
+            reason=unusable,
+        )))
     return out
 
-async def list_llm_sources(worker_type: str, process=None) -> list[LLMSource]:
-    """Every source that could fund *worker_type*, ranked, with reasons — for THIS
-    process when one is given, otherwise the box-wide view the picker renders."""
-    sources = await _inventory(worker_type)
-    if not sources:
+
+def _preferred(cap) -> str:
+    """The funding source the user explicitly asked for, or ``""``.
+
+    Today that is the legacy ``auth_mode``/``api_provider`` pair, which names a PROVIDER
+    rather than an endpoint. Collapsing it to a single preferred endpoint typeid is Phase 3
+    and needs the picker to write the new field in the same change; reading a field nothing
+    writes yet would be a dead branch under a docstring claiming otherwise.
+
+    ``auth_mode == "device"`` is the FIELD DEFAULT and therefore indistinguishable from
+    "never touched" -- so it is read as no preference, and the default order applies. Only an
+    explicit ``api`` mode names a provider.
+
+    A stated preference is a CONSTRAINT, not a hint: when the named source has no usable
+    credential the spawn fails loudly rather than quietly spending something else. Silently
+    substituting would spend a subscription or a budget the user did not choose -- and the
+    fall-through it replaces (the vendor device-login picker) hangs the turn rather than
+    failing it.
+
+    Known limitation, unchanged: there is no way to say "device, explicitly", because
+    ``device`` is the field's default. Expressing it needs a third state, which the Phase 3
+    picker is the right place to introduce.
+    """
+    if cap is None or getattr(cap, "auth_mode", "device") != "api":
+        return ""
+    return str(getattr(cap, "api_provider", "") or "")
+
+
+def _matches_preference(endpoint, source: LLMSource, preferred: str) -> bool:
+    """Whether this candidate is the one the user asked for.
+
+    ``"flowpad"`` is the legacy ``api_provider`` value meaning "the hub endpoint". It was
+    never a provider; it stood in for a KIND, from when a stored key had no row and a hub
+    budget had to be modelled as a provider whose key is the hub login. So it matches on
+    kind, not on ``endpoint.provider``, which now holds the root's real provider
+    (``openrouter``) and would never equal it. Any other value names a stored key's provider.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+    if preferred == LMApiProvider.FLOWPAD.value:
+        return endpoint.kind == LLMEndpointKind.HUB
+    return endpoint.kind == LLMEndpointKind.API_KEY and endpoint.provider == preferred
+
+
+async def list_llm_candidates(worker_type: str, process=None) -> list[Candidate]:
+    """Every endpoint that could fund *worker_type*, ranked, each with its verdict — for
+    THIS process when one is given, otherwise the box-wide view the picker renders.
+
+    The endpoint travels with the verdict so a caller never has to re-read a row to learn
+    the provider, the key or the model slugs behind an answer this function already chose.
+    """
+    candidates, cap = await _inventory(worker_type)
+    if not candidates:
         return []
 
     if process is not None:
         constraint = await _constraint(process)
         if constraint is not None:
             return sorted(
-                _apply_constraint(sources, *constraint, _hub_logged_in()), key=lambda s: s.rank
+                _apply_constraint(candidates, *constraint, _hub_logged_in()),
+                key=lambda c: c.source.rank,
             )
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     preferred = _preferred(cap)
     if preferred:
-        why = f"{worker_type} is set to use {preferred}"
-        sources = [
-            source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER})
-            if source.provider == preferred
-            else source.ineligible(why)
-            for source in sources
+        name = next(
+            (c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred
+        )
+        why = f"{worker_type} is set to use {name}"
+        candidates = [
+            Candidate(endpoint, source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER}))
+            if _matches_preference(endpoint, source, preferred)
+            else Candidate(endpoint, source.ineligible(why))
+            for endpoint, source in candidates
         ]
-    return sorted(sources, key=lambda s: s.rank)
+    return sorted(candidates, key=lambda c: c.source.rank)
+
+
+async def list_llm_sources(worker_type: str, process=None) -> list[LLMSource]:
+    """The verdicts alone, for callers that render them and never need the row."""
+    return [c.source for c in await list_llm_candidates(worker_type, process)]
+
 
 # ── resolution ───────────────────────────────────────────────────────────────────
 
-def pick_llm_source(sources: list[LLMSource]) -> LLMSource | None:
+def pick_llm_candidate(candidates: list[Candidate]) -> Candidate | None:
     """The winner of a ranked list: *first eligible AND auto*, else *first eligible*.
 
-    The second pass is not a nicety. It is what keeps an unproven device login usable on
-    an unbound box when nothing else is configured -- the state most desktop installs are
-    in, and exactly what happened before this resolver existed.
+    The second pass is not a nicety. It is what keeps an unproven device login usable on an
+    unbound box when nothing else is configured -- the state most desktop installs are in,
+    and exactly what happened before this resolver existed.
 
-    One function, so the answer a spawn uses and the answer a picker displays cannot
-    drift apart. That drift is precisely what made a stale ``login_state`` tell users
-    their working harness was signed out.
+    One function, so the answer a spawn uses and the answer a picker displays cannot drift
+    apart. That drift is precisely what made a stale ``login_state`` tell users their working
+    harness was signed out.
     """
-    for source in sources:
-        if source.eligible and source.auto:
-            return source
-    for source in sources:
-        if source.eligible:
-            return source
+    for candidate in candidates:
+        if candidate.source.eligible and candidate.source.auto:
+            return candidate
+    for candidate in candidates:
+        if candidate.source.eligible:
+            return candidate
     return None
 
-async def resolve_box_llm_source(worker_type: str) -> LLMSource | None:
-    """What would fund *worker_type* with no process in hand — the box-wide answer the
-    picker and the box status report."""
-    return pick_llm_source(await list_llm_sources(worker_type))
+
+async def resolve_box_llm_endpoint(worker_type: str) -> Candidate | None:
+    """The box-wide answer, with the endpoint behind it."""
+    return pick_llm_candidate(await list_llm_candidates(worker_type))
+
 
 async def resolve_llm_source(process) -> LLMSource:
     """The source that funds this spawn. Raises :class:`LLMSourceError` when none can."""
+    return (await resolve_llm_endpoint(process)).source
+
+
+async def resolve_llm_endpoint(process) -> Candidate:
+    """The endpoint that funds this spawn, and the verdict that chose it.
+
+    What a spawn actually wants: the key, the provider and the model slugs all hang off the
+    row, so handing back only the verdict would make the caller look the row up again — and
+    a second lookup is a second chance to disagree with the answer.
+    """
     worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
-    sources = await list_llm_sources(worker_type, process)
-    chosen = pick_llm_source(sources)
+    candidates = await list_llm_candidates(worker_type, process)
+    chosen = pick_llm_candidate(candidates)
     if chosen is None:
-        raise LLMSourceError(worker_type, sources)
+        raise LLMSourceError(worker_type, [c.source for c in candidates])
     return chosen

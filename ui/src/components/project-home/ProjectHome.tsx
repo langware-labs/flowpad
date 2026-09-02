@@ -92,7 +92,7 @@ const CreateTab: React.FC<{
     {/* The project's own agents, right under the vendor session tiles: both
         answer "start something", and an agent IS a session starter. */}
     <ProjectAgentsStrip projectId={projectId} />
-    <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
+    <QuickCreatePanel {...panelProps} sections={['asset', 'folder', 'helpdesk']} />
   </div>
 );
 

@@ -14,6 +14,7 @@ keys. In-process callers (workers) read via ``get_lm_api`` in the SDK.
 
 import logging
 
+from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint
 from flow_sdk.cli.auth.lm_api_keys import (
     delete_lm_api,
     list_lm_api,
@@ -73,6 +74,11 @@ async def lm_keys_action() -> ApiResponse:
                 if not key:
                     return ApiFailResponse(message="key is required")
                 set_lm_api(key, provider)
+                # A stored key with no row funds nothing: every local consumer reaches this
+                # key through `LLMEndpoint.key_endpoints()`, which is a query over rows. Minting
+                # here — the one place a key is stored through the API — keeps the two halves
+                # from drifting. Find-or-mint, so re-entering a key does not duplicate.
+                await LLMEndpoint.ensure_for_secret(provider.value)
                 # Auto-validate on set so the UI can confirm the key immediately;
                 # reuse the in-hand key rather than re-reading the store.
                 result = await validate_lm_api(provider, key=key)
@@ -86,6 +92,11 @@ async def lm_keys_action() -> ApiResponse:
             if provider is None:
                 return ApiFailResponse(message=f"Unknown provider: {sub_path}")
             await delete_lm_api(provider)
+            # The row names a secret that no longer exists; leaving it makes the resolver
+            # offer funding that cannot pay.
+            stale = await LLMEndpoint.find_by_secret(f"{LM_SECRET_PREFIX}{provider.value}")
+            if stale is not None:
+                await stale.destroy()
             return ApiSuccessResponse(data={"ok": True})
 
         return ApiFailResponse(message=f"Method {method} not supported")

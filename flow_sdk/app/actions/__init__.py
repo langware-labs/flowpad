@@ -18,6 +18,7 @@ from . import (  # noqa: F401
     message_attachment_action,
     notification_action,
     prompt_pin_action,
+    rag_index_action,
     report_action,
     share_action,
     task_assign_action,

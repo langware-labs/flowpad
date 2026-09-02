@@ -1007,14 +1007,16 @@ class FSRecord(Generic[M]):
 
                 # Type-specific post-sync hook.
                 info = SchemaRegistry.get(self.type)
-                if info is not None and info.post_sync_fn is not None:
+                # Each callback is isolated: one observer raising must not stop the next from
+                # running, any more than it stops the sync that already committed.
+                for callback in info.post_sync_callbacks if info is not None else ():
                     try:
-                        await info.post_sync_fn(self)
+                        await callback(self)
                     except Exception as post_exc:
                         import logging  # noqa: PLC0415
                         logging.getLogger(__name__).warning(
-                            "post_sync_fn failed for %s:%s — %s",
-                            self.type, self.id, post_exc,
+                            "post_sync_fn %s failed for %s:%s — %s",
+                            getattr(callback, "__name__", callback), self.type, self.id, post_exc,
                         )
         except Exception as exc:
             _record_error_from_exception(self, exc, trigger="sync_to_db").save()

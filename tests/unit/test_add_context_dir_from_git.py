@@ -4,7 +4,10 @@ This is the flow a vendor's capability layer arrives through: the customer
 attaches a URL, the repo is cloned, indexed, and whatever assets it ships
 (skills, agents, a help-desk manifest) become available to the project. "Add a
 help desk from git" is not a separate flow — it is this one, and the desk
-appears because of what was indexed.
+appears because of what was indexed. ``adopt-helpdesk-from-git`` sits ON TOP of
+this action (see ``test_adopt_helpdesk_from_git.py``): it attaches through here
+unchanged and only reports what showed up, so the properties below are still
+the ones holding both flows together.
 
 The properties pinned here are the ones whose failure is silent, and the ones
 the N:1 case depends on (one vendor repo, many customer projects):

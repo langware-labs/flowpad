@@ -10,6 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
+import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 
 interface AgentDeploymentsSectionProps {
@@ -42,6 +43,11 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   const [pausing, setPausing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [chatDeploymentId, setChatDeploymentId] = useState<string | null>(null);
+  // Tri-state, from the checklist. `null` = still checking, and deliberately does
+  // NOT disable Deploy: a slow or unanswerable probe must never take away a
+  // button that works today. Only a prerequisite we positively know is unmet
+  // does, and the backend's own error stays the backstop either way.
+  const [ready, setReady] = useState<boolean | null>(null);
   const hubMode = isHubOnly();
 
   const request = useMemo(
@@ -142,6 +148,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
       <p className="mb-3 text-xs text-muted-foreground">
         <Trans>Publish this agent to the cloud and give it a machine that logs in as itself.</Trans>
       </p>
+      <AgentDeployChecklist agent={agent} onReadinessChange={setReady} />
       <div className="flex flex-col gap-2">
         {deployments.map((deployment) => {
           const url = deployment.origin?.url || deployment.target.location;
@@ -212,7 +219,12 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
         })}
 
         <div className="flex items-center gap-3">
-          <Button size="sm" disabled={!agent.enabled || deploying} onClick={() => void deploy()}>
+          <Button
+            size="sm"
+            disabled={!agent.enabled || deploying || ready === false}
+            title={ready === false ? t`Finish the setup above before deploying` : undefined}
+            onClick={() => void deploy()}
+          >
             {deploying ? (
               <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (

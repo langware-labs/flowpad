@@ -12,6 +12,12 @@ and the desk appears because of what was indexed. That is also what lets support
 tiers chain: B clones A's portal and inherits A's desk, then publishes its own
 portal naming B's desk for C.
 
+``Project.adopt_helpdesk_from_git`` does not weaken that. It delegates the
+attach to ``add_context_dir_from_git`` verbatim and adds only a REPORT — which
+desk arrived, whether it is the one that will actually serve, and where its
+portal is. The attach stays single-owner; what the action supplies is the
+path→entity resolution a UI cannot do for itself.
+
 ``desk_project_id`` is the HUB project that owns the ticket queue, so cloning
 the portal also discovers where tickets go. It is the manifest's *claim*, not a
 verified fact — a repo can name any project, and ``display_name`` is

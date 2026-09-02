@@ -10,6 +10,7 @@ A responder is just ``(path, request_headers) -> (status, body, headers)``, whic
 covers every case the suite has: serving a fixture, ETag negotiation, JSON, and
 error statuses.
 """
+
 from __future__ import annotations
 
 import threading
@@ -35,7 +36,17 @@ def local_http_server(respond: Responder) -> Iterator[str]:
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler's contract
-            status, body, headers = respond(self.path, self.headers)
+            self._answer(respond(self.path, self.headers))
+
+        def do_POST(self):  # noqa: N802 — same contract; the body rides the mapping as ``_body``
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b""
+            seen = {k: v for k, v in self.headers.items()}
+            seen["_body"] = raw.decode("utf-8", "replace")
+            self._answer(respond(self.path, seen))
+
+        def _answer(self, reply):
+            status, body, headers = reply
             self.send_response(status)
             for key, value in (headers or {}).items():
                 self.send_header(key, value)
