@@ -872,6 +872,7 @@ export function AssetRow({
   busy,
   canOpen,
   cannotOpenReason,
+  openAction,
   onPick,
   onUnpick,
   onImprove,
@@ -893,6 +894,13 @@ export function AssetRow({
   /** Why the row cannot be opened, for the disabled tooltip. Without it the
    *  vetoed row claims to be an inline persona, which is a different thing. */
   cannotOpenReason?: string;
+  /** Host-owned open action, REPLACING the derived "open in its asset editor"
+   *  navigation — and making the row openable regardless of what the typeid
+   *  says. For a row whose type has no editor (`data_source`, configured in the
+   *  Data sources view rather than opened as a file) the derived route falls
+   *  back to the markdown editor and dead-ends; the host knows where its row
+   *  actually leads, so it says so. */
+  openAction?: { label: string; run: (descriptor: AssetDescriptor) => void };
   onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onImprove?: (descriptor: AssetDescriptor) => void;
@@ -901,7 +909,7 @@ export function AssetRow({
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
   const readOnly = isReadOnlySource(descriptor.source);
-  const openable = (canOpen ?? true) && _isOpenableTypeid(descriptor.typeid);
+  const openable = (canOpen ?? true) && (!!openAction || _isOpenableTypeid(descriptor.typeid));
   const locationText = useEntityLocationLabel(descriptor.remote);
   // The name chip OPENS the asset in its editor — clicking the thing you are
   // looking at should show you the thing. Selecting is a separate, explicit
@@ -911,9 +919,11 @@ export function AssetRow({
   const pickLabel = togglesOff ? t`Remove ${label}` : t`Select ${label}`;
   const openActionLabel = !openable
     ? (cannotOpenReason ?? t`Inline persona — no backing entity`)
-    : readOnly
-      ? t`View ${label} (read-only)`
-      : t`Open ${label}`;
+    : openAction
+      ? openAction.label
+      : readOnly
+        ? t`View ${label} (read-only)`
+        : t`Open ${label}`;
   const openActionTitle = locationText ? `${openActionLabel}\n${locationText}` : openActionLabel;
   const openActionAria = locationText ? `${openActionLabel}, ${locationText}` : openActionLabel;
   // Explorer targets the FILE, so an asset with no path (inline persona) has
@@ -938,7 +948,12 @@ export function AssetRow({
   }, [explorerPath, navigation]);
 
   const onOpenClick = useCallback(() => {
-    if (!openable || !id) return;
+    if (!openable) return;
+    if (openAction) {
+      openAction.run(descriptor);
+      return;
+    }
+    if (!id) return;
     try {
       // Open by the asset's TypeId via the canonical DockPointer factory
       // (grammar editor/<editor>/typeid/<type>-<id>). Read-only sources open in
@@ -955,7 +970,7 @@ export function AssetRow({
     } catch (err) {
       console.error('[AssetRow] failed to open asset', descriptor.typeid, err);
     }
-  }, [navigation, type, id, readOnly, openable, descriptor.typeid]);
+  }, [navigation, type, id, readOnly, openable, openAction, descriptor]);
 
   return (
     <div

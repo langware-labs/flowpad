@@ -414,6 +414,13 @@ class Deployment(Entity):
             )
         context_data.setdefault("launched_by_agent", agent.name)
 
+        # Declared -> attached, BEFORE the folder is read below. ``mcp_servers``
+        # on agent.md is the authored intent; ``mcp_assets()`` is the structural
+        # attachment a launch resolves, and this is the one place that turns the
+        # first into the second. Idempotent, so a re-launch of an unchanged
+        # agent writes nothing.
+        await agent.attach_declared_mcp_servers()
+
         process = AgenticProcess(
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
@@ -431,6 +438,8 @@ class Deployment(Entity):
             # constructor rather than via ``process.add_mcp`` because this verb
             # is documented "not saved" and ``add_mcp`` saves. A process may
             # still add its own on top; ``resolved_mcp_servers`` dedupes by name.
+            # Reads the folder AFTER the attach above, which is what puts the
+            # editor's declared ids there.
             mcp_servers=await agent.resolved_mcp_specs(),
             cli_config=opts.to_json(),
             instruction_content=prompt,

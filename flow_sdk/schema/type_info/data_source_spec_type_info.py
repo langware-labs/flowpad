@@ -14,7 +14,10 @@ The metadata model is derived from the type's ``asset_spec`` (``ManifestSpec``)
 """
 from flow_sdk.builtin.data_source_spec import ManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.data_source_spec import derive_data_source_spec
+from flow_sdk.fs_store.indexer.functions.data_source_spec import (
+    data_source_spec_identity_key,
+    derive_data_source_spec,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -32,11 +35,17 @@ DATA_SOURCE_SPEC = TypeMetadata(
     main_file="data_source.json",
     fts_content=("name", "description"),
     derive_fields_fn=derive_data_source_spec,
-    # DERIVED, not a capsule: `data_source.json` deliberately carries no id, so
-    # the id falls out of the path — stable for a shipped asset and identical on
-    # every machine. Stamping one into the manifest would also make a shared
-    # source arrive carrying the sender's id.
+    # DERIVED, not a capsule: `data_source.json` deliberately carries no id —
+    # stamping one in would make a shared source arrive carrying the sender's id.
+    # A derived carrier has nowhere to write an id back, so identity must be a
+    # pure function of the source, and `identity_key_fn` is what supplies it. It
+    # is NOT optional: without a key `mint_entity_id` falls through to
+    # `uuid5(resolved path)`, and a spec's path is the INSTALL's
+    # (`…/site-packages/flow_sdk/system_projects/…`), not the asset's — several
+    # coexist on one machine and every upgrade moves it, so one shipped source
+    # forked into a row per install location (FLOWPAD-2070).
     identity_carrier=derived_identity(),
+    identity_key_fn=data_source_spec_identity_key,
     index_fields=["name", "title", "runtime"],
 )
 

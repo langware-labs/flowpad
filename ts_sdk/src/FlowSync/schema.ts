@@ -80,6 +80,11 @@ export interface TypeInfo {
   /** Scope-relative subdir for the claude-default mount (e.g. `.claude/skills`,
    *  `agentic-assets/task`). Derived server-side from the three fields above. */
   main_subdir?: string | null;
+  /** `'folder'` when the asset IS a directory (skill/task/mcp/agent), `'file'` when
+   *  the asset IS a single file (markdown/subagent). Only a folder-layout asset can
+   *  OWN nested assets under its own `agentic-assets/` — that is what the backend
+   *  `repo_assets_fn` walker recurses into. */
+  main_layout?: string | null;
   /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
   main_file?: string | null;
   /** True when a folder-layout type's asset_ref points at the inner main_file. */
