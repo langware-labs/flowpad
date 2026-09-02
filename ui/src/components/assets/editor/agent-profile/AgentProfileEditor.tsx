@@ -236,12 +236,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
         <div className="flex shrink-0 items-center gap-3 pt-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
-              {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
+              {agent.enabled ? <Trans>Agent enabled</Trans> : <Trans>Agent disabled</Trans>}
             </span>
             <Switch
               checked={agent.enabled}
               onCheckedChange={(v) => void save({ enabled: v })}
-              aria-label={t`Enabled`}
+              aria-label={t`Enable Agent`}
             />
           </div>
           <Button
@@ -251,7 +251,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
             data-testid="agent-inbox-button"
           >
             <Mail className="me-1.5 h-3.5 w-3.5" />
-            <Trans>Inbox</Trans>
+            <Trans>Email inbox</Trans>
           </Button>
           <Button
             size="sm"
