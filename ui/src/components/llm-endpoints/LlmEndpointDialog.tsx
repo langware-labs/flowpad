@@ -39,12 +39,14 @@ import { FiltersEditor } from './FiltersEditor';
 import { LimitsEditor } from './LimitsEditor';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { SourcePicker } from './SourcePicker';
+import { useLlmEndpointChain } from './use-llm-endpoints';
 import {
   buildAllocateBody,
   buildEntityJson,
   canConfigure,
   draftFrom,
   emptyDraft,
+  kindFromChain,
   PROVIDERS,
   providerSpec,
   validateDraft,
@@ -60,12 +62,21 @@ export interface LlmEndpointDialogProps {
   /** Every endpoint the user can see — candidates for a chain's sources and
    *  the graph the cycle check runs over. */
   all: readonly LLMEndpoint[];
+  /** The chain-resolved kind, when the caller already knows it. The entity's own is always
+   *  `root`, so without this an edit on a chain opens a root form. */
+  editingKind?: LLMEndpointKind | null;
   /** After a successful save (the live list refetches; the caller may too). */
   onSaved?: (endpoint: LLMEndpoint) => void;
 }
 
-export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }: LlmEndpointDialogProps) {
+export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, all, onSaved }: LlmEndpointDialogProps) {
   const { t } = useLingui();
+  // The edit form is shaped by root-vs-chain, and `editing.kind` says `root` for everything
+  // (`kindFromChain`) — so editing a chain opened a ROOT form, offering provider, base URL and a
+  // key it does not have. The detail page already resolved the kind and passes it; the list has no
+  // chain to ask, so fetch one here. Cheap: react-query, and the detail's fetch is the same key.
+  const ownChain = useLlmEndpointChain(open && editing && !editingKind ? editing.id : undefined);
+  const resolvedKind = editingKind ?? (editing ? kindFromChain(ownChain.data, editing.id) : null);
   const [draft, setDraft] = useState<EndpointDraft>(() => emptyDraft('root'));
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -73,10 +84,20 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, all, onSaved }:
 
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing) : emptyDraft('root'));
+    setDraft(editing ? draftFrom(editing, resolvedKind) : emptyDraft('root'));
     setStoredHint(editing?.credential_hint ?? '');
-    setShowAdvanced(!!editing && editing.kind === 'chain');
+    setShowAdvanced(!!editing && resolvedKind === 'chain');
+    // `resolvedKind` is deliberately NOT a dependency here. When the dialog fetches its own chain
+    // the answer lands a moment AFTER open, and re-running this would re-seed the draft and throw
+    // away whatever had been typed in between. The effect below patches the one field that changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
+
+  useEffect(() => {
+    if (!open || !editing || !resolvedKind) return;
+    setDraft((d) => (d.kind === resolvedKind ? d : { ...d, kind: resolvedKind }));
+    setShowAdvanced(resolvedKind === 'chain');
+  }, [open, editing, resolvedKind]);
 
   const problems = useMemo(() => validateDraft(draft), [draft]);
   const isEdit = !!editing;
