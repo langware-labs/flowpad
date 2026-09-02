@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 from pydantic import (
     BaseModel,
@@ -22,7 +22,7 @@ from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
-from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -32,7 +32,6 @@ from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -40,6 +39,7 @@ from flow_sdk.fs_store.path_utils import (
     is_protected_path,
     is_valid_project_cwd,
 )
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
@@ -1387,8 +1387,80 @@ class Project(Entity):
         secret_id: str | None = None,
         description: str | None = None,
     ) -> "ApiResponse":
-        """Attach a value-free secret pointer to this project and write its
-        reference json under ``assets/sodot/<name>.json`` (indexed + travels)."""
+        """Attach ONE value-free secret pointer to this project.
+
+        Nothing but the back-compat shim now: the convenience params
+        (``kind`` + ``sod_name``/``secret_id``) become an explicit locator, and
+        the declaration itself goes through :meth:`add_secret_pointers`. Keeping
+        a second copy of validate → mint → bucket → sidecar had already let the
+        two diverge — the batch path silently accepted a ``local`` locator with
+        no ``sod_name``, which mints a declaration nothing can ever resolve.
+        """
+        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+
+        name = (name or "").strip()
+        # Build the value-free locator from an explicit ``locator`` dict, or the
+        # convenience kind + sod_name/secret_id params (back-compat). This is the
+        # only genuinely singular part; everything after it is the batch's job.
+        raw_locator = dict(locator or {})
+        if not raw_locator:
+            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
+            raw_locator = {"kind": resolved_kind}
+            if resolved_kind == "local":
+                raw_locator["sod_name"] = (sod_name or name or "").strip()
+            elif resolved_kind == "flowpad-hub":
+                raw_locator["secret_id"] = (secret_id or "").strip()
+
+        return await self.add_secret_pointers(pointers=[{
+            "name": name,
+            "env_var": env_var,
+            "scope": scope,
+            "locator": raw_locator,
+            "sod_store": sod_store,
+            "description": description,
+        }])
+
+    def _sync_secret_reference(self, secret, env_var: str, scope: str) -> None:
+        """Make the on-disk reference json agree with the declaration.
+
+        The sidecar exists so a receiver of a shared project learns which secrets
+        it needs (docs/secret_share.md) — it is a SHARING artifact. A private
+        declaration has no receiver, so writing one only puts committable files
+        in the author's tree for a credential nobody else will ever see.
+
+        Write-if-shared alone is not enough, which is why this SYNCS rather than
+        writes: re-declaring a previously shared env var as private would leave
+        the old sidecar sitting in git, still indexed, still asserting a shared
+        declaration for a secret that is now private. The file is a function of
+        the current declaration, never of its history.
+        """
+        sodot_dir = self._assets_sodot_dir()
+        if sodot_dir is None:
+            return
+        path = sodot_dir / f"{env_var}.json"
+        try:
+            if scope == "shared":
+                secret.to_json_asset(path)
+            else:
+                path.unlink(missing_ok=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("[secret] could not sync reference asset for %s: %s", env_var, e)
+
+    @action.post(action_name="add-secret-pointers")
+    async def add_secret_pointers(self, pointers: list[dict[str, Any]] | None = None) -> "ApiResponse":
+        """Declare SEVERAL secrets in one act, saving the project ONCE.
+
+        A credential bundles env vars (gmail is an address and an app password),
+        so adding one is inherently a multi-declaration act. Calling
+        ``add-secret-pointer`` N times does NOT work: each call mutates this
+        project's context buckets and then saves the whole entity, so two calls
+        racing — or one issued from a copy loaded before the other landed —
+        writes back a bucket missing the other's link. The declarations survive
+        as rows while the project forgets them, which reads as "the connection I
+        just added went away".
+
+        One mint loop, one save, so there is no window to lose a link in.
+        """
         from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
             SecretOrigin,
             is_valid_secret_origin_env_var,
@@ -1399,62 +1471,54 @@ class Project(Entity):
         )
         from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
-        name = (name or "").strip()
-        env_var = (env_var or "").strip()
-        scope = (scope or "private").strip().lower()
-        if not env_var:
-            return ApiFailResponse(message="env_var is required")
-        if not is_valid_secret_origin_env_var(env_var):
-            return ApiFailResponse(message="env_var must be a valid environment variable name")
-        if scope not in ("private", "shared"):
-            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+        entries = pointers or []
+        if not entries:
+            return ApiFailResponse(message="pointers is required")
 
-        # Build the value-free locator from an explicit ``locator`` dict, or the
-        # convenience kind + sod_name/secret_id params (back-compat).
-        raw_locator = dict(locator or {})
-        if not raw_locator:
-            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
-            raw_locator = {"kind": resolved_kind}
-            if resolved_kind == "local":
-                raw_locator["sod_name"] = (sod_name or name or "").strip()
-            elif resolved_kind == "flowpad-hub":
-                raw_locator["secret_id"] = (secret_id or "").strip()
-        try:
-            loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
-            get_secret_origin_driver(loc.kind)  # ensure a driver is registered for this kind
-        except Exception as e:  # noqa: BLE001
-            return ApiFailResponse(message=f"Invalid secret locator: {e}")
-
-        if loc.kind == "local" and not getattr(loc, "sod_name", ""):
-            return ApiFailResponse(message="sod_name is required for local secret pointers")
-        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or env_var
-
-        # No uniqueness CHECK is needed any more: the id is (project_id, env_var),
-        # so re-declaring an env var mints the same row and updates it in place.
-        # The name is the key — pointing it at a different provider is an edit,
-        # not a second secret.
-        secret = await SecretOrigin.mint_for(
-            project_id=str(self.id),
-            env_var=env_var,
-            locator=loc,
-            name=name,
-            sod_store=sod_store,
-            description=description,
-        )
-        data = secret.context_data(scope=scope)
-        if scope == "shared":
-            self.add_shared_context_entities(secret.typeid, data=data)
-        else:
-            self.add_private_context_entities(secret.typeid, data=data)
-
-        # Write the value-free reference json so it's indexed like any asset and
-        # travels with the project's git-backed folder (see docs/secret_share.md).
-        sodot_dir = self._assets_sodot_dir()
-        if sodot_dir is not None:
+        minted: list[tuple[Any, str, str]] = []
+        for entry in entries:
+            env_var = str(entry.get("env_var") or "").strip()
+            if not is_valid_secret_origin_env_var(env_var):
+                return ApiFailResponse(message=f"invalid env_var: {env_var!r}")
+            scope = (str(entry.get("scope") or "private")).strip().lower()
+            if scope not in ("private", "shared"):
+                return ApiFailResponse(message="scope must be 'private' or 'shared'")
+            raw_locator = dict(entry.get("locator") or {})
+            if not raw_locator:
+                raw_locator = {"kind": normalize_secret_origin_kind(entry.get("kind") or "local")}
             try:
-                secret.to_json_asset(sodot_dir / f"{env_var}.json")
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
+                get_secret_origin_driver(loc.kind)
             except Exception as e:  # noqa: BLE001
-                log.warning("[secret] could not write reference asset for %s: %s", name, e)
+                return ApiFailResponse(message=f"Invalid secret locator for {env_var}: {e}")
+            # A `local` pointer with no sod_name names nothing — it would mint a
+            # declaration no driver can ever resolve.
+            if loc.kind == "local" and not getattr(loc, "sod_name", ""):
+                return ApiFailResponse(message=f"sod_name is required for local secret pointers ({env_var})")
+            secret = await SecretOrigin.mint_for(
+                project_id=str(self.id),
+                env_var=env_var,
+                locator=loc,
+                # The coordinate is the better name when one was not given: it is
+                # what the author actually typed.
+                name=(
+                    str(entry.get("name") or "").strip()
+                    or getattr(loc, "sod_name", "")
+                    or getattr(loc, "secret_id", "")
+                    or env_var
+                ),
+                sod_store=str(entry.get("sod_store") or ""),
+                description=entry.get("description"),
+            )
+            minted.append((secret, env_var, scope))
+
+        for secret, env_var, scope in minted:
+            data = secret.context_data(scope=scope)
+            if scope == "shared":
+                self.add_shared_context_entities(secret.typeid, data=data)
+            else:
+                self.add_private_context_entities(secret.typeid, data=data)
+            self._sync_secret_reference(secret, env_var, scope)
 
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
@@ -1523,6 +1587,7 @@ class Project(Entity):
                 continue
             env_var = entry.get("env_var") or ""
             found_in = await self._where_is_secret_value(env_var, loc, driver, env_local_names, sodot_names)
+            resolvable = await self._can_resolve_declaration(loc, driver, found_in)
             hint = driver.setup_hint(loc)
             rows.append(
                 {
@@ -1533,11 +1598,29 @@ class Project(Entity):
                     "scope": entry.get("scope"),
                     "description": entry.get("description") or "",
                     "sod_store": entry.get("sod_store") or hint.get("sod_store"),
-                    "status": "available" if found_in else "missing",
+                    # For a declaration that names a LOCAL store, its own driver
+                    # is the last word — see ``_can_resolve_declaration``.
+                    # ``resolve_project_secrets`` resolves through that driver, so
+                    # a value in the OTHER local store is not one any worker will
+                    # be handed. Answering from the union reported an OpenRouter
+                    # key "Connected" off an ``OPENROUTER_API_KEY`` in
+                    # ``.env.local`` while the declaration pointed at the
+                    # encrypted store, where there was nothing — green in
+                    # Connections, "no key is stored" on LLM sources, and no key
+                    # in the process either.
+                    "status": "available" if resolvable else "missing",
+                    # Kept as the UNION, and kept deliberately: "the value is in
+                    # .env.local, but this credential reads the encrypted store"
+                    # is the sentence that tells someone what to do next, and it
+                    # needs both halves.
                     "found_in": found_in,
                     # The receiver-facing warning: a declaration this machine
-                    # cannot satisfy. Computed, never stored.
-                    "warning": None if found_in else "missing-value",
+                    # cannot satisfy. Computed, never stored. ``wrong-store``
+                    # separates "there is no value anywhere" from "there is one,
+                    # somewhere this declaration does not read".
+                    "warning": None
+                    if resolvable
+                    else ("wrong-store" if found_in else "missing-value"),
                     "setup_hint": hint,
                 }
             )
@@ -1563,6 +1646,29 @@ class Project(Entity):
         except Exception:  # noqa: BLE001
             sodot = set()
         return env_local, sodot
+
+    #: The declarations whose own driver is the LAST word on availability.
+    #: Both name a local store directly, so "the value is in the other local
+    #: store" says nothing about them — ``resolve_project_secrets`` resolves
+    #: through the named driver and would hand a worker nothing. Every other
+    #: kind is an external slot that cannot resolve locally AT ALL yet
+    #: (``ProviderStubDriver.can_resolve`` is ``False``), and for those the
+    #: local-store union below is the stopgap that keeps a usable secret from
+    #: reporting missing.
+    _AUTHORITATIVE_LOCAL_KINDS: ClassVar[frozenset[str]] = frozenset({"local", "env-local"})
+
+    async def _can_resolve_declaration(self, loc, driver, found_in: str | None) -> bool:
+        """Can THIS declaration be satisfied on this machine?
+
+        The question a status must answer, because it is the question the spawn
+        path asks. Existence only — no value is fetched.
+        """
+        try:
+            if await driver.can_resolve(loc, project=self):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        return bool(found_in) and loc.kind not in self._AUTHORITATIVE_LOCAL_KINDS
 
     async def _where_is_secret_value(
         self, env_var: str, loc, driver, env_local: set[str], sodot: set[str]

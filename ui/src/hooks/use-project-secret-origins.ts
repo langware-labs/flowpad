@@ -70,6 +70,17 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     [refreshStatus],
   );
 
+  /** Declare several at once — one project save, so no link can be lost. */
+  const addMany = useCallback(
+    async (entries: Parameters<Project['addSecretPointers']>[0]) => {
+      const p = projectRef.current;
+      if (!p || !entries.length) return;
+      await p.addSecretPointers(entries);
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
   /** Setup wizard: store a provided value in the secret's designated SOD store. */
   const provide = useCallback(
     async (params: { typeid?: string; envVar?: string; value: string }) => {
@@ -91,5 +102,5 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     [refreshStatus],
   );
 
-  return { secretOrigins, status, statusReady, add, provide, remove, refreshStatus } as const;
+  return { secretOrigins, status, statusReady, add, addMany, provide, remove, refreshStatus } as const;
 }

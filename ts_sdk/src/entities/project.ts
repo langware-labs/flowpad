@@ -621,6 +621,41 @@ export class Project extends APIEntity<Project> {
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
 
+  /**
+   * Declare several secrets in one act.
+   *
+   * A credential bundles env vars, so adding one is inherently plural. Calling
+   * `addSecretPointer` per variable does NOT work: each call mutates the
+   * project's context buckets and saves the whole entity, so the second write
+   * can land from a copy that predates the first and silently drop its link —
+   * the declarations survive as rows while the project forgets them. One call,
+   * one save.
+   */
+  async addSecretPointers(
+    pointers: Array<{
+      name?: string;
+      envVar: string;
+      locator: SecretOriginLocator;
+      scope?: SecretPointerScope;
+      sodStore?: SodStore;
+      description?: string;
+    }>,
+  ): Promise<void> {
+    const actionInfo = new ActionInfo('add-secret-pointers', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      pointers: pointers.map((p) => ({
+        name: p.name ?? p.envVar,
+        env_var: p.envVar,
+        scope: p.scope ?? 'private',
+        kind: p.locator.kind,
+        locator: p.locator,
+        ...(p.sodStore ? { sod_store: p.sodStore } : {}),
+        ...(p.description !== undefined ? { description: p.description } : {}),
+      })),
+    };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
   async removeSecretPointer(typeid: string): Promise<void> {
     this.adoptSecretOrigins(await this.post('remove-secret-pointer', { typeid }));
   }

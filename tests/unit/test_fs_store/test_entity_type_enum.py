@@ -144,6 +144,7 @@ EXPECTED = {
     "RUN": "run",
     "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
+    "RAG_INDEX": "rag_index",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
     "FILE": "file",
@@ -195,6 +196,7 @@ EXPECTED = {
     # source, its per-stream cursor, and the records it produces — additive
     # members, no existing value changed.
     "DATA_SOURCE": "data_source", "DATA_SOURCE_CURSOR": "data_source_cursor",
+    "CREDENTIAL_SPEC": "credential_spec",
     "DATA_SOURCE_SPEC": "data_source_spec",
     "SOURCE_ITEM": "source_item",
     # The inbox projection's thread grouping — additive member, no existing

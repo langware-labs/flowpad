@@ -112,6 +112,10 @@ Consequences worth stating:
 - `kind` / `locator` / `sod_store` demote to **declaration detail**: where to
   fetch, where to cache. They may change freely.
 - The sidecar is `assets/sodot/<ENV_VAR>.json` — the filename *is* the identity.
+  It is written for a **shared** declaration only: the file exists so a receiver
+  learns which secrets a project needs, and a private declaration has no
+  receiver. `Project._sync_secret_reference` keeps the file a function of the
+  current scope, removing it if a shared declaration is re-declared private.
 
 **No migration.** Rows and sidecars minted under the old locator-derived scheme
 are never matched again; they linger inert and are left on disk untouched. A
@@ -150,6 +154,11 @@ folders. The per-entry sidecar stores **value-free** metadata only —
 `{name, env_var, kind, locator, scope, typeid}` (`SecretOrigin.context_data`).
 
 - **`add-secret-pointer`** (`name`, `env_var`, `scope`, `kind`, and
+- `add-secret-pointers` — the PLURAL form, and what the Connections surface
+  calls. A credential bundles env vars, so adding one is inherently several
+  declarations; each singular call saves the whole project, so N of them give N
+  windows in which a write from a stale copy drops an earlier link. One mint
+  loop, one save. `add-secret-pointer` is now a back-compat shim over it.
   `sod_name`/`secret_id`/`locator`): validates `env_var`, mints the
   `SecretOrigin` and links it into the private or shared bucket. Returns the
   project `model_dump`. There is **no** uniqueness check to perform — the id is
