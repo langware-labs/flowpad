@@ -15,6 +15,7 @@ interface IconWithBadgeProps {
   /** Extra classes for the base only (e.g. instance-state color). */
   baseClassName?: string;
   'aria-label'?: string;
+  'data-testid'?: string;
 }
 
 /**

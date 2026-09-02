@@ -228,7 +228,7 @@ async def test_next_poll_is_scheduled_even_when_a_stream_failed():
 async def test_a_parked_segment_does_not_park_the_source(monkeypatch):
     """One `config_error` stream is parked on ITS row; its siblings keep polling.
 
-    `may_poll` refuses a `config_error` SOURCE, so rolling one bad channel up
+    `poll_refusal` refuses a `config_error` SOURCE, so rolling one bad channel up
     to the source used to stop every healthy sibling — the opposite of the
     per-stream isolation this module promises.
     """
@@ -248,7 +248,7 @@ async def test_a_parked_segment_does_not_park_the_source(monkeypatch):
     assert refreshed.health == SourceHealth.OK.value, (
         f"one parked segment parked the whole source ({refreshed.health})"
     )
-    assert refreshed.may_poll(), "the healthy sibling must keep polling"
+    assert refreshed.poll_refusal() == "", "the healthy sibling must keep polling"
     assert refreshed.error_code == "not_found", "the card must still name the parked segment"
 
     # Second run: the parked stream is not a candidate; only the sibling runs.

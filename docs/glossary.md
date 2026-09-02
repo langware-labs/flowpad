@@ -172,6 +172,20 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 | asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `MicroApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
 | `micro_app` (family `webapp`) | ours | The delivery plane of an app, and a REPO folder asset when the app IS a folder on disk: `webapp.json` declares `kind` / `build`, `asset_ref` is the app folder, and `serving_root()` is `<asset_ref>/<build>` — we start the app folder, we serve the build. A row registered by `flow app serve` stays DB-only (`location_type: Artifact`, no `asset_ref`). |
 
+## Help desk (2026-09-02)
+
+`Helpdesk` is one word for two halves that are configured separately and either
+of which may be absent. Say which one you mean.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **ticket queue** | a **hub** Project, named by `desk_project_id` in the manifest | Where a support request is delivered (`start_guest_conversation`, `kind=helpdesk`). Hub-backed; nothing local. |
+| **portal** | a **git repo** cloned locally | The help content: guides, `.flow/customization` branding, optionally a `support` SubAgent. Local; needs no hub. |
+| `Helpdesk` (the entity) | `flow_sdk/builtin/helpdesk.py` | The portal folder as an indexed asset. Fields read THROUGH to `helpdesk.json`, so a `git pull` takes effect with no re-index. |
+| **adopt** (the verb) | `Project.adopt_helpdesk_from_git`, `resolve_adopted_helpdesk` | A project takes on a desk by attaching its repo as a context folder. Not "create" — `HelpdeskTypeInfo` is `creatable=False`; a desk is authored in a repo, never in the app. The user-facing tile still reads **Add help desk**, because "adopt" is our word for the mechanism, not theirs for the act. |
+| **serving desk** vs. **a desk that is present** | `resolve_adopted_helpdesk` | Resolution stops at the FIRST desk in `direct_context_roots()` order. A second desk under a later root is present but serves nothing — the `shadowed` outcome. Never conflate the two. |
+| **portal slot** | `helpdesk_project_dir(desk_id)` | `<workspace>/.flow/helpdesk/project-<id>` — the app-managed checkout for the desk the HUB advertises. Distinct from an adopted desk's context folder, which lives in the visible workspace. |
+
 ## Identity carriers (2026-08-30)
 
 | Ours | One place | Notes |

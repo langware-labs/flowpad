@@ -69,6 +69,13 @@ function imageIcon(src: string): LucideIcon {
  * type render identically (previously this returned `File` while iconForType
  * returned `FileText`, giving two different "unknown" glyphs).
  */
+/** Names this module can resolve to a component beyond lucide's own exports —
+ *  the bespoke brand marks registered above. `icon-value.isLucideName` folds
+ *  this in so there is ONE "can this string render" predicate rather than two. */
+export function isCustomIconName(iconName: string | null | undefined): boolean {
+  return !!iconName && iconName in CUSTOM_ICONS;
+}
+
 export function lucideByName(iconName: string | null | undefined): LucideIcon {
   if (!iconName) return FileText;
   const custom = CUSTOM_ICONS[iconName];

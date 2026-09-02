@@ -45,15 +45,44 @@ async def test_no_token_is_a_definite_failure():
     assert "No token" in result.detail
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", ["not-json", "[]"])
+async def test_success_status_with_invalid_body_is_never_a_pass(monkeypatch, body):
+    import httpx
+
+    def handler(_request):
+        return httpx.Response(200, text=body)
+
+    real_client = httpx.AsyncClient
+
+    def client(*_args, **_kwargs):
+        return real_client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+
+    result = await run_probe("github", "token")
+
+    assert result.ok is None
+    assert result.code == "invalid_response"
+
+
 def test_result_serializes_the_three_states_intact():
     # `ok` must survive as a JSON null, not collapse to false — the client
     # branches on all three.
-    assert ProbeResult(ok=None, detail="d").as_data() == {"ok": None, "identity": None, "detail": "d"}
+    assert ProbeResult(ok=None, detail="d").as_data() == {
+        "ok": None,
+        "identity": None,
+        "account_key": None,
+        "detail": "d",
+        "code": None,
+    }
     assert ProbeResult(ok=False).as_data()["ok"] is False
     assert ProbeResult(ok=True, identity="serans1").as_data() == {
         "ok": True,
         "identity": "serans1",
+        "account_key": None,
         "detail": None,
+        "code": None,
     }
 
 
@@ -62,16 +91,16 @@ def test_slack_reads_its_error_out_of_a_200_body():
     dead token healthy."""
     probe = get_probe("slack")
 
-    assert probe.body_error({"ok": False, "error": "invalid_auth"}) == "invalid_auth"
-    assert probe.body_error({"ok": True, "user": "eran"}) is None
+    assert probe.method == "POST"
+    assert probe.success_field == "ok"
+    assert probe.error_field == "error"
 
 
-def test_only_the_unverified_probe_is_marked_as_such():
-    """GitHub and Slack were exercised against their live APIs; Anthropic's could
-    not be, for want of a claude.ai OAuth token."""
-    assert get_probe("anthropic").unverified is True
-    assert get_probe("github").unverified is False
-    assert get_probe("slack").unverified is False
+def test_every_probe_is_strict_and_uses_the_declared_provider_endpoint():
+    assert get_probe("github").url == "https://api.github.com/user"
+    assert get_probe("slack").url == "https://slack.com/api/auth.test"
+    assert get_probe("google").url == "https://www.googleapis.com/drive/v3/about"
+    assert get_probe("anthropic").url == "https://api.anthropic.com/v1/organizations/me"
 
 
 def test_the_bearer_is_extracted_from_every_stored_credential_shape():

@@ -17,6 +17,7 @@ _startup_times = {"module_import_start": time.time()}
 
 import logging
 
+import psutil
 import uvicorn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
@@ -122,6 +123,8 @@ async def _on_server_startup():
         {
             "port": settings.port,
             "server_pid": os.getpid(),
+            "server_create_time": psutil.Process(os.getpid()).create_time(),
+            "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
             "webhook_path": "/api/v1/webhook/listen",
             "health_path": "/api/v1/health/status",
         }
@@ -510,7 +513,16 @@ async def _shutdown_extras():
         pass
 
     print("Shutting down minihub server...")
-    clear_server_info()
+    create_time = None
+    try:
+        create_time = psutil.Process(os.getpid()).create_time()
+    except Exception:
+        pass
+    clear_server_info(
+        expected_pid=os.getpid(),
+        expected_create_time=create_time,
+        expected_generation=os.environ.get("FLOWPAD_SERVICE_GENERATION"),
+    )
     print("Shutdown complete.")
 
 

@@ -57,8 +57,16 @@ class EmailInboxDriver(Protocol):
         """Allocate this agent's mailbox, or return the one it already has."""
         ...
 
+    async def enable_inbox(self, agent_id: str) -> dict:
+        """Activate this agent's allocation, provisioning it when absent."""
+        ...
+
+    async def disable_inbox(self, agent_id: str) -> dict:
+        """Pause this agent's allocation without releasing its address."""
+        ...
+
     async def get_inbox(self, agent_id: str) -> Optional[dict]:
-        """The agent's active mailbox descriptor, or None when it has none."""
+        """The agent's non-deleted mailbox descriptor, or None when unallocated."""
         ...
 
     async def delete_inbox(self, agent_id: str) -> bool:

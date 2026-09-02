@@ -327,6 +327,8 @@ class FlowpadServerInfo(BaseModel):
     server_pid: int | None = None
     monitor_pid: int | None = None
     launch_iso_time: str | None = None  # ISO 8601
+    server_create_time: float | None = None
+    generation: str | None = None
 
 
 def load_server_info() -> dict:
@@ -381,7 +383,12 @@ def set_server_info(data: dict) -> Path:
     return save_server_info(existing)
 
 
-def clear_server_info() -> None:
+def clear_server_info(
+    *,
+    expected_pid: int | None = None,
+    expected_create_time: float | None = None,
+    expected_generation: str | None = None,
+) -> None:
     """Delete the active server.json — this server is no longer running.
 
     Every key in the file is runtime-only (port, pids, launch time), and a
@@ -390,6 +397,16 @@ def clear_server_info() -> None:
     re-routes their traffic to whichever server later recycles the port.
     """
     try:
+        if expected_pid is not None or expected_create_time is not None or expected_generation is not None:
+            current = load_server_info()
+            if expected_pid is not None and current.get("server_pid") != expected_pid:
+                return
+            if expected_generation is not None and current.get("generation") != expected_generation:
+                return
+            if expected_create_time is not None:
+                actual = current.get("server_create_time")
+                if not isinstance(actual, (int, float)) or abs(actual - expected_create_time) > 1.0:
+                    return
         get_port_file_path().unlink(missing_ok=True)
     except Exception:
         pass

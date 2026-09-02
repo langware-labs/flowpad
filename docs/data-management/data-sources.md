@@ -140,7 +140,7 @@ for operators, never read back as a floor.
 ### Declared traits
 
 Capabilities are declared on the driver class; the optional hooks (`verify`,
-`channel_for`, `origin_id_for`, `segment_budget`, `sends`) default to `None`/`False`
+`channel_for`, `origin_id_for`, `segment_budget`, `sends`, reply lookup) default to `None`/`False`
 on the `IngestDriver` base, so the engine reads them directly — no `getattr` probes.
 
 | Trait | Default | Meaning |
@@ -156,8 +156,10 @@ on the `IngestDriver` base, so the engine reads them directly — no `getattr` p
 | `verify()` | — | Is the setup finished? Distinct from health, which is about the last run |
 | `send()` | — | Can this driver push a message back to its channel? |
 | `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source instead of minting a twin. Telegram declares `bot_token` |
+| `find_reply()` | — | Optional targeted reply lookup for transports such as Gmail that can query provider headers without backfilling unrelated mail |
+| `wait_for_reply()` | — | Optional session-level reply wait for transports such as Gmail that can correlate a response without repeatedly backfilling the mailbox |
 
-Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`,
+Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`, `gmail`,
 `telegram`, `cloud_email`, `folder`, `git`, `gdrive` — registered by importing
 `ingest/drivers/__init__.py`. Authored sources are registered from rows, not
 imports: `spec_registry.refresh_spec_drivers()` sweeps `DataSourceSpec` rows
@@ -169,6 +171,13 @@ driver is refused and logged — builtins always win.
 The registry is a `KindRegistry` keyed on `provider`; a miss answers `None`,
 and `sync_source` records that as the `unknown_provider` config error rather
 than crashing the poller.
+
+Callers send through `DataSource.send(MessageSpec)`, which validates the common
+message shape before delegating to the driver's `send()` hook. For transports
+with reply headers, `DataSource.expect_reply(outcome)` returns when a received
+item references the sent provider id; a driver may use its targeted lookup or
+session-level wait instead of a mailbox backfill. The caller owns the outer
+deadline.
 
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields
@@ -201,8 +210,9 @@ with a dead credential parks every sibling on the next tick, even though the
 cycle that discovered it finished them. `segment_count` is stamped in the same
 roll-up, which is why a source that fails before enumerating reads 0.
 
-`may_poll()` is the ONE gate — `status == active and health != config_error` —
-asked by `is_due`, `request_poll` and the fast lane alike.
+`poll_refusal()` is the ONE gate — an empty reason means the source is active
+and not in `config_error`; otherwise the returned sentence says exactly why it
+cannot run. `is_due`, `request_poll` and the fast lane all ask it.
 
 **Lifecycle.** `NEW` is transient: `DataSource.save` resolves it on the way
 in — to `SETUP` (with a default `setup_detail`) when the driver declares

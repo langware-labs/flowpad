@@ -1,4 +1,4 @@
-import type { Bookmark } from '@sdk';
+import { AUTO_BOOKMARK_SOURCE, type Bookmark } from '@sdk';
 import { isAllScope, projectIdInScope, type ScopeFilter } from '@src/lib/scope-filter';
 
 /**
@@ -13,11 +13,19 @@ import { isAllScope, projectIdInScope, type ScopeFilter } from '@src/lib/scope-f
  * `defaultScopeFilter` makes project scope the default whenever one is. That
  * is what left the bookmarks slider rendering an empty desktop.
  *
+ * The `flow show` AUTO tree is the one exception, and it is not personal: it
+ * is machine-built, and `mint_auto_favorite` keys its find-or-create on
+ * `project_id`, so each project gets a root of its OWN. Reading an unscoped
+ * auto row as global therefore disagreed with the writer — a tree written
+ * before stamping existed stayed visible in every project, next to the root
+ * that project had since minted for itself, and the favorites desktop showed
+ * two folders both called "Auto". Auto rows scope like the content they are.
+ *
  * A bookmark that DOES carry a `project_id` still filters normally, so a
  * project-stamped favorite stays out of an unrelated project's scope.
  */
 export function bookmarkInScope(b: Bookmark, scope: ScopeFilter, currentProjectId: string | null): boolean {
-  if (!b.project_id) return true;
+  if (!b.project_id && b.source !== AUTO_BOOKMARK_SOURCE) return true;
   return projectIdInScope(b.project_id, scope, currentProjectId);
 }
 

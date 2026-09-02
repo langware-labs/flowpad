@@ -170,7 +170,7 @@ async def test_a_change_event_and_a_poll_on_one_source_run_sync_once(monkeypatch
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_change_event_does_not_wake_a_disabled_source(monkeypatch):
     """Disabled is a person's decision, and a provider nudge must not override
-    it. The gate is deliberately narrower than `may_poll`: a source still in
+    it. The gate is deliberately narrower than `poll_refusal`: a source still in
     SETUP does reconcile from a bare event (a git watch is exactly that)."""
     import flow_sdk.ingest.sync as sync_mod
     from types import SimpleNamespace

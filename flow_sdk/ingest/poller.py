@@ -64,7 +64,7 @@ _attention_tasks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.
 def note_attention(source_id: str, cadence_seconds: int) -> None:
     """Arm or renew the fast lane for one source; start the loop on first use.
 
-    Called by ``request_poll`` after its own gates (``may_poll``), so the
+    Called by ``request_poll`` after its own gates (``poll_refusal``), so the
     lane never needs to re-litigate whether the source may poll at all —
     it still re-checks each round, because a source can park mid-lease.
     """
@@ -94,7 +94,7 @@ async def _attention_loop() -> None:
                 continue
             lease["next"] = now + lease["cadence"]
             source = await DataSource.get_by_id(source_id)
-            if source is None or not source.may_poll():
+            if source is None or source.poll_refusal():
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
             if not _claim(source_id):
@@ -170,7 +170,7 @@ async def poll_source(source: DataSource, now: Optional[datetime] = None) -> boo
     change event, a CLI — so nothing polls a source the heartbeat is already
     polling: two `sync_source` runs on one source race each other's cursor
     writes. Concurrency only: whether polling this source is ALLOWED
-    (`may_poll`) is the dispatching caller's question, since a local listen
+    (`poll_refusal`) is the dispatching caller's question, since a local listen
     loop legitimately drives a source the heartbeat would not. A source already in flight is skipped, not queued; the running
     poll (or the next tick) picks the change up, which is all a change event
     ever promised (`change_event.py`: a lost event is latency, never loss).

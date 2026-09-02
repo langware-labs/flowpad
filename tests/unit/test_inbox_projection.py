@@ -146,6 +146,44 @@ class TestConcurrentPlacement:
         assert len(rows) == 1, f"one item must place one message, got {len(rows)}"
         assert {r[0] for r in results} == {str(rows[0].id)}, "both lanes must converge on the same id"
 
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_two_concurrent_projections_announce_once(self, monkeypatch):
+        import asyncio
+        import uuid
+
+        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.source_item import SourceItem
+        from flow_sdk.inbox.projection import project_source_item
+
+        source = DataSource(
+            name="race", provider="telegram", channel="telegram",
+            account_key=f"@bot-{uuid.uuid4().hex[:8]}",
+        )
+        await source.save()
+        item = SourceItem(
+            kind="content.message.chat", provider="telegram",
+            data_source_id=str(source.id), segment_key="updates",
+            external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
+            name="race", body="hello race",
+            author_external_id="7", author_display="Someone",
+        )
+        await item.save()
+        projected = []
+        monkeypatch.setattr(
+            "flow_sdk.inbox.inbox_on_tag.emit_projected_tag",
+            lambda projected_item: projected.append(str(projected_item.id)),
+        )
+
+        await asyncio.gather(
+            project_source_item(item, source=source, known_unplaced=True,
+                                notify=False, recount=False),
+            project_source_item(item, source=source, known_unplaced=True,
+                                notify=False, recount=False),
+        )
+
+        assert projected == [str(item.id)]
+
 
 class TestSenderMapping:
     """`_sender_for` decides whether a message counts as unread.
