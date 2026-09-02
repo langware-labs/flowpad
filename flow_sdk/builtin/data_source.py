@@ -580,6 +580,7 @@ class DataSource(Entity):
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
         await self._coerce_config()
+        await self._coerce_reflect()
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe
             # keys on it (Verify on a fresh source probed nothing) and the UI
@@ -590,7 +591,7 @@ class DataSource(Entity):
             # IS its provider name (agentmail). A driver that answers empty
             # (agent transport with no connector yet) stamps nothing.
             driver = self._driver()
-            if driver is not None:
+            if driver is not None and driver.channel_for is not None:
                 try:
                     stamped = str(driver.channel_for(self) or "").strip()
                 except Exception:  # noqa: BLE001 — a probe must never fail a save
@@ -622,6 +623,40 @@ class DataSource(Entity):
             return
         if spec is not None:
             self.config = spec.coerce_config(self.config)
+
+    async def _coerce_reflect(self) -> None:
+        """``reflect`` must be a mode the spec offers, or the source ingests
+        nothing: the folder driver returns file refs, and with the row-level
+        default ``record`` there is no reflector to place them — the poll
+        parks on ``reflect_mode`` (``sync.py``) rather than silently dropping
+        them, but the API caller who never sent ``reflect`` did not ask for a
+        parked source. The dialog can only pick from the spec's list; this
+        applies the same list to the API and an agent, and picks the head
+        (the spec's declared default) when the value is not on it.
+
+        Looked up at CREATE, plus on a tree-backed driver still sitting on
+        ``record`` — that is the one combination that cannot be right, so a
+        row minted before this rule heals on its next save, while a correct
+        source never pays a spec read on the poller's per-tick re-save.
+        """
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        if self.exist_in_db and not stuck:
+            return
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            spec = await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return
+        modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
+        if not modes or self.reflect in modes:
+            return
+        logger.warning(
+            "[data_source] %s: reflect=%r is not offered by the %r spec (%s); using %r",
+            self.id, self.reflect, self.provider, ", ".join(modes), modes[0],
+        )
+        self.reflect = modes[0]
 
     def _stamp_origin(self) -> None:
         """``origin`` follows ``config`` on every save — the driver derives it

@@ -221,3 +221,98 @@ async def test_next_poll_is_scheduled_even_when_a_stream_failed():
     assert refreshed.next_poll_at is not None, "a failed run must still reschedule"
     assert refreshed.is_due(NOW) is False
     assert refreshed.is_due(NOW + timedelta(seconds=121)) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_parked_segment_does_not_park_the_source(monkeypatch):
+    """One `config_error` stream is parked on ITS row; its siblings keep polling.
+
+    `may_poll` refuses a `config_error` SOURCE, so rolling one bad channel up
+    to the source used to stop every healthy sibling — the opposite of the
+    per-stream isolation this module promises.
+    """
+    src = await _source()
+    good, parked = "https://good.test/f", "https://gone.test/f"
+    driver = _FakeDriver(
+        [good, parked],
+        {
+            good: FetchResult(items=[], next_state={"n": "1"}, high_water="1"),
+            parked: SourceError.config("not_found", "HTTP 404"),
+        },
+    )
+    register_driver(driver)
+
+    await sync_source(src, now=NOW, budget=10)
+    refreshed = await DataSource.get_one({"id": src.id})
+    assert refreshed.health == SourceHealth.OK.value, (
+        f"one parked segment parked the whole source ({refreshed.health})"
+    )
+    assert refreshed.may_poll(), "the healthy sibling must keep polling"
+    assert refreshed.error_code == "not_found", "the card must still name the parked segment"
+
+    # Second run: the parked stream is not a candidate; only the sibling runs.
+    driver.calls.clear()
+    await sync_source(refreshed, now=NOW + timedelta(minutes=1), budget=10)
+    assert driver.calls == [good], f"a parked stream was re-polled: {driver.calls}"
+    parked_cursor = await DataSourceCursor.ensure_for(src.id, parked)
+    assert parked_cursor.health == SourceHealth.CONFIG_ERROR.value
+
+    # When NOTHING is left to run, the source itself is parked.
+    register_driver(_FakeDriver([parked], {parked: SourceError.config("not_found", "HTTP 404")}))
+    only = await _source()
+    await sync_source(only, now=NOW, budget=10)
+    assert (await DataSource.get_one({"id": only.id})).health == SourceHealth.CONFIG_ERROR.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
+    """A driver that returns file refs has no record destination; `record`
+    used to log a warning, drop the files, and advance the cursor past them."""
+    src = await _source(reflect="record")
+    key = "root"
+    register_driver(
+        _FakeDriver([key], {key: FetchResult(refs=["a.md"], next_state={"seen": "1"}, high_water="1")})
+    )
+
+    report = await sync_source(src, now=NOW)
+    assert report.outcomes == []
+
+    cursor = await DataSourceCursor.ensure_for(src.id, key)
+    assert cursor.health == SourceHealth.CONFIG_ERROR.value
+    assert cursor.error_code == "reflect_mode"
+    assert cursor.state == {} and cursor.high_water is None, "the cursor advanced past dropped files"
+    refreshed = await DataSource.get_one({"id": src.id})
+    assert refreshed.health == SourceHealth.CONFIG_ERROR.value
+    assert refreshed.error_code == "reflect_mode"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypatch):
+    """`ingest_items` raising used to escape `sync_source` entirely: no health,
+    no roll-up, and the poller logging it as a bug."""
+    import flow_sdk.ingest.sync as sync_mod
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(sync_mod, "ingest_items", _boom)
+    src = await _source(poll_interval_seconds=120)
+    key = "https://w.test/f"
+    register_driver(
+        _FakeDriver([key], {key: FetchResult(items=[_item(src.id, key, 1)], next_state={"n": "1"}, high_water="1")})
+    )
+
+    report = await sync_source(src, now=NOW)
+    assert report.outcomes == []
+
+    cursor = await DataSourceCursor.ensure_for(src.id, key)
+    assert cursor.health == SourceHealth.TRANSIENT_ERROR.value
+    assert cursor.error_code == "RuntimeError"
+    assert cursor.consecutive_failures == 1
+    assert cursor.state == {} and cursor.high_water is None, "records were not committed; the cursor must not move"
+    refreshed = await DataSource.get_one({"id": src.id})
+    assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "roll-up must still run"
+    assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))

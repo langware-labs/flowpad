@@ -81,17 +81,23 @@ class Folder(Entity):
 
     @staticmethod
     async def detect_origin(path: str) -> FSOrigin:
-        """Classify a local path into an origin: a directory inside a git repo →
-        ``GitOrigin`` (transportable, whole-repo clone + rel_path); otherwise a
-        plain ``LocalOrigin``. Runs a blocking git probe — async only."""
-        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+        """Classify a local path into an origin: the first registered driver
+        that recognises it wins (a directory inside a git repo → ``GitOrigin``,
+        transportable, whole-repo clone + rel_path); otherwise a plain
+        ``LocalOrigin``. Asks the REGISTRY, not ``"git"`` by name, so a new
+        origin kind is detected the moment it registers. Runs a blocking git
+        probe — async only."""
+        from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS  # noqa: PLC0415
 
         canonical = canonical_posix_path(path)
-        try:
-            detected = await get_origin_driver("git").detect(canonical)
-        except Exception:
-            detected = None
-        return detected if detected is not None else LocalOrigin(base=canonical)
+        for _kind, driver in ORIGIN_DRIVERS.items():
+            try:
+                detected = await driver.detect(canonical)
+            except Exception:  # noqa: BLE001 — one driver's probe must not veto the rest
+                detected = None
+            if detected is not None:
+                return detected
+        return LocalOrigin(base=canonical)
 
     @staticmethod
     def derive_name(origin: FSOrigin, local_path: Optional[str] = None) -> Optional[str]:

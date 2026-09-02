@@ -26,3 +26,18 @@ async def test_a_list_stays_a_list_and_an_unknown_provider_changes_nothing():
     src = make_data_source(provider="nobody_registered_this", config={"feed_urls": "http://a/x"})
     await src.save(notify=False)
     assert src.config["feed_urls"] == "http://a/x"
+
+
+async def test_reflect_off_the_spec_list_falls_to_the_spec_default_on_create():
+    """A folder source created through the API with the row default `record`
+    has no reflector for the refs its driver returns; the spec's head is what
+    the dialog would have picked."""
+    await DataSourceSpec(name="tree_provider", title="Tree", reflect=["none", "copy"]).save(notify=False)
+    src = make_data_source(provider="tree_provider", config={"root": "/tmp/x"})
+    assert src.reflect == "record"
+    await src.save(notify=False)
+    assert src.reflect == "none"
+
+    chosen = make_data_source(provider="tree_provider", config={"root": "/tmp/y"}, reflect="copy")
+    await chosen.save(notify=False)
+    assert chosen.reflect == "copy", "a mode the spec offers is kept as given"
