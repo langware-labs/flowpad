@@ -9,7 +9,7 @@ subagents: []
 additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
-enabled: false
-version: 3
+enabled: true
+version: 4
 ---
 
