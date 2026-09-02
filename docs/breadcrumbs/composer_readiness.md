@@ -1,7 +1,12 @@
 ---
+id: 2baf8c97-a4d4-416f-950a-10a1611152a4
 title: Composer readiness is a generation property, not a recent-bytes property
-tags: [breadcrumb.test.composer_readiness.rules]
-description: The PTY composer-ready gate scanned only the last 64 KB of output, but a vendor paints its ready-marker solely on a FULL composer redraw — so after one chatty turn the marker sits megabytes behind, the gate blocks forever with no log line, and every prompt is delivered 15 s late by the blind last-resort fallback.
+tags:
+- breadcrumb.test.composer_readiness.rules
+description: The PTY composer-ready gate scanned only the last 64 KB of output, but
+  a vendor paints its ready-marker solely on a FULL composer redraw — so after one
+  chatty turn the marker sits megabytes behind, the gate blocks forever with no log
+  line, and every prompt is delivered 15 s late by the blind last-resort fallback.
 ---
 
 # Composer readiness is a generation property, not a recent-bytes property
@@ -114,9 +119,3 @@ deliberately drops the transcript's USER_MESSAGE row from the live stream
 (`agentic_process.py:4258`). A pane remount inside that 15 s window therefore
 erases the question while the answer still streams in — an answer with no
 question above it. See `ui/tests/api/forced_history_reconcile_keeps_undelivered_echo.test.ts`.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 2baf8c97-a4d4-416f-950a-10a1611152a4
-flowpad:endcapsule identity -->

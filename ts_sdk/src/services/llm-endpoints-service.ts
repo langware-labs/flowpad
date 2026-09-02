@@ -25,6 +25,18 @@ export interface LLMCredentialTestResult {
   message?: string;
 }
 
+/** The verdict of ``test``: one real, minimal completion sent through the endpoint's chain. */
+export interface LLMEndpointTestResult {
+  ok: boolean;
+  /** The status the call came back with; 0 never happens — the hub always names one. */
+  status: number;
+  /** The model the probe asked for ('' when it never got that far). */
+  model: string;
+  latency_ms: number;
+  /** Why it failed, in the provider's (or the hub's) own words; '' on success. */
+  message: string;
+}
+
 export interface LLMEndpointModel {
   id: string;
   root_id: string;
@@ -151,12 +163,47 @@ export class LlmEndpointsService {
     return dataManager.callAction<undefined, { ok: true }>(action('credential', id, 'DELETE'));
   }
 
+  /**
+   * Does a call through this endpoint succeed? The hub sends ONE minimal completion down the
+   * resolved chain, so the answer covers the credential, every hop's filters and budget, the
+   * routing and the provider — which is why it works on an allocation, where `testCredential`
+   * (a ROOT's key against the provider's model list) refuses outright.
+   *
+   * A refused or failed call is a VERDICT, not a thrown error: it resolves with `ok: false`.
+   */
+  testEndpoint(id: string, model?: string): Promise<LLMEndpointTestResult> {
+    const info = action('test', id, 'POST');
+    info.bodyParameters = model ? { model } : {};
+    return dataManager.callAction<undefined, LLMEndpointTestResult>(info);
+  }
+
   listModels(id: string): Promise<LLMEndpointModel[]> {
     return dataManager.callAction<undefined, LLMEndpointModel[]>(action('models', id, 'GET'));
   }
 
   getChain(id: string): Promise<LLMChain> {
     return dataManager.callAction<undefined, LLMChain>(action('chain', id, 'GET'));
+  }
+
+  /**
+   * Create an endpoint that draws on `parentId` — the only way a source link comes into being.
+   *
+   * The parent is the URL, not a field, and that is the whole point: the hub authorizes this
+   * against the endpoint being drawn FROM, so delegating a budget requires administering it. The
+   * `sources` field it replaces was checked against nothing, which let anyone who could merely
+   * spend a pool hang an uncapped sibling off it.
+   *
+   * `grant_to` is a principal typeid (`user-<id>`, `team-<id>`) that may SPEND the result — the
+   * allocation and the grant land in one authorized call. It needs an account that already
+   * exists; inviting an address that does not is `inviteMember` on the allocation afterwards.
+   */
+  allocate(
+    parentId: string,
+    body: { name: string; limits?: LLMEndpointLimits; filters?: LLMEndpointFilters; grant_to?: string },
+  ): Promise<LLMEndpoint> {
+    const info = action('allocate', parentId, 'POST');
+    info.bodyParameters = { ...body };
+    return dataManager.callAction<undefined, LLMEndpoint>(info);
   }
 
   getUsage(id: string, query: LLMUsageQuery): Promise<LLMUsageReport> {

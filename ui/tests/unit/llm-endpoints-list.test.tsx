@@ -1,7 +1,7 @@
 /**
  * `LlmEndpointsList` + the view's delete confirm: root and chain rows, their
- * badges, admin gating off the permission expansion, and delete going through
- * the generic entity DELETE only after the confirm.
+ * badges, admin gating off the permission expansion, delete going through the
+ * generic entity DELETE only after the confirm, and the per-row Test probe.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -33,6 +33,7 @@ const h = vi.hoisted(() => ({
   ),
   endpoints: [] as unknown[],
   refetch: vi.fn(),
+  testEndpoint: vi.fn(),
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -40,7 +41,11 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     dataManager: { ...(actual.dataManager as object), delete: h.deleteEntity },
-    llmEndpointsService: { ...(actual.llmEndpointsService as object), getUsage: h.getUsage },
+    llmEndpointsService: {
+      ...(actual.llmEndpointsService as object),
+      getUsage: h.getUsage,
+      testEndpoint: h.testEndpoint,
+    },
   };
 });
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
@@ -182,6 +187,45 @@ describe('LlmEndpointsList', () => {
     const typeId = h.deleteEntity.mock.calls[0][0];
     expect(typeId.type).toBe('llm_endpoint');
     expect(typeId.id).toBe(ROOT);
+  });
+
+  it('tests any row — including a chain, which holds no credential of its own', async () => {
+    h.testEndpoint.mockResolvedValue({
+      ok: true,
+      status: 200,
+      model: 'claude-haiku-4-5',
+      latency_ms: 412,
+      message: '',
+    });
+    h.endpoints.push(
+      entity({ id: ROOT, name: 'root', provider: 'openai' }, ['read', 'update', 'delete']),
+      entity({ id: CHAIN, name: 'chain', sources: [`llm_endpoint-${ROOT}`] }, ['read']),
+    );
+    renderView();
+
+    await userEvent.click(screen.getByTestId(`llm-test-${CHAIN}`));
+    expect(h.testEndpoint).toHaveBeenCalledWith(CHAIN);
+    expect((await screen.findByTestId(`llm-test-verdict-${CHAIN}`)).textContent).toBe('412ms');
+    // Testing a row must not open it.
+    expect(h.openPage).not.toHaveBeenCalled();
+    // A reader's row carries the probe even though it carries no edit/delete.
+    expect(screen.queryByTestId(`llm-edit-${CHAIN}`)).toBeNull();
+  });
+
+  it('shows a failed call as a verdict on the row, not as a thrown error', async () => {
+    h.testEndpoint.mockResolvedValue({
+      ok: false,
+      status: 429,
+      model: '',
+      latency_ms: 0,
+      message: "limit 'cost_usd_total' exceeded on endpoint capped",
+    });
+    h.endpoints.push(entity({ id: ROOT, name: 'capped', provider: 'openai' }, ['read']));
+    renderView();
+
+    await userEvent.click(screen.getByTestId(`llm-test-${ROOT}`));
+    expect((await screen.findByTestId(`llm-test-verdict-${ROOT}`)).textContent).toBe('429');
+    expect(screen.getByTestId(`llm-test-${ROOT}`).getAttribute('title')).toContain('cost_usd_total');
   });
 
   it('backs out of the confirm without deleting', async () => {

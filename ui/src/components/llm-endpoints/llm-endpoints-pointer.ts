@@ -10,7 +10,7 @@
  * No React here: the harness modal, the catalog and the components all import
  * this file, so it must stay a leaf.
  */
-import { LLMEndpoint, PageId, TypeId, ViewType, isTypeId } from '@sdk';
+import { LLMEndpoint, Layout, PageId, TypeId, ViewType, isTypeId } from '@sdk';
 
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 
@@ -38,6 +38,22 @@ export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab): string {
  *  `id` may be a bare uuid or a typeid. */
 export function openLlmEndpoint(navigation: NavigationActions, id: string, tab?: LlmEndpointTab): void {
   navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id, tab));
+}
+
+/**
+ * Where an emailed share invitation should land: this endpoint's own page.
+ *
+ * The TS twin of `endpoint_share_landing_path` (`flow_sdk/builtin/llm_endpoint.py`), and it lives
+ * here for that module's stated reason — this file owns the address grammar, so a hand-written
+ * path would keep working while a viewType or page-segment rename went green everywhere else,
+ * and the only symptom would be an emailed invite that 404s.
+ *
+ * Without a `callback_override` the hub falls back to a bare entity URL the app has no route
+ * for, and the recipient's one click lands nowhere.
+ */
+export function endpointShareLandingPath(id: string): string {
+  const pointer = encodeURIComponent(endpointIdFromTypeId(id));
+  return `/${Layout.DOCK}/${PageId.HUB}/${ViewType.LLM_ENDPOINTS}/${pointer}`;
 }
 
 export const ENDPOINT_TYPE = LLMEndpoint.type;
