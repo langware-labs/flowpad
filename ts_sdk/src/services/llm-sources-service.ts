@@ -52,18 +52,6 @@ export interface LLMFundingStatus {
   active_for: string[];
 }
 
-const EMPTY: LLMFundingStatus = {
-  available: [],
-  endpoint_typeid: null,
-  invoke_url: null,
-  name: null,
-  provider: null,
-  hub_logged_in: false,
-  sources: {},
-  resolved: {},
-  active_for: [],
-};
-
 export class LlmSourcesService {
   private readonly base: string;
 
@@ -71,9 +59,14 @@ export class LlmSourcesService {
     this.base = `/graph/${nodeTypeId.type}/${nodeTypeId.id}/${ACTION}`;
   }
 
-  /** The whole funding picture in one read. */
-  status(): Promise<LLMFundingStatus> {
-    if (isHubOnly()) return Promise.resolve(EMPTY);
+  /** The whole funding picture in one read, or `null` where there is no box to ask.
+   *
+   *  `null` rather than an all-empty record: a success-shaped empty is indistinguishable from a
+   *  box that genuinely has nothing, so the screen renders a bare header instead of saying it is
+   *  desktop-only — and every field added to `LLMFundingStatus` would have to be mirrored into
+   *  that constant forever. */
+  status(): Promise<LLMFundingStatus | null> {
+    if (isHubOnly()) return Promise.resolve(null);
     return apiClient.get(this.base);
   }
 

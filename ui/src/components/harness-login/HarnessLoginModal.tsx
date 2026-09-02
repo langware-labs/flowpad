@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { AlertCircle, ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
@@ -78,11 +79,14 @@ const providerLabel = (provider: string) => PROVIDER_LABEL[provider] ?? provider
 
 /** Friendly, non-expert-facing extras that do NOT exist on the Capability
  *  entity. Name and icon are resolved registry-first in `useHarness`. */
+// Names come from the ONE vendor label table (`WORKER_LABELS`); only the
+// account noun is this screen's own vocabulary. Adding a harness should not
+// mean re-typing its display name in a fourth place.
 const FRIENDLY: Record<Worker, { name: string; account: string }> = {
-  claude: { name: 'Claude', account: 'Anthropic account' },
-  codex: { name: 'Codex', account: 'ChatGPT account' },
-  copilot: { name: 'Copilot', account: 'GitHub account' },
-  opencode: { name: 'OpenCode', account: 'provider account' },
+  claude: { name: WORKER_LABELS.claude, account: 'Anthropic account' },
+  codex: { name: WORKER_LABELS.codex, account: 'ChatGPT account' },
+  copilot: { name: WORKER_LABELS.copilot, account: 'GitHub account' },
+  opencode: { name: WORKER_LABELS.opencode, account: 'provider account' },
 };
 
 /** Shared per-harness state hook: resolves the live Capability entity, its

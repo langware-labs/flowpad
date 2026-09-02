@@ -223,6 +223,12 @@ msgstr "{0} קבצים מצורפים"
 msgid "{0} bytes"
 msgstr "{0} בתים"
 
+#. placeholder {0}: granted.join(', ')
+#. placeholder {1}: endpoint.name
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
+msgid "{0} can now spend {1}."
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
@@ -1148,6 +1154,10 @@ msgstr ""
 msgid "Add secret"
 msgstr "הוסף סוד"
 
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
+msgid "Add someone to share with."
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Add source"
 msgstr "הוספת מקור"
@@ -1697,6 +1707,10 @@ msgstr "כל מי שיש לו הקישור יכול להצטרף כחבר. הק�
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמחוק את ה-sandbox הזה."
+
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
+msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
+msgstr ""
 
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
@@ -2394,6 +2408,10 @@ msgstr ""
 msgid "Budget for the whole scope"
 msgstr ""
 
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
+msgid "Budget shared"
+msgstr ""
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget updated"
 msgstr ""
@@ -2587,6 +2605,7 @@ msgstr ""
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -4391,6 +4410,10 @@ msgstr "לא ניתן לעצור"
 msgid "Could not store value"
 msgstr "לא ניתן לשמור את הערך"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Could not switch source"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
 msgstr "לא ניתן היה לעבור לטרמינל"
@@ -5453,6 +5476,10 @@ msgstr "קוד התקן"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
 msgstr "התחברות דרך מכשיר"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Device logins"
+msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -8234,6 +8261,10 @@ msgstr ""
 msgid "Hub endpoint unavailable"
 msgstr ""
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Hub endpoints"
+msgstr ""
+
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
 msgstr "שגיאות Hub דוכאו"
@@ -8405,6 +8436,10 @@ msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "in total"
+msgstr ""
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "in use"
 msgstr ""
 
 #: src/i18n/pref-labels.ts
@@ -9260,6 +9295,16 @@ msgstr "מנהלי אינדקס LLM"
 msgid "LLM key"
 msgstr "מפתח LLM"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "LLM keys"
+msgstr ""
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
+#: src/types/ViewType.ts
+msgid "LLM sources"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Load Flowpad assistant"
@@ -9543,6 +9588,7 @@ msgstr "טוען..."
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
@@ -11549,6 +11595,10 @@ msgstr ""
 msgid "Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone provides the value."
 msgstr "עדיין לא הוצהר דבר. יש להצהיר מה הפרויקט צריך — הצהרה יכולה להישאר לא מסופקת עד שמישהו יספק את הערך."
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "nothing eligible"
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
 msgstr "לא הוגדרו הגבלות עדיין, ולכן מכונה זו רואה את כל הסודות להלן."
@@ -11661,6 +11711,11 @@ msgstr "הודע לישות (הגדל מונה)"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Notify people about this push"
 msgstr "להודיע לאנשים על הדחיפה הזו"
+
+#. placeholder {0}: landed?.name ?? source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Now using {0}"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "OAuth"
@@ -12172,6 +12227,10 @@ msgstr "פתיחת סשן העובד שכבר הופעל עבור המפרט/ה�
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 msgid "Open this agent's transcript"
 msgstr "פתח את תמלול הסוכן הזה"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Open this endpoint on the hub"
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open this link on Flowpad Hub"
@@ -15520,6 +15579,8 @@ msgstr "הגדרת Git"
 
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -15528,7 +15589,9 @@ msgstr "הגדרת Git"
 msgid "Share"
 msgstr "שתף"
 
+#. placeholder {0}: endpoint?.name || 'budget'
 #. placeholder {0}: sandbox?.name || 'sandbox'
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share {0}"
 msgstr "שיתוף {0}"
@@ -15542,6 +15605,7 @@ msgstr "לשתף את {0} דרך Git"
 msgid "Share anyway"
 msgstr "שתפו בכל זאת"
 
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
 msgstr "שיתוף לפי שם או דוא״ל…"
@@ -15845,6 +15909,7 @@ msgid "Sigma graph view"
 msgstr "תצוגת גרף Sigma"
 
 #: src/components/account/user-info.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
@@ -17081,6 +17146,10 @@ msgstr "ייתכן שהקובץ נמחק, הועבר או שאינו תואם א
 msgid "The FlowPad backend server is not responding."
 msgstr "שרת backend של FlowPad אינו מגיב."
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "The funding picture is only available on a desktop instance."
+msgstr ""
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "The GitHub connection didn't complete."
 msgstr "החיבור ל-GitHub לא הושלם."
@@ -17245,6 +17314,10 @@ msgstr ""
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "הם יורדו שוב בפעם הבאה שהעזרה תיפתח."
+
+#: src/components/llm-endpoints/ShareEndpointDialog.tsx
+msgid "They'll get an email with a link that opens this budget."
+msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email with a link that opens this sandbox."
@@ -18343,6 +18416,7 @@ msgid "Usage unavailable"
 msgstr "השימוש לא זמין"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -18457,6 +18531,7 @@ msgstr "הגדרה ידנית"
 msgid "uses"
 msgstr "שימושים"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Using"
 msgstr "בשימוש"
@@ -18892,6 +18967,10 @@ msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את ס
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Where does it come from?"
 msgstr "מאיפה זה מגיע?"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Where each assistant gets its model access, and why."
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."

@@ -178,8 +178,9 @@ async def select_llm_source(payload: dict) -> dict:
     to, the box decides whether to spend it.
 
     Deliberately a sub-action rather than the bare ``POST``: that one means "the hub is binding
-    this box" and answers 409 without a hub login key, so a user picking their own OpenRouter
-    key would be told the box is not logged in to the hub.
+    this box" and answers 409 without a hub login key, so a user picking their own OpenRouter key
+    would be told the box is not logged in to the hub. (Canonical statement; the callers point
+    here rather than restating it.)
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
@@ -187,6 +188,7 @@ async def select_llm_source(payload: dict) -> dict:
     from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceKind
 
+    hub_key = bool(resolve_hub_api_key())
     harness = str(payload.get("harness") or "").strip()
     if not harness:
         raise HubEndpointBindError("harness is required", 400)
@@ -211,10 +213,12 @@ async def select_llm_source(payload: dict) -> dict:
             raise HubEndpointBindError(f"unknown provider {provider!r}", 400) from exc
         cap.auth_mode, cap.api_provider = "api", provider
     else:
-        if not resolve_hub_api_key():
+        if not hub_key:
             raise HubEndpointBindError("this box is not logged in to the hub", 409)
         typeid = str(payload.get("endpoint_typeid") or "")
         bound = get_hub_llm_endpoint()
+        if not typeid and bound is None:
+            raise HubEndpointBindError("no hub endpoint is available to this box", 400)
         if typeid and (bound is None or bound.endpoint_typeid != typeid):
             from flow_sdk.builtin.llm_endpoint import hub_invoke_path  # noqa: PLC0415
             from flow_sdk.db.drivers.db_base_record import TypeId  # noqa: PLC0415
@@ -229,10 +233,8 @@ async def select_llm_source(payload: dict) -> dict:
                 provider=str(payload.get("provider") or ""),
                 name=str(payload.get("name") or ""),
             )
-        elif bound is None:
-            raise HubEndpointBindError("no hub endpoint is available to this box", 400)
         cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
 
     await cap.save(notify=True)
     logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
-    return await _status(bool(resolve_hub_api_key()))
+    return await _status(hub_key)

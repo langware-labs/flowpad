@@ -13,8 +13,10 @@ This class exists so the box can *hold* one as an entity rather than as a four-f
   persisted locally — the hub is ground truth, and a local row could only ever drift from it;
 * there is deliberately no ``sources`` field. Since the hub made allocation a relationship, sources
   are not part of an endpoint's serialization, and mirroring one would be inventing state;
-* nothing here writes to the hub. Creating or re-budgeting an endpoint is ``allocate`` on the parent,
-  which is authorized against the budget being delegated and has no client-writable equivalent.
+* nothing here writes an endpoint to the hub. Creating or re-budgeting one is ``allocate`` on the
+  parent, which is authorized against the budget being delegated and has no client-writable
+  equivalent. The single exception is :meth:`LLMEndpoint.share`, which writes no endpoint state at
+  all -- it invites a person to one that already exists.
 
 ``_api_visible`` is False for the same reason: there are no local rows to serve. The list reaches the
 UI through the ``llm-endpoint`` box action, beside the binding it already reports.
@@ -29,6 +31,7 @@ from pydantic import BaseModel, Field
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.core.urls.service_urls import urls_service
+from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 
 
 class LLMLimits(BaseModel):
@@ -66,6 +69,23 @@ class LLMFilters(BaseModel):
     model_map: dict[str, str] = Field(default_factory=dict)
 
 
+#: What sharing a budget confers: spend it, never control it. See ``LLMEndpoint.share``.
+SHARE_ROLE = HubRole.READER.value
+
+
+def endpoint_share_landing_path(endpoint_id: str) -> str:
+    """Where the emailed invitation should land: this endpoint's page in the desktop app.
+
+    Built through ``dock_url`` rather than spelled as an f-string, because that module owns the
+    dock-address grammar and is pinned to its TS twin by a contract fixture both suites assert.
+    A hand-written path would keep working while a viewType or page-segment rename went green
+    everywhere else -- and the only symptom would be an emailed invite that 404s.
+    """
+    from flow_sdk.core.dock_address import PageId, ViewType, dock_url  # noqa: PLC0415
+
+    return dock_url(ViewType.LLM_ENDPOINTS, pointer=endpoint_id, page=PageId.HUB)
+
+
 def hub_invoke_path(typeid: Any) -> str:
     """The FULL hub path an endpoint is invoked on, e.g.
     ``/api/v1/graph/llm_endpoint/<id>/invoke``.
@@ -80,6 +100,9 @@ def hub_invoke_path(typeid: Any) -> str:
 class LLMEndpoint(Entity):
     # No local rows: instances are transient projections of hub state (see the module docstring).
     _api_visible: ClassVar[bool] = False
+    #: Read by ``share_action``: there is no local row to fetch, so a share of this type is an
+    #: invitation to something that already exists on the hub rather than a push of local state.
+    _hub_only: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "BrainCircuit"
 
     type: str = APIField(default="llm_endpoint")
@@ -120,6 +143,47 @@ class LLMEndpoint(Entity):
 
     def invoke_path(self) -> str:
         return hub_invoke_path(self.typeid)
+
+    async def share(self, recipients: list[str] | None = None) -> None:
+        """Give somebody this budget to spend: one invitation per email address.
+
+        Deliberately NOT ``Entity.share()``. The generic implementation CREATES the entity on the
+        hub from a local row, which is meaningless here twice over -- there is no local row (this is
+        a projection of hub state), and the endpoint already exists on the hub. So this overrides it
+        entirely and never calls ``super()``: the only thing that travels is the invitation.
+
+        ``reader`` is the role, and that is the whole security story of sharing a budget: the hub's
+        ``llm_endpoint`` policy gives ``reader`` exactly ``read, invoke, models, chain, usage``. The
+        recipient can spend the budget and watch it drain; they cannot raise its limits, replace the
+        provider key underneath the owner, allocate themselves an uncapped sibling, or pass it on.
+        Anything above ``reader`` would make the cap advisory.
+
+        ``callback_override`` points the emailed link at this endpoint's page in the desktop app.
+        Without it the hub falls back to a bare entity URL the app has no route for, and the
+        recipient's "one click" lands nowhere.
+
+        One POST per recipient, because the hub's ``MembershipRequest`` carries a single
+        ``recipient_email``. Failures are not swallowed: the caller decides what a partial share
+        means, and the UI reports per-address outcomes.
+        """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        for email in recipients or []:
+            # Lowercased, not merely stripped: the hub stores and looks invitations up by exact
+            # match, so a mixed-case address is an invitation the recipient never sees.
+            if not (address := normalize_email(email)):
+                continue
+            await hub_post(
+                "llm_endpoint",
+                {
+                    "recipient_email": address,
+                    "invitation_targets": [{"typeid": str(self.typeid), "role": SHARE_ROLE}],
+                    "callback_override": endpoint_share_landing_path(self.id),
+                },
+                self.id,
+                "members",
+            )
 
     @property
     def is_root(self) -> bool:

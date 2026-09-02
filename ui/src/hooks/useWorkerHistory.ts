@@ -6,6 +6,15 @@ import { useContext } from './useContext';
 /** Worker vendors as the worker-history action reports them (NOT the launch
  *  `claude_code` form). Single source for the union + any vendor chip list. */
 export const WORKER_TYPES = ['claude', 'codex', 'copilot', 'opencode'] as const;
+
+/** Vendor display names, keyed by the same value space as {@link WORKER_TYPES} so a new
+ *  vendor is one row rather than a fresh table per surface. */
+export const WORKER_LABELS: Record<WorkerType, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  copilot: 'Copilot',
+  opencode: 'OpenCode',
+};
 export type WorkerType = (typeof WORKER_TYPES)[number];
 
 export interface WorkerHistoryEntry {

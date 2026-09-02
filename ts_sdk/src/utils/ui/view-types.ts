@@ -127,7 +127,7 @@ export enum ViewType {
   LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
   TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
   // DESK page: what funds this machine's harnesses (device logins, stored keys, hub endpoints)
-  LLM_SOURCES = 'llm-sources', // /dock/llm-sources[/device|key|endpoint/<id>|mapping|defaults]
+  LLM_SOURCES = 'llm-sources', // /dock/llm-sources[/<worker>] -- the harness in focus
 }
 
 /**
@@ -135,15 +135,6 @@ export enum ViewType {
  * Used as pointer in dock/credentials/:pointer URLs, optionally followed by a
  * project id: `credentials/environment/<projectId>`.
  */
-/** `/dock/llm-sources/<section>[/<key>]` — the leading segment only. */
-export enum LlmSourcesSection {
-  Device = 'device',
-  Key = 'key',
-  Endpoint = 'endpoint',
-  Mapping = 'mapping',
-  Defaults = 'defaults',
-}
-
 export enum CredentialsSubview {
   ENVIRONMENT = 'environment',
   CONNECTIONS = 'connections',

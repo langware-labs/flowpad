@@ -102,13 +102,6 @@
       "me",
       "team",
       "org"
-    ],
-    "llm-sources": [
-      "device",
-      "key",
-      "endpoint",
-      "mapping",
-      "defaults"
     ]
   },
   "retired_views": {
@@ -673,7 +666,7 @@
     {
       "name": "every llm-sources selection is one tab",
       "view_type": "llm-sources",
-      "pointer": "endpoint/7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0",
+      "pointer": "claude",
       "tab_hash": "llm-sources|"
     }
   ],
@@ -985,11 +978,11 @@
       "url": "/dock/hub/token-plan/team/550e8400-e29b-41d4-a716-446655440000"
     },
     {
-      "name": "llm sources is a DESK page and folds its selection",
-      "url": "/dock/llm-sources/device/claude",
+      "name": "llm sources is a DESK page pointed at one harness",
+      "url": "/dock/llm-sources/claude",
       "page": "desk",
       "view_type": "llm-sources",
-      "pointer": "device/claude"
+      "pointer": "claude"
     }
   ]
 }
