@@ -99,7 +99,7 @@ def derive_dataset(data: dict, root: Path, header_raw: dict) -> None:
     need ``is_binary``, which is a layout question."""
     data["name"] = data.get("title") or root.name
     examples = data.get("examples") or []
-    data["num_annotated"] = sum(1 for ex in examples if ex.ground_truth is not None)
+    data["num_annotated"] = layout_for(data.get("data_layout")).count_annotated(root, examples)
     data["num_multi_output"] = sum(1 for ex in examples if isinstance(ex.output, list) and len(ex.output) > 1)
     data["num_binary_inputs"] = sum(
         1 for ex in examples if is_binary(ex.input[0] if isinstance(ex.input, list) else ex.input)

@@ -36,7 +36,8 @@ rules before writing one; the ones that bite:
   credential value.
 - A `traits` block is REQUIRED for an authored source (it is what a builtin's
   driver class would hold) and forbidden on a builtin. At minimum `emits` — the
-  ontology kind stamped on every record.
+  ontology kind stamped on every record; the loader refuses a `fetch.py` folder
+  whose `emits` is missing or blank, and the folder is not indexed.
 - `config` field `type` is one of `text` `lines` `csv` `number` `path`. Anything
   else is a load error.
 
