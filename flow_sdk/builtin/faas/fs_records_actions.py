@@ -934,8 +934,8 @@ class FsRecordsActionsMixin:
         # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
         # Absent params → explicit "everything known" filter built from
         # get_all_projects(), so the walk fans out via _resolve_scoped_roots
-        # instead of the silent USER_HOME_FOLDER → real_project_cwd_fn
-        # expander discovery.
+        # (one REAL_PROJECT_CWD root per project) — there is no implicit
+        # USER_HOME_FOLDER expander any more.
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
@@ -1574,9 +1574,8 @@ class FsRecordsActionsMixin:
 
         # `create_missing=False`: resolving the scope must NOT write entities.
         # The ScopeFilter is complete either way — an unmaterialized cwd still
-        # yields `Project.derive_id_for_path(cwd)` — and the index run itself
-        # materializes every missing project inside the job, via
-        # `real_project_cwd_fn` -> `get_all_projects(create_missing=True)`.
+        # yields `Project.derive_id_for_path(cwd)` — and project roots are
+        # resolved inside the job by `_resolve_scoped_roots`, not here.
         # Minting here was duplicate work done BEFORE the index single-flight
         # guard is taken: measured 38.854s on a cold DB (vs 1.4s warm) while
         # the index job itself is 2.4s, so a second request arriving in that
@@ -2040,7 +2039,7 @@ class FsRecordsActionsMixin:
         # bulk discover already removed). Fall back to the scoped re-index.
         #
         # default_roots() no longer auto-expands USER_HOME → REAL_PROJECT_CWD
-        # (the silent ``real_project_cwd_fn`` fanout was removed). We therefore
+        # (the silent USER_HOME_FOLDER fanout walker was retired). We therefore
         # enumerate project roots explicitly via the scope filter so project-
         # rooted record types (TASK, SPEC, project-root SKILL/AGENT/WORKFLOW/
         # CLAUDE_MD/CLAUDE_RULES) are reachable from this recovery path.
@@ -2126,6 +2125,39 @@ class FsRecordsActionsMixin:
 
     # -- fs-records CRUD action --------------------------------------------------
 
+    async def _index_sync_warning(self, rec, record_type: str, op: str) -> list[dict] | None:
+        """Sync the just-saved record into the Entity DB, surfacing a failure.
+
+        The metadata shadow is already on disk, so the write itself succeeded;
+        what a failed ``sync_to_db`` leaves behind is a record with no DB row,
+        invisible to every query until the next scan. That used to be a DEBUG
+        line nobody read. Now it is logged at WARNING with the type and id, and
+        returned as the envelope's ``warnings`` entry (``index_sync_failed``)
+        so the client knows the row is missing. ``None`` when the sync went
+        through.
+        """
+        try:
+            await rec.sync_to_db()
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "[fs-records] %s of %s/%s saved to disk but sync_to_db failed; "
+                "no DB row until the next index: %s",
+                op,
+                record_type,
+                rec.id,
+                exc,
+                exc_info=True,
+            )
+            return [
+                {
+                    "error_code": "index_sync_failed",
+                    "message": f"{record_type}/{rec.id} saved on disk but not indexed: {exc}",
+                    "type": record_type,
+                    "id": rec.id,
+                }
+            ]
+        return None
+
     async def _materialize_main_body(self, rec, record_type: str) -> None:
         """Write a just-created asset to disk through the type's serializer
         (``SKILL.md``, ``agent.md``…) so the new asset is discoverable by a
@@ -2155,16 +2187,27 @@ class FsRecordsActionsMixin:
     async def _fs_records_action(self) -> ApiResponse:
         """CRUD gateway for filesystem-backed typed records.
 
-        Uses ``RecordList`` for all record types — delegates discovery to
-        ``record_class.discover()`` and persistence to ``record.persist()``.
+        Uses ``RecordList`` for all record types — discovery via
+        ``FSRecord.discover`` and persistence via ``FSRecord.save``.
 
         Routing (via sub_path):
             GET    /fs-records                   → list registered types
             GET    /fs-records/{type}             → list records of type
             GET    /fs-records/{type}/{uid}       → get one record
-            POST   /fs-records/{type}             → create record
+            POST   /fs-records/{type}             → create record (body must carry ``id``)
             PUT    /fs-records/{type}/{uid}       → update record
             DELETE /fs-records/{type}/{uid}       → delete record
+
+        Twelve segments are reserved and dispatched BEFORE the ``{type}``
+        branch, so no record type may take their name. Eleven are first
+        segments — ``file``, ``history_entry``, ``search``, ``mcp-reconcile``,
+        ``scan``, ``index``, ``invalidate``, ``index-sessions``,
+        ``index-status``, ``asset-stats``, ``activity-status`` — and one is a
+        second segment: ``discover`` (``POST /fs-records/{type}/discover``).
+
+        POST and PUT answer SUCCESS with the saved record even when the DB row
+        could not be written; that case is surfaced in the envelope's
+        ``warnings`` as ``index_sync_failed`` (see ``_index_sync_warning``).
         """
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.fs_store.exceptions import ReadOnlyRecordError  # noqa: PLC0415
@@ -2255,12 +2298,6 @@ class FsRecordsActionsMixin:
 
         record_list = RecordList(type_name=record_type)
 
-        # Read-only checks moved off Record; the RecordList over FSRecord is
-        # always mutable. ReadOnlyRecordError stays imported for the
-        # except branch below.
-        if method in ("post", "put", "delete"):
-            from flow_sdk.fs_store.exceptions import ReadOnlyRecordError  # noqa: F401
-
         try:
             if method == "get":
                 # Parse query params into RecordQuery
@@ -2293,14 +2330,22 @@ class FsRecordsActionsMixin:
                 body = await request_info.get_post_data()
                 if not isinstance(body, dict):
                     return ApiFailResponse(message="Invalid request body (expected JSON object)")
+                if not body.get("id"):
+                    # FSRecord.save() refuses an id-less record (it used to mint
+                    # a content fingerprint that was NOT an entity id). Say so
+                    # up front instead of letting the raise read as a conflict.
+                    return ApiFailResponse(
+                        message=(
+                            f"Creating a '{record_type}' record requires an 'id' minted through "
+                            "TypeInfo.mint_entity_id; the fs-records route does not mint ids"
+                        ),
+                        status_code=400,
+                    )
                 try:
                     rec = await asyncio.to_thread(record_list.create, body)
                 except ValueError as e:
                     return ApiFailResponse(message=str(e), status_code=409)
-                try:
-                    await rec.sync_to_db()
-                except Exception as e:
-                    logging.debug(f"[fs-records] sync_to_db skipped on create: {e}")
+                warnings = await self._index_sync_warning(rec, record_type, "create")
                 # Materialize the folder-asset's main body on disk (default_body
                 # → e.g. SKILL.md) so an API-created asset is discoverable by a
                 # disk-walking scan. sync_to_db writes the DB row + metadata
@@ -2315,7 +2360,7 @@ class FsRecordsActionsMixin:
                 # HTTP-created records are born with a scope just like
                 # indexer-discovered ones — no post-create patch needed here.
                 await self._broadcast_fs_record_op("create", record_type, rec.id, rec.meta_dict())
-                return ApiSuccessResponse(data=rec.meta_dict())
+                return ApiSuccessResponse(data=rec.meta_dict(), warnings=warnings)
 
             if method == "put":
                 if not uid:
@@ -2327,12 +2372,9 @@ class FsRecordsActionsMixin:
                     rec = await asyncio.to_thread(record_list.update, uid, body)
                 except KeyError as e:
                     return ApiFailResponse(message=str(e), status_code=404)
-                try:
-                    await rec.sync_to_db()
-                except Exception as e:
-                    logging.debug(f"[fs-records] sync_to_db skipped on update: {e}")
+                warnings = await self._index_sync_warning(rec, record_type, "update")
                 await self._broadcast_fs_record_op("update", record_type, uid, rec.meta_dict())
-                return ApiSuccessResponse(data=rec.meta_dict())
+                return ApiSuccessResponse(data=rec.meta_dict(), warnings=warnings)
 
             if method == "delete":
                 if not uid:

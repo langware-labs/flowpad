@@ -301,8 +301,8 @@ def is_path_under(path: str, root: str) -> bool:
 
     Pure string check over already-canonical posix paths (see
     ``canonical_posix_path``) — ``/a/bc`` is NOT under ``/a/b``. The single
-    containment predicate shared by the nested-project walk dedup
-    (``real_project_cwd_fn._dedup_nested``) and the deepest-project-wins
+    containment predicate shared by the nested-project root dedup
+    (``_resolve_scoped_roots``: outermost-wins) and the deepest-project-wins
     association (``deepest_project_id_for_path``) so the two can never drift.
     """
     r = root.rstrip("/")
