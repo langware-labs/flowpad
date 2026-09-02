@@ -227,12 +227,12 @@ traits:
   owns_bytes: false               # false ⇒ never stamp identity into these bytes
 ```
 
-All three default (`emits: ""`, `channel: ""`, `owns_bytes: true`), and the block
-itself is optional even for a `fetch.py` source — `driver_for_spec` builds the
-adapter from an empty `TraitsSpec` when it is absent. So an authored source that
-forgets `emits` stamps a **blank** kind on every item and lands outside the inbox
-projection with nothing raising. The authoring skill says "at minimum `emits`";
-the loader does not enforce it.
+`channel` and `owns_bytes` default (`""`, `true`); **`emits` does not, for a
+`fetch.py` source.** `runtime_for_folder` refuses a script folder whose `traits`
+block is absent or whose `emits` is blank — a `ManifestError`, so the folder is
+not indexed — because a blank kind is stamped on every item unvalidated and lands
+outside the inbox projection with nothing raising. The authoring skill's "at
+minimum `emits`" is now the loader's rule too.
 
 **`emits`** decides inbox membership — the projection admits `content.message.*`
 and nothing else. It is **stamped at `ingest_items`**, not validated: membership
@@ -321,9 +321,9 @@ Still open, and named where it bites:
   part of this gap: `DataSource.save()` stamps it from `driver.channel_for()` at
   CREATE, so Verify on a fresh credentialed source probes the right channel.)
 * **`requires` is not read.** Recorded on the row, enforced nowhere.
-* **`traits.emits` is optional for a `fetch.py` source** and defaults to `""`,
-  which stamps a blank kind on every item. A load-time rule ("a script source
-  declares `emits`") would close it the way the other rules were closed.
+* **`traits.emits` is required for a `fetch.py` source** (closed the way the
+  other rules were: a load error in `runtime_for_folder`). A builtin still may
+  not declare `traits` at all.
 * **`FETCH.md` (agent runtime) is reserved, not implemented.** A folder carrying
   one is refused at load with that message, rather than indexing and then failing
   every poll.

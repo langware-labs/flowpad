@@ -17,6 +17,7 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import ClassVar, Optional
@@ -580,6 +581,7 @@ class DataSource(Entity):
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
         await self._coerce_config()
+        await self._validate_config()
         await self._coerce_reflect()
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe
@@ -623,6 +625,50 @@ class DataSource(Entity):
             return
         if spec is not None:
             self.config = spec.coerce_config(self.config)
+
+    async def _validate_config(self) -> None:
+        """The manifest's ``required`` / ``pattern`` rules, applied where the
+        dialog cannot see: the API and an agent. The form already refuses a
+        blank required field and a value off its regex, so a source created by
+        hand could look configured and park on its first sync with a driver
+        error the author had to decode. Raises ``ValueError`` naming the field,
+        which the create route maps to a 400.
+
+        CREATE only. The poller re-saves a row every tick, and a rule added to
+        the spec after the row was minted must not turn that re-save into an
+        exception nobody is there to read — the sync's own health verdict is
+        where an existing source reports a config it cannot use.
+        """
+        if self.exist_in_db or not isinstance(self.config, dict):
+            return
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            spec = await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return
+        if spec is None:
+            return
+        for name, field in (spec.config or {}).items():
+            value = self.config.get(name)
+            blank = value is None or (isinstance(value, str) and not value.strip()) or value in ([], {})
+            if blank:
+                if field.required and field.default is None:
+                    raise ValueError(f"config.{name} is required")
+                continue
+            if not field.pattern:
+                continue
+            # One regex per value, so a multi-line field names the entries at
+            # fault (the form's rule, `source-form.ts`); `search`, as its
+            # `RegExp.test` is.
+            try:
+                regex = re.compile(field.pattern)
+            except re.error:
+                continue  # the spec's fault, not the caller's; the form still applies it
+            values = value if isinstance(value, list) else [value]
+            bad = [str(v) for v in values if isinstance(v, str) and regex.search(v) is None]
+            if bad:
+                raise ValueError(f"config.{name} is not valid: {', '.join(bad)}")
 
     async def _coerce_reflect(self) -> None:
         """``reflect`` must be a mode the spec offers, or the source ingests
