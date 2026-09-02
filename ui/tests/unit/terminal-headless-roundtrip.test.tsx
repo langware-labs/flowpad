@@ -20,16 +20,25 @@
  * deliberately keeps the xterm mounted underneath (same `!isHeadless` gate),
  * so only the pty_mode TRANSPORT flip exercises this unmount/remount path.
  *
- * Regression 2 (Hebrew reversed for the rest of a session) rides the SAME
- * re-mount. The RTL/bidi contract `.xterm-rtl-grid` is stamped on the
- * container by applyRtlGridContract(), and it was stamped ONLY from the
- * layout effect keyed on `[process?.worker_type]`. worker_type does not change
- * across the round trip, so that effect never re-fires and the FRESH container
- * comes back bare — on Windows + Claude Code, whose Hebrew is pre-reversed
- * into visual order, the browser then reorders every RTL run a second time and
- * the session reads backwards until a new terminal is opened. Re-mount and
- * vendor-resolution are independent triggers; the contract has to be stamped
- * at term.open() as well. What the bare container then PAINTS is asserted in
+ * Regression 2 (Hebrew reversed for a whole session) is the OPPOSITE leg of
+ * the same conditional mount, and it is the one a user can actually reach:
+ * useProcessSurface only ever calls switchMode(WorkerMode.Interactive) — chat
+ * and vibe need no transport of their own — so a PTY session never returns to
+ * headless, but a session CREATED headless (`pty_mode: false`: open-new-chat,
+ * use-start-vibe-session, start-wizard-process) mounts its container for the
+ * first time when the user opens the Terminal view.
+ *
+ * The RTL/bidi contract `.xterm-rtl-grid` was stamped ONLY from the layout
+ * effect keyed on `[process?.worker_type]`. Through the whole headless phase
+ * that effect ran with no container to stamp, and by the time one mounts
+ * worker_type has long since resolved — so it never fires again and the
+ * first-ever container is bare. On Windows + Claude Code, whose RTL text is
+ * pre-reversed into visual order, the browser then reorders every RTL run a
+ * second time and the session reads backwards; a session started directly in
+ * the terminal is fine, because there the container exists on the first render
+ * while worker_type is still undefined. Container-mount and vendor-resolution
+ * are independent triggers, so the contract has to be stamped at term.open()
+ * too. What a bare container then PAINTS is asserted in
  * tests/browser_render/xterm-rtl.spec.ts — jsdom has no bidi engine, so this
  * tier can only assert the contract itself.
  */
@@ -395,7 +404,7 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
   });
 });
 
-describe('InteractiveTerminal — the round trip re-applies the RTL grid contract', () => {
+describe('InteractiveTerminal — a session opened from chat gets the RTL grid contract', () => {
   let savedPlatform: PropertyDescriptor | undefined;
 
   beforeEach(() => {
@@ -410,23 +419,19 @@ describe('InteractiveTerminal — the round trip re-applies the RTL grid contrac
     workerType = 'codex';
   });
 
-  it('leaves the re-mounted container carrying .xterm-rtl-grid after chat → terminal', () => {
-    headless = false;
-    const { rerender } = render(ui('c1'));
-
-    const first = xtermSpies.open.lastContainer!;
-    expect(first.classList.contains('xterm-rtl-grid')).toBe(true);
-
+  it('stamps the container a chat session mounts when it switches to the terminal', () => {
+    // A vibe/chat session (pty_mode=false): no container exists, so the
+    // vendor-keyed effect has nothing to stamp for the whole headless phase.
     headless = true;
-    rerender(ui('c2'));
+    const { rerender } = render(ui('s1'));
+    expect(xtermSpies.open.calls).toBe(0);
 
-    // chat → terminal: a FRESH container, and worker_type never moved — so the
-    // vendor-keyed effect cannot be what stamps it. Bare here means every
-    // pre-reversed Hebrew row is reordered a second time by the browser.
+    // The user opens the Terminal view — the one direction switchMode goes.
+    // worker_type resolved long ago and does not move, so the vendor-keyed
+    // effect cannot be what stamps this first-ever container.
     headless = false;
-    rerender(ui('c3'));
-    const second = xtermSpies.open.lastContainer!;
-    expect(second).not.toBe(first);
-    expect(second.classList.contains('xterm-rtl-grid')).toBe(true);
+    rerender(ui('s2'));
+    expect(xtermSpies.open.calls).toBe(1);
+    expect(xtermSpies.open.lastContainer!.classList.contains('xterm-rtl-grid')).toBe(true);
   });
 });
