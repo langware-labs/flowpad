@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -2212,7 +2211,7 @@ class FsRecordsActionsMixin:
         ``warnings`` as ``index_sync_failed`` (see ``_index_sync_warning``).
         """
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
-        from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
         from flow_sdk.fs_store.exceptions import ReadOnlyRecordError  # noqa: PLC0415
         from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -2335,20 +2334,14 @@ class FsRecordsActionsMixin:
                     return ApiFailResponse(message="Invalid request body (expected JSON object)")
                 # The id gate for a record born over HTTP. `FSRecord.save()`
                 # refuses an id-less record (it used to mint a content
-                # fingerprint that is NOT an entity id), and a client-supplied
-                # id may not be adopted unless it conforms — same order as
-                # `Entity.allocate_id`: adopt a v4/v5, normalize a foreign one
-                # to a stable v5, else mint. There is no file to derive from
-                # here, so the no-key form is the right mint.
-                raw_id = body.get("id")
-                if not raw_id:
-                    body["id"] = mint_uuid()
-                elif (adopted := adopt_entity_id(raw_id)) is not None:
-                    body["id"] = adopted
-                else:
-                    body["id"] = mint_uuid(
-                        key=f"{record_type}:{raw_id}", namespace=uuid.NAMESPACE_DNS
-                    )
+                # fingerprint that is NOT an entity id). The policy is
+                # `Entity.allocate_id`'s and is asked for BY TYPE, not
+                # re-implemented: a hand-copy drops the per-type
+                # `_row_id_policy` that `project` and `tag` declare, and a
+                # random v4 for a project forks a second row the next time the
+                # indexer walks that cwd.
+                entity_cls = _SR.get_entity_cls(record_type) or Entity
+                body["id"] = entity_cls.allocate_id({**body, "type": record_type})
                 try:
                     rec = await asyncio.to_thread(record_list.create, body)
                 except ValueError as e:

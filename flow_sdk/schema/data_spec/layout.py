@@ -122,10 +122,12 @@ class DatasetLayout:
 
     def count_annotated(self, folder, examples: Sequence[Any]) -> int:
         """How many of the parsed ``examples`` carry gold. THE definition of
-        ``num_annotated`` — the indexer's extractor and the entity's post-label
-        recount both read it. A CSV row is annotated when its gold cell is
-        present; ``FolderLayout`` answers from the directory instead, so the
-        per-example ``index`` and this count are one rule."""
+        ``num_annotated``, for every layout — the indexer's extractor and the
+        entity's post-label recount both read it. A row is annotated when its
+        gold slot is present, and ``FolderLayout.read_example`` emits that slot
+        on exactly the scan result ``has_ground_truth`` reports, so the
+        per-example ``index`` flag and this count are one rule without a second
+        pass over the directories."""
         return sum(1 for ex in examples if getattr(ex, "ground_truth", None) is not None)
 
     def read(self, folder: Path, spec: type, *, dataset_id: str,
@@ -344,15 +346,11 @@ class FolderLayout(DatasetLayout):
         """Does this example carry gold DATA in any form the reader accepts —
         ``ground_truth/``, ``ground_truth.txt``, ``ground_truth-N``, or the
         legacy ``expected*`` alias? Exactly when ``read_example`` would emit a
-        ``ground_truth`` slot; the cheap form of that question, so the index
-        and the counts never need the payloads."""
+        ``ground_truth`` slot — the same ``_scan`` classification, so the
+        index's per-example flag and the counted rows can never disagree. The
+        cheap form of the question, so ``index`` never reads the payloads."""
         data, _ = self._scan(ex_dir)
         return bool(data[GROUND_TRUTH] or data[EXPECTED_LEGACY])
-
-    def count_annotated(self, folder, examples: Sequence[Any]) -> int:
-        """From the directories, not the parsed rows — the same ``has_ground_truth``
-        that ``index`` reports per example, so the two can never disagree."""
-        return sum(1 for ex_dir in _example_dirs(folder) if self.has_ground_truth(ex_dir))
 
     def read_example(self, ex_dir: Path) -> Optional[dict[str, Any]]:
         """One example directory as a row dict — ``None`` when it has no input data."""

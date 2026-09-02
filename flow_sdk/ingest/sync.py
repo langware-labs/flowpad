@@ -114,6 +114,44 @@ async def sync_source(
     return combined
 
 
+async def _place(source: DataSource, result, view: SegmentCursorView) -> Optional[IngestReport]:
+    """Put a fetch's payload where the SOURCE says it goes; the report, if any.
+
+    A driver's payload lands EITHER in the graph as a record or on disk as an
+    asset, never both. `ingest_items` stays the single chokepoint for
+    SourceItem writes — reflection is a second destination beside it, not a
+    branch inside it, so that invariant survives a source whose payload is a
+    file.
+
+    Which one is chosen by the SOURCE (`reflect`), not the driver: the same
+    folder could reasonably be mirrored as records or as assets, and a driver
+    that decided this would be deciding a policy question with only transport
+    knowledge.
+    """
+    if result.unchanged:
+        return None
+    report = None
+    if result.items:
+        report = await ingest_items(
+            result.items,
+            mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
+        )
+    if result.refs or result.tombstones:
+        if get_reflector(source.reflect) is None:
+            # A driver that fills `refs` has no record destination; with
+            # `record` (or any mode without a reflector) the files would be
+            # dropped on the floor while the cursor advanced past them — a
+            # source that looks healthy and ingests nothing. Raised BEFORE the
+            # cursor moves, so it is classified like any other config error and
+            # the window is re-read once the mode is fixed.
+            raise SourceError.config(
+                "reflect_mode",
+                f"reflect={source.reflect!r} cannot place files; pick a filesystem mode",
+            )
+        await reflect_refs(source, result.refs, result.tombstones, result.renames)
+    return report
+
+
 async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) -> IngestReport:
     report = IngestReport()
     cursor.last_attempted_at = now
@@ -134,37 +172,7 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
     # cursor is written only below, it leaves the position exactly where it was.
     try:
         result = await driver.fetch(source, view)
-
-        # ── the two destinations ───────────────────────────────────────────
-        #
-        # A driver's payload lands EITHER in the graph as a record or on disk
-        # as an asset, never both. `ingest_items` stays the single chokepoint
-        # for SourceItem writes — reflection is a second destination beside
-        # it, not a branch inside it, so that invariant survives a source
-        # whose payload is a file.
-        #
-        # Which one is chosen by the SOURCE (`reflect`), not the driver: the
-        # same folder could reasonably be mirrored as records or as assets,
-        # and a driver that decided this would be deciding a policy question
-        # with only transport knowledge.
-        if not result.unchanged and result.items:
-            report = await ingest_items(
-                result.items,
-                mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
-            )
-        if not result.unchanged and (result.refs or result.tombstones):
-            if get_reflector(source.reflect) is None:
-                # A driver that fills `refs` has no record destination; with
-                # `record` (or any mode without a reflector) the files would
-                # be dropped on the floor while the cursor advanced past them
-                # — a source that looks healthy and ingests nothing. Raised
-                # BEFORE the cursor moves, so it is classified like any other
-                # config error and the window is re-read once the mode is fixed.
-                raise SourceError.config(
-                    "reflect_mode",
-                    f"reflect={source.reflect!r} cannot place files; pick a filesystem mode",
-                )
-            await reflect_refs(source, result.refs, result.tombstones, result.renames)
+        report = await _place(source, result, view) or report
     except Exception as exc:  # noqa: BLE001 — classified, never re-raised
         health, code, detail = classify(exc)
         cursor.health = health.value
@@ -227,31 +235,34 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
 
 
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
-    # Free: this row is being written anyway, and it saves every list surface
-    # from watching the cursor table live just to render a count.
-    source.segment_count = len(cursors)
     # A parked segment stays parked on its own row; it must not park the
     # SOURCE. `may_poll` refuses a `config_error` source outright, so rolling
     # one bad channel up here used to stop every healthy sibling from polling
     # — the opposite of the per-stream isolation this module promises. The
-    # source is `config_error` only when there is nothing left that could run.
-    parked = [c for c in cursors if c.health == SourceHealth.CONFIG_ERROR.value]
-    live = [c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value]
-    if cursors and not live:
-        health = SourceHealth.CONFIG_ERROR
-    else:
-        health = worst_of([c.health for c in live])
-    source.health = health.value
-    # The card still names the worst offender: a live source with one parked
-    # segment shows WHICH one and why, otherwise the parked row is invisible.
+    # source is `config_error` only when there is nothing left that could run,
+    # which `worst_of` already answers: fall back to the full list only when
+    # every segment is parked (and to the empty list's NEVER_SYNCED when there
+    # are none at all).
+    live = [c.health for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value]
+    health = worst_of(live or [c.health for c in cursors])
+    # The card still names the worst offender, preferring one at the rolled-up
+    # health and falling back to a parked segment — otherwise the parked row is
+    # invisible on a source that reads healthy.
     offender = next(
         (c for c in cursors if c.health == health.value and c.error_code), None
-    ) or next((c for c in parked if c.error_code), None)
-    source.error_code = offender.error_code if offender else None
-    source.error_detail = offender.error_detail if offender else None
+    ) or next(
+        (c for c in cursors if c.health == SourceHealth.CONFIG_ERROR.value and c.error_code), None
+    )
     if health is SourceHealth.OK:
         source.last_synced_at = now
-    source.schedule_next(now)
+    _stamp_source(
+        source,
+        health,
+        offender.error_code if offender else None,
+        offender.error_detail if offender else None,
+        now,
+        segment_count=len(cursors),
+    )
     await source.save()
 
 
@@ -268,17 +279,38 @@ async def _fail_source(
     segments can fail for a transient reason, and parking a source over one
     network blip is the mistake `SourceError.for_status` exists to prevent.
 
-    Mirrors `_roll_up` on the fields it stamps: the same `now` the run was
-    given (not a second clock read), the detail bounded the way a cursor's is,
-    and the segment count the row already knows about — the enumerate that
-    failed here is exactly the case where the count would otherwise go stale
-    with nothing to say it did."""
-    source.health = health.value
-    source.error_code = code
-    source.error_detail = detail[:500]
-    source.segment_count = len(await DataSourceCursor.get_all({"data_source_id": source.id}))
+    Stamps through the same helper as `_roll_up`, so the two cannot drift: the
+    `now` the run was given (not a second clock read), and a bounded detail.
+    The segment count is left alone — this path failed BEFORE enumerating, so
+    it has nothing truer to say than the row already does."""
+    _stamp_source(source, health, code, detail, now)
     emit_sync_tag(
         source.provider, source.id, "failed", error_code=code, error_detail=detail
     )
-    source.schedule_next(now)
     await source.save()
+
+
+def _stamp_source(
+    source: DataSource,
+    health: SourceHealth,
+    code: Optional[str],
+    detail: Optional[str],
+    now: datetime,
+    *,
+    segment_count: Optional[int] = None,
+) -> None:
+    """The source row's verdict fields, written in ONE place.
+
+    Both endings of a run — the roll-up over segments and a whole-source
+    failure — stamp the same five fields, and a comment saying "mirrors the
+    other" is exactly the kind of pairing that drifts. `segment_count` is
+    optional because only the roll-up has counted.
+    """
+    source.health = health.value
+    source.error_code = code
+    source.error_detail = detail[:500] if detail else detail
+    if segment_count is not None:
+        # Free: this row is being written anyway, and it saves every list
+        # surface from watching the cursor table live just to render a count.
+        source.segment_count = segment_count
+    source.schedule_next(now)

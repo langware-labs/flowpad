@@ -328,7 +328,7 @@ class DataSource(Entity):
         Not synchronous — the poller runs off the once-a-minute heartbeat, so
         this means "on the next tick", within 60s. Deliberately not sped up.
         """
-        self._make_due()
+        await self._make_due()
         await self.save()
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
@@ -469,7 +469,7 @@ class DataSource(Entity):
 
         # A parked source would otherwise accept the replay and then never poll
         # to act on it.
-        self._make_due()
+        await self._make_due()
         await self.save()
 
         return {
@@ -580,9 +580,14 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
-        await self._coerce_config()
-        await self._validate_config()
-        await self._coerce_reflect()
+        # ONE spec read per save, shared by the three rules below. Each used
+        # to fetch it independently, so a create paid three round trips for the
+        # same row on a request a person is waiting on. `_needs_spec` keeps the
+        # steady state free: the poller's per-tick re-save reads nothing.
+        spec = await self._spec() if self._needs_spec() else None
+        self._coerce_config(spec)
+        self._validate_config(spec)
+        self._coerce_reflect(spec)
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe
             # keys on it (Verify on a fresh source probed nothing) and the UI
@@ -603,7 +608,28 @@ class DataSource(Entity):
         self._stamp_origin()
         return await super().save(*args, **kwargs)
 
-    async def _coerce_config(self) -> None:
+    def _needs_spec(self) -> bool:
+        """True when any save-time rule below still has a question for the spec.
+
+        A saved row whose config is already typed and whose reflect mode is
+        settled has nothing to ask, which is the poller's case on every tick.
+        """
+        untyped = isinstance(self.config, dict) and any(isinstance(v, str) for v in self.config.values())
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        return untyped or stuck or not self.exist_in_db
+
+    async def _spec(self) -> "Optional[object]":
+        """The provider's definition row, or None when it cannot be resolved —
+        an unresolvable spec changes nothing about any of the three rules."""
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            return await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return None
+
+    def _coerce_config(self, spec) -> None:
         """Shape ``config`` by the definition's field types on save — a URL sent
         as a string where ``lines`` is declared must not produce a source that
         looks configured and fails on its first sync (the rss driver iterating
@@ -617,16 +643,10 @@ class DataSource(Entity):
         """
         if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
             return
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
-
-        try:
-            spec = await DataSourceSpec.get_one({"name": self.provider})
-        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
-            return
         if spec is not None:
             self.config = spec.coerce_config(self.config)
 
-    async def _validate_config(self) -> None:
+    def _validate_config(self, spec) -> None:
         """The manifest's ``required`` / ``pattern`` rules, applied where the
         dialog cannot see: the API and an agent. The form already refuses a
         blank required field and a value off its regex, so a source created by
@@ -639,15 +659,7 @@ class DataSource(Entity):
         exception nobody is there to read — the sync's own health verdict is
         where an existing source reports a config it cannot use.
         """
-        if self.exist_in_db or not isinstance(self.config, dict):
-            return
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
-
-        try:
-            spec = await DataSourceSpec.get_one({"name": self.provider})
-        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
-            return
-        if spec is None:
+        if self.exist_in_db or not isinstance(self.config, dict) or spec is None:
             return
         for name, field in (spec.config or {}).items():
             value = self.config.get(name)
@@ -670,7 +682,7 @@ class DataSource(Entity):
             if bad:
                 raise ValueError(f"config.{name} is not valid: {', '.join(bad)}")
 
-    async def _coerce_reflect(self) -> None:
+    def _coerce_reflect(self, spec) -> None:
         """``reflect`` must be a mode the spec offers, or the source ingests
         nothing: the folder driver returns file refs, and with the row-level
         default ``record`` there is no reflector to place them — the poll
@@ -688,12 +700,6 @@ class DataSource(Entity):
         driver = self._driver()
         stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
         if self.exist_in_db and not stuck:
-            return
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
-
-        try:
-            spec = await DataSourceSpec.get_one({"name": self.provider})
-        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
             return
         modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
         if not modes or self.reflect in modes:
@@ -818,20 +824,32 @@ class DataSource(Entity):
 
     # ── shared bodies — the actions above are thin wrappers over these ────────
 
-    def _make_due(self) -> None:
+    async def _make_due(self) -> None:
         """Make this source due on the next tick, clearing any error latch.
 
-        THE un-latch. `is_due` refuses a `config_error` source, so a parked
-        source that is not cleared here accepts the operator's verb and then
-        never polls to act on it. One copy, because a second one diverges —
-        the rule `SourceError.for_status` states in `ingest/health.py`.
+        THE un-latch, and it has to cover BOTH latches: `is_due` refuses a
+        `config_error` source, and `_round_robin` skips a `config_error`
+        cursor. Clearing only the row would let an operator fix a credential,
+        press Sync now, and watch the segment sit out every tick while the
+        roll-up re-stamps the source from it. One copy, because a second one
+        diverges — the rule `SourceError.for_status` states in
+        `ingest/health.py`.
         """
+        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+
         self.next_poll_at = None
         if self.health == SourceHealth.CONFIG_ERROR.value:
             self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
                 else SourceHealth.OK.value
         self.error_code = None
         self.error_detail = None
+        for cursor in await DataSourceCursor.get_all({"data_source_id": self.id}):
+            if cursor.health == SourceHealth.CONFIG_ERROR.value:
+                cursor.mark_ok()
+                cursor.error_code = None
+                cursor.error_detail = None
+                cursor.consecutive_failures = 0
+                await cursor.save()
 
     async def _reset_cursors(self) -> int:
         """Forget every segment's position; the cursor rows stay (see ``DataSourceCursor.reset_for``)."""

@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { ApiFailResponse } from './ApiResponse';
+import { ApiFailResponse, ApiWarning } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
@@ -123,10 +123,19 @@ function initApiClient(client: ApiAxiosInstance) {
     (response: AxiosResponse) => {
       const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementSuccessful(method);
-      // Any status code that lie within the range of 2xx cause this function to trigger
-      // Do something with response data
+      // The interceptor unwraps to `data`, so anything else on the envelope is
+      // dropped here. `warnings` is a SUCCESS response saying part of the work
+      // did not land (e.g. a record saved to disk whose DB row failed) — the
+      // caller got its payload and would otherwise never learn that, so log it
+      // rather than let it vanish between the server and the app.
+      const warnings = (response.data as { warnings?: ApiWarning[] })?.warnings;
+      if (warnings?.length) {
+        console.warn(
+          `[api] ${method} ${response.config?.url ?? ''} succeeded with warnings:`,
+          warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
+        );
+      }
       return response.data.data;
-      //return response;
     },
     (error) => {
       // Any status codes that falls outside the range of 2xx cause this function to trigger

@@ -97,7 +97,8 @@ async def _attention_loop() -> None:
             if source is None or not source.may_poll():
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
-            _inflight.add(source_id)
+            if not _claim(source_id):
+                continue
             asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
         # Sleep to the nearest upcoming edge (a due round or a lease expiry)
         # instead of a fixed 1s spin — most wakeups were dead time under a 5s
@@ -106,6 +107,20 @@ async def _attention_loop() -> None:
         edges = [min(l["next"], l["expiry"]) for l in _attention.values()]
         if edges:
             await asyncio.sleep(min(max(min(edges) - time.monotonic(), 0.25), 5.0))
+
+
+def _claim(source_id: str) -> bool:
+    """Take this source's poll slot, or report that someone already holds it.
+
+    The three lanes — the heartbeat, the attention fast lane and an
+    out-of-band `poll_source` — all take the same slot, and two `sync_source`
+    runs on one source race each other's cursor writes. `_run_poll` is what
+    releases it, in a `finally`.
+    """
+    if source_id in _inflight:
+        return False
+    _inflight.add(source_id)
+    return True
 
 
 async def dispatch_due_sources(
@@ -133,16 +148,15 @@ async def dispatch_due_sources(
         return dispatched
 
     for source in sources:
-        if source.id in _inflight:
-            continue
-        if not source.is_due(now):
+        if source.id in _inflight or not source.is_due(now):
             continue
         # Dispatch even when a capability is missing: `sync_source` records it
         # as `capability_unavailable` / config_error, which is what surfaces the
         # "Parked — needs attention" banner. Skipping silently here left a
         # gated source sitting at `never_synced`, looking healthy, never
         # polling, with nothing anywhere explaining why.
-        _inflight.add(source.id)
+        if not _claim(source.id):
+            continue
         dispatched.append(source.id)
         spawn(_run_poll(source, now))
 
@@ -159,9 +173,8 @@ async def poll_source(source: DataSource, now: Optional[datetime] = None) -> boo
     poll (or the next tick) picks the change up, which is all a change event
     ever promised (`change_event.py`: a lost event is latency, never loss).
     """
-    if source.id in _inflight:
+    if not _claim(source.id):
         return False
-    _inflight.add(source.id)
     await _run_poll(source, now or datetime.now(timezone.utc))
     return True
 
