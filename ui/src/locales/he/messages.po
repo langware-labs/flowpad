@@ -3658,6 +3658,10 @@ msgstr "הגדר את החשבון שלך, העדפות היישום והודע�
 #~ msgid "Configured by worker"
 #~ msgstr ""
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured in Data sources — no file on disk"
+msgstr "מוגדר במקורות נתונים — אין קובץ בדיסק"
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -12012,6 +12016,10 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Open in Data sources"
+msgstr "פתיחה במקורות נתונים"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
