@@ -22,6 +22,13 @@ vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', ()
   ),
 }));
 
+// The pre-deploy checklist is a whole dependency tree of its own (auth, project,
+// git preflight, OAuth) and is pinned in `tests/unit/agent-deploy-checklist.test.tsx`.
+// This file is about the deployment rows, so stub it rather than re-mock its world.
+vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
+  AgentDeployChecklist: () => null,
+}));
+
 vi.mock('@sdk/react/hooks', () => ({
   useEntitiesQuery: () => ({ data: mocks.deployments, refetch: mocks.refetch }),
 }));
