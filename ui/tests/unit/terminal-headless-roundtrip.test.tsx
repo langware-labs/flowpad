@@ -404,6 +404,14 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
   });
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_bidi.rules: FAILING? read this tag's rules before editing
+//       — the contract has TWO triggers (container mount AND vendor resolution); do
+//       not delete either stamp
+// flowpad:endcapsule tag
 describe('InteractiveTerminal — a session opened from chat gets the RTL grid contract', () => {
   let savedPlatform: PropertyDescriptor | undefined;
 
