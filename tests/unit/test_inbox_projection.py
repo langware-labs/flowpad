@@ -264,3 +264,45 @@ class TestSelfAddresses:
 
         source = SimpleNamespace(account_identities=["a@x.io", "b@x.io"], account_key="")
         assert "b@x.io" in self_addresses(source)
+
+
+class TestProjectedAnnounce:
+    """`inbox.*.message.projected` means ARRIVAL. The reconcile sweep and the
+    `.created` handler both reach `_place_message` for the same item; only the
+    call that created the row may announce, or every message is announced
+    twice and an agent mailbox answers it twice."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_sweep_first_then_created_handler_announces_once(self, monkeypatch):
+        import uuid
+        from types import SimpleNamespace
+
+        import flow_sdk.inbox.inbox_on_tag as tags_mod
+        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.source_item import SourceItem
+        from flow_sdk.inbox.projection import _on_item, project_source_item
+
+        announced: list[str] = []
+        monkeypatch.setattr(tags_mod, "emit_projected_tag", lambda item: announced.append(item.id))
+
+        source = DataSource(
+            name="once", provider="telegram", channel="telegram",
+            account_key=f"@bot-{uuid.uuid4().hex[:8]}",
+        )
+        await source.save()
+        item = SourceItem(
+            kind="content.message.chat", provider="telegram",
+            data_source_id=str(source.id), segment_key="updates",
+            external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
+            name="once", body="hello once",
+            author_external_id="7", author_display="Someone",
+        )
+        await item.save()
+
+        # The sweep gets there first and places (and announces) the row …
+        await project_source_item(item, source=source, notify=False, recount=False, announce=True)
+        # … then the `.created` handler arrives for the same item.
+        await _on_item(SimpleNamespace(tag="ingest.telegram.item.created", data={"entity_id": str(item.id)}))
+
+        assert announced == [str(item.id)], f"announced {len(announced)} times for one placement"

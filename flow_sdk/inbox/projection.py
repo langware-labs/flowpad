@@ -170,8 +170,9 @@ async def project_source_item(
 
     The announcement still fires from HERE rather than from a lane, because the
     two lanes race and either may do the write; the incremental lane calls this
-    function whether or not the sweep got there first, so the announcement
-    lands exactly once without a lane having to know who won.
+    function whether or not the sweep got there first, and only the call that
+    CREATED the row announces (``_place_message``), so the announcement lands
+    exactly once without a lane having to know who won.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
@@ -360,7 +361,13 @@ async def _place_message(
     )
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
-    if announce:
+    # Announce a BIRTH, not a write. Both lanes (the reconcile sweep and the
+    # `.created` handler) reach here for the same item, and whichever loses
+    # finds the row and re-projects — announcing then put two `projected`
+    # events on the bus per message, and an agent mailbox answered each one.
+    # `existing_fm is None` is the lane-neutral "I placed it" fact, so the
+    # announcement lands exactly once without either lane knowing who won.
+    if announce and existing_fm is None:
         from flow_sdk.inbox.inbox_on_tag import emit_projected_tag  # noqa: PLC0415
 
         emit_projected_tag(item)

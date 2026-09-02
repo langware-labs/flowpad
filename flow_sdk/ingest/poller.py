@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import weakref
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -53,7 +54,11 @@ ATTENTION_LEASE_SECONDS = 35.0
 
 #: source id → {"expiry": monotonic, "cadence": seconds, "next": monotonic}
 _attention: dict[str, dict] = {}
-_attention_tasks: "dict[object, asyncio.Task]" = {}
+# Keyed by the RUNNING loop, weakly — the `inbox/_locks.py` idiom. A plain
+# dict pinned every test's torn-down loop (and its task) forever.
+_attention_tasks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def note_attention(source_id: str, cadence_seconds: int) -> None:
@@ -144,12 +149,35 @@ async def dispatch_due_sources(
     return dispatched
 
 
+async def poll_source(source: DataSource, now: Optional[datetime] = None) -> bool:
+    """Poll one source NOW, under the same in-flight guard as the tick lanes.
+
+    Returns whether it ran. The one entry point for an out-of-band poll — a
+    change event, a CLI — so nothing polls a source the heartbeat is already
+    polling: two `sync_source` runs on one source race each other's cursor
+    writes. A source already in flight is skipped, not queued; the running
+    poll (or the next tick) picks the change up, which is all a change event
+    ever promised (`change_event.py`: a lost event is latency, never loss).
+    """
+    if source.id in _inflight:
+        return False
+    _inflight.add(source.id)
+    await _run_poll(source, now or datetime.now(timezone.utc))
+    return True
+
+
 async def _run_poll(source: DataSource, now: datetime) -> None:
     """Owns its own slot: whatever happens, the source is released."""
     try:
         # Push the next due time out BEFORE any I/O. If this process dies
         # mid-poll, the source waits one interval on restart instead of being
         # re-picked — and re-crashed — on every tick.
+        #
+        # Known, deferred: on the attention fast lane this is a second row
+        # write per round (`request_poll_action` already saved the same
+        # reschedule when it armed the lane). Not a correctness problem — the
+        # same value twice — but the fast lane needs a design pass before the
+        # pre-schedule can be skipped for it without losing the crash guard.
         try:
             source.schedule_next(now)
             await source.save()

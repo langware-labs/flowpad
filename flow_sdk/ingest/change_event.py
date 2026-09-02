@@ -84,7 +84,7 @@ async def handle_change(event: Any) -> bool:
     bus deliberately does not await consumers and would only log the failure.
     """
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+    from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
     data = getattr(event, "data", None) or {}
     source_id = str(data.get("source_id") or "")
@@ -98,8 +98,10 @@ async def handle_change(event: Any) -> bool:
         return False
     if source is None:
         return False
-    await sync_source(source)
-    return True
+    # Through the poller, never `sync_source` directly: the heartbeat may have
+    # this source in flight, and a second run would race the first's cursor
+    # writes. In flight means the change is already being picked up.
+    return await poll_source(source)
 
 
 def subscribe() -> Callable[[], None]:
