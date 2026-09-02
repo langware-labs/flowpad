@@ -13,6 +13,12 @@
  * and 400s with "Post not supported for this path" on the `/dock/hub/llm-endpoints` page, which
  * is served straight off the hub. `members` is registered `types="all"` and routes on both.
  *
+ * Sharing a budget sends NO email (`notifyByEmail: false`). Auto-accept is on for every entity
+ * type, so the `reader` edge is written before the mail step would run — the recipient already has
+ * the budget and finds it in their own listing. The mail would announce a fait accompli, and a
+ * budget is handed over in a conversation ("here is your $1"), not discovered in an inbox. The hub
+ * still mints the Invitation, so nothing else about the grant changes.
+ *
  * `reader` is the entire security story of sharing money: the hub's `llm_endpoint` policy gives
  * it `read, invoke, models, chain, usage`. The recipient can spend the budget and watch it
  * drain; they cannot raise its limits, swap the provider key underneath the owner, allocate
@@ -87,7 +93,9 @@ export async function shareEndpointByEmail(
 ): Promise<ShareEndpointOutcome> {
   const callbackOverride = endpointShareLandingPath(endpoint.id);
   const results = await Promise.allSettled(
-    emails.map((email) => endpoint.inviteMember(email, ENDPOINT_SHARE_ROLE, { callbackOverride })),
+    emails.map((email) =>
+      endpoint.inviteMember(email, ENDPOINT_SHARE_ROLE, { callbackOverride, notifyByEmail: false }),
+    ),
   );
   const outcome: ShareEndpointOutcome = { granted: [], failed: [] };
   results.forEach((result, i) => {

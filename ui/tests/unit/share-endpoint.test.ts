@@ -39,11 +39,26 @@ describe('shareEndpointByEmail', () => {
     expect(inviteMember).toHaveBeenCalledTimes(2);
     expect(inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', ENDPOINT_SHARE_ROLE, {
       callbackOverride: '/dock/hub/llm-endpoints/e1',
+      notifyByEmail: false,
     });
     expect(inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', ENDPOINT_SHARE_ROLE, {
       callbackOverride: '/dock/hub/llm-endpoints/e1',
+      notifyByEmail: false,
     });
     expect(outcome).toEqual({ granted: ['bob@x.com', 'carol@x.com'], failed: [] });
+  });
+
+  it('shares without emailing — the recipient already has the budget', async () => {
+    // Auto-accept writes the `reader` edge before the hub would send, so the mail announces a fait
+    // accompli. A budget is handed over in conversation, not discovered in an inbox.
+    const inviteMember = vi.fn().mockResolvedValue(undefined);
+
+    await shareEndpointByEmail(fakeEndpoint(inviteMember), ['bob@x.com']);
+
+    expect(inviteMember).toHaveBeenCalledWith('bob@x.com', ENDPOINT_SHARE_ROLE, {
+      callbackOverride: '/dock/hub/llm-endpoints/e1',
+      notifyByEmail: false,
+    });
   });
 
   it('shares at reader — spend and watch, never configure', () => {
