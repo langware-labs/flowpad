@@ -1062,6 +1062,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *  - ``transfer`` + ``roleToKeep``: hand the entity OVER rather than share it.
    *    ``roleToKeep: null`` means keep nothing. Owner-only, enforced hub-side by
    *    ``can_assign``'s TRANSFER branch — never assume it from the UI.
+   *  - ``notifyByEmail: false``: grant without emailing. The role is written —
+   *    and, with auto-accept on, accepted — before the hub reaches the mail
+   *    step, so this withholds the NOTIFICATION and nothing else. Only worth it
+   *    where the recipient is being told another way. Sent only when explicitly
+   *    false, so the body of every existing caller is unchanged.
    */
   public async inviteMember(
     email: string,
@@ -1084,6 +1089,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
        * membership instead of being refused.
        */
       extraTargets?: { typeid: string; role: string }[];
+      /**
+       * Send the invitation email? Defaults to true (the hub's own default).
+       *
+       * The SENDER's choice, not the recipient's — the hub keeps this separate
+       * from `is_notification_required`, which is the recipient's preference.
+       */
+      notifyByEmail?: boolean;
     },
   ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
@@ -1093,6 +1105,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
+      ...(opts?.notifyByEmail === false ? { notify_by_email: false } : {}),
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;

@@ -3,6 +3,10 @@
  * hub's permission expansion allows them. New endpoint is always offered —
  * creating one is a type-level right (the creator becomes its owner).
  *
+ * Every row also carries a Test button: using an endpoint is a reader's right,
+ * so the "does a call through this succeed?" question is answerable on the
+ * rows a reader can see, not only on the ones they can configure.
+ *
  * Today's tokens/cost per row come from one `usage` call per visible endpoint
  * (react-query dedupes and caches them; the same query feeds the detail's
  * Today tab), so the list is a glance at spend without a second endpoint.
@@ -19,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
 import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
+import { TestEndpointButton } from './TestEndpointButton';
 import { TONE } from './tone';
 import { cohortRange, formatUsd } from './usage-math';
 import { usageQueryOptions } from './use-llm-endpoints';
@@ -163,7 +168,7 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
               <TableHead className="text-end">
                 <Trans>Today</Trans>
               </TableHead>
-              <TableHead className="w-24" />
+              <TableHead className="w-40" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -235,7 +240,8 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
                     {totals ? `${formatValue(totals.total_tokens, 'tokens')} · ${formatUsd(totals.cost_usd)}` : '…'}
                   </TableCell>
                   <TableCell className="text-end">
-                    <span className="inline-flex gap-1" onClick={(ev) => ev.stopPropagation()}>
+                    <span className="inline-flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>
+                      <TestEndpointButton endpointId={e.id} />
                       {configurable && (
                         <Button
                           variant="ghost"

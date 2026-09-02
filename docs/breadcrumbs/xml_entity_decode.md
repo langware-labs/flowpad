@@ -1,3 +1,7 @@
+---
+id: e81f1d9a-4848-4e78-90e8-5c90daf2cd14
+---
+
 ***
 
 title: XML entity decode belongs to the XML transport, not to FlowData
@@ -129,8 +133,3 @@ SyntaxError: Expected ',' or '}' after property value in JSON at position 29
 * [Served app HTML must be read as UTF-8](served_html_encoding.md) — same family:
   an encoding contract that a permissive default silently violates.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: e81f1d9a-4848-4e78-90e8-5c90daf2cd14
-flowpad:endcapsule identity -->
