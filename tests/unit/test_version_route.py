@@ -29,7 +29,7 @@ async def test_check_version_exposes_hub_build_timestamps(monkeypatch):
     monkeypatch.setattr(version_route.hub, "get_info", fake_hub_info)
 
     try:
-        response = await version_route.check_version()
+        response = (await version_route.check_version()).data
     finally:
         version_route._cache.clear()
 

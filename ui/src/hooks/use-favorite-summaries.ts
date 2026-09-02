@@ -1,5 +1,5 @@
 import type { Bookmark } from '@sdk';
-import { sdkConfig } from '@sdk/config/index';
+import apiClient from '@sdk/client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -54,14 +54,7 @@ export function useFavoriteSummaries(bookmarks: Bookmark[]) {
     queryKey: ['favorite-summaries', key],
     queryFn: async () => {
       if (refs.length === 0) return { summaries: [] } as SummaryResponse;
-      const resp = await fetch(`${sdkConfig.apiUrl}/api/v1/favorites/summary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ refs }),
-      });
-      if (!resp.ok) throw new Error(`favorites/summary ${resp.status}`);
-      return (await resp.json()) as SummaryResponse;
+      return apiClient.post<SummaryResponse>('/api/v1/favorites/summary', { refs });
     },
     staleTime: 15_000,
   });
@@ -87,7 +80,5 @@ export function summaryForBookmark(
 ): FavoriteSummary | undefined {
   const type = bookmark.data?.entity_type;
   const id = bookmark.data?.entity_id;
-  return typeof type === 'string' && typeof id === 'string'
-    ? summaries.get(favoriteSummaryKey(type, id))
-    : undefined;
+  return typeof type === 'string' && typeof id === 'string' ? summaries.get(favoriteSummaryKey(type, id)) : undefined;
 }

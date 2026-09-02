@@ -56,8 +56,8 @@ async def test_trace_skeleton_route(client, session_on_disk):
     r = await client.get(f"/api/v1/workers/claude/{SID}/trace-skeleton")
     assert r.status_code == 200
     body = r.json()
-    assert body["ok"] is True
-    skeleton = body["skeleton"]
+    assert body["status"] == "SUCCESS"
+    skeleton = body["data"]["skeleton"]
     assert skeleton["session_id"] == SID
     assert skeleton["summary"]["lane_count"] == 1
     assert skeleton["lanes"][0]["segments"][0]["label"] == "do the thing"
@@ -83,8 +83,7 @@ async def test_create_agent_trace_route_creates_new_records(client, session_on_d
     r1 = await client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                            json={"annotations": annotations})
     assert r1.status_code == 200, r1.text
-    body1 = r1.json()
-    assert body1["ok"] is True
+    body1 = r1.json()["data"]
     assert body1["summary"]["verdict"] == "ok"
     assert body1["summary"]["issue_count"] == 1
     assert body1["id"]
@@ -93,7 +92,7 @@ async def test_create_agent_trace_route_creates_new_records(client, session_on_d
     r2 = await client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                            json={"annotations": annotations})
     assert r2.status_code == 200
-    assert r2.json()["id"] != body1["id"]
+    assert r2.json()["data"]["id"] != body1["id"]
 
     # The summary fields are queryable via the graph API; trace stays a blob.
     g = await client.get(f"/api/v1/graph/agent_trace/{body1['id']}")
@@ -118,8 +117,7 @@ async def test_create_agent_trace_preserves_by_asset(client, session_on_disk):
     r = await client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                           json={"annotations": annotations})
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["ok"] is True
+    body = r.json()["data"]
 
     with open(body["asset_ref"], encoding="utf-8") as f:
         doc = json.load(f)
