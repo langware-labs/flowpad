@@ -1,12 +1,26 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import { DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
-import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
+import {
+  AssetRow,
+  assetScope,
+  basename,
+  descriptorKey,
+  displayLabelForDescriptor,
+  type AssetScope,
+} from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
+import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { useStagedAssets } from './useStagedAssets';
 import { useQuickCreatePick } from '@src/components/quick-create';
+
+/** Stable while loading — a fresh `[]` per render would re-run the row memo. */
+const NO_SOURCES: DataSource[] = [];
 
 /** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
  *  pane never caches Skill entities); a skill's identity IS its folder, so the
@@ -65,6 +79,15 @@ export function AgentResourcesBody() {
   // launch, so it carries no worker dimension to filter on.
   const mcpAssets = useStagedAssets(Mcp.type);
 
+  // The connected sources, read through the ONE named query the Data sources
+  // view uses, so the two can't disagree about what exists. Not
+  // `useStagedAssets` like its three neighbours: a DataSource is a DB row and a
+  // property of the INSTANCE (`scope: []`, see flow_sdk/builtin/data_source.py),
+  // not a file the project-level path scan could find.
+  const { data: sources = NO_SOURCES, isLoading: sourcesLoading } = useEntitiesQuery<DataSource>(sourcesQuery);
+
+  const { navigation } = useDockNavigation();
+
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   // Project home's own creation seam: `onPick(type)` opens the same name/scope
   // form. `dialogs` MUST be rendered or the trigger silently does nothing.
@@ -82,6 +105,47 @@ export function AgentResourcesBody() {
     [docAssets.descriptors],
   );
 
+  // A source row leads to the Data sources view — where a source is edited,
+  // replayed and deleted — because `data_source` has no asset editor to route
+  // to (`editorForType` returns none) and the derived route would dead-end in
+  // the markdown fallback.
+  const openInDataSources = useMemo(
+    () => ({ label: t`Open in Data sources`, run: () => navigation.openTab(ViewType.DATA_SOURCES) }),
+    [navigation, t],
+  );
+
+  const sourceRows = useMemo(
+    () =>
+      [...sources]
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map((source) => {
+          const typeid = source.typeId.toString();
+          const label = source.name || source.provider || typeid;
+          const d: AssetDescriptor = {
+            typeid,
+            // A source lives in the remote system it syncs, which is none of
+            // this process's source dirs and not writable from it.
+            source: 'external',
+            posix_path: null,
+          };
+          // Hand-built rather than `assetScope(d)`: that reads a FILE's location
+          // off `source_dir`, and this row has no file. The scope axis still
+          // answers "where does this live" — for a source that is the remote it
+          // speaks to. `channel` is the driver-written user-facing word (gmail,
+          // slack); `provider` is what shows before the first poll fills it in.
+          const scope: AssetScope = {
+            kind: 'external',
+            label: source.channel || source.provider || 'external',
+            revealPath: null,
+            tooltip: [label, source.channel || source.provider, `status: ${source.status}`, `health: ${source.health}`]
+              .filter(Boolean)
+              .join('\n'),
+          };
+          return { d, key: typeid, label, scope };
+        }),
+    [sources],
+  );
+
   const mcpAssetRows = useMemo(
     () => mcpAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
     [mcpAssets.descriptors],
@@ -89,19 +153,17 @@ export function AgentResourcesBody() {
 
   return (
     <div className="flex flex-col py-1">
-      {/* Deliberately listless. What this section used to render was the
-          installed `DataSourceSpec` CATALOG — the nine provider types the
-          machine can connect, not anything this agent has or could be given.
-          They were neither viewable (no row opened anything) nor selectable
-          (the Agent has no data-sources field, and adding one is out of
-          scope), so every row was decoration. The one real affordance is
-          connecting a source, which is what `+` does.
-          `itemCount={0}` also means the section settles collapsed — the `+`
-          stays reachable in the header regardless. */}
+      {/* The CONNECTED sources — what an agent here can actually read from —
+          and never again the installed `DataSourceSpec` catalog this section
+          used to list. That catalog was the nine provider types the machine
+          *can* connect: neither viewable nor selectable, so every row was
+          decoration. Same shape as the three sections below it: rows are what
+          is available, `+` adds one more. */}
       <NavigatorSection
         id="data-sources"
         label={t`Data sources`}
-        itemCount={0}
+        isLoading={sourcesLoading}
+        itemCount={sourceRows.length}
         action={
           <IconButton
             icon={Plus}
@@ -115,7 +177,21 @@ export function AgentResourcesBody() {
             <Trans>Connect a data source to make it available here</Trans>
           </Empty>
         }
-      />
+      >
+        {sourceRows.map((row) => (
+          <AssetRow
+            key={row.key}
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
+            selected={false}
+            improvable={false}
+            busy={false}
+            openAction={openInDataSources}
+            cannotOpenReason={t`Configured in Data sources — no file on disk`}
+          />
+        ))}
+      </NavigatorSection>
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so
