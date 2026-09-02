@@ -221,7 +221,15 @@ function writeDesktopVersion(version) {
 }
 
 // Configuration
-const BACKEND_PORT = 9007;
+// A dev run is started from the repo (`npm run dev:electron`) against a backend
+// the developer already has running: it does NOT own the machine's flowpad
+// install, and must not start, stop or upgrade it.
+const isDev = process.env.MINIHUB_DEV === 'true';
+// Fixed for a packaged app; in dev it can point at a repo-run backend (e.g. the
+// `oss` instance on 9008). One const feeds the start URL, the `get-backend-url`
+// IPC and the open-externally guard, so they can never disagree.
+const BACKEND_PORT =
+  isDev && process.env.FLOWPAD_BACKEND_PORT ? Number(process.env.FLOWPAD_BACKEND_PORT) : 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
@@ -416,6 +424,11 @@ function createWindow() {
   // Mouse back/forward (X1/X2) buttons. Electron does not map these to history
   // navigation, so we wire them up — and the OS surfaces them differently per
   // platform, so we listen per platform (one source each, no double-navigation).
+  //
+  // This is the ONLY navigator for those buttons. The renderer deliberately
+  // binds nothing (see the NOTE in `ui/src/main.tsx`): on hardware that sends a
+  // real X1 the button reaches the web layer too, so a second handler there
+  // makes one press step history twice.
   const nav = () => mainWindow.webContents.navigationHistory;
 
   // [nav] tracing: every back/forward source and every resulting history
@@ -607,9 +620,6 @@ async function startApp() {
   if (mainWindow.webContents.isLoading()) {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
   }
-
-  // In development mode, assume backend is running externally
-  const isDev = process.env.MINIHUB_DEV === 'true';
 
   let backendJustUpgraded = false;
 
@@ -835,14 +845,12 @@ async function startApp() {
     mainWindow.webContents.openDevTools();
   }
 
-  // Background update check (non-blocking, after UI is loaded)
-  if (!uvManager) {
-    uvManager = new UvManager(log);
-    try {
-      uvManager._flowBin = await uvManager._resolveFlowBin();
-    } catch {
-      uvManager._flowBin = 'flow';
-    }
+  // Background update check (non-blocking, after UI is loaded). Skipped in dev
+  // for the same reason the startup block is: it would stop the developer's
+  // live backend and reinstall the PyPI package underneath a running app.
+  if (isDev) {
+    log.info('Development mode: skipping background update check');
+    return;
   }
   uvManager.checkForUpdatesInBackground(mainWindow, {
     sendStatus,
