@@ -1,3 +1,4 @@
+import { Capability, capabilityManager, dataManager, harnessKindForWorkerType, TypeId } from '@sdk';
 import { useEffect, useRef } from 'react';
 
 import { openHarnessLoginModal } from './harness-login-store';
@@ -20,6 +21,21 @@ function isSignedOut(detail: string | null | undefined): boolean {
 }
 
 /**
+ * Tell the backend what the harness just said about itself, so the sign-out is
+ * recorded rather than merely displayed.
+ *
+ * Best-effort and deliberately unawaited by the caller: the modal opens either
+ * way. Failing to record leaves the old (wrong) state, which is exactly where
+ * we were before — never worse.
+ */
+async function recordSignedOut(kind: string, message: string): Promise<void> {
+  const id = capabilityManager.getSnapshot(kind).capability?.id;
+  if (!id) return;
+  const capability = await dataManager.getByTypeId<Capability>(new TypeId(Capability.type, id));
+  await capability?.reportSignedOut(message);
+}
+
+/**
  * Pop the harness-login modal when a worker reports that it is signed out.
  *
  * Why this exists: when the harness is logged out, Claude Code answers with a
@@ -29,12 +45,21 @@ function isSignedOut(detail: string | null | undefined): boolean {
  * can; getting the user signed back in is Flowpad's job, and the modal for it
  * already exists.
  *
+ * The sentence is also EVIDENCE, not just a trigger, and that is the second
+ * half of this hook. ``login_state`` is written by the last device login or
+ * auth probe and nothing invalidates it when the user signs out elsewhere;
+ * an auth probe that cannot reach a verdict (a 5s timeout, unparseable output)
+ * deliberately leaves it alone. So the modal could open on this error and greet
+ * the user with a green "Signed in" from a login that had since been revoked.
+ * Reporting the denial to the backend fixes the value everywhere it is read,
+ * and handing it to the modal makes that row honest even if the write fails.
+ *
  * Fires once per distinct message: the status is re-derived on every serialize,
  * so without the latch a signed-out process would re-open the modal on each
  * poll. A different message (or the same one after a successful turn clears it)
  * arms it again.
  */
-export function useHarnessLoginOnAuthError(detail: string | null | undefined): void {
+export function useHarnessLoginOnAuthError(detail: string | null | undefined, workerType?: string | null): void {
   const lastFired = useRef<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +71,8 @@ export function useHarnessLoginOnAuthError(detail: string | null | undefined): v
     }
     if (lastFired.current === text) return;
     lastFired.current = text;
-    openHarnessLoginModal();
-  }, [detail]);
+    const kind = harnessKindForWorkerType(workerType);
+    if (kind) void recordSignedOut(kind, text).catch(() => undefined);
+    openHarnessLoginModal(kind ? { kind, message: text } : undefined);
+  }, [detail, workerType]);
 }

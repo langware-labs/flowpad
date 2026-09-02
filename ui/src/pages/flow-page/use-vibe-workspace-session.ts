@@ -1,5 +1,5 @@
-import { AgenticProcess, parentOfTab, tabForDockKey, tabManager, Tab, TypeId } from '@sdk';
-import { useEffect, useMemo } from 'react';
+import { AgenticProcess, parentOfTab, tabForDockKey, Tab, TypeId } from '@sdk';
+import { useEffect, useMemo, useRef } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAllTabs } from '@src/tabs/use-tab-manager';
@@ -71,10 +71,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // must fall through to the child lookup so a terminal opened inside the
     // workspace keeps rendering in its display pane instead of taking over the
     // whole surface.
-    if (
-      currentDock.viewType === ViewType.SHELL &&
-      DockPointer.isAgenticProcessPointer(currentDock.pointer)
-    ) {
+    if (currentDock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(currentDock.pointer)) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
@@ -104,8 +101,28 @@ export function useVibeWorkspaceSessionHost(
     enabled: !!processTypeId,
   });
 
+  // `processTab` is null in TWO situations that need OPPOSITE answers:
+  //   • never had one — a cold open; the row hasn't landed yet. Mint it.
+  //   • had one, now gone — ANOTHER WINDOW CLOSED THIS SESSION. Minting here
+  //     is what made a closed tab pop back: `setupTabAndAdopt` →
+  //     `materializeTab` finds no existing tab, falls through to `ensureDock`
+  //     → `new_tab` → `ensure_tab`, which sets `visible=True` again ~400 ms
+  //     after the close, so the tab could never be closed while a vibe window
+  //     watched it (RCA 2026-09-01).
+  // A session that is gone is not damage to repair.
+  const hadTab = useRef(false);
+  const sessionId = session?.processId ?? null;
   useEffect(() => {
-    if (!active || !session || session.processTab) return;
+    hadTab.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!active || !session) return;
+    if (session.processTab) {
+      hadTab.current = true;
+      return;
+    }
+    if (hadTab.current) return; // closed elsewhere — never rebuild it
     void setupTabAndAdopt(session.processDock);
   }, [active, session, session?.processTab, session?.processDock]);
 

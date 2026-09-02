@@ -207,9 +207,26 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     return dataManager.callAction<undefined, { cancelled: boolean }>(action);
   }
 
-  /** Cheap login-state probe (no version run) — used by the startup gate. */
-  async authStatus(): Promise<WorkerAuthStatus> {
+  /** Record a sign-out the harness itself reported mid-turn ("Not logged in ·
+   *  Please run /login"). The vendor's own denial is better evidence than the
+   *  auth-status probe, which can fail to reach a verdict and then leaves a
+   *  stale "signed in" standing — see `report_signed_out_action`. */
+  async reportSignedOut(message: string): Promise<{ recorded: boolean; reason?: string }> {
+    const action = new ActionInfo('report-signed-out', Capability.type, this.id, 'POST' as HttpMethod);
+    action.bodyParameters = { message };
+    return dataManager.callAction<{ message: string }, { recorded: boolean; reason?: string }>(action);
+  }
+
+  /** Cheap login-state probe (no version run) — used by the startup gate.
+   *
+   *  `force` drops a recorded refusal before probing. Pass it only for a probe
+   *  the USER asked for (the "Test" button): a refusal the harness itself made
+   *  outranks the probe, which only checks that a credential exists, so without
+   *  an explicit re-check a harness re-authorised outside FlowPad would stay
+   *  stuck reading as signed out. */
+  async authStatus(force = false): Promise<WorkerAuthStatus> {
     const action = new ActionInfo('auth-status', Capability.type, this.id, 'GET' as HttpMethod);
+    if (force) action.queryParameters = { force: 'true' };
     return dataManager.callAction<undefined, WorkerAuthStatus>(action);
   }
 }
