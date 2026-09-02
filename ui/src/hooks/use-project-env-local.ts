@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { EnvLocalStatus, Project } from '@sdk';
+import type { EnvLocalKey, EnvLocalStatus, Project } from '@sdk';
 
 /**
  * The project's `.env.local`, as the Secrets tab sees it.
@@ -11,6 +11,10 @@ import type { EnvLocalStatus, Project } from '@sdk';
  * The response carries key NAMES and line numbers, never values, so there is
  * nothing here to leak into a render.
  */
+/** Stable while loading — a fresh `[]` per render churns every memo that takes
+ *  `keys` as a dependency, which re-runs the credential fold on every render. */
+const NO_KEYS: EnvLocalKey[] = [];
+
 export function useProjectEnvLocal(project: Project | null | undefined) {
   const projectRef = useRef<Project | null>(null);
   projectRef.current = project ?? null;
@@ -58,7 +62,7 @@ export function useProjectEnvLocal(project: Project | null | undefined) {
 
   return {
     ready,
-    keys: status?.keys ?? [],
+    keys: status?.keys ?? NO_KEYS,
     blocked: status?.blocked ?? false,
     blockReason: status?.block_reason ?? null,
     path: status?.path ?? null,

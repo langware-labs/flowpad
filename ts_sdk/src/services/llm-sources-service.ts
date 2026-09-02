@@ -33,6 +33,14 @@ export interface LLMEndpointOffer {
   credential_hint: string;
   system_default: boolean;
   invoke_path: string;
+  /** `LLMFundingKind` — which of the three funding kinds this is. */
+  kind: string;
+  /** Sod entry naming the stored key. A NAME, never a value; `api_key` kind only. */
+  secret_name: string;
+  /** `{sm, md, lg, embedding}` model slugs for this credential. */
+  models: Record<string, string>;
+  /** False for a device login: the backend can never call it. */
+  invocable: boolean;
 }
 
 export interface LLMFundingStatus {
@@ -48,6 +56,10 @@ export interface LLMFundingStatus {
   sources: Record<string, LLMSource[]>;
   /** Per capability kind, the one the resolver picks — `null` when nothing can fund it. */
   resolved: Record<string, LLMSource | null>;
+  /** The endpoints those verdicts name, by typeid, deduplicated across harnesses. A verdict
+   *  mirrors none of the row's fields, so anything renderable (kind, provider, models) is
+   *  looked up here. */
+  endpoints: Record<string, LLMEndpointOffer>;
   /** Capability kinds whose resolved source IS the bound endpoint. */
   active_for: string[];
 }

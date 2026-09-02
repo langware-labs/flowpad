@@ -3,6 +3,9 @@ import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
+import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
+import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
+import { toggleRoot } from '@src/components/rag/rag-service';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -324,19 +327,33 @@ function folderBrowseable(args: {
           },
         ]
       : [];
+  // Every docs folder can be made searchable, so every row carries the toggle — beside the
+  // knowledge browser, which is the same kind of thing: an action ON this folder rather than a
+  // way into it. The backend finds or creates the box's index, so the first folder anybody
+  // marks needs no visit to the Search indexes screen first.
+  const ragAction: ToolbarAction = {
+    id: `rag:${typeid}:${absPath}`,
+    icon: <RagToggleGlyph path={absPath} />,
+    // Neutral wording on purpose: the label is fixed when the row is BUILT, while the answer
+    // it describes changes at render time. "Index this folder" on a button that is about to
+    // UN-index it is worse than naming what the button is for.
+    label: t`Search indexing for this folder`,
+    // The wrapper is load-bearing: `toggleRoot` resolves to the new coverage, and
+    // `ToolbarAction.run` is `void | Promise<void>` — returning it directly is a type error.
+    run: async () => {
+      await toggleRoot(absPath);
+    },
+  };
   return {
     id: markdownFolderNodeId(typeid, absPath),
     kind,
     label,
-    icon:
-      kind === 'vault-root' ? (
-        <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-      ) : (
-        <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-      ),
+    // A docs folder is as indexable as any other, so it wears the same marker; `absPath` is
+    // already the machine path the roots are stored as.
+    icon: <RagFolderIcon Base={Folder} path={absPath} size={kind === 'vault-root' ? 'h-4 w-4' : 'h-3.5 w-3.5'} />,
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ...kbAction],
+    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ragAction, ...kbAction],
     dragData:
       kind === 'folder'
         ? {
@@ -422,14 +439,11 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
   const vaults = type.vaults ?? [];
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
 
+  // A vault keeps the glyph that says which vault it is, and wears the brain on top of it when
+  // it is a RAG root — the two facts are independent, so one must not replace the other.
   const vaultIcon = (v: AssetTypeVault): React.ReactNode => {
-    if (v.scope === 'user') {
-      return <UserIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
-    }
-    if (v.scope === 'project') {
-      return <Library className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
-    }
-    return <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
+    const Base = v.scope === 'user' ? UserIcon : v.scope === 'project' ? Library : Folder;
+    return <RagFolderIcon Base={Base} path={v.absPath} size="h-4 w-4" />;
   };
 
   const buildVaultNode = (v: AssetTypeVault): Browseable => ({

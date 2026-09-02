@@ -12,6 +12,7 @@ from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.folder import FolderDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
+from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.drivers.hackernews import HackerNewsDriver
 from flow_sdk.ingest.drivers.rss import RssDriver
 from flow_sdk.ingest.drivers.slack import SlackDriver
@@ -25,6 +26,7 @@ register_driver(CloudEmailDriver())
 register_driver(FolderDriver())
 register_driver(GoogleDriveDriver())
 register_driver(GitDriver())
+register_driver(GmailDriver())
 register_driver(SlackDriver())
 register_driver(TelegramDriver())
 
@@ -34,6 +36,7 @@ __all__ = [
     "CloudEmailDriver",
     "FolderDriver",
     "GitDriver",
+    "GmailDriver",
     "GoogleDriveDriver",
     "HackerNewsDriver",
     "RssDriver",

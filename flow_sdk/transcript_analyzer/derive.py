@@ -41,6 +41,7 @@ _FLOW_VERBS = frozenset(
         "artifact",
         "auth",
         "connect",
+        "connections",
         "config",
         "context",
         "conversation",

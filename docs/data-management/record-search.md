@@ -53,7 +53,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
 - **Populated by**: `fts_upsert()` from the `sync_to_db()` / indexer path only — no database triggers
 - **Only indexed**: `FtsEntry`s where at least one of `name`/`title`/`description`/`content` is non-None (`FtsEntry.has_content`)
 - **`porter unicode61`**: Porter stemmer for English (run/runs/running match) + Unicode-aware tokenization
-- **Six columns** feed BM25 ranking with default weights `bm25(entities_fts, 0, 0, 10, 8, 3, 1)` — i.e. `entity_id`/`type` contribute nothing, `name` is weighted highest, then `title`, `description`, `content`. The schema was migrated from a 4-column (`entity_id, type, name, indexed_content`) layout; on open the driver drops and recreates the table if the stored DDL lacks `title` (`sqlite_driver.py:375`).
+- **Six columns** feed BM25 ranking with default weights `bm25(entities_fts, 0, 0, 10, 8, 3, 1)` — i.e. `entity_id`/`type` contribute nothing, `name` is weighted highest, then `title`, `description`, `content`. The schema was migrated from a 4-column (`entity_id, type, name, indexed_content`) layout; on open the driver drops and recreates the table if the stored DDL lacks `title` (`sqlite_driver.py:450`).
 
 ---
 
@@ -61,7 +61,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
 
 ### `search_*` readers (per-record)
 
-`sync_to_db()` builds the `FtsEntry` from three default properties on `FSRecord` plus the `name` instance attr (`fs_record.py:460`):
+`sync_to_db()` builds the `FtsEntry` via `FtsEntry.from_record(...)` from three default properties on `FSRecord` plus the `name` instance attr (`fs_record.py:887`):
 
 ```python
 @property
@@ -77,21 +77,23 @@ def search_description(self) -> str:
     return self.__dict__.get("description") or ""
 ```
 
-These read directly from instance attrs (`__dict__`) — there is no longer a `content` property on `Record` and no per-record parse at index time. Type-specific extractors (the `parser_fn`) are responsible for populating `title`/`description`/`content`/`body` on the instance during scan. A record with none of these set produces an `FtsEntry` with no content, and the FTS upsert is skipped (the Entity row is still written).
+These read directly from instance attrs (`__dict__`) — there is no longer a `content` property on `Record` and no per-record parse at index time. Type-specific extractors (`TypeInfo.from_disk_fn`) are responsible for populating `title`/`description`/`content`/`body` on the instance during scan. A record with none of these set produces an `FtsEntry` with no content, and the FTS upsert is skipped (the Entity row is still written).
+
+`FtsEntry.from_record` is the only sanctioned constructor for a file-backed type; `FtsEntry.from_entity(entity, info=...)` is its twin for a DB-only type (`TypeInfo.db_only`), whose `content` column comes from the row fields named in `TypeInfo.fts_content`.
 
 ### Declare `index_fields` in `TypeInfo`
 
 ```python
 # flow_sdk/schema/type_info/skill_type_info.py
-SKILL_TYPE_INFO = TypeInfo(
+SKILL_TYPE_INFO = TypeMetadata(
     type_name="skill",
-    browseable=True,
+    browseable_by=ViewMode.STANDARD,
     index_fields=["description"],
     ...
 )
 ```
 
-`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:205`) and consumed by the indexer / agent-records route. Current declarations include: `subagent`/`skill`/`whiteboard` → `["description"]`, `workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
+`index_fields` is now a field on the per-type `TypeMetadata` (`flow_sdk/schema/type_info/*_type_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:203`) and consumed by the agent-records route (`flow_sdk/server/routes/agent_records.py:104`) and the type's `schema_hash` / `to_dict`; the FTS indexer itself does **not** read it — what reaches `entities_fts` is decided by the `search_*` readers above. Current declarations include: `agent`/`subagent`/`skill`/`whiteboard`/`deck`/`deck_template`/`graph_workflow`/`journey`/`helpdesk`/`spreadsheet` → `["description"]`, `dynamic_workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
 
 ---
 
@@ -111,7 +113,11 @@ Returns a list of hydrated Entity objects, ranked by BM25 (plus optional recency
 
 ### `driver.fts_delete(entity_id)`
 
-Remove a record from the FTS index. Called explicitly when a record is deleted. Available on the SQLite driver via `get_db_driver().fts_delete(entity_id)`.
+Remove a record from the FTS index. Called explicitly when a record is deleted. Available on the SQLite driver via `get_db_driver().fts_delete(entity_id)`. `driver.fts_clear()` empties the whole table (used by `SchemaRegistry.clear_index()`).
+
+### `Entity.save()` → `store()` → `_fts_upsert`
+
+The second FTS writer. Every `Entity.save()` of a file-backed type ends in `_store()` (`entity_model.py:1349`), which mirrors the row to the shadow record and then upserts `FtsEntry.from_record(...)` from the row's fields; a DB-only type feeds `FtsEntry.from_entity(...)` straight from the row. This is how entities created through the graph API or the listen webhook become searchable without a scan — but that path runs neither wiki edge extraction nor `post_sync_fn`.
 
 ---
 
@@ -141,7 +147,7 @@ Defined in `flow_sdk/server/routes/search.py`.
 - **Browse mode** (`q` empty): builds a `QueryFilter(type=record_type or "entity")` (with an optional `status` match), calls `Entity.get_all()`, then applies scope/folder/system/tag filters and paginates with offset/limit. `total` is the post-filter count before pagination.
 - **FTS mode** (`q` non-empty): runs `Entity.search(query, limit=limit+offset, record_type, status, calibration)`, then applies scope/folder/system/tag post-filters, sets `total` to the post-filter count, and slices `[offset:offset+limit]`. On exception (index not ready) it returns empty results with `"indexer_ready": false`.
 
-> **Pagination caveat (in code comment, `search.py:176`)**: FTS mode fetches only `limit + offset` rows, so if the Python-side scope/folder/tag filters drop more than `offset` rows, page 2+ may be short. `record_type` and `status`, by contrast, are pushed into the SQL and are not affected.
+> **Pagination caveat (in code comment, `search.py:213`)**: FTS mode fetches only `limit + offset` rows, so if the Python-side scope/folder/tag filters drop more than `offset` rows, page 2+ may be short. `record_type` and `status`, by contrast, are pushed into the SQL and are not affected.
 
 Response:
 ```json
@@ -175,22 +181,22 @@ Response:
 GET /api/v1/assets/types
 ```
 
-Returns all record types with `browseable=True` in their `TypeInfo`, plus a hardcoded `project` entry at the top (`flow_sdk/server/routes/assets.py:86`). The `markdown` entry additionally carries a `vaults` list. Each entry has `type_name`, `label` (derived as `type_name.replace("_"," ").title()`), `icon`, and `creatable`.
+Returns all record types with a non-null `browseable_by` view mode in their `TypeInfo`, plus a hardcoded `project` entry at the top (`flow_sdk/server/routes/assets.py:76`). The server cannot know the client's view mode, so it returns every browseable type with its `browseable_by` level and the client filters cumulatively (`STANDARD` ⊂ `ADVANCED` ⊂ `DEV`). The `markdown` entry additionally carries a `vaults` list. Each entry has `type_name`, `label` (derived as `type_name.replace("_"," ").title()`), `icon`, `creatable`, and `browseable_by`.
 
 ```json
 {
   "status": "SUCCESS",
   "data": {
     "types": [
-      {"type_name": "project", "label": "Projects", "icon": null, "creatable": false},
-      {"type_name": "skill", "label": "Skill", "icon": null, "creatable": true},
-      {"type_name": "markdown", "label": "Markdown", "icon": null, "creatable": true, "vaults": []}
+      {"type_name": "project", "label": "Projects", "icon": null, "creatable": false, "browseable_by": "standard"},
+      {"type_name": "skill", "label": "Skill", "icon": null, "creatable": true, "browseable_by": "standard"},
+      {"type_name": "markdown", "label": "Markdown", "icon": null, "creatable": true, "browseable_by": "standard", "vaults": []}
     ]
   }
 }
 ```
 
-To surface a Record type in the user-facing browser, set `browseable=True` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_info.py`) — there is no `_browseable` ClassVar on the Record class. Currently set on the `TypeInfo` for: `skill`, `subagent`, `workflow`, `markdown`, `spec`, `claude_rules`, `claude_memory`, `plan`, `whiteboard`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see `main_subdir` in `TypeInfo` for that).
+To surface a Record type in the user-facing browser, set `browseable_by=ViewMode.<STANDARD|ADVANCED|DEV>` on its `TypeMetadata` (in `flow_sdk/schema/type_info/<type>_type_info.py`) — there is no boolean `browseable` and no `_browseable` ClassVar on the Record class. Currently: `STANDARD` — `agent`, `subagent`, `skill`, `markdown`, `spec`, `task`, `prompt`, `deck`, `journey`, `mcp`, `spreadsheet`; `ADVANCED` — `claude_rules`, `claude_memory`, `plan`, `whiteboard`, `dataset`, `deck_template`, `dynamic_workflow`, `graph_workflow`, `helpdesk`, `workflow_run`, the report types; `DEV` — `flowpad_diagnosis`, `tag`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see the placement axis / `main_subdir` in `TypeInfo` for that).
 
 ### Reindex (FaaS index endpoint)
 
@@ -201,7 +207,7 @@ POST /fs-records/index?rebuild=true          → clear + re-index
 POST /fs-records/index?user=&projects=A,B    → narrow to a ScopeFilter
 ```
 
-Handled by `_handle_fs_records_index` in `flow_sdk/builtin/faas/fs_records_actions.py:772`, backed by the shared `FSIndexer` (`flow_sdk/fs_store/indexer/`). The indexer scans records from disk, calls `sync_to_db()` (batching `FtsEntry`s), and emits `progress_report` FlowData events per type. The set of indexable types is `INDEXABLE_TYPES` from the indexer package; it is registry-driven, not hardcoded per call. There is no `POST /api/v1/search/reindex` route.
+Handled by `_handle_fs_records_index` in `flow_sdk/builtin/faas/fs_records_actions.py:1441`, backed by the shared `FSIndexer` (`flow_sdk/fs_store/indexer/`). The indexer scans records from disk, calls `sync_to_db(fts_batch=...)` (batching `FtsEntry`s, committing every 50 records and stamping `.hash` sentinels only after each commit), and emits `progress_report` FlowData events per type. `?rebuild=true` clears rows, FTS **and** the on-disk sentinels (`FSRecord.clear_hashes_for_type`, `:1656`) before indexing. The set of indexable types is `INDEXABLE_TYPES` (`flow_sdk/fs_store/indexer/builtin.py:22`), a hand-maintained list that must overlap `SchemaRegistry._BUILTIN_DEFAULT_TYPES`. There is no `POST /api/v1/search/reindex` route.
 
 ### Index status / clear
 
@@ -217,8 +223,9 @@ DELETE /fs-records/index
 ## 7. When indexing happens
 
 `sync_to_db()` is called explicitly and runs inline (within the async call chain) — there is no `IndexWorker` thread, debounce queue, or background daemon. Index calls happen in:
-- The CRUD handlers in `fs_records_actions.py` — `sync_to_db()` is awaited directly on create/update of a record (e.g. `fs_records_actions.py:1284`, `:1322`), *before* the `_broadcast_fs_record_op(...)` notification.
-- The bulk `FSIndexer` invoked by `POST /fs-records/index` (and on discover, `fs_records_actions.py:1115`), which batches `FtsEntry`s for one `fts_upsert(list)`.
+- The CRUD handlers in `fs_records_actions.py` — `sync_to_db()` is awaited directly on create/update of a record (`fs_records_actions.py:2302`, `:2332`), *before* the `_broadcast_fs_record_op(...)` notification. A failure there is logged at DEBUG and the request still succeeds.
+- The bulk `FSIndexer` invoked by `POST /fs-records/index` (and on discover-by-path, `fs_records_actions.py:2092`), which batches `FtsEntry`s for one `fts_upsert(list)` per commit batch.
+- `Entity.save()` → `store()` → `_fts_upsert` for every file-backed row written through the graph API, the listen webhook, or application code (section 5).
 - FlowMessage body unpack for shared file-backed entities. In normal copy mode,
   the unpacker first writes the copied asset into the mapped project, then indexes
   that path. In git transfer mode, the unpacker resolves or clones the `GitOrigin`
@@ -226,7 +233,7 @@ DELETE /fs-records/index
   this way becomes searchable only after that receive/open/index step has run.
 - Explicit application code.
 
-> **Important — webhook entities are NOT FTS-indexed**: Entities created via the listen webhook (`POST /api/v1/webhook/listen` / `_reflect_entity` in `flow_sdk/app/actions/listen.py`) use `entity.save(scope)` directly and do **not** call `sync_to_db()` or `fts_upsert()`. These entities will not appear in FTS search results until a (re)index via `POST /fs-records/index`. Only entities created through the `sync_to_db()` / indexer path get FTS entries automatically.
+> **Webhook entities are indexed from the row, not from disk**: Entities created via the listen webhook (`POST /api/v1/webhook/listen` / `_reflect_entity` in `flow_sdk/app/actions/listen.py`) use `entity.save(scope)` and never call `sync_to_db()`. They still get an FTS entry — `store()` upserts one from the row's `name`/`title`/`description`/`content` — but no `from_disk_fn` parse, no wiki edges and no `post_sync_fn` run for them until the next `POST /fs-records/index` or GET-time refresh.
 
 This keeps the architecture simple and predictable at current scale.
 
@@ -244,25 +251,25 @@ For comparison: an unindexed filesystem scan of 100K records to find ones matchi
 
 A type contributes to search in two coordinated places:
 
-1. **Its `parser_fn` populates `title`/`description`/`content`/`body` on the record instance** during scan. The base `search_title` / `search_description` / `search_content` readers (section 4) then surface those attrs into the `FtsEntry`. A type that never sets any of them produces a no-content entry and is effectively unsearchable by text.
+1. **Its `from_disk_fn` populates `title`/`description`/`content`/`body` on the record instance** during scan. The base `search_title` / `search_description` / `search_content` readers (section 4) then surface those attrs into the `FtsEntry`. A type that never sets any of them produces a no-content entry and is effectively unsearchable by text.
 
 2. **Its `TypeInfo` declares `index_fields`** (in `flow_sdk/schema/type_info/<type>_info.py`):
 
 ```python
 # skill_type_info.py
-SKILL_TYPE_INFO = TypeInfo(type_name="skill", browseable=True, index_fields=["description"], ...)
+TypeMetadata(type_name="skill", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
 
 # subagent_type_info.py
-SUBAGENT_TYPE_INFO = TypeInfo(type_name="subagent", browseable=True, index_fields=["description"], ...)
+TypeMetadata(type_name="subagent", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
 
 # task_type_info.py
-TASK_TYPE_INFO = TypeInfo(type_name="task", index_fields=["description", "objective"], ...)
+TypeMetadata(type_name="task", browseable_by=ViewMode.STANDARD, index_fields=["description", "objective"], ...)
 
 # markdown_type_info.py
-MARKDOWN_TYPE_INFO = TypeInfo(type_name="markdown", browseable=True, index_fields=["title", "tags", "links"], ...)
+TypeMetadata(type_name="markdown", browseable_by=ViewMode.STANDARD, index_fields=["title", "tags", "links"], ...)
 ```
 
-These are registered on the `SchemaRegistry` entry and consumed by the indexer / agent-records route — they are not a `ClassVar` on the `Record` subclass, and there is no `content` property to override.
+These are registered on the `SchemaRegistry` entry and consumed by the agent-records route and the schema hash — they are not a `ClassVar` on the `Record` subclass, there is no `content` property to override, and they do not change what the FTS table stores.
 
 ---
 
@@ -287,4 +294,4 @@ async def test_fts_upsert_and_search(db_driver):
 
 See `tests/api/test_fts5_search.py`, `tests/unit/test_fts_columns.py`, and `tests/unit/test_fts_calibration.py` for the full suites.
 
-For end-to-end testing via `FSRecord.sync_to_db()`, build a record whose `parser_fn` sets `title`/`description`/`content`, then call `await record.sync_to_db()` and `await Entity.search(...)`.
+For end-to-end testing via `FSRecord.sync_to_db()`, build a record whose `from_disk_fn` sets `title`/`description`/`content`, then call `await record.sync_to_db()` and `await Entity.search(...)`.

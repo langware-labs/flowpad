@@ -1,5 +1,9 @@
 from enum import Enum
-from typing import AsyncGenerator
+from functools import lru_cache
+from typing import TYPE_CHECKING, AsyncGenerator
+
+if TYPE_CHECKING:
+    from flow_sdk.external_apis.llm.dialects import ProviderDialect
 
 
 class APIProvider(str, Enum):
@@ -7,10 +11,35 @@ class APIProvider(str, Enum):
     GROQ = "groq"
 
 
-#: Where each provider's OpenAI-compatible endpoint lives, and which config
-#: field holds its key. Groq speaks the OpenAI wire protocol on this path, so
-#: one client covers both — the vendor SDKs added nothing but a second copy of
-#: the same 120-line request/stream/timeout dance.
+#: Groq is deliberately NOT in ``LMApiProvider``: it is not a funding source a worker or an
+#: endpoint can be pointed at, only a base URL this one function knows. It speaks the OpenAI
+#: wire protocol, so one client covers it and OpenRouter both — the vendor SDKs added nothing
+#: but a second copy of the same request/stream/timeout dance.
+
+
+@lru_cache(maxsize=1)
+def _generic_openai_dialect() -> "ProviderDialect":
+    """A dialect for an endpoint we know nothing about beyond "it speaks OpenAI".
+
+    Callers of :func:`openai_compatible_completion` have already resolved the base URL, the
+    key and the model, so nothing the registry would supply is consulted — only the wire.
+    Cached because it is a constant; built lazily to keep this module import-light.
+    """
+    from flow_sdk.external_apis.llm.dialects import (  # noqa: PLC0415
+        WIRE_OPENAI,
+        ProviderDialect,
+        _bearer,
+    )
+    from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider  # noqa: PLC0415
+
+    return ProviderDialect(
+        provider=LMApiProvider.OPENROUTER,
+        default_base_url="",
+        _auth=_bearer,
+        wire=WIRE_OPENAI,
+    )
+
+
 async def openai_compatible_completion(
     *,
     base_url: str,
@@ -26,78 +55,31 @@ async def openai_compatible_completion(
 ) -> "str | AsyncGenerator[str, None] | None | dict":
     """One chat completion against any OpenAI-compatible endpoint.
 
-    ``timeout`` is a ceiling on the call, not a retry budget: on expiry the
-    caller gets an empty answer (or an empty stream) rather than a raised
-    exception, which is what every caller here already expected.
+    ``timeout`` is a ceiling on the call, not a retry budget.
+
+    **This raises** :class:`~flow_sdk.external_apis.llm.errors.LLMError` on failure. It used
+    to answer ``""`` for a timeout, a 401, a missing model and a model that genuinely said
+    nothing alike, which made it impossible for any caller to explain a failure. The callers
+    that want best-effort prose keep that behaviour by catching ``LLMError`` themselves — see
+    :func:`llm_completion`.
     """
-    import asyncio  # noqa: PLC0415
-    import json  # noqa: PLC0415
-    import logging  # noqa: PLC0415
+    from flow_sdk.external_apis.llm.client import LLMClient  # noqa: PLC0415
 
-    from openai import AsyncOpenAI  # noqa: PLC0415
-    from openai.types.chat import (  # noqa: PLC0415
-        ChatCompletionSystemMessageParam,
-        ChatCompletionUserMessageParam,
+    client = LLMClient(
+        dialect=_generic_openai_dialect(),
+        base_url=base_url,
+        api_key=api_key,
+        label=provider_label,
     )
-
-    from flow_sdk.external_apis.llm.utils.utils import clean_fenced_completion  # noqa: PLC0415
-
-    async def _empty_gen() -> "AsyncGenerator[str, None]":
-        # noinspection PyUnreachableCode
-        if False:
-            yield ""
-
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-    params: dict = {
-        "model": model,
-        "messages": [
-            ChatCompletionSystemMessageParam(role="system", content=system),
-            ChatCompletionUserMessageParam(role="user", content=user),
-        ],
-        "stream": stream,
-    }
-    if reasoning:
-        params["extra_body"] = {"reasoning": {"effort": "high"}}
-
-    try:
-        response = await asyncio.wait_for(client.chat.completions.create(**params), timeout=timeout)
-
-        if not stream:
-            text = response.choices[0].message.content or ""
-            if not json_reply:
-                return text
-            text = clean_fenced_completion(text)
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                logging.error("Failed to decode JSON response: %s", text)
-                return None
-
-        async def generator() -> "AsyncGenerator[str, None]":
-            try:
-                async for chunk in response:
-                    task = asyncio.current_task()
-                    if task is not None and task.cancelled():
-                        logging.info("LLM streaming cancelled")
-                        return
-                    chunk_content = getattr(chunk.choices[0].delta, "content", None)
-                    if chunk_content:
-                        yield chunk_content
-            except asyncio.CancelledError:
-                logging.info("LLM streaming cancelled via CancelledError")
-                raise
-
-        return generator()
-
-    except asyncio.TimeoutError:
-        logging.warning("%s completion timed out after %s seconds", provider_label, timeout)
-        return _empty_gen() if stream else ""
-    except asyncio.CancelledError:
-        logging.info("%s completion was cancelled", provider_label)
-        raise  # propagate cancellation
-    except Exception as exc:  # noqa: BLE001
-        logging.error("Error in %s completion: %s", provider_label, exc)
-        return _empty_gen() if stream else ""
+    return await client.create_completion(
+        system,
+        user,
+        model=model,
+        stream=stream,
+        json_reply=json_reply,
+        reasoning=reasoning,
+        timeout=timeout,
+    )
 
 
 def parse_model_string(model: str) -> tuple[APIProvider, str]:
@@ -147,6 +129,11 @@ async def llm_completion(
     """
     Main LLM completion function that routes to appropriate provider.
 
+    Best-effort by contract: every failure becomes an empty answer (``""``, or an empty
+    stream), and a reply that was asked to be JSON but was not becomes ``None``. Both of
+    this function's callers are search helpers that degrade rather than fail, so the
+    swallowing lives here — one level above the primitive, which raises.
+
     Args:
         instruction: System instruction
         content: User content
@@ -165,7 +152,15 @@ async def llm_completion(
         model="openrouter/anthropic/claude-sonnet-4.5" -> Explicitly uses OpenRouter
         model="groq/meta/llama-3" -> Uses Groq
     """
+    import logging  # noqa: PLC0415
+
     from flow_sdk.config import default_service_config  # noqa: PLC0415
+    from flow_sdk.external_apis.llm.errors import LLMError, LLMInvalidJSON  # noqa: PLC0415
+
+    async def _empty_gen() -> "AsyncGenerator[str, None]":
+        # noinspection PyUnreachableCode
+        if False:
+            yield ""
 
     if timeout is None:
         timeout = 60.0
@@ -180,15 +175,22 @@ async def llm_completion(
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
-    return await openai_compatible_completion(
-        base_url=base_url,
-        api_key=api_key,
-        model=model_name,
-        system=instruction,
-        user=content,
-        stream=stream,
-        reasoning=reasoning,
-        json_reply=json_reply,
-        timeout=timeout,
-        provider_label=provider.value,
-    )
+    try:
+        return await openai_compatible_completion(
+            base_url=base_url,
+            api_key=api_key,
+            model=model_name,
+            system=instruction,
+            user=content,
+            stream=stream,
+            reasoning=reasoning,
+            json_reply=json_reply,
+            timeout=timeout,
+            provider_label=provider.value,
+        )
+    except LLMInvalidJSON as exc:
+        logging.error("Failed to decode JSON response: %s", exc.body)
+        return None
+    except LLMError as exc:
+        logging.error("Error in %s completion: %s", provider.value, exc)
+        return _empty_gen() if stream else ""

@@ -1,14 +1,11 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CredentialsSubview, PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ConnectionsManager } from '@src/components/connections-manager';
-import { ProjectEnvironmentTab } from '@src/components/credentials-view/ProjectEnvironmentTab';
 import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -20,37 +17,33 @@ import { credentialsPointer, credentialsTabs, parseCredentialsPointer } from './
 import { LoginRequiredPanel } from './LoginRequiredPanel';
 
 /**
- * Credentials — one surface over the three things a project or a person needs
- * to authenticate: environment variables, OAuth connections, and API keys.
+ * Credentials — the one surface for everything a project or a person
+ * authenticates with: OAuth connections, API credentials, and bare declared
+ * environment variables, all as rows of one table.
  *
  * Page-agnostic on purpose. It reads `currentDock.page` rather than hardcoding
  * the hub, so mounting it on the desk keeps working; `openPage` is what
  * preserves that (`openTab` is desk-only and would silently revert the page).
  *
- * Tab AND project selection live in the pointer, never in local state — a
- * reload lands where you were, and picking a project is a navigation rather
- * than a hidden write.
+ * Project selection lives in the pointer, never in local state — a reload lands
+ * where you were, and picking a project is a navigation rather than a hidden
+ * write.
  */
 export const CredentialsView: React.FC = () => {
   const { t } = useLingui();
-  // In-component, like `statusLabel` in connections-manager: a module-level map
-  // of raw strings would escape lingui extraction.
-  const tabLabel = (id: CredentialsSubview): string =>
-    id === CredentialsSubview.CONNECTIONS
-      ? t`Connections`
-      : id === CredentialsSubview.API_KEYS
-        ? t`API Keys`
-        : t`Project Environment`;
   const { user } = useAuth();
   const { navigation, currentDock } = useDockNavigation();
   const { projects, isLoading } = useProjects();
   const { project: contextProject } = useContext();
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // The leading tab is also where a bare `/credentials` lands — stated here, at
-  // the one place that knows the runtime, rather than inside the URL helper.
-  const tabs = credentialsTabs(isHubOnly());
-  const { tab, projectId } = parseCredentialsPointer(currentDock?.pointer, tabs[0]);
+  // One surface now, so the leading tab is the only tab — and it is still
+  // `credentialsTabs` that says so, keeping the URL helper the single authority
+  // on where a bare `/credentials` lands. A retired subview in the pointer
+  // (`environment`, `api-keys`) is forwarded here rather than 404-ing, so old
+  // saved tabs and bookmarks still resolve.
+  const [tab] = credentialsTabs(isHubOnly());
+  const { projectId } = parseCredentialsPointer(currentDock?.pointer, tab);
 
   const items = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
@@ -78,20 +71,17 @@ export const CredentialsView: React.FC = () => {
     return <LoginRequiredPanel message={<Trans>Please log in to view and manage credentials.</Trans>} />;
   }
 
-  const showPicker = tab !== CredentialsSubview.API_KEYS;
-
   return (
     <div className="flex h-full flex-col" data-testid="credentials-view">
-      {/* Fixed height: the picker is taller than the title and is hidden on API
-          Keys, so an auto-height header would jump 4px on every tab switch. */}
+      {/* Fixed height: the picker is taller than the title, so an auto-height
+          header would jump 4px when it renders. */}
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <KeyRound className="h-4 w-4" />
         <h2 className="text-sm font-semibold">
           <Trans>Credentials</Trans>
         </h2>
 
-        {showPicker && (
-          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -117,44 +107,12 @@ export const CredentialsView: React.FC = () => {
                 />
               </div>
             </PopoverContent>
-          </Popover>
-        )}
+        </Popover>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => go(v as CredentialsSubview)} className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b px-2">
-          <TabsList className="h-8">
-            {tabs.map((id) => (
-              <TabsTrigger key={id} value={id} className="h-7 text-xs">
-                {tabLabel(id)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {tab === CredentialsSubview.ENVIRONMENT &&
-            (selected ? <ProjectEnvironmentTab project={selected} /> : <NoProjectPanel loading={isLoading} />)}
-
-          {tab === CredentialsSubview.CONNECTIONS && (
-            <ConnectionsManager projectTypeId={selected?.typeId} header={false} />
-          )}
-
-          {tab === CredentialsSubview.API_KEYS && <ApiKeysView header={false} className="max-w-4xl" />}
-        </div>
-      </Tabs>
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <ConnectionsManager projectTypeId={selected?.typeId} project={selected} header={false} />
+      </div>
     </div>
   );
 };
-
-const NoProjectPanel: React.FC<{ loading?: boolean }> = ({ loading }) => (
-  <div className="p-4 text-sm text-muted-foreground" data-testid="credentials-no-project">
-    {loading ? (
-      <Trans>Loading projects…</Trans>
-    ) : (
-      // No create button: making a project is a local-filesystem flow, which
-      // cannot work from a hub-only server.
-      <Trans>No projects yet — create one from the desktop app, then pick it here.</Trans>
-    )}
-  </div>
-);

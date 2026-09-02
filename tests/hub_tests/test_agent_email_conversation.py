@@ -22,8 +22,9 @@ The correspondent is a second real mailbox rather than a human with a mail
 client. That is the same substitution the hub's own live validation made
 (`docs/agent-email-inbox.md`: "Inbound from a real external mailbox"), and it
 buys the thing a manual check cannot — this runs unattended and fails loudly.
-What it does NOT prove is deliverability to a consumer provider like Gmail;
-that remains a human check, once, per domain.
+The final test uses the first-class Gmail source for the public-domain leg. It
+is credential-gated and requires the Hub's publicly routable AgentMail provider;
+the local in-process provider cannot receive an SMTP delivery from Gmail.
 
 The turn is a real agent run, so these are deliberately one-turn tests. The
 30-second cap is the budget: if a turn cannot answer "reply with OK" inside it,
@@ -40,12 +41,14 @@ from pathlib import Path
 import httpx
 import pytest
 
+import flow_sdk
+import flow_sdk.ingest.drivers  # noqa: F401 — register the shipped providers
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
+from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
-
+from flow_sdk.schema.data_spec import DataSpec
 from tests.hub_tests._local_login import login_as
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
@@ -58,6 +61,10 @@ REPLY_DEADLINE_SECONDS = 20
 REPLY_POLL_SECONDS = 2
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _reclaim_hub_entities_the_tier_creates():
+    """Skip the generic Hub-wide scan: every row in this module has exact cleanup."""
+    yield
 
 
 async def _hub_agent(hub_base_url: str, token: str, name: str) -> str:
@@ -157,7 +164,6 @@ def _inject_claude_harness() -> None:
     """
     from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
     from flow_sdk.core.capabilities.models import CapabilityKind, CapabilityValue
-
     from tests.utils.claude_utils import find_claude
 
     kind = CapabilityKind.CLAUDE_CLI.value
@@ -334,3 +340,97 @@ async def test_an_unlisted_sender_is_ignored(mailboxes):
     assert await _await_reply(mailboxes["outsider_id"], from_address=mailboxes["agent_address"]) is None, (
         "an unlisted sender got a reply"
     )
+
+
+async def _sync_until_message(
+    source: DataSource,
+    *,
+    from_address: str,
+    body_fragment: str,
+) -> SourceItem:
+    """Drive pytest's mailbox only until the exact public mail is ingested."""
+    wanted = from_address.strip().lower()
+    while True:
+        report = await sync_source(source)
+        for outcome in report.outcomes:
+            item = await SourceItem.get_by_id(outcome.entity_id)
+            if (
+                item is not None
+                and str(item.author_external_id or "").strip().lower() == wanted
+                and body_fragment in str(item.body or "")
+            ):
+                return item
+
+
+async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
+    """The public SDK snippet: Gmail → Agent inbox → real Agent → Gmail."""
+    gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
+    if not gmail_address or not os.environ.get("GMAIL_APP_PASSWORD"):
+        pytest.skip("set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env.local")
+
+    await flow_sdk.auth.logout()
+    gmail = DataSource(
+        name=f"gmail-{uuid.uuid4().hex[:8]}",
+        provider="gmail",
+        config={"address": gmail_address},
+        account_key=gmail_address,
+        account_identities=[gmail_address],
+        poll_interval_seconds=60,
+    )
+    await gmail.save()
+    pirate = Agent(
+        name=f"pirate-{uuid.uuid4().hex[:8]}",
+        worker_type="claude",
+        model="sm",
+        system_prompt="Answer like a pirate. Include 'arr' in every reply.",
+        email_allowed_senders=[gmail.account_key],
+    )
+    await pirate.save()
+
+    try:
+        await flow_sdk.auth.login()
+        inbox = await pirate.enableEmail()
+        if inbox.provider != "agentmail":
+            pytest.skip(
+                "Gmail delivery requires the local Hub to run with "
+                "EMAIL_INBOX_PROVIDER=agentmail"
+            )
+
+        agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
+        assert agent_source is not None, "enableEmail() did not create the polling source"
+        # Establish an empty committed cursor before the public message arrives.
+        await sync_source(agent_source)
+
+        nonce = f"doubloon-{uuid.uuid4().hex[:8]}"
+        sent = await gmail.send(
+            EmailMessageSpec(
+                to=[pirate.inbox.address],
+                subject=f"Treasure {nonce}",
+                body=f"Where is the treasure? Include {nonce} in your answer.",
+            )
+        )
+        await _sync_until_message(
+            agent_source,
+            from_address=gmail_address,
+            body_fragment=nonce,
+        )
+        reply = await gmail.expect_reply(sent)
+
+        stored_reply = await SourceItem.find_existing(
+            gmail.id,
+            reply.segment_key,
+            reply.external_id,
+        )
+        assert stored_reply is not None, "Gmail reply was returned but not ingested"
+        assert stored_reply.provider == "gmail"
+        assert reply.author_external_id.lower() == pirate.inbox.address.lower()
+        assert nonce in reply.body
+        assert "arr" in reply.body.lower()
+    finally:
+        if pirate.inbox is not None:
+            await pirate.decommission_inbox()
+        if pirate.remote:
+            await pirate.unshare()
+        await pirate.delete()
+        await gmail.delete()
+        await flow_sdk.auth.logout()

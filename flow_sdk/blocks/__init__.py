@@ -22,6 +22,7 @@ Verbs live on blocks (``listen``, ``run``, ``send``); control flow — allow
 lists, branches, errors, prints — is never configuration, it is the Python
 between the calls.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +34,13 @@ from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
-from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItemSpec
+from flow_sdk.builtin.source_item import (
+    EmailMessageSpec,
+    MessageSpec,
+    SlackMessageSpec,
+    SourceItemSpec,
+    TelegramMessageSpec,
+)
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -47,6 +54,8 @@ __all__ = [
     "MessageSpec",
     "Inbox",
     "RunOutput",
+    "SlackMessageSpec",
+    "TelegramMessageSpec",
     "workflow",
 ]
 
@@ -54,9 +63,7 @@ logger = logging.getLogger(__name__)
 
 #: The active workflow name — a grouping stamp for observability, nothing more.
 #: v1 carries it so spawned processes can be attributed; no engine reads it.
-current_workflow: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "current_workflow", default=""
-)
+current_workflow: contextvars.ContextVar[str] = contextvars.ContextVar("current_workflow", default="")
 
 
 @contextlib.asynccontextmanager
@@ -110,9 +117,7 @@ class AgentRunner:
     def __init__(
         self,
         agent: "AgentRef",
-        session_key: Callable[[SourceItemSpec], str] = lambda m: str(
-            m.thread_key or m.external_id
-        ),
+        session_key: Callable[[SourceItemSpec], str] = lambda m: str(m.thread_key or m.external_id),
         max_processes: int = 4,
     ):
         if not agent or (isinstance(agent, str) and not agent.strip()):
@@ -135,8 +140,7 @@ class AgentRunner:
             return existing
         if len(self.processes) >= self.max_processes:
             raise RuntimeError(
-                f"max_processes={self.max_processes} live sessions reached; "
-                f"key {key!r} would exceed the budget"
+                f"max_processes={self.max_processes} live sessions reached; key {key!r} would exceed the budget"
             )
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
 
@@ -145,7 +149,7 @@ class AgentRunner:
         wf = current_workflow.get()
         if wf:
             options["context_data"] = {"workflow": wf, "session_key": key}
-        ap = await deployment.build("", **options)
+        ap = await deployment.create_process("", **options)
         await ap.save()
         self.processes[key] = ap
         return ap
@@ -218,6 +222,15 @@ class Inbox:
         if self._source is not None:
             return self._source
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.connections import require  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        # A provider that reads with a machine-level connection (Slack, Drive)
+        # is checked HERE, before any row exists: ``NotConnected`` names the
+        # fix, whereas a source created without it parks on its first poll.
+        driver = get_driver(self.provider)
+        if driver is not None and driver.connection:
+            await require(driver.connection)
 
         key, value = self._identity()
         existing = await DataSource.find_for_account(self.provider, key, value)
@@ -269,37 +282,16 @@ class Inbox:
                 sender = str(item.author_external_id or "").strip().lower()
                 if self.senders and sender not in self.senders:
                     continue
-                yield SourceItemSpec.model_validate(
-                    {k: getattr(item, k) for k in SourceItemSpec.model_fields}
-                )
+                yield SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
             await asyncio.sleep(poll_every)
 
     async def send(self, spec: MessageSpec) -> str:
-        """Deliver an outbound spec through the source's driver.
+        """Deliver an outbound spec through the source's messaging seam.
 
         Returns the provider's id for the created message — identity is born
         at the provider. The sent copy re-ingests on a later sync and joins
         its thread like any other message.
         """
-        if spec.attachments:
-            raise NotImplementedError(
-                "attachments are not supported on this channel yet — "
-                "the driver send contract carries text only"
-            )
-        if len(spec.to) != 1:
-            raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
-
         source = await self._ensure_source()
-        driver = get_driver(source.provider)
-        if driver is None or not driver.sends:
-            raise RuntimeError(f"the {source.provider} driver cannot send")
-        outcome = await driver.send(
-            source,
-            thread_key=spec.thread_key,
-            to=spec.to[0],
-            text=spec.body,
-            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
-            in_reply_to=spec.reply_to_external_id,
-        )
+        outcome = await source.send(spec)
         return str(outcome.external_id or "")

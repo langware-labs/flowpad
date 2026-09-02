@@ -51,24 +51,36 @@ class HubEndpointBindError(Exception):
         self.status_code = status_code
 
 
-async def _sources_by_kind() -> tuple[dict, dict]:
-    """``(sources, resolved)`` for every hub-capable harness, keyed by capability kind.
+async def _sources_by_kind() -> tuple[dict, dict, dict]:
+    """``(sources, resolved, endpoints)`` for every hub-capable harness.
+
+    ``sources`` and ``resolved`` are keyed by capability kind; ``endpoints`` is keyed by
+    endpoint typeid and is the union across harnesses. A verdict names an endpoint and
+    mirrors none of its fields, so the client needs the rows to render a row's provider or
+    model beside its reason — and sending them once, deduplicated, beats repeating an
+    endpoint inside every harness's list.
 
     Reads only what is already local (including the endpoint memo), so this adds no
     round-trip to a status the harness picker polls.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, pick_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
+        list_llm_candidates,
+        pick_llm_candidate,
+    )
 
     sources: dict[str, list] = {}
     resolved: dict[str, dict | None] = {}
+    endpoints: dict[str, dict] = {}
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
-        listed = await list_llm_sources(worker)
-        chosen = pick_llm_source(listed)
-        sources[kind] = [s.model_dump(mode="json") for s in listed]
-        resolved[kind] = chosen.model_dump(mode="json") if chosen else None
-    return sources, resolved
+        listed = await list_llm_candidates(worker)
+        chosen = pick_llm_candidate(listed)
+        sources[kind] = [c.source.model_dump(mode="json") for c in listed]
+        resolved[kind] = chosen.source.model_dump(mode="json") if chosen else None
+        for candidate in listed:
+            endpoints.setdefault(candidate.source.endpoint_typeid, candidate.endpoint.to_wire())
+    return sources, resolved, endpoints
 
 
 async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
@@ -78,7 +90,7 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
     # out), so computing sources before this ran left every endpoint out of the FIRST
     # answer and put it in the second -- a picker that fills in on its own second poll.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
-    sources, resolved = await _sources_by_kind()
+    sources, resolved, endpoints = await _sources_by_kind()
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {
         # Every endpoint this user could be pointed at, not just the one the hub pushed -- the
@@ -98,6 +110,10 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
         # claims cannot disagree.
         "sources": sources,
         "resolved": resolved,
+        # The rows the verdicts above name, deduplicated across harnesses. The verdict
+        # carries only an ``endpoint_typeid``; everything renderable (provider, kind, model
+        # slugs) lives here.
+        "endpoints": endpoints,
         # Harnesses whose resolved source IS the bound endpoint. This used to mean "whose
         # Capability was flipped to (api, flowpad)" -- a proxy for the answer rather than the
         # answer. Now that binding no longer rewrites the user's preference, the honest
@@ -105,7 +121,9 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
         "active_for": [
             kind
             for kind, pick in resolved.items()
-            if pick and pick.get("kind") == "endpoint" and pick.get("endpoint_typeid") == bound_typeid and bound_typeid
+            # A typeid match is the whole test now: only a hub endpoint can carry the bound
+            # typeid, so the kind check this used to make was already implied.
+            if pick and bound_typeid and pick.get("endpoint_typeid") == bound_typeid
         ],
     }
 

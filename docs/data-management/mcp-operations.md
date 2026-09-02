@@ -74,7 +74,9 @@ Tools are registered by passing a callable to `mcp.tool()()`. The tool name expo
 
 ## Registered Tools
 
-All five tools are defined in `flow_sdk/mcp_server/mcp_api.py` and registered in `flow_sdk/mcp_server/__init__.py`. A sixth function, `workflow_trace`, is also defined in `mcp_api.py` but is intentionally **not** registered (its `mcp.tool()(workflow_trace)` line is commented out in `__init__.py`), so it is not exposed to Claude Code.
+All five tools are defined in `flow_sdk/mcp_server/mcp_api.py` and registered in `flow_sdk/mcp_server/__init__.py`. There is no unregistered sixth function any more — the `workflow_trace` helper an earlier revision of this doc mentioned has been removed from `mcp_api.py`.
+
+Every tool ends by calling `flow_sdk.discovery.notify.send_mcp_event(tool_name, session_id, params, result)`, which posts an ordered (`wait=True`) `hook_op` EVENT named `mcp_tool_call` to FlowPad through the same `send_event` → `send_resource_sync` funnel as `flow_tag` (record type `log`). It is fire-and-forget and silently skipped when FlowPad is not running.
 
 ### `flow_ping`
 
@@ -220,7 +222,7 @@ After local processing, `send_flow_tag(flow_data)` is called. This sends a `hook
 }
 ```
 
-`send_flow_tag` routes through the shared `send_resource_sync()` envelope. The `id` field is a fresh UUID4 generated per call. `resource_type` is `"entity"` (the `send_resource_sync` default — `send_flow_tag` does not override it) and `ref_type` is `"data"` (also the default). The `type` field is always `"skill"` regardless of the actual `element_type` in the flow tag — to discriminate event kinds, consumers must inspect `data.event_data.element_type`. The `execution_scope` field comes from `flow_sdk.utils.environment.get_execution_scope()`, which parses the `FLOWPAD_EXECUTION_SCOPE` environment variable as JSON (defaults to `[]` if unset or unparseable).
+`send_flow_tag` is `send_event("flow_tag", flow_data, record_type=RecordType.SKILL)`, and `send_event` is the one EVENT-shaped funnel into the shared `send_resource_sync()` envelope (every typed event sender — `send_log_event`, `send_mcp_event`, `send_flow_tag` — is that call with a different record type and log label). The `id` field is a fresh UUID4 generated per call. `resource_type` is `"entity"` (the `send_resource_sync` default — `send_flow_tag` does not override it) and `ref_type` is `"data"` (also the default). The `type` field is always `"skill"` regardless of the actual `element_type` in the flow tag — to discriminate event kinds, consumers must inspect `data.event_data.element_type`. The `execution_scope` field comes from `flow_sdk.utils.environment.get_execution_scope()`, which parses the `FLOWPAD_EXECUTION_SCOPE` environment variable as JSON (defaults to `[]` if unset or unparseable).
 
 If FlowPad is not running or is rate-limited, the notification is silently skipped and the return value reflects `"skipped (FlowPad unavailable)"`.
 
@@ -336,41 +338,33 @@ store = stores.get(key, session_store)
 
 **Returns:**
 
-- `index == -1`: Returns `claude_session_summary_log(session)` — a newline-joined string of one-line summaries for all filtered transcript entries, formatted as `"[   1]  <summary>"`.
-- `index >= 0`: Returns a string of the form `"Entry {index} summary: {entry.summary}\nFull content: {entry.content}"`.
+- `index == -1`: Returns `worker_summary_log(jsonl_path, "claude")` — an extractive, search-indexable text rendering of the whole transcript: only entries whose kind carries real text are kept, and their per-entry `to_string()` renderings are joined. It is capped at the analyzer's default `max_chars` (a longer transcript is truncated with a logged warning) and best-effort — any parse/IO failure yields `""`.
+- `index >= 0`: Returns `AgentTranscriptFile("claude", jsonl_path).entries[index].to_string()` — the full rich rendering of that one entry.
+- If `claude_session_id` is empty: `"Error: session_id is required"`.
 - If `index` is not an `int`: `"Error: index must be an integer"`.
 - If the session is not found: `"Error: session {claude_session_id} not found"`.
 - If the index is out of range: `"Error: index {index} out of range for session with {n} entries"`.
 
+The `send_mcp_event` call at the end truncates the result to its first 200 characters.
+
 **Data source:**
 
-The tool reads directly from the Claude Code session JSONL files on disk via the indexer's `claude_sessions` function module:
+The tool reads directly from the Claude Code session JSONL files on disk through the worker-generic transcript analyzer, not through the indexer's `claude_sessions` helpers:
 
 ```python
-from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-    claude_session_filtered_entries,
-    claude_session_summary_log,
-    extract_claude_session_from_path,
-)
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, worker_summary_log
 from flow_sdk.instance_settings import get_instance_settings
 
 projects_dir = get_instance_settings().claude_projects_dir
-# scan each project subdir for "{claude_session_id}.jsonl"
-session = extract_claude_session_from_path(jsonl)
+# scan each project subdir for "{claude_session_id}.jsonl"; first match wins
+if index == -1:
+    result = worker_summary_log(jsonl_path, "claude")
+else:
+    entries = AgentTranscriptFile("claude", jsonl_path).entries
+    result = entries[index].to_string()
 ```
 
-`get_instance_settings().claude_projects_dir` resolves to the Claude projects directory (`~/.claude/projects/` by default). The tool iterates every project subdirectory looking for a file named `{session_id}.jsonl`; the first match is parsed by `extract_claude_session_from_path()`. There is no `ClaudeRootFsRecord` / `ClaudeSessionFsRecord` class involved — those record classes were removed in favor of the free functions in `claude_sessions.py`.
-
-**Filtered entries:** `claude_session_filtered_entries(session)` excludes entry types in the module-level tuple `_EXCLUDED_ENTRY_TYPES = ("file-history-snapshot", "progress")`. Index values in `session_analysis` refer to positions in this filtered list, not the raw transcript.
-
-**Summary log format example:**
-
-```
-[   1]  user: implement a CSV parser
-[   2]  assistant: tool: Read(file_path) | I'll read the file first...
-[   3]  turn completed in 1423ms
-[   4]  assistant: tool: Write(file_path, content)
-```
+`get_instance_settings().claude_projects_dir` resolves to the Claude projects directory (`~/.claude/projects/` by default). The tool iterates every project subdirectory looking for a file named `{session_id}.jsonl`; the first match is used. Index values refer to positions in `AgentTranscriptFile(...).entries` — the analyzer's full parsed entry list for that file. The `-1` summary is unnumbered and covers only the text-bearing subset of those entries (joined with blank lines), so it does not tell the caller which index a given entry has; the caller must count entries itself. There is no `ClaudeRootFsRecord` / `ClaudeSessionFsRecord` class and no `_EXCLUDED_ENTRY_TYPES` filter involved.
 
 **Example call:**
 
@@ -425,9 +419,14 @@ Alternatively, using `python -m`:
 
 The `flow-sdk-mcp` console script is registered in `pyproject.toml` and points to `flow_sdk.mcp_server:run`.
 
-The SDK discovers MCP servers through the indexer function module `flow_sdk/fs_store/indexer/functions/mcp_server.py` (the old `ClaudeMcpJsonRecordList` / `ClaudeMcpServerFsRecord` record classes have been removed). It walks each `.mcp.json` / `.claude/mcp.json` (and the legacy `~/.claude.json`) file, yielding one RFC-6901 `/mcpServers/<name>` JSON-pointer FSRef per server. `extract_mcp_server()` then materializes each into an `FSRecord` of type `RecordType.MCP_SERVER` with a stable id of `<source_file>:<name>` and fields `name`, `scope`, `source_file`, `path`, `modified_at`, `command`, `args`, and `env`.
+The SDK discovers MCP servers through the indexer function module `flow_sdk/fs_store/indexer/functions/mcp_server.py` (the old `ClaudeMcpJsonRecordList` / `ClaudeMcpServerFsRecord` record classes have been removed). Discovery is two-stage and multi-vendor:
 
-The `scope` field distinguishes user-level from project-level servers. It defaults to `"user"` when the source FSRef carries no scope.
+1. `mcp_source_files_fn` walks the user home and each project root for known config files and yields one `RecordType.MCP_SERVER_SOURCE` FSRef per file. The catalog covers Claude Code (`~/.claude.json`, `~/.claude/mcp.json`, `~/.claude/.mcp.json`, `<proj>/.mcp.json`, `<proj>/mcp.json`, `<proj>/.claude/mcp.json`), Claude Desktop, Cursor (`.cursor/mcp.json`), Copilot (`.copilot/mcp-config.json`), Windsurf (`.codeium/windsurf/mcp_config.json`) and Codex (TOML `mcp_servers`); everyone but Codex keys servers under `mcpServers`.
+2. `mcp_servers_in_file_fn` opens each source and yields one RFC-6901 JSON-pointer FSRef per server (`/mcpServers/<name>`, or for Claude's *local* scope `/projects/<abs cwd>/mcpServers/<name>` nested inside `~/.claude.json`). `~/.claude.json` also contributes the cloud-connector stubs it lists (display names only). `extract_mcp_server(ref, resolved_id)` then materializes each pointer into an `FSRecord` of type `RecordType.MCP_SERVER`.
+
+The record id is derived, not minted: `_record_id(source_file, json_path)` keeps the legacy `<source_file>:<name>` shape for a top-level pointer and uses `<source_file>:<json_path>` for deeper (local-scope) pointers, so same-named servers in different project blocks do not collide. Fields: `name`, `scope`, `source_file`, `path`, `json_path`, `format` (`json` / `toml`), `project_path` (local scope only), `modified_at`, `command`, `args`, `env`, `url`, `transport` (`stdio`, or `http` when only a `url` is given), `worker_type` (owning agent), `connector_type` (`remote` for cloud connectors and url-only servers, else `local`) and `description`. The record's `_asset_ref` is the source file, read-only, carrying the pointer.
+
+`scope` is `user` (top-level block under the home root), `project` (top-level block in a project file) or `local` (the nested per-project block in `~/.claude.json`, Claude's default `claude mcp add` scope). It defaults to `"user"` when the source FSRef carries no scope.
 
 ## MCP Tools vs Graph API Actions
 

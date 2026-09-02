@@ -21,7 +21,7 @@ from typing import List, Optional
 
 from flow_sdk.core.entity.entity_env.env_table import merge_env_tables
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
-from flow_sdk.core.oauth.provider_registry import local_providers
+from flow_sdk.core.oauth.provider_registry import publishable_local_providers
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 
@@ -37,7 +37,7 @@ class OAuthProviderInfo:
 async def get_available_oauth_providers() -> List[OAuthProviderInfo]:
     return [
         OAuthProviderInfo(name=p.name, display_name=p.display_name, icon=p.icon or "")
-        for p in local_providers()
+        for p in publishable_local_providers()
     ]
 
 
@@ -50,6 +50,8 @@ def provider_env_var(
     scopes: Optional[list[str]] = None,
     expires_at: Optional[int] = None,
     needs_reauth: bool = False,
+    verifiable: bool = True,
+    protocol: int = 1,
 ) -> EnvVar:
     """One provider, as a value-free pointer row."""
     return EnvVar(
@@ -60,6 +62,9 @@ def provider_env_var(
         ref_type=BuiltinEntityType.USER,
         ref_name=credentials_name,
         icon=icon,
+        oauth_display_name=display_name,
+        oauth_verifiable=verifiable,
+        oauth_protocol=protocol,
         oauth_kind=kind,
         oauth_scopes=list(scopes or []),
         # Freshness travels WITH the pointer. A local provider has no answer for
@@ -81,7 +86,7 @@ def oauth_provider_rows() -> EntityEnvVars:
                 kind=p.kind.value,
                 scopes=list(p.scopes),
             )
-            for p in local_providers()
+            for p in publishable_local_providers()
         ]
     )
 

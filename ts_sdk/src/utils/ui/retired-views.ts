@@ -16,9 +16,9 @@ import { CredentialsSubview, ViewType } from './view-types';
  * the next view is one edit here.
  */
 export const RETIRED_DOCK_VIEWS: Partial<Record<ViewType, { viewType: ViewType; pointer: string }>> = {
-  [ViewType.ENVIRONMENT]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.ENVIRONMENT },
+  [ViewType.ENVIRONMENT]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
   [ViewType.CONNECTIONS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
-  [ViewType.API_KEYS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.API_KEYS },
+  [ViewType.API_KEYS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
 };
 
 /**

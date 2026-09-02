@@ -6,9 +6,9 @@ id: 5b8388fe-f701-5e08-b082-e02306680955
 
 `flow_sdk/capsules/` stores named, JSON-compatible metadata in filesystem
 assets without knowing about entity types, UUIDs, the indexer, or the DB.
-`AssetCapsule.from_path(path)` dispatches on the path — folder, Markdown, or
-source file — and every carrier exposes `read`, `write`, `write_if_absent`,
-`remove`, and `names`.
+`AssetCapsule.from_path(path)` dispatches on the path — folder (`FolderCapsule`),
+Markdown (`CodeCommentCapsule`), or source file (`LineCommentCapsule`) — and
+every carrier exposes `read`, `write`, `write_if_absent`, `remove`, and `names`.
 
 `CapsuleData` has the same logical shape in both carriers:
 
@@ -79,11 +79,12 @@ WHERE its id lives through `TypeInfo.identity_carrier`
 | carrier | types | stores |
 |---|---|---|
 | `FrontmatterCarrier` / `FolderMdCarrier` | every type whose main document is markdown — markdown, claude_md, claude_memory, claude_rules, subagent, command, plan, prompt, agent, spec, and skill/task/whiteboard (`SKILL.md`, `task.md`, `WHITE_BOARD.md`) | `id:` first in the YAML frontmatter of that document |
-| `FolderJsonCarrier` | folder types whose main is JSON — dataset, deck, deck_template, graph_workflow, journey | `<folder>/.flow/capsules/identity.json` |
-| `NativeJsonCarrier` | reports | the `"id"` key of the report's own JSON root |
-| `DerivedCarrier` | sessions, project, mcp_server, plugin, … | nothing — the id is a pure function of the source |
+| `FolderJsonCarrier` | folder types whose main is JSON — dataset, deck, deck_template, graph_workflow, journey, mcp | `<folder>/.flow/capsules/identity.json` |
+| `NativeJsonCarrier` | reports (`_report.py`: usage_report, asset_cleanup_report, …) | the `"id"` key of the report's own JSON root |
+| `DerivedCarrier` | claude/codex/copilot sessions, project, mcp_server, plugin, claude_hook, dynamic_workflow, workflow_run, markdown_index, spreadsheet, micro_app, todo_file, helpdesk, secret_origin, data_source_spec | nothing — the id is a pure function of the source (`writable = False`) |
 
 The seam is `TypeInfo.mint_entity_id(ref, *, proposed_id=None, owner_id=None, live_ids=None)`
+(`flow_sdk/fs_store/schema_registry.py:523`)
 — read the carrier; a live id is the answer; else the owning row; else mint and
 write — and `TypeInfo.read_id(ref)`, the pure read the collision ranking and
 create guards use. The carrier only reads and writes; TypeInfo owns v4/v5

@@ -129,8 +129,11 @@ async def test_value_change_is_detected_and_reported(tmp_path, sod_env):
 @pytest.mark.asyncio
 async def test_no_value_and_no_digest_ever_leaves_the_boundary(tmp_path, sod_env):
     project = await _project(tmp_path)
+    # SHARED: the sidecar is one of the surfaces enumerated below, and a private
+    # declaration no longer writes one — so the widest boundary check needs the
+    # scope that actually produces every surface.
     await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
     )
     await project.provide_secret(env_var="OPENAI_API_KEY", value="sk-super-secret")
@@ -151,3 +154,54 @@ async def test_no_value_and_no_digest_ever_leaves_the_boundary(tmp_path, sod_env
     for blob in surfaces:
         assert "sk-super-secret" not in blob
         assert digest not in blob, "the digest is per-machine and must not travel either"
+
+
+@pytest.mark.asyncio
+async def test_a_local_declaration_is_not_satisfied_by_the_other_local_store(tmp_path, sod_env):
+    """A declaration naming a LOCAL store is answered by that store alone.
+
+    The union above is a stopgap for external slots that cannot resolve locally
+    at all. Applying it here claimed a credential was Connected off a value in a
+    file the declaration does not read — `resolve_project_secrets` resolves
+    through the named driver, so no worker would have been handed it either.
+    That is exactly how an OpenRouter key read "Connected" in Connections and
+    "no openrouter key is stored on this machine" on LLM sources at the same
+    time.
+    """
+    project = await _project(tmp_path)
+    await project.add_secret_pointer(
+        name="openrouter", env_var="OPENROUTER_API_KEY", scope="private",
+        locator={"kind": "local", "sod_name": "lm_api.openrouter"},
+    )
+    write_env_local(project, "OPENROUTER_API_KEY", "value-in-the-wrong-store")
+
+    row = (await _status_rows(project))["OPENROUTER_API_KEY"]
+
+    assert row["status"] == "missing"
+    # `wrong-store`, not `missing-value`: there IS a value, somewhere this
+    # declaration does not read, and saying so is what tells someone what to do.
+    assert row["warning"] == "wrong-store"
+    assert row["found_in"] == "env-local"
+
+
+@pytest.mark.asyncio
+async def test_the_named_local_store_does_satisfy_it(tmp_path, sod_env):
+    """The other half of the rule — and the path the Connections `Set up` panel
+    takes, which is why an LLM key added there becomes visible to funding."""
+    project = await _project(tmp_path)
+    await project.add_secret_pointer(
+        name="openrouter", env_var="OPENROUTER_API_KEY", scope="private",
+        locator={"kind": "local", "sod_name": "lm_api.openrouter"},
+    )
+    await project.provide_secret(env_var="OPENROUTER_API_KEY", value="sk-or-test")
+
+    row = (await _status_rows(project))["OPENROUTER_API_KEY"]
+
+    assert row["status"] == "available"
+    assert row["warning"] is None
+
+    # And it landed under the name the LLM funding resolver reads, which is the
+    # whole point of routing the declaration at the sod store.
+    from flow_sdk.cli.auth.lm_api_keys import get_lm_api
+
+    assert get_lm_api("openrouter") == "sk-or-test"
