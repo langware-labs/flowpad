@@ -4,10 +4,26 @@
  * Money makes the failure modes matter more than usual: a share that silently does nothing looks
  * identical to one that worked, and a share reported as failed when the role actually landed pushes
  * the sender into a retry that then says "already has access". Both are pinned here.
+ *
+ * The CALL SHAPE is pinned too, and that is not ceremony. This module used to send
+ * `endpoint.share([email])`, which reaches a `share` action only `flow_sdk` registers: it worked in
+ * Electron and answered 400 "Post not supported for this path" on the `/dock/hub/llm-endpoints`
+ * page, which is served straight off the hub. Nothing here caught it, because the only assertions
+ * were about outcomes. `members` routes on both backends — so the action, the role and the landing
+ * path are asserted explicitly.
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { shareEndpointByEmail, shareEndpointFailureText } from '@src/components/llm-endpoints/share-endpoint';
+import {
+  ENDPOINT_SHARE_ROLE,
+  shareEndpointByEmail,
+  shareEndpointFailureText,
+} from '@src/components/llm-endpoints/share-endpoint';
+
+/** A stand-in for the entity: only `inviteMember` and `id` are reached. */
+function fakeEndpoint(inviteMember: ReturnType<typeof vi.fn>, id = 'e1') {
+  return { inviteMember, id } as never;
+}
 
 /** An axios-shaped rejection: what the client actually throws — envelope, not `message`. */
 function hubError(status: number, detail?: string) {
@@ -15,27 +31,37 @@ function hubError(status: number, detail?: string) {
 }
 
 describe('shareEndpointByEmail', () => {
-  it('invites each address through the sdk one-liner', async () => {
-    const share = vi.fn().mockResolvedValue(undefined);
+  it('invites each address through `members`, at reader, one POST per recipient', async () => {
+    const inviteMember = vi.fn().mockResolvedValue(undefined);
 
-    const outcome = await shareEndpointByEmail({ share } as never, ['bob@x.com', 'carol@x.com']);
+    const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['bob@x.com', 'carol@x.com']);
 
-    expect(share).toHaveBeenCalledTimes(2);
-    expect(share).toHaveBeenNthCalledWith(1, ['bob@x.com']);
-    expect(share).toHaveBeenNthCalledWith(2, ['carol@x.com']);
+    expect(inviteMember).toHaveBeenCalledTimes(2);
+    expect(inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', ENDPOINT_SHARE_ROLE, {
+      callbackOverride: '/dock/hub/llm-endpoints/e1',
+    });
+    expect(inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', ENDPOINT_SHARE_ROLE, {
+      callbackOverride: '/dock/hub/llm-endpoints/e1',
+    });
     expect(outcome).toEqual({ granted: ['bob@x.com', 'carol@x.com'], failed: [] });
+  });
+
+  it('shares at reader — spend and watch, never configure', () => {
+    // Anything above `reader` would make the endpoint's cap advisory: the recipient could raise it.
+    // Mirrors SHARE_ROLE in `flow_sdk/builtin/llm_endpoint.py` and the hub's own share suite.
+    expect(ENDPOINT_SHARE_ROLE).toBe('reader');
   });
 
   it('keeps going after one address fails, and says which', async () => {
     // The hub takes one recipient per POST, so a batch is N requests. Aborting on the first
     // rejection would discard grants that already landed and leave the sender unable to tell which.
-    const share = vi
+    const inviteMember = vi
       .fn()
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(hubError(403, 'Only the owner may invite'))
       .mockResolvedValueOnce(undefined);
 
-    const outcome = await shareEndpointByEmail({ share } as never, ['a@x.com', 'b@x.com', 'c@x.com']);
+    const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['a@x.com', 'b@x.com', 'c@x.com']);
 
     expect(outcome.granted).toEqual(['a@x.com', 'c@x.com']);
     expect(outcome.failed).toEqual([{ email: 'b@x.com', reason: 'Only the owner may invite' }]);
@@ -44,18 +70,18 @@ describe('shareEndpointByEmail', () => {
   it('counts an existing member as granted', async () => {
     // The hub refuses to re-invite and answers 400 naming `change_role`. The access being asked for
     // is already in place, so calling that a failure would be wrong.
-    const share = vi.fn().mockRejectedValue(hubError(400, 'use change_role to modify an existing membership'));
+    const inviteMember = vi.fn().mockRejectedValue(hubError(400, 'use change_role to modify an existing membership'));
 
-    const outcome = await shareEndpointByEmail({ share } as never, ['bob@x.com']);
+    const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['bob@x.com']);
 
     expect(outcome).toEqual({ granted: ['bob@x.com'], failed: [] });
   });
 
   it('sends nothing when there is nobody to send to', async () => {
-    const share = vi.fn();
+    const inviteMember = vi.fn();
 
-    expect(await shareEndpointByEmail({ share } as never, [])).toEqual({ granted: [], failed: [] });
-    expect(share).not.toHaveBeenCalled();
+    expect(await shareEndpointByEmail(fakeEndpoint(inviteMember), [])).toEqual({ granted: [], failed: [] });
+    expect(inviteMember).not.toHaveBeenCalled();
   });
 });
 

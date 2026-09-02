@@ -2,21 +2,37 @@
  * Sharing an LLM budget by email — the logic, kept out of the dialog so it can be tested
  * without rendering anything.
  *
- * The whole write is `endpoint.share([email])`, the ts_sdk one-liner. It reaches the local
- * server's generic `share` action, which for a hub-only entity forwards a standard
- * `MembershipRequest` to `POST /graph/llm_endpoint/<id>/members`. The hub does the rest: it
- * mints an Invitation, provisions a shadow account if the address has never signed in, sends
- * the mail, and grants `reader` on accept.
+ * The write is `endpoint.inviteMember(email, reader)` — `POST /graph/llm_endpoint/<id>/members`,
+ * the same call every other shareable entity makes (`share-sandbox.ts`, which this module was
+ * modelled on). The hub does the rest: it mints an Invitation, provisions a shadow account if the
+ * address has never signed in, sends the mail, and grants the role on accept.
+ *
+ * It is deliberately NOT `endpoint.share([email])`. That reaches the LOCAL server's generic
+ * `share` action, which exists only in `flow_sdk`; the hub's API is a strict subset of it and
+ * registers no `share` (see `hub-runtime.ts`). So the SDK one-liner works from the desktop app
+ * and 400s with "Post not supported for this path" on the `/dock/hub/llm-endpoints` page, which
+ * is served straight off the hub. `members` is registered `types="all"` and routes on both.
  *
  * `reader` is the entire security story of sharing money: the hub's `llm_endpoint` policy gives
  * it `read, invoke, models, chain, usage`. The recipient can spend the budget and watch it
  * drain; they cannot raise its limits, swap the provider key underneath the owner, allocate
- * themselves an uncapped sibling, or pass it on. The role is chosen on the Python side so it
- * cannot be talked up from a client.
+ * themselves an uncapped sibling, or pass it on.
+ *
+ * Naming the role here rather than in Python is not a downgrade: `members` on an `llm_endpoint`
+ * is owner-only, and the hub authorizes every grant through `can_assign` by principal type and
+ * rank — an owner could already confer `admin` through the API. `share-sandbox.ts` holds its own
+ * role constant for the same reason.
  */
-import type { LLMEndpoint } from '@sdk';
+import { Role, type LLMEndpoint } from '@sdk';
 
 import { errorDetail, errorStatus } from '@src/lib/error-message';
+
+import { endpointShareLandingPath } from './llm-endpoints-pointer';
+
+/** What a share confers: spend and watch, never configure. The hub's `llm_endpoint` policy is
+ *  keyed on this exact string, so it comes from the shared `Role` enum rather than a literal —
+ *  the same value `SHARE_ROLE` pins on the Python side (`HubRole.READER`). */
+export const ENDPOINT_SHARE_ROLE = Role.READER;
 
 export interface ShareEndpointOutcome {
   granted: string[];
@@ -66,10 +82,13 @@ export function shareEndpointFailureText(error: unknown, fallback: string): stri
  * exactly which addresses took.
  */
 export async function shareEndpointByEmail(
-  endpoint: Pick<LLMEndpoint, 'share'>,
+  endpoint: Pick<LLMEndpoint, 'inviteMember' | 'id'>,
   emails: string[],
 ): Promise<ShareEndpointOutcome> {
-  const results = await Promise.allSettled(emails.map((email) => endpoint.share([email])));
+  const callbackOverride = endpointShareLandingPath(endpoint.id);
+  const results = await Promise.allSettled(
+    emails.map((email) => endpoint.inviteMember(email, ENDPOINT_SHARE_ROLE, { callbackOverride })),
+  );
   const outcome: ShareEndpointOutcome = { granted: [], failed: [] };
   results.forEach((result, i) => {
     const email = emails[i];
