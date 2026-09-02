@@ -199,6 +199,13 @@ msgstr "{0}"
 msgid "{0} — opened \"{fallbackName}\" instead."
 msgstr "{0} — تم فتح \"{fallbackName}\" بدلاً منه."
 
+#. placeholder {0}: verdict.status
+#. placeholder {1}: verdict.model
+#. placeholder {2}: verdict.latency_ms
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "{0} · {1} · {2}ms"
+msgstr ""
+
 #. placeholder {0}: truncateLabel(sessionLabel)
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "{0} · new run"
@@ -6632,6 +6639,10 @@ msgstr "متاجر معروفة إضافية"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "صفوف إضافية تم جلبها (الحد الأقصى + الجلب الإضافي)"
+
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "failed"
+msgstr ""
 
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "Failed"
@@ -15327,6 +15338,10 @@ msgstr "فشل الإرسال."
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
+#: src/components/llm-endpoints/TestEndpointButton.tsx
+msgid "Send one minimal call through this endpoint"
+msgstr ""
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Send the reply for just this message"
 msgstr "إرسال الرد لهذه الرسالة فقط"
@@ -17066,11 +17081,13 @@ msgstr "جلسات الطرفية"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test"
 msgstr "اختبار"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "فشل الاختبار"
 

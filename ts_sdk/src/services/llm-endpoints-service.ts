@@ -25,6 +25,18 @@ export interface LLMCredentialTestResult {
   message?: string;
 }
 
+/** The verdict of ``test``: one real, minimal completion sent through the endpoint's chain. */
+export interface LLMEndpointTestResult {
+  ok: boolean;
+  /** The status the call came back with; 0 never happens — the hub always names one. */
+  status: number;
+  /** The model the probe asked for ('' when it never got that far). */
+  model: string;
+  latency_ms: number;
+  /** Why it failed, in the provider's (or the hub's) own words; '' on success. */
+  message: string;
+}
+
 export interface LLMEndpointModel {
   id: string;
   root_id: string;
@@ -149,6 +161,20 @@ export class LlmEndpointsService {
 
   deleteCredential(id: string): Promise<{ ok: true }> {
     return dataManager.callAction<undefined, { ok: true }>(action('credential', id, 'DELETE'));
+  }
+
+  /**
+   * Does a call through this endpoint succeed? The hub sends ONE minimal completion down the
+   * resolved chain, so the answer covers the credential, every hop's filters and budget, the
+   * routing and the provider — which is why it works on an allocation, where `testCredential`
+   * (a ROOT's key against the provider's model list) refuses outright.
+   *
+   * A refused or failed call is a VERDICT, not a thrown error: it resolves with `ok: false`.
+   */
+  testEndpoint(id: string, model?: string): Promise<LLMEndpointTestResult> {
+    const info = action('test', id, 'POST');
+    info.bodyParameters = model ? { model } : {};
+    return dataManager.callAction<undefined, LLMEndpointTestResult>(info);
   }
 
   listModels(id: string): Promise<LLMEndpointModel[]> {
