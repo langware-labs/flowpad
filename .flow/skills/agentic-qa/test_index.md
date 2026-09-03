@@ -100,13 +100,12 @@
 |---|---:|:---:|:---:|---|
 | `dock-sweep/dock_sweep.md` | 1 | yes | no | - |
 
-## docs (4 scenarios)
+## docs (3 scenarios)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---:|:---:|:---:|---|
 | `docs/v0.28_scenarios/LLM_comfigure.md` | 1 | yes | no | - |
 | `docs/v0.28_scenarios/coding_agent_cli.md` | 1 | yes | no | - |
-| `docs/v0.28_scenarios/environment_tab.md` | 2 | yes | no | - |
 | `docs/v0.28_scenarios/shell_tab.md` | 1 | yes | no | - |
 
 ## editor (14 scenarios)

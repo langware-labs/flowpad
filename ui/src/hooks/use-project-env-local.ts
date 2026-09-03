@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EnvLocalKey, EnvLocalStatus, Project } from '@sdk';
 
 /**
- * The project's `.env.local`, as the Secrets tab sees it.
+ * The project's `.env.local`, as the Connections table sees it.
  *
  * Headless: every decision — which keys exist, which are already declared,
  * whether writing is blocked — is the backend's. This hook only calls the
@@ -46,20 +46,6 @@ export function useProjectEnvLocal(project: Project | null | undefined) {
    *  Purely additive: it writes a declaration and does NOT touch `.env.local`.
    *  The project's own tooling (vite, dotenv, …) reads that file, and keeping
    *  it in sync is not ours to decide. */
-  const declare = useCallback(
-    async (key: string) => {
-      const p = projectRef.current;
-      if (!p || !key) return;
-      await p.addSecretPointer(key, key, {
-        locator: { kind: 'env-local', env_key: key },
-        scope: 'private',
-        sodStore: 'env-local',
-      });
-      await refresh();
-    },
-    [refresh],
-  );
-
   return {
     ready,
     keys: status?.keys ?? NO_KEYS,
@@ -67,6 +53,5 @@ export function useProjectEnvLocal(project: Project | null | undefined) {
     blockReason: status?.block_reason ?? null,
     path: status?.path ?? null,
     refresh,
-    declare,
   } as const;
 }

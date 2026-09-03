@@ -60,10 +60,10 @@ const NO_SPECS: CredentialSpec[] = [];
  */
 export function useCredentialConnections(project: Project | null | undefined) {
   const { data: specs = NO_SPECS } = useEntitiesQuery<CredentialSpec>(credentialSpecsQuery);
-  const { secretOrigins, status, addMany, provide } = useProjectSecretOrigins(project ?? null);
+  const { secretOrigins, status, addMany, provide, removeMany } = useProjectSecretOrigins(project ?? null);
   // `useProjectEnvLocal` returns the already-unwrapped fields, not the raw
   // status object — `keys` is names + line numbers only, never a value.
-  const { keys: envLocalKeys, blocked } = useProjectEnvLocal(project ?? null);
+  const { keys: envLocalKeys, blocked, blockReason } = useProjectEnvLocal(project ?? null);
 
   const rows: CredentialRow[] = useMemo(
     () => buildCredentialRows({ specs, secretOrigins, status, envLocalKeys }),
@@ -138,5 +138,37 @@ export function useCredentialConnections(project: Project | null | undefined) {
     })();
   }, [rows, specs, addMany]);
 
-  return { rows, specs, envLocalBlocked: blocked, declareCredential, provide };
+  /** The env vars already sitting in `.env.local` — names only, never values.
+   *  The Add form asks for a variable only when this does not already have it. */
+  const envLocalPresent = useMemo(
+    () => new Set(envLocalKeys.map((k) => k.key)),
+    [envLocalKeys],
+  );
+
+  /**
+   * Stop declaring every variable of one credential.
+   *
+   * The declaration is the only thing the app can withdraw: `.env.local` is
+   * append-only by policy, so the VALUE stays where the user put it and only
+   * this project's pointer to it goes. Without this there is no way to
+   * un-declare anything at all — the row would be permanent, and so would its
+   * entry in the machine's attachable-secrets list.
+   */
+  const stopDeclaring = useCallback(
+    async (row: CredentialRow) => {
+      await removeMany(row.members.map((m) => m.typeid).filter((id): id is string => !!id));
+    },
+    [removeMany],
+  );
+
+  return {
+    rows,
+    specs,
+    envLocalBlocked: blocked,
+    envLocalBlockReason: blockReason,
+    envLocalPresent,
+    declareCredential,
+    provide,
+    stopDeclaring,
+  };
 }

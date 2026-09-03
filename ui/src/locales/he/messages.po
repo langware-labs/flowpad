@@ -50,6 +50,18 @@ msgstr "— הצג שוליים של זמן/אינדקס"
 msgid "— show trace event gutter"
 msgstr "— הצג שוליים של אירועי עקיבה"
 
+#: src/components/connections-manager/credential-value-form.tsx
+#~ msgid ".env.local is not ignored by git here, so a value written to it would be committable. Add it to .gitignore first."
+#~ msgstr ""
+
+#: src/components/connections-manager/credential-value-form.tsx
+msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid ".env.local is not ignored by git in this project, so values cannot be written there. Add it to .gitignore to add API credentials."
+#~ msgstr ""
+
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
 msgstr "· בחר ענף"
@@ -122,8 +134,8 @@ msgid "(not visible)"
 msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "(optional — you can provide it later)"
-msgstr "(לא חובה — אפשר להוסיף מאוחר יותר)"
+#~ msgid "(optional — you can provide it later)"
+#~ msgstr "(לא חובה — אפשר להוסיף מאוחר יותר)"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
@@ -237,7 +249,6 @@ msgid "{0} can now spend {1}."
 msgstr ""
 
 #. placeholder {0}: connection.provider
-#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} connection failed"
 msgstr "החיבור ל{0} נכשל"
@@ -474,13 +485,17 @@ msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדל
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
 
+#: src/components/connections-manager.tsx
+msgid "{displayName} connection failed"
+msgstr ""
+
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
 msgstr "{earlier} מוקדם יותר בשרשור זה"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "{envVar} already exists here. This records where it comes from; the current value is kept."
-msgstr "{envVar} כבר קיים כאן. הצהרה זו מתעדת מהיכן הוא מגיע; הערך הנוכחי נשמר."
+#~ msgid "{envVar} already exists here. This records where it comes from; the current value is kept."
+#~ msgstr "{envVar} כבר קיים כאן. הצהרה זו מתעדת מהיכן הוא מגיע; הערך הנוכחי נשמר."
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "{envVar} is now declared for this project."
@@ -803,8 +818,8 @@ msgid "1m"
 msgstr "דקה"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "1Password"
-msgstr "1Password"
+#~ msgid "1Password"
+#~ msgstr "1Password"
 
 #: src/hooks/useClaudeErrorRecords.ts
 msgid "1w"
@@ -1032,12 +1047,12 @@ msgstr "פעילות"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/connections-manager/credential-value-form.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
-#: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
@@ -1283,6 +1298,7 @@ msgid "Added vibe agent"
 msgstr "סוכן Vibe נוסף"
 
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/connections-manager/credential-value-form.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Adding…"
 msgstr "מוסיף…"
@@ -1340,6 +1356,14 @@ msgstr "סוכן"
 #: src/components/quick-create/registry.ts
 msgid "Agent created"
 msgstr "סוכן נוצר"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent disabled"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent enabled"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
@@ -1611,6 +1635,10 @@ msgstr "כבר בוצע — ניתן לפתוח את ההרצה"
 msgid "Already focused"
 msgstr "כבר במיקוד"
 
+#: src/components/connections-manager/credential-value-form.tsx
+msgid "already in .env.local"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed globally — uninstall first"
@@ -1680,7 +1708,6 @@ msgstr "ניתוחים (AgentTrace) של הסשן הזה — הרצה, הצגה 
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
-#: src/types/ViewType.ts
 msgid "Analysis"
 msgstr "ניתוח"
 
@@ -1822,9 +1849,9 @@ msgstr ""
 msgid "Api Key"
 msgstr "מפתח API"
 
-#: src/components/data-sources/provider-catalog.ts
-#~ msgid "API key"
-#~ msgstr "מפתח API"
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "API key"
+msgstr "מפתח API"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -2265,7 +2292,6 @@ msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Available"
 msgstr "זמין"
 
@@ -2396,16 +2422,16 @@ msgid "Betas allowed"
 msgstr ""
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Bind"
-msgstr "לקשור"
+#~ msgid "Bind"
+#~ msgstr "לקשור"
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Bind an existing app secret to a project environment variable."
-msgstr "חיבור app secret קיים למשתנה סביבה בפרויקט"
+#~ msgid "Bind an existing app secret to a project environment variable."
+#~ msgstr "חיבור app secret קיים למשתנה סביבה בפרויקט"
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Bind secret"
-msgstr "קישור סוד"
+#~ msgid "Bind secret"
+#~ msgstr "קישור סוד"
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
@@ -2692,10 +2718,10 @@ msgstr ""
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/connections-manager/credential-value-form.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/components/credentials-view/ProvideValueInline.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -2722,7 +2748,6 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -2880,7 +2905,6 @@ msgstr "בוצע commit ודחיפה לשינויים"
 
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/i18n/pref-labels.ts
-#: src/types/ViewType.ts
 msgid "Chat"
 msgstr "צ'אט"
 
@@ -3798,6 +3822,7 @@ msgstr "אישור"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -3839,7 +3864,7 @@ msgstr "התחברות ל-GitHub"
 msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 msgstr "יש לחבר את חשבון ה-GitHub שלך כדי לפתוח אותו. מי ששיתף את הארגז החול לא יכול לעשות זאת עבורך."
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
 msgid "Connected"
@@ -3858,7 +3883,7 @@ msgstr "חיבור פעיל למכונה של {hostName}."
 msgid "Connected to GitHub"
 msgstr "מחובר ל-GitHub"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
 msgid "Connecting"
 msgstr "מתחבר"
@@ -3867,7 +3892,7 @@ msgstr "מתחבר"
 msgid "Connecting…"
 msgstr "מתחברת..."
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Connection error"
 msgstr "שגיאת חיבור"
 
@@ -3879,14 +3904,15 @@ msgstr "מזהה חיבור"
 msgid "Connection Info"
 msgstr "מידע חיבור"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Connection rejected"
 msgstr "החיבור נדחה"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Connection verified"
 msgstr "החיבור אומת"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/connections-manager.tsx
 msgid "Connections"
 msgstr "חיבורים"
@@ -4018,8 +4044,8 @@ msgid "Conversation unavailable"
 msgstr "השיחה אינה זמינה"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Coordinate"
-msgstr "סנכרון"
+#~ msgid "Coordinate"
+#~ msgstr "סנכרון"
 
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -4195,7 +4221,8 @@ msgstr ""
 msgid "Cost (USD), total"
 msgstr ""
 
-#. placeholder {0}: spec.title || String(spec.name ?? '')
+#. placeholder {0}: spec.title || key
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "Could not add {0}"
 msgstr ""
@@ -4247,10 +4274,13 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 msgid "Could not connect GitHub"
 msgstr "לא ניתן להתחבר ל-GitHub"
 
-#. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
-msgid "Could not connect to {0}."
-msgstr "לא ניתן להתחבר ל-{0}."
+#~ msgid "Could not connect to {0}."
+#~ msgstr "לא ניתן להתחבר ל-{0}."
+
+#: src/components/connections-manager.tsx
+msgid "Could not connect to {displayName}."
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
@@ -4281,12 +4311,12 @@ msgid "Could not create the MCP server"
 msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Could not declare"
-msgstr "לא ניתן היה להצהיר"
+#~ msgid "Could not declare"
+#~ msgstr "לא ניתן היה להצהיר"
 
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "Could not declare that key"
-msgstr "לא ניתן להצהיר על המפתח הזה"
+#~ msgid "Could not declare that key"
+#~ msgstr "לא ניתן להצהיר על המפתח הזה"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
@@ -4551,6 +4581,10 @@ msgstr "לא ניתן להגדיר את Git"
 msgid "Could not set up the budget"
 msgstr ""
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Could not sign in to FlowPad"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Could not sign in to the cloud"
 msgstr "לא ניתן להתחבר לענן"
@@ -4596,6 +4630,11 @@ msgstr "לא ניתן לעצור"
 
 #: src/components/rag/RagView.tsx
 msgid "Could not stop covering {path}"
+msgstr ""
+
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
+msgid "Could not stop declaring {0}"
 msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -5107,20 +5146,20 @@ msgstr "מצגות"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "Declare"
-msgstr "הצהירו"
+#~ msgid "Declare"
+#~ msgstr "הצהירו"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Declare an environment variable"
-msgstr "הצהרה על משתנה סביבה"
+#~ msgid "Declare an environment variable"
+#~ msgstr "הצהרה על משתנה סביבה"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "Declare origin"
 #~ msgstr "הצהירו על המקור"
 
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "Declared"
-msgstr "מוצהר"
+#~ msgid "Declared"
+#~ msgstr "מוצהר"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Declared on the agent's card. Not yet applied to the worker."
@@ -5593,7 +5632,6 @@ msgstr ""
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Description"
@@ -5643,8 +5681,8 @@ msgid "Details"
 msgstr "פרטים"
 
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "Detected in .env.local"
-msgstr "זוהה ב-.env.local"
+#~ msgid "Detected in .env.local"
+#~ msgstr "זוהה ב-.env.local"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Dev"
@@ -5813,8 +5851,6 @@ msgstr "השבתת טלמטריה וניתוח נתונים"
 msgid "disabled"
 msgstr "מכובה"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Disabled"
 msgstr "מבוטל"
@@ -6285,6 +6321,15 @@ msgid "Effort"
 msgstr "רמת מאמץ"
 
 #: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email disabled"
+msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email enabled"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Email inbox"
 msgstr ""
 
@@ -6340,8 +6385,12 @@ msgid "Empty trace"
 msgstr "עקבה ריקה"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Empty uses the variable name."
-msgstr "שדה ריק ישתמש בשם המשתנה."
+#~ msgid "Empty uses the variable name."
+#~ msgstr "שדה ריק ישתמש בשם המשתנה."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Enable Agent"
+msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Enable agent email"
@@ -6372,7 +6421,6 @@ msgid "Enable extended thinking for all conversations"
 msgstr "הפעלת חשיבה מורחבת בכל השיחות"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/BindSecretDialog.tsx
 msgid "Enable secrets"
 msgstr "הפעל סודות"
 
@@ -6390,13 +6438,10 @@ msgstr "הפעלת סביבה מבודדת מקוננת חלשה יותר"
 msgid "Enable/Disable hook"
 msgstr "הפעלה או השבתה של הוק"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -6412,8 +6457,8 @@ msgid "Enabled Plugins"
 msgstr "תוספים מופעלים"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "Encrypted keychain"
-msgstr "מחזיק מפתחות מוצפן"
+#~ msgid "Encrypted keychain"
+#~ msgstr "מחזיק מפתחות מוצפן"
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "End anchor"
@@ -6524,20 +6569,20 @@ msgid "Env"
 msgstr ""
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Env var"
-msgstr "משתנה סביבה"
+#~ msgid "Env var"
+#~ msgstr "משתנה סביבה"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "ENV_VAR"
-msgstr "משתנה_סביבה"
+#~ msgid "ENV_VAR"
+#~ msgstr "משתנה_סביבה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "סביבה"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Environment variable"
-msgstr "משתנה סביבה"
+#~ msgid "Environment variable"
+#~ msgstr "משתנה סביבה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment Variables"
@@ -6564,11 +6609,6 @@ msgstr "שגיאה"
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/machine-overview/node-secrets.tsx
-#: src/components/project-home/BindSecretDialog.tsx
-#: src/components/project-home/BindSecretDialog.tsx
-#: src/components/project-home/EnvLocalCard.tsx
-#: src/components/project-home/SecretsCard.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -6663,6 +6703,10 @@ msgstr "בכל בחירה"
 #: src/pages/discover-page/discover-page.tsx
 msgid "Every skill, agent, spec, and document this project ships."
 msgstr "כל הכישורים, הסוכנים, המפרטים והמסמכים שהפרויקט הזה כולל."
+
+#: src/components/connections-manager/credential-value-form.tsx
+msgid "Every value is already on this machine — nothing to type."
+msgstr ""
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Everything available is already connected."
@@ -6861,8 +6905,8 @@ msgid "Failed to add Git folder"
 msgstr "הוספת תיקיית Git נכשלה"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "Failed to add secret"
-msgstr "הוספת הסוד נכשלה"
+#~ msgid "Failed to add secret"
+#~ msgstr "הוספת הסוד נכשלה"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to add vibe agent"
@@ -6873,8 +6917,8 @@ msgid "Failed to backup database"
 msgstr "גיבוי בסיס הנתונים נכשל"
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Failed to bind secret"
-msgstr "הצמדת הסוד נכשלה"
+#~ msgid "Failed to bind secret"
+#~ msgstr "הצמדת הסוד נכשלה"
 
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "Failed to build call stack: {error}"
@@ -6935,8 +6979,8 @@ msgid "Failed to create spec"
 msgstr "נכשל ביצירת מפרט"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Failed to declare the environment variable"
-msgstr "הצהרת משתנה הסביבה נכשלה."
+#~ msgid "Failed to declare the environment variable"
+#~ msgstr "הצהרת משתנה הסביבה נכשלה."
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Failed to delete"
@@ -6965,7 +7009,6 @@ msgid "Failed to discard draft"
 msgstr "נכשל להשליך טיוטה"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to enable secrets"
 msgstr "כשל בהפעלת סודות"
 
@@ -7203,8 +7246,8 @@ msgstr "ההפעלה נכשלה."
 #~ msgstr "שמירת הערך נכשלה"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "Failed to store value"
-msgstr "שגיאה בשמירת הערך"
+#~ msgid "Failed to store value"
+#~ msgstr "שגיאה בשמירת הערך"
 
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
@@ -7538,6 +7581,10 @@ msgstr "הודעת זרימה"
 msgid "Flowpad"
 msgstr "Flowpad"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "FlowPad"
+msgstr ""
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "מפתח API של FlowPad"
@@ -7582,8 +7629,8 @@ msgid "Flowpad diagnostics"
 msgstr "אבחון Flowpad"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "Flowpad Hub"
-msgstr "Flowpad Hub"
+#~ msgid "Flowpad Hub"
+#~ msgstr "Flowpad Hub"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -8030,8 +8077,8 @@ msgid "Go up"
 msgstr "עלה כיוון למעלה"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "Google Secret Manager"
-msgstr "Google Secret Manager"
+#~ msgid "Google Secret Manager"
+#~ msgstr "Google Secret Manager"
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
@@ -8724,7 +8771,6 @@ msgstr "בתוך האפליקציה בלבד"
 msgid "Inactive"
 msgstr "לא פעיל"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -9384,8 +9430,8 @@ msgid "Leave conversation"
 msgstr "עזוב שיחה"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Leave empty to declare the need only"
-msgstr "יש להשאיר ריק כדי להצהיר על הצורך בלבד."
+#~ msgid "Leave empty to declare the need only"
+#~ msgstr "יש להשאיר ריק כדי להצהיר על הצורך בלבד."
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave this conversation?"
@@ -9456,9 +9502,7 @@ msgstr "שורה"
 
 #. placeholder {0}: el.absRow
 #. placeholder {0}: link.line
-#. placeholder {0}: row.line
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
-#: src/components/project-home/EnvLocalCard.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line {0}"
 msgstr "שורה {0}"
@@ -9933,7 +9977,6 @@ msgstr "רק מקומי — קבוע"
 msgid "Local path"
 msgstr "נתיב מקומי"
 
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
 msgstr "מיקום"
@@ -9946,11 +9989,11 @@ msgstr "נעול לאחר ההודעה הראשונה"
 msgid "Log mode"
 msgstr "מצב רישום"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Logged in"
 msgstr "מחובר לחשבון"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Logged out"
 msgstr "מנותק מהחשבון"
 
@@ -9968,7 +10011,7 @@ msgstr "כניסה"
 msgid "Login canceled"
 msgstr "ההתחברות בוטלה"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Login failed"
 msgstr "ההתחברות נכשלה"
 
@@ -10392,8 +10435,8 @@ msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "Missing"
-msgstr "חסר"
+#~ msgid "Missing"
+#~ msgstr "חסר"
 
 #: src/pages/keychain-approval.tsx
 msgid "Missing API key — please retry the deep link from the source page."
@@ -11202,8 +11245,8 @@ msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr ""
 
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "No keys found in this project's .env.local."
-msgstr "לא נמצאו מפתחות בקובץ .env.local של הפרויקט הזה."
+#~ msgid "No keys found in this project's .env.local."
+#~ msgstr "לא נמצאו מפתחות בקובץ .env.local של הפרויקט הזה."
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No known fix yet — use \"Fix It\" to start a session."
@@ -11234,8 +11277,8 @@ msgid "No LLM index for this folder yet."
 msgstr "אין אינדקס LLM לתיקייה זו עדיין."
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "No local app secrets"
-msgstr "אין סודות אפליקציה מקומיים"
+#~ msgid "No local app secrets"
+#~ msgstr "אין סודות אפליקציה מקומיים"
 
 #: src/components/account/system-log.tsx
 msgid "No log file found"
@@ -11590,8 +11633,8 @@ msgid "No schedule triggers yet. <0>Create one</0>"
 msgstr "אין טריגרים מתוזמנים עדיין. <0>צור אחד</0>"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "No secrets yet. Add one below — the value never leaves your machine."
-msgstr "אין עדיין סודות. הוסיפו אחד למטה — הערך לעולם לא עוזב את המחשב שלך."
+#~ msgid "No secrets yet. Add one below — the value never leaves your machine."
+#~ msgstr "אין עדיין סודות. הוסיפו אחד למטה — הערך לעולם לא עוזב את המחשב שלך."
 
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
@@ -11830,7 +11873,7 @@ msgstr ""
 msgid "Not checked"
 msgstr "לא בדוק"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
 msgid "Not connected"
 msgstr "לא מחובר"
@@ -12070,8 +12113,8 @@ msgid "OAuth + PKCE"
 msgstr "OAuth + PKCE"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "OAuth connection"
-msgstr "חיבור OAuth"
+#~ msgid "OAuth connection"
+#~ msgstr "חיבור OAuth"
 
 #: src/components/connections-manager.tsx
 #~ msgid "OAuth Connections"
@@ -12176,8 +12219,8 @@ msgid "Open"
 msgstr "פתח"
 
 #: src/components/project-home/EnvLocalCard.tsx
-msgid "Open .env.local at this line"
-msgstr "פתחו את .env.local בשורה זו"
+#~ msgid "Open .env.local at this line"
+#~ msgstr "פתחו את .env.local בשורה זו"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
@@ -12615,7 +12658,6 @@ msgid "OpenAI"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
@@ -12671,6 +12713,10 @@ msgstr ""
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "הפעולה נכשלה"
+
+#: src/components/connections-manager/credential-value-form.tsx
+msgid "optional"
+msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -13340,7 +13386,6 @@ msgstr "ראשי"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Private"
 msgstr "פרטי"
 
@@ -13350,8 +13395,8 @@ msgid "Private Context"
 msgstr "הקשר פרטי"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Private to me"
-msgstr "פרטי לי בלבד"
+#~ msgid "Private to me"
+#~ msgstr "פרטי לי בלבד"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "problem"
@@ -13420,8 +13465,8 @@ msgid "Project"
 msgstr "פרויקט"
 
 #: src/components/secrets/OriginChip.tsx
-msgid "Project .env.local"
-msgstr ".env.local של הפרויקט"
+#~ msgid "Project .env.local"
+#~ msgstr ".env.local של הפרויקט"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 #~ msgid "Project (local)"
@@ -13895,8 +13940,8 @@ msgid "reason"
 msgstr "סיבה"
 
 #: src/types/ViewType.ts
-msgid "Reasoning"
-msgstr "חשיבה"
+#~ msgid "Reasoning"
+#~ msgstr "חשיבה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Reasoning Effort"
@@ -14003,8 +14048,8 @@ msgid "Reconnected."
 msgstr "החיבור חודש."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Record where {lockedEnvVar} comes from"
-msgstr "תעדו מאיפה {lockedEnvVar} מגיע"
+#~ msgid "Record where {lockedEnvVar} comes from"
+#~ msgstr "תעדו מאיפה {lockedEnvVar} מגיע"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Recorded"
@@ -15218,7 +15263,6 @@ msgstr "סורק את כל משאבי הווקים מפרופיל המערכת �
 msgid "schedule"
 msgstr "תיזמון"
 
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -15453,8 +15497,8 @@ msgstr "מחפש…"
 
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Secret"
-msgstr "סוד"
+#~ msgid "Secret"
+#~ msgstr "סוד"
 
 #: src/components/account/secrets-section.tsx
 msgid "Secret deleted"
@@ -15470,8 +15514,6 @@ msgstr "סוד נשמר"
 
 #: src/components/account/account-info.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/project-home/ProjectHome.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Secrets"
 msgstr "סודות"
 
@@ -15607,8 +15649,8 @@ msgid "Select Projects"
 msgstr "בחר פרויקטים"
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "Select secret"
-msgstr "בחירת סוד"
+#~ msgid "Select secret"
+#~ msgstr "בחירת סוד"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Select session"
@@ -15890,7 +15932,6 @@ msgstr "הגדר פרויקט"
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/project-home/SecretsCard.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "הגדר"
@@ -15900,8 +15941,8 @@ msgid "Set up (runs an agentic process)"
 msgstr "הגדר (מפעיל תהליך אגנטי)"
 
 #: src/components/project-home/SecretsCard.tsx
-msgid "Set up →"
-msgstr "להגדיר →"
+#~ msgid "Set up →"
+#~ msgstr "להגדיר →"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
@@ -16058,7 +16099,6 @@ msgstr "שיתוף באמצעות Git origin"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
-#: src/components/project-home/SecretsCard.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
 msgstr "משותף"
@@ -16078,8 +16118,8 @@ msgid "Shared with {0}"
 msgstr "משותף עם {0}"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Shared with the project"
-msgstr "משותף עם הפרויקט"
+#~ msgid "Shared with the project"
+#~ msgstr "משותף עם הפרויקט"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
@@ -16398,6 +16438,10 @@ msgstr "יציאה מהסנדבוקס"
 msgid "Sign-in"
 msgstr "התחברות"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+#~ msgid "Sign-in failed"
+#~ msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in not confirmed"
 msgstr ""
@@ -16424,11 +16468,13 @@ msgstr "מחובר ל-Remote"
 msgid "signed out"
 msgstr "לא מחובר"
 
-#: src/components/account/user-info.tsx
+#: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "מתבצעת התחברות"
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/connections-manager/flowpad-connection-row.tsx
 msgid "Signing in…"
 msgstr "מתחבר…"
 
@@ -16985,13 +17031,15 @@ msgstr "עצור"
 msgid "Stop covering this folder"
 msgstr ""
 
-#: src/components/credentials-view/ProjectEnvironmentTab.tsx
-#~ msgid "Stop declaring"
-#~ msgstr "הפסיקו להצהיר"
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Stop declaring"
+msgstr "הפסיקו להצהיר"
 
-#: src/components/credentials-view/ProjectEnvironmentTab.tsx
-#~ msgid "Stop declaring {0}?"
-#~ msgstr "להפסיק להצהיר את {0}?"
+#. placeholder {0}: pendingUndeclare?.title ?? ''
+#: src/components/connections-manager.tsx
+msgid "Stop declaring {0}?"
+msgstr "להפסיק להצהיר את {0}?"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17549,8 +17597,12 @@ msgid "The cloud service returned an error. Please try again in a moment."
 msgstr "שירות הענן החזיר שגיאה. יש לנסות שוב בעוד רגע."
 
 #: src/components/connections-manager.tsx
-msgid "The credential could not be declared."
+msgid "The credential could not be added."
 msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "The credential could not be declared."
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
@@ -17563,6 +17615,14 @@ msgstr "האישור הוסר מחשבונך. אין כרגע פרויקט שמ�
 #: src/components/connections-manager.tsx
 msgid "The credential was removed from your account."
 msgstr "האישור הוסר מחשבונך."
+
+#: src/components/connections-manager.tsx
+msgid "The declaration may be only partly removed."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "The declaration was not removed."
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -17633,8 +17693,12 @@ msgid "The live session has ended."
 msgstr "הסשן החי הסתיים."
 
 #: src/components/project-home/BindSecretDialog.tsx
-msgid "The local secrets store is not enabled yet."
-msgstr "מאגר הסודות המקומי עדיין לא מופעל"
+#~ msgid "The local secrets store is not enabled yet."
+#~ msgstr "מאגר הסודות המקומי עדיין לא מופעל"
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "The login did not complete."
+msgstr ""
 
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
@@ -17725,6 +17789,7 @@ msgid "The transcript on disk was started under another project — the binding 
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
 
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
 msgid "The value could not be written."
 msgstr ""
 
@@ -17735,6 +17800,10 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפעלה שלך ולעולם לא ניתן לקרוא אותו מהממשק זה."
+
+#: src/components/connections-manager/credential-value-form.tsx
+msgid "The value is written to this project's .env.local and stays on this machine."
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
@@ -17999,6 +18068,10 @@ msgstr "עדיין לא הוגדרו סודות לפרויקט זה."
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "This project is now available in the cloud."
 msgstr "הפרויקט זמין כעת בענן."
+
+#: src/components/connections-manager.tsx
+msgid "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
+msgstr ""
 
 #: src/routes/loaders/load-project.ts
 msgid "This project tab URL is malformed."
@@ -18719,8 +18792,8 @@ msgid "Unstar chat"
 msgstr "הסרת כוכב"
 
 #: src/types/ViewType.ts
-msgid "Unsupported"
-msgstr "לא נתמך"
+#~ msgid "Unsupported"
+#~ msgstr "לא נתמך"
 
 #: src/routes/loaders/load-project.ts
 #: src/routes/loaders/load-project.ts
@@ -18850,8 +18923,8 @@ msgid "Uploading…"
 msgstr "העלאה..."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Uppercase letters, numbers and underscores only."
-msgstr "אותיות גדולות, ספרות וקו תחתון בלבד."
+#~ msgid "Uppercase letters, numbers and underscores only."
+#~ msgstr "אותיות גדולות, ספרות וקו תחתון בלבד."
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -19039,7 +19112,6 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Value"
 msgstr "ערך"
 
@@ -19048,20 +19120,20 @@ msgid "Value for {envVar}"
 msgstr "ערך עבור {envVar}"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Value too long"
-msgstr "הערך ארוך מדי."
+#~ msgid "Value too long"
+#~ msgstr "הערך ארוך מדי."
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "ערך:"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Values are limited to {MAX_ENV_VAR_VALUE_LENGTH} characters."
-msgstr "ערכים מוגבלים ל-{MAX_ENV_VAR_VALUE_LENGTH} תווים."
+#~ msgid "Values are limited to {MAX_ENV_VAR_VALUE_LENGTH} characters."
+#~ msgstr "ערכים מוגבלים ל-{MAX_ENV_VAR_VALUE_LENGTH} תווים."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Values for this location are held elsewhere — the declaration records the need and reads as missing until that location has it."
-msgstr "הערכים למיקום הזה נשמרים במקום אחר — ההצהרה מתעדת את הצורך בלבד, ותוצג כחסרה עד שיהיה ערך במיקום הזה."
+#~ msgid "Values for this location are held elsewhere — the declaration records the need and reads as missing until that location has it."
+#~ msgstr "הערכים למיקום הזה נשמרים במקום אחר — ההצהרה מתעדת את הצורך בלבד, ותוצג כחסרה עד שיהיה ערך במיקום הזה."
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine. Nothing is sent anywhere by adding one."
@@ -19412,8 +19484,8 @@ msgstr "מה צריך העובד לעשות עם הודעה זו?"
 #~ msgstr "מה הפרויקט צריך, מאיפה מגיע כל ערך, והאם הוא מסופק כאן."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "What this secret is for"
-msgstr "למה הסוד הזה משמש?"
+#~ msgid "What this secret is for"
+#~ msgstr "למה הסוד הזה משמש?"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
@@ -19449,12 +19521,13 @@ msgid "When on, the server re-creates the Welcome bookmark + feed entry on the n
 msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את סימניית קבלת הפנים ואת רשומת הפיד, ולאחר מכן מכבה הגדרה זו."
 
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/connections-manager/credential-value-form.tsx
 msgid "Where do I get this?"
 msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
-msgid "Where does it come from?"
-msgstr "מאיפה זה מגיע?"
+#~ msgid "Where does it come from?"
+#~ msgstr "מאיפה זה מגיע?"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Where each assistant gets its model access, and why."
@@ -19771,6 +19844,10 @@ msgstr "סביבת העבודה CloudNSite שלך מוכנה"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "שם התצוגה שלך"
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Your FlowPad account"
+msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup on this image will be lost."

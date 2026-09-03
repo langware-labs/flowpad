@@ -9,7 +9,7 @@ import type {
 } from '@sdk';
 
 /**
- * Project secrets hook — the Secrets card + setup wizard read everything here.
+ * Project secrets hook — the Connections table reads everything here.
  * The backend owns all logic (value-free pointers, driver resolution, stores);
  * this hook only calls actions and surfaces their results (headless FE).
  */
@@ -46,30 +46,6 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     void refreshStatus();
   }, [project?.id, secretsKey, refreshStatus]);
 
-  /** Add a value-free secret pointer: the provider (where to fetch), the SOD
-   *  store (how to store a provided value), and the env var (how to use it). */
-  const add = useCallback(
-    async (opts: {
-      name: string;
-      envVar: string;
-      locator: SecretOriginLocator;
-      sodStore?: SodStore;
-      scope?: SecretPointerScope;
-      description?: string;
-    }) => {
-      const p = projectRef.current;
-      if (!p || !opts.envVar || !opts.locator) return;
-      await p.addSecretPointer(opts.name || opts.envVar, opts.envVar, {
-        locator: opts.locator,
-        scope: opts.scope ?? 'private',
-        sodStore: opts.sodStore,
-        description: opts.description,
-      });
-      await refreshStatus();
-    },
-    [refreshStatus],
-  );
-
   /** Declare several at once — one project save, so no link can be lost. */
   const addMany = useCallback(
     async (entries: Parameters<Project['addSecretPointers']>[0]) => {
@@ -102,5 +78,36 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     [refreshStatus],
   );
 
-  return { secretOrigins, status, statusReady, add, addMany, provide, remove, refreshStatus } as const;
+  /**
+   * Stop declaring several at once — N removes, but ONE refresh.
+   *
+   * The mirror of {@link addMany}, and not as good: `remove-secret-pointer` is a
+   * single-pointer action on the backend, so there is no batch to call and this
+   * is still N round-trips that can fail half-way. What it does fix is the other
+   * half of the cost — `remove` refetches the whole resolve-status after every
+   * call, so undeclaring a three-variable credential used to mean three writes
+   * AND three full refetches, with the table re-rendering between each.
+   */
+  const removeMany = useCallback(
+    async (typeids: string[]) => {
+      const p = projectRef.current;
+      if (!p || !typeids.length) return;
+      for (const typeid of typeids) {
+        if (typeid) await p.removeSecretPointer(typeid);
+      }
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
+  return {
+    secretOrigins,
+    status,
+    statusReady,
+    addMany,
+    provide,
+    remove,
+    removeMany,
+    refreshStatus,
+  } as const;
 }

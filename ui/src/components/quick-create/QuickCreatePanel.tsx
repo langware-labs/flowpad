@@ -2,7 +2,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { dataContext, isHubOnly } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
 import {
   CONTEXT_FOLDERS_WIKI,
   ContextFolderScopeChips,
@@ -24,7 +23,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
-import { GitBranch, Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
+import { GitBranch, Info, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
@@ -53,7 +52,6 @@ const CLAUDE_CODE_WIKI = 'Claude Code sessions';
 const CODEX_WIKI = 'Codex sessions';
 const COPILOT_WIKI = 'Copilot sessions';
 const OPENCODE_WIKI = 'OpenCode sessions';
-const SECRET_WIKI = 'Project secrets';
 const CONVERSATION_WIKI = 'Conversations';
 const PROJECT_WIKI = 'Flowpad project';
 const HELPDESK_WIKI = 'Help desks';
@@ -193,7 +191,6 @@ export function useQuickCreatePick() {
   const { project } = useProject();
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [bindSecretOpen, setBindSecretOpen] = useState(false);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
@@ -252,7 +249,6 @@ export function useQuickCreatePick() {
       ) : (
         <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} />
       )}
-      <BindSecretDialog project={project ?? null} open={bindSecretOpen} onOpenChange={setBindSecretOpen} />
       {ctxFolder.dialogs}
       {helpdesk.dialogs}
       <NewConversationDialog open={newMessageOpen} onClose={() => setNewMessageOpen(false)} />
@@ -275,7 +271,6 @@ export function useQuickCreatePick() {
 
   const panelProps: PanelHandlers = {
     onPick,
-    onBindSecret: () => setBindSecretOpen(true),
     onAddFolder: ctxFolder.pick,
     onAddHelpdesk: helpdesk.open,
     onNewMessage,
@@ -302,8 +297,6 @@ export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['fold
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
   onPick: (type: string) => void;
-  /** Open the secret-binding dialog. */
-  onBindSecret: () => void;
   /** Run a context-folder source at the given scope. */
   onAddFolder: (source: ContextFolderSource, scope: ContextFolderScope) => void;
   /** Open the adopt-a-help-desk dialog. */
@@ -353,7 +346,6 @@ export interface SessionTileDef {
  */
 export function QuickCreatePanel({
   onPick,
-  onBindSecret,
   onAddFolder,
   onAddHelpdesk,
   onNewMessage,
@@ -444,31 +436,6 @@ export function QuickCreatePanel({
   // passed by value, so the host still has it after this panel unmounts.
   const folderSources = useContextFolderSources();
 
-  // Project-attachment tiles — secret bindings live on the Project entity, not
-  // as creatable file assets, so they are hardcoded here rather than in
-  // QUICK_CREATE_REGISTRY. This is the entry point for adding them: the
-  // ProjectHome cards only render once non-empty.
-  const projectAttachmentTiles: Array<{
-    key: string;
-    Icon: TileIcon;
-    label: string;
-    wikiword: string;
-    disabled?: boolean;
-    onClick: () => void;
-  }> = [
-    {
-      key: 'secret',
-      Icon: KeyRound,
-      label: t`Secret`,
-      wikiword: SECRET_WIKI,
-      disabled: !currentProject,
-      onClick: () => {
-        onDone?.();
-        onBindSecret();
-      },
-    },
-  ];
-
   // Keyed by section so `sections` controls both membership AND order — the
   // group is looked up, not laid out, so the caller's order is what renders.
   const bySection: Record<QuickCreateSection, ReactNode> = {
@@ -549,16 +516,6 @@ export function QuickCreatePanel({
               onDone?.();
               onPick(item.type);
             }}
-          />
-        ))}
-        {projectAttachmentTiles.map((tile) => (
-          <TippedTile
-            key={tile.key}
-            wikiword={tile.wikiword}
-            Icon={tile.Icon}
-            label={tile.label}
-            disabled={tile.disabled}
-            onClick={tile.onClick}
           />
         ))}
       </TileSection>
