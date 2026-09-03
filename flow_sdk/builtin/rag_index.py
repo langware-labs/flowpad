@@ -227,6 +227,18 @@ class RagIndex(Entity):
             with RagStore(self.store_dir) as store:
                 yield store
 
+    async def unstamped_roots(self) -> list[str]:
+        """Roots the store holds no tree hash for — work no marker can announce.
+
+        A hash is recorded when a root finishes indexing, so a missing one means this root has
+        never been done, or the store that recorded it is gone. Cheap on purpose: one sqlite
+        read per root, never a walk, because this runs on the heartbeat.
+        """
+        if not self.roots:
+            return []
+        async with self.open_store() as store:
+            return [root for root in self.roots if not store.tree_hash(root)]
+
     async def forget_root(self, root: str) -> int:
         """Drop every document of *root* from the store. Returns chunks removed."""
         from flow_sdk.fs_store.path_utils import is_path_under
