@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
+from flow_sdk.fs_store.identity_carrier import CarrierId, FolderJsonCarrier, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -190,6 +190,11 @@ class Layout:
 
 
 _NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
+
+#: How far above an unclaimed path to look for the folder asset that owns it.
+#: An inner file sits 1-3 levels below its asset root (``scripts/run.py``); the
+#: cap stops a stray path from walking the tree to the filesystem root.
+_MAX_CONTAINMENT_DEPTH = 8
 
 
 
@@ -510,16 +515,102 @@ class TypeInfo:
         """Return the concrete asset path accepted by identity callbacks."""
         return Path(getattr(ref, "_path", ref))
 
-    def carrier_path_for(self, ref: Any) -> Path:
-        """The file or folder this type's identity carrier lives in: the main
-        markdown document for a frontmatter carrier (``<folder>/<main_file>`` on
-        a folder type), the folder for a folder-json carrier, the file otherwise."""
-        path = self._identity_path(ref)
+    def _names_own_document(self, path: Path) -> bool:
+        """Is ``path`` a FILE this type may write an id into — its main document,
+        or any file in this type's own document format?
+
+        The union matters, and a layout test alone would miss half of it: a
+        folder-layout type is carried by ``<folder>/<main_file>``, but the same
+        type also travels as a PORTABLE single document with any name
+        (``asset.md`` for an ``agent``), and both are legitimately stampable.
+        What is never stampable is a foreign format — a ``.py`` beside them.
+        """
+        if self.main_file and path.name.lower() == self.main_file.lower():
+            return True
+        return path.suffix.lower() == (self.main_ext or "").lower()
+
+    def _carrier_write_is_safe(self, target: Path) -> bool:
+        """May this type's carrier WRITE at ``target`` without damaging it?
+
+        A write question, never a read one: ``read_id`` must keep reading
+        wherever the carrier points, or a provider that embeds its own id (a
+        ``DerivedCarrier`` over ``.jsonl``) stops being adopted. Only the two
+        carriers that write bytes they do not parse can do damage:
+
+        * ``FrontmatterCarrier`` prepends a YAML header to whatever is there —
+          legal in this type's own document, corruption in anything else. This
+          is FLOWPAD-2083: ``mcp/crm-mcp/server.py``, reached under a type whose
+          editor URL said ``markdown``, came back as ``---\\nid: …\\n---`` on top
+          of Python and stopped importing.
+        * ``FolderJsonCarrier`` is built to drop ``.flow/capsules/identity.json``
+          beside a FOLDER; handed a regular file, ``AssetCapsule.from_path``
+          degrades to an inline comment capsule written INTO it — the same bug
+          without the SyntaxError, because comments still parse.
+
+        A format-aware carrier (``NativeJsonCarrier``) and a read-only one are
+        unaffected. A directory, or a target whose bytes do not exist yet, stays
+        writable: ``_commit_identity`` mints against asset_refs that land moments
+        later, which is why ``layout_of``'s projections are total.
+        """
+        if not target.is_file():
+            return True   # a directory (folder capsule) or a not-yet-created save target
+        if isinstance(self.identity_carrier, (FrontmatterCarrier, FolderJsonCarrier)):
+            return self._names_own_document(target)
+        return True
+
+    def _carrier_target(self, path: Path) -> Path:
+        """Where this type's carrier would live for ``path``, before any safety
+        question — the historical ``carrier_path_for`` body."""
         if isinstance(self.identity_carrier, FrontmatterCarrier) and self.folder_backed and self.main_file:
             root = self.storage_root_for(path)
             main = root / self.main_file
             return main if main.is_file() else root   # no main doc (a yaml-only skill): the folder carries
         return self.storage_root_for(path) if self.folder_backed else path
+
+    def _containing_asset_root(self, path: Path) -> "Path | None":
+        """The nearest ancestor that IS an asset of this type, else None.
+
+        A pure path+filesystem question — never a DB lookup. Widening the OWNER
+        lookup to containment would fan a query out per asset-owning class and,
+        worse, fail OPEN onto a write when it returns nothing (see
+        ``path_owners.owner_id_for``); this fails closed.
+        """
+        if self.main_layout != "folder" or not self.main_file:
+            return None
+        for depth, ancestor in enumerate(path.parents):
+            if depth >= _MAX_CONTAINMENT_DEPTH:
+                break
+            if (ancestor / self.main_file).is_file():
+                return ancestor
+        return None
+
+    def carrier_path_for(self, ref: Any) -> Path:
+        """The file or folder this type's identity carrier lives in: the main
+        markdown document for a frontmatter carrier (``<folder>/<main_file>`` on
+        a folder type), the folder for a folder-json carrier, the file otherwise.
+
+        TOTAL — a path always names somewhere to READ, and reads never damage
+        anything. What changed is the answer for a target this type may not
+        WRITE: instead of naming that file (where ``mint_entity_id`` would
+        prepend a YAML header to whatever the bytes were — a bundled
+        ``mcp/crm-mcp/server.py``, reached under a type whose editor URL said
+        ``markdown``, came back as ``---\\nid: …\\n---`` on top of Python and
+        stopped importing, FLOWPAD-2083), it names the asset that CONTAINS it, so
+        the id resolves where it actually lives rather than being minted into a
+        file that merely sits nearby. When nothing contains it the unwritable
+        target is still returned, to be read from; whether a write may follow is
+        ``_carrier_write_is_safe``'s call, in ``mint_entity_id``.
+        """
+        path = self._identity_path(ref)
+        target = self._carrier_target(path)
+        if self._carrier_write_is_safe(target):
+            return target
+        root = self._containing_asset_root(path)
+        if root is None:
+            return target   # read here; the write gate refuses to stamp it
+        # Resolve to the owning asset's canonical ref — the inner main file for a
+        # spec-style type, the bare folder for a skill-style one.
+        return self._carrier_target(self.asset_ref_for(root))
 
     def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
         """The carrier path and what it holds; raises ``MalformedCarrier`` — a
@@ -568,8 +659,18 @@ class TypeInfo:
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
         path, carrier = self._read_carrier(ref)
+        writable_target = path is not None and self._carrier_write_is_safe(path)
+        if not writable_target and path is not None and getattr(self.identity_carrier, "writable", False):
+            # This type may not put an id in these bytes — i.e. the CALLER
+            # mis-classified the path. The id still resolves (derived below);
+            # nothing is stamped. This line is the one that would have named the
+            # mislabel in FLOWPAD-2083 instead of it surfacing as a SyntaxError.
+            logging.warning(
+                "[asset-id] %s will not write its carrier into %s; deriving an id instead",
+                self.type_name, path,
+            )
         can_write = (
-            path is not None
+            writable_target
             and self.identity_carrier.writable
             and not bool(getattr(ref, "read_only", False))
             and not carrier_writes_are_suppressed()
