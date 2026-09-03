@@ -25,6 +25,7 @@ import {
   Invitation,
   QueryRequest,
   TypeId,
+  User,
   acceptInvitation,
   archiveAllConversations,
   archiveConversation,
@@ -452,9 +453,16 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
-  // The user's own channels. Hidden until the local user is known — the bar
-  // keys its rows on that typeid, and an empty bar would flash meanwhile.
-  const { userTypeId } = useContext();
+  // Whose channels the header line shows: the agent's on an agent inbox, else
+  // the local user's — absent until that typeid is known, so no empty bar flashes.
+  // `localUser.id`, not `userTypeId`: that alias resolves to the `@local` pointer,
+  // and rows carry the user's real id.
+  const { localUser } = useContext();
+  const localUserId = localUser?.id;
+  const channelsOwner = useMemo(
+    () => (agentId ? new TypeId(Agent.type, agentId) : localUserId ? new TypeId(User.type, localUserId) : null),
+    [agentId, localUserId],
+  );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
   const hubReachable = connection.status === 'connected' || connection.status === 'verified';
@@ -972,7 +980,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {renderViewPill('archived', t`Archived`, Archive)}
             {!agentId && renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
-          {!agentId && userTypeId && <AttachedChannelsBar owner={userTypeId} className="ms-2" />}
           {/* Text search — filters the list below to conversations whose
               messages contain the query, spanning archived rows. Hidden in
               the Help Desk view (hub-sourced tickets, not local messages). */}
@@ -1213,6 +1220,32 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             </div>
           ))}
 
+        {/* The header line: select-all on the left, the owner's attached channels
+            on the right. Rendered even with no conversations — the channels are
+            how one gets some. */}
+        {!inHelpdeskView && !initialLoading && (
+          <div
+            className="flex h-9 items-center gap-3 border-b border-border/40 bg-muted/10 px-3"
+            data-testid="inbox-select-all-row"
+          >
+            {visibleCount > 0 && (
+              <>
+                <Checkbox
+                  checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label={t`Select all conversations`}
+                  data-testid="inbox-select-all"
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs text-muted-foreground">
+                  {selectedCount > 0 ? <Trans>{selectedCount} selected</Trans> : t`Select all`}
+                </span>
+              </>
+            )}
+            {channelsOwner && <AttachedChannelsBar owner={channelsOwner} className="ms-auto" />}
+          </div>
+        )}
+
         {!inHelpdeskView && initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
@@ -1236,24 +1269,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 <Trans>Check for new messages</Trans>
               </Button>
             )}
-          </div>
-        )}
-
-        {!inHelpdeskView && !initialLoading && visibleCount > 0 && (
-          <div
-            className="flex h-7 items-center gap-3 border-b border-border/40 bg-muted/10 px-3"
-            data-testid="inbox-select-all-row"
-          >
-            <Checkbox
-              checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
-              onCheckedChange={toggleSelectAll}
-              aria-label={t`Select all conversations`}
-              data-testid="inbox-select-all"
-              className="h-3.5 w-3.5"
-            />
-            <span className="text-xs text-muted-foreground">
-              {selectedCount > 0 ? <Trans>{selectedCount} selected</Trans> : t`Select all`}
-            </span>
           </div>
         )}
 

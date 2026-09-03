@@ -14,7 +14,7 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { useAttachedChannels } from './AttachedChannelsBar';
 import { InboxView } from './InboxView';
 
 const MIN_REFRESH_SECONDS = 60;
@@ -41,8 +41,8 @@ export function AgentInboxView() {
   const [senders, setSenders] = useState('');
   const [refresh, setRefresh] = useState(String(MIN_REFRESH_SECONDS));
   const activeState = state?.agent_id === parsed.agentId ? state : null;
-  // The agent's channels — the bar's own rows, so "has an inbox at all" and
-  // what the bar shows can never disagree.
+  // The agent's channels — the inbox header's own rows, so "has an inbox at
+  // all" and what that header shows can never disagree.
   const { rows: channels } = useAttachedChannels(agentTypeId);
 
   const loadState = useCallback(async () => {
@@ -160,7 +160,6 @@ export function AgentInboxView() {
               )}
             </div>
           </div>
-          {agentTypeId && <AttachedChannelsBar owner={agentTypeId} className="justify-end" />}
         </div>
         {activeState?.inbox && (
           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(12rem,1fr)_10rem_auto]">

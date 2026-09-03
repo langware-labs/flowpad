@@ -11,6 +11,7 @@ import { GoogleCloudStorageIcon } from '@src/components/icons/GoogleCloudStorage
 import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
 import { LinearIcon } from '@src/components/icons/LinearIcon';
 import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
+import { SlackIcon } from '@src/components/icons/SlackIcon';
 import { TelegramIcon } from '@src/components/icons/TelegramIcon';
 import { iconAssetUrl } from '@sdk';
 
@@ -32,9 +33,12 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   OpenCode: OpenCodeIcon as unknown as LucideIcon,
   // Connection providers whose brand mark is monochrome: registered here, not in
   // the Connections tab's own table, so the glyph resolves wherever a provider
-  // icon is rendered. A multicolour brand (Slack) still needs its own mark.
+  // icon is rendered.
   Atlassian: AtlassianIcon,
   Linear: LinearIcon,
+  // Shadows lucide's monochrome `Slack`: on an inbox row the colour is the
+  // attribution, so the brand mark wears its own.
+  Slack: SlackIcon,
   // Data-source providers whose own mark says which one it is. Registered for
   // the same reason as the harness logos: three providers ship a mailbox and a
   // fourth a bucket, and lucide's `Mail` / `Cloud` / `Send` made them
