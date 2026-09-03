@@ -258,3 +258,17 @@ def test_a_provider_copies_its_hub_token_iff_something_local_reads_it(provider, 
     descriptor = registry.get_local_provider(provider)
     assert descriptor is not None
     assert descriptor.copy_hub_credential is copies
+
+
+def test_linear_is_a_hub_run_provider_with_a_graphql_probe():
+    """Same contract as Atlassian, plus the one GraphQL twist: the probe is a GET
+    carrying the query in the URL with a JSON content-type, because neither probe
+    runner sends a body and Linear rejects a body-less request without that header."""
+    ln = registry.get_local_provider("linear")
+    assert ln is not None
+    assert ln.endpoints is None and ln.hub_required is True
+    assert registry.prefers_hub_flow("linear") is True
+    assert registry.user_credentials_name("linear") == "linear_credentials"
+    assert ln.probe.method == "GET"
+    assert dict(ln.probe.query) == {"query": "{ viewer { id name email } }"}
+    assert dict(ln.probe.headers) == {"Content-Type": "application/json"}

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import * as lucideIcons from 'lucide-react';
 import { FileText, type LucideIcon } from 'lucide-react';
+import { AtlassianIcon } from '@src/components/icons/AtlassianIcon';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { LinearIcon } from '@src/components/icons/LinearIcon';
 import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import { iconAssetUrl } from '@sdk';
 
@@ -23,6 +25,11 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   Codex: CodexIcon as unknown as LucideIcon,
   Copilot: CopilotIcon as unknown as LucideIcon,
   OpenCode: OpenCodeIcon as unknown as LucideIcon,
+  // Connection providers whose brand mark is monochrome: registered here, not in
+  // the Connections tab's own table, so the glyph resolves wherever a provider
+  // icon is rendered. A multicolour brand (Slack) still needs its own mark.
+  Atlassian: AtlassianIcon,
+  Linear: LinearIcon,
 };
 
 /**
