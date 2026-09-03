@@ -7,10 +7,21 @@ function trimHubHost(hubHost: string): string {
 }
 
 /** Canonical cloud Project Home URL. */
-export function hubProjectUrl(hubAppUrl: string | null | undefined, projectId: string | null | undefined): string | null {
+export function hubProjectUrl(
+  hubAppUrl: string | null | undefined,
+  projectId: string | null | undefined,
+): string | null {
   if (!hubAppUrl || !projectId) return null;
   const dockPath = DockPointer.forProject(projectId).withPage(PageId.HUB).toUrl();
   return `${trimHubHost(hubAppUrl)}${dockPath}`;
+}
+
+/** Canonical cloud console home — `<hub base url>/dock/hub/home`, the hub's
+ *  own landing page (see `home-loader.ts`'s hub-only redirect for the same
+ *  path). Null when there is no hub host to anchor against. */
+export function hubHomeUrl(hubAppUrl: string | null | undefined): string | null {
+  if (!hubAppUrl) return null;
+  return `${trimHubHost(hubAppUrl)}/dock/hub/home`;
 }
 
 /**
@@ -44,14 +55,7 @@ export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): Doc
  * page rather than a 404, so guessing a URL would look like it worked — we link
  * only what we know resolves.
  */
-const HUB_PAGE_TYPES = new Set([
-  'page',
-  'flow',
-  'task',
-  'agent',
-  'knowledge_base',
-  'workspace',
-]);
+const HUB_PAGE_TYPES = new Set(['page', 'flow', 'task', 'agent', 'knowledge_base', 'workspace']);
 
 /**
  * The hub page for an entity: hub host + the hub's own dock pointer for it.

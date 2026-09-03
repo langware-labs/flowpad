@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
+import { Bot, Cloud, Globe, Monitor, type LucideIcon } from 'lucide-react';
 import { Layout, RuntimeKind } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -33,7 +33,7 @@ const WIKI_PAGE = 'Runtime environments';
 /** Per-runtime glyphs. These describe RUNTIMES, not entity types — there is no
  *  TypeInfo for "a cloud sandbox", so `iconForType` has nothing to resolve. */
 const RUNTIME_ICON: Record<RuntimeKind, LucideIcon> = {
-  [RuntimeKind.HUB]: Network,
+  [RuntimeKind.HUB]: Cloud,
   [RuntimeKind.SANDBOX]: Cloud,
   [RuntimeKind.AGENT]: Bot,
   [RuntimeKind.DESKTOP]: Monitor,

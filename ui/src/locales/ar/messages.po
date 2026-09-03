@@ -12310,6 +12310,10 @@ msgstr ""
 msgid "Open externally: {childPath}"
 msgstr "فتح خارجياً: {childPath}"
 
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "Open Flowpad Cloud"
+msgstr ""
+
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
 msgstr "فتح المجلد"
