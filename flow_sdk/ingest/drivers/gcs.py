@@ -36,6 +36,7 @@ from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.choice_spec import Choice
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,40 @@ class GoogleCloudStorageDriver(IngestDriver):
                 f"Reconnect Google, granting {GCS_SCOPE}, and check the bucket name."
             )
         return SetupVerdict.ok()
+
+    async def choices(self, source, field: str) -> list[Choice]:
+        """The buckets this credential can see — the `bucket` field's offer.
+
+        Read ONLY here. `config.project` exists for this call and nothing else: `fetch`
+        and `verify` work from a bucket name the user already gave, and making them
+        depend on a project id would break every source configured before this existed.
+
+        The project is checked before any round trip, because "I cannot list without one"
+        is a cheaper and more useful answer than a 400 from Google.
+        """
+        if field != "bucket":
+            return []
+        project = str((source.config or {}).get("project") or "").strip()
+        if not project:
+            raise SourceError.config(
+                "no_project", "Set 'GCP project' to list buckets, or type the bucket name."
+            )
+        token = await self._token(source)
+        if not token:
+            raise SourceError.config(
+                "no_credential", "No Google credential on this machine. Connect Google first."
+            )
+        async with http.client() as client:
+            body = await self._call(
+                client, source, token, "/b", {"project": project, "fields": "items(name,location)"}
+            )
+        # A bucket's name IS its id, so `name` repeats it deliberately — the form collapses
+        # that pair back to a plain string rather than storing a dict for no gain.
+        return [
+            Choice(id=str(b["name"]), name=str(b["name"]), detail=str(b.get("location") or "").lower())
+            for b in body.get("items") or []
+            if b.get("name")
+        ]
 
     # ── the sync ──────────────────────────────────────────────────────────
 

@@ -52,7 +52,7 @@ The config keys are the manifest's, one dict per provider:
 | `telegram` | `bot_token`, `base_url` | `bot_token` |
 | `slack` | `channels: list[str]` | `channels` (membership) |
 | `gdrive` | `drives`, `cache_root`, `base_url` | — |
-| `gcs` | `bucket`, `prefixes`, `cache_root`, `base_url` | `bucket` |
+| `gcs` | `bucket`, `project`, `prefixes`, `cache_root`, `base_url` | `bucket` |
 | `gmail` | `address` | `address` |
 | `cloud_email` | `agent_id`, `address` | `agent_id` |
 | `agent` | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector` |
@@ -231,3 +231,34 @@ reply.body
 For a typed reply that threads correctly per channel, use the
 [workflows](workflows.md) surface: `EmailMessageSpec.reply_to(item, body=...)`
 and `Inbox.send(...)`.
+
+## 9. Ask a provider what you can pick
+
+Three providers ask for values nobody can produce from memory — a shared drive is
+`0AB1cdEfGhIjKlMnOpQ`. A manifest field marked `choices` can be listed instead.
+Pinned by `tests/unit/test_data_sources_snippets.py`.
+
+```python
+from flow_sdk.builtin.data_source import DataSource
+
+picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+
+[(c.id, c.name) for c in picks.items]   # what this credential can actually see
+picks.detail                            # why the list is empty, when it is
+```
+
+A refusal is an **empty `items` and a sentence**, never an exception: no connection, a
+scope the consent screen never asked for, a project id nobody set — all of them mean the
+same thing to the person filling the form, which is *type it instead*. So the field falls
+back to a plain text input carrying `picks.detail`, and never blocks a save.
+
+`choices_for` answers `None` for a provider that does not exist or a field its manifest
+never marked — that is the form asking about something it had no business asking about,
+and it is a caller bug rather than a refusal. `type` still decides the shape: `text` picks
+one, `lines` picks many.
+
+| provider | field | what it lists |
+| --- | --- | --- |
+| `gcs` | `bucket` | buckets in `config.project` — the project is read for THIS call only |
+| `gdrive` | `drives` | the shared drives the Google account can see |
+| `slack` | `channels` | every channel the token can see, joined or not |

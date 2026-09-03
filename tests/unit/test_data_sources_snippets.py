@@ -7,17 +7,20 @@ names a fence uses but does not define — ``FEED_URL``, ``KEY``, ``WATCHED``, `
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import flow_sdk.ingest.drivers  # noqa: F401 — the page's own first fence
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
-from tests.unit._ingest_helpers import fixture_bytes, local_http_server
+from tests.unit._ingest_helpers import fixture_bytes, local_http_server, with_token
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 DOC = "data-sources.md"
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _fresh_feed():
@@ -104,3 +107,65 @@ async def test_7_read_the_row_first(tmp_path):
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
     ns = await _section("7.", ns, nth=1)
     assert ns["src"].status in {"new", "setup", "active"}
+
+
+async def _gcs_spec():
+    """The `gcs` manifest as a row, minted once for this module.
+
+    Built from the SHIPPED manifest rather than a hand-written one, so this also proves
+    `bucket` is really marked choosable where it ships — a fence passing against a fixture
+    the product does not use would pin nothing. Find-or-create because the suite shares one
+    database and a second row would make the lookup ambiguous.
+    """
+    import json
+
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec, ManifestSpec
+
+    path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gcs/data_source.json"
+    manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
+    assert manifest.config["bucket"].choices is True, "the shipped manifest is what the form reads"
+    existing = await DataSourceSpec.get_all({"name": manifest.name})
+    if existing:
+        return existing[0]
+    row = DataSourceSpec(name=manifest.name, title=manifest.title, config=manifest.config)
+    await row.save()
+    return row
+
+
+async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
+    """The picker, against a loopback Storage API.
+
+    The spec row is built from the SHIPPED manifest rather than a hand-written one, so this
+    also proves `bucket` is really marked choosable where it ships — a fence that passed
+    against a fixture the product does not use would pin nothing.
+    """
+    import json
+
+    from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
+
+    await _gcs_spec()
+    # The one thing a loopback server cannot supply: the credential comes from the
+    # machine's connection store, not over the wire.
+    with_token(monkeypatch, GoogleCloudStorageDriver)
+
+    def storage(_path, _headers):
+        body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
+        return 200, json.dumps(body).encode(), {"Content-Type": "application/json"}
+
+    with local_http_server(storage) as base:
+        ns = await _section("9.", {"PROJECT": "acme-prod", "BASE_URL": base})
+
+    assert [c.id for c in ns["picks"].items] == ["acme-docs", "acme-logs"]
+    assert ns["picks"].detail == "", "a list is the whole answer"
+
+
+async def test_9_a_refusal_is_a_sentence_not_an_exception():
+    """The claim the section makes in prose, executed: no project, no exception."""
+    await _gcs_spec()
+
+    picks = await DataSource.choices_for("gcs", "bucket", {})
+    assert picks.items == [] and "GCP project" in picks.detail
+
+    assert await DataSource.choices_for("gcs", "cache_root") is None, (
+        "a field the manifest never marked is a caller bug, not a refusal"
+    )

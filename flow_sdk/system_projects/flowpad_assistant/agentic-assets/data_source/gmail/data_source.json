@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "gmail",
   "title": "Gmail",
-  "icon_name": "Mail",
+  "icon_name": "Gmail",
   "description": "A Gmail mailbox read over IMAP and sent through SMTP using an app password from the environment.",
   "auth": {
     "env": [

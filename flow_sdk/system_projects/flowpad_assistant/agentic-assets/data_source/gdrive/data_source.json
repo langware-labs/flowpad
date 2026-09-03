@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "gdrive",
   "title": "Google Drive",
-  "icon_name": "HardDrive",
+  "icon_name": "GoogleDrive",
   "description": "Files from Drive, downloaded and indexed. Needs a Google connection.",
   "auth": {
     "connector": "google",
@@ -17,9 +17,10 @@
   "config": {
     "drives": {
       "type": "lines",
-      "label": "Shared drive IDs",
+      "choices": true,
+      "label": "Shared drives",
       "placeholder": "0AB1cdEfGhIjKlMnOpQ",
-      "hint": "One per line. Leave empty to sync My Drive. Each shared drive has its own change log, so each gets its own cursor."
+      "hint": "Pick from the drives this Google account can see, or type IDs one per line. Leave empty to sync My Drive. Each shared drive has its own change log, so each gets its own cursor."
     },
     "cache_root": {
       "type": "path",
