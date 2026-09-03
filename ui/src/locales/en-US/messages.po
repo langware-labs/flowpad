@@ -646,8 +646,8 @@ msgid "{totalResolved} issue{0} matched — saving you the time to debug {1} man
 msgstr "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
 
 #: src/components/organization/organization-page.tsx
-#~ msgid "{trimmed} is ready."
-#~ msgstr "{trimmed} is ready."
+msgid "{trimmed} is ready."
+msgstr "{trimmed} is ready."
 
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
@@ -4368,8 +4368,8 @@ msgid "Could not create group task"
 msgstr "Could not create group task"
 
 #: src/components/organization/organization-page.tsx
-#~ msgid "Could not create organization"
-#~ msgstr "Could not create organization"
+msgid "Could not create organization"
+msgstr "Could not create organization"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not create the budget"
@@ -4869,6 +4869,7 @@ msgstr "CPU:"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -10937,8 +10938,8 @@ msgid "New option"
 msgstr "New option"
 
 #: src/components/organization/organization-page.tsx
-#~ msgid "New organization"
-#~ msgstr "New organization"
+msgid "New organization"
+msgstr "New organization"
 
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -12902,16 +12903,16 @@ msgid "Organization activated"
 msgstr "Organization activated"
 
 #: src/components/organization/organization-page.tsx
-#~ msgid "Organization created"
-#~ msgstr "Organization created"
+msgid "Organization created"
+msgstr "Organization created"
 
 #: src/components/organization/budgets/OrgRootSetup.tsx
 msgid "Organization created, but the key was not saved"
 msgstr "Organization created, but the key was not saved"
 
 #: src/components/organization/organization-page.tsx
-#~ msgid "Organization name…"
-#~ msgstr "Organization name…"
+msgid "Organization name…"
+msgstr "Organization name…"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
@@ -18915,6 +18916,7 @@ msgstr "Unknown error"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/organization/use-create-child-team.ts
 msgid "Unknown error."
 msgstr "Unknown error."
