@@ -57,3 +57,16 @@ export interface NotificationData {
  * and put 402 errors on the board.
  */
 export type NotificationInput = Omit<NotificationData, 'timestamp' | 'id'> & { id?: string };
+
+/**
+ * The text a copy affordance yields for a notification: the title, and the
+ * message under it when there is one.
+ *
+ * One definition because two surfaces show the same alert — the toast and the
+ * footer warnings popover — and a person who copies from one and pastes from the
+ * other must get the same thing. The popover composed this inline first; the
+ * toast now shares it rather than spelling the join a second time.
+ */
+export function notificationText(data: Pick<NotificationData, 'title' | 'message'>): string {
+  return data.message ? `${data.title}\n${data.message}` : data.title;
+}

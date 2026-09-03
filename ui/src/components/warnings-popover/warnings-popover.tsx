@@ -5,7 +5,7 @@ import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useWarnings } from '@sdk/react/hooks';
-import { runAction, runCommand, useAlertStore } from '@src/notifications';
+import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import {
@@ -194,7 +194,7 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
         )}
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
-        <CopyButton text={alert.message ? `${alert.title}\n${alert.message}` : alert.title} />
+        <CopyButton text={notificationText(alert)} />
         <DiagnoseIconButton subject={alert} className={DIAGNOSE_BTN_CLASS} />
         <button
           type="button"
