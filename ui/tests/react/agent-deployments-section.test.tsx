@@ -22,7 +22,14 @@ vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', ()
   ),
 }));
 
-vi.mock('@sdk/react/hooks', () => ({
+// PARTIAL, via importOriginal: this file controls the deployments query and
+// nothing else. A hand-listed factory replaces the whole module, so every hook
+// the tree picks up later — `useAuth` and `useProject` both arrived with the
+// deploy checklist — throws "no export defined" three frames below the
+// component under test, and the fix degenerates into adding names one failure
+// at a time.
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sdk/react/hooks')>()),
   useEntitiesQuery: () => ({ data: mocks.deployments, refetch: mocks.refetch }),
 }));
 
