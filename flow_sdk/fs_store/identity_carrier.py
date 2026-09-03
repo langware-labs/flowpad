@@ -88,16 +88,6 @@ class IdentityCarrier(Protocol):
     #: row on a rotated session path would otherwise swallow a different asset.
     writable: bool
 
-    #: True when the carrier stamps bytes it does NOT parse, so writing into a
-    #: file it does not own is corruption rather than an edit — frontmatter
-    #: prepended to Python source is FLOWPAD-2083. Such a carrier may only touch
-    #: a file that IS its type's document (``TypeInfo._carrier_write_is_safe``).
-    #: A carrier that parses what it edits (``NativeJsonCarrier``) declares False.
-    #: The DEFAULT IS TRUE, and deliberately so: a new carrier that says nothing
-    #: is treated as unsafe, because "unspecified means allowed" is precisely how
-    #: the original bug reached the disk.
-    format_blind: bool
-
     def read(self, path: Path) -> CarrierId: ...
 
     def write_if_absent(self, path: Path, entity_id: str) -> str: ...
@@ -160,8 +150,6 @@ class FrontmatterCarrier:
     legacy: tuple[IdentityReader, ...] = ()
 
     writable: ClassVar[bool] = True
-    #: Prepends a header to bytes it never parsed. (FolderMdCarrier inherits it.)
-    format_blind: ClassVar[bool] = True
 
     def read(self, path: Path) -> CarrierId:
         try:
@@ -219,10 +207,6 @@ class FolderJsonCarrier:
     legacy: tuple[IdentityReader, ...] = ()
 
     writable: ClassVar[bool] = True
-    #: Meant for a FOLDER (``.flow/capsules/identity.json``). Handed a regular
-    #: file, ``AssetCapsule.from_path`` degrades to an inline comment capsule
-    #: written INTO it — blind to whatever that file actually is.
-    format_blind: ClassVar[bool] = True
 
     def read(self, path: Path) -> CarrierId:
         found = _read_identity_capsule(path)
@@ -244,9 +228,6 @@ class NativeJsonCarrier:
     """A report: the ``"id"`` key of its own JSON root."""
 
     writable: ClassVar[bool] = True
-    #: Parses the document, sets one key and re-serializes. A JSON file it does
-    #: not own survives that intact, so it is not restricted to its own document.
-    format_blind: ClassVar[bool] = False
 
     def _load(self, path: Path) -> dict:
         try:
@@ -276,9 +257,6 @@ class DerivedCarrier:
     reader: IdentityReader | None = None
 
     writable: ClassVar[bool] = False
-    #: Moot — it never writes — but stated so the Protocol is satisfied without
-    #: anyone having to infer it from ``writable``.
-    format_blind: ClassVar[bool] = False
 
     def read(self, path: Path) -> CarrierId:
         if self.reader is None:

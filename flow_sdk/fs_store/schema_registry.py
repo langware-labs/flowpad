@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
+from flow_sdk.fs_store.identity_carrier import CarrierId, FolderJsonCarrier, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -551,20 +551,12 @@ class TypeInfo:
         unaffected. A directory, or a target whose bytes do not exist yet, stays
         writable: ``_commit_identity`` mints against asset_refs that land moments
         later, which is why ``layout_of``'s projections are total.
-
-        Which carriers those are is the CARRIER's declaration (``format_blind``,
-        beside ``writable``), never an isinstance switch here. A type-switch in
-        this file would put knowledge of carriers outside them and — the part
-        that matters — would fail OPEN for a carrier it had not heard of. The
-        default below is therefore the unsafe-until-proven-safe one: an
-        undeclared carrier is treated as format-blind, because "unspecified
-        means allowed" is exactly how this bug reached the disk.
         """
         if not target.is_file():
             return True   # a directory (folder capsule) or a not-yet-created save target
-        if not getattr(self.identity_carrier, "format_blind", True):
-            return True
-        return self._names_own_document(target)
+        if isinstance(self.identity_carrier, (FrontmatterCarrier, FolderJsonCarrier)):
+            return self._names_own_document(target)
+        return True
 
     def _carrier_target(self, path: Path) -> Path:
         """Where this type's carrier would live for ``path``, before any safety
