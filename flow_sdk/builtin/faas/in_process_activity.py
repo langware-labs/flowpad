@@ -7,6 +7,7 @@ job and duplicate starts can be rejected.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
@@ -22,6 +23,26 @@ class InProcessActivity:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     timeout_seconds: int = 600
     latest_table: IndexProgressTable | None = None
+    #: Set when the holder releases the slot (``_complete_activity``). A waiter
+    #: awaits this instead of polling, so it wakes the moment the job is gone
+    #: rather than on some interval of its own choosing.
+    released: asyncio.Event = field(default_factory=asyncio.Event, repr=False, compare=False)
+
+    async def wait_released(self) -> None:
+        """Block until the holder releases this slot, or its own timeout passes.
+
+        The bound is the holder's ``timeout_seconds`` — the liveness budget the
+        activity already carries — so waiting introduces no second one. A holder
+        that dies without releasing is bounded by exactly the same value that
+        makes ``is_timed_out`` true for `_start_activity`.
+        """
+        remaining = self.timeout_seconds - (datetime.now(timezone.utc) - self.started_at).total_seconds()
+        if remaining <= 0:
+            return
+        try:
+            await asyncio.wait_for(self.released.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            return
 
     @property
     def is_timed_out(self) -> bool:

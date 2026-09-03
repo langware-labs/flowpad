@@ -1246,10 +1246,21 @@ class Entity(DBEntity):
         if hasattr(driver, "fts_upsert"):
             await driver.fts_upsert(entry)
 
-    async def _fts_upsert(self, type_name: str, record) -> None:
+    async def _fts_upsert(self, type_name: str, record) -> bool:
+        """Write the record's four weighted text columns into FTS5.
+
+        Returns False (writing nothing) when the built entry has no text in any
+        column — ``FtsEntry.has_content`` is the one emptiness check; the
+        record's ``search_content`` property is a string and never None, so
+        testing it for None was a guard that could not fire.
+        """
         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
-        await self._fts_write(FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record))
+        entry = FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record)
+        if not entry.has_content:
+            return False
+        await self._fts_write(entry)
+        return True
 
     async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
@@ -1263,7 +1274,7 @@ class Entity(DBEntity):
 
         Unlike :meth:`delete` (DB row + relationships only — the on-disk shadow
         folder is left behind), ``destroy`` routes through the record so the
-        whole ``<records_root>/<type>/<type>-@<id>/`` tree is removed too.
+        whole ``<records_root>/<type>/<id>/`` tree is removed too.
         Falls back to a plain ``delete`` for entities that have no record."""
         rec = await self.get_record()
         if rec is not None:
@@ -1274,13 +1285,11 @@ class Entity(DBEntity):
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
 
-        Content is sourced from the linked record's search_content. No-op if entity
-        has no linked record or record returns None.
+        Content is sourced from the linked record's search columns. No-op if the
+        entity has no linked record or the built entry has no text at all.
         """
         record = await self.get_record()
         if record is None:
-            return
-        if record.search_content is None:
             return
         await self._fts_upsert(self.get_type(), record)
 
@@ -1406,9 +1415,9 @@ class Entity(DBEntity):
 
             from_exception(record, exc, trigger="store").save()
             return None
-        # Immediately index into FTS5 so the entity is searchable without a scan.
-        if record.search_content is not None:
-            await entity._fts_upsert(type_name, record)
+        # Immediately index into FTS5 so the entity is searchable without a scan
+        # (a no-op when the record carries no text in any search column).
+        await entity._fts_upsert(type_name, record)
         return record
 
     def _storage_origin(self, record) -> "Any":
@@ -1528,7 +1537,13 @@ class Entity(DBEntity):
                 await record.sync_to_db()
                 record.write_hash()
             except Exception:
-                pass
+                logging.getLogger(__name__).warning(
+                    "[record-sync] refresh of %s/%s failed; the DB row still reflects "
+                    "the previous index of the asset",
+                    self.get_type(),
+                    self.id,
+                    exc_info=True,
+                )
             return True
 
     # ==================== Wiki link capability ====================

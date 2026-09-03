@@ -105,7 +105,9 @@ describe('full analysis flow — open analysis renders against live data (no moc
         body: JSON.stringify({ annotations }),
       });
       expect(res.ok).toBe(true);
-      const body = await res.json();
+      // Raw `fetch`, so the ApiResponse envelope is NOT unwrapped for us the way
+      // `apiClient` does it — the payload is under `data`.
+      const { data: body } = await res.json();
       traceId = body.id;
       expect(traceId).toBeTruthy();
       expect(body.summary.issue_count).toBeGreaterThanOrEqual(1); // drives the issue badge

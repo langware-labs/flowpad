@@ -44,6 +44,44 @@
       "type": "number",
       "advanced": true,
       "label": "Max items per run"
+    },
+    "send_agent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Send agent",
+      "hint": "The persona that writes a reply. Empty means the connector's own (`emailer` for gmail, `slack-poster` for slack)."
+    },
+    "send_subagent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Send subagent",
+      "hint": "Empty means the connector's own (`email_sender` for gmail, `slack_sender` for slack)."
+    },
+    "deadline_seconds": {
+      "type": "number",
+      "advanced": true,
+      "label": "Fetch deadline (seconds)",
+      "default": 300,
+      "hint": "Wall-clock for one fetch; a worker past it is killed so it cannot hold the source's slot forever."
+    },
+    "send_deadline_seconds": {
+      "type": "number",
+      "advanced": true,
+      "label": "Send deadline (seconds)",
+      "default": 120,
+      "hint": "Wall-clock for one send — shorter than a fetch: a fetch may sweep a mailbox, a send writes one message."
+    },
+    "stream": {
+      "type": "text",
+      "advanced": true,
+      "label": "Stream (legacy)",
+      "hint": "A single segment; read only when `segments` and `streams` are empty. Prefer `segments`."
+    },
+    "streams": {
+      "type": "csv",
+      "advanced": true,
+      "label": "Streams (legacy)",
+      "hint": "Older alias of `segments`; read only when `segments` is empty. Prefer `segments`."
     }
   }
 }

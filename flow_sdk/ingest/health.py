@@ -14,6 +14,12 @@ from __future__ import annotations
 
 from flow_sdk._compat import StrEnum
 
+#: How much of a failure's detail a row keeps. The cursor row and the source
+#: row hold the same kind of text and are read in the same card, so the bound
+#: is stated once here, beside `classify` and `SourceError` — the rest of the
+#: failure contract.
+ERROR_DETAIL_MAX = 500
+
 
 class SourceHealth(StrEnum):
     NEVER_SYNCED = "never_synced"

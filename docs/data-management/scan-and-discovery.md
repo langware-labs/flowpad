@@ -112,9 +112,9 @@ idx.add_function(RecordType.MCP_SERVER_SOURCE,  mcp_servers_in_file_fn, RecordTy
 Notable structural facts:
 
 - **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
-- **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
+- **There is no project-cwd walker** (the unregistered `real_project_cwd_fn` was deleted). Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
 - **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
-- **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias (it still sits in `INDEXABLE_TYPES`, but no walker emits it).
+- **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias that no walker emits, so it is not in `indexable_types()`.
 - **Repo assets have exactly one walker.** `repo_assets_fn` (`functions/repo_assets.py`) recurses the `agentic-assets/<type>/<name>` hierarchy (children nest in an asset's own `agentic-assets/` subfolder) and is the ONLY discovery path for every flowpad-native asset — `task`, `spec`, `deck`, `deck_template`, `dataset`, `data_source_spec`, `whiteboard`, `spreadsheet`, `journey`, `graph_workflow`, `agent`, `agent_trace`, `prompt`, `plan`, `mcp`, `micro_app`, `helpdesk`, the two report types, and installed (received) `claude_session` / `codex_session` / `copilot_session` transcripts. A new repo type enrolls by declaring `asset_class="repo"` on its `TypeMetadata`; nothing in `build_default_indexer()` changes. Its output set is `SchemaRegistry.get_repo_types()`, so typed scans stay prunable.
 
 ### Type-gating the dispatch
@@ -228,7 +228,7 @@ A record is an orphan iff its Layer-1 source is gone. `OrphanAction` controls th
 | `IGNORE` | Remove the DB row + FTS entry; keep the on-disk record dir (tombstone). |
 | `DELETE` | Remove DB row + FTS entry **and** `rmtree` the record dir. |
 
-Orphan detection is constrained to `INDEXABLE_TYPES` (`_resolve_orphan_filter_types`) so runtime-only types with DB rows but no walker (e.g. `conversation`, `flow_message`, `annotation`, `compute_node`, `invitation`) are never flagged as orphan en masse. A destructive action on a *narrowed* walk (`opts.roots` set) without a `scope_filter` is refused and falls back to `INDEX` — cross-scope references would otherwise be misclassified.
+Orphan detection is constrained to `indexable_types()` (`_resolve_orphan_filter_types`) — derived from the walker graph, so every walked type (including the repo-asset types `agent_trace`, `data_source_spec`, `graph_workflow`, `helpdesk`, `journey`, `mcp`, `prompt`, `secret_origin`, `workflow_run`) is swept — so runtime-only types with DB rows but no walker (e.g. `conversation`, `flow_message`, `annotation`, `compute_node`, `invitation`) are never flagged as orphan en masse. A destructive action on a *narrowed* walk (`opts.roots` set) without a `scope_filter` is refused and falls back to `INDEX` — cross-scope references would otherwise be misclassified.
 
 ---
 
@@ -328,7 +328,7 @@ recent = q.apply(all_sessions)
   ]
   ```
 
-  This list must overlap with `INDEXABLE_TYPES` (`flow_sdk/fs_store/indexer/builtin.py`) — the indexer can't walk a type with no registered walker. Runtime-only types (`BOOKMARK`, `ANNOTATION`, `AGENTIC_PROCESS`, `RECORD_ERROR`, `CLAUDE_ERROR`) are intentionally excluded.
+  This list is only the bootstrap fallback; `tests/unit/test_indexable_types.py` asserts every default-indexed type is in the derived `indexable_types()` set. Runtime-only types (`BOOKMARK`, `ANNOTATION`, `AGENTIC_PROCESS`, `RECORD_ERROR`, `CLAUDE_ERROR`) are intentionally excluded.
 - **Scan/index logging:** `append_scan(...)`, `append_index(...)`, `get_last_scan_at(type)`, `get_last_index_at(type)`.
 - **Index status:** `await get_index_status(...)` → `IndexStatus` (`never_indexed`, `last_indexed_at`, `stale`, `per_type` with entity counts).
 - **Index clearing:** `await clear_index(types)` deletes FTS entries + entities for the given types (or all).

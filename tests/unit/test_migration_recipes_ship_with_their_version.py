@@ -81,13 +81,25 @@ def _shipped_in_own_wheel(version: str, commit: str, tmp: Path) -> bool:
         os.environ.pop("FLOWPAD_MIGRATIONS_ROOT", None)
 
 
-def _catch_up_coverage(released: dict[str, str]) -> set[str]:
-    """Versions re-driven by an unreleased recipe. A catch-up recipe declares
-    them in a module-level ``STRANDED`` tuple; one without it covers nothing."""
+def _catch_up_coverage(never_shipped: dict[str, str]) -> set[str]:
+    """Versions re-driven by a recipe that will actually run. A catch-up recipe
+    declares them in a module-level ``STRANDED`` tuple; one without it covers
+    nothing.
+
+    The disqualifier is being STRANDED, not being released. A recipe that
+    shipped in its own wheel runs on every install of that version, so it CAN
+    repay debt — and it is the normal place to do so, because the release that
+    carries a repayment is cut right after it lands. Excluding every released
+    version instead made the repayment stop counting the moment its own version
+    was bumped: 0.2.153's recipe declared the six stranded versions, the bump
+    commit followed minutes later, and this guard then reported that nothing
+    covered them. Only a recipe that never shipped is disqualified — it will
+    never run, so it can repay nothing, including itself.
+    """
     covered: set[str] = set()
     for version in _recipe_versions():
-        if version in released:
-            continue  # released — not a place to repay debt from
+        if version in never_shipped:
+            continue  # stranded itself — it never runs, so it covers nothing
         script = REPO / MIGRATIONS / version / "scripts" / "migrate.py"
         if not script.is_file():
             continue
@@ -102,6 +114,15 @@ def released() -> dict[str, str]:
     """Recipe version -> the commit its wheel was built from."""
     if not (REPO / ".git").exists():
         pytest.skip("needs git history to replay the release trees")
+    if _git("rev-parse", "--is-shallow-repository").strip() == "true":
+        # A shallow clone answers "no release commits" to every `git log -S`,
+        # which silently turns the whole guard inside out: `released` is empty,
+        # so nothing looks stranded and the tests below conclude the debt is
+        # gone. That is a lie about the checkout, not a fact about the tree —
+        # so say which it is. CI checks out at full depth for this reason
+        # (.github/workflows/test.yml); a local shallow clone simply cannot
+        # answer, and skipping beats asserting something untrue.
+        pytest.skip("shallow clone — no release history to replay")
     return {v: c for v in _recipe_versions() if (c := _release_commit(v))}
 
 
@@ -114,8 +135,8 @@ def never_shipped(released, tmp_path_factory) -> dict[str, str]:
     return {v: c for v, c in released.items() if not _shipped_in_own_wheel(v, c, tmp)}
 
 
-def test_no_recipe_is_stranded(released, never_shipped) -> None:
-    covered = _catch_up_coverage(released)
+def test_no_recipe_is_stranded(never_shipped) -> None:
+    covered = _catch_up_coverage(never_shipped)
     stranded = [
         f"{version} (released in {commit[:9]})"
         for version, commit in sorted(never_shipped.items())
@@ -139,10 +160,10 @@ def test_the_resolver_finds_a_recipe_that_did_ship(released, tmp_path: Path) -> 
     assert _shipped_in_own_wheel("0.2.26", commit, tmp_path)
 
 
-def test_the_catch_up_actually_covers_the_stranded_history(released, never_shipped) -> None:
+def test_the_catch_up_actually_covers_the_stranded_history(never_shipped) -> None:
     """Guard against the covering recipe silently losing a version: everything
     that did NOT ship must be named, and nothing that DID ship should be."""
-    covered = _catch_up_coverage(released)
+    covered = _catch_up_coverage(never_shipped)
     assert never_shipped, "history has no stranded recipes — this guard is obsolete"
     assert covered == set(never_shipped), (
         f"catch-up covers {sorted(covered)} but the stranded set is {sorted(never_shipped)}"
