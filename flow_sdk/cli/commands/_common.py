@@ -163,6 +163,26 @@ def post_graph_json(
     return body.get("data") or {}
 
 
+def current_process_typeid() -> "str | None":
+    """The AgenticProcess this command is running inside, or ``None`` outside one.
+
+    The non-fatal half of :func:`resolve_process_id`: a command that merely wants to
+    ATTRIBUTE something to the calling process (progress, say) must not abort when there
+    is no process — a plain shell on the box is a legitimate caller.
+    """
+    from flow_sdk.utils.environment import get_execution_scope
+
+    try:
+        for scope in get_execution_scope():
+            if isinstance(scope, dict) and scope.get("type") == "agentic_process" and scope.get("id"):
+                return f"agentic_process-{scope['id']}"
+            if isinstance(scope, str) and scope.startswith("agentic_process-"):
+                return scope
+    except Exception:  # noqa: BLE001 — no scope is an answer, not a failure
+        return None
+    return None
+
+
 def resolve_process_id(process_opt: Optional[str]) -> str:
     """Target AgenticProcess id from ``--process`` (bare id or
     ``agentic_process-<id>`` TypeId), falling back to the current process

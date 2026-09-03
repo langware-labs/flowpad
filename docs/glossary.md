@@ -197,3 +197,28 @@ of which may be absent. Say which one you mean.
 | `identity_carrier` (`FrontmatterCarrier`, `FolderMdCarrier`, `FolderJsonCarrier`, `NativeJsonCarrier`, `DerivedCarrier`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `read` / `write_if_absent` / `convert` — validation and minting stay in `TypeInfo`. |
 | `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `carrier_path_for` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write. `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier. For markdown identity it is **legacy**: read, stripped from bodies, converted in place. Still the live carrier for `tag` blocks in source files and for folder-json identity. |
+
+## Activity (2026-09-03)
+
+**`Activity` is ours, not a provider mirror.** It is the one mechanism any long-running
+work reports progress through — an index, a walk, a RAG pass, a QA cycle, a running
+agentic process — from Python, TypeScript, the REST API, the CLI or an agent.
+
+The noun was free where the near ones were not: `Job` is the FaaS entity, `Task` is a
+folder asset, `Flow` means a chat message and a bus envelope, `Graph` and `Workflow` are
+both already ambiguous. `Activity` collides only with the `InProcessActivity` holder it is
+built to replace in phase 2.
+
+| Ours | One place | Notes |
+|---|---|---|
+| `ActivityProgressSpec` | `flow_sdk/schema/data_spec/activity_spec.py` | The value that travels. A registered `DataSpec` (`activity.progress`), frozen, recursive. `total=None` means UNKNOWN — never 0. `errors_count` is the truth, `errors` a capped sample. |
+| `Activity` (the handle) | `flow_sdk/activity/activity.py` | The mutable node, addressed by `(scope, path)` and found-or-created at every level. `Activity.get("a/b")` and `Activity.get("a").child("b")` are the same node, so code deep in a walk needs no handle threaded to it. |
+| `inc` vs `set_counter` | `flow_sdk/activity/activity.py` | Two counter verbs for two producer shapes: `inc` adds a DELTA (events seen), `set_counter` takes an ABSOLUTE total (a running count, a re-parsed transcript) and never moves backwards. The monotonicity policy lives on the verb so every producer inherits one answer. |
+| `ActivityProgressMonitor` | `flow_sdk/activity/progress_monitor.py` | The in-memory registry — it IS find-or-create. Holds LIVE work only: a root's terminal untracks its whole tree, so a later `get` yields a FRESH node. "Is it running" is its question; "when did it last finish" is the receipt's (phase 2). |
+| **path** vs. **scope** | — | `path` addresses within a scope (`index`, `index/pdf`); `scope` is the TypeId the work belongs to, absent for instance-wide work. Scope is also the WS routing key: unscoped broadcasts, scoped goes to that entity's watchers. |
+| **tick** vs. **transition** | `flow_sdk/activity/emit.py` | A tick is a coalesced snapshot on the `progress_report` envelope and touches nothing else. A transition (started / blocked / completed / failed) publishes on the event bus immediately and is never coalesced away. |
+| `interrupted` | `ActivityState.INTERRUPTED` | Assigned by the system, never a producer: work that STOPPED rather than finished — a child still running when its root ended. The state the old tracker could not express, which is why a restart made the footer indicator vanish silently. |
+
+Verb casing is deliberately per-language: `inc_success` in Python, `incSuccess` in
+TypeScript, `inc-success` from a shell. The route accepts all three, so it stays one
+vocabulary rather than three APIs.
