@@ -304,13 +304,19 @@ interface AgentInboxStateWire {
   enabled: boolean;
   inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
+  /** Every message source the agent owns; the mailbox is one of them. */
+  sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
 }
 
 export interface AgentInboxState {
   agent_id: string;
   enabled: boolean;
+  /** The mailbox channel's own row and source — kept for readers that predate
+   *  an agent holding more than one channel. */
   inbox: EmailInbox | null;
   source: DataSource | null;
+  /** Every message source the agent owns (the mailbox included). */
+  sources: DataSource[];
 }
 
 export interface AgentInboxScope {
@@ -344,6 +350,10 @@ function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
           })
         : null,
     source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
+    sources: (state.sources ?? []).flatMap((row) => {
+      const id = entityId(row);
+      return id ? [new DataSource({ ...row, id })] : [];
+    }),
   };
 }
 
