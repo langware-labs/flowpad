@@ -201,7 +201,14 @@ async def docs_graph(root: str = Query(...)) -> dict:
         entity_id=typeid_for(root_path),
         # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
         # names itself honestly, so a docs scan and a real index no longer share an address.
-        activity=Activity.get("docs.scan", scope=typeid_for(root_path)),
+        #
+        # Scoped to the BOX, not to the folder's typeid: scanning a directory on this
+        # machine is the instance's work, and an entity-scoped activity is delivered only
+        # to clients watching that entity — which for a scanned folder is nobody, so the
+        # scan would advance perfectly and appear in no browser at all. One address per
+        # box means two concurrent scans of different roots share a row; `current` names
+        # which root is in hand.
+        activity=Activity.get("docs.scan"),
     )
 
     # Plain counters mutated by the (sync) scan thread; the async pump reads them
