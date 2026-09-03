@@ -24,6 +24,9 @@ machine is provable in fast unit tests and the transport is somebody else's prob
 
 from __future__ import annotations
 
+import asyncio
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
@@ -101,6 +104,8 @@ class Activity:
         "updated_at",
         "finished_at",
         "seq",
+        "_released",
+        "claim_deadline",
     )
 
     def __init__(
@@ -143,6 +148,14 @@ class Activity:
         #: by ``id()`` would hand a recycled id's counter to an unrelated later object,
         #: and an evicted root would lose the seq its own terminal snapshot needs.
         self.seq = 0
+        #: Set when this node reaches a terminal state. A caller queueing for the address
+        #: awaits it; see :meth:`claim`. Lazily created so a node minted off the event loop
+        #: (a walk in a worker thread) costs nothing.
+        self._released: "Optional[asyncio.Event]" = None
+        #: Monotonic deadline for a CLAIMED node. A holder past it is claimable again —
+        #: the liveness bound that keeps a producer which died without ending its activity
+        #: from owning the address forever. ``None`` on a node nobody claimed.
+        self.claim_deadline: Optional[float] = None
 
     # ------------------------------------------------------------------ address
 
@@ -155,6 +168,89 @@ class Activity:
         from flow_sdk.activity.progress_monitor import monitor
 
         return monitor.activity(path, scope=scope)
+
+    @classmethod
+    def try_claim(
+        cls,
+        path: str,
+        scope: Optional[str] = None,
+        *,
+        timeout_seconds: int = 600,
+    ) -> "Activity":
+        """Take the address for single-flight work, or raise if somebody holds it.
+
+        The address IS the slot: one activity per ``(scope, path)`` is the same statement
+        as one job of that name per entity. A holder that has finished is already evicted,
+        and one past its ``timeout_seconds`` is taken over — the two cases the registry
+        this replaces spelled out as ``is_complete`` and ``is_timed_out``.
+
+        Raises ``RuntimeError`` with the message callers already match on.
+        """
+        from flow_sdk.activity.progress_monitor import monitor
+
+        return monitor.try_claim(path, scope=scope, timeout_seconds=timeout_seconds)
+
+    @classmethod
+    @asynccontextmanager
+    async def claim(
+        cls,
+        path: str,
+        scope: Optional[str] = None,
+        *,
+        timeout_seconds: int = 600,
+        queue: bool = False,
+        message: "Optional[str]" = None,
+    ):
+        """Hold an address for the duration of a block, then end and release it.
+
+        ``queue=True`` waits for the holder instead of raising. A caller who wants THIS
+        scope's work done cannot be served by the run already going — a boot pass covers
+        the system's own roots, not the folder somebody just asked for — so the honest
+        answer is "after you", not a refusal. The wait is bounded by the holder's own
+        remaining budget, never a new one, and the loop re-claims rather than assuming it
+        won: another waiter may take the address first.
+        """
+        while True:
+            try:
+                act = cls.try_claim(path, scope=scope, timeout_seconds=timeout_seconds)
+                break
+            except RuntimeError:
+                from flow_sdk.activity.progress_monitor import monitor
+
+                holder = monitor.holder(path, scope=scope) if queue else None
+                if holder is None:
+                    raise
+                await holder.wait_released()
+        try:
+            yield act
+        except BaseException as exc:
+            act.fail(str(exc) or type(exc).__name__)
+            raise
+        else:
+            act.done(message)
+        finally:
+            # A body that ended the activity itself already released the address; this is
+            # the belt for the path that did not.
+            if not act.is_terminal:
+                act.cancel()
+
+    async def wait_released(self) -> None:
+        """Block until this node ends, or until its own claim budget runs out.
+
+        The bound is the holder's REMAINING budget — the same value that makes
+        :attr:`claim_expired` true — so waiting introduces no second timeout of its own.
+        """
+        if self.is_terminal:
+            return
+        remaining = None
+        if self.claim_deadline is not None:
+            remaining = self.claim_deadline - time.monotonic()
+            if remaining <= 0:
+                return
+        try:
+            await asyncio.wait_for(self.released_event.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            return
 
     def child(self, name: str) -> "Activity":
         """The child called ``name``, created on first touch.
@@ -410,7 +506,28 @@ class Activity:
                 node.finished_at = now
                 node.updated_at = now
         self._monitor._finished(self)
+        self._wake_waiters()
         return self
+
+    @property
+    def released_event(self) -> "asyncio.Event":
+        """The event a queued caller waits on. Created on first use."""
+        if self._released is None:
+            self._released = asyncio.Event()
+        return self._released
+
+    def _wake_waiters(self) -> None:
+        if self._released is not None:
+            self._released.set()
+
+    @property
+    def claim_expired(self) -> bool:
+        """A claimed holder that outlived its budget, and is therefore claimable again.
+
+        Mirrors ``InProcessActivity.is_timed_out``: without it, a producer killed mid-run
+        would hold its address until the process restarted.
+        """
+        return self.claim_deadline is not None and time.monotonic() > self.claim_deadline
 
     def reset(self) -> "Activity":
         """Back to ``pending``, counters cleared, children dropped.

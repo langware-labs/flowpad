@@ -10,8 +10,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable
+
+if TYPE_CHECKING:
+    from flow_sdk.activity import Activity
 
 
 @dataclass
@@ -23,6 +27,14 @@ class InProcessActivity:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     timeout_seconds: int = 600
     latest_table: IndexProgressTable | None = None
+    #: The ``Activity`` that actually holds the address. Single-flight, queueing and the
+    #: liveness bound all live there now; this dataclass survives only to carry the legacy
+    #: ``IndexProgressTable`` payload while producers are migrated onto the new shape.
+    activity: "Optional[Activity]" = None
+    #: Address of the mirrored ``Activity``. Defaults to ``job_name``, which is the slot's
+    #: own name — but a producer that only BORROWED a job name so the old pill would label
+    #: it (the docs scan, the semantic check) names itself honestly here instead.
+    activity_path: "Optional[str]" = None
     #: Set when the holder releases the slot (``_complete_activity``). A waiter
     #: awaits this instead of polling, so it wakes the moment the job is gone
     #: rather than on some interval of its own choosing.
@@ -36,6 +48,11 @@ class InProcessActivity:
         that dies without releasing is bounded by exactly the same value that
         makes ``is_timed_out`` true for `_start_activity`.
         """
+        if self.activity is not None:
+            # One bound, owned by the claim: waiting here and being claimable there must
+            # agree, or a waiter sleeps past the moment the slot opened.
+            await self.activity.wait_released()
+            return
         remaining = self.timeout_seconds - (datetime.now(timezone.utc) - self.started_at).total_seconds()
         if remaining <= 0:
             return
@@ -61,6 +78,27 @@ class InProcessActivity:
         """
         t = self.latest_table
         return t is not None and t.text == PROGRESS_TEXT_COMPLETE
+
+    def set_table(self, table: IndexProgressTable) -> None:
+        """Record the latest table AND mirror it onto the activity.
+
+        The single seam that makes every legacy producer visible in the new mechanism
+        without rewriting its internals: it already built this table, so reflect it. Both
+        shapes go out until the producer is migrated natively, which is what keeps the old
+        footer pill working while the new chip fills in.
+        """
+        from flow_sdk.activity.bridge import activity_for, is_terminal_table, mirror_table
+
+        self.latest_table = table
+        node = self.activity
+        if node is None:
+            node = activity_for(self.activity_path or self.job_name, self.entity_id)
+            self.activity = node
+        if node.is_terminal:
+            return
+        mirror_table(node, table)
+        if is_terminal_table(table):
+            node.done()
 
     def make_flow_data(self) -> dict:
         """Build a ``progress_report`` flow_data envelope from ``latest_table``.
