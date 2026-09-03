@@ -1,8 +1,8 @@
 """System profile types for Claude Code environment information."""
 
-from flow_sdk._compat import StrEnum
-
 from pydantic import BaseModel, Field
+
+from flow_sdk._compat import StrEnum
 
 
 class Scope(StrEnum):
