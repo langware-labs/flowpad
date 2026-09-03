@@ -6,7 +6,11 @@
   "description": "Channel conversations in Microsoft Teams. Connect Microsoft first, then pick the channels this source reads. Work or school accounts only — the Teams message APIs do not support personal Microsoft accounts.",
   "setup_wiki": "Teams channels",
   "auth": {
-    "connector": "microsoft"
+    "connector": "microsoft",
+    "scopes": [
+      "ChannelMessage.Read.All",
+      "ChannelMessage.Send"
+    ]
   },
   "config": {
     "channels": {
