@@ -243,7 +243,7 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
     return out
 
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_authoritative: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -256,9 +256,17 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
     rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
-    if bound_typeid and bound_typeid not in rows:
+    if bound_typeid and bound_typeid not in rows and not listing_authoritative:
         # The push is authoritative even when the listing has not caught up: a freshly
         # bound (or freshly shared) endpoint must work before any cache has heard of it.
+        #
+        # But only while we have not managed to ask. Once a listing has SUCCEEDED and does not
+        # contain the bound endpoint, its absence is an answer rather than a gap -- the endpoint
+        # was deleted, or the role that made it spendable was revoked -- and synthesising it
+        # anyway is what strands a box: the stub is eligible, a bound endpoint outranks an
+        # unproven device login, and every spawn then posts to an invoke URL that answers
+        # "Entity ... not found" until the harness exhausts its retries. Leaving it out makes
+        # the ladder fall through to whatever the box can actually spend.
         rows[bound_typeid] = _hub_stub(
             bound_typeid,
             name=bound.name if bound else "",
@@ -306,7 +314,11 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.cli.auth.secrets import get_secrets
-    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, get_hub_llm_endpoint
+    from flow_sdk.instance_settings.llm_endpoint import (
+        fetch_hub_llm_endpoints,
+        get_hub_llm_endpoint,
+        listing_supersedes_binding,
+    )
 
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
@@ -326,7 +338,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     candidates = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
     candidates += _key_sources(spec, rows, stored)
-    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in)
+    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
     return candidates, cap
 
 
