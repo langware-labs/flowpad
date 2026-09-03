@@ -34,6 +34,7 @@ import asyncio
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.connections.types import ConnectionKind, ConnectionSpec, ConnectionState
+from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.project import Project
@@ -113,9 +114,15 @@ def _harness_state(source) -> ConnectionState:
         return ConnectionState.UNKNOWN
     if not source.eligible:
         return ConnectionState.DISCONNECTED
-    if str(source.authority) == "cached":
-        return ConnectionState.CONNECTED
-    return ConnectionState.UNKNOWN
+    # PRESUMED is the only authority that means "nobody asked". CACHED and PROVEN
+    # are both answers -- PROVEN is the STRONGEST one the resolver can issue, and
+    # reading it as unknown is the precise bug the browser ladder had before this
+    # fold moved here. Written as "only presumed is unknown" rather than a list of
+    # the good ones, so a new authority reads as an answer instead of silently
+    # joining the not-checked pile.
+    if str(source.authority) == str(LLMSourceAuthority.PRESUMED):
+        return ConnectionState.UNKNOWN
+    return ConnectionState.CONNECTED
 
 
 async def _credential_rows(project: "Project") -> list[ConnectionSpec]:

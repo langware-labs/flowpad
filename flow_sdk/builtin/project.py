@@ -1601,22 +1601,99 @@ class Project(Entity):
                 if want_env_var and entry.get("env_var") != want_env_var:
                     continue
                 targets.append(tid)
-        if targets:
-            # Delete the value-free reference asset(s) too so removal is complete.
-            sodot_dir = self._assets_sodot_dir()
-            if sodot_dir is not None:
-                for tid in targets:
-                    entry = self.get_context_entry_data(tid) or {}
-                    ev = (entry.get("env_var") or "").strip()
-                    if ev:
-                        try:
-                            (sodot_dir / f"{ev}.json").unlink(missing_ok=True)
-                        except OSError:
-                            pass
-            self.remove_shared_context_entities(*targets)
-            self.remove_private_context_entities(*targets)
-            await self.save()
+        await self._detach_secret_pointers(targets)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    async def _detach_secret_pointers(self, targets: list[TypeId]) -> None:
+        """Drop these declarations and their reference assets, saving ONCE.
+
+        One save for the whole list, for the reason ``add_secret_pointers``
+        spells out on the other side: each save writes back the entire context
+        bucket, so detaching N pointers with N saves gives a concurrent writer N
+        windows to be overwritten. A credential is inherently several env vars,
+        which makes N > 1 the normal case rather than the exotic one.
+        """
+        if not targets:
+            return
+        # Delete the value-free reference asset(s) too so removal is complete.
+        sodot_dir = self._assets_sodot_dir()
+        if sodot_dir is not None:
+            for tid in targets:
+                entry = self.get_context_entry_data(tid) or {}
+                ev = (entry.get("env_var") or "").strip()
+                if ev:
+                    try:
+                        (sodot_dir / f"{ev}.json").unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        self.remove_shared_context_entities(*targets)
+        self.remove_private_context_entities(*targets)
+        await self.save()
+
+    @action.post(action_name="delete-secrets")
+    async def delete_secrets(self, typeids: list[str] | None = None) -> "ApiResponse":
+        """Delete credentials: the declarations, and the values we are allowed to delete.
+
+        One action rather than a pointer-removal the UI decorates, because "delete"
+        has to be one outcome the user can be told about. It is a BATCH for the same
+        reason ``add-secret-pointers`` is: a credential is several variables, and
+        removing them one request at a time can fail half-way and leave a row that
+        is neither there nor gone.
+
+        The value goes only where deleting it is ours to do — the driver decides,
+        via ``forget``. The encrypted ``sodot`` store is Flowpad's own and is
+        emptied; a ``.env.local`` entry is the user's own line and is left exactly
+        where they put it, which is the promise the docs make. The response says
+        which happened, per variable, so the UI can report what actually went
+        rather than assuming.
+        """
+        from flow_sdk.builtin.secret_origin_digest import clear_digest  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        wanted = [t for t in (typeids or []) if str(t or "").strip()]
+        if not wanted:
+            return ApiFailResponse(message="typeids is required")
+
+        by_typeid = {
+            str(row.get("typeid") or ""): row for row in self.secret_origins if row.get("typeid")
+        }
+        deleted: list[str] = []
+        kept: list[str] = []
+        targets: list[TypeId] = []
+        for typeid in wanted:
+            # The declaration always goes, whatever happens to the value — that is
+            # what makes the row disappear, and an undeclared value is never
+            # injected. Collected rather than removed here: they are detached in
+            # ONE save below.
+            try:
+                targets.append(TypeId.to_typeid(typeid))
+            except Exception:  # noqa: BLE001
+                targets.append(TypeId(type=BuiltinEntityType.SECRET_ORIGIN.value, id=typeid))
+
+            entry = by_typeid.get(str(typeid))
+            if entry is None:
+                continue
+            env_var = str(entry.get("env_var") or "")
+            try:
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+                forgotten = await get_secret_origin_driver(loc.kind).forget(loc, project=self)
+            except Exception as e:  # noqa: BLE001
+                # A value we could not delete is reported as kept, never as deleted:
+                # the whole point of the response is that the UI can be honest.
+                log.debug("[secrets] could not forget %s: %s", env_var, e)
+                forgotten = False
+            (deleted if forgotten else kept).append(env_var)
+            # The digest goes either way. It is OUR bookkeeping about the value,
+            # not the value — keyed to a declaration that is about to stop
+            # existing — so keeping it when `.env.local` kept the value would
+            # leave an orphaned record in the encrypted store with nothing left
+            # to describe.
+            if env_var:
+                await clear_digest(str(self.id), env_var)
+
+        await self._detach_secret_pointers(targets)
+        return ApiSuccessResponse(data={"deleted": deleted, "kept": kept})
 
     @action.post(action_name="secret-resolve-status")
     async def secret_resolve_status(self) -> "ApiResponse":

@@ -25,9 +25,10 @@ const h = vi.hoisted(() => ({
   usage: {} as Record<string, unknown[]>,
   declare: vi.fn(async () => undefined),
   provide: vi.fn(async () => undefined),
-  stopDeclaring: vi.fn(async () => undefined),
+  deleteCredential: vi.fn(async () => ({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
   rows: [] as unknown[],
   blocked: false,
+  connections: null as unknown[] | null,
 }));
 
 // Spread the original: the barrel `@sdk/react/hooks` re-exports this module, so
@@ -75,15 +76,15 @@ vi.mock('@src/components/connections-manager/use-credential-connections', () => 
     envLocalPresent: new Set<string>(),
     declareCredential: h.declare,
     provide: h.provide,
-    stopDeclaring: h.stopDeclaring,
+    deleteCredential: h.deleteCredential,
   }),
 }));
-// The harness rows are covered by their own file; here they are switched off so
-// this one stays about the table's own producers. `status: null` is also the real
-// hub answer, so the component takes the same path it takes off-desk.
-vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  useLlmSources: () => ({ status: null, isLoading: false }),
+// The consolidated read. Stubbed rather than provided with a QueryClient: this
+// file is about the table's own producers, and the harness rows it feeds are
+// presenters covered by their own file. `null` is also the real hub answer, so
+// the component takes the same path it takes off-desk.
+vi.mock('@src/hooks/use-connections', () => ({
+  useConnections: () => ({ connections: h.connections, isLoading: false, refetch: vi.fn() }),
 }));
 // `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
 // not render. The host owns navigation so the harness rows can stay presenters.
@@ -223,9 +224,12 @@ describe('ConnectionsManager', () => {
     expect(screen.getByTestId('connection-kind-github').textContent).toBe('OAuth');
     expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
 
-    const scopes = screen.getByTestId('connection-scopes-github').textContent;
-    expect(scopes).toContain('repo');
-    expect(scopes).toContain('read:org');
+    // One chip and a count, not a stack: four chips wrapped the row to four
+    // lines and pushed Status and Actions out of view. The full list is the
+    // cell's tooltip, which is where it stays scannable.
+    const cell = screen.getByTestId('connection-scopes-github');
+    expect(cell.textContent).toBe('repo+1');
+    expect(cell.querySelector('[title]')?.getAttribute('title')).toBe('repo\nread:org');
   });
 
   it('does not claim "no scopes" when the owning side never published them', () => {
@@ -393,6 +397,7 @@ describe('ConnectionsManager — withdrawing a declaration', () => {
         key: 'twilio',
         title: 'Twilio',
         state: 'connected',
+        sodStore: 'sodot',
         declaredCount: 2,
         adoptableCount: 0,
         members: [
@@ -403,18 +408,51 @@ describe('ConnectionsManager — withdrawing a declaration', () => {
   });
   afterEach(() => cleanup());
 
-  it('offers to stop declaring, and says the value is not deleted', async () => {
-    // Without this there is no way to un-declare anything in the app at all —
-    // the row is permanent, and so is its entry in the machine's attachable
+  it('deletes the credential — one plain verb, not "stop declaring"', async () => {
+    // Without this there is no way to remove anything in the app at all — the
+    // row is permanent, and so is its entry in the machine's attachable
     // secrets list.
     render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByTestId('connection-stop-declaring-twilio'));
+    await userEvent.click(screen.getByTestId('connection-delete-twilio'));
 
-    // `.env.local` is append-only by policy, so the confirmation must not
-    // promise a deletion it cannot perform.
-    expect(document.body.textContent).toMatch(/stays in \.env\.local/i);
+    // A value in Flowpad's own store really is deleted, so the dialog says so
+    // without hedging.
+    expect(document.body.textContent).toMatch(/stored value is deleted/i);
+    expect(document.body.textContent).not.toMatch(/\.env\.local/i);
 
-    await userEvent.click(screen.getByRole('button', { name: /^stop declaring$/i }));
-    await waitFor(() => expect(h.stopDeclaring).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(h.deleteCredential).toHaveBeenCalledTimes(1));
+  });
+
+  it('names the variables it will NOT delete, before deleting', async () => {
+    // The one case where Delete is not total. `.env.local` is the user's own
+    // file and Flowpad never removes an entry from it, so the dialog has to say
+    // which variables stay — discovering it afterwards is how a delete button
+    // starts lying.
+    //
+    // The STORE decides, not where a value was last found: a declaration's
+    // locator kind comes from its definition's store, and that kind is what
+    // picks the driver the backend asks to forget the value.
+    h.rows = [
+      {
+        key: 'gmail',
+        title: 'Gmail',
+        state: 'connected',
+        sodStore: 'env-local',
+        declaredCount: 2,
+        adoptableCount: 0,
+        members: [
+          { envVar: 'GMAIL_ADDRESS', label: 'Address', secret: false, required: true, state: 'met', declared: true, typeid: 'secret_origin-9' },
+          { envVar: 'GMAIL_APP_PASSWORD', label: 'Password', secret: true, required: true, state: 'met', declared: true, typeid: 'secret_origin-10' },
+        ],
+      },
+    ] as unknown[];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('connection-delete-gmail'));
+
+    const text = document.body.textContent ?? '';
+    expect(text).toMatch(/GMAIL_ADDRESS, GMAIL_APP_PASSWORD stay in your \.env\.local/i);
+    // And it must not also claim the value was deleted.
+    expect(text).not.toMatch(/stored value is deleted/i);
   });
 });

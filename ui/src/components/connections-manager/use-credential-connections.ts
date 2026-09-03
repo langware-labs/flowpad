@@ -60,7 +60,7 @@ const NO_SPECS: CredentialSpec[] = [];
  */
 export function useCredentialConnections(project: Project | null | undefined) {
   const { data: specs = NO_SPECS } = useEntitiesQuery<CredentialSpec>(credentialSpecsQuery);
-  const { secretOrigins, status, addMany, provide, removeMany } = useProjectSecretOrigins(project ?? null);
+  const { secretOrigins, status, addMany, provide, deleteMany } = useProjectSecretOrigins(project ?? null);
   // `useProjectEnvLocal` returns the already-unwrapped fields, not the raw
   // status object — `keys` is names + line numbers only, never a value.
   const { keys: envLocalKeys, blocked, blockReason } = useProjectEnvLocal(project ?? null);
@@ -146,19 +146,22 @@ export function useCredentialConnections(project: Project | null | undefined) {
   );
 
   /**
-   * Stop declaring every variable of one credential.
+   * Delete one credential: its declarations, and its values where deleting them
+   * is ours to do.
    *
-   * The declaration is the only thing the app can withdraw: `.env.local` is
-   * append-only by policy, so the VALUE stays where the user put it and only
-   * this project's pointer to it goes. Without this there is no way to
-   * un-declare anything at all — the row would be permanent, and so would its
-   * entry in the machine's attachable-secrets list.
+   * The split is not ours to decide per row — the backend driver owns it, because
+   * whether a value may be deleted is a property of the STORE. Flowpad's own
+   * encrypted store is emptied; a value in the project's `.env.local` stays
+   * exactly where the user put it, since Flowpad never removes an entry from
+   * that file. The result names which is which so the caller can say so.
    */
-  const stopDeclaring = useCallback(
+  const deleteCredential = useCallback(
     async (row: CredentialRow) => {
-      await removeMany(row.members.map((m) => m.typeid).filter((id): id is string => !!id));
+      return await deleteMany(
+        row.members.map((m) => m.typeid).filter((id): id is string => !!id),
+      );
     },
-    [removeMany],
+    [deleteMany],
   );
 
   return {
@@ -169,6 +172,6 @@ export function useCredentialConnections(project: Project | null | undefined) {
     envLocalPresent,
     declareCredential,
     provide,
-    stopDeclaring,
+    deleteCredential,
   };
 }

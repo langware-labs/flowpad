@@ -41,3 +41,15 @@ class EnvLocalSecretDriver:
         if project is None or not getattr(locator, "env_key", ""):
             raise ValueError("env-local store requires a project and env_key")
         await asyncio.to_thread(write_env_local, project, locator.env_key, value)
+
+    async def forget(self, locator: SecretOriginLocator, **context: Any) -> bool:
+        """Never. ``.env.local`` is the user's own file.
+
+        Flowpad reads it, never writes over an entry and never removes one — the
+        promise the docs make in *Project secrets*. The file is hand-maintained
+        and shared with tooling that is none of our business: it carries comments,
+        an order someone chose, and keys we did not put there. So a delete stops
+        at the declaration, and the caller tells the user the value stayed rather
+        than silently editing their file.
+        """
+        return False

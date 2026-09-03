@@ -79,8 +79,12 @@ async def test_a_harness_is_signed_out_only_when_a_probe_said_so():
     )
 
 
-async def test_a_probed_harness_reads_connected():
-    assert status_mod._harness_state(_Source(authority="cached")) is ConnectionState.CONNECTED
+@pytest.mark.parametrize("authority", ["cached", "proven"])
+async def test_a_probed_harness_reads_connected(authority):
+    """`proven` is here on purpose. It is the STRONGEST verdict the resolver can
+    issue, and the browser ladder this fold replaces let it fall through to "nobody
+    has asked" — the same drift, one language over."""
+    assert status_mod._harness_state(_Source(authority=authority)) is ConnectionState.CONNECTED
 
 
 # ── what belongs in the list ───────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import {
+  ConnectionKind,
   ConnectionStatus,
   type CredentialSpec,
   TypeId,
@@ -33,6 +34,7 @@ import { useCredentialConnections } from './connections-manager/use-credential-c
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
+import { useConnections } from '@src/hooks/use-connections';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { CredentialRow } from './credentials-view/credential-rows';
@@ -101,7 +103,10 @@ const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
 
 /** How many scopes to show before collapsing the rest into a count. A dozen
  *  chips would bury the row it belongs to. */
-const SCOPES_SHOWN = 4;
+//: One chip plus a count, never a stack. Four chips wrapped a row to four lines
+//: and pushed Status and Actions out of the viewport on a provider like Slack;
+//: the full list is a hover away and was never scannable as chips anyway.
+const SCOPES_SHOWN = 1;
 
 /** Stable fallback for a provider with no placements. */
 const NO_PROJECTS: Project[] = [];
@@ -244,6 +249,23 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // row at once. Gated above a threshold so a large workspace doesn't fan out on
   // arrival; the delete dialog force-enables it, because blast radius must never
   // be guessed.
+  /**
+   * The harness logins, from the ONE consolidated `connections` read.
+   *
+   * The rows used to resolve themselves, which cost a funding read plus a probe
+   * per harness — five requests — and, worse, kept a second definition of
+   * "signed in" in the browser. Only the harness rows are taken from this list
+   * so far: the credential rows below need member-level state (declared,
+   * adoptable, which line of `.env.local`) that a `ConnectionSpec` does not
+   * carry, and the OAuth rows need the grant-vs-placement split that its single
+   * `state` field collapses.
+   */
+  const { connections: consolidated } = useConnections(projectTypeId);
+  const harnessRows = React.useMemo(
+    () => (consolidated ?? []).filter((row) => row.kind === ConnectionKind.Harness),
+    [consolidated],
+  );
+
   const { projects } = useProjects();
 
   // The credential half of the table. An API credential is project-scoped
@@ -263,13 +285,43 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     envLocalPresent: envLocalKeys,
     declareCredential,
     provide: provideCredentialValue,
-    stopDeclaring,
+    deleteCredential,
   } = useCredentialConnections(selectedProject);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [addBusy, setAddBusy] = React.useState<string | null>(null);
   const [pendingCredential, setPendingCredential] = React.useState<CredentialSpec | null>(null);
-  const [pendingUndeclare, setPendingUndeclare] = React.useState<CredentialRow | null>(null);
+  const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
+
+  /**
+   * What Delete will actually do, said before it happens.
+   *
+   * The prediction keys off the row's STORE, which is what actually decides the
+   * outcome: a declaration's locator kind comes from its definition's store
+   * (`CredentialSpec.locatorFor`), and that kind picks the driver whose
+   * `forget()` the backend calls. Reading `member.foundIn` instead would predict
+   * from where a value was last resolved — a near-enough proxy that is not the
+   * signal the backend acts on.
+   *
+   * One store per credential, so there are two outcomes and not three:
+   * `locatorFor` gives every variable of a definition the same kind, and an
+   * ad-hoc row is a single variable.
+   */
+  const credentialDeleteDescription = React.useMemo(() => {
+    const row = pendingDeleteCredential;
+    if (!row || row.sodStore !== 'env-local') {
+      return t`This project stops using it and the stored value is deleted.`;
+    }
+    // Name the variables that are actually there — those are the lines that stay.
+    const names = row.members
+      .filter((m) => m.state === 'met' || m.state === 'adoptable')
+      .map((m) => m.envVar)
+      .join(', ');
+    return names.includes(',')
+      ? t`This project stops using it. ${names} stay in your .env.local — Flowpad never removes an entry from that file.`
+      : t`This project stops using it. ${names} stays in your .env.local — Flowpad never removes an entry from that file.`;
+  }, [pendingDeleteCredential, t]);
+
   const [usageForced, setUsageForced] = React.useState(false);
   const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
   const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
@@ -610,7 +662,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 holds, above the project-scoped credential rows below. Navigation is
                 the HOST's, like every other row action here — a leaf reaching for the
                 router subscribes the whole table to every location change. */}
-            <HarnessConnectionRows onDetails={(worker) => openLlmSources(navigation, worker)} />
+            <HarnessConnectionRows
+              rows={harnessRows}
+              onDetails={(worker) => openLlmSources(navigation, worker)}
+            />
             {allConnections.map((connection) => {
               // Grant vs placement: `grant` says whether the user holds the
               // credential at all (answerable with no project); `status` says
@@ -647,18 +702,21 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell data-testid={`connection-scopes-${connection.id}`}>
                     {connection.scopes?.length ? (
-                      <div className="flex flex-wrap items-center gap-1">
+                      <div
+                        className="flex items-center gap-1"
+                        title={connection.scopes.join('\n')}
+                      >
                         {connection.scopes.slice(0, SCOPES_SHOWN).map((scope) => (
                           <Badge
                             key={scope}
                             variant="secondary"
-                            className="rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
+                            className="max-w-[220px] truncate rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
                           >
                             {scope}
                           </Badge>
                         ))}
                         {connection.scopes.length > SCOPES_SHOWN && (
-                          <span className="text-[11px] text-muted-foreground/70" title={connection.scopes.join(', ')}>
+                          <span className="shrink-0 text-[11px] text-muted-foreground/70">
                             +{connection.scopes.length - SCOPES_SHOWN}
                           </span>
                         )}
@@ -830,7 +888,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <CredentialConnectionRows
               rows={credentialRows}
               adoptingKey={addBusy}
-              onStopDeclaring={(row) => setPendingUndeclare(row)}
+              onDelete={(row) => setPendingDeleteCredential(row)}
               onAdopt={async (rowKey) => {
                 // Declares straight away — no value form. A row is only
                 // adoptable when every one of its values is ALREADY on disk, so
@@ -867,26 +925,42 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         </Table>
       </div>
 
+      {/* Delete says what will actually happen, BEFORE it happens. The row
+          already knows which store each value came from (`foundIn`), so the
+          one case where Delete is not total — a value in the user's own
+          `.env.local`, which Flowpad never removes from — is named here rather
+          than discovered afterwards. */}
       <ConfirmDialog
-        open={!!pendingUndeclare}
+        open={!!pendingDeleteCredential}
         onOpenChange={(open) => {
-          if (!open) setPendingUndeclare(null);
+          if (!open) setPendingDeleteCredential(null);
         }}
-        title={t`Stop declaring ${pendingUndeclare?.title ?? ''}?`}
-        description={t`This project stops using it. The value stays in .env.local — nothing is deleted from your file.`}
-        confirmLabel={t`Stop declaring`}
+        title={t`Delete ${pendingDeleteCredential?.title ?? ''}?`}
+        description={credentialDeleteDescription}
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => {
-          const row = pendingUndeclare;
-          setPendingUndeclare(null);
+          const row = pendingDeleteCredential;
+          setPendingDeleteCredential(null);
           if (!row) return;
           void (async () => {
             try {
-              await stopDeclaring(row);
+              const { kept } = await deleteCredential(row);
+              // Report what the BACKEND did, not what the dialog predicted: the
+              // driver decides, and a value could have moved stores since the
+              // table was painted.
+              notify.success({
+                title: t`${row.title} deleted`,
+                // No singular/plural split here, unlike the dialog: "stayed"
+                // reads the same for one name or several.
+                ...(kept.length
+                  ? { message: t`${kept.join(', ')} stayed in your .env.local.` }
+                  : {}),
+              });
             } catch (error) {
               notify.error({
-                title: t`Could not stop declaring ${row.title}`,
-                message: errorMessage(error, t`The declaration may be only partly removed.`),
+                title: t`Could not delete ${row.title}`,
+                message: errorMessage(error, t`It may be only partly removed.`),
               });
             }
           })();

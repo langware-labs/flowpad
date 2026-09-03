@@ -1,30 +1,27 @@
 import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { LLMFundingKind } from '@sdk';
+import { ConnectionState, type ConnectionSpec } from '@sdk';
 import { cn } from '@src/lib/utils';
-import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { providerMetaFor } from '@src/tabs/provider-meta';
-import {
-  harnessKinds,
-  sourcesOfKind,
-  useLlmSources,
-  workerOf,
-} from '@src/components/llm-sources/use-llm-sources';
-import { sourceVisual } from '@src/components/llm-sources/llm-source-visuals';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
-
-/** Display names are keyed by worker; `workerOf` hands back a plain string. */
-const LABELS: Record<string, string> = WORKER_LABELS;
 
 /**
  * The harness device logins — Claude, Codex, Copilot, OpenCode — as Connections rows.
  *
  * They are the credentials the assistants actually run on, and they were the one
- * kind of connection this table did not show. Its own producer rather than a
- * synthetic `allConnections` entry: that map is keyed by registered OAuth provider
- * name and gated on `grantStatuses`, and a harness login is in neither.
+ * kind of connection this table did not show.
+ *
+ * **A presenter.** The rows arrive already composed, from the single
+ * `connections` read; this file only draws them. It used to resolve them itself
+ * through `useLlmSources`, which cost one funding read plus a probe per harness
+ * — five requests to paint four cells that the consolidated list already
+ * answers. More importantly, resolving here meant the browser held a second
+ * opinion about what "signed in" means, and that copy had already drifted from
+ * the backend's on the strongest verdict it can issue.
  *
  * **Read-only on purpose.** Signing in is a vendor CLI flow the login modal already
  * owns end to end — the device code, Claude's paste-back, the provider picker, the
@@ -32,31 +29,45 @@ const LABELS: Record<string, string> = WORKER_LABELS;
  * the row would otherwise have to explain: there is no logout for a harness at any
  * tier, because signing out means running the vendor's own CLI in your own terminal.
  */
-export function HarnessConnectionRows({ onDetails }: { onDetails?: (worker: string) => void }) {
-  const { t } = useLingui();
-  const { status } = useLlmSources();
 
-  // `null` is the hub: device logins are box facts, so `status()` answers null there
-  // rather than an empty picture.
-  if (!status) return null;
+/**
+ * State → how it reads. Keyed by the enum, so a new state is a type error rather
+ * than a row that silently falls through to the neutral dot.
+ *
+ * "Not checked" is a first-class answer, not a hedge: the backing field is not
+ * persisted, so "nobody has asked" is the COMMON state after any restart, and
+ * rendering it as "not connected" tells a signed-in user they are signed out
+ * every time the backend restarts.
+ */
+const STATE_VISUAL: Record<ConnectionState, { text: MessageDescriptor; dot: string }> = {
+  [ConnectionState.Connected]: { text: msg`Signed in`, dot: 'bg-emerald-400' },
+  [ConnectionState.Disconnected]: { text: msg`Signed out`, dot: 'bg-muted-foreground/40' },
+  [ConnectionState.NeedsReauth]: { text: msg`Reconnect needed`, dot: 'bg-red-500' },
+  [ConnectionState.Unknown]: { text: msg`Not checked`, dot: 'bg-muted-foreground/40' },
+};
+
+export function HarnessConnectionRows({
+  rows,
+  onDetails,
+}: {
+  rows: ConnectionSpec[];
+  onDetails?: (worker: string) => void;
+}) {
+  const { t } = useLingui();
 
   return (
     <>
-      {harnessKinds(status).map((kind) => {
-        const worker = workerOf(kind);
-        // The DEVICE candidate, not `resolved[kind]`: this row is about the harness's
-        // own login, which must still be listed on a box where a stored API key
-        // currently outranks it.
-        const device = sourcesOfKind(status, kind, LLMFundingKind.Device)[0];
+      {rows.map((row) => {
+        const worker = row.provider;
         const { Icon, iconClassName } = providerMetaFor(worker);
-        const verdict = sourceVisual(device);
+        const visual = STATE_VISUAL[row.state] ?? STATE_VISUAL[ConnectionState.Unknown];
 
         return (
-          <TableRow key={`harness:${kind}`} data-testid={`connection-row-harness-${worker}`}>
+          <TableRow key={`harness:${worker}`} data-testid={`connection-row-harness-${worker}`}>
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
                 <Icon className={cn('h-4 w-4 shrink-0', iconClassName)} />
-                <span>{LABELS[worker] ?? worker}</span>
+                <span>{row.display_name || worker}</span>
               </div>
             </TableCell>
 
@@ -81,16 +92,16 @@ export function HarnessConnectionRows({ onDetails }: { onDetails?: (worker: stri
 
             <TableCell>
               <div className="flex items-center gap-2 text-sm">
-                <span className={cn('h-2 w-2 shrink-0 rounded-full', verdict.dot)} />
+                <span className={cn('h-2 w-2 shrink-0 rounded-full', visual.dot)} />
                 {/* One short word in the cell — a wrapping label is what made the two
                     halves of this table read as two different tables. The backend owns
                     the sentence and it is rendered verbatim, in the title. */}
                 <span
                   className="whitespace-nowrap"
-                  title={device?.reason || device?.detail || undefined}
+                  title={row.detail || undefined}
                   data-testid={`connection-status-harness-${worker}`}
                 >
-                  {i18n._(verdict.text)}
+                  {i18n._(visual.text)}
                 </span>
               </div>
             </TableCell>

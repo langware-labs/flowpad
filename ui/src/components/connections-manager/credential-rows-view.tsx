@@ -11,8 +11,9 @@ import { TableCell, TableRow } from '../ui/table';
 import { CONNECTIONS_COLUMN_COUNT } from '../connections-manager';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
-/** Same cap the OAuth scope chips use — the column is one line, not a list. */
-const VARS_SHOWN = 4;
+/** Same cap the OAuth scope chips use — one chip and a count. The column is one
+ *  line, and four chips wrapped the row to four lines. */
+const VARS_SHOWN = 1;
 
 /** The provider glyph for a credential row.
  *
@@ -39,7 +40,7 @@ export function CredentialConnectionRows({
   rows,
   onProvide,
   onAdopt,
-  onStopDeclaring,
+  onDelete,
   adoptingKey,
 }: {
   rows: CredentialRow[];
@@ -51,8 +52,10 @@ export function CredentialConnectionRows({
    *  shown in the table, and therefore excluded from Add connection, so there
    *  would be nowhere left to add it from. */
   onAdopt?: (rowKey: string) => Promise<void>;
-  /** Withdraw the declaration — see `stopDeclaring`. */
-  onStopDeclaring?: (row: CredentialRow) => void;
+  /** Delete the credential: its declarations, and the values it is ours to
+   *  delete. See `deleteCredential` — a value in the user's `.env.local` stays,
+   *  and the confirm dialog is where that is said. */
+  onDelete?: (row: CredentialRow) => void;
   /** Row key currently being adopted, so the button can spell "working". */
   adoptingKey?: string | null;
 }) {
@@ -80,7 +83,7 @@ export function CredentialConnectionRows({
         const unset = row.members.filter((m) => m.declared && m.state !== 'met');
         const showAdopt = !!onAdopt && row.declaredCount === 0 && row.adoptableCount > 0;
         const showSetup = !!onProvide && row.declaredCount > 0 && row.state !== 'connected';
-        const showStop = !!onStopDeclaring && row.declaredCount > 0;
+        const showDelete = !!onDelete && row.declaredCount > 0;
         return (
           <React.Fragment key={`credential:${row.key}`}>
           <TableRow data-testid={`connection-row-${row.key}`}>
@@ -106,13 +109,18 @@ export function CredentialConnectionRows({
                 of environment variables. Same badge shape the OAuth scopes use,
                 so the two read as one column. */}
             <TableCell data-testid={`connection-vars-${row.key}`}>
-              <div className="flex flex-wrap items-center gap-1">
+              <div
+                className="flex items-center gap-1"
+                title={row.members
+                  .map((m) => `${m.envVar}${m.required ? '' : t` (optional)`}`)
+                  .join('\n')}
+              >
                 {shown.map((m) => (
                   <Badge
                     key={m.envVar}
                     variant="secondary"
                     className={cn(
-                      'font-mono text-[11px] font-normal',
+                      'max-w-[220px] truncate font-mono text-[11px] font-normal',
                       m.state === 'missing' && 'opacity-50',
                     )}
                     title={
@@ -127,12 +135,7 @@ export function CredentialConnectionRows({
                   </Badge>
                 ))}
                 {extra > 0 && (
-                  <span
-                    className="text-xs text-muted-foreground"
-                    title={row.members.map((m) => m.envVar).join(', ')}
-                  >
-                    +{extra}
-                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">+{extra}</span>
                 )}
               </div>
             </TableCell>
@@ -173,21 +176,21 @@ export function CredentialConnectionRows({
                   <Trans>Set up</Trans>
                 </Button>
               )}
-              {showStop && (
+              {showDelete && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="ms-1 h-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => onStopDeclaring?.(row)}
-                  data-testid={`connection-stop-declaring-${row.key}`}
+                  onClick={() => onDelete?.(row)}
+                  data-testid={`connection-delete-${row.key}`}
                 >
-                  <Trans>Stop declaring</Trans>
+                  <Trans>Delete</Trans>
                 </Button>
               )}
               {/* The cell is never blank: a row with no action still gets a dash,
                   which the three-way ternary this replaced could not express once
-                  Stop declaring became a fourth outcome. */}
-              {!showAdopt && !showSetup && !showStop && (
+                  Delete became a fourth outcome. */}
+              {!showAdopt && !showSetup && !showDelete && (
                 <span className="text-sm text-muted-foreground">—</span>
               )}
             </TableCell>

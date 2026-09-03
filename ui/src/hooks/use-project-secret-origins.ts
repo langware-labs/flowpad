@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  Project,
-  ProjectSecretOriginSummary,
-  SecretOriginLocator,
-  SecretPointerScope,
-  SecretResolveStatus,
-  SodStore,
-} from '@sdk';
+import type { Project, ProjectSecretOriginSummary, SecretResolveStatus } from '@sdk';
 
 /**
  * Project secrets hook — the Connections table reads everything here.
@@ -68,34 +61,20 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     [refreshStatus],
   );
 
-  const remove = useCallback(
-    async (typeid: string) => {
-      const p = projectRef.current;
-      if (!p || !typeid) return;
-      await p.removeSecretPointer(typeid);
-      await refreshStatus();
-    },
-    [refreshStatus],
-  );
-
   /**
-   * Stop declaring several at once — N removes, but ONE refresh.
+   * Delete: the declarations AND the values we are allowed to delete.
    *
-   * The mirror of {@link addMany}, and not as good: `remove-secret-pointer` is a
-   * single-pointer action on the backend, so there is no batch to call and this
-   * is still N round-trips that can fail half-way. What it does fix is the other
-   * half of the cost — `remove` refetches the whole resolve-status after every
-   * call, so undeclaring a three-variable credential used to mean three writes
-   * AND three full refetches, with the table re-rendering between each.
+   * One backend call for N pointers, because deleting is one act with one
+   * outcome to report — and the answer says which values actually went, so the
+   * caller can tell the user the truth about the ones that stayed.
    */
-  const removeMany = useCallback(
-    async (typeids: string[]) => {
+  const deleteMany = useCallback(
+    async (typeids: string[]): Promise<{ deleted: string[]; kept: string[] }> => {
       const p = projectRef.current;
-      if (!p || !typeids.length) return;
-      for (const typeid of typeids) {
-        if (typeid) await p.removeSecretPointer(typeid);
-      }
+      if (!p || !typeids.length) return { deleted: [], kept: [] };
+      const result = await p.deleteSecrets(typeids);
       await refreshStatus();
+      return result;
     },
     [refreshStatus],
   );
@@ -106,8 +85,7 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     statusReady,
     addMany,
     provide,
-    remove,
-    removeMany,
+    deleteMany,
     refreshStatus,
   } as const;
 }
