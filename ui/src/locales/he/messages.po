@@ -3291,6 +3291,10 @@ msgstr "אפשרויות הפעלת CLI"
 msgid "CLI Log Level"
 msgstr "רמת היומן של ממשק שורת הפקודה"
 
+#: src/components/connections-manager/harness-connection-rows.tsx
+msgid "CLI login"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "CLI Options"
 msgstr "אפשרויות CLI"
@@ -5678,6 +5682,7 @@ msgstr "פרטים"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -11875,6 +11880,8 @@ msgid "Not available in Local mode"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Not checked"
 msgstr "לא בדוק"
 
@@ -16452,6 +16459,7 @@ msgid "Sign-in not confirmed"
 msgstr ""
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
@@ -16472,6 +16480,10 @@ msgstr "מחובר ל-Remote"
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed out"
 msgstr "לא מחובר"
+
+#: src/components/connections-manager/harness-connection-rows.tsx
+msgid "Signed out"
+msgstr ""
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -17588,6 +17600,10 @@ msgstr "הנכס תואם את HEAD"
 #: src/pages/discover-page/discover-page.tsx
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr "הנכסים שפורסמו עם הפרויקט הזה — הכישורים, הסוכנים, המפרטים והמסמכים שלו."
+
+#: src/components/connections-manager/harness-connection-rows.tsx
+msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The backend may have restarted. Click to reattach."

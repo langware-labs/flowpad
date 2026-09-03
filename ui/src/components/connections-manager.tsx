@@ -32,6 +32,7 @@ import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use
 import { useCredentialConnections } from './connections-manager/use-credential-connections';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
+import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
 import type { CredentialRow } from './credentials-view/credential-rows';
 import {
   CredentialValueForm,
@@ -603,6 +604,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 added. Its own producer — see the component for why it cannot be
                 a synthetic `allConnections` entry. */}
             <FlowpadConnectionRow />
+            {/* The harness logins sit with FlowPad: both are accounts this MACHINE
+                holds, above the project-scoped credential rows below. */}
+            <HarnessConnectionRows />
             {allConnections.map((connection) => {
               // Grant vs placement: `grant` says whether the user holds the
               // credential at all (answerable with no project); `status` says

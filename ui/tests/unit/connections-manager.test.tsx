@@ -78,6 +78,18 @@ vi.mock('@src/components/connections-manager/use-credential-connections', () => 
     stopDeclaring: h.stopDeclaring,
   }),
 }));
+// The harness rows are covered by their own file; here they are switched off so
+// this one stays about the table's own producers. `status: null` is also the real
+// hub answer, so the component takes the same path it takes off-desk.
+vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useLlmSources: () => ({ status: null, isLoading: false }),
+}));
+// `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
+// not render — the harness row is the first thing in this tree to navigate.
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: {}, currentDock: null }),
+}));
 vi.mock('@src/notifications', () => ({
   notify: { error: h.notifyError, success: vi.fn(), info: vi.fn() },
 }));
