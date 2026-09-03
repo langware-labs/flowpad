@@ -91,29 +91,11 @@ async def _scope_changed_excluding_version(
 
 
 def _versionable_folder_types() -> list:
-    """The folder-backed types from ``asset_scope`` whose main file can CARRY the
-    frontmatter ``version:`` header THIS module writes — skill (SKILL.md), task
-    (task.md), whiteboard (WHITE_BOARD.md).
-
-    ``_folder_backed_types`` answers the shape question, and it is the same answer
-    ``folder_asset_for`` resolved a moment earlier, so this filter can only ever
-    narrow the set the caller actually got — the two cannot disagree about which
-    folders are assets. Single-file types are not in it at all; they reach the
-    frontmatter guard in ``_asset_scope`` instead.
-
-    The narrowing test is the type's own ``identity_carrier``: a
-    ``FrontmatterCarrier`` (these three, via ``FolderMdCarrier``) already declares
-    "my id lives in this document's header", which is the same statement as "this
-    file can hold one". It is the partition the identity seam itself uses — see
-    the matching isinstance gate in ``SchemaRegistry.carrier_path_for`` — so a new
-    markdown-bodied type is picked up automatically and a type that changes body
-    format cannot drift out of sync with a filename check.
-
-    This lives HERE and not in ``asset_scope`` on purpose. Which folders are
-    assets is a fact about shape, shared with the git-ops endpoints; which files
-    may be STAMPED is a versioning policy owned by this module. What versioning
-    SHOULD mean for a JSON-bodied asset is a separate decision; until it is made
-    they simply do not participate.
+    """``asset_scope``'s folder-backed types narrowed to those whose main file can
+    CARRY the frontmatter ``version:`` this module writes — skill, task, whiteboard.
+    The test is the type's ``identity_carrier``: ``FrontmatterCarrier`` already means
+    "my id lives in this document's header", the gate the identity seam uses too.
+    Which folders are assets is shape (there); which may be STAMPED is policy (here).
     """
     from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier
 
