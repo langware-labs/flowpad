@@ -2,9 +2,12 @@
 
 `flow_sdk.blocks` is the plain-Python workflow surface. No engine, no hidden
 graph: blocks are ordinary classes, your own `async for` is the orchestration,
-and every value that moves between blocks is a `DataSpec`. Each block is a view
-over entities that already exist (`DataSource`, `Agent`, `AgenticProcess`, the
-ingest and projection machinery). Nothing here persists state of its own.
+and every value that moves between blocks is a `DataSpec`. The
+[simple message source](message-source.md) yields an ephemeral `MessageRequest`;
+the source owns its one-shot reply correlation. Entity-backed blocks are views
+over existing `DataSource`, `Agent`, `AgenticProcess`, ingest, and projection
+machinery; `MessageSource` owns only a transient queue. Nothing here persists
+state of its own.
 
 ## 1. Mail concierge
 
@@ -14,16 +17,18 @@ typed reply → delivery verified at the counterpart inbox, 17–18s end to end)
 
 ```python
 import flow_sdk.ingest.drivers  # noqa: F401
-from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("mail-concierge"):
     inbox  = Inbox("me@agentmail.to", api_key=KEY)
-    runner = AgentRunner("email-summarizer")
+    agent  = await get_agent("email-summarizer")
 
-    async for m in inbox.listen():                    # m: SourceItemSpec
-        out   = await runner.run(m)                   # out: RunOutput
-        reply = EmailMessageSpec.reply_to(m, body=out.text)
-        await inbox.send(reply)
+    async with agent.process_messages():
+        async for m in inbox.listen():                # m: SourceItemSpec
+            out   = await agent.process_message(m)    # out: RunOutput
+            reply = EmailMessageSpec.reply_to(m, body=out.text)
+            await inbox.send(reply)
 ```
 
 What each line does:
@@ -38,12 +43,14 @@ What each line does:
   landed into its conversation, and yields only arrivals: items present when
   `listen` started are the baseline. Your own sent copies and senders outside
   `senders=` are filtered.
-* `AgentRunner(agent)` takes the real `Agent` entity, a name, or a TypeId.
-  One `AgenticProcess` per `session_key` (default: the provider thread), so the
-  same thread continues the same conversation. Spawns go through the agent's
-  `Deployment`, so worker, model and permission mode come from `agent.md`.
-* `runner.run(m)` prompts with the message body and returns the assistant's
-  reply as a frozen `RunOutput`. A failed prompt raises instead of hanging.
+* `agent.process_messages()` owns the private runner and closes its processes
+  on exit. `agent.process_message(m)` uses one `AgenticProcess` per provider
+  thread, so the same thread continues the same conversation. Spawns go
+  through the agent's `Deployment`, so worker, model and permission mode come
+  from `agent.md`.
+* `agent.process_message(m)` prompts with the message body and returns the
+  assistant's reply as a frozen `RunOutput`. A failed prompt raises instead of
+  hanging.
 * `EmailMessageSpec.reply_to(m, body=...)` addresses the author, keeps the
   thread, adds `Re:` once. `inbox.send(reply)` goes through the driver and
   returns the provider's id.
@@ -53,11 +60,12 @@ Control flow is Python, not configuration:
 ```python
 inbox = Inbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
 
-async for m in inbox.listen():
-    if "urgent" not in m.name.lower():
-        continue
-    out = await runner.run(m)
-    await inbox.send(EmailMessageSpec.reply_to(m, body=out.text))
+async with agent.process_messages():
+    async for m in inbox.listen():
+        if "urgent" not in m.name.lower():
+            continue
+        out = await agent.process_message(m)
+        await inbox.send(EmailMessageSpec.reply_to(m, body=out.text))
 ```
 
 ## 2. The same loop as a Telegram bot
@@ -66,15 +74,17 @@ Browser-proven end to end (bot created via @BotFather, per-chat session memory
 across turns). The send leg is pinned by `tests/long_tests/test_telegram_send.py`.
 
 ```python
-from flow_sdk.blocks import AgentRunner, Inbox, TelegramMessageSpec, workflow
+from flow_sdk.blocks import Inbox, TelegramMessageSpec, workflow
+from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("support-bot"):
     inbox  = Inbox("@my_support_bot", provider="telegram", bot_token=TOKEN)
-    runner = AgentRunner("support-agent")           # session per chat
+    agent  = await get_agent("support-agent")
 
-    async for m in inbox.listen():
-        out = await runner.run(m)
-        await inbox.send(TelegramMessageSpec.reply_to(m, body=out.text))
+    async with agent.process_messages():
+        async for m in inbox.listen():
+            out = await agent.process_message(m)     # session per chat
+            await inbox.send(TelegramMessageSpec.reply_to(m, body=out.text))
 ```
 
 Channels disagree on who a reply targets: email replies to the author,
@@ -89,15 +99,17 @@ driver records nothing itself. Pinned by `tests/unit/test_slack_driver.py`
 (send, identity stamp, channel reuse) against a loopback Slack.
 
 ```python
-from flow_sdk.blocks import AgentRunner, Inbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import Inbox, SlackMessageSpec, workflow
+from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("channel-helper"):
     inbox  = Inbox("C0123456789", provider="slack")   # the channel id, not its name
-    runner = AgentRunner("slack-summarizer")          # session per thread
+    agent  = await get_agent("slack-summarizer")
 
-    async for m in inbox.listen():
-        out = await runner.run(m)
-        await inbox.send(SlackMessageSpec.reply_to(m, body=out.text))
+    async with agent.process_messages():
+        async for m in inbox.listen():
+            out = await agent.process_message(m)       # session per thread
+            await inbox.send(SlackMessageSpec.reply_to(m, body=out.text))
 ```
 
 * The Slack token is the machine's connected Slack credential; there is no

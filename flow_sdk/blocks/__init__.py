@@ -2,25 +2,29 @@
 
 No engine, no hidden graph, no operators: blocks are ordinary classes, the
 script's own ``async for`` loop is the orchestration, and every value that
-moves between blocks is a DataSpec. The rule throughout: **the SDK introduces
-vocabulary, never rows** — each block is a view over entities that already
-exist (``DataSource``, ``Agent``, ``AgenticProcess``, the ingest and
-projection machinery); nothing here persists state of its own.
+moves between blocks is a DataSpec. A ``MessageSource`` request is an ephemeral
+DataSpec whose source-owned correlation completes its sender. The rule
+throughout: **the SDK introduces vocabulary, never rows** — entity-backed
+blocks are views over entities that already exist (``DataSource``, ``Agent``,
+``AgenticProcess``, the ingest and projection machinery), while
+``MessageSource`` owns only a transient queue. Nothing here persists state of
+its own.
 
 The canonical program::
 
     async with workflow("mail-concierge"):
         inbox  = Inbox("me@agentmail.to", api_key=KEY)
-        runner = AgentRunner("email-summarizer")
+        agent  = await get_agent("email-summarizer")
 
-        async for m in inbox.listen():                    # m: SourceItemSpec
-            out   = await runner.run(m)                   # out: RunOutput
-            reply = EmailMessageSpec.reply_to(m, body=out.text)
-            await inbox.send(reply)
+        async with agent.process_messages():
+            async for m in inbox.listen():                # m: SourceItemSpec
+                out   = await agent.process_message(m)    # out: RunOutput
+                reply = EmailMessageSpec.reply_to(m, body=out.text)
+                await inbox.send(reply)
 
-Verbs live on blocks (``listen``, ``run``, ``send``); control flow — allow
-lists, branches, errors, prints — is never configuration, it is the Python
-between the calls.
+Verbs live on their owners (``listen``, ``process_message``, ``send``);
+control flow — allow lists, branches, errors, prints — is never configuration,
+it is the Python between the calls.
 """
 
 from __future__ import annotations
@@ -44,14 +48,17 @@ from flow_sdk.builtin.source_item import (
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
+from .message_source import MessageRequest, MessageSource, _MessageRequestExpired
+
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
 
 __all__ = [
-    "AgentRunner",
     "EmailMessageSpec",
     "FileRef",
     "MessageSpec",
+    "MessageRequest",
+    "MessageSource",
     "Inbox",
     "RunOutput",
     "SlackMessageSpec",
@@ -60,6 +67,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_AgentInput = SourceItemSpec | MessageRequest
+
+_active_agent_runners: contextvars.ContextVar[dict[str, "_AgentRunner"] | None] = contextvars.ContextVar(
+    "active_agent_runners", default=None
+)
 
 #: The active workflow name — a grouping stamp for observability, nothing more.
 #: v1 carries it so spawned processes can be attributed; no engine reads it.
@@ -95,7 +108,7 @@ class RunOutput(DataSpec):
     files: list[FileRef] = []
 
 
-class AgentRunner:
+class _AgentRunner:
     """Runs an ``Agent``, one ``AgenticProcess`` per session.
 
     ``agent`` is the REAL ``Agent`` entity (``flow_sdk/builtin/agent.py``) or
@@ -117,24 +130,37 @@ class AgentRunner:
     def __init__(
         self,
         agent: "AgentRef",
-        session_key: Callable[[SourceItemSpec], str] = lambda m: str(m.thread_key or m.external_id),
+        session_key: Callable[[_AgentInput], str] = lambda m: str(m.thread_key or m.external_id),
         max_processes: int = 4,
     ):
         if not agent or (isinstance(agent, str) and not agent.strip()):
-            raise ValueError("AgentRunner needs an agent (entity, name, or id)")
+            raise ValueError("agent message processing needs an agent (entity, name, or id)")
         self.agent = agent
         self.session_key = session_key
         self.max_processes = int(max_processes)
         self.processes: dict[str, object] = {}
+        self.closed = False
+        self._spawn_lock = asyncio.Lock()
 
-    async def process_for(self, m: SourceItemSpec):
+    def _ensure_open(self) -> None:
+        if self.closed:
+            raise RuntimeError("agent message processing scope is closed")
+
+    async def process_for(self, m: _AgentInput):
         """The session's process — reused on a key hit, spawned on a miss.
 
         The spawn goes through the agent's ``Deployment`` (the one sanctioned
         spawner from a persona) so worker, model, permission mode and
         subagents are the ones the ``agent.md`` declares — never hand-rolled.
         """
+        self._ensure_open()
         key = str(self.session_key(m))
+        async with self._spawn_lock:
+            return await self._find_or_spawn(key)
+
+    async def _find_or_spawn(self, key: str):
+        """Admit one spawn at a time so key reuse and the cap stay atomic."""
+        self._ensure_open()
         existing = self.processes.get(key)
         if existing is not None:
             return existing
@@ -145,16 +171,19 @@ class AgentRunner:
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
 
         deployment = await get_agent_local_deployment(self.agent)
+        self._ensure_open()
         options: dict = {"visible": False}
         wf = current_workflow.get()
         if wf:
             options["context_data"] = {"workflow": wf, "session_key": key}
         ap = await deployment.create_process("", **options)
+        await self._discard_if_closed(ap)
         await ap.save()
+        await self._discard_if_closed(ap)
         self.processes[key] = ap
         return ap
 
-    async def run(self, m: SourceItemSpec) -> RunOutput:
+    async def run(self, m: _AgentInput) -> RunOutput:
         """One turn: route by session, prompt with the message body, return
         the assistant's reply as a value."""
         from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
@@ -168,14 +197,98 @@ class AgentRunner:
         text = await _capture_assistant_reply(ap)
         return RunOutput(text=text or "", files=[])
 
+    @staticmethod
+    async def _exit_process(ap) -> None:
+        """Exit one process without letting teardown mask the caller."""
+        try:
+            await ap.exit()
+        except Exception:  # noqa: BLE001 — teardown must not mask the run
+            logger.debug("blocks: process exit failed", exc_info=True)
+
+    async def _discard_if_closed(self, ap) -> None:
+        if self.closed:
+            await self._exit_process(ap)
+            self._ensure_open()
+
     async def close(self) -> None:
         """Exit every live session. Best-effort; safe to call twice."""
+        self.closed = True
         for ap in list(self.processes.values()):
-            try:
-                await ap.exit()
-            except Exception:  # noqa: BLE001 — teardown must not mask the run
-                logger.debug("blocks: process exit failed", exc_info=True)
+            await self._exit_process(ap)
         self.processes.clear()
+
+
+def _agent_runner_key(agent: "AgentRef") -> str:
+    return str(getattr(agent, "id", agent))
+
+
+@contextlib.asynccontextmanager
+async def _process_messages(agent: "AgentRef"):
+    """Scope one private runner so repeated messages preserve their sessions."""
+    key = _agent_runner_key(agent)
+    active = _active_agent_runners.get() or {}
+    if key in active:
+        raise RuntimeError("this agent is already processing messages in the current context")
+
+    runner = _AgentRunner(agent)
+    token = _active_agent_runners.set({**active, key: runner})
+    try:
+        yield
+    finally:
+        try:
+            await runner.close()
+        finally:
+            _active_agent_runners.reset(token)
+
+
+async def _process_message(agent: "AgentRef", message: _AgentInput) -> RunOutput:
+    """Run one message, reusing the active scope or closing a one-shot runner."""
+    runner = (_active_agent_runners.get() or {}).get(_agent_runner_key(agent))
+    if runner is not None:
+        return await runner.run(message)
+    runner = _AgentRunner(agent)
+    try:
+        return await runner.run(message)
+    finally:
+        await runner.close()
+
+
+@contextlib.asynccontextmanager
+async def _respond_to(agent: "AgentRef", source: MessageSource):
+    """Run ``agent`` behind ``source`` for the lifetime of this scope."""
+    async with _process_messages(agent):
+        async with source.listen() as messages:
+
+            async def serve() -> None:
+                try:
+                    async for message in messages:
+                        answer = await _process_message(agent, message)
+                        try:
+                            await message.reply(answer.text)
+                        except _MessageRequestExpired:
+                            continue
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    source._fail(exc)
+                    raise
+
+            task = asyncio.create_task(serve())
+            body_failed = False
+            try:
+                yield source
+            except BaseException:
+                body_failed = True
+                raise
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    if not body_failed:
+                        raise
 
 
 class Inbox:
