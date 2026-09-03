@@ -7,7 +7,7 @@ the Agent and send a threaded reply through that same inbox.
 import flow_sdk
 import flow_sdk.ingest.drivers  # noqa: F401 — register shipped drivers
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 
 await flow_sdk.auth.login()
 
@@ -31,16 +31,12 @@ mail = Inbox(
     agent_id=pirate.id,
     senders=pirate.email_allowed_senders,
 )
-runner = AgentRunner(pirate)
-
-try:
+async with pirate.process_messages():
     async with workflow("pirate-email"):
         async for message in mail.listen():
-            output = await runner.run(message)
+            output = await pirate.process_message(message)
             reply = EmailMessageSpec.reply_to(message, body=output.text)
             await mail.send(reply)
-finally:
-    await runner.close()
 ```
 
 `enableEmail()` is login-gated and idempotent: it enables the Agent's email
@@ -49,7 +45,8 @@ policy, the Hub owns one formal inbox per Agent, and the SDK ensures one
 over that `DataSource`; `DataSource` itself does not expose `listen()`.
 
 Send a message from `captain@gmail.com` to `allocated.address` after the loop
-starts. Each email thread gets its own Agent process, and
+starts. `process_messages()` owns the process lifecycle, each email thread gets
+its own Agent process, and
 `EmailMessageSpec.reply_to(...)` preserves the email thread when replying.
 
 When Flowpad's server is running, its built-in inbox runtime already performs
