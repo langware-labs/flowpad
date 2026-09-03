@@ -10,6 +10,7 @@ from flow_sdk.ingest.drivers.agent import AgentDriver
 from flow_sdk.ingest.drivers.agentmail import AgentMailDriver
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.folder import FolderDriver
+from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
@@ -25,6 +26,7 @@ register_driver(AgentMailDriver())
 register_driver(CloudEmailDriver())
 register_driver(FolderDriver())
 register_driver(GoogleDriveDriver())
+register_driver(GoogleCloudStorageDriver())
 register_driver(GitDriver())
 register_driver(GmailDriver())
 register_driver(SlackDriver())

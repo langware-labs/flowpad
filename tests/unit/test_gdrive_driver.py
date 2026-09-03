@@ -25,7 +25,7 @@ import pytest
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.health import SourceError
-from tests.unit._ingest_helpers import local_http_server, make_data_source
+from tests.unit._ingest_helpers import local_http_server, make_data_source, with_token
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -78,18 +78,7 @@ async def _fetch(driver, source, state=None):
 
 @pytest.fixture
 def driver(monkeypatch):
-    d = GoogleDriveDriver()
-    # The token is the one thing a loopback server cannot supply. Every test
-    # below is about what the driver does WITH a token, so it is handed one.
-    monkeypatch.setattr(GoogleDriveDriver, "_token", lambda self, source: _ok("tok"))
-    return d
-
-
-def _ok(value):
-    async def _coro():
-        return value
-
-    return _coro()
+    return with_token(monkeypatch, GoogleDriveDriver)
 
 
 async def test_first_poll_enumerates_then_takes_a_start_token(driver, tmp_path):

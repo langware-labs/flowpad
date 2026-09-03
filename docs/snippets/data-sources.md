@@ -8,7 +8,7 @@ fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
 reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
 
 ```python
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the eleven shipped drivers
+import flow_sdk.ingest.drivers  # noqa: F401 — registers the twelve shipped drivers
 ```
 
 ## 1. Connect a feed and sync it once
@@ -52,6 +52,7 @@ The config keys are the manifest's, one dict per provider:
 | `telegram` | `bot_token`, `base_url` | `bot_token` |
 | `slack` | `channels: list[str]` | `channels` (membership) |
 | `gdrive` | `drives`, `cache_root`, `base_url` | — |
+| `gcs` | `bucket`, `prefixes`, `cache_root`, `base_url` | `bucket` |
 | `gmail` | `address` | `address` |
 | `cloud_email` | `agent_id`, `address` | `agent_id` |
 | `agent` | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector` |
