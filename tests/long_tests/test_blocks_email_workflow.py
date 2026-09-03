@@ -7,9 +7,8 @@ The conversation's canonical program, run for real:
         agent = await get_agent("email-summarizer")
         async with agent.process_messages():
             async for m in inbox.listen():
-                out   = await agent.process_message(m)
-                reply = EmailMessageSpec.reply_to(m, body=out.text)
-                await inbox.send(reply)
+                out = await agent.process_message(m)
+                await m.reply(EmailMessageSpec.reply_to(m, body=out.text))
 
 Everything is the shipped machinery: the agentmail driver fetches and sends,
 the projection places messages, the persona spawns through its Deployment and
@@ -120,9 +119,9 @@ async def test_blocks_snippet_receives_and_replies(local_project):
                     reply = EmailMessageSpec.reply_to(
                         m, body=f"{out.text}\n[{marker}-reply]"
                     )
-                    sent_id = await inbox.send(reply)
+                    outcome = await m.reply(reply)                 # send → record → ack
                     mark("reply sent")
-                    assert sent_id, "the provider must confirm the send"
+                    assert outcome is not None and outcome.external_id, "the provider must confirm the send"
                     break                                          # one message is the test
 
         # ── the reply really arrived at the counterpart ──────────────────────

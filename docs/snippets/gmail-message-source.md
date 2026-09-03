@@ -28,4 +28,5 @@ await gmail.save()
 ```
 
 The app password is read from `GMAIL_APP_PASSWORD` when Gmail is contacted. It
-is never copied into the DataSource row or its metadata.
+is never copied into the DataSource row or its metadata — which is exactly what
+`tests/unit/test_gmail_snippet.py` runs this page to check.

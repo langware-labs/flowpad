@@ -10,6 +10,7 @@ import flow_sdk.builtin.claude_memory_entities  # noqa: F401
 import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401
 import flow_sdk.builtin.command  # noqa: F401
+import flow_sdk.builtin.consumer_position  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
 import flow_sdk.builtin.data_source  # noqa: F401
 import flow_sdk.builtin.data_source_cursor  # noqa: F401
@@ -23,6 +24,7 @@ import flow_sdk.builtin.markdown_index  # noqa: F401
 import flow_sdk.builtin.message_thread  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
+import flow_sdk.builtin.source_change  # noqa: F401
 import flow_sdk.builtin.source_item  # noqa: F401
 import flow_sdk.builtin.spreadsheet  # noqa: F401
 import flow_sdk.builtin.subagent  # noqa: F401

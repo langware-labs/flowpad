@@ -35,9 +35,11 @@ async with pirate.process_messages():
     async with workflow("pirate-email"):
         async for message in mail.listen():
             output = await pirate.process_message(message)
-            reply = EmailMessageSpec.reply_to(message, body=output.text)
-            await mail.send(reply)
+            await message.reply(EmailMessageSpec.reply_to(message, body=output.text))
 ```
+
+Pinned by `tests/unit/test_agent_email_snippet.py` (Hub legs stubbed, scripted
+mail, mock worker) and live by `tests/hub_tests/test_agent_email_conversation.py`.
 
 `enableEmail()` is login-gated and idempotent: it enables the Agent's email
 policy, the Hub owns one formal inbox per Agent, and the SDK ensures one
@@ -47,7 +49,9 @@ over that `DataSource`; `DataSource` itself does not expose `listen()`.
 Send a message from `captain@gmail.com` to `allocated.address` after the loop
 starts. `process_messages()` owns the process lifecycle, each email thread gets
 its own Agent process, and
-`EmailMessageSpec.reply_to(...)` preserves the email thread when replying.
+`EmailMessageSpec.reply_to(...)` preserves the email thread when replying, and
+`message.reply(...)` sends it and acks the message in one step — a restart
+resumes after the last reply and never sends one twice.
 
 When Flowpad's server is running, its built-in inbox runtime already performs
 this processing for enabled Agents. Use the explicit loop above when the Python
