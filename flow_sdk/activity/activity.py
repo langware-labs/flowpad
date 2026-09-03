@@ -228,11 +228,6 @@ class Activity:
             raise
         else:
             act.done(message)
-        finally:
-            # A body that ended the activity itself already released the address; this is
-            # the belt for the path that did not.
-            if not act.is_terminal:
-                act.cancel()
 
     async def wait_released(self) -> None:
         """Block until this node ends, or until its own claim budget runs out.
@@ -247,8 +242,10 @@ class Activity:
             remaining = self.claim_deadline - time.monotonic()
             if remaining <= 0:
                 return
+        if self._released is None:
+            self._released = asyncio.Event()
         try:
-            await asyncio.wait_for(self.released_event.wait(), timeout=remaining)
+            await asyncio.wait_for(self._released.wait(), timeout=remaining)
         except asyncio.TimeoutError:
             return
 
@@ -429,6 +426,42 @@ class Activity:
         self.counters[counter] = value
         return self._touch()
 
+    def set_progress(
+        self,
+        *,
+        done: "Optional[int]" = None,
+        skipped: "Optional[int]" = None,
+        errors: "Optional[int]" = None,
+        error_message: str = "error",
+    ) -> "Activity":
+        """Move the structural counters to ABSOLUTE values, never backwards.
+
+        The sibling of :meth:`set_counter` for ``done`` / ``skipped`` / ``errors_count``,
+        and it exists for the same reason: a producer whose source is a running total
+        would otherwise compute ``value - held`` itself and invent its own answer for a
+        total that went down. That policy belongs in one place, next to the fields it
+        constrains — including the one constraint between them, that ``skipped`` is a
+        SUBSET of ``done`` and must not be counted into it twice.
+        """
+        if self.is_terminal:
+            return self
+        if skipped is not None:
+            delta = int(skipped) - self.skipped
+            if delta > 0:
+                self.skipped += delta
+                self.done_count += delta
+        if done is not None:
+            delta = int(done) - self.done_count
+            if delta > 0:
+                self.done_count += delta
+        if errors is not None:
+            delta = int(errors) - self.errors_count
+            if delta > 0:
+                self.errors_count += delta
+                self.errors.append(ActivityErrorSpec(message=str(error_message), ts=_now()))
+                self.errors = trim_errors(self.errors)
+        return self._touch()
+
     # ------------------------------------------------------------------ lifecycle
 
     def block(self, message: Optional[str] = None) -> "Activity":
@@ -506,19 +539,14 @@ class Activity:
                 node.finished_at = now
                 node.updated_at = now
         self._monitor._finished(self)
-        self._wake_waiters()
+        self.release_waiters()
         return self
 
-    @property
-    def released_event(self) -> "asyncio.Event":
-        """The event a queued caller waits on. Created on first use."""
+    def release_waiters(self) -> None:
+        """Wake anyone queued on this address. Called on terminal, and on takeover."""
         if self._released is None:
             self._released = asyncio.Event()
-        return self._released
-
-    def _wake_waiters(self) -> None:
-        if self._released is not None:
-            self._released.set()
+        self._released.set()
 
     @property
     def claim_expired(self) -> bool:

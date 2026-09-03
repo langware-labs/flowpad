@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
@@ -196,7 +197,11 @@ async def docs_graph(root: str = Query(...)) -> dict:
     # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
     # names itself honestly, so a docs scan and a real index no longer share one address.
     activity = InProcessActivity(
-        job_name=_JOB, entity_id=typeid_for(root_path), activity_path="docs.scan"
+        job_name=_JOB,
+        entity_id=typeid_for(root_path),
+        # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
+        # names itself honestly, so a docs scan and a real index no longer share an address.
+        activity=Activity.get("docs.scan", scope=typeid_for(root_path)),
     )
 
     # Plain counters mutated by the (sync) scan thread; the async pump reads them
@@ -228,6 +233,13 @@ async def docs_graph(root: str = Query(...)) -> dict:
         graph = await asyncio.to_thread(
             lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph()
         )
+    except BaseException:
+        # Without this the activity never reaches a terminal state, so the monitor keeps a
+        # permanently "running" root per scanned folder and the chip reports work that
+        # stopped. The terminal table is only sent on the happy path below.
+        if activity.activity is not None:
+            activity.activity.fail("docs scan failed")
+        raise
     finally:
         counter["done"] = True
         await pump_task

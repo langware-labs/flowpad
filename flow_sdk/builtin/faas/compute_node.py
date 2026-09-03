@@ -152,9 +152,10 @@ class ComputeNode(
     def _complete_activity(self, job_name: str) -> None:
         """Release the slot and wake its waiters."""
         activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
-        if activity is not None:
-            activity.released.set()
-            if activity.activity is not None and not activity.activity.is_terminal:
+        if activity is not None and activity.activity is not None:
+            # Ending the activity is what frees the address and wakes its waiters; the
+            # carrier has no release of its own to set.
+            if not activity.activity.is_terminal:
                 activity.activity.done()
 
     def _running_activity(self, job_name: str):

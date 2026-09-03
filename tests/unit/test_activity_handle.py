@@ -15,15 +15,6 @@ from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH, MAX_ERROR_SAMPLE
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    """The monitor is module-global — the same singleton production uses. Clearing it
-    around each test keeps them independent without mocking the thing under test."""
-    monitor.clear()
-    yield
-    monitor.clear()
-
-
 # ---------------------------------------------------------------- addressing
 
 

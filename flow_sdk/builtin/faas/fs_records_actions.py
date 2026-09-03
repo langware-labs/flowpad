@@ -1242,6 +1242,7 @@ class FsRecordsActionsMixin:
         """
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
 
+        activity = None
         while True:
             try:
                 activity = self._start_activity(job_name, timeout_seconds=timeout_seconds)
@@ -2145,7 +2146,7 @@ class FsRecordsActionsMixin:
         for key, activity in _COMPUTE_ACTIVITIES.items():
             if not key.startswith(prefix):
                 continue
-            if activity is None or activity.is_timed_out or activity.is_complete:
+            if activity is None or self._running_activity(activity.job_name) is None:
                 continue
             payload = activity.make_flow_data()["attributes"]
             payload["started_at"] = activity.started_at.isoformat()

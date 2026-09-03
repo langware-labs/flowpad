@@ -19,13 +19,6 @@ from flow_sdk.activity import Activity, ActivityState, monitor
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    monitor.clear()
-    yield
-    monitor.clear()
-
-
 # ---------------------------------------------------------------- taking the address
 
 
@@ -202,4 +195,4 @@ async def test_waiting_is_bounded_by_the_holders_own_budget():
     Activity.try_claim("index", scope="node-1", timeout_seconds=0)
 
     async with Activity.claim("index", scope="node-1", queue=True) as act:
-        assert act.state is not ActivityState.PENDING or True
+        assert monitor.holder("index", scope="node-1") is act

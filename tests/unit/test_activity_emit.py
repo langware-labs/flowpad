@@ -29,13 +29,6 @@ INTERVAL = 0.02
 LOCAL_SCOPE_TYPEID = local_scope_typeid()
 
 
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    monitor.clear()
-    yield
-    monitor.clear()
-
-
 @pytest.fixture()
 def sent(monkeypatch):
     """Capture what would go on the socket, without a socket.

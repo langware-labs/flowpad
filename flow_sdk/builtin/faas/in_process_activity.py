@@ -7,15 +7,18 @@ job and duplicate starts can be rejected.
 """
 from __future__ import annotations
 
-import asyncio
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
+from flow_sdk.activity.bridge import mirror_table
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable
 
 if TYPE_CHECKING:
     from flow_sdk.activity import Activity
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,40 +29,22 @@ class InProcessActivity:
     entity_id: str
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     timeout_seconds: int = 600
-    latest_table: IndexProgressTable | None = None
+    #: Write through :meth:`set_table` ONLY — the setter is what mirrors onto the activity,
+    #: and a producer assigning this directly would get the old pill, no chip, and no error
+    #: anywhere. Read it through the :attr:`latest_table` property.
+    _latest_table: IndexProgressTable | None = None
     #: The ``Activity`` that actually holds the address. Single-flight, queueing and the
     #: liveness bound all live there now; this dataclass survives only to carry the legacy
     #: ``IndexProgressTable`` payload while producers are migrated onto the new shape.
     activity: "Optional[Activity]" = None
-    #: Address of the mirrored ``Activity``. Defaults to ``job_name``, which is the slot's
-    #: own name — but a producer that only BORROWED a job name so the old pill would label
-    #: it (the docs scan, the semantic check) names itself honestly here instead.
-    activity_path: "Optional[str]" = None
-    #: Set when the holder releases the slot (``_complete_activity``). A waiter
-    #: awaits this instead of polling, so it wakes the moment the job is gone
-    #: rather than on some interval of its own choosing.
-    released: asyncio.Event = field(default_factory=asyncio.Event, repr=False, compare=False)
-
     async def wait_released(self) -> None:
-        """Block until the holder releases this slot, or its own timeout passes.
+        """Block until the holder releases this slot.
 
-        The bound is the holder's ``timeout_seconds`` — the liveness budget the
-        activity already carries — so waiting introduces no second one. A holder
-        that dies without releasing is bounded by exactly the same value that
-        makes ``is_timed_out`` true for `_start_activity`.
+        One bound, owned by the claim: waiting here and being claimable there must agree,
+        or a waiter sleeps past the moment the slot opened.
         """
         if self.activity is not None:
-            # One bound, owned by the claim: waiting here and being claimable there must
-            # agree, or a waiter sleeps past the moment the slot opened.
             await self.activity.wait_released()
-            return
-        remaining = self.timeout_seconds - (datetime.now(timezone.utc) - self.started_at).total_seconds()
-        if remaining <= 0:
-            return
-        try:
-            await asyncio.wait_for(self.released.wait(), timeout=remaining)
-        except asyncio.TimeoutError:
-            return
 
     @property
     def is_timed_out(self) -> bool:
@@ -79,6 +64,11 @@ class InProcessActivity:
         t = self.latest_table
         return t is not None and t.text == PROGRESS_TEXT_COMPLETE
 
+    @property
+    def latest_table(self) -> IndexProgressTable | None:
+        """The last table this job emitted. Write it with :meth:`set_table`."""
+        return self._latest_table
+
     def set_table(self, table: IndexProgressTable) -> None:
         """Record the latest table AND mirror it onto the activity.
 
@@ -87,18 +77,16 @@ class InProcessActivity:
         shapes go out until the producer is migrated natively, which is what keeps the old
         footer pill working while the new chip fills in.
         """
-        from flow_sdk.activity.bridge import activity_for, is_terminal_table, mirror_table
-
-        self.latest_table = table
-        node = self.activity
-        if node is None:
-            node = activity_for(self.activity_path or self.job_name, self.entity_id)
-            self.activity = node
-        if node.is_terminal:
+        self._latest_table = table
+        if self.activity is None or self.activity.is_terminal:
             return
-        mirror_table(node, table)
-        if is_terminal_table(table):
-            node.done()
+        try:
+            mirror_table(self.activity, table)
+        except Exception:  # noqa: BLE001
+            # A mirror must never fail the walk it is describing — but it must not fail
+            # SILENTLY either: a producer that renamed a field would otherwise show a
+            # blank chip with nothing anywhere saying why.
+            logger.debug("activity mirror failed for job %s", self.job_name, exc_info=True)
 
     def make_flow_data(self) -> dict:
         """Build a ``progress_report`` flow_data envelope from ``latest_table``.

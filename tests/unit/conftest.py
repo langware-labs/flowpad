@@ -249,3 +249,20 @@ def claude_projects(tmp_path, monkeypatch) -> Path:
         lambda: SimpleNamespace(claude_projects_dir=tmp_path),
     )
     return proj
+
+
+@pytest.fixture(autouse=True)
+def _clean_activity_monitor():
+    """Empty the activity monitor around every unit test.
+
+    ``ActivityProgressMonitor`` is a process-global singleton, so an activity a test leaves
+    running is visible to every test after it — and six activity test modules had each
+    grown their own copy of this fixture, which is the point at which it stops being a
+    coincidence. Clearing is a dict clear on an empty map for the tests that never touch
+    it, so it costs nothing to make it the default.
+    """
+    from flow_sdk.activity import monitor
+
+    monitor.clear()
+    yield
+    monitor.clear()

@@ -17,13 +17,6 @@ from flow_sdk.activity import activity as activity_module
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    monitor.clear()
-    yield
-    monitor.clear()
-
-
 @pytest.fixture()
 def clock(monkeypatch):
     """A movable clock. ``stale()`` is about elapsed time, and a test that proved it by
@@ -317,3 +310,42 @@ def test_concurrent_increments_do_not_lose_counts():
         t.join()
 
     assert act.spec().done == 800
+
+
+def test_this_machines_compute_node_is_the_same_address_as_no_scope():
+    """Two spellings of one place must not be two activities.
+
+    A legacy producer scopes its index to ``str(compute_node.typeid)``; ``flow progress
+    index`` scopes to nothing. Both mean "this box", so the same job name would otherwise
+    run twice under one name with neither seeing the other — and the single-flight claim
+    would not notice. Collapsing here also makes "belongs to the box" structurally
+    ``scope is None``, so nothing downstream re-derives it.
+    """
+    from flow_sdk.activity.emit import local_scope_typeid
+
+    scoped = Activity.get("index", scope=local_scope_typeid())
+    unscoped = Activity.get("index")
+
+    assert scoped is unscoped
+    assert scoped.scope is None, "the box's own node normalises away"
+    assert monitor.count() == 1
+
+
+def test_another_compute_node_keeps_its_scope():
+    """Only THIS machine's node is the instance; a remote one is an ordinary entity."""
+    mine = Activity.get("index")
+    theirs = Activity.get("index", scope="compute_node-11111111-1111-4111-8111-111111111111")
+
+    assert mine is not theirs
+    assert theirs.scope == "compute_node-11111111-1111-4111-8111-111111111111"
+
+
+def test_the_claim_sees_through_both_spellings():
+    """The gate must refuse a second claim even when the two callers spell the box
+    differently — otherwise two indexes run at once and neither knows."""
+    from flow_sdk.activity.emit import local_scope_typeid
+
+    Activity.try_claim("index", scope=local_scope_typeid())
+
+    with pytest.raises(RuntimeError, match="already running"):
+        Activity.try_claim("index")

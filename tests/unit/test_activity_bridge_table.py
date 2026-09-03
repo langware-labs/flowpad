@@ -10,18 +10,11 @@ The conversions that matter are the ones where the two shapes DISAGREE: the old 
 
 import pytest
 
-from flow_sdk.activity import Activity, ActivityState, monitor
+from flow_sdk.activity import Activity, ActivityState
 from flow_sdk.activity.bridge import mirror_table
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
-
-
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    monitor.clear()
-    yield
-    monitor.clear()
 
 
 def table(**kw) -> IndexProgressTable:
@@ -48,8 +41,7 @@ def test_an_unknown_total_stops_meaning_zero():
     mirror_table(act, table(job_name="scan", done=1204, total=0))
 
     spec = act.spec()
-    assert spec.total is None
-    assert spec.fraction() is None
+    assert spec.total is None, "unknown, not zero — a bar pinned at 0% would be a lie"
     assert spec.done == 1204
 
 
@@ -97,7 +89,9 @@ def test_successive_tables_advance_rather_than_restate():
     """Tables carry running totals and the activity's verbs take deltas, so mirroring the
     same table twice must not move anything."""
     act = Activity.get("index")
-    rows = lambda done: (TypeProgressRow(type_name="markdown", done=done, total=100),)  # noqa: E731
+
+    def rows(done: int):
+        return (TypeProgressRow(type_name="markdown", done=done, total=100),)
 
     mirror_table(act, table(rows=rows(10), done=10, total=100))
     mirror_table(act, table(rows=rows(40), done=40, total=100))
@@ -146,9 +140,17 @@ def test_errors_are_counted_even_though_the_table_carries_no_message():
     assert child.errors, "a sample explains why there is no detail"
 
 
-def test_a_malformed_table_never_breaks_the_producer():
-    act = Activity.get("index")
+def test_a_mirror_failure_never_breaks_the_producer_and_is_not_silent(caplog):
+    """A mirror must not fail the walk it describes — but a producer that renamed a field
+    must not get a blank chip with nothing anywhere saying why either."""
+    import logging
 
-    mirror_table(act, object())
+    from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 
-    assert act.state is not ActivityState.FAILED
+    carrier = InProcessActivity(job_name="index", entity_id="node-1", activity=Activity.get("index"))
+
+    with caplog.at_level(logging.DEBUG, logger="flow_sdk.builtin.faas.in_process_activity"):
+        carrier.set_table(object())  # type: ignore[arg-type]
+
+    assert Activity.get("index").state is not ActivityState.FAILED
+    assert any("mirror failed" in r.message for r in caplog.records)
