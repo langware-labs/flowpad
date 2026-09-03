@@ -30,11 +30,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.choice_spec import Choice
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.source_item import MessageSpec
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +88,12 @@ class SlackDriver(IngestDriver):
     identity_config_key = "channels"
     #: Read with the machine's Slack connection — there is no per-source key.
     connection = "slack"
+
+    @classmethod
+    def outbound_spec(cls, source) -> type["MessageSpec"]:
+        from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
+
+        return SlackMessageSpec
 
     def channel_for(self, source) -> str:
         return "slack"
@@ -286,6 +296,21 @@ class SlackDriver(IngestDriver):
         thread_ts = str(thread_key or "").strip() or str(in_reply_to or "").strip()
         if thread_ts:
             payload["thread_ts"] = thread_ts
+
+        # Post AS the agent that owns this source, when one does. Resolved from
+        # the source rather than threaded through `send` — the same key and the
+        # same rule the INBOUND half already uses (`_agent_sender_for`), so one
+        # agent reads as one identity on both sides of the conversation.
+        # Requires the `chat:write.customize` scope: without it Slack accepts
+        # the post and silently ignores both fields.
+        from flow_sdk.inbox.sender_identity import sender_identity  # noqa: PLC0415
+
+        identity = await sender_identity(source)
+        if identity is not None:
+            if identity.username:
+                payload["username"] = identity.username
+            if identity.icon_emoji:
+                payload["icon_emoji"] = identity.icon_emoji
         try:
             body = await self._post(token, "chat.postMessage", payload)
         except SourceError as exc:
@@ -321,6 +346,37 @@ class SlackDriver(IngestDriver):
             await source.save()
         except Exception:  # noqa: BLE001 — identity is a nicety; fetching must not fail on it
             logger.debug("[slack] auth.test identity stamp failed", exc_info=True)
+
+    async def choices(self, source, field: str) -> list[Choice]:
+        """The channels this token can see — the `channels` field's offer.
+
+        `channels:read` / `groups:read` are already in the app's granted set, so this
+        needs no new consent and no change to the hub that owns that list.
+
+        It offers every channel the token can SEE, not only those the bot has joined.
+        Discovery is the point: "not a member yet" is a normal SETUP state this driver
+        already reports and the person fixes with an invite, so pre-filtering would hide
+        exactly the channel they opened the form to add.
+        """
+        if field != "channels":
+            return []
+        token = await self._token(source)
+        if not token:
+            raise SourceError.config("no_credential", "No Slack credential on this machine. Connect Slack first.")
+        body = await self._call(
+            token,
+            "conversations.list",
+            {"types": "public_channel,private_channel", "exclude_archived": "true", "limit": "200"},
+        )
+        return [
+            Choice(
+                id=str(c["id"]),
+                name=str(c.get("name") or c["id"]),
+                detail="private" if c.get("is_private") else "",
+            )
+            for c in body.get("channels") or []
+            if c.get("id")
+        ]
 
     # ── internals ─────────────────────────────────────────────────────────
 
@@ -378,10 +434,31 @@ class SlackDriver(IngestDriver):
         return await self._request(token, method, verb="GET", payload=params)
 
     async def _token(self, source) -> Optional[str]:
-        """This machine's Slack token. The precedence lives in one place."""
-        from flow_sdk.core.oauth.provider_registry import SLACK, token_for  # noqa: PLC0415
+        """This machine's Slack token — the BOT's, when we hold it.
 
-        return await token_for(SLACK)
+        The bot is who this driver should be. `_ensure_identity` was written to
+        stamp a bot's user id, `chat.postMessage` posts as whoever the token is,
+        and an inbound message from the human only reads as an external sender —
+        the thing that makes a reply addressable at all — when we are NOT that
+        human. With the user token the app IS the authorizing person, so their
+        own messages fold into "ours" and `outbound.py` refuses to reply.
+
+        Falls back to the user token so an instance that connected before the
+        bot half was adopted keeps working, degraded rather than broken. That
+        fallback costs a second credential resolution per poll on such an
+        instance — a `User.get_local()` read and a SOD decrypt — which is the
+        price of not breaking it. An instance that has adopted the bot pays
+        exactly what it paid before, because the first lookup hits.
+        """
+        from flow_sdk.core.oauth.provider_registry import (  # noqa: PLC0415
+            SLACK,
+            app_credentials_name,
+            token_for,
+        )
+
+        bot_name = app_credentials_name(SLACK)
+        bot = await token_for(SLACK, name=bot_name) if bot_name else None
+        return bot or await token_for(SLACK)
 
     async def _read_probe(self, token: str, channel: str) -> Optional[str]:
         """None when the channel is readable, else Slack's error code.
