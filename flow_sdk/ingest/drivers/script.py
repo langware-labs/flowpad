@@ -1,6 +1,6 @@
 """A data source whose driver is a script the user wrote.
 
-The nine shipped drivers are Python classes in this package. A source authored
+The ten shipped drivers are Python classes in this package. A source authored
 as an ASSET has no class — it has `data_source.json` plus a `fetch.py`, and this
 module is what makes that runnable: one adapter that satisfies the
 ``IngestDriver`` base and answers every verb by calling the

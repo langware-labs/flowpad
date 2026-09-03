@@ -161,13 +161,13 @@ def session_analysis(claude_session_id: str, index: int) -> str:
 
     Args:
         claude_session_id: The session ID (provided in context at session start)
-        index: index of specific entry in session for details on that entry. If index is -1, it returns the summary of the whole session.
+        index: index of specific entry in session for details on that entry. If index is -1, it returns the summary of the whole session, with every line prefixed ``[<index>]`` — pass that number back as ``index`` to drill into the entry.
 
     Returns:
         Details of the sessions as a string for the complete session or a specific entry based on the index provided.
     """
-    from flow_sdk.transcript_analyzer import AgentTranscriptFile, worker_summary_log  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile, worker_summary_log  # noqa: PLC0415
 
     if not claude_session_id:
         return "Error: session_id is required"
@@ -189,9 +189,10 @@ def session_analysis(claude_session_id: str, index: int) -> str:
         return f"Error: session {claude_session_id} not found"
 
     # Worker-generic transcript analyzer: extractive whole-session summary for
-    # index == -1, or the full rich rendering of a single entry otherwise.
+    # index == -1 (each line numbered with its `.entries` index so a follow-up
+    # `index=` call is derivable), or the full rendering of one entry otherwise.
     if index == -1:
-        result = worker_summary_log(jsonl_path, "claude")
+        result = worker_summary_log(jsonl_path, "claude", number_entries=True)
     else:
         entries = AgentTranscriptFile("claude", jsonl_path).entries
         if 0 <= index < len(entries):

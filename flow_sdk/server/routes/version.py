@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from flow_sdk import __version__
+from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.server import self_update
 from flow_sdk.server.launch import get_status
 from flow_sdk.utils import hub
@@ -201,11 +202,12 @@ async def _fetch_github(client: httpx.AsyncClient) -> tuple[list[ReleaseInfo], O
         return [], str(exc)
 
 
-@router.get("/api/v1/version/check", response_model=VersionCheckResponse)
-async def check_version() -> VersionCheckResponse:
+@router.get("/api/v1/version/check", response_model=ApiSuccessResponse[VersionCheckResponse])
+async def check_version() -> ApiSuccessResponse[VersionCheckResponse]:
+    """Standard ``{status, data}`` envelope; ``data`` is a :class:`VersionCheckResponse`."""
     cached = _cache.get("v1")
     if cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
-        return cached[1]
+        return ApiSuccessResponse(data=cached[1])
     async with httpx.AsyncClient() as client:
         pypi_info, github_result, hub_raw = await asyncio.gather(
             _fetch_pypi(client),
@@ -225,11 +227,15 @@ async def check_version() -> VersionCheckResponse:
     # pinning a broken response for 5 minutes.
     if pypi_info.error is None and github_error is None:
         _cache["v1"] = (time.monotonic(), resp)
-    return resp
+    return ApiSuccessResponse(data=resp)
 
 
-@router.post("/api/v1/version/install", response_model=InstallVersionResponse)
-async def install_version(req: InstallVersionRequest) -> InstallVersionResponse:
+@router.post("/api/v1/version/install", response_model=ApiSuccessResponse[InstallVersionResponse])
+async def install_version(req: InstallVersionRequest) -> ApiSuccessResponse[InstallVersionResponse]:
+    return ApiSuccessResponse(data=await _install_version(req))
+
+
+async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse:
     """Reinstall a pinned flowpad version and restart the server via the monitor.
 
     Cross-platform / Electron-independent: the actual restart is performed by the

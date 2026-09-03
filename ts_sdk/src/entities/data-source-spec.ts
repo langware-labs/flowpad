@@ -15,7 +15,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * What a config field renders as. Mirrors `FieldType` in
- * `flow_sdk/ingest/manifest.py`, which validates it at parse time — so a typo
+ * `flow_sdk/builtin/data_source_spec.py`, which validates it at parse time — so a typo
  * is a manifest load error there and a compile error at the three comparison
  * sites here, instead of silently rendering a text input.
  */

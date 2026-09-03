@@ -662,10 +662,7 @@ class TypeInfo:
         path, carrier = self._read_carrier(ref)
         writable_target = path is not None and self._carrier_write_is_safe(path)
         if not writable_target and path is not None and getattr(self.identity_carrier, "writable", False):
-            # This type may not put an id in these bytes — i.e. the CALLER
-            # mis-classified the path. The id still resolves (derived below);
-            # nothing is stamped. This line is the one that would have named the
-            # mislabel in FLOWPAD-2083 instead of it surfacing as a SyntaxError.
+            # The caller mis-classified the path; the id still resolves below, nothing is stamped.
             logging.warning(
                 "[asset-id] %s will not write its carrier into %s; deriving an id instead",
                 self.type_name, path,

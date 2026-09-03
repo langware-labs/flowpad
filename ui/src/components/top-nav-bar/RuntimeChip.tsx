@@ -1,8 +1,9 @@
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
+import { Bot, Cloud, Globe, Monitor, type LucideIcon } from 'lucide-react';
 import { Layout, RuntimeKind } from '@sdk';
+import { getRaw } from '@sdk/client';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -33,7 +34,7 @@ const WIKI_PAGE = 'Runtime environments';
 /** Per-runtime glyphs. These describe RUNTIMES, not entity types — there is no
  *  TypeInfo for "a cloud sandbox", so `iconForType` has nothing to resolve. */
 const RUNTIME_ICON: Record<RuntimeKind, LucideIcon> = {
-  [RuntimeKind.HUB]: Network,
+  [RuntimeKind.HUB]: Cloud,
   [RuntimeKind.SANDBOX]: Cloud,
   [RuntimeKind.AGENT]: Bot,
   [RuntimeKind.DESKTOP]: Monitor,
@@ -51,18 +52,14 @@ function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
   return <Trans>Desktop</Trans>;
 }
 
-/** Fetch the page body from the hub's legacy wiki route. The route returns the
- *  raw `{type, id, asset_ref, content}` shape — NO ApiResponse envelope — so
- *  the sdk apiClient (whose interceptor unwraps `response.data.data`) would
- *  yield undefined; use a plain same-origin fetch instead (hub mode serves the
- *  SPA from the hub itself, so cookie auth rides along). */
+/** Fetch the page body from the hub's legacy wiki route. The hub returns the
+ *  raw `{type, id, asset_ref, content} | null` shape — NO ApiResponse envelope
+ *  (hub code is not ours to change), so it is read through `getRaw`, which
+ *  wraps the bare body for the client's unwrapping interceptor. The client
+ *  carries the hub base URL and auth; no URL is built here. */
 async function fetchHubWikiContent(name: string): Promise<string | null> {
-  const res = await fetch(`/api/v1/wiki/resolve?${new URLSearchParams({ name })}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`wiki/resolve failed: HTTP ${res.status}`);
-  const body: unknown = await res.json();
-  const content = body && typeof body === 'object' ? (body as { content?: unknown }).content : null;
+  const body = await getRaw<{ content?: unknown } | null>('/api/v1/wiki/resolve', { params: { name } });
+  const content = body && typeof body === 'object' ? body.content : null;
   return typeof content === 'string' ? content : null;
 }
 

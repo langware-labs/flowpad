@@ -50,6 +50,29 @@ export function errorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * The backend's machine error code and its human message, together.
+ *
+ * A route that fails with the standard envelope puts the code at
+ * `data.error_code` (`flow_sdk/server/routes/transcripts.py:_error`), which is
+ * what a caller branches on — sniffing the message string for a prefix is too
+ * brittle for that. Falls back to the HTTP status, then to the axios code for
+ * a network failure that never got a response. The message half is
+ * {@link errorMessage}, so the wording matches every other surface.
+ */
+export function describeApiError(error: unknown, fallback = 'Request failed'): { code: string; message: string } {
+  const e =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown; response?: { status?: number; data?: { data?: { error_code?: unknown } } } })
+      : null;
+  const errorCode = e?.response?.data?.data?.error_code;
+  const code =
+    typeof errorCode === 'string'
+      ? errorCode
+      : String(e?.response?.status ?? (typeof e?.code === 'string' ? e.code : '') ?? '') || 'UNKNOWN';
+  return { code: code || 'UNKNOWN', message: errorMessage(error, fallback) };
+}
+
+/**
  * Pull the HTTP status out of whatever a failed call threw, or 0 when there
  * isn't one (client-side error, network failure before a response).
  *

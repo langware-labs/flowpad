@@ -87,7 +87,7 @@ test.describe('Full analysis flow', () => {
       const seedTrace = async (found: boolean) => {
         const res = await api.post(`/api/v1/workers/claude/${SID}/agent-trace`, { data: { annotations: annotations(found) } });
         expect(res.ok()).toBeTruthy();
-        const body = await res.json();
+        const body = (await res.json()).data; // ApiResponse envelope
         traceIds.push(body.id);
         return body as { id: string; summary: { issue_count: number } };
       };

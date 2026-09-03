@@ -7,7 +7,7 @@
  * dialog and the delete confirm (one instance each, driven by a nullable
  * target — the house pattern), so rows and the detail hold no dialogs.
  */
-import { PageId, ViewType, dataManager, type LLMEndpoint } from '@sdk';
+import { PageId, ViewType, dataManager, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Waypoints } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -33,6 +33,9 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<LLMEndpoint | null>(null);
+  // The kind the DETAIL resolved from the chain report. The list has no chain to ask, so it passes
+  // nothing and the dialog resolves its own — see `LlmEndpointDialog`.
+  const [editingKind, setEditingKind] = useState<LLMEndpointKind | null>(null);
   const [deleting, setDeleting] = useState<LLMEndpoint | null>(null);
   const [sharing, setSharing] = useState<LLMEndpoint | null>(null);
 
@@ -44,10 +47,12 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
 
   const openAdd = useCallback(() => {
     setEditing(null);
+    setEditingKind(null);
     setEditorOpen(true);
   }, []);
-  const openEdit = useCallback((e: LLMEndpoint) => {
+  const openEdit = useCallback((e: LLMEndpoint, kind?: LLMEndpointKind | null) => {
     setEditing(e);
+    setEditingKind(kind ?? null);
     setEditorOpen(true);
   }, []);
 
@@ -116,6 +121,7 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         editing={editing}
+        editingKind={editingKind}
         all={endpoints}
         onSaved={() => void refetch()}
       />
