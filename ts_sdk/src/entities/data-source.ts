@@ -6,7 +6,10 @@
  * that is the origin enum on a trace's FlowData (stream | history | …) and has
  * nothing to do with ingestion. See docs/glossary.md.
  */
-import { APIEntity, registerEntity } from '../APIEntity';
+// The module rather than the `../models` barrel — one class is all this needs, and the
+// barrel re-exports most of the SDK's model layer.
+import { ActionInfo } from '../models/ActionInfo';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
@@ -26,10 +29,10 @@ export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_e
 export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
 export interface IDataSource extends IEntity {
+  owner?: string | null;
   name: string;
   kind?: string;
   provider?: string;
-  owner?: string | null;
   channel?: string;
   account_key?: string;
   account_identities?: string[];
@@ -54,6 +57,23 @@ export interface IDataSource extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DataSource extends EntityMerge<IDataSource> {}
 
+/** One thing a provider says can be picked. Mirrors `Choice` in `choice_spec.py`. */
+export interface DataSourceChoice {
+  id: string;
+  name: string;
+  detail?: string;
+}
+
+/** One field's offer: what can be picked, or why nothing can. Mirrors `ChoiceSet`. */
+export interface DataSourceChoiceSet {
+  items: DataSourceChoice[];
+  detail: string;
+}
+
+// The decorator binds to the declaration IMMEDIATELY below it. Anything slipped in
+// between silently unhooks it — the class stops registering, and the store then has no
+// constructor for `data_source`, so every list of sources renders empty with nothing
+// throwing. Keep declarations above this line.
 @registerEntity
 export class DataSource extends APIEntity<DataSource> implements IDataSource {
   static type: string = 'data_source';
@@ -67,6 +87,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  driver on every poll, so never set it from a form. */
   channel: string = '';
   account_key: string = '';
+  /** Whose source this is — a user or agent typeid string, or null on rows
+   *  written before ownership existed (read as the local user's). */
+  owner: string | null = null;
   /** Addresses that are ME on this source. Display/round-trip only. */
   account_identities: string[] = [];
   required_capabilities: string[] = [];
@@ -81,9 +104,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   window_days: number = 7;
   /** Streams this source has, rolled up by the poller. Read from here rather
    *  than counting cursor rows: cursors churn on every poll, so watching them
-  /** Whose source this is — a user or agent typeid string, or null on rows
-   *  written before ownership existed (read as the local user's). */
-  owner: string | null = null;
    *  live for a count repaints a list every tick. */
   segment_count: number = 0;
   next_poll_at: string | null = null;
@@ -99,6 +119,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.provider = entity.provider ?? this.provider;
     this.channel = entity.channel ?? this.channel;
     this.account_key = entity.account_key ?? this.account_key;
+    this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
@@ -119,11 +140,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   get isActive(): boolean {
     return this.status === 'active';
   }
-    this.owner = entity.owner ?? this.owner;
 
   /** Waiting on the user to finish something outside Flowpad (a Slack invite). */
   get needsSetup(): boolean {
     return this.status === 'setup';
+  }
+
+  /** The scheduler will not poll it until a person acts: a setup step is owed, or it
+   *  is running but parked on `config_error` (`DataSource.poll_refusal`). A PAUSED
+   *  source carrying a stale error is not this — resuming it is the fix. */
+  get needsAttention(): boolean {
+    return this.needsSetup || (this.isActive && this.health === 'config_error');
   }
 
   /** Mirrors DataSource.is_due — why a source that looks configured sits idle. */
@@ -132,6 +159,28 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     if (this.health === 'config_error') return false;
     if (!this.next_poll_at) return true;
     return new Date(this.next_poll_at).getTime() <= Date.now();
+  }
+
+  /**
+   * What this credential can offer for one choosable config field — buckets, shared
+   * drives, channels.
+   *
+   * Class-level, with no entity id, because the picker's whole job is to fill the form
+   * for a source that does not exist yet. POST though it reads nothing: the in-progress
+   * config travels with it, and a draft config is where a secret lives on some providers.
+   *
+   * A refusal comes back as an empty `items` and a sentence in `detail` — never a thrown
+   * error — because every cause (no connection, a missing scope, no project id) means the
+   * same thing to the person filling the form: type it instead.
+   */
+  static async choices(
+    provider: string,
+    field: string,
+    config: Record<string, unknown> = {},
+  ): Promise<DataSourceChoiceSet> {
+    const info = new ActionInfo('choices', DataSource.type, null, 'POST');
+    info.bodyParameters = { provider, field, config };
+    return dataManager.callAction<unknown, DataSourceChoiceSet>(info);
   }
 
   /**
@@ -146,13 +195,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /**
    * Attention: someone is LOOKING at this source's output — poll on the next
    * heartbeat tick. Fired on an interval by a selected view; the request
-  /** The scheduler will not poll it until a person acts: a setup step is owed, or it
-   *  is running but parked on `config_error` (`DataSource.poll_refusal`). A PAUSED
-   *  source carrying a stale error is not this — resuming it is the fix. */
-  get needsAttention(): boolean {
-    return this.needsSetup || (this.isActive && this.health === 'config_error');
-  }
-
    * stream itself is the liveness signal, so nothing is stored and nothing
    * needs undoing when the viewer goes away. Unlike `pollNow` it never
    * un-latches `config_error` and never wakes a disabled source.
