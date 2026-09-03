@@ -24,6 +24,7 @@ from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, 
 from flow_sdk.core import action
 from flow_sdk.core.oauth import resolve_user_credentials_name, unresolved_provider_reason
 from flow_sdk.core.oauth.hub_oauth import (
+    hub_app_credentials_name_for,
     hub_credential_value,
     hub_credentials_name_for,
     hub_start_auth,
@@ -548,6 +549,24 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
             logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
         else:
             logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
+
+    # The APP (bot) half, when the provider issues one — a SEPARATE policy from
+    # `copy_hub_credential`, not a sub-case of it. They coincide for Slack and
+    # would not for a provider whose user token stays on the hub (Atlassian's
+    # shape) while its bot token has a local consumer. Nesting this under the
+    # user-token branch would have silently adopted nothing there.
+    #
+    # `verify_held=False` because the hub's provider table advertises only the
+    # user token: the value route serves this name, but nothing discoverable
+    # points at it.
+    app_local = descriptor.app_credentials_name if descriptor is not None else None
+    if app_local:
+        app_value = await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
+        if app_value:
+            await record_credential(user, provider, app_value, name=app_local)
+            logger.info("OAuth: adopted the hub's %s BOT token into local %s", provider, app_local)
+        else:
+            logger.info("OAuth: no %s bot token on the hub (app tokens are optional)", provider)
 
     # A provider the hub owns outright has no local value to record, but the row
     # still has to exist or the table reads it as MISSING.

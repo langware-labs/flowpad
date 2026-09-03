@@ -34,6 +34,7 @@ SLACK = "slack"
 GOOGLE = "google"
 ATLASSIAN = "atlassian"
 LINEAR = "linear"
+GITLAB = "gitlab"
 
 
 class OAuthFlowKind(str, Enum):
@@ -332,6 +333,26 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         hub_required=True,
         copy_hub_credential=False,
     ),
+    GITLAB: LocalOAuthProvider(
+        name=GITLAB,
+        display_name="GitLab",
+        user_credentials_name="gitlab_credentials",
+        # lucide ships this one, so the name is all the frontend needs.
+        icon="Gitlab",
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://gitlab.com/api/v4/user",
+            identity_fields=("email", "username"),
+            account_key_fields=("id",),
+        ),
+        hub_required=True,
+        # Two-hour token the hub refreshes; a local copy would go stale.
+        copy_hub_credential=False,
+    ),
 }
 
 
@@ -393,6 +414,16 @@ def user_credentials_name(name: str) -> Optional[str]:
     return provider.user_credentials_name if provider else None
 
 
+def app_credentials_name(name: str) -> Optional[str]:
+    """The SOD entry name holding this provider's APP (bot) token, or ``None``.
+
+    ``None`` for every provider that issues only one identity, which is all of
+    them but Slack — so a caller can ask unconditionally.
+    """
+    provider = get_local_provider(name)
+    return provider.app_credentials_name if provider else None
+
+
 def prefers_hub_flow(name: str) -> bool:
     """Whether this provider should run its flow on the hub when one is available.
 
@@ -440,9 +471,8 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
     # ``name`` reads a NON-default credential for the same provider — Slack's
     # bot token beside the user's. The hub tier is skipped for it: that tier
     # resolves the provider's user-token name, which is not this one.
-    explicit_name = name is not None
-    name = name or user_credentials_name(provider)
-    if not name:
+    entry = name or user_credentials_name(provider)
+    if not entry:
         return None
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
@@ -456,7 +486,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
         if u is None:
             return None
         try:
-            return await get_user_credentials(u, name, u.id)
+            return await get_user_credentials(u, entry, u.id)
         except KeyError:  # no SOD entry — the ordinary "not connected"
             return None
 
@@ -474,7 +504,9 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
-    if not hub or explicit_name:
+    # An explicit name skips the hub tier: that tier resolves the provider's
+    # USER-token name, which by definition is not the one being asked for.
+    if not hub or name:
         return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
@@ -488,9 +520,13 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
         return None
 
 
-async def token_for(provider: str, *, user: Any = None, hub: bool = True) -> Optional[str]:
+async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:
     """The bearer token for ``provider`` — ``credential_for`` unwrapped by
-    ``token_from_credential`` (a dict credential yields its ``access_token``)."""
+    ``token_from_credential`` (a dict credential yields its ``access_token``).
+
+    ``name`` selects a non-default credential for the same provider (Slack's bot
+    token beside the user's) and is passed straight through, so a caller never
+    has to unwrap by hand."""
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
 
-    return token_from_credential(await credential_for(provider, user=user, hub=hub))
+    return token_from_credential(await credential_for(provider, user=user, hub=hub, name=name))

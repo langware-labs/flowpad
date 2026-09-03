@@ -25,8 +25,7 @@ Config on the DataSource::
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
@@ -39,6 +38,9 @@ from flow_sdk.ingest.driver import (
     SendStatus,
 )
 from flow_sdk.ingest.health import SourceError
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.source_item import MessageSpec
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,12 @@ class TelegramDriver(IngestDriver):
     #: Chat-grade while watched: the Bot API is comfortable at one
     #: getUpdates every few seconds (long-poll clients do one per second).
     attention_poll_seconds = 5
+
+    @classmethod
+    def outbound_spec(cls, source) -> type["MessageSpec"]:
+        from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
+
+        return TelegramMessageSpec
 
     def channel_for(self, source) -> str:
         return "telegram"

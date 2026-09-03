@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.source_item import EmailMessageSpec, SlackMessageSpec
 from flow_sdk.inbox.outbound import ChannelSendUnavailable, resolve_reply_target
 
 LOCAL_USER_ID = "9f0b1c2d-3e4f-4a5b-8c7d-6e5f4a3b2c1d"
@@ -36,10 +37,13 @@ def _shared_message(sender_id: str, kind: str = "agentmail"):
     )
 
 
-def _item(item_id: str, author: str, subject: str):
+def _item(item_id: str, author: str, subject: str, segment_key: str = ""):
+    # `segment_key` is the CHANNEL on a chat record — what a channel-addressed
+    # driver replies to, and what an author-addressed one ignores.
     return SimpleNamespace(
         id=item_id, author_external_id=author, name=subject,
         thread_key="t-1", external_id=f"<{item_id}@mail>",
+        segment_key=segment_key,
     )
 
 
@@ -68,9 +72,13 @@ def wire(monkeypatch):
     monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _get_local)
     monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", _source_one)
     monkeypatch.setattr("flow_sdk.builtin.source_item.SourceItem.get_one", _item_one)
+    # A real driver answers `outbound_spec()`; the default is the email rule.
+    # A test flips `state["spec"]` to model a channel-addressed provider.
+    state["spec"] = EmailMessageSpec
+
     monkeypatch.setattr(
         "flow_sdk.ingest.driver.get_driver",
-        lambda _p: SimpleNamespace(sends=state["sends"]),
+        lambda _p: SimpleNamespace(sends=state["sends"], outbound_spec=lambda _source: state["spec"]),
     )
     return state
 
@@ -236,6 +244,39 @@ class TestAnUnknownLocalUserIsNotEveryone:
         wire["local"] = None
         wire["messages"] = [_message(AGENT_SENDER, "agent_only")]
         wire["items"] = {"agent_only": _item("agent_only", "bot@agentmail.to", "Hello")}
+
+        with pytest.raises(ChannelSendUnavailable):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestAChannelRepliesToTheChannel:
+    """Slack's `to` is the CHANNEL, not the author.
+
+    `resolve_reply_target` used to hand-roll the email rule — reply to whoever
+    wrote — so a Slack reply carried the author's user id. `chat.postMessage`
+    reads that as a DM, so the agent's answer went privately to the person
+    instead of into the channel everyone is reading. No error, no bounce: the
+    message simply arrived in the wrong place.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_slack_reply_is_addressed_to_the_channel_not_the_author(self, wire):
+        wire["spec"] = SlackMessageSpec
+        wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
+        wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="C08L1P4C95J")}
+
+        target = await resolve_reply_target(CONVERSATION)
+
+        assert target.to == "C08L1P4C95J", "the reply was addressed to the author — Slack DMs that"
+
+    @pytest.mark.asyncio
+    async def test_a_channel_record_with_no_channel_refuses(self, wire):
+        """Better a refusal than a post addressed to an empty string."""
+        wire["spec"] = SlackMessageSpec
+        wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
+        wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="")}
 
         with pytest.raises(ChannelSendUnavailable):
             await resolve_reply_target(CONVERSATION)

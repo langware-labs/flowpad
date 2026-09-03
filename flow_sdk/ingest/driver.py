@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
-    from flow_sdk.builtin.source_item import SourceItemSpec
+    from flow_sdk.builtin.source_item import MessageSpec, SourceItemSpec
 
 
 class SendStatus(StrEnum):
@@ -216,6 +216,32 @@ class IngestDriver:
     attention_poll_seconds: Optional[int] = None
     #: Ceiling on segments synced per pass; None means the caller's budget.
     segment_budget: Optional[int] = None
+
+    @classmethod
+    def outbound_spec(cls, source) -> type["MessageSpec"]:
+        """The spec class that knows WHO a reply on this channel is addressed to.
+
+        ``MessageSpec`` already states the rule — subclasses "own their
+        ``reply_to`` constructor, because channels disagree on WHO a reply
+        targets: email replies to the author's address, a chat channel replies
+        to the chat itself" — and each spec implements it. This attribute is
+        how a caller ASKS, instead of re-deriving the rule from the provider
+        name.
+
+        Takes the SOURCE, not just the driver, for the same reason
+        ``channel_for`` does: one driver can serve several channels.
+        ``AgentDriver`` reaches whichever connector its config names, so "which
+        channel is this?" is only answerable per source.
+
+        Email is the default because it is the historical behaviour; a
+        channel-addressed driver overrides in one line. Imported late: this
+        module is imported by ``builtin.data_source``, so a module-level import
+        of ``builtin.source_item`` would close a cycle.
+        """
+        from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
+
+        return EmailMessageSpec
+
     #: OPTIONAL identity resolver ``(source, ref) -> origin_id`` for unstamped sources.
     origin_id_for: Optional[Callable[..., str]] = None
     #: OPTIONAL ``(source) -> FSOrigin`` — where the source's tree lives; stamped on save.
@@ -257,6 +283,18 @@ class IngestDriver:
 
     #: OPTIONAL. Can this source actually read what it was configured for?
     verify: Optional[Callable[["DataSource"], Any]] = None  # async (source) -> SetupVerdict
+
+    #: OPTIONAL ``(source, field) -> list[Choice]`` — the remote containers this
+    #: credential can SEE for ONE config field: buckets, shared drives, channels. It is
+    #: what lets the form offer a list instead of asking for an id nobody can produce
+    #: from memory. Keyed by field name because one driver may furnish more than one.
+    #:
+    #: RAISES ``SourceError`` like ``fetch``, rather than returning a verdict like
+    #: ``verify``: its return type is a payload with no room for a sentence, and the ONE
+    #: caller (``DataSource.choices_for``) turns the raise into the same "empty list plus
+    #: one line" every provider needs. Three drivers writing that try/except would be
+    #: three chances to word the same refusal differently.
+    choices: Optional[Callable[..., Any]] = None
 
     async def segments(self, source: "DataSource") -> list[SegmentRef]:  # noqa: D102
         """The syncable units of ``source``.
