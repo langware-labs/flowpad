@@ -29,6 +29,7 @@ import { notify } from '@src/notifications';
 
 import { AddPeopleDialog } from './AddPeopleDialog';
 import { MoneyBox } from './MoneyBox';
+import { OrgRootSetup } from './OrgRootSetup';
 import { useOrgBudgets, useRemoveAllowance, useSetLifetimeCap, useTeamBudgets } from './use-budgets';
 
 export interface BudgetSectionProps {
@@ -65,6 +66,7 @@ function OrgBudgets({ orgId, orgLabel }: { orgId: string; orgLabel: string }) {
         kind="org"
         scopeId={orgId}
         onSetCap={(usd) => setCap.mutate({ endpointId: data.org.endpoint_id as string, usd })}
+        bringYourOwnKey={<OrgRootSetup orgId={orgId} org={data.org} />}
       />
       {data.org.endpoint_id && (
         <div className="rounded-md border">
@@ -256,6 +258,7 @@ function Header({
   scopeId,
   onSetCap,
   action,
+  bringYourOwnKey,
 }: {
   scope: ScopeBudget;
   label: string;
@@ -264,6 +267,10 @@ function Header({
   scopeId: string;
   onSetCap: (usd: number | null) => void;
   action?: React.ReactNode;
+  /** Org-only: replaces the generic "draw from the shared pool" setup button with the
+   *  bring-your-own-key form, and — once a pool exists — renders below the money row so the key
+   *  stays reachable without a separate screen. */
+  bringYourOwnKey?: React.ReactNode;
 }) {
   const { t } = useLingui();
   const over = scope.limit_usd !== null && scope.allocated_usd !== null && scope.allocated_usd > scope.limit_usd;
@@ -304,6 +311,8 @@ function Header({
             </span>
           )}
         </div>
+      ) : bringYourOwnKey ? (
+        bringYourOwnKey
       ) : (
         <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-3 text-sm">
           <span className="text-muted-foreground">
@@ -316,6 +325,7 @@ function Header({
           <SetUpButton kind={kind === 'org' ? 'org' : 'team'} scopeId={scopeId} label={label} />
         </div>
       )}
+      {scope.endpoint_id && bringYourOwnKey}
 
       {over && (
         <p className="text-xs text-destructive" data-testid={`${kind}-over-allocated`}>

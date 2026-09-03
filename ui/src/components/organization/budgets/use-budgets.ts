@@ -64,6 +64,17 @@ export function useSetLifetimeCap() {
   });
 }
 
+/** Make the org the paying entity on its own key; the caller sets the key afterward with
+ *  `llmEndpointsService.setCredential` on the returned `endpoint_id`. */
+export function useSetupOrgRoot() {
+  const invalidate = useInvalidateBudgets();
+  return useMutation({
+    mutationFn: ({ orgId, provider, baseUrl }: { orgId: string; provider: string; baseUrl?: string }) =>
+      budgetsService.setupOrgRoot(orgId, { provider, base_url: baseUrl }),
+    onSuccess: () => invalidate(),
+  });
+}
+
 export function useRemoveAllowance() {
   const invalidate = useInvalidateBudgets();
   return useMutation({
