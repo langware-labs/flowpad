@@ -223,26 +223,36 @@ async def test_an_unknown_provider_records_nothing(sod_env):
     assert user.get_env_var("not-registered_credentials") is None
 
 
-def test_atlassian_is_a_hub_run_provider_the_desktop_can_name():
-    """Same contract as Slack: no local endpoints (so `prefers_hub_flow` sends
-    the flow to the hub, which holds the secret and the single registered
-    callback), but a local credential name and probe so the desktop can adopt,
-    test and attach what the hub hands back."""
-    at = registry.get_local_provider("atlassian")
-    assert at is not None
-    assert at.endpoints is None
-    assert at.hub_required is True
-    assert at.kind is OAuthFlowKind.CODE
-    assert registry.prefers_hub_flow("atlassian") is True
-    assert registry.user_credentials_name("atlassian") == "atlassian_credentials"
-    assert at.probe.url == "https://api.atlassian.com/me"
-    # The hub refreshes the hourly token; a local copy would go stale.
-    assert at.copy_hub_credential is False
+@pytest.mark.parametrize(
+    "provider",
+    [p.name for p in registry.local_providers() if p.hub_required],
+)
+def test_a_hub_run_provider_keeps_the_same_contract(provider):
+    """No local endpoints, so `prefers_hub_flow` routes the flow to the hub that
+    holds the secret and the registered callback. The local row still needs a
+    credential name and a probe, which are what let the desktop name, adopt and
+    attach what comes back.
+
+    Derived from the registry rather than a hand-written list: the next hub-run
+    provider is covered the moment it is declared.
+    """
+    p = registry.get_local_provider(provider)
+    assert p.endpoints is None
+    assert p.kind is OAuthFlowKind.CODE
+    assert p.probe is not None
+    assert registry.prefers_hub_flow(provider) is True
+    assert registry.user_credentials_name(provider) == f"{provider}_credentials"
+
+
+def test_atlassians_probe_names_the_person_not_a_site():
+    """`/me` answers for any token carrying `read:me` and needs no cloud_id,
+    which is what makes it usable as a probe."""
+    assert registry.get_local_provider("atlassian").probe.url == "https://api.atlassian.com/me"
 
 
 @pytest.mark.parametrize(
     ("provider", "copies"),
-    [("github", True), ("slack", True), ("atlassian", False)],
+    [("github", True), ("slack", True), ("atlassian", False), ("linear", False), ("gitlab", False)],
 )
 def test_a_provider_copies_its_hub_token_iff_something_local_reads_it(provider, copies):
     """`copy_hub_credential` tracks one fact: does anything on THIS machine read
@@ -252,23 +262,20 @@ def test_a_provider_copies_its_hub_token_iff_something_local_reads_it(provider, 
     called from the request-less ingest poller) both do, so the value has to be
     copied down — with the flag False the desktop finishes a successful OAuth
     holding a visibility row and no value, and every Slack poll fails
-    `no_credential` while Connections shows "Connected". atlassian does not, and
-    must not copy: the hub refreshes its hourly token and a local copy goes stale.
+    `no_credential` while Connections shows "Connected". The hub-run providers do not, and
+    must not copy: the hub refreshes their expiring tokens and a local copy goes
+    stale within the hour.
     """
     descriptor = registry.get_local_provider(provider)
     assert descriptor is not None
     assert descriptor.copy_hub_credential is copies
 
 
-def test_linear_is_a_hub_run_provider_with_a_graphql_probe():
-    """Same contract as Atlassian, plus the one GraphQL twist: the probe is a GET
-    carrying the query in the URL with a JSON content-type, because neither probe
-    runner sends a body and Linear rejects a body-less request without that header."""
+def test_linears_probe_is_graphql_over_get():
+    """The one probe that is not a plain REST read: the query rides in the URL
+    with a JSON content-type, because neither probe runner sends a body and
+    Linear rejects a body-less request without that header."""
     ln = registry.get_local_provider("linear")
-    assert ln is not None
-    assert ln.endpoints is None and ln.hub_required is True
-    assert registry.prefers_hub_flow("linear") is True
-    assert registry.user_credentials_name("linear") == "linear_credentials"
     assert ln.probe.method == "GET"
     assert dict(ln.probe.query) == {"query": "{ viewer { id name email } }"}
     assert dict(ln.probe.headers) == {"Content-Type": "application/json"}
