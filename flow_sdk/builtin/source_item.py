@@ -127,21 +127,24 @@ class TelegramMessageSpec(MessageSpec):
         )
 
 
-class SlackMessageSpec(MessageSpec):
-    """Outbound Slack message: the generic shape, thread-targeted replies.
+class ChannelMessageSpec(MessageSpec):
+    """Outbound message to a CHANNEL, threaded — the shape Slack and Teams share.
 
-    No extra fields — Slack has no subject; blocks, attachments and mentions
-    are explicit non-goals for now (the driver posts plain text).
+    No extra fields: neither channel has a subject worth modelling here, and
+    blocks, cards, mentions and media are explicit non-goals for now (the
+    drivers post plain text). Providers subclass it by name only, so
+    ``outbound_spec`` can still say which one a source speaks.
     """
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "SlackMessageSpec":
+    def reply_to(cls, m, *, body: str, attachments=()) -> "ChannelMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
-        Slack replies target the CHANNEL, in the message's thread: ``to``
-        carries the channel id, which on an inbound record is ``segment_key``
-        (a Slack ``thread_key`` is a bare ``ts`` and names no channel), and
-        ``thread_key`` rides through so the post lands as a threaded reply.
+        A channel reply targets the CHANNEL, in the message's thread: ``to``
+        carries the inbound record's ``segment_key`` (a channel ``thread_key``
+        is a bare message id and names no channel), and ``thread_key`` rides
+        through so the post lands as a threaded reply. Each driver decides what
+        its segment key spells — Slack a channel id, Teams ``{team}/{channel}``.
         """
         return cls(
             to=[str(getattr(m, "segment_key", "") or "")],
@@ -150,6 +153,18 @@ class SlackMessageSpec(MessageSpec):
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
             attachments=list(attachments),
         )
+
+
+class SlackMessageSpec(ChannelMessageSpec):
+    """Outbound Slack message: ``thread_key`` is the thread's ``ts``."""
+
+
+class TeamsMessageSpec(ChannelMessageSpec):
+    """Outbound Microsoft Teams message: ``thread_key`` is the ROOT message id.
+
+    Teams' own model is two levels — a root and its replies — so a reply to a
+    reply is still a reply to the root, and ``thread_key`` already names it.
+    """
 
 
 class SourceItem(Entity):

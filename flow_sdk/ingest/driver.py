@@ -311,6 +311,50 @@ class IngestDriver:
         raise NotImplementedError
 
 
+def segments_from_config(source: "DataSource", key: str = "channels") -> list[SegmentRef]:
+    """The streams a channel-list source names in ``config[key]``.
+
+    Keyed by id, never by name: a renamed channel is the same channel, and
+    keying on the name would fork its history. Each entry is either a bare id
+    or ``{"id", "name"}`` from the picker.
+    """
+    config = getattr(source, "config", None) or {}
+    entries = config.get(key) or []
+    # A `lines` field arrives as a bare string from a caller that bypassed the
+    # form (``blocks.Inbox`` names ONE channel); iterating it would yield its
+    # characters as ids.
+    if isinstance(entries, str):
+        entries = [line for line in entries.splitlines() if line.strip()]
+    refs: list[SegmentRef] = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            ref_key = str(entry.get("id") or "").strip()
+            label = str(entry.get("name") or ref_key)
+        else:
+            ref_key = str(entry).strip()
+            label = ref_key
+        if ref_key:
+            refs.append(SegmentRef(key=ref_key, label=label))
+    return refs
+
+
+def identity_stamped(source: "DataSource") -> bool:
+    """Whether ``source`` already knows which account it reads as."""
+    return bool(getattr(source, "account_key", "") or getattr(source, "account_identities", None))
+
+
+async def stamp_identity(source: "DataSource", *, account_key: str, identities: list[str]) -> None:
+    """Record the account a source reads and posts as.
+
+    ``self_addresses`` reads ``account_identities``; without them the inbox
+    attributes our own posts to a foreign sender and a ``blocks.Inbox`` loop
+    answers itself.
+    """
+    source.account_key = account_key
+    source.account_identities = [v for v in identities if v]
+    await source.save()
+
+
 def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
     """The driver's channel for this source, defaulting to its provider.
 

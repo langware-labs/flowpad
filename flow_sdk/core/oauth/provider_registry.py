@@ -35,6 +35,7 @@ GOOGLE = "google"
 ATLASSIAN = "atlassian"
 LINEAR = "linear"
 GITLAB = "gitlab"
+MICROSOFT = "microsoft"
 
 
 class OAuthFlowKind(str, Enum):
@@ -246,6 +247,59 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             query=(("fields", "user(permissionId,displayName,emailAddress)"),),
             identity_fields=("user.emailAddress", "user.displayName"),
             account_key_fields=("user.permissionId",),
+        ),
+    ),
+    MICROSOFT: LocalOAuthProvider(
+        name=MICROSOFT,
+        display_name="Microsoft",
+        user_credentials_name="microsoft_credentials",
+        icon="Microsoft",
+        # GOOGLE's shape, NOT Slack's, and the difference is load-bearing. A
+        # Teams source is POLLED, and a background poll has no request user, so
+        # `credential_for` lands on the local tier and can never reach a
+        # hub-held token (see its docstring). Slack gets away with a hub flow
+        # because its bot token does not expire and is copied down once; a
+        # Microsoft access token lasts an hour, so a copy would be stale before
+        # the next poll. Entra ID supports a public client with PKCE and a
+        # loopback redirect — the same desktop grant Google Drive uses — which
+        # keeps the refresh token on this machine where the poller can spend it.
+        kind=OAuthFlowKind.LOOPBACK,
+        # `offline_access` is the one that matters: without it there is no
+        # refresh token and the connection dies after an hour.
+        # `ChannelMessage.Read.All` is the least-privileged delegated permission
+        # that lists channel messages; `.Send` posts. Personal Microsoft
+        # accounts are NOT supported by these APIs — work/school only.
+        scopes=(
+            "offline_access",
+            "User.Read",
+            "Team.ReadBasic.All",
+            "Channel.ReadBasic.All",
+            "ChannelMessage.Read.All",
+            "ChannelMessage.Send",
+        ),
+        endpoints=OAuthEndpoints(
+            # `common` covers any work/school tenant. A single-tenant app
+            # registration replaces it with the tenant id, which is a change to
+            # the app, not to this table.
+            authorize_url="https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            token_url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        ),
+        # No default: this repo registers no Entra application. Set
+        # MICROSOFT_CLIENT_ID from an app registration of type "Mobile and
+        # desktop" with `http://localhost` as a redirect URI. Until then
+        # `client_id_for` returns None and the flow reports a missing client
+        # rather than half-running.
+        client_id_env="MICROSOFT_CLIENT_ID",
+        client_id_default=None,
+        pkce=True,
+        # access_token + refresh_token + expiry: the refresh half is what the
+        # poller spends an hour from now.
+        token_shape=TokenShape.CREDENTIAL_DICT,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://graph.microsoft.com/v1.0/me",
+            identity_fields=("userPrincipalName", "displayName"),
+            account_key_fields=("id",),
         ),
     ),
     SLACK: LocalOAuthProvider(
