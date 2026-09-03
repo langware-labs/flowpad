@@ -230,3 +230,38 @@ async def test_a_refused_authorization_stores_nothing_anywhere(dummy_provider, m
         assert refusing.latest_token is None
         assert refusing.counts["token"] == 0
         assert double.held is None
+
+
+# ── the poller's shape: no request context at all ────────────────────────────
+
+
+async def test_an_adopted_token_resolves_with_no_request_context(
+    dummy_provider, hub, local_dummy_provider, monkeypatch
+):
+    """`token_for` must answer for the BACKGROUND poller, not just a request.
+
+    Every consumer that matters runs outside a request: `SlackDriver._token()`
+    is called from the ingest poller on every tick, and `credential_for`'s first
+    tier (`get_current_request_user_fresh`) is None there. Adoption writes under
+    the REQUEST user, so a provider whose token is only reachable through that
+    tier is connected in the UI and dead in the poller — which is exactly how a
+    connected Slack source failed with `no_credential` on every poll while the
+    Connections row stayed green.
+    """
+    from flow_sdk.core.oauth.provider_registry import token_for
+
+    hub.complete_flow()
+    user = await _user("poller-owner")
+
+    await _adopt(user, monkeypatch)
+    assert await local_value(user) == hub.held, "adoption did not land a local value"
+
+    # The poller's context: no request user. `User.get_local()` is the tier that
+    # must carry it from here on.
+    monkeypatch.setattr(
+        "flow_sdk.request_context.methods.get_current_request_user_fresh",
+        _returning(None),
+    )
+    monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _returning(user))
+
+    assert await token_for(PROVIDER) == dummy_provider.latest_token

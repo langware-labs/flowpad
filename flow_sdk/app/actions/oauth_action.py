@@ -277,60 +277,63 @@ async def oauth_main() -> ApiResponse:
         return ApiFailResponse(message=f"OAuth error: {str(e)}")
 
 
+def _status_data(provider: str, token: object, *, error: str | None = None) -> dict:
+    """The status payload, built once.
+
+    Held is held: every field is a function of whether a token resolved, so the
+    four hand-written copies this replaces could — and did — drift from each
+    other. ``error`` is the one axis that is not derivable.
+    """
+    held = bool(token)
+    return {
+        "status": "error" if error else ("available" if held else "missing"),
+        "has_token": held,
+        "is_attached": held,
+        "auth_method": provider if held else "none",
+        **({"error": error} if error else {}),
+    }
+
+
 async def _handle_status(provider: str) -> ApiResponse:
     """Check OAuth connection status for a provider.
 
     Desktop mode reads Flowpad-owned SOD entries. It never inspects Claude Code's
     credential store.
+
+    Every provider resolves through ``token_for``'s precedence chain (request
+    user → local user → hub). This used to answer an unconditional "missing" for
+    anything that was not anthropic or github, so a genuinely connected Slack,
+    Google Drive or Atlassian still reported no token while the Connections row
+    said "Connected" purely because an env-var row existed. A status that never
+    asks whether the secret is there cannot tell "connected" from
+    "connected-looking".
+
+    Anthropic is the one provider that keeps its own resolver: its credential is
+    desktop-local by construction, so it reads with ``hub=False`` and must not
+    pay a hub round trip to learn what it already knows.
+
+    COST: for a provider whose token is not held locally this now costs up to two
+    hub round trips (``hub_holds_credential``'s table read, then the value read),
+    where the old constant cost none. That is fine for the one-provider,
+    on-demand caller this has (``ui/src/lib/github-oauth-status.ts``), and is NOT
+    fine in a loop over the provider list — derive a table from the memoised
+    catalogue (``core/connections/specs.py::_oauth_state``) before doing that.
     """
     try:
+        from flow_sdk.core.oauth.provider_registry import token_for  # noqa: PLC0415
+
         if provider == "anthropic":
-            credentials = await get_anthropic_token_for_current_user()
-            return ApiSuccessResponse(
-                message="Connection status checked",
-                data={
-                    "status": "available" if credentials else "missing",
-                    "has_token": bool(credentials),
-                    "is_attached": bool(credentials),
-                    "auth_method": "anthropic",
-                },
-            )
-
-        if provider == "github":
-            token = await _get_github_token_for_current_user()
-            return ApiSuccessResponse(
-                message="Connection status checked",
-                data={
-                    "status": "available" if token else "missing",
-                    "has_token": bool(token),
-                    "is_attached": bool(token),
-                    "auth_method": "github",
-                },
-            )
-
-        # Default: no credentials available
-        return ApiSuccessResponse(
-            message="Connection status checked",
-            data={
-                "status": "missing",
-                "has_token": False,
-                "is_attached": False,
-                "auth_method": "none",
-            },
-        )
+            token = await get_anthropic_token_for_current_user()
+        else:
+            token = await token_for(provider)
+        return ApiSuccessResponse(message="Connection status checked", data=_status_data(provider, token))
     except Exception as e:
         # Unexpected error path (above branches handle their own errors). Surface
         # status="error" so the UI can distinguish from a genuine "no credential".
         logger.warning(f"OAuth status check error for {provider}: {e}")
         return ApiSuccessResponse(
             message="Connection status checked",
-            data={
-                "status": "error",
-                "has_token": False,
-                "is_attached": False,
-                "auth_method": provider if provider in {"anthropic", "github"} else "none",
-                "error": str(e),
-            },
+            data=_status_data(provider, None, error=str(e)),
         )
 
 
@@ -510,12 +513,18 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
 
     * A provider with LOCAL consumers of the raw token — GitHub, whose token is
       read out of local SOD by ``git push``, the ``gh`` capability and the repo
-      actions — gets the value copied into local SOD under the local name.
-      Without this the Connections tab would say Connected while every one of
-      those kept failing.
-    * A provider with no local consumer — Slack — gets a value-free row only.
+      actions, and Slack, whose ``SlackDriver._token()`` runs on every poll from
+      the request-less poller — gets the value copied into local SOD under the
+      local name. Without this the Connections tab would say Connected while
+      every one of those kept failing.
+    * A provider with no local consumer — Atlassian, whose hourly token the hub
+      refreshes and a local copy would go stale — gets a value-free row only.
       The token stays on the hub and is resolved when a worker actually needs it,
       which is the rule the rest of the secret plane follows.
+
+    Both branches run ONCE, here, in the request that completed the flow. A
+    credential connected on another machine is never adopted; see
+    ``credential_for``'s hub tier for the read path that still covers it.
     """
     from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
     from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415

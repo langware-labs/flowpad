@@ -80,9 +80,7 @@ def test_pkce_params_appear_only_when_the_descriptor_asks():
     without = parse_qs(urlparse(do._build_authorize_url(_dummy(), "c", "r", "s", "chal")).query)
     assert "code_challenge" not in without
 
-    with_pkce = parse_qs(
-        urlparse(do._build_authorize_url(_dummy(pkce=True), "c", "r", "s", "chal")).query
-    )
+    with_pkce = parse_qs(urlparse(do._build_authorize_url(_dummy(pkce=True), "c", "r", "s", "chal")).query)
     assert with_pkce["code_challenge"] == ["chal"]
     assert with_pkce["code_challenge_method"] == ["S256"]
 
@@ -240,3 +238,23 @@ def test_atlassian_is_a_hub_run_provider_the_desktop_can_name():
     assert at.probe.url == "https://api.atlassian.com/me"
     # The hub refreshes the hourly token; a local copy would go stale.
     assert at.copy_hub_credential is False
+
+
+@pytest.mark.parametrize(
+    ("provider", "copies"),
+    [("github", True), ("slack", True), ("atlassian", False)],
+)
+def test_a_provider_copies_its_hub_token_iff_something_local_reads_it(provider, copies):
+    """`copy_hub_credential` tracks one fact: does anything on THIS machine read
+    the raw token outside a request?
+
+    github (`git push`, the `gh` capability) and slack (`SlackDriver._token()`,
+    called from the request-less ingest poller) both do, so the value has to be
+    copied down — with the flag False the desktop finishes a successful OAuth
+    holding a visibility row and no value, and every Slack poll fails
+    `no_credential` while Connections shows "Connected". atlassian does not, and
+    must not copy: the hub refreshes its hourly token and a local copy goes stale.
+    """
+    descriptor = registry.get_local_provider(provider)
+    assert descriptor is not None
+    assert descriptor.copy_hub_credential is copies
