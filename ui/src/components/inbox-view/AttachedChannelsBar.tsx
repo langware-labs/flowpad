@@ -10,15 +10,16 @@
  * `channel`: a just-attached source has no channel until its first poll, and
  * the icon must be there the moment it is created.
  *
- * Click = the ONE pause/resume verb (`useSourceToggle`). A parked source
+ * The icons ARE the controls — click = the ONE pause/resume verb (`useSourceToggle`). A parked source
  * (`needsAttention`) is not toggled — the backend refuses to poll it until
  * someone finishes its setup — so the click opens the Data Sources screen.
  * Filtering the inbox by channel is deliberately NOT a click here: that is
- * navigation state and belongs in the URL.
+ * navigation state and belongs in the URL. Attaching a channel is not here
+ * either: that is the Data Sources screen's job.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type DataSourceSpec, TypeId } from '@sdk';
-import { Ellipsis, Plus } from 'lucide-react';
+import { Ellipsis } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
@@ -31,17 +32,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { isMessageSourceSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { ownerOf } from './channel-owner';
 
 const EMPTY: DataSource[] = [];
-/** One icon button plus its gap; the "…" and "+" buttons are the same size. */
+/** One icon button plus its gap; the "…" button is the same size. */
 const SLOT_PX = 32;
 
 /** The owner's message sources, in a stable order — plus the spec lookup the
@@ -66,12 +65,12 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   return { rows, specFor };
 }
 
-/** How many channel icons fit beside the "+" in `width` px — all of them when
- *  unmeasured (0: jsdom, display:none) or roomy; otherwise one slot is kept for
- *  "…", and folding only ONE icon to make room for it would gain nothing. */
+/** How many channel icons fit in `width` px — all of them when unmeasured
+ *  (0: jsdom, display:none) or roomy; otherwise one slot is kept for "…", and
+ *  folding only ONE icon to make room for it would gain nothing. */
 export function visibleCount(width: number, rows: number): number {
   if (!width) return rows;
-  const slots = Math.floor(width / SLOT_PX) - 1; // one slot is always the "+"
+  const slots = Math.floor(width / SLOT_PX);
   return slots >= rows ? rows : Math.max(0, slots - 1);
 }
 
@@ -87,7 +86,6 @@ export function AttachedChannelsBar({ owner, className }: { owner: TypeId; class
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { rows, specFor } = useAttachedChannels(owner);
-  const [attachOpen, setAttachOpen] = useState(false);
   const labels: Labels = { listening: t`listening`, paused: t`paused`, parked: t`needs attention` };
   const openDataSources = () => navigation.openTab(ViewType.DATA_SOURCES);
 
@@ -133,31 +131,9 @@ export function AttachedChannelsBar({ owner, className }: { owner: TypeId; class
             {folded.map((source) => (
               <ChannelMenuItem key={source.id} {...rowProps(source)} />
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setAttachOpen(true)}>
-              <Plus className="size-3.5" /> {t`Attach a channel`}
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={SLOT_CLASS}
-            onClick={() => setAttachOpen(true)}
-            aria-label={t`Attach a channel`}
-            data-testid="attached-channels-add"
-          >
-            <Plus />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{t`Attach a channel`}</TooltipContent>
-      </Tooltip>
-      {/* Mounted only while open: a closed dialog would still hold its own specs
-          subscription and run its seed effect on every bar render. */}
-      {attachOpen && <DataSourceDialog open onOpenChange={setAttachOpen} owner={owner} only={isMessageSourceSpec} />}
     </div>
   );
 }

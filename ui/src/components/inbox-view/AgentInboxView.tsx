@@ -206,7 +206,7 @@ export function AgentInboxView() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <p>
-            <Trans>Attach a channel with + above, or give this Agent an email address.</Trans>
+            <Trans>No channel reaches this Agent yet. Give it an email address to start.</Trans>
           </p>
           <Button type="button" disabled={saving} onClick={() => void createEmail()} data-testid="agent-email-create-cta">
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}

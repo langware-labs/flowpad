@@ -47,10 +47,10 @@ import { AttachedChannelsBar, visibleCount } from '@src/components/inbox-view/At
 describe('visibleCount', () => {
   it('shows everything when unmeasured or roomy, and folds only when it saves a slot', () => {
     expect(visibleCount(0, 4)).toBe(4); // jsdom / display:none: never fold on a bogus 0
-    expect(visibleCount(6 * 32, 4)).toBe(4); // 4 icons + "+" fit
-    expect(visibleCount(5 * 32, 4)).toBe(4); // exactly fits
-    expect(visibleCount(4 * 32, 4)).toBe(2); // "+" and "…" take two, two icons stay
-    expect(visibleCount(2 * 32, 4)).toBe(0); // only "+" and "…"
+    expect(visibleCount(6 * 32, 4)).toBe(4); // roomy
+    expect(visibleCount(4 * 32, 4)).toBe(4); // exactly fits
+    expect(visibleCount(3 * 32, 4)).toBe(2); // "…" takes one, two icons stay
+    expect(visibleCount(1 * 32, 4)).toBe(0); // only "…"
   });
 });
 
@@ -69,6 +69,5 @@ describe('AttachedChannelsBar', () => {
     expect(icons.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
     expect(icons[2].getAttribute('aria-label')).toContain('needs attention');
     expect(screen.queryByTestId('attached-channels-more')).toBeNull();
-    expect(screen.getByTestId('attached-channels-add')).toBeTruthy();
   });
 });
