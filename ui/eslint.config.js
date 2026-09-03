@@ -25,7 +25,12 @@ export default tseslint.config(
       ecmaVersion: 2020,
       globals: globals.browser,
       parserOptions: {
-        project: './tsconfig.app.json',
+        // Both projects, or nothing under `tests/` can be linted at all:
+        // tsconfig.app.json includes only `src` + the SDK, so every test file
+        // fails type-aware linting with "not found in any of the provided
+        // projects". tests/tsconfig.json already exists and is referenced from
+        // tsconfig.json — it just was never handed to ESLint.
+        project: ['./tsconfig.app.json', './tests/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },

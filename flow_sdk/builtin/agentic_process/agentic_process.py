@@ -28,7 +28,6 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
@@ -49,7 +48,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     ProcessHookRuntime,
     ProcessMcpRuntime,
 )
-from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -63,7 +61,7 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.worker_status import StatusDetail, WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.compute.providers.compute_provider import (
     LOOPBACK_HOSTNAMES,
@@ -76,9 +74,11 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -372,6 +372,7 @@ class SystemInstructionAssets:
         The one place the "no text ⇒ no file to point at" coercion is stated.
         """
         return str(self.claude_file) if self.claude_file else None
+
     # The owning process. Every vendor but opencode reaches these assets through
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
@@ -743,7 +744,6 @@ async def _read_json_body() -> dict | ApiFailResponse:
     from flow_sdk.request_context.json_body import read_json_body  # noqa: PLC0415
 
     return await read_json_body(get_current_request_info())
-
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -2690,9 +2690,9 @@ class AgenticProcess(Entity):
         re-deriving that from a path — which it does not have — is impossible.
         Returned rather than fetched separately so the entity is loaded once.
         """
-        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.core import Entity  # noqa: PLC0415
         from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
         kind = str(payload.get("kind") or "")
         if kind == DisplayTargetKind.VFS:
@@ -2842,9 +2842,9 @@ class AgenticProcess(Entity):
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
         from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
-        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
         body = await _read_json_body()
@@ -5603,7 +5603,9 @@ class AgenticProcess(Entity):
             # them via --add-dir), but their paths aren't consumed — write without capturing.
             asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
             asset_dir.load_asset(".agents", content=instructions + "\n")
-            copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            copilot_body = (
+                f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            )
             asset_dir.load_asset(
                 ".github/instructions/flowpad.instructions.md",
                 content=copilot_body,
@@ -5681,8 +5683,7 @@ class AgenticProcess(Entity):
         driver = self.driver
         if not bool(getattr(driver, "supports_process_mcp", False)):
             raise NotImplementedError(
-                f"{getattr(driver, 'name', self.worker_type)} does not support "
-                "per-process MCP servers"
+                f"{getattr(driver, 'name', self.worker_type)} does not support per-process MCP servers"
             )
 
     async def add_mcp(self, spec: "McpSpec") -> bool:
@@ -5807,9 +5808,7 @@ class AgenticProcess(Entity):
         cmd.apply_instruction_assets(assets)
 
     @classmethod
-    def _apply_process_assets(
-        cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = ""
-    ) -> None:
+    def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = "") -> None:
         # Order is no longer load-bearing: opencode's generated config is written
         # lazily at spawn (``_sync_config_env``), so every contribution is on
         # ``cmd`` by the time anything is rendered.
@@ -7074,7 +7073,13 @@ class AgenticProcess(Entity):
         # The CLI's own sentence behind a bare ERROR ("Not logged in · Please
         # run /login"). Only resolved for the error status — it costs a second
         # tail read, and there is nothing to say for any other state.
-        data["worker_status_detail"] = self._worker_status_detail(computed)
+        detail = self._worker_status_detail(computed)
+        data["worker_status_detail"] = detail.text if detail else None
+        # WHICH refused turn this is, so a consumer can tell a re-read of the
+        # same entry from a genuinely new failure. The sentence cannot: every
+        # signed-out turn writes the identical one, so the harness-login modal
+        # keyed on it never re-opened after the user dismissed it once.
+        data["worker_status_detail_id"] = detail.entry_id if detail else None
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -7139,8 +7144,9 @@ class AgenticProcess(Entity):
             return WorkerStatus.ERROR
         return self._discover_status_from_transcript()
 
-    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> str | None:
-        """The CLI's own error sentence, when the worker status is ERROR.
+    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
+        """The CLI's own error entry — its sentence and its entry id — when the
+        worker status is ERROR.
 
         Best-effort and never raising: a missing transcript, an unreadable file
         or a driver without a detail hook all yield ``None``, and the surface

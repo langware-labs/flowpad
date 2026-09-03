@@ -84,6 +84,12 @@ export interface ICapability extends IEntity {
   login_code?: string | null;
   login_accepts_code?: boolean | null;
   login_message?: string | null;
+  /** The harness's own refusal, recorded by `report-signed-out` and retracted by
+   *  the backend the moment newer evidence lands (a completed device login, a
+   *  verified probe, an explicit Test). Broadcast-only, like the rest of the
+   *  login_* block — and the single source of truth for "this box says it is
+   *  signed out", which is why no client keeps a copy of its own. */
+  login_denied?: boolean;
   /** How this harness authenticates its worker: "device" (default) or "api"
    *  (a stored LLM-provider key). Persisted + user-switchable. */
   auth_mode?: 'device' | 'api' | null;
@@ -128,6 +134,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   login_code: string | null = null;
   login_accepts_code: boolean | null = null;
   login_message: string | null = null;
+  login_denied: boolean = false;
   auth_mode: 'device' | 'api' | null = null;
   api_provider: string | null = null;
   model_map: Record<string, Record<string, string>> = {};

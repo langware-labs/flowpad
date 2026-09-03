@@ -90,10 +90,13 @@ class Capability(Entity):
     last_check: dict[str, Any] | None = APIField(default=None)
     last_setup: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
-    # Device-login session state — runtime-only, broadcast but never persisted
-    # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
-    # live DeviceLoginSession for this harness kind; None/idle when no login
-    # is in flight.
+    # Device-login session state — ``Persist.FALSE``: DB-only, never mirrored
+    # into metadata.json (same shape as AgenticProcess.connection_id /
+    # Tab.status). Mirrors the live DeviceLoginSession for this harness kind;
+    # None/idle when no login is in flight. ``login_state`` is the exception to
+    # "broadcast, never written": the startup sweep resolves and SAVES it
+    # (``discovery._resolve_login_states``), because the spawn resolver reads it
+    # back off a freshly-loaded row and would otherwise never see the verdict.
     login_state: DeviceLoginState | None = APIField(default=None, persist=Persist.FALSE)
     login_url: str | None = APIField(default=None, persist=Persist.FALSE)
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
@@ -106,7 +109,17 @@ class Capability(Entity):
     # only tests whether one EXISTS (see ``probe_claude_auth`` — it never asks
     # the server). Without this marker the probe's presence-only "yes" flipped a
     # witnessed sign-out straight back to "authenticated" on the next poll.
-    login_denied: bool = APIField(default=False, persist=Persist.FALSE)
+    #
+    # Nullable, and that is load-bearing: like every runtime login_* field this
+    # is set in memory and BROADCAST, never written by ``save()``, so a row
+    # rebuilt from the DB — which is what ``GET /graph/capability`` serves, and
+    # what the frontend's `mutateAndRecheck` re-lists on every default-assistant
+    # or auth-mode change — knows nothing about it. Its None siblings drop out of
+    # the payload (``exclude_none``) and so cannot overwrite the live value a
+    # broadcast delivered; a ``False`` default shipped on every refetch and DID,
+    # silently retracting a refusal nobody had retracted. None means "this row
+    # has no opinion"; only an actual state change sends True/False.
+    login_denied: bool | None = APIField(default=None, persist=Persist.FALSE)
     # How this harness authenticates its worker: "device" (vendor device login,
     # default) or "api" (a stored LLM-provider key — see flow_sdk.cli.auth.lm_api_keys
     # and cli_drivers/api_auth.py). Persisted + user-switchable; like reference_kind
@@ -543,9 +556,10 @@ class Capability(Entity):
         candidate = await resolve_box_llm_endpoint(worker_type) if spec is not None else None
         endpoint, source = candidate if candidate is not None else (None, None)
 
-        # ALWAYS probe the vendor, whatever funds the harness today. This action is the only
-        # producer of ``login_state``, which is ``Persist.FALSE`` and therefore ``None`` after
-        # every restart -- and the resolver reads exactly that field to decide whether a device
+        # ALWAYS probe the vendor, whatever funds the harness today. This action and the
+        # startup sweep (``discovery._resolve_login_states``) are the two producers of
+        # ``login_state`` -- the sweep answers it for every box on boot, this answers it on
+        # demand -- and the resolver reads exactly that field to decide whether a device
         # login is proven. Probing only when device already won closes a loop with no exit: on a
         # box the hub has bound, the endpoint wins because device is unproven, so the probe never
         # runs, so device stays unproven forever -- and the user's "Test sign-in" button stops

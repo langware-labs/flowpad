@@ -996,6 +996,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * never declared here, so every read of it was a type error.
    */
   worker_status_detail?: string | null;
+  /**
+   * The transcript entry id behind that sentence — which refusal this is.
+   * Sent alongside the detail on every process payload; the harness-login
+   * trigger keys on it, because the sentence is byte-identical on every
+   * signed-out turn and so cannot tell one refusal from the next.
+   */
+  worker_status_detail_id?: string | null;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
