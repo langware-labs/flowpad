@@ -23,8 +23,8 @@ pinned by a test so it cannot drift silently.
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
 * **Import the drivers once.** `import flow_sdk.ingest.drivers` registers the
-  eleven shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
-  `gmail`, `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
+  twelve shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
+  `gcs`, `gmail`, `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
   `get_driver()` returns `None` and a source parks on `config_error`.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
