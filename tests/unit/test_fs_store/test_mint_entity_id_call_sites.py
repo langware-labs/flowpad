@@ -158,9 +158,6 @@ _RAW_UUID_ALLOWLIST = {
     ("fs_record.py", "uuid5"),
     # scan_log / index_log row ids: JSONL diagnostic rows, never entities.
     ("schema_registry.py", "uuid4"),
-    # record_error / claude_hook: log rows and a Phase-4 stub, not entities.
-    ("record_error.py", "uuid4"),
-    ("claude_hook.py", "uuid4"),
 }
 
 

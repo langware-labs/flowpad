@@ -90,10 +90,17 @@ describe('assetContextFoldersRoot', () => {
 
   it('renders git-backed rows with the git icon and local rows with the folder icon', async () => {
     const { Folder, GitBranch } = await import('lucide-react');
+    const { RagFolderIcon } = await import('@src/components/browseable-tree/RagFolderIcon');
     const root = assetContextFoldersRoot({ dirs: DIRS, onAdd: vi.fn(), onRemove: vi.fn() });
     const rows = await root.listChildren!();
-    expect((rows[0].icon as ReactElement).type).toBe(Folder);
-    expect((rows[1].icon as ReactElement).type).toBe(GitBranch);
+    // The row icon is the RAG badge WRAPPING the base glyph — the folder's
+    // index state is drawn over it — so the base is a prop now, not the
+    // element type. Assert through the wrapper rather than around it: the
+    // question this test exists to answer is still "git rows get GitBranch".
+    expect((rows[0].icon as ReactElement).type).toBe(RagFolderIcon);
+    expect((rows[0].icon as ReactElement).props.Base).toBe(Folder);
+    expect((rows[1].icon as ReactElement).type).toBe(RagFolderIcon);
+    expect((rows[1].icon as ReactElement).props.Base).toBe(GitBranch);
   });
 
   it('rows forward external OS drops to onExternalDrop with their dir', async () => {

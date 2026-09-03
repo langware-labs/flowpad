@@ -42,7 +42,6 @@ class RecordQuery:
     modified_before: datetime | None = None
 
     # Relationship filters
-    parent_id: str | None = None
     child_filter: RecordQuery | None = None  # recursive composition
 
     # Arbitrary predicate (for caller-supplied logic)
@@ -67,7 +66,10 @@ class RecordQuery:
             return False
 
         if self.status is not None:
-            rec_status = str(record.status) if record.status else ""
+            # ``status`` is a per-type meta field, not an FSRecord attribute —
+            # a record without one simply doesn't match a status filter.
+            raw_status = getattr(record, "status", None)
+            rec_status = str(raw_status) if raw_status else ""
             if isinstance(self.status, list):
                 if rec_status not in self.status:
                     return False
@@ -92,12 +94,6 @@ class RecordQuery:
         if self.modified_before is not None:
             ma = getattr(record, "modified_at", None)
             if ma is None or ma > self.modified_before:
-                return False
-
-        if self.parent_id is not None:
-            pr = record.parent_ref
-            parent_ok = pr is not None and pr.id == self.parent_id
-            if not parent_ok:
                 return False
 
         # Scope filter (value coercion for enum/raw string comparison)
@@ -165,8 +161,6 @@ class RecordQuery:
             params["created_before"] = self.created_before.isoformat()
         if self.ids:
             params["ids"] = self.ids
-        if self.parent_id:
-            params["parent_id"] = self.parent_id
         if self.scope:
             params["scope"] = self.scope.value if hasattr(self.scope, 'value') else str(self.scope)
         if self.limit is not None:

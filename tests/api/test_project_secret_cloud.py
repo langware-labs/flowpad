@@ -78,8 +78,13 @@ async def test_delete_from_cloud_touches_nothing_local(tmp_path, monkeypatch, so
 
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", spy)
     project = await _project(tmp_path, published=True)
+    # SHARED, because the reference asset is the point of the assertion below:
+    # `assets/sodot/<ENV_VAR>.json` is written for a shared declaration and
+    # deliberately UNLINKED for a private one (a private secret must leave no
+    # committed reference), so a private pointer has no sidecar for "delete
+    # from cloud" to leave alone.
     await project.add_secret_pointer(
-        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        name="openai", env_var="OPENAI_API_KEY", scope="shared",
         locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
     )
     write_env_local(project, "OPENAI_API_KEY", "sk-still-here")

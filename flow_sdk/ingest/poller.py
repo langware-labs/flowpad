@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import weakref
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -53,7 +54,11 @@ ATTENTION_LEASE_SECONDS = 35.0
 
 #: source id → {"expiry": monotonic, "cadence": seconds, "next": monotonic}
 _attention: dict[str, dict] = {}
-_attention_tasks: "dict[object, asyncio.Task]" = {}
+# Keyed by the RUNNING loop, weakly — the `inbox/_locks.py` idiom. A plain
+# dict pinned every test's torn-down loop (and its task) forever.
+_attention_tasks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def note_attention(source_id: str, cadence_seconds: int) -> None:
@@ -92,7 +97,8 @@ async def _attention_loop() -> None:
             if source is None or source.poll_refusal():
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
-            _inflight.add(source_id)
+            if not _claim(source_id):
+                continue
             asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
         # Sleep to the nearest upcoming edge (a due round or a lease expiry)
         # instead of a fixed 1s spin — most wakeups were dead time under a 5s
@@ -101,6 +107,20 @@ async def _attention_loop() -> None:
         edges = [min(l["next"], l["expiry"]) for l in _attention.values()]
         if edges:
             await asyncio.sleep(min(max(min(edges) - time.monotonic(), 0.25), 5.0))
+
+
+def _claim(source_id: str) -> bool:
+    """Take this source's poll slot, or report that someone already holds it.
+
+    The three lanes — the heartbeat, the attention fast lane and an
+    out-of-band `poll_source` — all take the same slot, and two `sync_source`
+    runs on one source race each other's cursor writes. `_run_poll` is what
+    releases it, in a `finally`.
+    """
+    if source_id in _inflight:
+        return False
+    _inflight.add(source_id)
+    return True
 
 
 async def dispatch_due_sources(
@@ -128,20 +148,37 @@ async def dispatch_due_sources(
         return dispatched
 
     for source in sources:
-        if source.id in _inflight:
-            continue
-        if not source.is_due(now):
+        if source.id in _inflight or not source.is_due(now):
             continue
         # Dispatch even when a capability is missing: `sync_source` records it
         # as `capability_unavailable` / config_error, which is what surfaces the
         # "Parked — needs attention" banner. Skipping silently here left a
         # gated source sitting at `never_synced`, looking healthy, never
         # polling, with nothing anywhere explaining why.
-        _inflight.add(source.id)
+        if not _claim(source.id):
+            continue
         dispatched.append(source.id)
         spawn(_run_poll(source, now))
 
     return dispatched
+
+
+async def poll_source(source: DataSource, now: Optional[datetime] = None) -> bool:
+    """Poll one source NOW, under the same in-flight guard as the tick lanes.
+
+    Returns whether it ran. The one entry point for an out-of-band poll — a
+    change event, a CLI — so nothing polls a source the heartbeat is already
+    polling: two `sync_source` runs on one source race each other's cursor
+    writes. Concurrency only: whether polling this source is ALLOWED
+    (`poll_refusal`) is the dispatching caller's question, since a local listen
+    loop legitimately drives a source the heartbeat would not. A source already in flight is skipped, not queued; the running
+    poll (or the next tick) picks the change up, which is all a change event
+    ever promised (`change_event.py`: a lost event is latency, never loss).
+    """
+    if not _claim(source.id):
+        return False
+    await _run_poll(source, now or datetime.now(timezone.utc))
+    return True
 
 
 async def _run_poll(source: DataSource, now: datetime) -> None:
@@ -150,6 +187,12 @@ async def _run_poll(source: DataSource, now: datetime) -> None:
         # Push the next due time out BEFORE any I/O. If this process dies
         # mid-poll, the source waits one interval on restart instead of being
         # re-picked — and re-crashed — on every tick.
+        #
+        # Known, deferred: on the attention fast lane this is a second row
+        # write per round (`request_poll_action` already saved the same
+        # reschedule when it armed the lane). Not a correctness problem — the
+        # same value twice — but the fast lane needs a design pass before the
+        # pre-schedule can be skipped for it without losing the crash guard.
         try:
             source.schedule_next(now)
             await source.save()

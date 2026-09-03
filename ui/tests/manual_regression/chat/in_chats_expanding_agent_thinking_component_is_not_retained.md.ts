@@ -60,7 +60,9 @@ async function fulfillTranscript(route: Route) {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(transcript(sessionId, name)),
+    // The route answers with the ApiResponse envelope; `apiClient` unwraps
+    // `data`, so a bare body reaches the app as undefined.
+    body: JSON.stringify({ status: 'SUCCESS', data: transcript(sessionId, name) }),
   });
 }
 

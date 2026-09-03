@@ -17,6 +17,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from flow_sdk.flowpad_types.vendors import VENDOR_KEYS
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer.assembly import assemble_tree
 from flow_sdk.transcript_analyzer.entries import AgentSpawnEntry, MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
@@ -61,10 +62,9 @@ _SUPPORTED_WORKERS: frozenset[str] = VENDOR_KEYS | {"workflow"}
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"ok": False, "error_code": code, "error": message},
-    )
+    """Non-2xx ``ApiFailResponse`` envelope; ``data.error_code`` is the machine code."""
+    body = ApiFailResponse(status_code=status_code, message=message, data={"error_code": code})
+    return JSONResponse(status_code=status_code, content=body.model_dump())
 
 
 def _assemble_subagents(transcript: AgentTranscriptFile) -> None:
@@ -170,7 +170,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         path: absolute filesystem path to the JSONL.
 
     Response:
-        { ok, worker_type, session_id, path, header, entries }
+        ApiSuccessResponse envelope: data = { worker_type, session_id, path, received, header, entries }
     """
     if worker_type not in _SUPPORTED_WORKERS:
         return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
@@ -191,15 +191,14 @@ async def get_transcript(worker_type: str, path: str = ""):
 
     _assemble_subagents(transcript)
     _stamp_workflow_child_paths(transcript, p)
-    return {
-        "ok": True,
+    return ApiSuccessResponse(data={
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
         "received": await _is_received(worker_type, transcript.session_id),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
-    }
+    })
 
 
 @router.get("/api/v1/workers/{worker_type}/{session_id}/trace-skeleton")
@@ -222,7 +221,7 @@ async def get_trace_skeleton(worker_type: str, session_id: str):
         return _error(404, "NOT_FOUND", str(exc))
     except ValueError as exc:
         return _error(400, "INVALID_ARG", str(exc))
-    return {"ok": True, "skeleton": skeleton}
+    return ApiSuccessResponse(data={"skeleton": skeleton})
 
 
 @router.post("/api/v1/workers/{worker_type}/{session_id}/agent-trace")
@@ -274,13 +273,12 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
     entity = AgentTrace.from_trace(trace)
     await entity.save()
     feed_entry_id = await _post_agent_trace_feed_entry(entity)
-    return {
-        "ok": True,
+    return ApiSuccessResponse(data={
         "id": entity.id,
         "asset_ref": entity.asset_ref,
         "summary": trace["summary"],
         "feed_entry_id": feed_entry_id,
-    }
+    })
 
 
 @router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")
@@ -315,12 +313,11 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
 
     _assemble_subagents(transcript)
     _stamp_workflow_child_paths(transcript, path)
-    return {
-        "ok": True,
+    return ApiSuccessResponse(data={
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
         "received": await _is_received(worker_type, transcript.session_id),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
-    }
+    })
