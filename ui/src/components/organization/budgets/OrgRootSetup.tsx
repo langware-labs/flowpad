@@ -25,6 +25,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 import { CredentialField } from '@src/components/llm-endpoints/CredentialField';
 import { PROVIDERS, type ProviderSpec } from '@src/components/llm-endpoints/endpoint-catalog';
+import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -72,7 +73,10 @@ function OrgKeyCreateForm({ orgId }: { orgId: string }) {
     try {
       const created = await setup.mutateAsync({ orgId, provider: providerId, baseUrl: spec.defaultBaseUrl });
       try {
-        await llmEndpointsService.setCredential(created.endpoint_id, key.trim());
+        // `created.endpoint_id` is a typeid (`llm_endpoint-<uuid>`); the credential action's URL
+        // takes the bare uuid -- a typeid in the path answers 422/404, the same normalisation
+        // every other write against an endpoint id already makes (see `add-people.ts`).
+        await llmEndpointsService.setCredential(endpointIdFromTypeId(created.endpoint_id), key.trim());
         notify.success({
           title: t`Organization activated`,
           message: t`Spending now bills your own ${spec.label}.`,
@@ -142,6 +146,7 @@ function OrgKeyField({
   provider,
   credentialHint,
 }: {
+  /** A typeid or a bare uuid; normalised here for the same reason the create flow normalises it. */
   endpointId: string;
   provider: string | null;
   credentialHint: string;
@@ -155,7 +160,7 @@ function OrgKeyField({
       {spec && <span className="text-xs text-muted-foreground">{t(spec.label)}</span>}
       <div className="min-w-56 flex-1">
         <CredentialField
-          endpointId={endpointId}
+          endpointId={endpointIdFromTypeId(endpointId)}
           credentialHint={hint}
           value={value}
           onChange={setValue}

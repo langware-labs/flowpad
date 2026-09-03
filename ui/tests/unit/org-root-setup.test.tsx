@@ -29,7 +29,8 @@ vi.mock('@sdk', async (importOriginal) => {
 import { OrgRootSetup } from '@src/components/organization/budgets/OrgRootSetup';
 
 const ORG_ID = '550e8400-e29b-41d4-a716-446655440000';
-const ENDPOINT_TYPEID = 'llm_endpoint-550e8400-e29b-41d4-a716-446655440099';
+const ENDPOINT_UUID = '550e8400-e29b-41d4-a716-446655440099';
+const ENDPOINT_TYPEID = `llm_endpoint-${ENDPOINT_UUID}`;
 
 afterEach(() => {
   cleanup();
@@ -69,7 +70,9 @@ describe('OrgRootSetup — no budget yet', () => {
       provider: 'anthropic',
       baseUrl: 'https://api.anthropic.com',
     });
-    expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_TYPEID, 'sk-ant-secret');
+    // `mutateAsync` answers with a TYPEID; `setCredential`'s action URL takes the bare uuid -- a
+    // typeid in the path answers 422/404, so this has to be the normalised form, not the raw one.
+    expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-ant-secret');
     // The order matters: the key can only be stored once the id creating it returns.
     const rootCallOrder = h.mutateAsync.mock.invocationCallOrder[0];
     const credentialCallOrder = h.setCredential.mock.invocationCallOrder[0];
@@ -84,7 +87,7 @@ describe('OrgRootSetup — no budget yet', () => {
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: '  sk-or-secret  ' } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
 
-    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_TYPEID, 'sk-or-secret'));
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-or-secret'));
   });
 
   it('reports it distinctly when the root is created but the key fails to store', async () => {
@@ -126,6 +129,24 @@ describe('OrgRootSetup — already a root', () => {
     expect(screen.getByText('OpenAI')).toBeTruthy();
     expect(screen.queryByTestId('org-root-provider-openai')).toBeNull();
     expect(screen.getByTestId<HTMLInputElement>('credential-input').placeholder).toMatch(/replace/i);
+  });
+
+  it('replaces the key against the normalised (bare) id, not the raw typeid the org row carries', async () => {
+    // Regression: `org.endpoint_id` is a typeid; passing it straight through to `CredentialField`
+    // meant every Save/Test/Delete on an ALREADY-ACTIVATED org silently hit a malformed URL and
+    // never reached the hub -- the same bug the create flow had, one component down.
+    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****beef' });
+    render(
+      <OrgRootSetup
+        orgId={ORG_ID}
+        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'anthropic', credential_hint: '****abcd' }}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: 'sk-ant-replacement' } });
+    fireEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-ant-replacement'));
   });
 
   it('offers no provider chip when the org has a root but no key stored yet', () => {
