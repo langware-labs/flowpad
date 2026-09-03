@@ -1341,6 +1341,14 @@ msgstr "Agent"
 msgid "Agent created"
 msgstr "Agent created"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent disabled"
+msgstr "Agent disabled"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent enabled"
+msgstr "Agent enabled"
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "Agent Hook"
@@ -5813,8 +5821,6 @@ msgstr "Disable telemetry and analytics"
 msgid "disabled"
 msgstr "disabled"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Disabled"
 msgstr "Disabled"
@@ -6285,6 +6291,15 @@ msgid "Effort"
 msgstr "Effort"
 
 #: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email disabled"
+msgstr "Email disabled"
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Email enabled"
+msgstr "Email enabled"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Email inbox"
 msgstr "Email inbox"
 
@@ -6343,6 +6358,10 @@ msgstr "Empty trace"
 msgid "Empty uses the variable name."
 msgstr "Empty uses the variable name."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Enable Agent"
+msgstr "Enable Agent"
+
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Enable agent email"
 msgstr "Enable agent email"
@@ -6390,13 +6409,10 @@ msgstr "Enable Weaker Nested Sandbox"
 msgid "Enable/Disable hook"
 msgstr "Enable/Disable hook"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -8724,7 +8740,6 @@ msgstr "In-app only"
 msgid "Inactive"
 msgstr "Inactive"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

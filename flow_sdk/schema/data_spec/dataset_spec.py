@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, Optional, TypeVar, Union
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec, to_authoring_form
@@ -46,6 +46,7 @@ class ExampleKind(StrEnum):
 class FileRef(DataSpec):
     """A file: its example-relative POSIX path. Resolved by the layout, never here."""
 
+    model_config = ConfigDict(frozen=True)
     spec_kind = "file_ref"
     path: str
 
@@ -53,6 +54,7 @@ class FileRef(DataSpec):
 class FolderSpec(DataSpec):
     """A folder of files: its own example-relative path and its members, recursively."""
 
+    model_config = ConfigDict(frozen=True)
     spec_kind = "folder"
     path: str
     files: dict[str, Union["FileRef", "FolderSpec"]] = Field(default_factory=dict)
@@ -61,6 +63,7 @@ class FolderSpec(DataSpec):
 class TextSpec(DataSpec):
     """A literal — a CSV cell."""
 
+    model_config = ConfigDict(frozen=True)
     spec_kind = "text"
     text: str
 
@@ -89,6 +92,8 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     ``kind`` is the ROW role (train/eval/test) — a field. The registration hook
     is ``spec_kind``, so the two never collide.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     id: str = ""                                 # layout-assigned
     kind: ExampleKind = ExampleKind.TRAIN
@@ -130,6 +135,8 @@ ExampleSpecT = TypeVar("ExampleSpecT", bound=ExampleSpec)
 
 class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
     """A dataset: a list of examples of one shape."""
+
+    model_config = ConfigDict(frozen=True)
 
     examples: list[ExampleSpecT]
 

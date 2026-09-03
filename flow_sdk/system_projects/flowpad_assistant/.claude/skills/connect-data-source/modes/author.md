@@ -24,8 +24,7 @@ folder asset, not SDK code — nothing is edited in `flow_sdk`.
 
 The runtime is derived from the folder, never declared: `fetch.py` ⇒ script,
 neither ⇒ a builtin resolved by `name`. `FETCH.md` is **reserved and refused at
-load** — a folder carrying one indexes as a valid spec and then fails every poll,
-so write `fetch.py`. A source that should fetch through a worker is not authored
+load** (`ManifestError`), so write `fetch.py`. A source that should fetch through a worker is not authored
 at all: it is the shipped `agent` transport, configured per
 `references/mapping.md`. Read `docs/data-management/data-source-asset.md` for the manifest
 rules before writing one; the ones that bite:
@@ -37,7 +36,8 @@ rules before writing one; the ones that bite:
   credential value.
 - A `traits` block is REQUIRED for an authored source (it is what a builtin's
   driver class would hold) and forbidden on a builtin. At minimum `emits` — the
-  ontology kind stamped on every record.
+  ontology kind stamped on every record; the loader refuses a `fetch.py` folder
+  whose `emits` is missing or blank, and the folder is not indexed.
 - `config` field `type` is one of `text` `lines` `csv` `number` `path`. Anything
   else is a load error.
 

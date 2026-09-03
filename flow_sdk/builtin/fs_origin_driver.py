@@ -63,7 +63,12 @@ class FSOriginDriver(Protocol):
 
     async def detect(self, asset_root: Path) -> "Optional[FSOrigin]":
         """Reverse lookup: which origin (if any) does ``asset_root`` come from?
-        Optional — returns None when the backend can't auto-discover it."""
+        Optional — returns None when the backend can't auto-discover it.
+
+        `Folder.detect_origin` asks EVERY registered driver, in registry order,
+        on every folder detection, and takes the first non-None. So a probe is
+        a cheap LOCAL question: a driver that reaches the network here puts
+        that latency on a path that only wanted to classify a directory."""
         ...
 
 

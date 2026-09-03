@@ -56,6 +56,7 @@ def worker_summary_log(
     *,
     max_chars: int = _DEFAULT_MAX_CHARS,
     transcript_format: TranscriptFormat | str | None = None,
+    number_entries: bool = False,
 ) -> str:
     """Return an extractive, search-indexable text rendering of a transcript.
 
@@ -68,6 +69,11 @@ def worker_summary_log(
     ``transcript_format`` disambiguates worker formats that don't self-detect
     (e.g. Copilot ``events.jsonl`` needs ``"copilot_events"``); codex rollouts
     self-detect, so it's optional there.
+
+    ``number_entries`` prefixes each rendered entry with ``[<i>]`` where ``i``
+    is its position in ``AgentTranscriptFile.entries`` — the same index the
+    ``session_analysis`` MCP tool takes to drill into one entry. Off by default
+    so the search-indexed text stays free of positional noise.
 
     Best-effort: any parse/IO failure returns ``""`` so a malformed or partial
     transcript can never break session indexing.
@@ -82,10 +88,12 @@ def worker_summary_log(
         # the final ``[:max_chars]``) is identical either way.
         parts: list[str] = []
         total = 0
-        for e in transcript.entries:
+        for i, e in enumerate(transcript.entries):
             if e.kind not in _SEARCHABLE_KINDS:
                 continue
             body = e.to_string()
+            if number_entries:
+                body = f"[{i}] {body}"
             parts.append(body)
             total += len(body) + 2  # +2 for the "\n\n" separator
             if total > max_chars:

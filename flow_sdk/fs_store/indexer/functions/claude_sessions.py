@@ -314,7 +314,7 @@ def claude_session_status(rec: Record) -> WorkerStatus:
 
 def claude_session_transcript_entries(rec: Record) -> list:
     """Lazily load transcript entries from the JSONL file."""
-    from flow_sdk.fs_store.indexer.functions.claude_transcript import create_transcript_entry
+    from flow_sdk.fs_store.indexer.functions._claude_transcript import create_transcript_entry
 
     path = getattr(rec, "jsonl_path", None) or rec.source_file or ""
     if not path or not Path(path).is_file():

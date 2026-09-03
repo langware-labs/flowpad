@@ -183,9 +183,9 @@ The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_roo
 
 ### [Folder Layout](data-management/folder-layout.md)
 
-On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<contenthash>_<pathdigest>.hash` sentinel), project directory encoding, the commonly used `EntityType` constants grouped by category (and which of them the indexer actually walks — `INDEXABLE_TYPES`), and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
+On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<contenthash>_<pathdigest>.hash` sentinel), project directory encoding, the commonly used `EntityType` constants grouped by category (and which of them the indexer actually walks — `indexable_types()`, derived from the walker graph), and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
 
-**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`INDEXABLE_TYPES`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
+**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`indexable_types()`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
 
 ***
 

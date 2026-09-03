@@ -9,11 +9,12 @@ A dataset holds many ``Example`` rows in one of two physical layouts (see
   occurrences) plus ``«slot».json`` metadata sidecars and an ``example.json``.
   Legacy ``input.txt`` / ``expected.txt`` are still accepted.
 
-Either layout parses into the same shape: one plain-JSON row per example. The
-row mirrors the example directory — a file is a ``str`` path, a folder is a
-``dict`` of members, a sidecar is a sibling ``{"metadata", "data"}`` dict — so
-there is one representation of a row's content, and it is the JSON itself. The
-dataset ``spec`` (a :class:`DataSpec`) is what says which strings are paths.
+Either layout parses into the same shape: one ``ExampleSpec`` row per example
+whose slots are artifacts — a ``FileRef`` (an example-relative path), a
+``FolderSpec`` (its members, recursively), or a ``TextSpec`` (a CSV cell) — and
+whose sidecars ride in ``metadata`` under their full filename. Nothing here holds
+file CONTENTS; the layout resolves a ref to bytes when a consumer asks. The
+dataset ``spec`` (a :class:`DatasetSpec` parametrization) types the slots.
 
 Every dataset JSON file (``dataset.json``, ``example.json``, ``«slot».json``) is a
 two-section document — ``{"metadata": {...}, "data": {...}}``. ``metadata`` holds
@@ -25,9 +26,10 @@ disk on demand (a 50k-row CSV stays one record, not 50k entities). The
 train/eval/test split lives *per-example* as ``Example.kind`` — "the eval set"
 is simply ``dataset.examples(ExampleKind.EVAL)``.
 
-The walker + parser live in
-``flow_sdk/fs_store/indexer/functions/dataset.py``; the type registration lives
-in ``flow_sdk/schema/type_info/dataset_type_info.py``. Modeled on WHITEBOARD.
+The on-disk grammar (both layouts, per-example reads and writes, the index)
+lives in ``flow_sdk/schema/data_spec/layout.py``; the indexer's extractor and
+id mint in ``flow_sdk/fs_store/indexer/functions/dataset.py``; the type
+registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 """
 from __future__ import annotations
 
@@ -210,6 +212,8 @@ class Dataset(Entity):
         for row in rows:
             kinds[row["kind"]] = kinds.get(row["kind"], 0) + 1
         self.num_examples = len(rows)
+        # `annotated` is the layout's `has_ground_truth` — the rule the indexer's
+        # `count_annotated` applies too, so a label and a reindex agree.
         self.num_annotated = sum(1 for row in rows if row["annotated"])
         self.kind_counts = kinds
         await self.save()
@@ -309,13 +313,3 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self._counts_from_disk()
         return ApiSuccessResponse(data={"example_id": example_id, "num_annotated": fresh.num_annotated})
-
-
-def dataset_id_from_path(path: Path) -> str:
-    """Stable id derived from the resolved folder path. THE one definition — the
-    indexer's identity reader imports it, so a direct load and a walk agree."""
-    import uuid  # noqa: PLC0415
-
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-
-    return mint_uuid(f"dataset:{Path(path).resolve()}", namespace=uuid.NAMESPACE_DNS)

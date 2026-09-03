@@ -27,6 +27,27 @@ TEST_API_KEY = "fp_production_testkey123456789abc"
 USER_INFO = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
 
 
+@pytest.fixture(autouse=True)
+def _no_login_escapes_this_module():
+    """Restore the process's cloud-login state around every test here.
+
+    These tests drive the real login endpoints, and a mis-aimed patch persists
+    a login instead of faking one. The damage lands nowhere near here: a
+    logged-in process routes `user/{id}/oauth/...` through the HUB, so twelve
+    tests in three other files failed against `app.flowpad.ai` with an id that
+    only exists in this file. Assertion-free on purpose — it is a net, not a
+    check; the patch target is what keeps the login from happening at all.
+    """
+    from flow_sdk.cli import app_config
+
+    before = app_config.get_user()
+    try:
+        yield
+    finally:
+        if app_config.get_user() != before:
+            app_config.set_user(before) if before else app_config.clear_user()
+
+
 # ---------------------------------------------------------------------------
 # /api/v1/cloud/status
 # ---------------------------------------------------------------------------
@@ -195,7 +216,12 @@ async def test_login_callback_returns_success_html(client):
             new=AsyncMock(return_value=USER_INFO),
         ),
         patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
-        patch("flow_sdk.cli.app_config.set_user"),
+        # AS USED, not at the source: `_finalize_login` imported `set_user` at
+        # module load, so patching `flow_sdk.cli.app_config.set_user` leaves the
+        # real one bound and the fake user is really persisted — which made the
+        # PROCESS cloud-logged-in as `user_abc123` for every later test, sending
+        # their hub calls to production. Same idiom as the full-flow test below.
+        patch("flow_sdk.cli.auth.cloud_login.set_user"),
         patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(

@@ -97,8 +97,7 @@ async def test_analysis_carries_per_skill_findings(tmp_path, monkeypatch):
         r = client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                         json={"annotations": ANNOTATIONS})
         assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["ok"] is True
+        body = r.json()["data"]
         assert body["summary"]["issue_count"] >= 1  # drives the row's issue badge
         assert body["id"]
 
