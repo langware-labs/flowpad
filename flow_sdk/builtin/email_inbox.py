@@ -337,7 +337,7 @@ class EmailInbox(Entity):
             existing = await driver.get_inbox(agent.id)
         except EmailInboxError as exc:
             if exc.code == EmailInboxErrorCode.TARGET_NOT_FOUND and not agent.remote:
-                await agent.share()
+                existing = await cls._publish_then_probe(agent, driver)
             elif exc.status_code == 401:
                 raise LoginRequired("FlowPad cloud login required to allocate an inbox") from exc
             else:
@@ -366,6 +366,44 @@ class EmailInbox(Entity):
         else:
             await inbox._cache_policy()
         return inbox
+
+    @classmethod
+    async def _publish_then_probe(cls, agent, driver):
+        """Resolve what ``target_not_found`` actually meant, and return the inbox.
+
+        ``HubErrorCode.TARGET_NOT_FOUND`` is deliberately ambiguous — its own
+        definition says so: *"the target entity doesn't exist OR the caller holds
+        no role on it — the hub deliberately doesn't distinguish, so entity
+        existence doesn't leak."* Publishing is the right answer to the first
+        reading and guaranteed to fail on the second, so this asks rather than
+        assumes.
+
+        Publishing an agent the hub already holds answers 409. That is not a
+        failure to report as-is — it is the ambiguity resolving itself: the agent
+        IS on the hub, we simply could not see it. So we adopt it and probe once
+        more. If the mailbox is now readable the agent was ours all along (a row
+        published from another instance); if it still is not, the agent belongs
+        to someone else, and THAT is the sentence worth showing — not the hub's
+        "a conflicting record already exists", which describes a database
+        constraint rather than anything the reader can act on.
+        """
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+
+        try:
+            await agent.share()
+        except Exception:  # noqa: BLE001 — what it MEANT is decided by the re-probe below
+            agent.remote = True
+            try:
+                return await driver.get_inbox(agent.id)
+            except EmailInboxError as still_hidden:
+                agent.remote = False
+                raise EmailInboxError(
+                    403,
+                    "this agent already exists on the hub under another account, so its "
+                    "mailbox cannot be allocated from here — allocate it from the account "
+                    "that owns the agent, or use an agent of your own",
+                ) from still_hidden
+        return None
 
     async def disable(self) -> "EmailInbox":
         """Turn the mailbox off, keeping the address and the source's cursor.
