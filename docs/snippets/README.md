@@ -7,11 +7,12 @@ pinned by a test so it cannot drift silently.
 | --- | --- | --- |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder | `tests/unit/test_ingest_end_to_end.py`, `tests/unit/test_folder_source/`, `tests/unit/test_ingest_write_route.py` |
 | [Gmail message source](gmail-message-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_driver.py` |
-| [Agent email](agent-email.md) | email a pirate Agent from Gmail and receive its reply | `tests/hub_tests/test_agent_email_conversation.py` |
+| [Agent email](agent-email.md) | allocate an Agent inbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
 | [Workflows](workflows.md) | the plain-Python `blocks` surface: an inbox, an agent runner, a typed reply, on email, Telegram and Slack | `tests/long_tests/test_blocks_email_workflow.py`, `tests/unit/test_blocks_email.py`, `tests/unit/test_slack_driver.py` |
 | [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
 | [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer | `tests/long_tests/test_process_mcp_multi_vendor.py` |
 | [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py` |
+| [RAG](rag.md) | make a folder searchable, run a pass, ask it something, chunk and store on their own | `tests/unit/test_rag_snippets.py` (runs every snippet), `tests/unit/test_rag_indexing.py` |
 
 ## Conventions
 

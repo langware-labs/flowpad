@@ -1,3 +1,7 @@
+---
+id: aebe1592-762b-4b1a-a217-90de8b06a2f0
+---
+
 # Processes and agents — snippets
 
 An `Agent` is the launchable persona (`agent.md` plus what sits in its
