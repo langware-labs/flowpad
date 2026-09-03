@@ -5,13 +5,13 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.blocks import MessageSource
+from flow_sdk.blocks import MessageBlock
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
 @pytest.mark.asyncio
 async def test_simple_source_sends_a_prompt_and_returns_its_reply() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
 
@@ -40,7 +40,7 @@ async def test_simple_source_sends_a_prompt_and_returns_its_reply() -> None:
 
 @pytest.mark.asyncio
 async def test_each_concurrent_send_receives_its_own_reply() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
 
@@ -62,7 +62,7 @@ async def test_each_concurrent_send_receives_its_own_reply() -> None:
 
 @pytest.mark.asyncio
 async def test_send_requires_an_active_listener() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     with pytest.raises(RuntimeError, match="no active listener"):
         await channel.send("hello")
@@ -71,7 +71,7 @@ async def test_send_requires_an_active_listener() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prompt", ["", "   "])
 async def test_send_rejects_a_blank_prompt(prompt: str) -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen():
         with pytest.raises(ValueError, match="cannot be blank"):
@@ -80,7 +80,7 @@ async def test_send_rejects_a_blank_prompt(prompt: str) -> None:
 
 @pytest.mark.asyncio
 async def test_only_one_listener_can_be_active() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen():
         with pytest.raises(RuntimeError, match="already has an active listener"):
@@ -90,7 +90,7 @@ async def test_only_one_listener_can_be_active() -> None:
 
 @pytest.mark.asyncio
 async def test_a_request_can_be_replied_to_only_once() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
         send = asyncio.create_task(channel.send("hello"))
@@ -104,7 +104,7 @@ async def test_a_request_can_be_replied_to_only_once() -> None:
 
 @pytest.mark.asyncio
 async def test_request_round_trips_without_copying_its_reply_capability() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
         send = asyncio.create_task(channel.send("hello"))
@@ -128,7 +128,7 @@ async def test_request_round_trips_without_copying_its_reply_capability() -> Non
 @pytest.mark.asyncio
 @pytest.mark.parametrize("field", ["text", "body", "name", "thread_key", "external_id"])
 async def test_request_fields_are_read_only_without_breaking_correlation(field: str) -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
         send = asyncio.create_task(channel.send("hello"))
@@ -141,7 +141,7 @@ async def test_request_fields_are_read_only_without_breaking_correlation(field: 
 
 @pytest.mark.asyncio
 async def test_listener_exit_fails_an_unresolved_send() -> None:
-    channel = MessageSource.get("simple")
+    channel = MessageBlock.get("simple")
 
     async with channel.listen() as messages:
         send = asyncio.create_task(channel.send("hello"))
@@ -151,10 +151,10 @@ async def test_listener_exit_fails_an_unresolved_send() -> None:
         await send
 
 
-def test_each_get_returns_a_fresh_source() -> None:
-    assert MessageSource.get("simple") is not MessageSource.get("simple")
+def test_each_get_returns_a_fresh_block() -> None:
+    assert MessageBlock.get("simple") is not MessageBlock.get("simple")
 
 
-def test_unknown_source_kind_is_rejected() -> None:
-    with pytest.raises(ValueError, match="Unknown message source kind"):
-        MessageSource.get("missing")
+def test_unknown_block_kind_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unknown message block kind"):
+        MessageBlock.get("missing")

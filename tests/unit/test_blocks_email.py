@@ -255,7 +255,7 @@ class TestAgentMessageProcessing:
     @pytest.mark.asyncio
     async def test_respond_to_owns_listening_reply_and_cleanup(self, fake_runner):
         agent = Agent(name="stub")
-        channel = blocks.MessageSource.get("simple")
+        channel = blocks.MessageBlock.get("simple")
 
         async with agent.respond_to(channel):
             reply = await channel.send("hello")
@@ -267,7 +267,7 @@ class TestAgentMessageProcessing:
     @pytest.mark.asyncio
     async def test_respond_to_propagates_a_failed_agent_turn_to_send(self, fake_runner):
         agent = Agent(name="stub")
-        channel = blocks.MessageSource.get("simple")
+        channel = blocks.MessageBlock.get("simple")
 
         with pytest.raises(RuntimeError, match="agent turn exploded"):
             async with agent.respond_to(channel):
@@ -279,7 +279,7 @@ class TestAgentMessageProcessing:
     @pytest.mark.asyncio
     async def test_cancelled_send_does_not_stop_the_responder(self, fake_runner):
         agent = Agent(name="stub")
-        channel = blocks.MessageSource.get("simple")
+        channel = blocks.MessageBlock.get("simple")
 
         async with agent.respond_to(channel):
             abandoned = asyncio.create_task(channel.send("wait"))
