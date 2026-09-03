@@ -553,8 +553,8 @@ msgid "{name} names no support queue"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} said: {statusReason}"
-msgstr "{name} يقول: {statusReason}======="
+#~ msgid "{name} said: {statusReason}"
+#~ msgstr "{name} يقول: {statusReason}======="
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but another desk answers first"
@@ -877,6 +877,10 @@ msgstr "يوجد مشروع بهذا الاسم بالفعل"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "A request just failed because {name} isn't signed in on this machine."
 msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx

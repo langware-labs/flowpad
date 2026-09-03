@@ -553,8 +553,8 @@ msgid "{name} names no support queue"
 msgstr "{name} names no support queue"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} said: {statusReason}"
-msgstr "{name} said: {statusReason}"
+#~ msgid "{name} said: {statusReason}"
+#~ msgstr "{name} said: {statusReason}"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but another desk answers first"
@@ -878,6 +878,10 @@ msgstr "A project with that name exists"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
 msgstr "A public desk needs no connection. Connect GitHub to browse your own repos."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "A request just failed because {name} isn't signed in on this machine."
+msgstr "A request just failed because {name} isn't signed in on this machine."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."

@@ -853,14 +853,16 @@ function HarnessDetail({
             {statusReason && (
               <div
                 data-testid="harness-status-reason"
+                // The harness's own sentence, kept as evidence but off the
+                // face of the panel: it instructs a terminal user to run
+                // /login, which contradicts the button directly below.
+                title={status === 'unverified' ? undefined : statusReason}
                 className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-500"
               >
                 {status === 'unverified' ? (
                   <Trans>We couldn't confirm this sign-in: {statusReason}</Trans>
                 ) : (
-                  <Trans>
-                    {name} said: {statusReason}
-                  </Trans>
+                  <Trans>A request just failed because {name} isn't signed in on this machine.</Trans>
                 )}
               </div>
             )}
