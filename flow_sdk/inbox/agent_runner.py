@@ -154,6 +154,7 @@ async def handle_inbound(item) -> bool:
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.email_inbox import EmailInbox  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
@@ -169,7 +170,13 @@ async def handle_inbound(item) -> bool:
     agent = await _agent_for(source)
     if agent is None:
         return False
-    if not agent.may_email(item.author_external_id or ""):
+    # The mailbox owns the gate, and it answers from the source alone: the config
+    # carries the Hub identity and the row carries the cached allowlist.
+    # `from_source` is deliberately the local constructor — this runs per message,
+    # so a Hub round trip here would put the network on the path of every piece of
+    # mail, including the ones we are about to ignore.
+    inbox = EmailInbox.from_source(source)
+    if not inbox.allowed(item.author_external_id or ""):
         logger.info("[agent-mail] ignoring mail to %s from unlisted sender", agent.name or agent.id)
         return False
 
