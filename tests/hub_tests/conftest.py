@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import httpx
 import pytest
 
+from tests.hub_tests._local_login import login_as
+
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _LOCAL_HUB_STATUS: tuple[bool, str] | None = None
 
@@ -248,6 +250,20 @@ def _two_distinct_identities():
 @pytest.fixture()
 def hub_login_payload(hub_base_url) -> dict:
     return _login(hub_base_url)
+
+
+@pytest.fixture()
+def hub_session(hub_base_url, hub_login_payload) -> dict:
+    """A persisted local login plus the ids a direct hub call needs.
+
+    Mirrors the production ``cloud_login`` funnel's local writes (sodot token and
+    the ``config.json`` user record) so the desktop-side helpers see a logged-in
+    instance, and hands back the api key for Bearer calls.
+    """
+    api_key = login_as(hub_login_payload)
+    user_id = (hub_login_payload.get("user") or {}).get("id")
+    assert user_id, "hub /login returned no user record"
+    return {"api_key": api_key, "user_id": user_id, "base_url": hub_base_url}
 
 
 @pytest.fixture()

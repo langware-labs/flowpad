@@ -27,7 +27,6 @@ import pytest
 from flow_sdk.core.oauth.hub_oauth import (
     hub_credential_value,
     hub_credentials_name_for,
-    hub_holds_credential,
     hub_start_auth,
 )
 from flow_sdk.core.oauth.provider_registry import (
@@ -36,7 +35,6 @@ from flow_sdk.core.oauth.provider_registry import (
     prefers_hub_flow,
     user_credentials_name,
 )
-from tests.hub_tests._local_login import login_as
 
 HUB_NAME = hub_credentials_name_for(ATLASSIAN)  # ATLASSIAN_OAUTH_USER_TOKEN
 
@@ -50,20 +48,12 @@ CONNECT_HINT = (
     "no Atlassian token on the hub yet. Connect once, then re-run:\n"
     "  1. GET {hub}/api/v1/graph/user/<your-id>/oauth/atlassian/auth  (Bearer token)\n"
     "  2. open the `auth_url` it returns, pick the site, click Accept\n"
-    "  3. re-run this file\n"
-    "The click needs a person — a real Atlassian login means a real password, "
-    "which is exactly what the dummy provider stands in for in every other test."
+    "  3. re-run this file"
 )
 
 REQUIRED_SCOPES = {"read:me", "offline_access", "read:jira-work", "read:confluence-content.all"}
 
 
-@pytest.fixture
-def hub_session(hub_base_url, hub_login_payload):
-    api_key = login_as(hub_login_payload)
-    user_id = (hub_login_payload.get("user") or {}).get("id")
-    assert user_id, "hub /login returned no user record"
-    return {"api_key": api_key, "user_id": user_id, "base_url": hub_base_url}
 
 
 # ── unattended: everything short of the consent click ────────────────────────
@@ -111,24 +101,25 @@ async def test_the_hub_builds_a_real_atlassian_authorize_url(hub_session):
 
 
 async def test_the_hub_holds_and_releases_the_atlassian_token(hub_session):
-    if not await hub_holds_credential(HUB_NAME):
-        pytest.skip(CONNECT_HINT)
-
+    # `hub_credential_value` already gates on `hub_holds_credential` and answers
+    # None when the row is absent, so one call is both the skip and the assert.
     value = await hub_credential_value(HUB_NAME)
+    if value is None:
+        pytest.skip(CONNECT_HINT)
     assert value, "the hub holds an Atlassian token but will not release its value"
 
 
 async def test_the_hub_held_atlassian_token_actually_works(hub_session):
     """The strongest claim available: call Atlassian with what the hub holds.
     `/me` is the one endpoint that needs no site, so it is the probe."""
-    if not await hub_holds_credential(HUB_NAME):
-        pytest.skip(CONNECT_HINT)
     if os.getenv("FLOWPAD_SKIP_LIVE_PROVIDER") == "1":
         pytest.skip("live provider calls disabled")
 
     from flow_sdk.core.oauth.provider_probe import run_probe
 
     token = await hub_credential_value(HUB_NAME)
+    if token is None:
+        pytest.skip(CONNECT_HINT)
     result = await run_probe(ATLASSIAN, token)
     assert result.ok is True, f"Atlassian refused the token: {result.detail!r}"
     assert result.identity, "/me accepted the token but named no identity"
