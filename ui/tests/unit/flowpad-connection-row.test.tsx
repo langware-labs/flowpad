@@ -17,7 +17,7 @@ const h = vi.hoisted(() => ({
   login: { status: 'logged_out', user: null, reason: null } as Record<string, unknown>,
   connection: { status: 'disconnected', error: null } as Record<string, unknown>,
   cloudLogin: vi.fn(async () => undefined),
-  generate: vi.fn(),
+  cloudLogout: vi.fn(async () => undefined),
 }));
 
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
@@ -31,19 +31,8 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => ({
 }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  cloudManager: { login: h.cloudLogin },
+  cloudManager: { login: h.cloudLogin, logout: h.cloudLogout },
 }));
-vi.mock('@src/components/api-keys-view/use-user-api-keys', () => ({
-  useUserApiKeys: () => ({
-    apiKeys: [],
-    flowpadKey: null,
-    generatedKey: null,
-    generate: h.generate,
-    remove: vi.fn(),
-    isLoading: false,
-  }),
-}));
-
 const { FlowpadConnectionRow } = await import(
   '@src/components/connections-manager/flowpad-connection-row'
 );
@@ -113,11 +102,16 @@ describe('FlowpadConnectionRow', () => {
     expect(screen.queryByTestId('connection-flowpad-connect')).toBeNull();
   });
 
-  it('keeps the API key with the account it belongs to', async () => {
+  it('signs out as-is when signed in — `cloudManager.logout()` and nothing else', async () => {
+    h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
+    h.connection = { status: 'verified', error: null };
     renderRow();
-    expect(screen.queryByTestId('connection-flowpad-key-panel')).toBeNull();
 
-    await userEvent.click(screen.getByTestId('connection-flowpad-key'));
-    expect(screen.getByTestId('connection-flowpad-key-panel')).toBeTruthy();
+    // Connect and Logout are the account's own lifecycle. The hub-websocket
+    // controls (Reconnect / Verify / Disconnect) stay on the Account screen,
+    // which models all 4 login × 6 connection states around them.
+    expect(screen.queryByTestId('connection-flowpad-connect')).toBeNull();
+    await userEvent.click(screen.getByTestId('connection-flowpad-logout'));
+    expect(h.cloudLogout).toHaveBeenCalledTimes(1);
   });
 });

@@ -11,9 +11,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
-import { CONNECTIONS_COLUMN_COUNT } from '../connections-manager';
-import { FlowPadApiKeyPanel, GeneratedApiKeyCallout } from '../api-keys-view/FlowPadApiKeyPanel';
-import { useUserApiKeys } from '../api-keys-view/use-user-api-keys';
 
 /**
  * FlowPad's own account, as a row in the Connections table.
@@ -34,9 +31,7 @@ import { useUserApiKeys } from '../api-keys-view/use-user-api-keys';
 export function FlowpadConnectionRow() {
   const { t } = useLingui();
   const { login, connection, cloudUrl } = useCloudStatus();
-  const keys = useUserApiKeys();
   const [busy, setBusy] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
 
   const loggedIn = login.status === 'logged_in';
 
@@ -65,6 +60,21 @@ export function FlowpadConnectionRow() {
     }
   };
 
+  /** Sign out, as-is: `cloudManager.logout()` is the whole action. */
+  const logout = async () => {
+    setBusy(true);
+    try {
+      await cloudManager.logout();
+    } catch (error) {
+      notify.error({
+        title: t`Could not sign out of FlowPad`,
+        message: errorMessage(error, t`The logout did not complete.`),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // The status word comes from the SHARED hub-status table, not a second copy:
   // `user-info.tsx` renders the same two enums, and an if-ladder here had
   // already drifted from it on two states — and would have swallowed a new one
@@ -80,99 +90,80 @@ export function FlowpadConnectionRow() {
     .join(' · ');
 
   return (
-    <>
-      <TableRow data-testid="connection-row-flowpad">
-        <TableCell className="font-medium">
-          <div className="flex items-center gap-2">
-            <img src={flowpadIcon} alt="" className="h-4 w-4 shrink-0 rounded-sm" />
-            <span>FlowPad</span>
-          </div>
-        </TableCell>
+    <TableRow data-testid="connection-row-flowpad">
+      <TableCell className="font-medium">
+        <div className="flex items-center gap-2">
+          <img src={flowpadIcon} alt="" className="h-4 w-4 shrink-0 rounded-sm" />
+          <span>FlowPad</span>
+        </div>
+      </TableCell>
 
-        <TableCell>
-          {/* Not "OAuth": the OAuth rows' `grantLabel` would describe hub login
-              as an authorization-code grant, which it is not. */}
-          <Badge
-            variant="outline"
-            className="text-xs font-normal"
-            title={cloudUrl || t`Your FlowPad account`}
-            data-testid="connection-kind-flowpad"
-          >
-            <Trans>FlowPad</Trans>
-          </Badge>
-        </TableCell>
+      <TableCell>
+        {/* Not "OAuth": the OAuth rows' `grantLabel` would describe hub login
+            as an authorization-code grant, which it is not. */}
+        <Badge
+          variant="outline"
+          className="text-xs font-normal"
+          title={cloudUrl || t`Your FlowPad account`}
+          data-testid="connection-kind-flowpad"
+        >
+          <Trans>FlowPad</Trans>
+        </Badge>
+      </TableCell>
 
-        {/* Machine-level, not project-scoped: it asks for no per-project scopes
-            and is not attached to a project, so both columns are honestly empty. */}
-        <TableCell className="text-sm text-muted-foreground">—</TableCell>
+      {/* Machine-level, not project-scoped: it asks for no per-project scopes
+          and is not attached to a project, so both columns are honestly empty. */}
+      <TableCell className="text-sm text-muted-foreground">—</TableCell>
 
-        <TableCell>
-          <div className="flex items-center gap-2 text-sm">
-            <span
-              className={cn(
-                'h-2 w-2 shrink-0 rounded-full',
-                healthy ? 'bg-emerald-500' : loggedIn ? 'bg-amber-500' : 'bg-muted-foreground/40',
-              )}
-            />
-            <span
-              className={cn('whitespace-nowrap', healthy && 'text-emerald-600')}
-              title={account || undefined}
-              data-testid="connection-status-flowpad"
-            >
-              {statusText}
-            </span>
-          </div>
-        </TableCell>
-
-        <TableCell className="text-sm text-muted-foreground">—</TableCell>
-
-        {/* No Disconnect, and no Manage: Reconnect / Verify / Disconnect are
-            hub-websocket controls, desktop-only (`connectionControlsAvailable`),
-            and `account/user-info.tsx` already models all 4 login × 6 connection
-            states around them. Account is a popover, not a dock address, so a
-            "Manage" button here would have nowhere to navigate to — the row
-            reports, and connects when there is nothing to report. */}
-        <TableCell className="text-end">
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7"
-              onClick={() => setOpen((v) => !v)}
-              data-testid="connection-flowpad-key"
-            >
-              <Trans>API key</Trans>
-            </Button>
-            {loggedIn ? null : (
-              <Button
-                size="sm"
-                className="h-7"
-                disabled={signingIn}
-                onClick={() => void connect()}
-                data-testid="connection-flowpad-connect"
-              >
-                {signingIn ? <Trans>Signing in…</Trans> : <Trans>Connect</Trans>}
-              </Button>
+      <TableCell>
+        <div className="flex items-center gap-2 text-sm">
+          <span
+            className={cn(
+              'h-2 w-2 shrink-0 rounded-full',
+              healthy ? 'bg-emerald-500' : loggedIn ? 'bg-amber-500' : 'bg-muted-foreground/40',
             )}
-          </div>
-        </TableCell>
-      </TableRow>
+          />
+          <span
+            className={cn('whitespace-nowrap', healthy && 'text-emerald-600')}
+            title={account || undefined}
+            data-testid="connection-status-flowpad"
+          >
+            {statusText}
+          </span>
+        </div>
+      </TableCell>
 
-      {/* The `fp_live_…` key is the other half of "this machine's FlowPad
-          account", so it expands from the same row instead of living in a
-          separate screen. Both panels are reused verbatim — the generated key is
-          shown once and is never re-fetchable, and that callout is the only place
-          the full secret is ever visible. */}
-      {open && (
-        <TableRow data-testid="connection-flowpad-key-panel">
-          <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="bg-muted/30">
-            <div className="space-y-4 py-2">
-              <FlowPadApiKeyPanel keys={keys} />
-              {keys.generatedKey && <GeneratedApiKeyCallout apiKey={keys.generatedKey} />}
-            </div>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
+      <TableCell className="text-sm text-muted-foreground">—</TableCell>
+
+      {/* Sign in, or sign out — the account's own lifecycle and nothing more.
+          Reconnect / Verify / Disconnect are hub-WEBSOCKET controls, desktop-only
+          (`connectionControlsAvailable`), and `account/user-info.tsx` already
+          models all 4 login × 6 connection states around them; a lossy copy of
+          three of six belongs here even less than none. */}
+      <TableCell className="text-end">
+        {loggedIn ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            disabled={busy}
+            onClick={() => void logout()}
+            data-testid="connection-flowpad-logout"
+          >
+            {busy ? <Trans>Signing out…</Trans> : <Trans>Logout</Trans>}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            className="h-7"
+            disabled={signingIn}
+            onClick={() => void connect()}
+            data-testid="connection-flowpad-connect"
+          >
+            {signingIn ? <Trans>Signing in…</Trans> : <Trans>Connect</Trans>}
+          </Button>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
