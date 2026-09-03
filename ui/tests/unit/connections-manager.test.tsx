@@ -86,7 +86,7 @@ vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) =>
   useLlmSources: () => ({ status: null, isLoading: false }),
 }));
 // `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
-// not render — the harness row is the first thing in this tree to navigate.
+// not render. The host owns navigation so the harness rows can stay presenters.
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {}, currentDock: null }),
 }));
