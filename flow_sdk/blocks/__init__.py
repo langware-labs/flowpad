@@ -386,20 +386,43 @@ class Inbox:
         api_key: str = "",
         provider: str = "agentmail",
         senders: Sequence[str] = (),
+        owner=None,
         **config,
     ):
         """``address`` is the mailbox/handle the block is ABOUT (an email
         address, a bot's @username); the provider decides what identifies the
         source (the driver's ``identity_config_key``). Provider-specific
         credentials pass as keyword config (``api_key=...``,
-        ``bot_token=...``) and land on the DataSource verbatim."""
+        ``bot_token=...``) and land on the DataSource verbatim.
+
+        ``owner`` says whose inbox this is — a user or Agent ``TypeId``, or an
+        ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
+        in the config keeps working as the compatibility alias: it is the
+        cloud mailbox driver's identity key and implies ``owner`` when none is
+        given."""
         self.address = str(address).strip()
         self.provider = provider
         self.senders = {s.strip().lower() for s in senders if s.strip()}
         self._config = {k: v for k, v in config.items() if v is not None}
         if api_key:
             self._config["api_key"] = api_key
+        self._owner_arg = owner
         self._source = None
+
+    def _owner(self):
+        """The ``TypeId`` this block's source belongs to, or None for the local
+        user (the DataSource stamps that itself on save)."""
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        given = self._owner_arg
+        if given is not None:
+            if isinstance(given, TypeId):
+                return given
+            typeid = getattr(given, "typeid", None)
+            return typeid if isinstance(typeid, TypeId) else TypeId(str(given))
+        agent_id = str(self._config.get("agent_id") or "").strip()
+        return TypeId(type=EntityType.AGENT.value, id=agent_id) if agent_id else None
 
     def _identity(self) -> tuple[str, str]:
         """(config key, value) that names WHICH account this block watches —
@@ -426,7 +449,8 @@ class Inbox:
             await require(driver.connection)
 
         key, value = self._identity()
-        existing = await DataSource.find_for_account(self.provider, key, value)
+        owner = self._owner()
+        existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
         if existing is not None:
             self._source = existing
             return existing
@@ -434,6 +458,7 @@ class Inbox:
             name=f"Inbox {self.address}",
             provider=self.provider,
             config={key: value, **self._config},
+            owner=owner,
         )
         await source.save()
         self._source = source

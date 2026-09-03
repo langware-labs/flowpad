@@ -88,3 +88,101 @@ async def test_thread_lookup_narrows_by_owner_and_stays_pre_owner_without_it():
     # legacy fallback is scoped to `owner IS NULL` rather than "any owner".
     with pytest.raises(ValueError, match="Multiple"):
         await MessageThread.find_existing("slack", key)
+
+
+# ── Phase 2: writers stamp owner; the thread seam keeps owners apart ─────────
+
+
+async def test_two_owners_on_one_key_get_two_threads_and_one_owner_gets_one():
+    """Enters through `resolve_thread`, the projection's real thread seam."""
+    from flow_sdk.inbox.projection import resolve_thread
+
+    a, b = _agent_tid(), _agent_tid()
+    key = f"ts-{uuid.uuid4()}"
+    ta1 = await resolve_thread("slack", key, a, title="t")
+    ta2 = await resolve_thread("slack", key, a, title="t")
+    tb = await resolve_thread("slack", key, b, title="t")
+    assert ta1.id == ta2.id, "the same owner must resolve one thread"
+    assert tb.id != ta1.id, "a second owner on the same key must not merge into the first"
+    assert ta1.conversation_id != tb.conversation_id
+
+
+async def test_a_pre_owner_thread_is_adopted_by_the_first_owner_not_forked():
+    """The conversation a user has been reading must survive the key change."""
+    from flow_sdk.inbox.projection import resolve_thread
+
+    key = f"ts-{uuid.uuid4()}"
+    legacy = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, conversation_id=str(uuid.uuid4()))
+    await legacy.save(notify=False)  # owner is None: a row from before the field existed
+
+    a = _agent_tid()
+    adopted = await resolve_thread("slack", key, a, title="t")
+    assert adopted.id == legacy.id
+    assert adopted.conversation_id == legacy.conversation_id
+    assert (await MessageThread.get_one({"id": legacy.id})).owner == a
+
+    # Once claimed, it is A's: a second owner mints its own rather than stealing it.
+    b = _agent_tid()
+    other = await resolve_thread("slack", key, b, title="t")
+    assert other.id != legacy.id
+    assert await MessageThread.find_unowned("slack", key) is None
+
+
+async def test_find_for_account_narrows_by_owner_and_is_pre_owner_without_it():
+    a, b = _agent_tid(), _agent_tid()
+    channel = f"C{uuid.uuid4().hex[:8]}"
+    sa = DataSource(name="a", provider="slack", config={"channels": [channel]}, owner=a)
+    sb = DataSource(name="b", provider="slack", config={"channels": [channel]}, owner=b)
+    await sa.save(notify=False)
+    await sb.save(notify=False)
+
+    assert (await DataSource.find_for_account("slack", "channels", channel, owner=a)).id == sa.id
+    assert (await DataSource.find_for_account("slack", "channels", channel, owner=b)).id == sb.id
+    # Omitted: the pre-owner lookup returns the first match, as it always has.
+    assert (await DataSource.find_for_account("slack", "channels", channel)).id in {sa.id, sb.id}
+
+
+async def test_find_owned_includes_a_legacy_agent_row_and_filters_by_channel():
+    agent_id = str(uuid.uuid4())
+    tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
+    owned = DataSource(name="o", provider="rss", owner=tid, channel="rss")
+    legacy = DataSource(name="l", provider="cloud_email", config={"agent_id": agent_id}, channel="agentmail")
+    stranger = DataSource(name="s", provider="rss", owner=_agent_tid(), channel="rss")
+    for row in (owned, legacy, stranger):
+        await row.save(notify=False)
+    # The save choke-point must NOT overwrite a legacy row's implied owner with the local user.
+    assert (await DataSource.get_one({"id": legacy.id})).owner == tid
+
+    ids = {r.id for r in await DataSource.find_owned(tid)}
+    assert ids == {owned.id, legacy.id}
+    assert {r.id for r in await DataSource.find_owned(tid, channel="agentmail")} == {legacy.id}
+
+
+async def test_save_stamps_the_local_user_when_nothing_set_an_owner():
+    local = await _local_user()
+    source = DataSource(name="mine", provider="rss")
+    assert source.owner is None
+    await source.save(notify=False)
+    assert source.owner == TypeId(type=EntityType.USER.value, id=str(local.id))
+
+
+async def test_ensure_conversation_entity_stamps_owner_and_adopts_a_pre_owner_row():
+    from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity
+    from flow_sdk.builtin.conversation import Conversation
+
+    a = _agent_tid()
+    created = await ensure_conversation_entity(str(uuid.uuid4()), None, title="t", owner=a)
+    assert created.owner == a
+
+    await _local_user()
+    plain = await ensure_conversation_entity(str(uuid.uuid4()), None, title="t")
+    assert plain.owner == await default_owner(), "no owner given → the local user's"
+
+    # A row from before the field existed, touched by a caller that knows the owner.
+    pre = Conversation(title="old")
+    pre.id = str(uuid.uuid4())
+    await pre.save(None, notify=False)
+    assert (await Conversation.get_one({"id": pre.id})).owner is None
+    adopted = await ensure_conversation_entity(pre.id, None, owner=a)
+    assert adopted.owner == a
+    assert (await Conversation.get_one({"id": pre.id})).owner == a

@@ -370,3 +370,26 @@ class TestInboxSend:
 def test_run_output_is_a_value():
     out = RunOutput(text="hi")
     assert out.text == "hi" and out.files == []
+
+
+# ── owner: the block says whose inbox it is; `agent_id=` stays as the alias ──
+
+
+def test_inbox_owner_is_implied_by_the_agent_id_alias():
+    from flow_sdk.fs_store.type_id import TypeId
+    from flow_sdk.schema.types import EntityType
+
+    agent_id = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
+    inbox = blocks.Inbox("pirate@agentmail.to", provider="cloud_email", agent_id=agent_id)
+    assert inbox._owner() == TypeId(type=EntityType.AGENT.value, id=agent_id)
+    # The alias still lands on the source config: it is cloud_email's identity key.
+    assert inbox._config["agent_id"] == agent_id
+
+
+def test_inbox_explicit_owner_wins_and_a_plain_inbox_is_the_local_users():
+    from flow_sdk.fs_store.type_id import TypeId
+
+    tid = TypeId(type="agent", id="3c1d9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c")
+    assert blocks.Inbox("me@agentmail.to", api_key="k", owner=tid, agent_id="ignored")._owner() == tid
+    # None here means "the DataSource stamps the local user on save", not "nobody".
+    assert blocks.Inbox("me@agentmail.to", api_key="k")._owner() is None

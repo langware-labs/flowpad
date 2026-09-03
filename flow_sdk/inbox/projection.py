@@ -52,6 +52,55 @@ def _thread_lock():
     return loop_lock(_thread_locks)
 
 
+async def resolve_thread(channel: str, key: str, owner, *, title: str):
+    """The thread for ``(owner, channel, key)`` — found, adopted, or minted.
+
+    Resolve-or-create, double-checked: the derived id used to absorb this race
+    for free, a lookup does not — two concurrent events on a brand-new thread
+    would each miss and fork it. The lock is taken only on a miss, so the
+    ~100% common already-exists case never serializes on it.
+
+    Between the owner lookup and the mint sits the migration: a thread written
+    before ``owner`` existed has none, and it must become THIS owner's row
+    rather than be forked by a fresh one — the conversation it points at is
+    the one the user has been reading. Scoped to ``owner IS NULL``, never
+    "any owner", so a second owner on the same key mints its own thread.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner)
+    if thread is not None:
+        return thread
+    async with _thread_lock():
+        thread = await MessageThread.find_existing(channel, key, owner)
+        if thread is not None:
+            return thread
+        legacy = await MessageThread.find_unowned(channel, key)
+        if legacy is not None:
+            legacy.owner = owner
+            await legacy.save(notify=False)
+            return legacy
+        # Both ids are ordinary uuid4s, minted here at birth and looked up ever
+        # after. `conversation_id` is authoritative from this moment: a merge
+        # repoints it, which is the whole reason nothing re-derives it from the
+        # key. A mail thread titles by subject. A chat message has none, and
+        # falling back to the KEY put raw Slack ts digits in the inbox; the
+        # root message's opening is what Slack itself titles a thread by.
+        # Stamped at birth only, so it never churns.
+        thread = MessageThread(
+            id=mint_uuid(),
+            channel=channel,
+            thread_key=key,
+            owner=owner,
+            conversation_id=mint_uuid(),
+            title=title,
+            name=title,
+        )
+        await thread.save(notify=False)
+        return thread
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
@@ -175,11 +224,9 @@ async def project_source_item(
     CREATED the row announces (``_place_message``), so the announcement lands
     exactly once without a lane having to know who won.
     """
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -192,34 +239,9 @@ async def project_source_item(
     channel = channel_of(source)
     subject = item.name or ""
     key = thread_key_for(item, subject)
+    owner = await owner_of(source)
 
-    # Resolve-or-create, double-checked: the derived id used to absorb this
-    # race for free, a lookup does not — two concurrent events on a brand-new
-    # thread would each miss and fork it. The lock is taken only on a miss, so
-    # the ~100% common already-exists case never serializes on it.
-    thread = await MessageThread.find_existing(channel, key)
-    if thread is None:
-        async with _thread_lock():
-            thread = await MessageThread.find_existing(channel, key)
-            if thread is None:
-                # Both ids are ordinary uuid4s, minted here at birth and looked
-                # up ever after. `conversation_id` is authoritative from this
-                # moment: a merge repoints it, which is the whole reason
-                # nothing re-derives it from the key.
-                # A mail thread titles by subject. A chat message has none, and
-                # falling back to the KEY put raw Slack ts digits in the inbox;
-                # the root message's opening is what Slack itself titles a
-                # thread by. Stamped at birth only, so it never churns.
-                display = subject or _thread_title(item) or key
-                thread = MessageThread(
-                    id=mint_uuid(),
-                    channel=channel,
-                    thread_key=key,
-                    conversation_id=mint_uuid(),
-                    title=display,
-                    name=display,
-                )
-                await thread.save(notify=False)
+    thread = await resolve_thread(channel, key, owner, title=subject or _thread_title(item) or key)
     thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
@@ -230,6 +252,7 @@ async def project_source_item(
         parent_typeid=None,
         someone_typeid=None,
         title=thread.title or subject or key,
+        owner=thread.owner,
     )
 
     sender_id, sender_name = await _sender_for(item, source, channel)

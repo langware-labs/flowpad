@@ -77,7 +77,10 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
 
     return await DataSource.find_for_account(
-        CloudEmailDriver.provider, CloudEmailDriver.identity_config_key, str(agent_id or "")
+        CloudEmailDriver.provider,
+        CloudEmailDriver.identity_config_key,
+        str(agent_id or ""),
+        owner=TypeId(type=EntityType.AGENT.value, id=str(agent_id or "")),
     )
 
 
@@ -497,12 +500,14 @@ class EmailInbox(Entity):
                 config=config,
                 account_key=self.address,
                 account_identities=[self.address],
+                owner=self.agent_typeid,
             )
             await source.save()
             return source
 
         wanted = {
             "config": {**(source.config or {}), **config},
+            "owner": self.agent_typeid,
             "kind": CloudEmailDriver.kind,
             "account_key": self.address,
             "account_identities": [self.address],

@@ -92,3 +92,26 @@ class MessageThread(ProjectedFields, Entity):
         if owner is not None:
             match["owner"] = str(owner)
         return await cls.get_one(match)
+
+    @classmethod
+    async def find_unowned(cls, channel: str, thread_key: str) -> "MessageThread | None":
+        """The pre-owner row for this key, if one is still unclaimed.
+
+        Exactly ``owner IS NULL`` — a row written before ownership existed —
+        and NOT "any owner": the projection adopts the former into the owner
+        that resolves it, and must never adopt another owner's thread.
+        """
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        return await cls.get_one(
+            QueryFilter(
+                match=ExpressionNode(
+                    op=QueryOp.AND,
+                    operands=[
+                        ExpressionNode(op=QueryOp.EQ, operands=["channel", channel]),
+                        ExpressionNode(op=QueryOp.EQ, operands=["thread_key", thread_key]),
+                        ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]),
+                    ],
+                )
+            )
+        )
