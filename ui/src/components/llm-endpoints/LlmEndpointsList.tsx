@@ -11,7 +11,7 @@
  * (react-query dedupes and caches them; the same query feeds the detail's
  * Today tab), so the list is a glance at spend without a second endpoint.
  */
-import type { LLMEndpoint, LLMUsageReport } from '@sdk';
+import type { LLMEndpoint, LLMEndpointKind, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueries } from '@tanstack/react-query';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -79,8 +79,11 @@ export function EndpointLink({
   );
 }
 
-export function CredentialChip({ endpoint }: { endpoint: LLMEndpoint }) {
-  if (endpoint.kind !== 'root') return <span className="text-xs text-muted-foreground">—</span>;
+export function CredentialChip({ endpoint, kind }: { endpoint: LLMEndpoint; kind?: LLMEndpointKind }) {
+  // Only a root holds a key, so only a root can be missing one. `endpoint.kind` says `root` for
+  // everything (see `kindFromChain`), which is why a chain wore an amber "no key" warning about a
+  // key it is not supposed to have. Callers that know the real kind pass it.
+  if ((kind ?? endpoint.kind) !== 'root') return <span className="text-xs text-muted-foreground">—</span>;
   return endpoint.hasCredential ? (
     <span
       className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] ${TONE.emerald}`}
