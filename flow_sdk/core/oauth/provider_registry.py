@@ -33,6 +33,7 @@ ANTHROPIC = "anthropic"
 SLACK = "slack"
 GOOGLE = "google"
 ATLASSIAN = "atlassian"
+LINEAR = "linear"
 
 
 class OAuthFlowKind(str, Enum):
@@ -136,6 +137,13 @@ class LocalOAuthProvider:
     hub_required: bool = False
     #: Whether a Hub grant is copied into local SOD for non-Hub consumers.
     copy_hub_credential: bool = False
+    #: OPTIONAL. The local SOD name for this provider's APP (bot) credential,
+    #: when the provider issues a second identity alongside the user's. Slack's
+    #: one OAuth returns both an `xoxb` bot token and an `xoxp` user token; the
+    #: bot is who an agent should speak AS in a channel, and it is the identity
+    #: `_ensure_identity` was written to stamp. None means the provider has no
+    #: second identity, which is every other provider we ship.
+    app_credentials_name: Optional[str] = None
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -203,11 +211,20 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # Google's "Desktop app" client type is exactly this grant: authorize in
         # the browser, redirect to a loopback port, exchange with PKCE.
         kind=OAuthFlowKind.LOOPBACK,
-        # Read-only Drive, which is all `GoogleDriveDriver` asks for. Listed here
-        # AND in the source manifest because this is what the consent screen
-        # requests while the manifest is what the source declares it needs; the
-        # verify path asserts the granted set covers the requested one.
-        scopes=("https://www.googleapis.com/auth/drive.readonly",),
+        # Read-only Drive and read-only Storage — what `GoogleDriveDriver` and
+        # `GoogleCloudStorageDriver` ask for. Listed here AND in each source manifest
+        # because this is what the consent screen requests while the manifest is what
+        # the source declares it needs; the verify path asserts the granted set covers
+        # the requested one.
+        #
+        # `devstorage.read_only` was missing until GCS shipped, so a Google connection
+        # granted before then carries Drive only and every GCS call 403s — including the
+        # bucket picker, which then reads as "this project has no buckets". Adding a
+        # scope invalidates existing consent: anyone already connected reconnects once.
+        scopes=(
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/devstorage.read_only",
+        ),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
@@ -261,6 +278,10 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # tier. Adoption runs once inside the wait-callback request (which can),
         # and the poller then reads local SOD.
         copy_hub_credential=True,
+        # The bot half of the same grant. An agent posts AS this, not as the
+        # human who connected — which is also what makes an inbound message from
+        # that human read as someone else, so a reply is addressable at all.
+        app_credentials_name="slack_bot_credentials",
     ),
     ATLASSIAN: LocalOAuthProvider(
         name=ATLASSIAN,
@@ -286,6 +307,29 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         hub_required=True,
         # Access tokens expire hourly and the hub refreshes them; a local copy
         # would go stale within the hour, so read through the hub instead.
+        copy_hub_credential=False,
+    ),
+    LINEAR: LocalOAuthProvider(
+        name=LINEAR,
+        display_name="Linear",
+        user_credentials_name="linear_credentials",
+        icon="Linear",
+        # Hub-run code flow, like Slack and Atlassian.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        # GraphQL over GET: the query rides in the URL, and the JSON content-type
+        # is what gets the request past Linear's CSRF guard.
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.linear.app/graphql",
+            query=(("query", "{ viewer { id name email } }"),),
+            headers=(("Content-Type", "application/json"),),
+            identity_fields=("data.viewer.email", "data.viewer.name"),
+            account_key_fields=("data.viewer.id",),
+        ),
+        hub_required=True,
         copy_hub_credential=False,
     ),
 }
@@ -372,7 +416,7 @@ def prefers_hub_flow(name: str) -> bool:
     return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
 
 
-async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -> Any:
+async def credential_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Any:
     """The stored credential for ``provider`` in whatever shape it was saved
     (GitHub: the token string; Anthropic: the normalized OAuth dict), or ``None``.
 
@@ -393,7 +437,11 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
     resolver and a capability probe) and a new tier reached some of them.
     Never raises: absence is the normal case for a provider nobody connected.
     """
-    name = user_credentials_name(provider)
+    # ``name`` reads a NON-default credential for the same provider — Slack's
+    # bot token beside the user's. The hub tier is skipped for it: that tier
+    # resolves the provider's user-token name, which is not this one.
+    explicit_name = name is not None
+    name = name or user_credentials_name(provider)
     if not name:
         return None
 
@@ -426,7 +474,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
-    if not hub:
+    if not hub or explicit_name:
         return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415

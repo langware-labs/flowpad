@@ -15,7 +15,8 @@ import * as React from 'react';
  *
  *  - **Multicolour brands** (Slack) must ship their own colours; a
  *    `currentColor` glyph would be wrong at any theme.
- *  - **Monochrome brands** (GitHub) must NOT ship colours: the asset the hub
+ *  - **Monochrome brands** (GitHub, and Atlassian/Linear via `CUSTOM_ICONS`)
+ *    must NOT ship colours: the asset the hub
  *    publishes is a black octocat, which disappears against a dark background.
  *    They map to a `currentColor` lucide glyph so they invert with the theme
  *    like every other icon in the table.
@@ -51,16 +52,7 @@ const SlackMark: ProviderMark = ({ className }) => (
 /** GitHub's mark is monochrome — take the theme's foreground colour. */
 const GithubMark: ProviderMark = ({ className }) => <Github className={className} aria-hidden="true" />;
 
-/** Atlassian's mark is monochrome (brand blue on white) — take the theme's
- *  foreground colour, as GitHub does, so it survives both themes. */
-const AtlassianMark: ProviderMark = ({ className }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-    <path d="M7.12 10.86a.68.68 0 0 0-1.16.12L.07 22.76a.7.7 0 0 0 .63 1.02h8.2a.68.68 0 0 0 .63-.39c1.77-3.66.7-9.22-2.41-12.53z" />
-    <path d="M11.43.36a15.53 15.53 0 0 0-.9 15.33l3.95 7.7a.7.7 0 0 0 .63.39h8.2a.7.7 0 0 0 .63-1.02L12.63.38a.67.67 0 0 0-1.2-.02z" />
-  </svg>
-);
-
-const MARKS: Record<string, ProviderMark> = { slack: SlackMark, github: GithubMark, atlassian: AtlassianMark };
+const MARKS: Record<string, ProviderMark> = { slack: SlackMark, github: GithubMark };
 
 /** The bespoke mark for a provider, or `null` — callers then fall back to the
  *  backend's published icon name. */
