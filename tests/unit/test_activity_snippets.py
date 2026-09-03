@@ -12,13 +12,6 @@ from flow_sdk.activity import Activity, ActivityState, monitor
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-@pytest.fixture(autouse=True)
-def _clean_monitor():
-    monitor.clear()
-    yield
-    monitor.clear()
-
-
 def test_snippet_1_count():
     act = Activity.get("index").label("Indexing").total(5000)
     act.inc_success()

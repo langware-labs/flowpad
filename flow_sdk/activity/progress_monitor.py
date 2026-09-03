@@ -31,6 +31,7 @@ called ``monitor`` would be shadowed by the singleton on the package, and every
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -47,6 +48,27 @@ Subscriber = Callable[[Activity, bool], None]
 def _norm(path: str) -> str:
     """Canonical address, so ``"/index//pdf"`` and ``"index/pdf"`` key the same node."""
     return SEP.join(split_path(path))
+
+
+def _norm_scope(scope: "Optional[str]") -> "Optional[str]":
+    """This machine's own ComputeNode IS the instance, so it normalises to no scope.
+
+    Two spellings of one place would otherwise be two addresses: a legacy producer scopes
+    its index to ``str(compute_node.typeid)`` while ``flow progress index`` scopes to
+    nothing, and the same job would run twice under one name without either seeing the
+    other. Collapsing here also means "belongs to the box" is structurally ``scope is
+    None`` everywhere downstream, instead of a comparison each consumer has to remember.
+    """
+    if scope is None:
+        return None
+    from flow_sdk.activity.emit import local_scope_typeid  # lazy: emit imports the monitor
+
+    return None if scope == local_scope_typeid() else scope
+
+
+def _is_held(node: "Optional[Activity]") -> bool:
+    """Whether a node owns its address right now — the ONE definition of "taken"."""
+    return node is not None and not node.is_terminal and not node.claim_expired
 
 class ActivityProgressMonitor:
     """Tracks every live activity on this box. One instance, module-level below."""
@@ -75,6 +97,7 @@ class ActivityProgressMonitor:
         segs = split_path(path)
         if not segs:
             raise ValueError("activity path must have at least one segment")
+        scope = _norm_scope(scope)
         with self._lock:
             key = (scope, SEP.join(segs))
             existing = self._nodes.get(key)
@@ -112,13 +135,11 @@ class ActivityProgressMonitor:
         Free means exactly what the registry this replaces meant: nobody is tracked here
         (a finished holder is already evicted), or the holder outlived its claim budget.
         A caller that WAITS on this and a caller that CLAIMS must not disagree about
-        whether the address is taken, so both ask this one question.
+        whether the address is taken, so both go through :func:`_is_held`.
         """
         with self._lock:
-            node = self._nodes.get((scope, _norm(path)))
-        if node is None or node.is_terminal or node.claim_expired:
-            return None
-        return node
+            node = self._nodes.get((_norm_scope(scope), _norm(path)))
+        return node if _is_held(node) else None
 
     def try_claim(
         self,
@@ -128,19 +149,17 @@ class ActivityProgressMonitor:
         timeout_seconds: int = 600,
     ) -> Activity:
         """Take an address, or raise ``RuntimeError`` naming the job that holds it."""
-        import time
-
+        key = (_norm_scope(scope), _norm(path))
         with self._lock:
-            held = self.holder(path, scope=scope)
-            if held is not None:
-                raise RuntimeError(f"Job '{_norm(path)}' already running")
+            existing = self._nodes.get(key)
+            if _is_held(existing):
+                raise RuntimeError(f"Job '{key[1]}' already running")
             # A stale holder is taken OVER, not resumed: its counters describe a run that
             # is gone, and a claimant inheriting them would report someone else's work.
-            stale = self._nodes.get((scope, _norm(path)))
-            if stale is not None:
-                stale._wake_waiters()
-                self.drop(_norm(path), scope=scope)
-            node = self.activity(path, scope=scope)
+            if existing is not None:
+                existing.release_waiters()
+                self.drop(key[1], scope=key[0])
+            node = self.activity(key[1], scope=key[0])
             node.claim_deadline = time.monotonic() + timeout_seconds
             return node
 
@@ -201,22 +220,19 @@ class ActivityProgressMonitor:
         and asking it about finished work is asking the wrong component.
         """
         with self._lock:
-            node = self._nodes.get((scope, _norm(path)))
+            node = self._nodes.get((_norm_scope(scope), _norm(path)))
         return node.spec() if node is not None else None
 
     def node(self, path: str, scope: Optional[str] = None) -> Optional[Activity]:
         """The live node without creating one. For callers that must not mint."""
         with self._lock:
-            return self._nodes.get((scope, _norm(path)))
+            return self._nodes.get((_norm_scope(scope), _norm(path)))
 
     def list(self, scope: Optional[str] = None, *, all_scopes: bool = False) -> "list[ActivityProgressSpec]":
         """Live roots, newest activity first. ``all_scopes`` ignores the scope filter."""
         with self._lock:
-            roots = [
-                r
-                for (s, _p), r in self._roots.items()
-                if all_scopes or s == scope
-            ]
+            wanted = _norm_scope(scope)
+            roots = [r for (s, _p), r in self._roots.items() if all_scopes or s == wanted]
         # A timezone-AWARE floor: every real stamp is aware, and mixing the two raises
         # rather than sorting. A root can genuinely have neither stamp — it was addressed
         # but never mutated — so the floor has to be reachable.
@@ -232,7 +248,8 @@ class ActivityProgressMonitor:
         with self._lock:
             if all_scopes:
                 return len(self._roots)
-            return sum(1 for (s, _p) in self._roots if s == scope)
+            wanted = _norm_scope(scope)
+            return sum(1 for (s, _p) in self._roots if s == wanted)
 
     def stale(self, seconds: float) -> "list[ActivityProgressSpec]":
         """Roots with no tick inside the window.
@@ -252,7 +269,7 @@ class ActivityProgressMonitor:
         """Force-untrack a root whose producer died without a terminal. Rare by design:
         the honest default is that such a root goes stale and says so."""
         with self._lock:
-            key = (scope, _norm(path))
+            key = (_norm_scope(scope), _norm(path))
             root = self._roots.pop(key, None)
             if root is None:
                 return False

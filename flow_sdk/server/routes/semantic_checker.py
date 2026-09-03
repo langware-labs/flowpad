@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
@@ -50,10 +51,13 @@ async def semantic_checker(body: dict) -> dict:
     type_ids = (body or {}).get("type_ids")
     if not isinstance(type_ids, list) or not type_ids:
         raise HTTPException(status_code=422, detail="type_ids (non-empty list) is required")
-    # Same as docs_graph: the legacy ``job_name`` is what the old pill recognises, the
-    # activity path is what this job actually is.
     activity = InProcessActivity(
-        job_name=_JOB, entity_id=str(type_ids[0]), activity_path="semantic.check"
+        job_name=_JOB,
+        entity_id=str(type_ids[0]),
+        # The legacy ``job_name`` is what the old pill recognises; the activity path is
+        # what this job actually is. Its terminal emit is in a `finally` below, so the
+        # activity cannot be left running when the check raises.
+        activity=Activity.get("semantic.check", scope=str(type_ids[0])),
     )
     await _emit(activity, done=0, total=0)
 
