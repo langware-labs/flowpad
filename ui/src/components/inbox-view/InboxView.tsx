@@ -55,6 +55,8 @@ import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
 import { SourceChip } from '@src/components/conversation/channel-attribution';
+import { AttachedChannelsBar } from './AttachedChannelsBar';
+import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
   actionsFor,
@@ -450,6 +452,9 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
+  // The user's own channels. Hidden until the local user is known — the bar
+  // keys its rows on that typeid, and an empty bar would flash meanwhile.
+  const { userTypeId } = useContext();
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
   const hubReachable = connection.status === 'connected' || connection.status === 'verified';
@@ -967,6 +972,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {renderViewPill('archived', t`Archived`, Archive)}
             {!agentId && renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
+          {!agentId && userTypeId && <AttachedChannelsBar owner={userTypeId} className="ms-2" />}
           {/* Text search — filters the list below to conversations whose
               messages contain the query, spanning archived rows. Hidden in
               the Help Desk view (hub-sourced tickets, not local messages). */}

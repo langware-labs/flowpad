@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
@@ -330,6 +330,25 @@ class DataSourceSpec(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    @computed_field
+    @property
+    def sends(self) -> bool:
+        """Whether a source of this provider is a MessageSource — its driver
+        can push a reply back to the channel (``IngestDriver.sends``).
+
+        Computed at serialization, not derived by the indexer like ``runtime``:
+        the answer lives on the driver CLASS, and importing the drivers package
+        from inside the indexer's per-record sync deadlocks on the import lock
+        (``ingest/spec_registry.py`` records the 120s stall). By the time a row
+        reaches the wire the shipped drivers are registered and every
+        script-runtime adapter has been refreshed, so this is a dict lookup.
+        A provider nothing has registered answers False — the same answer the
+        poller gives, which reports it as ``unknown_provider``.
+        """
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        driver = get_driver(self.name or "")
+        return bool(driver is not None and driver.sends)
 
     def coerce_config(self, config: dict) -> dict:
         """The row's field catalog applied to a source's ``config``."""

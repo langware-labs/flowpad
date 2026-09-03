@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DataSource } from '@sdk';
 import type { ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
+import { sourceIconName } from '@src/components/data-sources/source-icon';
 import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -76,10 +77,8 @@ export function useChannelAttribution() {
       const label = channelLabel(kind);
 
       const source = sourceForOrigin(sources, origin, originLocal);
-      const iconName = (spec: { icon_name?: string; channel_icon_names?: Record<string, string> } | undefined) =>
-        spec?.channel_icon_names?.[kind] || spec?.icon_name || '';
-
-      const name = iconName(source ? specFor(source.provider) : undefined) || iconName(specFor(kind));
+      const name =
+        sourceIconName(source ? specFor(source.provider) : undefined, kind) || sourceIconName(specFor(kind), kind);
       return { icon: name ? lucideByName(name) : MessageSquare, label };
     },
     [sources, specFor],
