@@ -50,6 +50,27 @@ def test_a_script_source_must_declare_emits():
     assert parse(WIKI, files={"fetch.py"})[1] is Runtime.SCRIPT                 # declared: loads
 
 
+def test_a_choosable_field_must_have_a_picker_shape():
+    """`choices` says the PROVIDER supplies the values; `type` says how they are drawn.
+
+    Pairing them is the whole reason `choices` is a flag and not a `FieldType`: `text`
+    picks one and `lines` picks many, so a `number` that declares `choices` would reach
+    the form as a picker with no widget — the same shape of bug as offering a reflect
+    mode that cannot work.
+    """
+    lines = {**RSS, "config": {"channels": {"type": "lines", "choices": True}}}
+    assert parse(lines)[0].config["channels"].choices is True
+    one = {**RSS, "config": {"bucket": {"type": "text", "choices": True}}}
+    assert parse(one)[0].config["bucket"].choices is True
+    with pytest.raises(ValidationError, match="no picker shape"):
+        parse({**RSS, "config": {"min_score": {"type": "number", "choices": True}}})
+
+
+def test_a_field_is_not_choosable_by_default():
+    """Nine of the twelve providers ask for an address the user already knows."""
+    assert parse(RSS)[0].config["feed_urls"].choices is False
+
+
 def test_a_builtin_may_not_declare_traits():
     """Its driver class owns them, and a second copy drifts."""
     with pytest.raises(ManifestError, match="driver class owns them"):

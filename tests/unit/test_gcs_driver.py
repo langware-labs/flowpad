@@ -24,6 +24,7 @@ import pytest
 
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
+from flow_sdk.ingest.health import SourceError
 from tests.unit._ingest_helpers import local_http_server, make_data_source, with_token
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -48,8 +49,10 @@ def _obj(name: str, generation: str = "1") -> dict:
 class _Bucket:
     """A minimal GCS that records what it was asked for."""
 
-    def __init__(self, objects=(), *, pages=None):
+    def __init__(self, objects=(), *, pages=None, buckets=()):
         self.objects = list(objects)
+        self.buckets = list(buckets)
+        self.listed_buckets: list[dict] = []
         #: Optional list of pages, to exercise `nextPageToken`.
         self.pages = pages
         self.listed: list[dict] = []
@@ -73,6 +76,9 @@ class _Bucket:
             name = unquote(url.path.split("/o/", 1)[1])
             self.downloaded.append(name)
             return 200, f"bytes of {name}".encode(), {}
+        if url.path.endswith("/b") or url.path.endswith("/b/"):
+            self.listed_buckets.append(query)
+            return 200, json.dumps({"items": self.buckets}).encode(), {}
         if url.path.endswith("/b/acme-docs"):
             return 200, json.dumps({"name": "acme-docs"}).encode(), {}
         return 404, b"{}", {}
@@ -208,7 +214,6 @@ async def test_a_directory_placeholder_is_not_a_document(driver, tmp_path):
 
 
 async def test_a_missing_bucket_is_a_config_error_named_by_its_field(driver, tmp_path):
-    from flow_sdk.ingest.health import SourceError
 
     with local_http_server(_Bucket()) as base:
         source = _source(tmp_path, base)
@@ -229,3 +234,45 @@ async def test_verify_passes_when_the_bucket_answers(driver, tmp_path):
     with local_http_server(_Bucket()) as base:
         verdict = await driver.verify(_source(tmp_path, base))
     assert verdict.ready is True
+
+
+# ── the picker ───────────────────────────────────────────────────────────────
+
+
+async def test_the_picker_offers_the_buckets_in_the_project(driver, tmp_path):
+    bucket = _Bucket(buckets=[{"name": "acme-docs", "location": "US-CENTRAL1"}, {"name": "acme-logs"}])
+    with local_http_server(bucket) as base:
+        picks = await driver.choices(_source(tmp_path, base, project="acme-prod"), "bucket")
+
+    assert [(c.id, c.name, c.detail) for c in picks] == [
+        ("acme-docs", "acme-docs", "us-central1"), ("acme-logs", "acme-logs", ""),
+    ], "a bucket's name IS its id, so both sides of the pair repeat it"
+    assert bucket.listed_buckets[-1]["project"] == "acme-prod"
+
+
+async def test_no_project_is_answered_before_any_request(driver, tmp_path):
+    """Google cannot enumerate buckets except within a project, and saying so costs
+    nothing — a round trip would only return the same thing as a 400."""
+    bucket = _Bucket(buckets=[{"name": "acme-docs"}])
+    with local_http_server(bucket) as base:
+        with pytest.raises(SourceError, match="GCP project"):
+            await driver.choices(_source(tmp_path, base), "bucket")
+
+    assert bucket.listed_buckets == [], "the cheapest question is asked first"
+
+
+async def test_the_project_is_read_by_the_picker_and_by_nothing_else(driver, tmp_path):
+    """`fetch` must not start needing it: every source configured before the picker
+    existed names its bucket outright and has no project set."""
+    bucket = _Bucket([_obj("intro.md")])
+    with local_http_server(bucket) as base:
+        source = _source(tmp_path, base)
+        assert "project" not in (source.config or {})
+        result = await driver.fetch(source, _view())
+
+    assert len(result.refs) == 1
+
+
+async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver, tmp_path):
+    with local_http_server(_Bucket()) as base:
+        assert await driver.choices(_source(tmp_path, base, project="p"), "prefixes") == []

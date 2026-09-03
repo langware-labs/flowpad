@@ -57,7 +57,10 @@ const PROJECT_WIKI = 'Flowpad project';
 const HELPDESK_WIKI = 'Help desks';
 
 /** A dense grid — a card under every tile the pointer crosses is noise. */
-const TILE_TIP_DELAY = 500;
+/** How long a tile waits before explaining itself. Exported so every surface
+ *  built from `DesktopTile` opens its tip on the same beat — two surfaces with
+ *  two delays read as one of them lagging. */
+export const TILE_TIP_DELAY = 500;
 
 /** Icon components accept a className — both lucide icons and the brand SVGs. */
 type TileIcon = ComponentType<{ className?: string }>;

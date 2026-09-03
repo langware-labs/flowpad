@@ -35,6 +35,8 @@ import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { Sparkles } from 'lucide-react';
 import { DataSourceDialog } from './DataSourceDialog';
+import { DesktopTile, TILE_TIP_DELAY } from '@src/components/quick-create/QuickCreatePanel';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { ReplayDialog } from './ReplayDialog';
 
 export function DataSourcesView() {
@@ -133,16 +135,28 @@ export function DataSourcesView() {
 
         {/* Trails the grid rather than leading it, so the eye starts on real
             sources — but it is still present when there are none, because this
-            screen is where the first one is created. */}
-        <button
-          type="button"
-          data-testid="add-data-source"
-          onClick={openAdd}
-          className="flex min-h-[8rem] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:bg-muted/30 hover:text-foreground"
-        >
-          <Plus className="size-5" />
-          <Trans>Add data source</Trans>
-        </button>
+            screen is where the first one is created.
+
+            The desktop's own "New" tile, not a card-sized dashed panel: adding a
+            source is the same ACT as every other "new thing" in the app, and it
+            was the one place that said so in a different shape. The cell keeps
+            the grid's rhythm; the tile inside it keeps the desktop's. */}
+        <div className="flex min-h-[8rem] items-center justify-center">
+          <Tooltip delayDuration={TILE_TIP_DELAY}>
+            <TooltipTrigger asChild>
+              <DesktopTile
+                data-testid="add-data-source"
+                Icon={Plus}
+                label={t`New`}
+                onClick={openAdd}
+                className="border-dashed"
+              />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <Trans>Add a data source</Trans>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       <DataSourceDialog open={editorOpen} onOpenChange={setEditorOpen} editing={editing} />

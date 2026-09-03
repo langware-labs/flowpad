@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "gcs",
   "title": "Google Cloud Storage",
-  "icon_name": "Cloud",
+  "icon_name": "GoogleCloudStorage",
   "description": "Objects from a GCS bucket, downloaded and indexed. Needs a Google connection.",
   "auth": {
     "connector": "google",
@@ -19,9 +19,16 @@
       "type": "text",
       "required": true,
       "account_key": true,
+      "choices": true,
       "label": "Bucket",
       "placeholder": "acme-docs",
-      "hint": "The bucket name, with or without the gs:// prefix. This names WHICH remote account the source serves."
+      "hint": "Pick from the buckets in the project below, or type the name (the gs:// prefix is optional). This names WHICH remote account the source serves."
+    },
+    "project": {
+      "type": "text",
+      "label": "GCP project",
+      "placeholder": "acme-prod",
+      "hint": "Only needed to LIST buckets — a bucket you name yourself syncs without it. Google has no way to enumerate buckets except within one project."
     },
     "prefixes": {
       "type": "lines",

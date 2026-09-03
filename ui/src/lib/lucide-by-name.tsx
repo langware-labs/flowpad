@@ -4,9 +4,14 @@ import { FileText, type LucideIcon } from 'lucide-react';
 import { AtlassianIcon } from '@src/components/icons/AtlassianIcon';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CloudMailboxIcon } from '@src/components/icons/CloudMailboxIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { GmailIcon } from '@src/components/icons/GmailIcon';
+import { GoogleCloudStorageIcon } from '@src/components/icons/GoogleCloudStorageIcon';
+import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
 import { LinearIcon } from '@src/components/icons/LinearIcon';
 import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
+import { TelegramIcon } from '@src/components/icons/TelegramIcon';
 import { iconAssetUrl } from '@sdk';
 
 /**
@@ -30,6 +35,17 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   // icon is rendered. A multicolour brand (Slack) still needs its own mark.
   Atlassian: AtlassianIcon,
   Linear: LinearIcon,
+  // Data-source providers whose own mark says which one it is. Registered for
+  // the same reason as the harness logos: three providers ship a mailbox and a
+  // fourth a bucket, and lucide's `Mail` / `Cloud` / `Send` made them
+  // indistinguishable in the picker — the one place a person is choosing
+  // BETWEEN them. Each is named by its manifest's `icon_name`, so the backend
+  // stays the one that decides which glyph a provider wears.
+  CloudMailbox: CloudMailboxIcon,
+  Gmail: GmailIcon,
+  GoogleCloudStorage: GoogleCloudStorageIcon,
+  GoogleDrive: GoogleDriveIcon,
+  Telegram: TelegramIcon,
 };
 
 /**

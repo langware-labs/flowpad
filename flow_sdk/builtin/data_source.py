@@ -967,7 +967,7 @@ class DataSource(Entity):
         ``SourceError`` centrally rather than asking each driver to.
         """
         from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.driver import DRIVERS, get_driver  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
         from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
@@ -977,11 +977,14 @@ class DataSource(Entity):
         if field_spec is None or not field_spec.choices:
             return None
 
-        # The same resolve the create path makes: it registers the shipped drivers and
-        # any script-runtime spec adapter. Without it the registry is empty on a request
-        # that arrives before the first poll, and every picker would report "this provider
-        # can't list" on a driver that can.
-        await refresh_spec_drivers(provider)
+        # Only when the answer isn't already in hand — the guard `save` makes for the
+        # same reason. A shipped provider is registered at import, so warming the spec
+        # table for it is a DB round trip on a popover a person is waiting on; but the
+        # registry IS empty on a request that arrives before anything imported the
+        # drivers package, and without the refresh every picker would then report "this
+        # provider can't list" on a driver that can.
+        if provider not in DRIVERS:
+            await refresh_spec_drivers(provider)
         driver = get_driver(provider)
         if driver is None or driver.choices is None:
             # The shipped-manifest test catches this pairing at CI. At runtime — a spec
