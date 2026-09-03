@@ -13,6 +13,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { InboxView } from './InboxView';
 
@@ -74,9 +75,13 @@ export function AgentInboxView() {
         setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
         setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
       } catch (error) {
+        // `forceToast` because this is a button the person just pressed: an
+        // alert-level notification is otherwise filed into the footer popover
+        // and never shown outside Dev mode, so the click appeared to do nothing.
         notify.error({
           title: enabled ? t`Could not allocate an inbox` : t`Could not disable the inbox`,
-          message: error instanceof Error ? error.message : t`Email settings could not be saved.`,
+          message: errorMessage(error, t`Email settings could not be saved.`),
+          forceToast: true,
         });
       } finally {
         setSaving(false);
@@ -89,7 +94,7 @@ export function AgentInboxView() {
     if (!agent || !activeState?.inbox || saving) return;
     const seconds = Number.parseInt(refresh, 10);
     if (!Number.isInteger(seconds) || seconds < MIN_REFRESH_SECONDS) {
-      notify.error({ title: t`Refresh interval must be at least 60 seconds` });
+      notify.error({ title: t`Refresh interval must be at least 60 seconds`, forceToast: true });
       return;
     }
     const allowed_senders = senders
@@ -103,7 +108,8 @@ export function AgentInboxView() {
     } catch (error) {
       notify.error({
         title: t`Could not save inbox settings`,
-        message: error instanceof Error ? error.message : undefined,
+        message: errorMessage(error, t`Inbox settings could not be saved.`),
+        forceToast: true,
       });
     } finally {
       setSaving(false);
