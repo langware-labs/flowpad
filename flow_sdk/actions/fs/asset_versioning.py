@@ -90,6 +90,48 @@ async def _scope_changed_excluding_version(
     return _strip_version(head_text) != _strip_version(work_text)
 
 
+def _versionable_folder_types() -> list:
+    """Folder-backed types whose main file can CARRY the frontmatter ``version:``
+    header THIS module writes — skill (SKILL.md), task (task.md), whiteboard
+    (WHITE_BOARD.md).
+
+    The test is the type's own ``identity_carrier``: a ``FrontmatterCarrier``
+    (these three, via ``FolderMdCarrier``) already declares "my id lives in this
+    document's header", which is the same statement as "this file can hold one".
+    It is the partition the identity seam itself uses — see the matching
+    isinstance gate in ``SchemaRegistry.carrier_path_for`` — so the two seams
+    cannot disagree about one asset, a new markdown-bodied type is picked up
+    automatically, and a type that changes body format cannot drift out of sync
+    with a filename check.
+
+    What versioning SHOULD mean for a JSON-bodied asset is a separate decision;
+    until it is made they simply do not participate.
+    """
+    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    out = []
+    for name in SchemaRegistry.get_all_types():
+        t = SchemaRegistry.get(name)
+        if not (t and t.folder_backed and t.main_file and t.main_subdir):
+            continue  # the FOLDER shape asset_scope resolves; single-file types
+            # reach the branch below instead, guarded by their own frontmatter.
+        if isinstance(t.identity_carrier, FrontmatterCarrier):
+            out.append(t)
+    return out
+
+
+def _versionable_main_files() -> set[str]:
+    """Lower-cased main-file names this module may stamp, or ``set()`` if the
+    registry is momentarily unavailable — an unresolvable type must never be
+    stamped blind, so the empty set correctly refuses every folder asset."""
+    try:
+        return {t.main_file.lower() for t in _versionable_folder_types()}
+    except Exception:  # noqa: BLE001
+        logger.debug("versionable-type resolve: registry unavailable", exc_info=True)
+        return set()
+
+
 def _asset_scope(real_path: str, repo_root: str, content: str) -> tuple[str, str, str] | None:
     """Resolve the git scope of the asset the written ``real_path`` belongs to.
 
@@ -98,13 +140,22 @@ def _asset_scope(real_path: str, repo_root: str, content: str) -> tuple[str, str
 
     * Folder-backed asset (skill): scope is the whole folder; the version lives in
       the inner main file (SKILL.md), so an internal-file edit still bumps the
-      asset's version and records a folder-scoped revision.
+      asset's version and records a folder-scoped revision. The main file must be
+      able to CARRY that version — see ``_versionable_folder_types``.
     * Single-file / inner-file asset (agent, markdown, spec): scope is the file
       itself, which must carry frontmatter to be an asset.
+
+    Both branches therefore ask the same question — "can the thing I am about to
+    stamp hold a YAML header?" — and the two guards below are that one rule.
     """
     folder = folder_asset_for(real_path)
     if folder is not None:
         asset_folder, main_abs = folder
+        if Path(main_abs).name.lower() not in _versionable_main_files():
+            # A folder asset whose main file cannot hold a YAML header (mcp.json,
+            # deck.json …). It is still a folder asset for git scoping — only the
+            # STAMP is refused. Symmetric with the single-file guard below.
+            return None
         return (
             os.path.relpath(asset_folder, repo_root),
             os.path.relpath(main_abs, repo_root),
