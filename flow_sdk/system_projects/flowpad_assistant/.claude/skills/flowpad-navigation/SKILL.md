@@ -75,7 +75,7 @@ flow show webapp --port <port>
 
 Use the port the dev server actually reported, never an assumed one.
 
-## A screen (Events, Preferences, Assets, Files, …)
+## A screen
 
 Screens are addressed by **view name**, optionally plus `/pointer` and `?opts` — the
 same string the URL bar carries after `/dock/`. Not by TypeId:
@@ -87,12 +87,85 @@ flow show view "search?q=widget"            # quote anything containing a ?
 flow navigate view preferences/appearance   # only on an explicit "take me there"
 ```
 
-More examples: `explorer/src`, `process-runs`, `data-sources`, `capabilities`,
-`inbox`, `desktop`, `lens/claude/transcript/<id>`.
+**Find the screen in the table below — do not reason from the address.** The address is
+a slug and the user speaks English; several slugs read nothing like the screen they open
+(`rag` is Search indexes, `explorer` is Files, `project` is Collaboration). Match on the
+**Screen** or **also called** column, then copy the address verbatim. If the ask matches
+no row, say so and ask which screen — a near-miss address is not a near-miss result, it
+opens a different screen and reports success.
 
-`flow schema views` lists every addressable view and whether it needs a pointer — use
-it instead of guessing. Screens are **not** TypeIds: `flow navigate entity events` is
-wrong and will fail.
+### Open by name
+
+| Screen | address | also called |
+| --- | --- | --- |
+| AI Configuration | `ai-config` | ai config, llm apis, models, clis |
+| Artifacts | `artifacts` | deliverables |
+| Assets | `assets` | library, docs tree |
+| Assistance | `assistance` | expert assistance |
+| Capabilities | `capabilities` | checks, system checks |
+| Code Editor | `editor` | edit file |
+| Collaboration | `project` | room |
+| Credentials | `credentials` | connections, secrets, api keys, keys, env vars |
+| Data sources | `data-sources` | connectors, integrations, ingestion, sources |
+| Desktop | `desktop` | favorites |
+| Docs | `docs` | documentation |
+| Events | `events` | rules, event bus, triggers, signals, cron |
+| Files | `explorer` | file tree, folders |
+| Graph Workflows | `graph-workflows` | workflows |
+| Home | `home` | landing, start |
+| Hooks | `hooks` | claude hooks |
+| Inbox | `inbox` | messages |
+| LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
+| LLM sources | `llm-sources` | harness funding |
+| Machine | `machine` | system, this machine |
+| Markdown | `markdown` | document |
+| Organization  *(hub)* | `organization` | people, teams, members |
+| Preferences | `preferences` | my preferences, appearance |
+| Runs | `process-runs` | history |
+| Search | `search` | find |
+| Search indexes | `rag` | embeddings, knowledge index, vector index |
+| Settings | `settings` | claude settings |
+| Survey | `survey` | — |
+| System Profile | `system_profile` | claude code status, live status |
+| Tasks | `tasks` | todo |
+| Token plan  *(hub)* | `token-plan` | budget, token budget |
+| Web App | `web-app` | web apps |
+| Worker | `shell` | chats, terminal |
+
+### Need an id
+
+These take a pointer; without one they are an error, not a landing. Get the id first
+(`flow record index`, or the `search` action of **flowpad-assistance**).
+
+| Screen | address | also called |
+| --- | --- | --- |
+| Agent | `agent/<id>` | — |
+| App | `app/<id>` | — |
+| Context | `graph_context/<id>` | frozen context |
+| Conversation | `conversation/<id>` | — |
+| Diagnosis | `diagnosis/<id>` | — |
+| Diff Viewer | `diff/<id>` | changes |
+| Entity  *(hub)* | `entity/<id>` | hub entity |
+| Graph | `graph/<id>` | dep graph, dependency graph |
+| Help desk | `helpdesk/<id>` | support |
+| Knowledge Browser | `k-browser/<id>` | docs browser |
+| Lens | `lens/<id>` | transcript |
+| Live Session | `live_session/<id>` | — |
+| Plan | `plan/<id>` | — |
+| Process | `agentic_process/<id>` | — |
+| Records  *(hub)* | `records/<id>` | hub records |
+| Show | `show/<id>` | — |
+| Skill apps | `apps/<id>` | — |
+| Spec | `spec/<id>` | — |
+| Subgraph | `subgraph/<id>` | — |
+| Tag Graph | `tag/<id>` | tags, taxonomy |
+| WorldView | `worldview/<id>` | world, org graph |
+
+A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.
+
+`flow schema views` is the same table, live, with each view's pointer rule. Reach for it
+only if the ask matches nothing above. Screens are **not** TypeIds: `flow navigate entity
+events` is wrong and will fail.
 
 ## You have no path and no id
 

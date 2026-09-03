@@ -285,30 +285,45 @@ class ViewMeta:
     ``addressable`` is False for a view with no ``VIEWER_REGISTRY`` row — the
     retired aliases and the folded-away ``skills`` / ``session``. Those still
     DECODE (history is forever) but must never be offered as a destination.
+
+    ``label`` / ``aliases`` are the AGENT's half of the vocabulary, and the one
+    thing this table deliberately does NOT take from TypeScript. ``VIEWER_REGISTRY``
+    already carries a ``title`` per view, but it is a lingui descriptor — localized,
+    and a translated screen name reaching an agent is worse than a raw slug. So the
+    label is stated here, in English. None of the three is in the contract fixture:
+    there is no TypeScript statement of them to disagree with, so a fixture row would
+    assert Python against a copy of Python — the tautology that file exists to avoid.
+
+    ``pages`` is the one to watch. It restates which renderer has a case for the view
+    (``renderHubBody`` vs the desk content panel), so unlike the other two it CAN
+    drift — adding a view to the hub renderer and not here leaves a real address
+    rejected. There is no TS row to pin it against today; if one is added to
+    ``VIEWER_REGISTRY``, pin it in the fixture like ``chrome``.
+
+    ``aliases`` is the load-bearing half, not a nicety: a label alone does not make a
+    screen findable, because the Connections screen's title is "Credentials" and that
+    is not the word anyone uses for it. See ``docs/display-capabilities.md``.
+
+    An alias MAY equal a non-addressable slug (``connections``, ``skills``) — those
+    are retired names that already forward to the same place, so the alias agrees
+    with ``normalize_retired`` rather than fighting it. It may never equal an
+    ADDRESSABLE slug, or the vocabulary would have two answers for one word.
     """
 
-    addressable: bool
     pointer: PointerRequirement
+    addressable: bool = True
     folds_pointer: bool = False
     scope_keyed: bool = False
     chrome: str = "workspace"  # "workspace" | "fullbleed"
+    label: str = ""  # English, agent-facing: "Search indexes", not "rag"
+    aliases: tuple[str, ...] = ()  # what a user might call it, lowercase
+    pages: tuple[str, ...] = ("desk",)  # which PageId(s) render it
 
 
-def _m(
-    pointer: PointerRequirement,
-    *,
-    addressable: bool = True,
-    folds_pointer: bool = False,
-    scope_keyed: bool = False,
-    chrome: str = "workspace",
-) -> ViewMeta:
-    return ViewMeta(
-        addressable=addressable,
-        pointer=pointer,
-        folds_pointer=folds_pointer,
-        scope_keyed=scope_keyed,
-        chrome=chrome,
-    )
+#: The table below builds rows directly. ``pointer`` leads and ``addressable``
+#: defaults to True, so a row is `_m(_OPT, label="…")` — a pass-through wrapper
+#: would only mean declaring every new field three times.
+_m = ViewMeta
 
 
 _REQ = PointerRequirement.REQUIRED
@@ -318,81 +333,196 @@ _NONE = PointerRequirement.NONE
 #: One row per :class:`ViewType`. The contract suite asserts completeness, so a
 #: view added in TypeScript cannot land here unclassified.
 VIEW_META: Mapping[ViewType, ViewMeta] = {
-    ViewType.HOME: _m(_OPT, chrome="fullbleed"),
-    ViewType.SYSTEM_PROFILE: _m(_OPT),
-    ViewType.ANALYSIS: _m(_OPT),
-    ViewType.CHAT: _m(_OPT),
-    ViewType.SHELL: _m(_OPT),
-    ViewType.EDITOR: _m(_OPT),
-    ViewType.WEB_APP: _m(_OPT),
+    ViewType.HOME: _m(_OPT, chrome="fullbleed", label="Home", aliases=("landing", "start")),
+    ViewType.SYSTEM_PROFILE: _m(
+        _OPT, label="System Profile", aliases=("claude code status", "live status")
+    ),
+    ViewType.ANALYSIS: _m(_OPT, addressable=False),
+    ViewType.CHAT: _m(_OPT, addressable=False),
+    ViewType.SHELL: _m(_OPT, label="Worker", aliases=("chats", "terminal")),
+    ViewType.EDITOR: _m(_OPT, label="Code Editor", aliases=("edit file",)),
+    ViewType.WEB_APP: _m(_OPT, label="Web App", aliases=("web apps",)),
+    # ANALYSIS / CHAT / REASONING / UNSUPPORTED below are NOT addressable either.
+    # They have no case in the content panel and no VIEWER_REGISTRY row, so a dock
+    # URL naming one falls to `default: <HomeLanding/>` — `flow show view chat`
+    # returned exit 0 and showed the user Home. A destination that silently answers
+    # with a different screen is worse than one that errors.
     ViewType.ENVIRONMENT: _m(_NONE, addressable=False),
     ViewType.CONNECTIONS: _m(_NONE, addressable=False),
-    ViewType.ARTIFACTS: _m(_OPT),
-    ViewType.REASONING: _m(_OPT),
-    ViewType.DIFF: _m(_REQ),
-    ViewType.UNSUPPORTED: _m(_OPT),
-    ViewType.MARKDOWN: _m(_OPT),
-    ViewType.DOCS: _m(_OPT),
-    ViewType.ASSISTANCE: _m(_OPT),
-    ViewType.SURVEY: _m(_OPT),
+    ViewType.ARTIFACTS: _m(_OPT, label="Artifacts", aliases=("deliverables",)),
+    ViewType.REASONING: _m(_OPT, addressable=False),
+    ViewType.DIFF: _m(_REQ, label="Diff Viewer", aliases=("changes",)),
+    ViewType.UNSUPPORTED: _m(_OPT, addressable=False),
+    ViewType.MARKDOWN: _m(_OPT, label="Markdown", aliases=("document",)),
+    ViewType.DOCS: _m(_OPT, label="Docs", aliases=("documentation",)),
+    ViewType.ASSISTANCE: _m(_OPT, label="Assistance", aliases=("expert assistance",)),
+    ViewType.SURVEY: _m(_OPT, label="Survey"),
     ViewType.API_KEYS: _m(_NONE, addressable=False),
-    ViewType.HOOKS: _m(_OPT),
-    ViewType.MACHINE: _m(_OPT),
-    ViewType.EXPLORER: _m(_OPT, scope_keyed=True),
+    ViewType.HOOKS: _m(_OPT, label="Hooks", aliases=("claude hooks",)),
+    ViewType.MACHINE: _m(_OPT, label="Machine", aliases=("system", "this machine")),
+    ViewType.EXPLORER: _m(
+        _OPT, scope_keyed=True, label="Files", aliases=("file tree", "folders")
+    ),
     ViewType.SKILLS: _m(_OPT, addressable=False),
-    ViewType.AI_CONFIG: _m(_OPT),
-    ViewType.SHOW: _m(_REQ),
-    ViewType.APPS: _m(_REQ),
-    ViewType.GRAPH: _m(_REQ),
-    ViewType.WORLDVIEW: _m(_REQ),
+    ViewType.AI_CONFIG: _m(
+        _OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")
+    ),
+    ViewType.SHOW: _m(_REQ, label="Show"),
+    ViewType.APPS: _m(_REQ, label="Skill apps"),
+    ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
+    ViewType.WORLDVIEW: _m(
+        _REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")
+    ),
     # OPTIONAL, not REQUIRED like the graph beside it: the screen opens on the
     # organization you belong to, and only carries a pointer when you deep-link to
     # a particular team.
-    ViewType.ORGANIZATION: _m(_OPT),
-    ViewType.TAG: _m(_REQ, folds_pointer=True),
-    ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True),
-    ViewType.K_BROWSER: _m(_REQ),
-    ViewType.LENS: _m(_REQ),
+    ViewType.ORGANIZATION: _m(
+        _OPT, label="Organization", aliases=("people", "teams", "members"), pages=("hub",)
+    ),
+    ViewType.TAG: _m(
+        _REQ, folds_pointer=True, label="Tag Graph", aliases=("tags", "taxonomy")
+    ),
+    ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True, label="Subgraph"),
+    ViewType.K_BROWSER: _m(
+        _REQ, label="Knowledge Browser", aliases=("docs browser",)
+    ),
+    ViewType.LENS: _m(_REQ, label="Lens", aliases=("transcript",)),
     ViewType.SESSION: _m(_REQ, addressable=False),
-    ViewType.TASKS: _m(_OPT),
-    ViewType.SETTINGS: _m(_OPT),
-    ViewType.PREFERENCES: _m(_OPT, folds_pointer=True),
-    ViewType.AGENTIC_PROCESS: _m(_REQ),
-    ViewType.SEARCH: _m(_NONE),
-    ViewType.EVENTS: _m(_NONE),
-    ViewType.TRIGGERS: _m(_NONE),
-    ViewType.CAPABILITIES: _m(_NONE),
-    ViewType.GRAPH_WORKFLOWS: _m(_OPT),
-    ViewType.SIGNALS: _m(_NONE),
-    ViewType.DATA_SOURCES: _m(_NONE),
-    ViewType.RAG: _m(_NONE),
-    ViewType.PROCESS_RUNS: _m(_OPT),
-    ViewType.PLAN: _m(_REQ),
-    ViewType.CRON: _m(_NONE),
-    ViewType.ASSETS: _m(_REQ, scope_keyed=True),
-    ViewType.PROJECT: _m(_REQ),
+    ViewType.TASKS: _m(_OPT, label="Tasks", aliases=("todo",)),
+    ViewType.SETTINGS: _m(_OPT, label="Settings", aliases=("claude settings",)),
+    ViewType.PREFERENCES: _m(
+        _OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")
+    ),
+    ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process"),
+    ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
+    ViewType.EVENTS: _m(_NONE, label="Events", aliases=("rules", "event bus")),
+    ViewType.TRIGGERS: _m(_NONE, label="Events"),
+    ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
+    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
+    ViewType.SIGNALS: _m(_NONE, label="Events"),
+    ViewType.DATA_SOURCES: _m(
+        _NONE, label="Data sources", aliases=("connectors", "integrations", "ingestion", "sources")
+    ),
+    ViewType.RAG: _m(
+        _NONE,
+        label="Search indexes",
+        aliases=("embeddings", "knowledge index", "vector index"),
+    ),
+    ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
+    ViewType.PLAN: _m(_REQ, label="Plan"),
+    ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),
+    # NOT aliased to `skills`, tempting as it is: ViewType.SKILLS says "folded into
+    # assets `list/skill`" but has no RETIRED_DOCK_VIEWS row, so it forwards nowhere
+    # and `flow show view skills` errors. Publishing the alias would hand an agent an
+    # address that fails. Add the forwarding row first, then the alias.
+    # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
+    # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
+    # REQUIRED it carried meant the URL worked in a browser while `flow show view
+    # assets` was rejected, so the tree was unreachable by name. Verified bare.
+    ViewType.ASSETS: _m(
+        _OPT,
+        scope_keyed=True,
+        label="Assets",
+        aliases=("library", "docs tree"),
+        pages=("desk", "hub"),
+    ),
+    # Same: a bare project dock is the assets workspace (see the PROJECT arm in
+    # `content-panel.tsx`, which documents exactly that and was unaddressable).
+    ViewType.PROJECT: _m(
+        _OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")
+    ),
     # `<agentId>/inbox` — the id leads, so the pointer is required.
-    ViewType.AGENT: _m(_REQ),
-    ViewType.INBOX: _m(_NONE),
-    ViewType.CONVERSATION: _m(_REQ),
-    ViewType.SPEC: _m(_REQ),
-    ViewType.GRAPH_CONTEXT: _m(_REQ),
-    ViewType.DIAGNOSIS: _m(_REQ),
-    ViewType.DESKTOP: _m(_NONE, scope_keyed=True),
-    ViewType.LIVE_SESSION: _m(_REQ),
-    ViewType.HELPDESK: _m(_REQ, folds_pointer=True),
+    ViewType.AGENT: _m(_REQ, label="Agent"),
+    ViewType.INBOX: _m(_NONE, label="Inbox", aliases=("messages",)),
+    ViewType.CONVERSATION: _m(_REQ, label="Conversation", pages=("desk", "hub")),
+    ViewType.SPEC: _m(_REQ, label="Spec"),
+    ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),
+    ViewType.DIAGNOSIS: _m(_REQ, label="Diagnosis"),
+    ViewType.DESKTOP: _m(_NONE, scope_keyed=True, label="Desktop", aliases=("favorites",)),
+    ViewType.LIVE_SESSION: _m(_REQ, label="Live Session"),
+    ViewType.HELPDESK: _m(
+        _REQ, folds_pointer=True, label="Help desk", aliases=("support",)
+    ),
     ViewType.ATLAS: _m(_OPT, addressable=False),
-    ViewType.HUB_RECORDS: _m(_REQ),
-    ViewType.HUB_ENTITY: _m(_REQ),
-    ViewType.CREDENTIALS: _m(_OPT, folds_pointer=True),
+    ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
+    ViewType.HUB_ENTITY: _m(_REQ, label="Entity", aliases=("hub entity",), pages=("hub",)),
+    ViewType.CREDENTIALS: _m(
+        _OPT,
+        folds_pointer=True,
+        label="Credentials",
+        # `connections` / `environment` / `api-keys` are the retired slugs that
+        # already forward here (RETIRED_DOCK_VIEWS), so naming them as aliases
+        # agrees with `normalize_retired` instead of competing with it — and
+        # `connections` is the word a user actually says for this screen.
+        aliases=("connections", "secrets", "api keys", "keys", "env vars"),
+        pages=("desk", "hub"),
+    ),
     # Pointer REQUIRED: an app with no artifact is not an address. Runtime rides in
     # options, so it is excluded from tab identity and switching dev/served
     # re-points the SAME tab instead of forking one per runtime.
-    ViewType.APP: _m(_REQ),
-    ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True),
-    ViewType.TOKEN_PLAN: _m(_OPT, folds_pointer=True),
-    ViewType.LLM_SOURCES: _m(_OPT, folds_pointer=True),
+    ViewType.APP: _m(_REQ, label="App"),
+    ViewType.LLM_ENDPOINTS: _m(
+        _OPT, folds_pointer=True, label="LLM Endpoints", aliases=("endpoints",), pages=("hub",)
+    ),
+    ViewType.TOKEN_PLAN: _m(
+        _OPT, folds_pointer=True, label="Token plan", aliases=("budget", "token budget"), pages=("hub",)
+    ),
+    ViewType.LLM_SOURCES: _m(
+        _OPT, folds_pointer=True, label="LLM sources", aliases=("harness funding",)
+    ),
 }
+
+
+def _normalize_name(token: str) -> str:
+    """Fold a screen name to its match key: lowercase, separators as spaces."""
+    return token.strip().lower().replace("-", " ").replace("_", " ")
+
+
+def _build_view_names() -> Mapping[str, ViewType]:
+    """Every word that names an addressable view → the view. Built once, at import.
+
+    Labels, aliases and the slug itself all resolve here. The FIRST view to claim a
+    word keeps it, and that is what collapses the `events` twins: `triggers`,
+    `signals` and `cron` decode to the same screen and carry the same label, so
+    without this the vocabulary would offer four addresses for one destination.
+    """
+    names: dict[str, ViewType] = {}
+    for view, meta in VIEW_META.items():
+        if not meta.addressable:
+            continue
+        for name in (_normalize_name(meta.label), *meta.aliases, _normalize_name(view.value)):
+            names.setdefault(name, view)
+    return names
+
+
+_VIEW_NAMES: Mapping[str, ViewType] = _build_view_names()
+
+
+def suggest_views(token: Optional[str], *, limit: int = 3) -> list[ViewType]:
+    """Addressable views whose label, alias or slug matches ``token``, best first.
+
+    For error messages, not for resolution: an address is still a slug, and
+    guessing one for the caller would turn a typo into a confident wrong screen —
+    which is the failure this whole vocabulary exists to stop. Naming candidates
+    lets the agent retry on a real address instead of re-guessing from the word
+    it already got wrong.
+    """
+    needle = _normalize_name(token or "")
+    if not needle:
+        return []
+    # Exact before substring; `search indexes` must offer `rag` ahead of `search`.
+    hits = sorted(
+        (name for name in _VIEW_NAMES if needle in name),
+        key=lambda name: (name != needle, len(name), name),
+    )
+    if not hits:
+        # A misspelling ("conections"): substring matching cannot see through a
+        # dropped letter, and the agent already believes it knows the name.
+        from difflib import get_close_matches  # noqa: PLC0415
+
+        hits = get_close_matches(needle, _VIEW_NAMES, n=limit, cutoff=0.75)
+    # One screen per suggestion — several words can name the same view.
+    return list(dict.fromkeys(_VIEW_NAMES[name] for name in hits))[:limit]
 
 
 def parse_view_type(token: Optional[str]) -> Optional[ViewType]:
@@ -468,6 +598,17 @@ def dock_url(
     pairs = [(k, v) for k, v in options.items() if v is not None]
     query = urlencode(pairs)
     return f"{url}?{query}" if query else url
+
+
+def dock_address(view_type: ViewType, page: PageId = PageId.DESK) -> str:
+    """The bare address form ``flow show view`` takes — ``dock_url`` minus ``/dock/``.
+
+    Exists so callers naming an address in prose (an error message telling an agent
+    what to type) do not restate the page-elision rule: ``desk`` is the default and
+    is NEVER emitted, so `desk/events` would be re-parsed with `desk` as the
+    viewType. One statement of that rule, in :func:`dock_url`, and this reuses it.
+    """
+    return dock_url(view_type, page=page).removeprefix(f"/{Layout.DOCK.value}/")
 
 
 @dataclass(frozen=True)

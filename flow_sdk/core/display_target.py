@@ -366,6 +366,10 @@ async def dock_target(address: str) -> dict:
     * a RETIRED view forwards first (``environment`` → ``credentials/environment``)
       rather than erroring, so an address saved before the retirement still opens;
     * a required pointer that is missing → ``InvalidDisplayTarget``;
+    * a view asked for on a page whose renderer has no case for it (``organization``
+      on ``desk``) → ``InvalidDisplayTarget`` naming the address that works. Without
+      it the address parses, the call succeeds, and the content panel falls through
+      to the Home landing — a wrong screen reported as a success;
     * a pointer shaped like a TypeId is looked up, so ``conversation/<bogus>``
       fails here instead of opening a dock that renders a load error. A
       grammar-only view (``events``) never touches the DB.
@@ -387,8 +391,16 @@ async def dock_target(address: str) -> dict:
         # Name the actual problem — an agent reads this string and retries on it.
         head = raw.lstrip("/").split("?", 1)[0].split("/", 1)[0]
         if da.parse_view_type(head) is None:
+            # Name candidates, not just the catalogue. An agent that guessed a
+            # screen name once will guess again from the same word unless the
+            # error hands it a real address to retry on.
+            hint = ", ".join(
+                f"{view.value} ({da.VIEW_META[view].label})" for view in da.suggest_views(head)
+            )
             raise InvalidDisplayTarget(
-                f"Unknown view '{head}'. Run `flow schema views` for the list."
+                f"Unknown view '{head}'. Did you mean: {hint}?"
+                if hint
+                else f"Unknown view '{head}'. Run `flow schema views` for the list."
             )
         raise InvalidDisplayTarget(f"Not a dock address: {address!r}")
 
@@ -400,6 +412,16 @@ async def dock_target(address: str) -> dict:
         )
     if meta.pointer is da.PointerRequirement.REQUIRED and not pointer:
         raise InvalidDisplayTarget(f"View '{view.value}' requires a pointer")
+    # A hub-only view asked for on the desk page is the same failure this module's
+    # vocabulary exists to prevent: the address parses, the request succeeds, and the
+    # content panel falls through to the Home landing because only `renderHubBody`
+    # has a case for it. Say which address actually opens it.
+    if parsed.page.value not in meta.pages:
+        fix = da.dock_address(view, da.PageId(meta.pages[0]))
+        raise InvalidDisplayTarget(
+            f"View '{view.value}' does not render on page '{parsed.page.value}'. "
+            f"Address it as '{fix}'."
+        )
 
     await _assert_pointer_entity_exists(view, pointer)
 
