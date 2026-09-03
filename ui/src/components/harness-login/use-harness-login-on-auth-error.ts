@@ -51,8 +51,11 @@ async function recordSignedOut(kind: string, message: string): Promise<void> {
  * an auth probe that cannot reach a verdict (a 5s timeout, unparseable output)
  * deliberately leaves it alone. So the modal could open on this error and greet
  * the user with a green "Signed in" from a login that had since been revoked.
- * Reporting the denial to the backend fixes the value everywhere it is read,
- * and handing it to the modal makes that row honest even if the write fails.
+ * Reporting the denial to the backend fixes the value everywhere it is read —
+ * the backend records it on ``Capability.login_denied`` and broadcasts, and the
+ * modal renders from that one row. The record is awaited before opening so the
+ * modal's first paint already carries the refusal, rather than flashing the
+ * stale "Signed in" it was summoned to contradict.
  *
  * Fires once per distinct message: the status is re-derived on every serialize,
  * so without the latch a signed-out process would re-open the modal on each
@@ -72,7 +75,9 @@ export function useHarnessLoginOnAuthError(detail: string | null | undefined, wo
     if (lastFired.current === text) return;
     lastFired.current = text;
     const kind = harnessKindForWorkerType(workerType);
-    if (kind) void recordSignedOut(kind, text).catch(() => undefined);
-    openHarnessLoginModal(kind ? { kind, message: text } : undefined);
+    void (async () => {
+      if (kind) await recordSignedOut(kind, text).catch(() => undefined);
+      openHarnessLoginModal();
+    })();
   }, [detail, workerType]);
 }

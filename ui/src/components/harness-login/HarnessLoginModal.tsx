@@ -136,12 +136,21 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   }, [modalOpen, capabilityId]);
 
   // What the harness itself said while refusing a turn ("Not logged in · Please
-  // run /login"), when that is why this modal is open. The vendor's own denial
-  // is the best evidence available about THIS box — better than a cached
-  // ``login_state`` and better than a probe that timed out — so it wins over
-  // both. ``useHarnessLoginOnAuthError`` also reports it to the backend; this
-  // keeps the row honest even when that write fails.
-  const deniedBy = useHarnessLoginStore((s) => (s.payload?.kind === kind ? s.payload.message : null));
+  // run /login"). The vendor's own denial is the best evidence available about
+  // THIS box — better than a cached ``login_state``, better than a probe that
+  // timed out — so it wins over both.
+  //
+  // Read STRAIGHT off the entity, never copied into a store here. The backend
+  // owns this fact end to end (``flow_sdk/builtin/capability.py``): it records
+  // the refusal, refuses to record one over a login in flight, and retracts it
+  // the moment newer evidence lands — a completed device login, a verified
+  // probe, an explicit Test — broadcasting each change. A second copy on this
+  // side could only ever go stale against that, and did: it outlived the login
+  // that disproved it and pinned the modal to a red "Not signed in" over a
+  // harness that had just authenticated, which is the same lie the denial
+  // exists to prevent, pointing the other way.
+  const denied = capability?.login_denied === true;
+  const deniedBy = denied ? capability?.login_message?.trim() || null : null;
 
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
@@ -190,7 +199,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const status: Status = !installed
     ? 'unavailable'
     : loginState === 'authenticated'
-      ? deniedBy
+      ? denied
         ? 'signedout'
         : undetermined
           ? 'unverified'
@@ -394,6 +403,7 @@ function HarnessListRow({
     <button
       type="button"
       onClick={onOpen}
+      data-testid={`harness-row-${worker}`}
       style={{ animation: `hlIn 320ms cubic-bezier(0.16,1,0.3,1) ${index * 60}ms both` }}
       className="group flex w-full items-center gap-3.5 rounded-xl border border-border/70 bg-card/40 p-3.5 text-start transition-all hover:border-border hover:bg-accent/40"
     >
@@ -615,8 +625,9 @@ function HarnessDetail({
 }: {
   kind: string;
   onBack: () => void;
-  /** Dismiss the whole modal — the sign-in is finished, so the user goes back
-   *  to whatever they were doing, not back to the assistants list. */
+  /** Dismiss the whole modal. "Done" means the sign-in is finished, so the user
+   *  goes back to what they were doing — NOT one level up into the assistants
+   *  list, which just reads as a second popup opening by itself. */
   onDone: () => void;
   keys: LmApiKeySummary[];
 }) {
