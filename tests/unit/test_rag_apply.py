@@ -1,4 +1,4 @@
-"""``SearchIndex.apply(change)`` — signed weights, idempotent by construction.
+"""``RagIndex.apply(change)`` — signed weights, idempotent by construction.
 
 Every assertion is about ``embedded``, the number that costs money: re-applying a page embeds
 nothing, a rename embeds nothing, and a delete is the same code path as an add.
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.blocks import FolderChange, SearchIndex
+from flow_sdk.blocks import FolderChange
 from flow_sdk.builtin.rag_index import RagIndex, RagStatus
 from flow_sdk.rag import reconcile
 from tests.unit.rag_embedder import embed, embed_all
@@ -51,8 +51,9 @@ def _page(root: Path, **kw) -> FolderChange:
     return FolderChange(source_id="src", root=str(root), **kw)
 
 
-async def _index() -> SearchIndex:
-    return SearchIndex(f"idx-{mint_uuid()}")
+async def _index() -> RagIndex:
+    """A fresh index per test: `named` is find-or-create and the suite shares one database."""
+    return await RagIndex.named(f"idx-{mint_uuid()}")
 
 
 async def test_an_added_page_is_indexed_and_reapplying_it_embeds_nothing(docs):
@@ -79,8 +80,7 @@ async def test_a_removed_document_is_gone_through_the_same_path_as_an_add(docs):
     (docs / "weather.md").unlink()
     report = await index.apply(_page(docs, removed=[str(docs / "weather.md")]))
     assert report.documents_removed == 1 and report.chunks_removed > 0
-    rag = await RagIndex.get_one({"name": index.name})
-    async with rag.open_store() as store:
+    async with index.open_store() as store:
         assert str(docs / "weather.md") not in store.document_refs()
 
 
@@ -98,8 +98,7 @@ async def test_a_rename_retires_the_old_path_and_indexes_the_new_one(docs):
     (docs / "intro.md").rename(moved)
     report = await index.apply(_page(docs, renamed={str(moved): str(docs / "intro.md")}))
     assert report.documents_removed == 1 and report.documents_changed == 1
-    rag = await RagIndex.get_one({"name": index.name})
-    async with rag.open_store() as store:
+    async with index.open_store() as store:
         refs = store.document_refs()
     assert str(moved) in refs and str(docs / "intro.md") not in refs
 
@@ -113,9 +112,8 @@ async def test_a_net_zero_path_is_skipped(docs):
 
 async def test_a_refusal_is_a_sentence_on_the_report_never_an_exception(docs, monkeypatch):
     index = await _index()
-    rag = await index._ensure_index()
-    rag.status = RagStatus.DISABLED
-    await rag.save(notify=False)
+    index.status = RagStatus.DISABLED
+    await index.save(notify=False)
     report = await index.apply(_page(docs, added=[str(docs / "intro.md")]))
     assert report.embedded == 0 and report.errors == ["this index is disabled"]
 

@@ -49,10 +49,9 @@ from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 from .delivery import Delivered
-from .folder import Folder, FolderChange
+from .folder_source import FolderChange, FolderSource
 from .merge import listen
 from .message_source import MessageRequest, MessageSource, _MessageRequestExpired
-from .search_index import SearchIndex
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
@@ -60,15 +59,14 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = [
     "Delivered",
     "EmailMessageSpec",
-    "Folder",
     "FolderChange",
+    "FolderSource",
     "FileRef",
     "MessageSpec",
     "MessageRequest",
     "MessageSource",
     "Inbox",
     "RunOutput",
-    "SearchIndex",
     "listen",
     "SlackMessageSpec",
     "TelegramMessageSpec",

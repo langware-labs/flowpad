@@ -1,4 +1,4 @@
-"""``Folder.listen()`` — the object-shaped sibling of ``Inbox.listen()``.
+"""``FolderSource.listen()`` — the object-shaped sibling of ``Inbox.listen()``.
 
 Same contract: one yield per page, ``ack()`` commits an offset, a page handed out and never
 acked comes back after a restart flagged, and a folder consumer starts from the beginning
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.blocks import Delivered, Folder, FolderChange, workflow
+from flow_sdk.blocks import Delivered, FolderChange, FolderSource, workflow
 from flow_sdk.ingest.reflect import ReflectMode
 
 from ._harness import DOC, write_doc
@@ -22,7 +22,7 @@ def _name() -> str:
     return f"w-{mint_uuid()}"
 
 
-async def _take(folder: Folder, n: int) -> list[Delivered]:
+async def _take(folder: FolderSource, n: int) -> list[Delivered]:
     agen = folder.listen(poll_every=0)
     out: list[Delivered] = []
     try:
@@ -35,8 +35,8 @@ async def _take(folder: Folder, n: int) -> list[Delivered]:
 
 async def test_the_first_page_is_the_whole_tree(folder_db, watched, project, make_source):
     DOC.create(watched)
-    await make_source(ReflectMode.NONE.value)          # the same source Folder() will find by root
-    folder = Folder(str(watched))
+    await make_source(ReflectMode.NONE.value)          # the same source FolderSource() finds by root
+    folder = FolderSource(str(watched))
     async with workflow(_name()):
         (change,) = await _take(folder, 1)
     assert isinstance(change, Delivered) and isinstance(change.item, FolderChange)
@@ -47,7 +47,7 @@ async def test_the_first_page_is_the_whole_tree(folder_db, watched, project, mak
 async def test_an_unacked_page_is_redelivered_and_an_acked_one_is_not(folder_db, watched, project, make_source):
     DOC.create(watched)
     await make_source(ReflectMode.NONE.value)
-    folder, name = Folder(str(watched)), _name()
+    folder, name = FolderSource(str(watched)), _name()
 
     async with workflow(name):
         (first,) = await _take(folder, 1)             # died holding it
@@ -65,7 +65,7 @@ async def test_an_unacked_page_is_redelivered_and_an_acked_one_is_not(folder_db,
 async def test_reply_is_not_a_folder_verb(folder_db, watched, project, make_source):
     DOC.create(watched)
     await make_source(ReflectMode.NONE.value)
-    (change,) = await _take(Folder(str(watched)), 1)
+    (change,) = await _take(FolderSource(str(watched)), 1)
     from flow_sdk.builtin.source_item import EmailMessageSpec
 
     with pytest.raises(RuntimeError):
@@ -74,6 +74,6 @@ async def test_reply_is_not_a_folder_verb(folder_db, watched, project, make_sour
 
 async def test_mirror_to_copies(folder_db, watched, project, in_workspace):
     DOC.create(watched)
-    folder = Folder(str(watched), mirror_to=str(project))
+    folder = FolderSource(str(watched), mirror_to=str(project))
     await folder.sync()
     assert (project / "a.md").exists()
