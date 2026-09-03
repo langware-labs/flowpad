@@ -360,6 +360,9 @@ def test_the_two_egress_seams_now_agree():
                 "expand",
                 "fs_storage_provider",
                 "origin",
+                # `owner` is a TypeId: the harness cannot invent one, and nothing
+                # should — it is stamped by the thread that mints the conversation.
+                "owner",
                 "kind",
                 "last_active_at",
                 "last_edited_at",
