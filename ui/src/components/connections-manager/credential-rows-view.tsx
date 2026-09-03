@@ -8,6 +8,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ProvideValueInline } from '@src/components/credentials-view/ProvideValueInline';
 import { TableCell, TableRow } from '../ui/table';
+import { CONNECTIONS_COLUMN_COUNT } from '../connections-manager';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
 /** Same cap the OAuth scope chips use — the column is one line, not a list. */
@@ -38,6 +39,7 @@ export function CredentialConnectionRows({
   rows,
   onProvide,
   onAdopt,
+  onStopDeclaring,
   adoptingKey,
 }: {
   rows: CredentialRow[];
@@ -49,6 +51,8 @@ export function CredentialConnectionRows({
    *  shown in the table, and therefore excluded from Add connection, so there
    *  would be nowhere left to add it from. */
   onAdopt?: (rowKey: string) => Promise<void>;
+  /** Withdraw the declaration — see `stopDeclaring`. */
+  onStopDeclaring?: (row: CredentialRow) => void;
   /** Row key currently being adopted, so the button can spell "working". */
   adoptingKey?: string | null;
 }) {
@@ -74,6 +78,9 @@ export function CredentialConnectionRows({
         const shown = row.members.slice(0, VARS_SHOWN);
         const extra = row.members.length - shown.length;
         const unset = row.members.filter((m) => m.declared && m.state !== 'met');
+        const showAdopt = !!onAdopt && row.declaredCount === 0 && row.adoptableCount > 0;
+        const showSetup = !!onProvide && row.declaredCount > 0 && row.state !== 'connected';
+        const showStop = !!onStopDeclaring && row.declaredCount > 0;
         return (
           <React.Fragment key={`credential:${row.key}`}>
           <TableRow data-testid={`connection-row-${row.key}`}>
@@ -144,17 +151,18 @@ export function CredentialConnectionRows({
 
             <TableCell className="text-sm text-muted-foreground">—</TableCell>
             <TableCell className="text-end">
-              {onAdopt && row.declaredCount === 0 && row.adoptableCount > 0 ? (
+              {showAdopt && (
                 <Button
                   size="sm"
                   className="h-7"
                   disabled={adoptingKey === row.key}
-                  onClick={() => void onAdopt(row.key)}
+                  onClick={() => void onAdopt?.(row.key)}
                   data-testid={`connection-adopt-${row.key}`}
                 >
                   {adoptingKey === row.key ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
                 </Button>
-              ) : onProvide && row.declaredCount > 0 && row.state !== 'connected' ? (
+              )}
+              {showSetup && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -164,7 +172,22 @@ export function CredentialConnectionRows({
                 >
                   <Trans>Set up</Trans>
                 </Button>
-              ) : (
+              )}
+              {showStop && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ms-1 h-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => onStopDeclaring?.(row)}
+                  data-testid={`connection-stop-declaring-${row.key}`}
+                >
+                  <Trans>Stop declaring</Trans>
+                </Button>
+              )}
+              {/* The cell is never blank: a row with no action still gets a dash,
+                  which the three-way ternary this replaced could not express once
+                  Stop declaring became a fourth outcome. */}
+              {!showAdopt && !showSetup && !showStop && (
                 <span className="text-sm text-muted-foreground">—</span>
               )}
             </TableCell>
@@ -175,7 +198,7 @@ export function CredentialConnectionRows({
               verbatim: it is one-way, never reads a value back, and Enter saves. */}
           {settingUp === row.key && (
             <TableRow data-testid={`connection-setup-panel-${row.key}`}>
-              <TableCell colSpan={6} className="bg-muted/30">
+              <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="bg-muted/30">
                 <div className="space-y-2 py-1">
                   {unset.map((m) => (
                     <div key={m.envVar} className="flex items-center gap-3">

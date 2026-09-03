@@ -10,8 +10,6 @@ import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
-import { EnvLocalCard } from './EnvLocalCard';
-import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
@@ -31,7 +29,7 @@ interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
   spawnProjectId?: string | null;
   /** Render only the "Create" body with no tab bar — the terminal empty state,
-   *  whose whole point is to start something. The landing shows all three tabs. */
+   *  whose whole point is to start something. The landing shows both tabs. */
   createOnly?: boolean;
   /** Hub-owned body rendered inside the shared Project Home shell. When set,
    *  local Git/setup/create controls are omitted; the Hub body owns content. */
@@ -108,11 +106,13 @@ const TAB_FOR_TAG: Record<string, string> = {
  * project-home content slot (no asset/item selected). The one surface that is
  * unambiguously "the project itself" rather than content inside it.
  *
- * Organized into three tabs:
+ * Organized into two tabs:
  *   - **Create**    — the session tiles (workers + terminal) and the New asset /
  *                     New folder tiles.
  *   - **Customize** — home title/background + the vibe agents layered on.
- *   - **Secrets**   — value-free secret references + setup wizard.
+ *
+ * A third, **Secrets**, was retired: it was one of five surfaces over the same
+ * declarations, and the Connections screen is now the only one.
  */
 export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false, cloudContent }) => {
   const dataCtx = useDataContext();
@@ -126,7 +126,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   // so they outlive whatever the tile click dismisses.
   const { panelProps, dialogs } = useQuickCreatePick();
 
-  // Customize/Secrets cards are project-entity bound — only when the resolved
+  // Customize cards are project-entity bound — only when the resolved
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
@@ -246,9 +246,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 <TabsTrigger value="customize" data-testid="project-home-tab-customize">
                   <Trans>Customize</Trans>
                 </TabsTrigger>
-                <TabsTrigger value="secrets" data-testid="project-home-tab-secrets">
-                  <Trans>Secrets</Trans>
-                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="create">{createTab}</TabsContent>
@@ -260,17 +257,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                     <HomeCustomizationCard project={project} />
                     <VibeAgentsCard project={project} />
                   </>
-                )}
-              </TabsContent>
-
-              <TabsContent value="secrets">
-                {project && (
-                  <div className="flex flex-col gap-3">
-                    {/* Declarations first, then what was merely detected on
-                        disk — the model, in the order it reads. */}
-                    <SecretsCard project={project} />
-                    <EnvLocalCard project={project} />
-                  </div>
                 )}
               </TabsContent>
             </Tabs>

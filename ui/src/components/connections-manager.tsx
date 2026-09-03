@@ -31,6 +31,12 @@ import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { useCredentialConnections } from './connections-manager/use-credential-connections';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
+import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
+import type { CredentialRow } from './credentials-view/credential-rows';
+import {
+  CredentialValueForm,
+  EnvLocalBlockedNotice,
+} from './connections-manager/credential-value-form';
 import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
 import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
@@ -58,6 +64,17 @@ export interface ConnectionsManagerProps {
 }
 
 // Extended OAuth connection type that includes providerName for internal use
+/**
+ * How many columns the Connections table has — Provider · Sign-in · Access
+ * requested · Status · Used by · Actions.
+ *
+ * Exported because THREE files now render rows into this one `<TableBody>` (the
+ * OAuth map here, `CredentialConnectionRows`, and `FlowpadConnectionRow`), and
+ * each one needs it for its full-width expansion row. Three hardcoded 6s is
+ * three places to forget when a column is added.
+ */
+export const CONNECTIONS_COLUMN_COUNT = 6;
+
 interface ExtendedOAuthConnection extends OAuthConnection {
   providerName: string;
   kind?: OAuthFlowKind;
@@ -200,19 +217,26 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     onAttachSuccess: handleOAuthAttachSuccess, // Attach completed (status: CONNECTED)
   });
 
-  // Create connections from available providers with their statuses
+  // Create connections from available providers with their statuses.
+  //
+  // HELD ONLY. The table lists what exists; the dialog lists what you could add
+  // (`addableProviders` below is the exact complement). Without this filter a
+  // provider you have never connected is in both at once — a "Not connected"
+  // row you cannot act on, and a tile offering to add the same thing.
   const allConnections: ExtendedOAuthConnection[] = React.useMemo(() => {
-    return availableProviders.map((provider) => ({
-      id: provider.name.toLowerCase(),
-      provider: provider.display_name,
-      providerName: provider.name, // Keep the actual provider name for API calls
-      status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
-      connectedAt: connectionTimestamps[provider.name.toLowerCase()],
-      kind: provider.kind,
-      scopes: provider.scopes,
-      icon: provider.icon,
-    }));
-  }, [availableProviders, providerStatuses, connectionTimestamps]);
+    return availableProviders
+      .filter((provider) => (grantStatuses[provider.name] ?? GrantStatus.NONE) !== GrantStatus.NONE)
+      .map((provider) => ({
+        id: provider.name.toLowerCase(),
+        provider: provider.display_name,
+        providerName: provider.name, // Keep the actual provider name for API calls
+        status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
+        connectedAt: connectionTimestamps[provider.name.toLowerCase()],
+        kind: provider.kind,
+        scopes: provider.scopes,
+        icon: provider.icon,
+      }));
+  }, [availableProviders, providerStatuses, connectionTimestamps, grantStatuses]);
 
   // "Where is this used?" — one env-table fetch per project, answering for every
   // row at once. Gated above a threshold so a large workspace doesn't fan out on
@@ -228,11 +252,21 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // instance with many projects.
   const selectedProject = project ?? null;
 
-  const { rows: credentialRows, specs: credentialSpecs, declareCredential, provide: provideCredentialValue } =
-    useCredentialConnections(selectedProject);
+  const {
+    rows: credentialRows,
+    specs: credentialSpecs,
+    envLocalBlocked,
+    envLocalBlockReason,
+    envLocalPresent: envLocalKeys,
+    declareCredential,
+    provide: provideCredentialValue,
+    stopDeclaring,
+  } = useCredentialConnections(selectedProject);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [addBusy, setAddBusy] = React.useState<string | null>(null);
+  const [pendingCredential, setPendingCredential] = React.useState<CredentialSpec | null>(null);
+  const [pendingUndeclare, setPendingUndeclare] = React.useState<CredentialRow | null>(null);
   const [usageForced, setUsageForced] = React.useState(false);
   const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
   const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
@@ -316,19 +350,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
    *  entity — and only the attach that follows needs a project. On the hub,
    *  where a user can hold zero projects, that guard made every row a dead end. */
   const handleConnect = async (connectionId: string) => {
-    const connection = allConnections.find((conn) => conn.id === connectionId);
-    if (!connection) return;
+    // From the CATALOGUE, not the rendered rows: the table no longer holds
+    // unconnected providers, so the everyday first-time connect is exactly the
+    // case `allConnections` does not contain.
+    const provider = availableProviders.find((p) => p.name.toLowerCase() === connectionId);
+    if (!provider) return;
+    const displayName = provider.display_name || provider.name;
 
     try {
-      const providerName = connection.providerName;
-      await connect(connectionId, providerName);
+      await connect(connectionId, provider.name);
     } catch (error) {
       // Surfaced, not just logged: every failure here (a provider this instance
       // cannot complete a flow for, a backend refusal) used to land in the
       // console only, so the button looked like it did nothing.
       notify.error({
-        title: t`${connection.provider} connection failed`,
-        message: errorMessage(error, t`Could not connect to ${connection.provider}.`),
+        title: t`${displayName} connection failed`,
+        message: errorMessage(error, t`Could not connect to ${displayName}.`),
       });
     }
   };
@@ -436,15 +473,51 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     void handleConnect(providerName.toLowerCase());
   };
 
-  const pickCredential = async (spec: CredentialSpec) => {
-    setAddBusy(String(spec.name ?? ''));
+  const pickCredential = (spec: CredentialSpec) => {
+    setAddOpen(false);
+    setPendingCredential(spec);
+  };
+
+  /**
+   * Declare one credential, with the busy flag and the failure message both
+   * surfaces share. Returns whether it landed.
+   */
+  const declareWithBusy = async (spec: CredentialSpec, key: string): Promise<boolean> => {
+    setAddBusy(key);
     try {
       await declareCredential(spec);
-      setAddOpen(false);
+      return true;
     } catch (error) {
       notify.error({
-        title: t`Could not add ${spec.title || String(spec.name ?? '')}`,
-        message: errorMessage(error, t`The credential could not be declared.`),
+        title: t`Could not add ${spec.title || key}`,
+        message: errorMessage(error, t`The credential could not be added.`),
+      });
+      return false;
+    } finally {
+      setAddBusy(null);
+    }
+  };
+
+  /**
+   * Declare THEN provide, in that order and never the reverse: `provide-secret`
+   * looks the pointer up on the project and fails when it is absent, so a value
+   * written first has nowhere to go.
+   */
+  const saveCredential = async (values: Record<string, string>) => {
+    const spec = pendingCredential;
+    if (!spec) return;
+    const key = String(spec.name ?? '');
+    if (!(await declareWithBusy(spec, key))) return;
+    setAddBusy(key);
+    try {
+      for (const [envVar, value] of Object.entries(values)) {
+        if (value) await provideCredentialValue({ envVar, value });
+      }
+      setPendingCredential(null);
+    } catch (error) {
+      notify.error({
+        title: t`Could not add ${spec.title || key}`,
+        message: errorMessage(error, t`The value could not be written.`),
       });
     } finally {
       setAddBusy(null);
@@ -481,6 +554,23 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         busyKey={addBusy}
       />
 
+      <CredentialValueForm
+        spec={pendingCredential}
+        presentKeys={envLocalKeys}
+        blocked={envLocalBlocked}
+        blockReason={envLocalBlockReason}
+        busy={!!addBusy}
+        onCancel={() => setPendingCredential(null)}
+        onSave={saveCredential}
+      />
+
+      {envLocalBlocked && (
+        <EnvLocalBlockedNotice
+          reason={envLocalBlockReason}
+          className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+        />
+      )}
+
       <div className="flex-1 overflow-auto">
         {/* Capped: the columns are all short, so a full-width dock strands the
             status and the button metres away from the provider they belong to. */}
@@ -508,6 +598,11 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {/* FlowPad first: it is the account the app itself signs in with, so
+                it heads the list rather than sorting in among the providers you
+                added. Its own producer — see the component for why it cannot be
+                a synthetic `allConnections` entry. */}
+            <FlowpadConnectionRow />
             {allConnections.map((connection) => {
               // Grant vs placement: `grant` says whether the user holds the
               // credential at all (answerable with no project); `status` says
@@ -672,6 +767,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           onClick={() => void handleConnect(connection.id)}
                           disabled={connectingConnectionId === connection.id}
                           className="h-7"
+                          data-testid={`connection-connect-${connection.id}`}
                         >
                           {connectingConnectionId === connection.id ? (
                             <>
@@ -726,9 +822,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <CredentialConnectionRows
               rows={credentialRows}
               adoptingKey={addBusy}
+              onStopDeclaring={(row) => setPendingUndeclare(row)}
               onAdopt={async (rowKey) => {
+                // Declares straight away — no value form. A row is only
+                // adoptable when every one of its values is ALREADY on disk, so
+                // there is nothing to ask for and asking would add a click to
+                // the one case that should be a single click.
                 const spec = credentialSpecs.find((c) => String(c.name ?? '') === rowKey);
-                if (spec) await pickCredential(spec);
+                if (spec) await declareWithBusy(spec, rowKey);
               }}
               onProvide={async (envVar, value) => {
                 try {
@@ -744,9 +845,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 }
               }}
             />
+            {/* "Nothing yet" is about what YOU added. The FlowPad row is always
+                present — it is the app's own account, not a connection you chose
+                — so it must not be what suppresses this line. */}
             {allConnections.length === 0 && credentialRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="py-8 text-center text-sm text-muted-foreground">
                   <Trans>No connections yet</Trans>
                 </TableCell>
               </TableRow>
@@ -754,6 +858,32 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingUndeclare}
+        onOpenChange={(open) => {
+          if (!open) setPendingUndeclare(null);
+        }}
+        title={t`Stop declaring ${pendingUndeclare?.title ?? ''}?`}
+        description={t`This project stops using it. The value stays in .env.local — nothing is deleted from your file.`}
+        confirmLabel={t`Stop declaring`}
+        variant="destructive"
+        onConfirm={() => {
+          const row = pendingUndeclare;
+          setPendingUndeclare(null);
+          if (!row) return;
+          void (async () => {
+            try {
+              await stopDeclaring(row);
+            } catch (error) {
+              notify.error({
+                title: t`Could not stop declaring ${row.title}`,
+                message: errorMessage(error, t`The declaration may be only partly removed.`),
+              });
+            }
+          })();
+        }}
+      />
 
       {/* Blast radius, by name. The count comes from the same usage map the
           Used-by column reads, force-loaded when this dialog opens. */}
