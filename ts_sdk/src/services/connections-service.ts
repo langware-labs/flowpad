@@ -33,6 +33,23 @@ export class ConnectionsService {
     const data = await apiClient.get<{ connections?: ConnectionSpec[] }>(`${this.base}${query}`);
     return data?.connections ?? [];
   }
+
+  /**
+   * Ask the installed harness CLIs whether they are signed in.
+   *
+   * A WRITE, and separate from `list` for that reason: it mirrors each verdict
+   * onto the box, so every surface stops saying "Not checked" — while `list`
+   * stays a read that `require()` can afford. Costs a bounded local subprocess
+   * per harness nobody has asked about yet; `force` asks all of them again.
+   */
+  async checkHarnessLogins(force = false): Promise<Record<string, string>> {
+    if (isHubOnly()) return {};
+    const data = await apiClient.post<{ checked?: Record<string, string> }>(
+      `/graph/compute_node/@local/check-harness-logins`,
+      { force },
+    );
+    return data?.checked ?? {};
+  }
 }
 
 export const connectionsService = new ConnectionsService({ type: 'compute_node', id: '@local' });

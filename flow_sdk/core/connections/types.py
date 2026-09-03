@@ -84,6 +84,10 @@ class ConnectionSpec(DataSpec):
     #: caller, because the backend is the only side that knows why.
     detail: str = ""
     identity: str = ""
+    #: WHAT KIND of account this is, in the vendor's own words — "Max plan",
+    #: "API key", "GitHub account". Empty when the provider does not say: a
+    #: guess here would be a claim about someone's billing.
+    account: str = ""
     icon: str = ""
     #: ``machine`` or ``project`` — which of the two scopes this row belongs to.
     #: Only API-key credentials are project-scoped.
@@ -122,6 +126,7 @@ class ConnectionSpec(DataSpec):
             connected=bool(value.get("connected")),
             detail=str(value.get("detail") or ""),
             identity=str(value.get("identity") or ""),
+            account=str(value.get("account") or ""),
             icon=str(value.get("icon") or ""),
             scope=str(value.get("scope") or "machine"),
             credential_ref=str(value.get("credential_ref") or ""),

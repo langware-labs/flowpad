@@ -21,6 +21,7 @@ function spec(over: Partial<ConnectionSpec> = {}): ConnectionSpec {
     connected: false,
     detail: '',
     identity: '',
+    account: '',
     icon: '',
     scope: 'machine',
     credential_ref: '',
@@ -53,6 +54,24 @@ describe('HarnessConnectionRows', () => {
     renderRows([spec({ provider: 'opencode', display_name: 'OpenCode' })]);
     expect(screen.getByTestId('connection-row-harness-opencode')).toBeTruthy();
     expect(screen.getByTestId('connection-kind-harness-opencode').textContent).toBe('CLI login');
+  });
+
+  it('names the account when the vendor named one', () => {
+    // The Sign-in column said "CLI login" for every harness, which is the
+    // mechanism, not the account. The backend supplies the vendor's own words —
+    // rendered verbatim, because a tier name of our own is a claim about billing.
+    renderRows([
+      spec({ state: ConnectionState.Connected, account: 'Anthropic account · Max', identity: 'a@b.co' }),
+    ]);
+    const badge = screen.getByTestId('connection-kind-harness-claude');
+    expect(badge.textContent).toBe('Anthropic account · Max');
+    expect(badge.getAttribute('title')).toBe('a@b.co');
+  });
+
+  it('falls back to the mechanism when the vendor says nothing', () => {
+    // codex, copilot and opencode answer signed-in/out and nothing more.
+    renderRows([spec({ state: ConnectionState.Connected })]);
+    expect(screen.getByTestId('connection-kind-harness-claude').textContent).toBe('CLI login');
   });
 
   it.each([

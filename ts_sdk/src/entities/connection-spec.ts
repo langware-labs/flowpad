@@ -49,6 +49,10 @@ export interface ConnectionSpec {
    *  side that knows why, and rewriting it here is how a status starts lying. */
   detail: string;
   identity: string;
+  /** WHAT KIND of account this is, in the vendor's own words — "Anthropic
+   *  account · Max", "GitHub account". Empty when the provider does not say;
+   *  render nothing rather than a guess about someone's billing. */
+  account: string;
   icon: string;
   /** `machine` or `project`. Only API-key credentials are project-scoped. */
   scope: string;

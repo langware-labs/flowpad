@@ -5,6 +5,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { isLucideName } from '@src/lib/icon-value';
 import { KeyRound } from 'lucide-react';
 import { Badge } from '../ui/badge';
+import { MoreOnHover } from './more-on-hover';
 import { Button } from '../ui/button';
 import { ProvideValueInline } from '@src/components/credentials-view/ProvideValueInline';
 import { TableCell, TableRow } from '../ui/table';
@@ -109,35 +110,36 @@ export function CredentialConnectionRows({
                 of environment variables. Same badge shape the OAuth scopes use,
                 so the two read as one column. */}
             <TableCell data-testid={`connection-vars-${row.key}`}>
-              <div
-                className="flex items-center gap-1"
-                title={row.members
-                  .map((m) => `${m.envVar}${m.required ? '' : t` (optional)`}`)
-                  .join('\n')}
+              <MoreOnHover
+                lines={row.members.map((m) => `${m.envVar}${m.required ? '' : t` (optional)`}`)}
               >
-                {shown.map((m) => (
-                  <Badge
-                    key={m.envVar}
-                    variant="secondary"
-                    className={cn(
-                      'max-w-[220px] truncate font-mono text-[11px] font-normal',
-                      m.state === 'missing' && 'opacity-50',
-                    )}
-                    title={
-                      m.state === 'met'
-                        ? t`Set${m.foundIn ? ` — from ${m.foundIn}` : ''}`
-                        : m.state === 'adoptable'
-                          ? t`In .env.local at line ${m.line ?? 0}, not declared yet`
-                          : t`Not set`
-                    }
-                  >
-                    {m.envVar}
-                  </Badge>
-                ))}
-                {extra > 0 && (
-                  <span className="shrink-0 text-xs text-muted-foreground">+{extra}</span>
-                )}
-              </div>
+                <div className="flex items-center gap-1">
+                  {shown.map((m) => (
+                    <Badge
+                      key={m.envVar}
+                      variant="secondary"
+                      className={cn(
+                        'max-w-[220px] truncate font-mono text-[11px] font-normal',
+                        m.state === 'missing' && 'opacity-50',
+                      )}
+                      title={
+                        m.state === 'met'
+                          ? t`Set${m.foundIn ? ` — from ${m.foundIn}` : ''}`
+                          : m.state === 'adoptable'
+                            ? t`In .env.local at line ${m.line ?? 0}, not declared yet`
+                            : t`Not set`
+                      }
+                    >
+                      {m.envVar}
+                    </Badge>
+                  ))}
+                  {!!extra && (
+                    <span className="shrink-0 cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2">
+                      +{extra}
+                    </span>
+                  )}
+                </div>
+              </MoreOnHover>
             </TableCell>
 
             <TableCell>
