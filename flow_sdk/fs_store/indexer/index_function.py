@@ -1142,6 +1142,39 @@ class FSIndexer:
         # activity stays alive until the terminal emit below.
         await progress.emit(text="sweeping", force=True)
 
+        # ----- Superseded-identity sweep -----
+        # A re-keying leaves residue no other pass can reach. When a type's
+        # identity rule changes (FLOWPAD-2070 moved data-source specs from the
+        # install path to the name), the run that mints the new id CANNOT see
+        # the fork: `dupe_ids_by_path` is the pre-walk preload, taken while the
+        # path still had one claimant. Every later run then skips the file as
+        # fresh — its bytes never moved — so the sweep below, which nominates
+        # from PARSED refs only, never hears about it. Both rows outlive every
+        # heartbeat; the provider picker drew one tile per row.
+        #
+        # Nominating needs no parse: an id equal to what the OLD path-derived
+        # rule would mint for this very path is, by construction, that rule's
+        # residue. It cannot be confused with the API-minted v4 twin that
+        # `_db_missing_orphans` deliberately keeps alive — those are random.
+        # And the `- seen_ids` subtraction below is the safety net: on a type
+        # still keyed by path that id IS the live one, lands in `seen_ids`
+        # (a fresh-skip counts), and is protected without a special case.
+        if dupe_ids_by_path:
+            from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+            by_name = {str(rt): rt for rt in stale_dupe_candidates}
+            for tname, by_path in dupe_ids_by_path.items():
+                for canon, ids in by_path.items():
+                    # The same call the old rule made: `mint_uuid(<resolved path>)`.
+                    legacy = mint_uuid(canon)
+                    if legacy not in ids:
+                        continue
+                    rt = by_name.get(tname) or next(
+                        (r for r in seen_ids if str(r) == tname), None
+                    )
+                    if rt is not None:
+                        stale_dupe_candidates.setdefault(rt, set()).add(legacy)
+
         # ----- Same-path duplicate sweep -----
         # Positive-evidence cleanup, independent of ``orphan_action``: each
         # candidate's path was walked AND parsed this run and resolved to a
