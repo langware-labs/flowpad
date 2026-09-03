@@ -62,7 +62,7 @@ async def test_rows_present_before_the_first_listen_are_the_baseline():
         inbox = Inbox(addr, provider="scripted")
         driver.push({"body": "old"})
         # Ingest the "old" page through a plain sync, before any position exists.
-        await (await inbox._ensure_source()).sync()
+        await (await inbox.ensure_source()).sync()
         driver.push({"body": "new"})
         async with workflow(_name()):
             (item,) = await _take(inbox, 1)
@@ -113,7 +113,7 @@ async def test_outside_a_workflow_the_position_is_ephemeral():
         driver.push({"body": "x"})
         (item,) = await _take(inbox, 1)
         await item.ack()                                   # a no-op that still works
-        source = await inbox._ensure_source()
+        source = await inbox.ensure_source()
     assert await ConsumerPosition.get_all({"data_source_id": str(source.id)}) == []
 
 

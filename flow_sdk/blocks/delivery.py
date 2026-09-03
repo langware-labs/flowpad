@@ -3,8 +3,12 @@
 Not a value. The item inside is the frozen ``SourceItemSpec`` (or a ``FolderChange``) and stays
 one; this is the envelope around it — the ``MessageRequest`` role, except that it holds a
 position and a source, which are not values. Attribute reads fall through to the item, so
-``EmailMessageSpec.reply_to(m, …)`` and ``agent.process_message(m)`` take the envelope
-unchanged. Reach for ``.item`` when you want the value itself.
+``agent.process_message(m)`` takes the envelope unchanged. Reach for ``.item`` when you want
+the value itself.
+
+**Build a reply with ``m.reply_spec(body=…)`` unless the code already knows its channel.**
+Naming a spec class is picking the addressing rule by hand; ``DataSource.reply_spec`` says
+what that costs on the wrong channel.
 
 **``ack()`` is an offset.** It commits this item AND everything before it — the Kafka grain,
 settled deliberately, because per-item bookkeeping does not survive a consumer that fans out.
@@ -75,6 +79,24 @@ class Delivered(Generic[T]):
     def acked(self) -> bool:
         return self._position.is_acked(self._row)
 
+    async def _source(self):
+        """The source this item arrived through. Raises rather than returning
+        ``None``: every caller here is about to send, and "gone" is not a case
+        any of them can carry on from."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        source = await DataSource.get_by_id(self.source_id)
+        if source is None:
+            raise LookupError(f"source {self.source_id} is gone; nothing to reply through")
+        return source
+
+    async def reply_spec(self, *, body: str, attachments=()) -> "MessageSpec":
+        """The reply to THIS item, in its own channel's shape — the rule and the
+        reason are ``DataSource.reply_spec``'s. Async only because it reads the
+        source."""
+        source = await self._source()
+        return source.reply_spec(self.item, body=body, attachments=attachments)
+
     async def reply(self, spec: "MessageSpec") -> "SendOutcome | None":
         """Send *spec* as the answer to this item, then ack — the piggybacked ack.
 
@@ -91,15 +113,12 @@ class Delivered(Generic[T]):
         """
         from datetime import datetime, timezone  # noqa: PLC0415
 
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.ingest.driver import SendOutcome  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
         position, row = self._position, self._row
-        source = await DataSource.get_by_id(self.source_id)
-        if source is None:
-            raise LookupError(f"source {self.source_id} is gone; nothing to reply through")
+        source = await self._source()
 
         if position.replying_to == str(row.id):
             if position.replied_external_id:

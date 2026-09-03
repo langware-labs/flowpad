@@ -158,12 +158,14 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {origin.kind} transport cannot send")
 
-    # ASK the channel who a reply is addressed to; do not assume. `MessageSpec`
-    # already owns this rule — email replies to the author, a chat channel
-    # replies to the chat — and each spec's `reply_to` implements it as a pure
-    # constructor. Hand-rolling the email answer here is what addressed a Slack
-    # reply to the author's user id, which Slack delivers as a DM instead of
-    # posting it in the channel.
+    # ASK the channel who a reply is addressed to; do not assume. `outbound_spec`
+    # is the one seam that answers it — `DataSource.reply_spec` is the same
+    # question asked from the SDK side — and each spec's `reply_to` implements
+    # its own rule as a pure constructor. The driver is already in hand here, so
+    # this asks it directly rather than round-tripping through the entity.
+    # Hand-rolling the email answer here is what addressed a Slack reply to the
+    # author's user id, which Slack delivers as a DM instead of posting it in
+    # the channel.
     spec = driver.outbound_spec(source).reply_to(item, body="")
     to = (spec.to[0] if spec.to else "").strip()
     if not to:
