@@ -29,6 +29,7 @@ export interface IDataSource extends IEntity {
   name: string;
   kind?: string;
   provider?: string;
+  owner?: string | null;
   channel?: string;
   account_key?: string;
   account_identities?: string[];
@@ -118,6 +119,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   get isActive(): boolean {
     return this.status === 'active';
   }
+    this.owner = entity.owner ?? this.owner;
 
   /** Waiting on the user to finish something outside Flowpad (a Slack invite). */
   get needsSetup(): boolean {
@@ -144,6 +146,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /**
    * Attention: someone is LOOKING at this source's output — poll on the next
    * heartbeat tick. Fired on an interval by a selected view; the request
+  /** The scheduler will not poll it until a person acts: a setup step is owed, or it
+   *  is running but parked on `config_error` (`DataSource.poll_refusal`). A PAUSED
+   *  source carrying a stale error is not this — resuming it is the fix. */
+  get needsAttention(): boolean {
+    return this.needsSetup || (this.isActive && this.health === 'config_error');
+  }
+
    * stream itself is the liveness signal, so nothing is stored and nothing
    * needs undoing when the viewer goes away. Unlike `pollNow` it never
    * un-latches `config_error` and never wakes a disabled source.

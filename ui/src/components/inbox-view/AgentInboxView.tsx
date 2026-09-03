@@ -9,12 +9,12 @@ import { ViewType } from '@src/types/ViewType';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
-import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
 import { InboxView } from './InboxView';
 
 const MIN_REFRESH_SECONDS = 60;
@@ -41,6 +41,9 @@ export function AgentInboxView() {
   const [senders, setSenders] = useState('');
   const [refresh, setRefresh] = useState(String(MIN_REFRESH_SECONDS));
   const activeState = state?.agent_id === parsed.agentId ? state : null;
+  // The agent's channels — the bar's own rows, so "has an inbox at all" and
+  // what the bar shows can never disagree.
+  const { rows: channels } = useAttachedChannels(agentTypeId);
 
   const loadState = useCallback(async () => {
     const currentAgent = agentRef.current;
@@ -61,34 +64,32 @@ export function AgentInboxView() {
   useEffect(() => void loadState(), [loadState]);
   useAttentionPolling(activeState?.source?.id, undefined, parsed.agentId ?? undefined);
 
-  const changeEnabled = useCallback(
-    async (enabled: boolean) => {
-      if (!agent || saving) return;
-      setSaving(true);
-      try {
-        if (enabled) {
-          const gate = await ensureCloudLogin();
-          if (!gate.ok) throw new Error(gate.error);
-        }
-        const next = enabled ? await agent.allocateInbox() : await agent.disableInbox();
-        setState(next);
-        setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
-        setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
-      } catch (error) {
-        // `forceToast` because this is a button the person just pressed: an
-        // alert-level notification is otherwise filed into the footer popover
-        // and never shown outside Dev mode, so the click appeared to do nothing.
-        notify.error({
-          title: enabled ? t`Could not allocate an inbox` : t`Could not disable the inbox`,
-          message: errorMessage(error, t`Email settings could not be saved.`),
-          forceToast: true,
-        });
-      } finally {
-        setSaving(false);
-      }
-    },
-    [agent, ensureCloudLogin, saving, t],
-  );
+  // Allocating is the hub-side act — an address nobody had. Listening on/off
+  // is NOT here any more: that is the channels bar's toggle, the same verb for
+  // the mailbox as for every other channel.
+  const createEmail = useCallback(async () => {
+    if (!agent || saving) return;
+    setSaving(true);
+    try {
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) throw new Error(gate.error);
+      const next = await agent.allocateInbox();
+      setState(next);
+      setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
+      setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
+    } catch (error) {
+      // `forceToast` because this is a button the person just pressed: an
+      // alert-level notification is otherwise filed into the footer popover
+      // and never shown outside Dev mode, so the click appeared to do nothing.
+      notify.error({
+        title: t`Could not allocate an inbox`,
+        message: errorMessage(error, t`Email settings could not be saved.`),
+        forceToast: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [agent, ensureCloudLogin, saving, t]);
 
   const saveConfiguration = useCallback(async () => {
     if (!agent || !activeState?.inbox || saving) return;
@@ -147,24 +148,19 @@ export function AgentInboxView() {
                   />
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">
-                  <Trans>No email address allocated</Trans>
-                </div>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  disabled={saving}
+                  onClick={() => void createEmail()}
+                  data-testid="agent-email-create"
+                >
+                  <Trans>No email address — create one</Trans>
+                </button>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {activeState?.enabled ? t`Email enabled` : t`Email disabled`}
-            </span>
-            <Switch
-              checked={activeState?.enabled ?? false}
-              disabled={saving}
-              onCheckedChange={(checked) => void changeEnabled(checked)}
-              aria-label={t`Enable agent email`}
-              data-testid="agent-email-enabled"
-            />
-          </div>
+          {agentTypeId && <AttachedChannelsBar owner={agentTypeId} className="justify-end" />}
         </div>
         {activeState?.inbox && (
           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(12rem,1fr)_10rem_auto]">
@@ -203,21 +199,16 @@ export function AgentInboxView() {
           </div>
         )}
       </section>
-      {activeState?.inbox ? (
+      {activeState?.inbox || channels.length > 0 ? (
         <div className="min-h-0 flex-1">
           <InboxView agentId={parsed.agentId} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <p>
-            <Trans>Enable email to allocate this Agent's inbox.</Trans>
+            <Trans>Attach a channel with + above, or give this Agent an email address.</Trans>
           </p>
-          <Button
-            type="button"
-            disabled={saving}
-            onClick={() => void changeEnabled(true)}
-            data-testid="agent-email-create"
-          >
+          <Button type="button" disabled={saving} onClick={() => void createEmail()} data-testid="agent-email-create-cta">
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             <Trans>Create email for agent</Trans>
           </Button>

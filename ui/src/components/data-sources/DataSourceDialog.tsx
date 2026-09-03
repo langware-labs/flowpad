@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
+import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { notify } from '@src/notifications';
@@ -95,7 +96,8 @@ export function DataSourceDialog({
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
-  const { specs, specFor } = useSourceSpecs();
+  const { specs: installed, specFor } = useSourceSpecs();
+  const specs = only ? installed.filter(only) : installed;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -108,11 +110,18 @@ export function DataSourceDialog({
   const seedRef = useRef({ specFor, specs });
   seedRef.current = { specFor, specs };
   useEffect(() => {
+  owner,
+  only,
     if (!open) return;
     const { specFor: lookup, specs: available } = seedRef.current;
     setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? ''));
     setShowAdvanced(false);
   }, [open, editing]);
+  /** Who the new source belongs to (a user or an agent). Omitted → the backend
+   *  stamps the local user, so every existing caller is unchanged. */
+  owner?: TypeId | null;
+  /** Narrow the provider tiles — the channels bar offers only specs that `sends`. */
+  only?: (spec: DataSourceSpec) => boolean;
 
   const spec = specFor(draft.provider);
   const problems = useMemo(() => validateDraft(draft, spec), [draft, spec]);
@@ -185,6 +194,7 @@ export function DataSourceDialog({
             onChange={(e) => setField(key, e.target.value)}
           />
         ) : (
+          owner: owner ? owner.toString() : null,
           <Input
             id={`ds-${key}`}
             type={field.type === FieldType.NUMBER ? 'number' : 'text'}
