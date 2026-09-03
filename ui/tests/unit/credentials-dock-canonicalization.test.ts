@@ -17,6 +17,7 @@ describe('canonicalCredentialsDockPath', () => {
     ['/dock/environment', '/dock/credentials/connections'],
     ['/dock/connections', '/dock/credentials/connections'],
     ['/dock/api-keys', '/dock/credentials/connections'],
+    ['/dock/skills', '/dock/assets/list/skill'],
   ])('redirects %s', (from, to) => {
     expect(canonicalCredentialsDockPath(from, '')).toBe(to);
   });

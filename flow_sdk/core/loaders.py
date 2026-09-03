@@ -68,6 +68,12 @@ def load_actions():
     except ImportError:
         pass  # LM keys action not available
 
+    # Import token-plan read-through (desk → hub) to register it
+    try:
+        from flow_sdk.app.actions import token_plan_action  # noqa: F401
+    except ImportError:
+        pass  # Token plan action not available
+
     # Import desktop-notify action to register it
     try:
         from flow_sdk.app.actions import desktop_notify_action  # noqa: F401

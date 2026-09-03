@@ -231,6 +231,13 @@ def invalidate_schema_cache() -> None:
     _all_type_payloads_cache.clear()
 
 
+# An entity class that binds to its type AFTER these memos were assembled
+# (lazily imported entity modules — ``Trigger`` via the server's trigger
+# subsystem) would otherwise leave that type's payload at ``schema: None``
+# for the life of the process.
+SchemaRegistry.on_entity_bound(invalidate_schema_cache)
+
+
 def _entity_schema_map(allow_cache: bool = True) -> Dict[str, Dict[str, Any]]:
     """`{type_name: json_schema}` for every entity type, from the cached
     ``get_full_schema()`` (keyed by each schema's ``properties.type.const``).

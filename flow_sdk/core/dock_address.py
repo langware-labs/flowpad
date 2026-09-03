@@ -250,6 +250,8 @@ RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
     ViewType.ENVIRONMENT: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     ViewType.CONNECTIONS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
+    # Skills folded into the Assets browser (`/dock/assets/list/skill`).
+    ViewType.SKILLS: RetiredTarget(ViewType.ASSETS, "list/skill"),
 }
 
 
@@ -411,10 +413,6 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
     ViewType.PLAN: _m(_REQ, label="Plan"),
     ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),
-    # NOT aliased to `skills`, tempting as it is: ViewType.SKILLS says "folded into
-    # assets `list/skill`" but has no RETIRED_DOCK_VIEWS row, so it forwards nowhere
-    # and `flow show view skills` errors. Publishing the alias would hand an agent an
-    # address that fails. Add the forwarding row first, then the alias.
     # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
     # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
     # REQUIRED it carried meant the URL worked in a browser while `flow show view

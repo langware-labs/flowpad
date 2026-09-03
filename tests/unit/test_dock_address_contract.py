@@ -24,8 +24,8 @@ from flow_sdk.core.dock_address import (
     MachineSubview,
     PageId,
     PointerRequirement,
-    ViewType,
     TokenPlanKind,
+    ViewType,
     WebappSubview,
     can_be_tab,
     dock_url,
@@ -197,8 +197,15 @@ def test_view_types_shadowing_a_real_entity_type_are_pinned():
 
 @pytest.mark.parametrize("retired", sorted(CONTRACT["retired_views"]), ids=lambda name: name)
 def test_retirement_targets_name_a_real_subview(retired):
-    """The forward pointer must be a live CredentialsSubview, not a free string."""
-    CredentialsSubview(CONTRACT["retired_views"][retired]["pointer"])
+    """The forward pointer must be a live subview, not a free string: a
+    credentials target names a ``CredentialsSubview``; the assets target
+    (``skills``) names an asset-list pointer."""
+    target = CONTRACT["retired_views"][retired]
+    if target["view_type"] == ViewType.CREDENTIALS.value:
+        CredentialsSubview(target["pointer"])
+    else:
+        assert target["view_type"] == ViewType.ASSETS.value
+        assert target["pointer"].startswith("list/")
 
 
 def test_flow_data_view_type_is_the_dock_address_enum():

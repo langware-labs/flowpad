@@ -118,6 +118,10 @@
     "api-keys": {
       "view_type": "credentials",
       "pointer": "connections"
+    },
+    "skills": {
+      "view_type": "assets",
+      "pointer": "list/skill"
     }
   },
   "view_meta": {
