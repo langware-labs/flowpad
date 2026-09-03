@@ -200,9 +200,10 @@ def local_dummy_provider(monkeypatch):
     `copy_hub_credential=True` is the OTHER half, and it is not optional here.
     A registered provider used to be sufficient for `_adopt_hub_credential` to
     copy the value into local SOD; the copy is now gated on this flag as well
-    (GitHub sets it — `git push` reads the raw token locally — while Slack
-    leaves it False and keeps the token hub-side). Without it these tests model
-    the Slack shape while asserting the GitHub one, and the desktop holds None.
+    (GitHub sets it — `git push` reads the raw token locally — and so does Slack
+    now that `SlackDriver._token()` reads it from the poller). Without it these
+    tests would assert the copied shape while modelling an uncopied one, and the
+    desktop holds None.
     """
     from flow_sdk.core.oauth import provider_registry as registry
     from flow_sdk.core.oauth.provider_registry import LocalOAuthProvider, OAuthFlowKind

@@ -245,9 +245,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # for them. Publishing a second list here would drift from the consent
         # screen the user really sees.
         scopes=(),
-        # The entry exists so `_adopt_hub_credential` will copy the hub's token
-        # into local SOD — without it the desktop ends a successful flow holding
-        # a row and nothing else. Slack's token is a bearer string.
+        # Slack's token is a bearer string.
         token_shape=TokenShape.BEARER_STRING,
         probe=OAuthProbeSpec(
             method="POST",
@@ -258,7 +256,11 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_parts=("team_id", "user_id"),
         ),
         hub_required=True,
-        copy_hub_credential=False,
+        # `SlackDriver._token()` calls `token_for(SLACK)` on every poll, from the
+        # background poller, which has no request user and so cannot reach the hub
+        # tier. Adoption runs once inside the wait-callback request (which can),
+        # and the poller then reads local SOD.
+        copy_hub_credential=True,
     ),
     ATLASSIAN: LocalOAuthProvider(
         name=ATLASSIAN,
