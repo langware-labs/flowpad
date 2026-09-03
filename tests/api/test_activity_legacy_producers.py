@@ -64,3 +64,37 @@ async def test_a_failing_docs_scan_still_ends_its_activity(client, tmp_path, obs
 
     for path, _state, _done in observed:
         assert monitor.get(path) is None, f"{path} was left running after a failed scan"
+
+
+async def test_every_legacy_emit_site_goes_through_the_mirroring_seam():
+    """The seam is what makes a legacy producer visible, and a new one can miss it.
+
+    ``latest_table`` is read-only precisely so the assignment cannot come back, but a
+    producer could still build a table and broadcast it without ever handing it to the
+    carrier. This counts the sites so a future one is a failing test rather than a row
+    that silently never appears.
+    """
+    import inspect
+
+    from flow_sdk.builtin.faas import fs_records_actions
+
+    source = inspect.getsource(fs_records_actions)
+    assert source.count("activity.set_table(") == 6, (
+        "a legacy progress producer was added or removed; every one must report through "
+        "set_table or it reaches the old pill only"
+    )
+    assert ".latest_table = " not in source, "latest_table is read-only; write via set_table"
+
+
+async def test_the_asset_usage_scan_reports_under_its_own_name(client, observed):
+    """It borrows ``job_name="scan"`` for the legacy pill, like the docs scan, and must not
+    be mistaken for a filesystem scan of the box."""
+    resp = await client.get(
+        "/api/v1/graph/compute_node/@local/fs-records/asset-usage",
+        params={"skill": "e2etest-no-such-skill"},
+    )
+
+    assert resp.status_code == 200
+    assert any(state.name in ("COMPLETED", "FAILED") for _p, state, _d in observed) or not observed
+    for path, _state, _done in observed:
+        assert monitor.get(path) is None, f"{path} was left running after the scan"
