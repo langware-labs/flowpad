@@ -104,12 +104,12 @@ async def test_full_analysis_flow_loop(tmp_path, monkeypatch):
         # (which reads this transcript route → SkillCallEntry).
         tr = client.get(f"/api/v1/workers/claude/{SID}/transcript")
         assert tr.status_code == 200, tr.text
-        loaded = [e for e in tr.json()["entries"] if e.get("kind") == "skill_call"]
+        loaded = [e for e in tr.json()["data"]["entries"] if e.get("kind") == "skill_call"]
         assert any(e.get("skill_name") == SKILL for e in loaded), "product-finder must show as loaded"
         # …and the deterministic skeleton records the skill_load event.
         sk = client.get(f"/api/v1/workers/claude/{SID}/trace-skeleton")
         assert sk.status_code == 200, sk.text
-        skeleton = sk.json()["skeleton"]
+        skeleton = sk.json()["data"]["skeleton"]
         assert any(e["kind"] == "skill_load" and e["label"] == SKILL for e in skeleton["events"])
         # Value substrate: the backend emits what the projected-savings layer consumes —
         # per-run cost in the summary and per-segment cost/severity in the lanes.
@@ -125,7 +125,7 @@ async def test_full_analysis_flow_loop(tmp_path, monkeypatch):
             ann = client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                               json={"annotations": _annotations(cycle < 2)})
             assert ann.status_code == 200, ann.text
-            improvable = ann.json()["summary"]["issue_count"] > 0
+            improvable = ann.json()["data"]["summary"]["issue_count"] > 0
 
             # Stop rule (mirror of shouldRunAnotherCycle): cap OR converged.
             if cycles_run >= MAX_CYCLES or not improvable:

@@ -314,8 +314,8 @@ async def get_all_scope_filter(
 
     This is the explicit replacement for the silent "no filter = walk the
     universe" pattern. Callers that previously passed ``scope_filter=None``
-    into the indexer (and got an implicit fanout via the
-    ``real_project_cwd_fn`` expander on ``USER_HOME_FOLDER``) should call this
+    into the indexer (and got an implicit fanout via the since-retired
+    ``USER_HOME_FOLDER`` expander walker) should call this
     helper instead — the returned filter materialises every Claude/Codex
     project cwd as an explicit ``REAL_PROJECT_CWD`` root via
     ``_resolve_scoped_roots``, so the work the scan does becomes visible at

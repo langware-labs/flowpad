@@ -511,11 +511,21 @@ async def _reflect_entity(
             _apply_entity_fields(existing, payload)
             await existing.save()
 
-            # Force immediate notification to ensure frontend receives update
+            # Force immediate notification to ensure frontend receives update.
+            # Only the "no such method" probe is silent; a notifier that exists
+            # and fails is a real broadcast loss.
             try:
                 await existing.notify_updated()
-            except Exception:
+            except AttributeError:
                 pass  # notify_updated may not exist on all entity types in flow-cli
+            except Exception:
+                logger.warning(
+                    "[_reflect_entity] notify_updated failed for %s %s; the frontend "
+                    "will not see this update until the next fetch",
+                    record_type,
+                    existing.id,
+                    exc_info=True,
+                )
 
             # Log final state after save
             if record_type == BuiltinEntityType.TASK.value:

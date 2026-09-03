@@ -27,7 +27,10 @@ export function buildContextEntityLines(typeIds: readonly TypeId[]): string[] {
       const recordPath = `${recordsRoot}/${tid.type}/${tid.id}`;
       out.push(`- ${label}: ${tid.toUrlString()}, read: ${recordPath}`);
     } else {
-      out.push(`- ${label}: ${tid.toUrlString()}, fetch: GET http://localhost:9007/api/v1/graph/${tid.type}/${tid.id}`);
+      // No records root known (hub / remote runtime): the TypeId alone is the
+      // reference. Workers resolve it through their pinned FLOW_INSTANCE backend
+      // (`flow` verbs / MCP), never through a URL baked into the prompt.
+      out.push(`- ${label}: ${tid.toUrlString()}`);
     }
   }
   return out;

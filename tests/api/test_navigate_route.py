@@ -467,4 +467,9 @@ async def test_navigate_view_forwards_a_retired_view():
 
             msg = _receive_ui_command(ws)
             assert msg["view_type"] == "credentials"
-            assert msg["pointer"] == "environment"
+            # All three retired views land on CONNECTIONS, not on a subview
+            # named after themselves: `environment` and `api-keys` are retired
+            # too, so forwarding onto one leaves anything that reads
+            # `dock.pointer` on a blank pane (see RETIRED_DOCK_VIEWS —
+            # "one hop, one table").
+            assert msg["pointer"] == "connections"

@@ -237,7 +237,7 @@ These record types are owned by flow-cli and stored under `~/.flow/instances/<na
 
 ### Claude Code Records (read-only, mapped from Claude directories)
 
-These types represent data sourced from Claude Code's own files. The records are read-only — their `asset_ref` FSRefs carry `read_only`, and their identity is a `DerivedCarrier` (a pure function of the source, never written back) — and do not own their underlying data. Only the members listed in `INDEXABLE_TYPES` (`flow_sdk/fs_store/indexer/builtin.py`) are actually walked by the indexer; the rest of the enum below (`CLAUDE_ROOT`, `ACCOUNT`, `HOOK`/`HOOK_ENTRY`, `HISTORY*`, `ACTIVE_SESSION*`, `CLAUDE_DEBUG_LOG`, the transcript-entry and settings sub-types) are enum members with no indexer function today.
+These types represent data sourced from Claude Code's own files. The records are read-only — their `asset_ref` FSRefs carry `read_only`, and their identity is a `DerivedCarrier` (a pure function of the source, never written back) — and do not own their underlying data. Only the members returned by `indexable_types()` (`flow_sdk/fs_store/indexer/builtin.py` — derived from the registered walkers' declared outputs, intersected with the types that have a `from_disk_fn`) are actually walked by the indexer; the rest of the enum below (`CLAUDE_ROOT`, `ACCOUNT`, `HOOK`/`HOOK_ENTRY`, `HISTORY*`, `ACTIVE_SESSION*`, `CLAUDE_DEBUG_LOG`, the transcript-entry and settings sub-types) are enum members with no indexer function today.
 
 | Constant | String value | Source path |
 |----------|-------------|-------------|
@@ -333,7 +333,7 @@ The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `C
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
 
-These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `claude_command.py`, `claude_plan.py`, `claude_memory.py`, `claude_rules.py`, `claude_hook.py`, `todo.py`, `skill.py`, `subagent.py`, `agent.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_type_info.py`; `flow_sdk/fs_store/indexer/builtin.py` wires them onto roots and declares `INDEXABLE_TYPES`. The table below maps types to the on-disk location their indexer reads; rows marked *not walked* are enum members with no registered indexer function.
+These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `claude_command.py`, `claude_plan.py`, `claude_memory.py`, `claude_rules.py`, `claude_hook.py`, `todo.py`, `skill.py`, `subagent.py`, `agent.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_type_info.py`; `flow_sdk/fs_store/indexer/builtin.py` wires them onto roots; `indexable_types()` there derives the walked set from those registrations (`FSIndexer.terminal_output_types()`), so there is no hand-maintained list to drift. The table below maps types to the on-disk location their indexer reads; rows marked *not walked* are enum members with no registered indexer function.
 
 | RecordType | Source |
 |-----------|--------|
@@ -352,7 +352,7 @@ These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<ty
 | `MCP_SERVER` | Entries in `mcp.json` / `.mcp.json` / `.claude/mcp.json` |
 | `ACCOUNT` | `~/.claude.json` (deprecated) — *not walked* |
 | `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `<records_root>/claude_error/` |
-| `CODEX_SESSION` / `CODEX_PROJECT` | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
+| `CODEX_SESSION` (`CODEX_PROJECT` is a deprecated alias, no longer indexable) | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
 | `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<id>/` |
 
 FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<id>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.

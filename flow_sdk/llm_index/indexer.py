@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.llm_index.core import (
     PROMPT_VERSION,
     TEMPLATE_VERSION,
@@ -46,7 +47,7 @@ _TYPEID_NAMESPACE = uuid.NAMESPACE_URL
 
 def typeid_for(path: Path | str) -> str:
     """Deterministic ``markdown_index-<uuid5>`` TypeId for a folder path."""
-    return f"markdown_index-{uuid.uuid5(_TYPEID_NAMESPACE, str(Path(path).resolve()))}"
+    return f"markdown_index-{mint_uuid(str(Path(path).resolve()), namespace=_TYPEID_NAMESPACE)}"
 
 
 # ── items ─────────────────────────────────────────────────────────────────────
@@ -718,7 +719,7 @@ class LLMIndexer:
             rp = str(path.resolve())
             nid = nid_by_path.get(rp)
             if nid is None:
-                nid = nid_by_path[rp] = str(uuid.uuid5(_TYPEID_NAMESPACE, rp))
+                nid = nid_by_path[rp] = mint_uuid(rp, namespace=_TYPEID_NAMESPACE)
             key = f"{type_name}-{nid}"
             node = {
                 "type": type_name,

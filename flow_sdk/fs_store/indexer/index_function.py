@@ -476,6 +476,39 @@ class FSIndexer:
     def add_root(self, node: FSRef) -> None:
         self._roots.append(node)
 
+    def terminal_output_types(self) -> list[RecordType]:
+        """The record types this indexer WRITES — derived from its own graph.
+
+        Union of every registered function's declared outputs, kept when the
+        type has a ``from_disk_fn``: the walker emits it AND the registry can
+        turn the ref into a row. That parser slot is the whole test, and it is
+        what drops the traversal scaffolds ``folder``, ``claude_hook_source``
+        and ``mcp_server_source`` — they are emitted only to be walked further,
+        and nothing parses them into a record.
+
+        Returned in registry order, so positional slices (``[:limit_types]``)
+        are deterministic across processes. A function registered with
+        ``output_type=None`` contributes nothing here: it declared no output,
+        so there is nothing to derive.
+        """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        emitted: set[str] = set()
+        for fns in self._functions.values():
+            for _fn, output_types in fns:
+                if output_types is None:
+                    continue
+                emitted.update(str(t) for t in output_types)
+        out: list[RecordType] = []
+        for name in SchemaRegistry.get_all_types():
+            if name not in emitted:
+                continue
+            info = SchemaRegistry.get(name)
+            if info is None or not _has_dispatch(info):
+                continue
+            out.append(RecordType(name))
+        return out
+
     def _compute_needed_output_types(self, requested: tuple[RecordType, ...]) -> set[RecordType] | None:
         """Reverse-reachability over the registration graph.
 
@@ -1325,19 +1358,19 @@ class FSIndexer:
         # is always empty). A subsequent IGNORE/DELETE sweep would wipe
         # them. This is data loss: those rows have no Layer 1 source, so
         # "source missing" doesn't apply.
-        from flow_sdk.fs_store.indexer.builtin import INDEXABLE_TYPES  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.builtin import indexable_types  # noqa: PLC0415
 
-        indexable = {str(t) for t in INDEXABLE_TYPES}
+        indexable = {str(t) for t in indexable_types()}
 
         if types:
             requested = {str(t) for t in types}
-            # Intersect with INDEXABLE_TYPES so an explicit caller can't
+            # Intersect with the derived set so an explicit caller can't
             # accidentally enable orphan detection on a non-indexable type.
             return requested & indexable
 
         # Union of "types with DB rows" and "types with a records dir on disk"
         # so we never miss a records-dir orphan just because no DB row exists.
-        # Then intersect with INDEXABLE_TYPES — see comment above.
+        # Then intersect with the derived set — see comment above.
         from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
         result: set[str] = set()
