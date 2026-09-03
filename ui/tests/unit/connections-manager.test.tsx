@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   grants: {} as Record<string, string>,
   projects: [] as unknown[],
   usage: {} as Record<string, unknown[]>,
+  checkHarnessLogins: vi.fn(),
   declare: vi.fn(async () => undefined),
   provide: vi.fn(async () => undefined),
   deleteCredential: vi.fn(async () => ({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
@@ -85,6 +86,7 @@ vi.mock('@src/components/connections-manager/use-credential-connections', () => 
 // the component takes the same path it takes off-desk.
 vi.mock('@src/hooks/use-connections', () => ({
   useConnections: () => ({ connections: h.connections, isLoading: false, refetch: vi.fn() }),
+  useCheckHarnessLogins: () => h.checkHarnessLogins(),
 }));
 // `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
 // not render. The host owns navigation so the harness rows can stay presenters.
@@ -210,7 +212,7 @@ describe('ConnectionsManager', () => {
     expect(screen.getByText(/No connections yet/i)).toBeTruthy();
   });
 
-  it('names the grant and lists the scopes it will request', () => {
+  it('names the grant and lists the scopes it will request', async () => {
     // The two things a user needs before granting: which flow runs, and what it
     // will be allowed to do. Both used to be invisible.
     h.providers = [
@@ -225,11 +227,27 @@ describe('ConnectionsManager', () => {
     expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
 
     // One chip and a count, not a stack: four chips wrapped the row to four
-    // lines and pushed Status and Actions out of view. The full list is the
-    // cell's tooltip, which is where it stays scannable.
+    // lines and pushed Status and Actions out of view. The rest is a hover away.
     const cell = screen.getByTestId('connection-scopes-github');
     expect(cell.textContent).toBe('repo+1');
-    expect(cell.querySelector('[title]')?.getAttribute('title')).toBe('repo\nread:org');
+
+    // And the hover actually reveals them. This used to be a native `title`,
+    // which asks for a second of stillness and often never appeared in the
+    // desktop shell at all — so the count read as a dead end.
+    await userEvent.hover(cell.querySelector('[tabindex]') as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getAllByText('read:org').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('asks the box to check the harness logins', () => {
+    // This screen is where a person comes to find out whether they are signed
+    // in, and the harness rows read "Not checked" until someone asks the vendor
+    // CLIs. Asking is a separate verb because it WRITES — the same list read
+    // resolves `require()` and must not spawn subprocesses.
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(h.checkHarnessLogins).toHaveBeenCalled();
   });
 
   it('does not claim "no scopes" when the owning side never published them', () => {

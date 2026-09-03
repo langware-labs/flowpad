@@ -23,6 +23,11 @@ import { TableCell, TableRow } from '../ui/table';
  * opinion about what "signed in" means, and that copy had already drifted from
  * the backend's on the strongest verdict it can issue.
  *
+ * **Only what is installed, and only what was asked.** The backend drops a
+ * harness whose CLI is not on this machine — a sign-in status for something you
+ * never installed is a question about nothing — and the screen asks it to probe
+ * the ones that are, so the rows say "Signed in" rather than "Not checked".
+ *
  * **Read-only on purpose.** Signing in is a vendor CLI flow the login modal already
  * owns end to end — the device code, Claude's paste-back, the provider picker, the
  * probe. So the row reports and Details hands off. That also sidesteps an asymmetry
@@ -72,16 +77,17 @@ export function HarnessConnectionRows({
             </TableCell>
 
             <TableCell>
-              {/* NOT "Device code": that label belongs to the RFC 8628 OAuth device
+              {/* The account when the vendor named one, the mechanism otherwise.
+                  NOT "Device code": that label belongs to the RFC 8628 OAuth device
                   grant, which exactly one registered provider uses. This is the
                   vendor CLI's own OAuth session — same words, different mechanism. */}
               <Badge
                 variant="outline"
                 className="text-xs font-normal"
-                title={t`The assistant's own CLI sign-in, kept by the vendor on this machine`}
+                title={row.identity || t`The assistant's own CLI sign-in, kept by the vendor on this machine`}
                 data-testid={`connection-kind-harness-${worker}`}
               >
-                <Trans>CLI login</Trans>
+                {row.account || <Trans>CLI login</Trans>}
               </Badge>
             </TableCell>
 

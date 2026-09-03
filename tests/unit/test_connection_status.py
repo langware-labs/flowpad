@@ -25,7 +25,7 @@ class _Source:
 
 
 def _no_harnesses(monkeypatch):
-    async def none():
+    async def none(**_):
         return []
 
     monkeypatch.setattr(status_mod, "_harness_rows", none)
@@ -85,6 +85,123 @@ async def test_a_probed_harness_reads_connected(authority):
     issue, and the browser ladder this fold replaces let it fall through to "nobody
     has asked" — the same drift, one language over."""
     assert status_mod._harness_state(_Source(authority=authority)) is ConnectionState.CONNECTED
+
+
+# ── which harnesses are rows at all ────────────────────────────────────────
+
+
+def _installed(monkeypatch, workers):
+    """Only *workers* have a CLI on this machine."""
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver.worker_executable",
+        lambda w: "/usr/local/bin/" + w if w in workers else None,
+    )
+
+
+async def test_a_harness_that_is_not_installed_is_not_a_row(monkeypatch):
+    """A sign-in status for a CLI you never installed is a question about
+    nothing — and four such rows, all reading "Not checked", is how the column
+    stopped meaning anything."""
+    _installed(monkeypatch, {"claude"})
+
+    assert status_mod._installed_harnesses() == ["claude"]
+
+
+# ── checking, which is a WRITE ─────────────────────────────────────────────
+
+
+class _Cap:
+    """Enough of a harness `Capability` for the check: the field it reads and
+    the refresh it calls."""
+
+    def __init__(self, login_state=None):
+        self.login_state = login_state
+        self.refreshed = 0
+
+    async def refresh_login_state(self):
+        self.refreshed += 1
+        self.login_state = "authenticated"
+        return None
+
+
+def _caps(monkeypatch, by_worker):
+    async def _get(worker):
+        return by_worker.get(worker)
+
+    monkeypatch.setattr(status_mod, "_harness_capability", _get)
+
+
+async def test_checking_asks_the_harnesses_nobody_asked_about(monkeypatch):
+    _installed(monkeypatch, {"claude"})
+    cap = _Cap()
+    _caps(monkeypatch, {"claude": cap})
+
+    checked = await status_mod.check_harness_logins()
+
+    assert cap.refreshed == 1
+    assert checked == {"claude": "authenticated"}
+
+
+async def test_checking_again_re_shells_nothing(monkeypatch):
+    """`login_state` means exactly "somebody asked". Re-probing an answered
+    harness would run a vendor CLI to learn what is already known — which is what
+    makes this safe to fire on every visit to the screen."""
+    _installed(monkeypatch, {"claude"})
+    cap = _Cap(login_state="authenticated")
+    _caps(monkeypatch, {"claude": cap})
+
+    assert await status_mod.check_harness_logins() == {}
+    assert cap.refreshed == 0
+
+
+async def test_force_asks_again(monkeypatch):
+    """The user saying "look again" — the same words the Test button uses."""
+    _installed(monkeypatch, {"claude"})
+    cap = _Cap(login_state="idle")
+    _caps(monkeypatch, {"claude": cap})
+
+    await status_mod.check_harness_logins(force=True)
+
+    assert cap.refreshed == 1
+
+
+async def test_a_vendor_that_cannot_be_reached_costs_a_verdict_not_the_screen(monkeypatch):
+    _installed(monkeypatch, {"claude", "codex"})
+    ok = _Cap()
+
+    class _Broken(_Cap):
+        async def refresh_login_state(self):
+            raise RuntimeError("the CLI is wedged")
+
+    _caps(monkeypatch, {"claude": _Broken(), "codex": ok})
+
+    assert await status_mod.check_harness_logins() == {"codex": "authenticated"}
+
+
+# ── what account it is ─────────────────────────────────────────────────────
+
+
+async def test_the_account_says_which_vendor_account_is_signed_in():
+    assert status_mod._account_for("copilot", _Cap(), ConnectionState.CONNECTED) == "GitHub account"
+
+
+async def test_a_reported_plan_refines_the_account_in_the_vendors_own_words():
+    """The plan is normalized by the PROBE, which is the layer that knows claude
+    spells it `subscriptionType`. Capitalised and otherwise untouched — a tier
+    name of our own would be a claim about billing."""
+    cap = _Cap()
+    cap.login_plan = "max"
+
+    assert status_mod._account_for("claude", cap, ConnectionState.CONNECTED) == "Anthropic account · Max"
+
+
+async def test_nothing_is_claimed_for_a_harness_that_is_not_signed_in():
+    """An account line under "Not checked" asserts what the status just declined
+    to."""
+    cap = _Cap()
+    cap.login_plan = "max"
+    for state in (ConnectionState.UNKNOWN, ConnectionState.DISCONNECTED):
+        assert status_mod._account_for("claude", cap, state) == ""
 
 
 # ── what belongs in the list ───────────────────────────────────────────────

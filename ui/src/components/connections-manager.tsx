@@ -23,6 +23,7 @@ import { isLucideName } from '@src/lib/icon-value';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Badge } from './ui/badge';
+import { MoreOnHover } from './connections-manager/more-on-hover';
 import { providerMark } from './connections-manager/provider-marks';
 import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
@@ -34,7 +35,7 @@ import { useCredentialConnections } from './connections-manager/use-credential-c
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
-import { useConnections } from '@src/hooks/use-connections';
+import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { CredentialRow } from './credentials-view/credential-rows';
@@ -107,6 +108,36 @@ const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
 //: and pushed Status and Actions out of the viewport on a provider like Slack;
 //: the full list is a hover away and was never scannable as chips anyway.
 const SCOPES_SHOWN = 1;
+
+/** The scopes cell: one chip, a count, and the rest a hover away.
+ *
+ *  The reveal itself is `MoreOnHover` — shared with the credential cell next
+ *  door, which had the same dead `title` attribute.
+ */
+function ScopeChips({ scopes }: { scopes: string[] }) {
+  const shown = scopes.slice(0, SCOPES_SHOWN);
+  const hidden = scopes.length - shown.length;
+  return (
+    <MoreOnHover lines={scopes}>
+      <div className="flex items-center gap-1">
+        {shown.map((scope) => (
+          <Badge
+            key={scope}
+            variant="secondary"
+            className="max-w-[220px] truncate rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
+          >
+            {scope}
+          </Badge>
+        ))}
+        {!!hidden && (
+          <span className="shrink-0 cursor-help text-[11px] text-muted-foreground/70 underline decoration-dotted underline-offset-2">
+            +{hidden}
+          </span>
+        )}
+      </div>
+    </MoreOnHover>
+  );
+}
 
 /** Stable fallback for a provider with no placements. */
 const NO_PROJECTS: Project[] = [];
@@ -261,6 +292,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
    * `state` field collapses.
    */
   const { connections: consolidated } = useConnections(projectTypeId);
+  // This screen is where a person comes to find out whether they are signed in,
+  // so it is the screen that asks. The rows read "Not checked" until something
+  // does.
+  useCheckHarnessLogins();
   const harnessRows = React.useMemo(
     () => (consolidated ?? []).filter((row) => row.kind === ConnectionKind.Harness),
     [consolidated],
@@ -702,25 +737,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell data-testid={`connection-scopes-${connection.id}`}>
                     {connection.scopes?.length ? (
-                      <div
-                        className="flex items-center gap-1"
-                        title={connection.scopes.join('\n')}
-                      >
-                        {connection.scopes.slice(0, SCOPES_SHOWN).map((scope) => (
-                          <Badge
-                            key={scope}
-                            variant="secondary"
-                            className="max-w-[220px] truncate rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
-                          >
-                            {scope}
-                          </Badge>
-                        ))}
-                        {connection.scopes.length > SCOPES_SHOWN && (
-                          <span className="shrink-0 text-[11px] text-muted-foreground/70">
-                            +{connection.scopes.length - SCOPES_SHOWN}
-                          </span>
-                        )}
-                      </div>
+                      <ScopeChips scopes={connection.scopes} />
                     ) : (
                       // Not "no scopes" — the side that owns the flow did not
                       // publish them. Saying "none" would be a lie.

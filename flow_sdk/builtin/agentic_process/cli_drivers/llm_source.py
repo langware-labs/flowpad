@@ -294,13 +294,17 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     return candidates, cap
 
 
-async def device_candidate(worker_type: str) -> Candidate | None:
+async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
     """The harness's OWN login verdict, and nothing else.
 
     What the Connections list needs per harness: it reports the device login
     regardless of whether a stored key currently outranks it, so the preference
     overlay does not apply — and the key/endpoint inventory (a second query plus
     a secret-store walk per harness) is never built only to be thrown away.
+
+    ``cap`` is the harness ``Capability`` when the caller already holds it — the
+    row this reads is the only thing it needs, and a caller that has just read it
+    (to show the account it carries) should not pay for the same read twice.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
@@ -308,7 +312,8 @@ async def device_candidate(worker_type: str) -> Candidate | None:
 
     if driver_api_auth_spec(worker_type) is None:
         return None
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    if cap is None:
+        cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     return _device_source(
         worker_type, getattr(cap, "login_state", None), get_hub_llm_endpoint() is not None
     )
