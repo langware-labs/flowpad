@@ -33,7 +33,7 @@ import asyncio
 import contextlib
 import contextvars
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
@@ -48,19 +48,28 @@ from flow_sdk.builtin.source_item import (
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
+from .delivery import Delivered
+from .folder import Folder, FolderChange
+from .merge import listen
 from .message_source import MessageRequest, MessageSource, _MessageRequestExpired
+from .search_index import SearchIndex
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
 
 __all__ = [
+    "Delivered",
     "EmailMessageSpec",
+    "Folder",
+    "FolderChange",
     "FileRef",
     "MessageSpec",
     "MessageRequest",
     "MessageSource",
     "Inbox",
     "RunOutput",
+    "SearchIndex",
+    "listen",
     "SlackMessageSpec",
     "TelegramMessageSpec",
     "workflow",
@@ -106,6 +115,27 @@ class RunOutput(DataSpec):
 
     text: str = ""
     files: list[FileRef] = []
+
+
+#: ``context_data`` key holding a session's turn records: ``{turn key: {status, text}}``.
+_TURNS = "turns"
+_STARTED, _DONE = "started", "done"
+#: Records kept per session. A redelivery is always of a RECENT item; older records are noise.
+_TURNS_KEPT = 200
+
+
+def _turns(ap) -> dict:
+    data = getattr(ap, "context_data", None) or {}
+    turns = data.get(_TURNS) or {}
+    return turns if isinstance(turns, dict) else {}
+
+
+def _turn_key(m: _AgentInput) -> str:
+    """One message, one key. The natural key when the message has one, else its own id."""
+    source = getattr(m, "data_source_id", "") or ""
+    segment = getattr(m, "segment_key", "") or ""
+    external = str(getattr(m, "external_id", "") or "")
+    return f"{source}:{segment}:{external}" if source else external
 
 
 class _AgentRunner:
@@ -185,17 +215,54 @@ class _AgentRunner:
 
     async def run(self, m: _AgentInput) -> RunOutput:
         """One turn: route by session, prompt with the message body, return
-        the assistant's reply as a value."""
+        the assistant's reply as a value.
+
+        **Safe to call twice with the same message.** A listener redelivers an
+        item after a crash, and a session is a thread — so a second turn on
+        the same text would be a duplicate answer, not a repeat of the first.
+        The turn is recorded on the process's own ``context_data`` (an entity,
+        so durable) BEFORE the prompt, and its text after; a repeat answers
+        from the record. Only a turn that was started and never finished asks
+        the transcript, and only because that is the one case with no record.
+        """
         from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
 
         ap = await self.process_for(m)
+        key = _turn_key(m)
+        prior = _turns(ap).get(key)
+        if prior and prior.get("status") == _DONE:
+            return RunOutput(text=prior.get("text", ""), files=[])
+        if prior and prior.get("status") == _STARTED:
+            # We died mid-turn. Did the agent finish? The transcript knows.
+            text = await _capture_assistant_reply(ap)
+            if text:
+                await self._record_turn(ap, key, text)
+                return RunOutput(text=text, files=[])
+        await self._stamp_turn(ap, key, {"status": _STARTED})
         outcome = await ap.prompt(m.body or m.name or "")
         # prompt() reports failure in its envelope, not by raising — a FAIL
         # left unchecked turns into an infinite transcript wait downstream.
         if getattr(outcome, "status", "SUCCESS") == "FAIL":
             raise RuntimeError(f"prompt failed: {getattr(outcome, 'message', outcome)}")
         text = await _capture_assistant_reply(ap)
+        await self._record_turn(ap, key, text or "")
         return RunOutput(text=text or "", files=[])
+
+    async def _record_turn(self, ap, key: str, text: str) -> None:
+        await self._stamp_turn(ap, key, {"status": _DONE, "text": text})
+
+    @staticmethod
+    async def _stamp_turn(ap, key: str, entry: dict) -> None:
+        """Write one turn's record, bounded so a long-lived session cannot grow it forever."""
+        turns = dict(_turns(ap))
+        turns[key] = entry
+        if len(turns) > _TURNS_KEPT:
+            for stale in list(turns)[: len(turns) - _TURNS_KEPT]:
+                turns.pop(stale, None)
+        data = dict(getattr(ap, "context_data", None) or {})
+        data[_TURNS] = turns
+        ap.context_data = data
+        await ap.save()
 
     @staticmethod
     async def _exit_process(ap) -> None:
@@ -291,6 +358,16 @@ async def _respond_to(agent: "AgentRef", source: MessageSource):
                         raise
 
 
+def _cadence(poll_every, driver) -> float:
+    """Seconds between cycles: the caller's ask, else the driver's attention cadence, else 3."""
+    if isinstance(poll_every, timedelta):
+        return max(0.0, poll_every.total_seconds())
+    if poll_every is not None:
+        return max(0.0, float(poll_every))
+    declared = getattr(driver, "attention_poll_seconds", None) if driver is not None else None
+    return float(declared) if declared else 3.0
+
+
 class Inbox:
     """One watched mailbox: the conversation surface of a message source.
 
@@ -359,48 +436,80 @@ class Inbox:
         self._source = source
         return source
 
-    async def listen(self, poll_every: float = 3.0) -> AsyncIterator[SourceItemSpec]:
-        """Async-iterate inbound messages, as spec values, as they arrive.
+    async def listen(
+        self,
+        *,
+        poll_every: "float | timedelta | None" = None,
+        page: int = 100,
+    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
+        """Async-iterate inbound messages as they arrive, each with an ``ack()``.
 
-        In-process: each cycle syncs the source (the driver fetch is plain
-        HTTP), projects what landed, and yields the rows not seen before.
-        Items already present when ``listen`` starts are the baseline — an
-        inbox yields arrivals, not history. Our own outgoing copies are
-        filtered (the loop guard), as are senders outside ``senders`` when
-        one was given.
+        Each cycle polls the source through the poller's slot (a poll already in flight is
+        skipped, not stacked), then drains what landed in INGEST order from the consumer's
+        position. The position is durable inside a named ``workflow()`` — a restart resumes
+        from the last ``ack()`` and hands back anything that was in flight with
+        ``redelivered=True``. Outside a workflow it lives for the loop, as before.
+
+        Items already present when a position is first created are the baseline: an inbox
+        yields arrivals, not history. Our own sent copies and senders outside ``senders``
+        are filtered — and ACKED, so a filtered row never becomes a gap the next drain
+        stops at.
+
+        ``poll_every`` defaults to the driver's attention cadence when it declares one, else
+        3 s. The row's own ``poll_interval_seconds`` still governs the heartbeat; this is the
+        rate of THIS loop.
         """
+        from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
         source = await self._ensure_source()
-        seen = {str(i.id) for i in await SourceItem.get_all({"data_source_id": source.id})}
+        position = await ConsumerPosition.ensure_for(
+            current_workflow.get(), str(source.id), baseline=await SourceItem.newest_for(str(source.id))
+        )
+        cadence = _cadence(poll_every, self._driver())
+        # The drain's own cursor. The durable watermark moves only on ack(); paging from it
+        # alone would re-read every unacked item each cycle. On restart this is gone, so
+        # everything after the watermark is yielded again — that IS the redelivery.
+        last_seen = position.watermark()
+        in_flight_at_start = position.in_flight_key()
+
         while True:
-            # Through the poller's slot, not `sync_source` directly: this loop
-            # polls the same source the heartbeat does, and two runs race each
-            # other's cursor writes. A skipped round is latency, not loss —
-            # the run already in flight lands the same items.
             await poll_source(source, datetime.now(timezone.utc))
-            items = await SourceItem.get_all({"data_source_id": source.id})
-            items.sort(key=lambda i: str(i.occurred_at or ""))
-            for item in items:
-                if str(item.id) in seen:
-                    continue
-                seen.add(str(item.id))
-                # Place it in its conversation regardless of the filters
-                # below — the inbox UI shows everything; the LOOP only acts
-                # on what passes.
-                try:
-                    await project_source_item(item, source=source, announce=False)
-                except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
-                    logger.exception("blocks: projection failed for %s", item.id)
-                if is_self_address(source, item.author_external_id or ""):
-                    continue  # our own sent copy, re-ingested
-                sender = str(item.author_external_id or "").strip().lower()
-                if self.senders and sender not in self.senders:
-                    continue
-                yield SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
-            await asyncio.sleep(poll_every)
+            while True:
+                rows = await SourceItem.page_after(str(source.id), last_seen, limit=page)
+                if not rows:
+                    break
+                for item in rows:
+                    key = key_of(item)
+                    last_seen = key
+                    redelivered = in_flight_at_start is not None and key <= in_flight_at_start
+                    if position.mark_in_flight(item):
+                        await position.commit()
+                    # Place it in its conversation regardless of the filters below — the
+                    # inbox UI shows everything; the LOOP only acts on what passes.
+                    try:
+                        await project_source_item(item, source=source, announce=False)
+                    except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
+                        logger.exception("blocks: projection failed for %s", item.id)
+                    sender = str(item.author_external_id or "").strip().lower()
+                    if is_self_address(source, item.author_external_id or "") or (
+                        self.senders and sender not in self.senders
+                    ):
+                        if position.advance_to(item):
+                            await position.commit()
+                        continue
+                    spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
+                    yield Delivered(
+                        spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
+                    )
+            await asyncio.sleep(cadence)
+
+    def _driver(self):
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        return get_driver(self.provider)
 
     async def send(self, spec: MessageSpec) -> str:
         """Deliver an outbound spec through the source's messaging seam.

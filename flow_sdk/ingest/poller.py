@@ -25,7 +25,7 @@ import asyncio
 import logging
 import time
 import weakref
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
@@ -221,3 +221,18 @@ async def _heartbeat_dispatch() -> None:
     dispatched = await dispatch_due_sources()
     if dispatched:
         logger.info("[ingest] dispatched %d source(s)", len(dispatched))
+
+
+#: How long a reflected page stays pageable. A consumer further behind re-walks its tree —
+#: the tree is the authority; the log is a shortcut.
+SOURCE_CHANGE_RETENTION = timedelta(days=30)
+
+
+@register_heartbeat_task("source_change_prune")
+async def _prune_source_changes() -> None:
+    """Age out the change log, a bounded slice per tick, DB-only — inside the heartbeat's budget."""
+    from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
+
+    pruned = await SourceChange.prune_before(datetime.now(timezone.utc) - SOURCE_CHANGE_RETENTION, limit=200)
+    if pruned:
+        logger.info("[ingest] pruned %d aged source_change row(s)", pruned)

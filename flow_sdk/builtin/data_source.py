@@ -423,12 +423,20 @@ class DataSource(Entity):
         Not synchronous — the poller runs off the once-a-minute heartbeat, so
         this means "on the next tick", within 60s. Deliberately not sped up.
         """
+        return ApiSuccessResponse(data=await self.poll_now())
+
+    async def poll_now(self) -> dict:
+        """Make this source due on the next tick — the verb under ``poll_now_action``.
+
+        Thin route, real verb: the pattern ``replay``/``replay_action`` set, so an
+        in-process caller never reaches through an HTTP handler to use it.
+        """
         await self._make_due()
         await self.save()
-        return ApiSuccessResponse(data={
+        return {
             "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
-        })
+        }
 
     @core_action.post(action_name="request_poll")
     async def request_poll_action(self) -> ApiResponse:
@@ -487,14 +495,19 @@ class DataSource(Entity):
         to BACKFILL — which suppresses per-item events, making a deliberate
         re-fetch silent.
         """
-        streams = await self._reset_cursors()
-        self.next_poll_at = None
-        await self.save()
+        streams = await self.reset_cursors()
         return ApiSuccessResponse(data={
             "status": "reset", "streams": streams,
             "detail": "position cleared; existing records still gate on content digest — "
                       "pair with purge_items for a visible re-fetch",
         })
+
+    async def reset_cursors(self) -> int:
+        """Forget every segment's position and make the source due. Returns streams reset."""
+        streams = await self._reset_cursors()
+        self.next_poll_at = None
+        await self.save()
+        return streams
 
     @core_action.post(action_name="purge_items")
     async def purge_items_action(self) -> ApiResponse:
@@ -506,9 +519,12 @@ class DataSource(Entity):
         dangling reference. It also discards local state (``read`` / ``starred``),
         which is the cost operators actually feel.
         """
-
-        removed = await self.purge_records_of(self.id)
+        removed = await self.purge_items()
         return ApiSuccessResponse(data={"status": "purged", "removed": removed})
+
+    async def purge_items(self) -> int:
+        """Drop this source's records. Returns how many went."""
+        return await self.purge_records_of(self.id)
 
     @core_action.post(action_name="replay")
     async def replay_action(self) -> ApiResponse:
@@ -633,10 +649,14 @@ class DataSource(Entity):
     @classmethod
     async def delete_children_of(cls, source_id: str) -> None:
         """Every row keyed to this source — the records AND the cursors."""
+        from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
         from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+        from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
 
         await cls.purge_records_of(source_id)
         await DataSourceCursor.delete_for(source_id)
+        await ConsumerPosition.delete_for(source_id)
+        await SourceChange.delete_for(source_id)
 
     @classmethod
     async def delete_by_id(cls, eid: str):
@@ -820,7 +840,19 @@ class DataSource(Entity):
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/verify — is the setup finished?
+        """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
+
+        Thin on purpose, the way ``replay_action`` is thin over ``replay``: the
+        verb belongs to the source, and a caller in-process should not have to
+        reach through an HTTP handler — or unwrap an ``ApiResponse`` — to use it.
+        """
+        verdict = await self.verify()
+        if verdict is None:
+            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+        return ApiSuccessResponse(data=verdict)
+
+    async def verify(self) -> Optional[dict]:
+        """Is this source's setup finished? ``None`` when no driver is registered.
 
         Two layers, in this order, because they fail for different reasons and
         the fix is different:
@@ -837,7 +869,7 @@ class DataSource(Entity):
         """
         driver = self._driver()
         if driver is None:
-            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+            return None
 
         connection = await self._verify_connection()
         if connection is not None:
@@ -845,10 +877,10 @@ class DataSource(Entity):
             self.setup_detail = connection
             self.verified_at = datetime.now(timezone.utc)
             await self.save()
-            return ApiSuccessResponse(data={
+            return {
                 "ready": False, "layer": "connection", "detail": connection,
                 "status": self.status,
-            })
+            }
 
         verdict = await self._verify_setup(driver)
         self.verified_at = datetime.now(timezone.utc)
@@ -862,13 +894,26 @@ class DataSource(Entity):
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
         await self.save()
-        return ApiSuccessResponse(data={
+        return {
             "ready": verdict.ready,
             "layer": "setup",
             "detail": verdict.detail,
             "pending": list(verdict.pending),
             "status": self.status,
-        })
+        }
+
+    async def sync(self, *, budget: int = 0):
+        """Run one sync cycle now, returning an ``IngestReport``.
+
+        Never raises — a failure is recorded as health, not thrown.
+
+        The verb belongs here; ``ingest.sync.sync_source`` stays the function the
+        POLLER calls, because it takes a budget and a clock the caller owns.
+        Do not confuse this with ``poll_now``, which only marks the source due.
+        """
+        from flow_sdk.ingest.sync import DEFAULT_SEGMENT_BUDGET, sync_source  # noqa: PLC0415
+
+        return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
 
     def _driver(self):
         from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415

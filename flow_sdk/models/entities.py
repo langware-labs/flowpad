@@ -294,6 +294,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import RagIndex: {e}")
 
 try:
+    from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ConsumerPosition: {e}")
+
+try:
+    from flow_sdk.builtin.source_change import SourceChange  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import SourceChange: {e}")
+
+try:
     from flow_sdk.builtin.file import File  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import File: {e}")

@@ -71,11 +71,25 @@ class ReflectMode(StrEnum):
 
 @dataclass
 class ReflectReport:
-    """What reflection did, before the indexer was told anything."""
+    """What reflection did, before the indexer was told anything.
+
+    ``placed`` is every path that landed; ``added`` / ``changed`` / ``renamed`` split it by
+    what the source observed, because a consumer downstream (a search index) wants the
+    intent, not just the set. ``origin_ids`` is the handle stamped on each placed path.
+    """
 
     placed: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    added: list[str] = field(default_factory=list)
+    changed: list[str] = field(default_factory=list)
+    #: ``{new local path: old local path}``
+    renamed: dict[str, str] = field(default_factory=dict)
+    origin_ids: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def moved_anything(self) -> bool:
+        return bool(self.added or self.changed or self.removed or self.renamed)
 
 
 class Reflector(Protocol):
@@ -381,6 +395,19 @@ def _stamps_identity(source: "DataSource") -> bool:
     return driver is None or driver.stamps_identity
 
 
+def _placement_of(reflector, source, ref: str, root: Optional[Path]) -> str:
+    """Where *ref* lands (or landed) under this reflector, without placing it."""
+    dest = getattr(reflector, "_dest", None)
+    if callable(dest):
+        try:
+            placed = dest(source, ref, root)
+            if placed:
+                return str(placed)
+        except Exception:  # noqa: BLE001 — a locator, never a failure
+            pass
+    return str(ref)
+
+
 async def reflect_refs(
     source: "DataSource",
     refs: list[str],
@@ -435,17 +462,24 @@ async def reflect_refs(
                 report.skipped.append(ref)
                 continue
             origin_id = origin_id_for(source, ref, root)
+            report.origin_ids[placed] = origin_id
             known = await origin_identity.resolve(origin_id)
             previous_ref = renames.get(ref)
+            moved = False
             if known is None and previous_ref:
                 # The source says this path IS the old one, moved. Its identity
                 # lives under the ORIGIN IT HAD — for git that is computable even
                 # though the old path no longer exists, because the handle is
                 # repo-relative rather than a property of the file on disk.
                 known = await origin_identity.resolve(origin_id_for(source, previous_ref, root))
+                moved = known is not None
             if known is None:
                 fresh.append((placed, ref))
                 continue
+            if moved:
+                report.renamed[placed] = _placement_of(reflector, source, previous_ref, root)
+            else:
+                report.changed.append(placed)
             # Known origin: re-parse onto the row it already names. `proposed_id` is
             # what stops a re-parse from forking — the same thread `_resync` uses
             # when the path is unchanged, applied here when only the PATH moved.
@@ -490,6 +524,7 @@ async def reflect_refs(
                 # keys it on the inode, and the reindex may have rewritten the file.
                 await origin_identity.stamp(entity, origin_id_for(source, ref, root), reload=False)
                 report.placed.append(path)
+                report.added.append(path)
 
         for ref in tombstones or []:
             removed = reflector.unplace(source, ref, root)
@@ -497,5 +532,19 @@ async def reflect_refs(
                 report.removed.append(removed)
         for path in report.removed:
             await _retire_row(path)
+
+        # The durable form of this page, then the announcement. In that order: a consumer woken
+        # by the tag re-derives from the row, so the row has to be there first.
+        if report.moved_anything:
+            from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
+            from flow_sdk.ingest.change_event import emit_applied  # noqa: PLC0415
+
+            await SourceChange.record(source, report)
+            emit_applied(
+                str(source.id), str(source.provider or ""),
+                refs=[*report.added, *report.changed, *report.renamed],
+                tombstones=report.removed,
+                renames=report.renamed,
+            )
 
         return report

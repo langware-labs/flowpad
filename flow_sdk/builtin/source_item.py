@@ -22,13 +22,16 @@ field map.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar, Optional
 
 from pydantic import ConfigDict, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
+from flow_sdk.builtin import ingest_order
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.legacy_fields import adopt_renamed
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
     NonBlank,
@@ -225,6 +228,58 @@ class SourceItem(Entity):
                 "item_id": self.id,
             },
         )
+
+    @classmethod
+    async def newest_for(cls, data_source_id: str) -> Optional["SourceItem"]:
+        """The last row ingested for a source — a fresh listener's baseline."""
+        return await ingest_order.newest_for(cls, data_source_id)
+
+    @classmethod
+    async def page_after(
+        cls, data_source_id: str, after: Optional[tuple[datetime, str]], *, limit: int
+    ) -> list["SourceItem"]:
+        """The next *limit* rows in ingest order, strictly after *after* — see ``ingest_order``."""
+        return await ingest_order.page_after(cls, data_source_id, after, limit=limit)
+
+    @classmethod
+    async def find_reply_from_self(cls, source, item, *, since: Optional[datetime] = None) -> Optional["SourceItem"]:
+        """Our own outbound row answering *item*, if one has been ingested. Redelivery's question.
+
+        Two keys, because ``reply_to_external_id`` is stamped only by drivers that map it —
+        Slack threads carry the root ``thread_ts``, not the replied-to message. Primary: a
+        self-authored row whose ``reply_to_external_id`` names the item. Fallback: a
+        self-authored row on the same thread ingested at or after *since* (the moment the
+        reply was attempted). Self-authorship is decided by ``is_self_address``, in Python —
+        a source's own addresses are a handful.
+
+        Eventually consistent for the four senders that do not record their own copy; the
+        caller syncs first and treats "not found" as "do not resend".
+        """
+        from flow_sdk.inbox.projection import is_self_address  # noqa: PLC0415
+
+        def mine(row: "SourceItem") -> bool:
+            return is_self_address(source, row.author_external_id or "")
+
+        if item.external_id:
+            rows = await cls.get_all({"data_source_id": str(source.id), "reply_to_external_id": item.external_id})
+            for row in rows:
+                if mine(row):
+                    return row
+        if item.thread_key:
+            operands = [
+                ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(source.id)]),
+                ExpressionNode(op=QueryOp.EQ, operands=["thread_key", item.thread_key]),
+            ]
+            if since is not None:
+                operands.append(ExpressionNode(op=QueryOp.GE, operands=["created_date", ingest_order.bind(since)]))
+            rows = await cls.get_all(QueryFilter(
+                match=ExpressionNode(op=QueryOp.AND, operands=operands),
+                order_by=[{"created_date": "asc"}, {"id": "asc"}],
+            ))
+            for row in rows:
+                if mine(row) and str(row.id) != str(getattr(item, "id", "")):
+                    return row
+        return None
 
     @classmethod
     async def find_existing(cls, data_source_id: str, segment_key: str, external_id: str) -> Optional["SourceItem"]:

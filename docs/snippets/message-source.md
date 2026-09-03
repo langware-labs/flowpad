@@ -22,6 +22,8 @@ async with agent.respond_to(channel):
 print(reply)
 ```
 
+Run as written by `tests/unit/test_message_source_snippet.py`.
+
 `respond_to()` owns the listener and the Agent's process lifecycle. `send()`
 returns the plain reply string; sending outside that scope fails immediately
 instead of hiding an unconsumed prompt. A channel accepts one listener, while
