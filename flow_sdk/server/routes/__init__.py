@@ -13,6 +13,7 @@ from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
 from .directory import router as directory_router
 from .display import router as display_router
+from .activity import router as activity_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -79,6 +80,7 @@ __all__ = [
     "version_router",
     "favorites_router",
     "markdown_index_router",
+    "activity_router",
     "docs_graph_router",
     "semantic_checker_router",
     "pty_stream_router",

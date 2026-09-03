@@ -14,6 +14,7 @@ pinned by a test so it cannot drift silently.
 | [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer | `tests/long_tests/test_process_mcp_multi_vendor.py` |
 | [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py` |
 | [RAG](rag.md) | make a folder searchable, run a pass, ask it something, chunk and store on their own | `tests/unit/test_rag_snippets.py` (runs every snippet), `tests/unit/test_rag_indexing.py` |
+| [Activity](activity.md) | report progress on anything — count, nest, end it, read what is live, and the same verbs from TypeScript, the CLI and HTTP | `tests/unit/test_activity_snippets.py` (runs every fence), `tests/unit/test_activity_handle.py`, `tests/unit/test_activity_monitor.py` |
 | [Pipes](pipes.md) | run a source cycle, mirror and follow a folder, react to a change, set cadence, one agent over several sources, keep a search index level | `tests/unit/test_pipes_snippets.py` (runs every fence) |
 
 ## Conventions
