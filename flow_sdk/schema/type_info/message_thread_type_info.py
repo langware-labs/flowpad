@@ -24,6 +24,7 @@ class MessageThreadMeta(BaseMeta):
     # files back into the DB.
     channel: Optional[str] = None
     thread_key: Optional[str] = None
+    owner: Optional[str] = None
     conversation_id: Optional[str] = None
     # The searchable payload. `name` (on BaseMeta) carries the title for FTS;
     # this is the same string kept under its own name for queries.
@@ -36,9 +37,9 @@ MESSAGE_THREAD = TypeMetadata(
     icon="MessagesSquare",
     api_visible=True,
     creatable=False,
-    index_fields=["name", "channel", "thread_key", "conversation_id"],
+    index_fields=["name", "channel", "thread_key", "owner", "conversation_id"],
     meta_model=MessageThreadMeta,
     # The DB medium's identity: the projector resolves a thread by this key
     # (``DbSerializer.resolve_key``), minting an ordinary uuid4 only on miss.
-    natural_key=("channel", "thread_key"),
+    natural_key=("channel", "thread_key", "owner"),
 )

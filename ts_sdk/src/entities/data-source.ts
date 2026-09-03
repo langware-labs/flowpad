@@ -80,6 +80,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   window_days: number = 7;
   /** Streams this source has, rolled up by the poller. Read from here rather
    *  than counting cursor rows: cursors churn on every poll, so watching them
+  /** Whose source this is — a user or agent typeid string, or null on rows
+   *  written before ownership existed (read as the local user's). */
+  owner: string | null = null;
    *  live for a count repaints a list every tick. */
   segment_count: number = 0;
   next_poll_at: string | null = null;

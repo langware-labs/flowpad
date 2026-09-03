@@ -28,11 +28,12 @@ the inbox projector.
 """
 from __future__ import annotations
 
-from typing import ClassVar, FrozenSet
+from typing import ClassVar, FrozenSet, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import ProjectedFields
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import EntityType
 
 
@@ -47,6 +48,12 @@ class MessageThread(ProjectedFields, Entity):
     # better. Stored (not just hashed into the id) so a mis-threaded row is
     # debuggable and so a future re-keying can find its inputs.
     thread_key: str = APIField(default="")
+    # Whose inbox this thread belongs to — the local user's or an Agent's. The
+    # third half of the natural key: without it two owners watching the same
+    # channel resolve the same `(channel, thread_key)` and their conversations
+    # merge. `None` on rows written before the field existed; the projection
+    # adopts those into the resolving owner on first touch rather than forking.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
 
     # ── the many-to-one seam ───────────────────────────────────────────────
     # Which conversation shows this thread. Starts 1:1 with a freshly minted
@@ -67,12 +74,21 @@ class MessageThread(ProjectedFields, Entity):
     _api_visible: ClassVar[bool] = True
 
     @classmethod
-    async def find_existing(cls, channel: str, thread_key: str) -> "MessageThread | None":
+    async def find_existing(
+        cls, channel: str, thread_key: str, owner: "TypeId | None" = None
+    ) -> "MessageThread | None":
         """THE identity lookup — the row for this natural key, or None.
 
         The key is declared once, on the type (``TypeInfo.natural_key``); this
         is its named single-row entry point, indexed by
-        ``ix_entities_message_thread_natural_key``. Same shape as
+        ``ix_entities_message_thread_natural_key_v2``. Same shape as
         ``SourceItem.find_existing``.
+
+        ``owner`` narrows to that owner's thread. Omitted, the lookup is the
+        pre-owner one over ``(channel, thread_key)`` alone — what a caller that
+        has not yet resolved an owner (and every legacy row) needs.
         """
-        return await cls.get_one({"channel": channel, "thread_key": thread_key})
+        match: dict = {"channel": channel, "thread_key": thread_key}
+        if owner is not None:
+            match["owner"] = str(owner)
+        return await cls.get_one(match)

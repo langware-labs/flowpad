@@ -29,10 +29,10 @@ logger = logging.getLogger(__name__)
 async def _agent_for(source) -> Optional[Any]:
     """The agent whose mailbox this source is, or None if it is not one."""
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-    from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+    from flow_sdk.inbox.projection import is_agent_owner, owner_of  # noqa: PLC0415
 
-    agent_id = agent_id_of(source)
-    return await Agent.get_by_id(agent_id) if agent_id else None
+    owner = await owner_of(source)
+    return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
 
 
 async def _workdir_for(agent) -> str:
