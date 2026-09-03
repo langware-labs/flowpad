@@ -57,7 +57,11 @@ async def semantic_checker(body: dict) -> dict:
         # The legacy ``job_name`` is what the old pill recognises; the activity path is
         # what this job actually is. Its terminal emit is in a `finally` below, so the
         # activity cannot be left running when the check raises.
-        activity=Activity.get("semantic.check", scope=str(type_ids[0])),
+        #
+        # Box-scoped for the same reason as the docs scan: a check across type ids is the
+        # instance's work, and scoping it to the first of those ids would deliver it only
+        # to whoever watches that one type — which is nobody.
+        activity=Activity.get("semantic.check"),
     )
     await _emit(activity, done=0, total=0)
 

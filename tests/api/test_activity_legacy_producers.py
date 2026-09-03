@@ -98,3 +98,21 @@ async def test_the_asset_usage_scan_reports_under_its_own_name(client, observed)
     assert any(state.name in ("COMPLETED", "FAILED") for _p, state, _d in observed) or not observed
     for path, _state, _done in observed:
         assert monitor.get(path) is None, f"{path} was left running after the scan"
+
+
+async def test_every_legacy_activity_is_addressed_to_the_box(client, docs_root, observed):
+    """An entity-scoped activity reaches only clients WATCHING that entity.
+
+    For a scanned folder or a checked type id that is nobody, so the work advanced
+    perfectly and showed in no browser — which is the whole point of the migration. These
+    jobs are the instance's work and must be addressed to it.
+    """
+    await client.get("/api/v1/docs-graph", params={"root": str(docs_root)})
+
+    assert observed, "the docs scan reported nothing at all"
+    from flow_sdk.activity import monitor as _monitor
+
+    for path, _state, _done in observed:
+        node = _monitor.node(path)
+        if node is not None:
+            assert node.scope is None, f"{path} is entity-scoped and would reach no browser"
