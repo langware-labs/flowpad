@@ -22,7 +22,11 @@ export function useSourceToggle(source: DataSource) {
     setBusy(true);
     try {
       source.status = next;
-      await source.save();
+      const saved = await source.save();
+      // The backend resolves `new` to `setup` or `active` on the way in; adopt its
+      // verdict, or the row reads as un-parked until the next fetch.
+      source.status = saved?.status ?? source.status;
+      source.setup_detail = saved?.setup_detail ?? source.setup_detail;
       source.markEdit();
       notify.success({
         title: next === 'disabled' ? t`Paused.` : t`Resumed — it polls on the next tick.`,

@@ -89,7 +89,9 @@ export function useChannelAttribution() {
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
 const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
-const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+// The source chip is the one a row is recognised BY, so its glyph is bigger than
+// a category's and keeps its brand colour — the text stays quiet.
+const SOURCE_CHIP = 'gap-1 rounded border border-border/60 bg-muted px-1 py-0 align-middle text-[10px] font-medium leading-tight text-muted-foreground';
 
 /** The per-row source chip: icon + channel, only for channel conversations.
  *  Hub-native rows pass no origin and render nothing — absence means "ours". */
@@ -109,11 +111,11 @@ export function SourceChip({
   return (
     <Badge
       variant="outline"
-      className={cn(COMPACT, MUTED_CHIP, className)}
+      className={cn(SOURCE_CHIP, className)}
       data-chip-type="source"
       title={attribution.label}
     >
-      <Icon className="h-2.5 w-2.5" />
+      <Icon className="size-4 shrink-0" />
       {attribution.label}
     </Badge>
   );
