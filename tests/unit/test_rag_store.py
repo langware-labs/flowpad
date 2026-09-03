@@ -8,6 +8,8 @@ here.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from flow_sdk.rag.chunking import chunk_markdown
@@ -266,3 +268,32 @@ def test_a_store_reopened_after_a_bare_read_still_takes_its_first_vectors(tmp_pa
     with RagStore(tmp_path / "store") as store:
         assert store.chunk_count() == 1
         assert store.search([0.1, 0.2, 0.3, 0.4], top_k=1)[0].doc_ref == "doc.md"
+
+
+def test_a_save_never_leaves_a_half_written_index_in_place(tmp_path, monkeypatch):
+    """The index is renamed into place, so a save that dies partway leaves the OLD file.
+
+    An in-place rewrite that is interrupted — a restart, a kill, a crash on another thread —
+    leaves a truncated file, and usearch's loader does not reject one: it walks the short header
+    into the heap and aborts the process on the next open. That makes the damage permanent, and
+    it took the backend down for good until the directory was deleted by hand.
+    """
+    store_dir = tmp_path / "store"
+    with RagStore(store_dir) as store:
+        store.add([_chunk("doc.md", "the original text")], [[0.1, 0.2, 0.3, 0.4]], model="m")
+
+    good = (store_dir / INDEX_FILE).read_bytes()
+
+    # A second build whose save dies mid-write.
+    store = RagStore(store_dir)
+    store.add([_chunk("doc2.md", "some more text")], [[0.5, 0.6, 0.7, 0.8]], model="m")
+
+    def die(path):
+        Path(path).write_bytes(b"truncated")
+        raise OSError("the process went away mid-save")
+
+    monkeypatch.setattr(store._open_index(), "save", die)
+    with pytest.raises(OSError):
+        store.flush()
+
+    assert (store_dir / INDEX_FILE).read_bytes() == good, "the old index must survive"
