@@ -349,7 +349,9 @@ def test_the_two_egress_seams_now_agree():
             {},
             # `message_ids` joined `message_count` as PRIVATE: both are projections
             # of the pointer log, rebuilt locally and never accepted from the hub.
-            ["hub_updated_date", "message_ids"],
+            # `owner`: whose inbox lists it — a fact about this machine's partition,
+            # never the hub's (that is the roster's `owner` role).
+            ["hub_updated_date", "message_ids", "owner"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
