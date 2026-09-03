@@ -1850,8 +1850,8 @@ msgid "Api Key"
 msgstr "Api Key"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
-msgid "API key"
-msgstr "API key"
+#~ msgid "API key"
+#~ msgstr "API key"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -4589,6 +4589,10 @@ msgstr "Could not sign in to FlowPad"
 msgid "Could not sign in to the cloud"
 msgstr "Could not sign in to the cloud"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Could not sign out of FlowPad"
+msgstr "Could not sign out of FlowPad"
+
 #: src/hooks/use-sandboxes.ts
 msgid "Could not sign the sandbox out"
 msgstr "Could not sign the sandbox out"
@@ -6387,10 +6391,6 @@ msgstr "Empty trace"
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Empty uses the variable name."
 #~ msgstr "Empty uses the variable name."
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Enable Agent"
-msgstr "Enable Agent"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Enable Agent"
@@ -10041,6 +10041,7 @@ msgstr "Login Required"
 msgid "Login: {0}"
 msgstr "Login: {0}"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Logout"
 msgstr "Logout"
@@ -16482,6 +16483,10 @@ msgstr "Signing in"
 msgid "Signing in…"
 msgstr "Signing in…"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Signing out…"
+msgstr "Signing out…"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
 msgstr "Simple actions — click to show all git operations"
@@ -17703,6 +17708,10 @@ msgstr "The live session has ended."
 #: src/components/connections-manager/flowpad-connection-row.tsx
 msgid "The login did not complete."
 msgstr "The login did not complete."
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "The logout did not complete."
+msgstr "The logout did not complete."
 
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."

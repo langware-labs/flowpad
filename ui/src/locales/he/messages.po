@@ -1850,8 +1850,8 @@ msgid "Api Key"
 msgstr "מפתח API"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
-msgid "API key"
-msgstr "מפתח API"
+#~ msgid "API key"
+#~ msgstr "מפתח API"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -4589,6 +4589,10 @@ msgstr ""
 msgid "Could not sign in to the cloud"
 msgstr "לא ניתן להתחבר לענן"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Could not sign out of FlowPad"
+msgstr ""
+
 #: src/hooks/use-sandboxes.ts
 msgid "Could not sign the sandbox out"
 msgstr "לא ניתן היה להתנתק מארגז החול"
@@ -6387,10 +6391,6 @@ msgstr "עקבה ריקה"
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Empty uses the variable name."
 #~ msgstr "שדה ריק ישתמש בשם המשתנה."
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Enable Agent"
-msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Enable Agent"
@@ -10041,6 +10041,7 @@ msgstr "נדרש כניסה"
 msgid "Login: {0}"
 msgstr "כניסה: {0}"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Logout"
 msgstr "התנתק"
@@ -16482,6 +16483,10 @@ msgstr "מתבצעת התחברות"
 msgid "Signing in…"
 msgstr "מתחבר…"
 
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Signing out…"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
 msgstr "פעולות פשוטות — לחץ להצגת כל פעולות ה-git"
@@ -17702,6 +17707,10 @@ msgstr "הסשן החי הסתיים."
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 msgid "The login did not complete."
+msgstr ""
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "The logout did not complete."
 msgstr ""
 
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
