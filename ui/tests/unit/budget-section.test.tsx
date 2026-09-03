@@ -28,6 +28,9 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
   useRemoveAllowance: () => ({ mutate: vi.fn(), isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // `OrgRootSetup`'s create-flow form calls this; the interaction itself has its own dedicated
+  // suite (org-root-setup.test.tsx) — here it only needs to exist so the org branch can render.
+  useSetupOrgRoot: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import { BudgetSection } from '@src/components/organization/budgets/BudgetSection';
@@ -39,6 +42,9 @@ const scope = (over: Record<string, unknown> = {}) => ({
   limit_usd: 100,
   spent_usd: 12.5,
   allocated_usd: 40,
+  is_root: false,
+  provider: null,
+  credential_hint: '',
   ...over,
 });
 
@@ -174,5 +180,47 @@ describe('BudgetSection — an organization', () => {
     draw(<BudgetSection nodeType="organization" nodeId={UUID(1)} nodeLabel="Langware" />);
 
     expect(screen.getByTestId(`budget-setup-team-${UUID(4)}`)).toBeTruthy();
+  });
+
+  it('offers the bring-your-own-key form in place of the shared-pool button when the org has no budget', () => {
+    h.org.mockReturnValue({
+      data: { org: scope({ endpoint_id: null, limit_usd: null, allocated_usd: null }), teams: [] },
+      isLoading: false,
+      error: null,
+    });
+    h.team.mockReturnValue(idle);
+
+    draw(<BudgetSection nodeType="organization" nodeId={UUID(1)} nodeLabel="Langware" />);
+
+    expect(screen.getByTestId('org-root-setup')).toBeTruthy();
+    expect(screen.queryByTestId('budget-setup-org-' + UUID(1))).toBeNull();
+  });
+
+  it("shows the stored key's masked hint once the org is a root", () => {
+    h.org.mockReturnValue({
+      data: { org: scope({ is_root: true, provider: 'anthropic', credential_hint: '****wxyz' }), teams: [] },
+      isLoading: false,
+      error: null,
+    });
+    h.team.mockReturnValue(idle);
+
+    draw(<BudgetSection nodeType="organization" nodeId={UUID(1)} nodeLabel="Langware" />);
+
+    expect(screen.getByTestId('org-root-key')).toBeTruthy();
+    expect(screen.getByTestId<HTMLInputElement>('credential-input').placeholder).toMatch(/replace/i);
+  });
+
+  it('explains why bringing a key is unavailable when the org already draws from the shared pool', () => {
+    h.org.mockReturnValue({
+      data: { org: scope({ is_root: false }), teams: [] }, // endpoint_id set, is_root false = legacy chain
+      isLoading: false,
+      error: null,
+    });
+    h.team.mockReturnValue(idle);
+
+    draw(<BudgetSection nodeType="organization" nodeId={UUID(1)} nodeLabel="Langware" />);
+
+    expect(screen.getByTestId('org-root-legacy-chain')).toBeTruthy();
+    expect(screen.queryByTestId('org-root-key')).toBeNull();
   });
 });

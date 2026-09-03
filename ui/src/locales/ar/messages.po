@@ -645,6 +645,10 @@ msgstr "{totalOrphans} سجل يتيم{0}"
 msgid "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
 msgstr "{totalResolved} مشكلة{0} متطابقة — مما يوفر عليك وقت تصحيح {1} يدويًا."
 
+#: src/components/organization/organization-page.tsx
+#~ msgid "{trimmed} is ready."
+#~ msgstr ""
+
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
 msgstr ""
@@ -1002,6 +1006,10 @@ msgstr "الإجراءات"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Actions ({0})"
 msgstr "الإجراءات ({0})"
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Activate"
+msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Activations only"
@@ -2530,6 +2538,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
 msgstr "استرجاع"
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Bring your own key"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
@@ -4270,6 +4282,10 @@ msgstr ""
 msgid "Cost (USD), total"
 msgstr ""
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Could not activate the organization"
+msgstr ""
+
 #. placeholder {0}: spec.title || String(spec.name ?? '')
 #: src/components/connections-manager.tsx
 msgid "Could not add {0}"
@@ -4350,6 +4366,10 @@ msgstr ""
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "Could not create group task"
 msgstr "تعذر إنشاء مهمة المجموعة"
+
+#: src/components/organization/organization-page.tsx
+#~ msgid "Could not create organization"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not create the budget"
@@ -10916,6 +10936,10 @@ msgstr "الاسم الجديد"
 msgid "New option"
 msgstr "إضافة خيار"
 
+#: src/components/organization/organization-page.tsx
+#~ msgid "New organization"
+#~ msgstr ""
+
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
@@ -12873,6 +12897,22 @@ msgstr "قائمة مرقمة"
 msgid "Organization"
 msgstr "المنظمة"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization activated"
+msgstr ""
+
+#: src/components/organization/organization-page.tsx
+#~ msgid "Organization created"
+#~ msgstr ""
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization created, but the key was not saved"
+msgstr ""
+
+#: src/components/organization/organization-page.tsx
+#~ msgid "Organization name…"
+#~ msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
 msgstr "العرض الشامل للهيكل التنظيمي"
@@ -13056,6 +13096,10 @@ msgstr "لصق مفتاح API"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Paste code from browser"
 msgstr "لصق الرمز من المتصفح"
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Paste it again below."
+msgstr ""
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Paste Mermaid syntax to replace the current board."
@@ -13819,6 +13863,7 @@ msgstr "محمي"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/organization/budgets/OrgRootSetup.tsx
 msgid "Provider"
 msgstr "المزود"
 
@@ -16871,6 +16916,11 @@ msgstr "تم إنشاء المواصفة"
 msgid "Specific unix sockets allowed in sandbox"
 msgstr "مآخذ Unix المحددة المسموح بها في بيئة العزل"
 
+#. placeholder {0}: spec.label
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Spending now bills your own {0}."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -18143,8 +18193,16 @@ msgstr ""
 msgid "This month"
 msgstr ""
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "This organization has no budget yet."
+msgstr ""
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
