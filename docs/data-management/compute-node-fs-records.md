@@ -230,17 +230,29 @@ POST /api/v1/graph/compute_node/{node_id}/fs-records/{type}
 Content-Type: application/json
 ```
 
-The request body must be a JSON object. It is passed to `RecordList.create(body)` which calls `FSRecord.from_dict(payload)` (with `type` defaulted to the list's `type_name`), checks for a duplicate id via `get()`, and calls `record.save()`.
+The request body must be a JSON object. Its `id` goes through the type's own
+`Entity.allocate_id` first (`_SR.get_entity_cls(record_type) or Entity`), which
+mints a v4 when the body carries none, adopts a conforming v4/v5, and
+normalizes a foreign id (a hand-authored v7) to a stable v5 — so the route
+never invents a fifth identity formula and `project`/`tag` keep the per-type
+`_row_id_policy` that makes a cwd resolve to the same row the indexer would
+mint. `FSRecord.save()` refuses an id-less record outright. It is then passed
+to `RecordList.create(body)` which calls `FSRecord.from_dict(payload)` (with `type` defaulted to the list's `type_name`), checks for a duplicate id via `get()`, and calls `record.save()`.
 
 If a record with the same id already exists, a `ValueError` (`"Record with id <id> already exists"`) is raised and wrapped in a 409 response.
 
-After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. The handler then calls `_materialize_main_body(rec, record_type)`, which writes the just-created asset's main body to disk through the type's `DiskSerializer` (e.g. a `SKILL.md`) so a disk-walking scan can rediscover it — `sync_to_db` writes the DB row and the metadata shadow, not the main body. Both steps are best-effort: a failure is logged at debug level and never fails the create. There is **no** post-create scope patch in the handler: `scope` is stamped from the resolved asset path inside `Entity._prepare_for_storage` (the single save chokepoint), so HTTP-created records are born with a scope just like indexer-discovered ones. Finally a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op` with `rec.meta_dict()`.
+After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. The handler then calls `_materialize_main_body(rec, record_type)`, which writes the just-created asset's main body to disk through the type's `DiskSerializer` (e.g. a `SKILL.md`) so a disk-walking scan can rediscover it — `sync_to_db` writes the DB row and the metadata shadow, not the main body. Neither step can fail the create — the record is already on disk — but both are
+REPORTED rather than swallowed: each logs at WARNING and rides back in the
+envelope's `warnings` list (`index_sync_failed`, `main_body_missing`), because
+the caller got a record and would otherwise never learn that its DB row is
+missing or that nothing on disk is discoverable by a scan. `status` stays
+`SUCCESS`; the client treats anything else as a failure. There is **no** post-create scope patch in the handler: `scope` is stamped from the resolved asset path inside `Entity._prepare_for_storage` (the single save chokepoint), so HTTP-created records are born with a scope just like indexer-discovered ones. Finally a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op` with `rec.meta_dict()`.
 
 **Request body:**
 
 ```json
 {
-  "id": "new-id-001",
+  "id": "5f2b7a1c-9d3e-4c8a-b6f1-0a2d4e6c8b03",
   "name": "My Process",
   "status": "new"
 }
@@ -721,7 +733,7 @@ shape, normally with a single relevant row for `X`.
 
 ### Conflict detection (409)
 
-Starting a scan/index/clear while one of the **same job name** is already running (not timed out, not complete) returns **409 Conflict**. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level dict in `compute_node.py`, keyed by `"{typeid}:{job_name}"` where `job_name` is `"scan"`, `"index"`, or `"clear"`). Because the key does **not** include the type filter, a per-type `scan?type=X` and an aggregate scan share the same `"scan"` activity and therefore conflict with each other. The `"scan"` slot is also taken by the sibling `/asset-usage` action while it walks sessions.
+Starting a scan or clear while one of the **same job name** is already running (not timed out, not complete) returns **409 Conflict**. `POST /fs-records/index` is the exception: it **queues** for the slot instead of refusing (`_index_activity(queue=True)`, threaded through `_run_index_activity`). The caller asked for a scope of its own, and the run holding the slot cannot serve it — the backend claims `index` at boot for the system-asset pass (`app.py` schedules `bootstrap.index_system_content` as a detached task) while `/health/status` already answers healthy, so the first client to ask used to be told 409 for a collision it could neither see nor influence. A waiter takes the slot when it frees and then runs its own pass; it re-claims in a loop rather than assuming it won, since another waiter may get there first. The wait is bounded by the HOLDER's `timeout_seconds` (`InProcessActivity.wait_released`), never a second budget. The auto-index path still skips silently on contention. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level dict in `compute_node.py`, keyed by `"{typeid}:{job_name}"` where `job_name` is `"scan"`, `"index"`, or `"clear"`). Because the key does **not** include the type filter, a per-type `scan?type=X` and an aggregate scan share the same `"scan"` activity and therefore conflict with each other. The `"scan"` slot is also taken by the sibling `/asset-usage` action while it walks sessions.
 
 Each activity auto-expires after `timeout_seconds` (the default in `_start_activity` is 600s):
 
@@ -731,6 +743,8 @@ Each activity auto-expires after `timeout_seconds` (the default in `_start_activ
 | `_handle_fs_records_index` (via the `_index_activity` context helper), `_auto_index_project`, `_index_system_assets` | `index` | 600 |
 | `_handle_fs_records_index_sessions` | `index` | 300 |
 | `_handle_fs_records_index_clear` | `clear` | 120 |
+
+`_complete_activity` sets the activity's `released` event as it pops the slot, which is what a queued caller waits on — so a waiter wakes the moment the holder is gone rather than on an interval of its own.
 
 `is_complete` is true only when the latest table carries `text == PROGRESS_TEXT_COMPLETE` — it is deliberately **not** inferred from `done >= total`, because that already holds during the post-loop orphan sweep and would open the duplicate-start gate to a second concurrent index run.
 

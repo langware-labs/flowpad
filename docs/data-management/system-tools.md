@@ -132,8 +132,12 @@ The terminal event has `text: "complete"` and `current: null`.
 Each scan/index operation acquires a slot in the module-level
 `_COMPUTE_ACTIVITIES` registry, keyed by `"{entity_typeid}:{job_name}"`.
 `ComputeNode._start_activity()` raises `RuntimeError("Job '<name>' already
-running")` when a live slot exists, which the `fs-records` action handlers
-translate into a **409 Conflict** response. Slots are released by
+running")` when a live slot exists, which the `scan` and `clear` handlers
+translate into a **409 Conflict** response. `POST /fs-records/index` instead
+QUEUES for the slot and then runs its own pass — the backend takes `index` at
+boot for the system-asset pass while already reporting itself healthy, so a
+refusal there was a collision the client could not see. The footer therefore
+shows a queued index as pending rather than surfacing an error. Slots are released by
 `ComputeNode._complete_activity()` in `finally` blocks and also auto-expire
 once `started_at` is older than `timeout_seconds` (`InProcessActivity.is_timed_out`),
 or once the latest table reports completion (`is_complete` — true only on the

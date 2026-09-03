@@ -199,16 +199,29 @@ read as permanent would park a source forever over a rate limit. Anything a
 driver raises that is not a `SourceError` classifies as transient: guessing
 "permanent" on an error never seen before would silently stop a working source.
 
-Where that rule actually bites is the **source**, not the segment. A failing
-segment records its own health on its cursor, but `_round_robin` does not
-consult cursor health — the next cycle fetches it again. What stops polling is
-the roll-up: `_roll_up` sets `DataSource.health` to the `worst_of` its cursors
-(`config_error` > `transient_error` > `never_synced` > `ok`), copies the
-offender's `error_code`/`error_detail` onto the source, and `may_poll()` then
-refuses the whole source while its health is `config_error`. So one segment
-with a dead credential parks every sibling on the next tick, even though the
-cycle that discovered it finished them. `segment_count` is stamped in the same
-roll-up, which is why a source that fails before enumerating reads 0.
+Failure isolation is per SEGMENT, and it holds in both directions. A
+`config_error` cursor is dropped from `_round_robin`'s candidates — it is
+parked until a person fixes it, so spending budget on it would re-learn the
+same failure every tick and, on a provider with a request ceiling, starve a
+sibling that would work. The roll-up then reports the source as the `worst_of`
+its LIVE cursors (`config_error` > `transient_error` > `never_synced` > `ok`),
+falling back to the full list only when every segment is parked. So one dead
+credential parks its own feed and nothing else; the source reads
+`config_error` only when there is nothing left that could run. The card still
+names the offender: `_roll_up` prefers a cursor at the rolled-up health and
+falls back to a parked one, so a source that reads healthy still shows WHICH
+segment is stuck and why.
+
+Both latches share one exit. `_make_due` — behind `poll_now` and `replay` —
+clears `config_error` on the source row AND on its parked cursors, because
+clearing only the row would let an operator fix a credential, press Sync now,
+and watch the segment sit out every tick while the roll-up re-stamped the
+source from it.
+
+`segment_count` is stamped in the same roll-up (through `_stamp_source`, the
+one writer of the source's verdict fields, shared with the whole-source failure
+path), which is why a source that fails before enumerating keeps the count it
+already had rather than reporting 0.
 
 `poll_refusal()` is the ONE gate — an empty reason means the source is active
 and not in `config_error`; otherwise the returned sentence says exactly why it
