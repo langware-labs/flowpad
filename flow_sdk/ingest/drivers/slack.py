@@ -33,7 +33,17 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin.source_item import SourceItemSpec
-from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SendOutcome, SetupVerdict
+from flow_sdk.ingest.driver import (
+    FetchResult,
+    IngestDriver,
+    SegmentCursorView,
+    SegmentRef,
+    SendOutcome,
+    SetupVerdict,
+    identity_stamped,
+    segments_from_config,
+    stamp_identity,
+)
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
 
@@ -99,30 +109,9 @@ class SlackDriver(IngestDriver):
         return "slack"
 
     async def segments(self, source) -> list[SegmentRef]:
-        """One stream per Slack channel.
-
-        Keyed by channel ID, never by name: a renamed channel is the same
-        channel, and keying on the name would fork its history. `segment_label`
-        carries the display name and self-heals on each poll.
-        """
-        config = getattr(source, "config", None) or {}
-        channels = config.get("channels") or []
-        # A `lines` field arrives as a bare string from a caller that bypassed
-        # the form (``blocks.Inbox`` names ONE channel); iterating it would
-        # yield its characters as channel ids.
-        if isinstance(channels, str):
-            channels = [line for line in channels.splitlines() if line.strip()]
-        refs: list[SegmentRef] = []
-        for entry in channels:
-            if isinstance(entry, dict):
-                key = str(entry.get("id") or "").strip()
-                label = str(entry.get("name") or key)
-            else:
-                key = str(entry).strip()
-                label = key
-            if key:
-                refs.append(SegmentRef(key=key, label=label))
-        return refs
+        """One stream per Slack channel, keyed by channel ID. `segment_label`
+        carries the display name and self-heals on each poll."""
+        return segments_from_config(source, "channels")
 
     async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         """One page of one channel, from where we left off.
@@ -332,7 +321,7 @@ class SlackDriver(IngestDriver):
         answer itself. Stamped on ``verify`` and after a ``send`` — never on
         ``fetch``, whose one-request-per-minute budget is not for this.
         """
-        if getattr(source, "account_key", "") or getattr(source, "account_identities", None):
+        if identity_stamped(source):
             return
         try:
             me = await self._call(token, "auth.test", {})
@@ -341,9 +330,10 @@ class SlackDriver(IngestDriver):
             handle = str(me.get("user") or "").strip()
             if not (user_id or bot_id):
                 return
-            source.account_key = f"@{handle}" if handle else user_id
-            source.account_identities = [v for v in (user_id, bot_id, f"@{handle}" if handle else "") if v]
-            await source.save()
+            at_handle = f"@{handle}" if handle else ""
+            await stamp_identity(
+                source, account_key=at_handle or user_id, identities=[user_id, bot_id, at_handle]
+            )
         except Exception:  # noqa: BLE001 — identity is a nicety; fetching must not fail on it
             logger.debug("[slack] auth.test identity stamp failed", exc_info=True)
 
