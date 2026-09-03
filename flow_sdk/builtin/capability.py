@@ -106,7 +106,17 @@ class Capability(Entity):
     # only tests whether one EXISTS (see ``probe_claude_auth`` — it never asks
     # the server). Without this marker the probe's presence-only "yes" flipped a
     # witnessed sign-out straight back to "authenticated" on the next poll.
-    login_denied: bool = APIField(default=False, persist=Persist.FALSE)
+    #
+    # Nullable, and that is load-bearing: like every runtime login_* field this
+    # is set in memory and BROADCAST, never written by ``save()``, so a row
+    # rebuilt from the DB — which is what ``GET /graph/capability`` serves, and
+    # what the frontend's `mutateAndRecheck` re-lists on every default-assistant
+    # or auth-mode change — knows nothing about it. Its None siblings drop out of
+    # the payload (``exclude_none``) and so cannot overwrite the live value a
+    # broadcast delivered; a ``False`` default shipped on every refetch and DID,
+    # silently retracting a refusal nobody had retracted. None means "this row
+    # has no opinion"; only an actual state change sends True/False.
+    login_denied: bool | None = APIField(default=None, persist=Persist.FALSE)
     # How this harness authenticates its worker: "device" (vendor device login,
     # default) or "api" (a stored LLM-provider key — see flow_sdk.cli.auth.lm_api_keys
     # and cli_drivers/api_auth.py). Persisted + user-switchable; like reference_kind
