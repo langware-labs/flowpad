@@ -78,6 +78,7 @@ export interface ILLMEndpoint extends IEntity {
   filters?: Partial<LLMEndpointFilters>;
   limits?: Partial<LLMEndpointLimits>;
   member_default_limits?: Partial<LLMEndpointLimits>;
+  principal_typeid?: string | null;
   system_default?: boolean;
   credential_hint?: string;
 }
@@ -97,7 +98,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   /** The budget the hub stamps on member defaults sourced from this endpoint
    *  (team/org scope endpoints); same shape as `limits`. */
   member_default_limits: LLMEndpointLimits = { ...DEFAULT_LLM_LIMITS };
-  /** True for hub-made per-principal defaults (`default-<typeid>`); read-only. */
+  /** Whose pot this is — `organization-`/`team-`/`user-<uuid>` — or null for a root or an
+   *  allocation. Server-owned and unique (one pot per principal), which is how a scope's budget is
+   *  found; the hub strips it from a client create and a client update. */
+  principal_typeid: string | null = null;
+  /** True for hub-made per-principal defaults (i.e. `principal_typeid` is set); read-only. */
   system_default: boolean = false;
   /** `""` or `****abcd`; read-only, written by the hub's credential action. */
   credential_hint: string = '';
@@ -112,6 +117,7 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.filters = { ...DEFAULT_LLM_FILTERS, ...(entity.filters ?? {}) };
     this.limits = { ...DEFAULT_LLM_LIMITS, ...(entity.limits ?? {}) };
     this.member_default_limits = { ...DEFAULT_LLM_LIMITS, ...(entity.member_default_limits ?? {}) };
+    this.principal_typeid = entity.principal_typeid ?? this.principal_typeid;
     this.system_default = entity.system_default ?? this.system_default;
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
   }

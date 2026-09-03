@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,9 +13,17 @@ import { OrganizationPage } from '@src/components/organization/organization-page
  * the graph is offered as a named alternative, never as the default.
  */
 
-// Rendered inside a router: the roster pulls in navigation-aware pieces, and a
-// component test should not be the thing that discovers that.
-const render = (ui: React.ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+// Rendered inside a router AND a query client: the roster pulls in navigation-aware pieces and the
+// budgets section is react-query backed, and a component test should not be the thing that
+// discovers that. Both providers are real in the app, so wrapping here matches the tree rather
+// than mocking the page's own dependencies away.
+const Providers = ({ children }: { children: React.ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter>{children}</MemoryRouter>
+  </QueryClientProvider>
+);
+
+const render = (ui: React.ReactElement) => rtlRender(<Providers>{ui}</Providers>);
 
 const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner', type: 'user' };
 const A_PERSON = { user_id: 'p-1', email: 'ann@example.com', name: 'Ann', role: 'member', type: 'user' };
@@ -82,9 +91,9 @@ describe('OrganizationPage', () => {
     const { rerender } = render(<OrganizationPage />);
     const callsAfterFirst = orgsMock.mock.calls.length;
     rerender(
-      <MemoryRouter>
+      <Providers>
         <OrganizationPage />
-      </MemoryRouter>,
+      </Providers>,
     );
     // Re-rendering may call the hook again, but it must never spiral: a handful
     // of calls is a render, thousands is the loop this pins shut.
