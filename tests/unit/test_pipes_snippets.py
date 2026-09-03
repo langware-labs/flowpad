@@ -177,6 +177,11 @@ async def test_snippet_6_keep_a_search_index_level(tmp_path, monkeypatch):
 
     monkeypatch.setattr(reconcile, "embedder_for", embedder)
     monkeypatch.setattr(RagIndex, "resolve_endpoint", some_endpoint)
+    # `named` is find-or-create over the whole box, and the suite shares one database, so a
+    # second run would find the first one's index and embed nothing. Scoped to the name the
+    # fence uses — a sibling test's index is not this test's to destroy.
+    for stale in await RagIndex.get_all({"name": "notes"}):
+        await stale.destroy()
 
     src = tmp_path / "src"
     src.mkdir()

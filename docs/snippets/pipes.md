@@ -42,10 +42,10 @@ source = DataSource(
 The same folder as a block, with the changes as a stream you can follow:
 
 ```python
-from flow_sdk.blocks import Folder, workflow
+from flow_sdk.blocks import FolderSource, workflow
 
 async with workflow("mirror"):                        # the name IS the consumer identity
-    docs = Folder(SRC, mirror_to=DEST)               # finds (or creates) the source above
+    docs = FolderSource(SRC, mirror_to=DEST)          # finds (or creates) the source above
     async for change in docs.listen():                # change: FolderChange(added, changed, removed, renamed)
         change.added, change.removed                  # canonical absolute paths
         await change.ack()                            # position commits LAST — at-least-once
@@ -93,9 +93,9 @@ on `listen()`, which drives the source through the poller's slot so the two can
 never poll it at once.
 
 ```python
-from flow_sdk.blocks import Folder
+from flow_sdk.blocks import FolderSource
 
-docs = Folder(SRC)
+docs = FolderSource(SRC)
 async for change in docs.listen(poll_every=0.5):    # seconds between THIS loop's polls
     await change.ack()
 ```
@@ -107,12 +107,12 @@ mechanism (a viewer's lease) and `listen()` deliberately does not use it.
 ## 5. An agent on several sources
 
 ```python
-from flow_sdk.blocks import EmailMessageSpec, Folder, FolderChange, Inbox, listen, workflow
+from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderSource, Inbox, listen, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("triage"):
     inbox = Inbox("me@agentmail.to", api_key=KEY)
-    docs  = Folder(SRC)
+    docs  = FolderSource(SRC)
     agent = await get_agent("triager")
 
     async with agent.process_messages():
@@ -132,24 +132,28 @@ source.
 The agent turn is safe to repeat: a redelivered item answers from the recorded
 turn instead of prompting again.
 
-## 6. Keep a search index level with a folder
+## 6. Keep a RAG index level with a folder
 
 ```python
-from flow_sdk.blocks import Folder, SearchIndex, workflow
+from flow_sdk.blocks import FolderSource, workflow
+from flow_sdk.builtin.rag_index import RagIndex
 
 async with workflow("docs-rag"):
-    docs  = Folder(SRC)
-    index = SearchIndex("notes")                      # a view over RagIndex, created on first use
+    docs  = FolderSource(SRC)
+    index = await RagIndex.named("notes")             # find-or-create, like ensure_default
     async for change in docs.listen():
         report = await index.apply(change)            # +1 present, −1 gone — inside apply
         await change.ack()
 ```
 
-`apply` folds `added / changed / removed / renamed` into one weight per path, so
-a delete flows through the same code as an add and a path both added and
-removed in one page nets to nothing. It is idempotent: applying a page twice
-embeds nothing the second time, because chunk ids key on their text. A refusal
-(nothing funds embeddings yet) comes back as a sentence on the report, never an
-exception — ack and move on; the heartbeat pass catches up.
+The verbs are the index's own, so there is no wrapper class: `apply` folds
+`added / changed / removed / renamed` into one weight per path, so a delete
+flows through the same code as an add and a path both added and removed in one
+page nets to nothing. It is idempotent — applying a page twice embeds nothing
+the second time, because chunk ids key on their text. A refusal (nothing funds
+embeddings yet) comes back as a sentence on the report, never an exception:
+ack and move on, the heartbeat pass catches up.
 
-`index.search("how does the walk decide what to skip")` asks it.
+`await index.search("how does the walk decide what to skip")` asks it — SEMANTIC
+retrieval over chunks. Not to be confused with `SourceItem.search(...)`, which is
+FTS5 keyword matching over rows; both are useful and they are not the same thing.

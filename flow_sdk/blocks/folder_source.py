@@ -1,7 +1,10 @@
-"""``Folder`` — a watched directory as a block: the object-shaped sibling of ``Inbox``.
+"""``FolderSource`` — a watched directory as a block: the object-shaped sibling of ``Inbox``.
 
 A view over the ``folder`` ``DataSource`` for that directory (found or created by its root, the
-driver's natural key), exactly as ``Inbox`` is a view over a mailbox's source. ``listen()`` pages
+driver's natural key), exactly as ``Inbox`` is a view over a mailbox's source. NOT ``Folder``:
+that word is taken by the ``Folder`` ENTITY (``builtin/folder.py``) — which ``RagIndex.add_root``
+mints for the very directory this block watches, so one word for both would name two different
+objects in one feature. ``listen()`` pages
 the ``SourceChange`` rows reflection writes, in ingest order, from this workflow's position, and
 yields one ``FolderChange`` per page with the same ``ack()`` an inbox item carries.
 
@@ -22,7 +25,7 @@ from flow_sdk.blocks.delivery import Delivered
 from flow_sdk.schema.data_spec.folder_change_spec import FolderChange
 
 
-class Folder:
+class FolderSource:
     def __init__(
         self,
         root: str,
@@ -109,4 +112,4 @@ class Folder:
             await asyncio.sleep(cadence)
 
 
-__all__ = ["Folder", "FolderChange"]
+__all__ = ["FolderChange", "FolderSource"]

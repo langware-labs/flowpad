@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import computed_field
@@ -39,6 +40,7 @@ from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.folder_change_spec import FolderChange
 
 #: The context bucket roots live in. PRIVATE, always: a root is an absolute path on THIS
 #: machine, and a receiver of a shared project has no such directory. Coverage is a local fact.
@@ -322,6 +324,94 @@ class RagIndex(Entity):
             pass
         await super().destroy()
 
+    @classmethod
+    async def named(cls, name: str = "") -> "RagIndex":
+        """The index called *name*, created if it does not exist. Empty ⇒ the box's default.
+
+        Find-or-create by lookup, like its sibling ``ensure_default`` — never an id derived
+        from the name.
+        """
+        name = (name or "").strip()
+        if not name or name == DEFAULT_INDEX_NAME:
+            return await cls.ensure_default()
+        existing = await cls.get_one({"name": name})
+        return existing if existing is not None else await cls._mint(name)
+
+    async def apply(self, change: "FolderChange") -> "Any":
+        """Bring the index level with one page of changes. Returns an ``IndexReport``.
+
+        Never raises for a refusal — a report whose ``errors`` carry the sentence, matching
+        ``run_index`` — so a consumer acks and moves on; the heartbeat pass catches up once the
+        index can run. Idempotent: applying a page twice embeds nothing the second time.
+        """
+        from flow_sdk.rag import reconcile  # noqa: PLC0415
+        from flow_sdk.rag.indexing import IndexReport, document_hash, index_documents, remove_documents  # noqa: PLC0415
+
+        # A ``Delivered`` wrapping a page reads as the page itself — that is what its
+        # ``__getattr__`` is for — so this takes either without unwrapping.
+        report = IndexReport(root=change.root)
+
+        # Cover the folder if nothing does yet: the listener chose it, and a page arriving for
+        # a folder the index does not cover would otherwise be silently indexed nowhere.
+        if change.root and not self.covers(change.root):
+            await self.add_root(change.root)
+
+        refusal = await self.settle_status()
+        if refusal:
+            report.errors.append(refusal)
+            return report
+        embed, model = await reconcile.embedder_for(self)
+        if embed is None:
+            report.errors.append("no embedding endpoint is available on this machine")
+            return report
+
+        weight: dict[str, int] = {}
+        for path in change.removed:
+            weight[path] = weight.get(path, 0) - 1
+        for new, old in change.renamed.items():
+            weight[old] = weight.get(old, 0) - 1
+            weight[new] = weight.get(new, 0) + 1
+        for path in [*change.added, *change.changed]:
+            weight[path] = weight.get(path, 0) + 1
+
+        gone = [p for p, w in weight.items() if w < 0]
+        present = [p for p, w in weight.items() if w > 0 and Path(p).is_file()]
+        documents = []
+        for path in present:
+            try:
+                documents.append((path, document_hash(Path(path)), Path(path)))
+            except OSError as exc:
+                report.errors.append(f"{path}: {exc}")
+
+        async with self.open_store() as store:
+            # The same whole-file skip `index_root` makes, and for the same reason: a page can
+            # name a file whose content did not change (a touch, a re-reflect, a page replayed
+            # after a crash), and chunking it again to arrive at the ids the store already
+            # holds is work with no output.
+            indexed = store.document_hashes()
+            documents = [(ref, h, p) for ref, h, p in documents if indexed.get(ref) != h]
+            report.skipped_unchanged = len(present) - len(documents)
+            remove_documents(store, gone, report=report)
+            await index_documents(store, documents, embed=embed, model=model or "", report=report)
+            store.flush()
+            self.chunk_count = store.chunk_count()
+            self.document_count = len(store.document_refs())
+        report.documents_changed = len(documents)
+        report.documents_removed = len(gone)
+        await self.save(notify=False)
+        return report
+
+    async def search(self, question: str, *, top_k: int = 5) -> list[Any]:
+        """Nearest chunks to *question*, best first. Empty when nothing funds an embedding."""
+        from flow_sdk.rag import reconcile  # noqa: PLC0415
+
+        embed, _model = await reconcile.embedder_for(self)
+        if embed is None:
+            return []
+        vectors = await embed([question])
+        async with self.open_store() as store:
+            return store.search(vectors[0], top_k=top_k)
+
     # ── lookup ──────────────────────────────────────────────────────────────
 
     @classmethod
@@ -343,7 +433,6 @@ class RagIndex(Entity):
                 best, best_len = index, len(root)
         return best
 
-
     @classmethod
     async def ensure_default(cls) -> "RagIndex":
         """The box's one index, created on first use.
@@ -360,7 +449,17 @@ class RagIndex(Entity):
         rows += await cls.get_all({"status": RagStatus.SETUP.value})
         if rows:
             return min(rows, key=lambda row: (row.created_date, str(row.id)))
-        index = cls(name=DEFAULT_INDEX_NAME)
+        return await cls._mint(DEFAULT_INDEX_NAME)
+
+    @classmethod
+    async def _mint(cls, name: str) -> "RagIndex":
+        """A new index, saved and with its status settled — the tail both find-or-creates share.
+
+        Settling on the way out is the point: an index minted mid-request is ACTIVE or SETUP
+        by the time its creator holds it, so the caller never has to know that a bare `save`
+        would have left it in the status a dispatcher skips.
+        """
+        index = cls(name=name)
         await index.save()
         await index.settle_status()
         return index
