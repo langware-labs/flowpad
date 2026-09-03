@@ -9,7 +9,6 @@ Routes:
 """
 
 import logging
-from dataclasses import asdict
 
 from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthProvider
 from flow_sdk.app.actions.desktop_oauth import (
@@ -158,7 +157,7 @@ async def oauth_main() -> ApiResponse:
             from flow_sdk.core.connections.specs import _list_connection_specs_local  # noqa: PLC0415
 
             specs = await _list_connection_specs_local()
-            return ApiSuccessResponse(data={"values": [asdict(spec) for spec in specs]})
+            return ApiSuccessResponse(data={"values": [spec.model_dump(mode="json") for spec in specs]})
 
         if oauth_action_str == OAuthAction.Token:
             from flow_sdk.core.connections.specs import (  # noqa: PLC0415

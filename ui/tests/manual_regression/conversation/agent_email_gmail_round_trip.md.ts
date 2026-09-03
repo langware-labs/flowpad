@@ -224,7 +224,7 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     fallbackEnv = childEnv;
     await openAgentInbox(page, ready.agent_id);
 
-    await page.getByTestId('agent-email-enabled').click();
+    await page.getByRole('button', { name: 'Create email for agent', exact: true }).click();
     await expect(page.getByTestId('agent-inbox-address')).toBeVisible();
     const inboxAddress = (await page.getByTestId('agent-inbox-address').textContent())?.trim() ?? '';
     expect(inboxAddress).toContain('@');

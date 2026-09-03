@@ -4873,6 +4873,10 @@ msgstr "Create as Whiteboard"
 msgid "Create bookmark on the recipient's desktop"
 msgstr "Create bookmark on the recipient's desktop"
 
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Create email for agent"
+msgstr "Create email for agent"
+
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Create File"
 msgstr "Create File"

@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from flow_sdk.core.connections import Authorization, list_connection_specs
+from flow_sdk.core.connections import Authorization, list_connections
 from flow_sdk.core.connections import connect as connect_provider
 from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
 from flow_sdk.core.connections.types import (
@@ -81,11 +81,22 @@ def _error_exit(error: ConnectionConnectError, *, json_output: bool) -> None:
 
 
 @connections_app.command("list")
-def list_connections(
+def list_connections_cmd(
     json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON object.")] = False,
+    project: Annotated[
+        str,
+        typer.Option("--project", help="Project id — adds its API-key credentials."),
+    ] = "",
 ) -> None:
+    """Every connection this box has: OAuth grants, API keys, FlowPad, harnesses.
+
+    Machine-level kinds always. API-key credentials are identified by
+    ``(project_id, env_var)``, so they appear only with ``--project`` — without
+    one the list is honestly smaller rather than quietly guessing which project
+    you meant.
+    """
     try:
-        specs = _run(list_connection_specs())
+        specs = _run(list_connections(project))
     except ConnectionConnectError as error:
         _error_exit(error, json_output=json_output)
         return
@@ -94,25 +105,16 @@ def list_connections(
             json.dumps(
                 {
                     "ok": True,
-                    "connections": [
-                        {
-                            "provider": row.provider,
-                            "display_name": row.display_name,
-                            "connected": row.connected,
-                            "identity": row.identity,
-                            "scopes": list(row.scopes),
-                            "icon": row.icon,
-                        }
-                        for row in specs
-                    ],
+                    "connections": [row.model_dump(mode="json") for row in specs],
                 }
             )
         )
         return
 
     for row in specs:
-        marker = "connected" if row.connected else "not connected"
-        typer.echo(f"{row.provider}\t{marker}\t{row.display_name}")
+        # The state word, not the boolean: "unknown" is a real answer for a
+        # harness login and "not connected" would be a false one.
+        typer.echo(f"{row.provider}\t{row.kind}\t{row.state}\t{row.display_name}")
 
 
 @connections_app.command("connect")

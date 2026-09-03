@@ -40,6 +40,7 @@ def register_builtin_kinds() -> None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy
 
     SchemaRegistry.register_kind("fs_ref", FSRef)
+    import flow_sdk.core.connections.types  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``

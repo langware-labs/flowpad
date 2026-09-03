@@ -294,6 +294,26 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     return candidates, cap
 
 
+async def device_candidate(worker_type: str) -> Candidate | None:
+    """The harness's OWN login verdict, and nothing else.
+
+    What the Connections list needs per harness: it reports the device login
+    regardless of whether a stored key currently outranks it, so the preference
+    overlay does not apply — and the key/endpoint inventory (a second query plus
+    a secret-store walk per harness) is never built only to be thrown away.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+
+    if driver_api_auth_spec(worker_type) is None:
+        return None
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    return _device_source(
+        worker_type, getattr(cap, "login_state", None), get_hub_llm_endpoint() is not None
+    )
+
+
 # ── overlay ──────────────────────────────────────────────────────────────────────
 
 def _hub_logged_in() -> bool:

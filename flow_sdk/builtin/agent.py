@@ -517,6 +517,7 @@ class Agent(Entity):
         from flow_sdk.auth import LoginRequired  # noqa: PLC0415
         from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
             EmailInboxError,
+            EmailInboxErrorCode,
             get_email_inbox_driver,
         )
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
@@ -528,11 +529,12 @@ class Agent(Entity):
             try:
                 await driver.get_inbox(self.id)
             except EmailInboxError as exc:
-                if exc.status_code == 401:
+                if exc.code == EmailInboxErrorCode.TARGET_NOT_FOUND:
+                    await self.share()
+                elif exc.status_code == 401:
                     raise LoginRequired("FlowPad cloud login required to enable email") from exc
-                if exc.status_code != 404:
+                else:
                     raise
-                await self.share()
             else:
                 # A previous attempt can publish the Agent and then fail while
                 # allocating its mailbox. Adopt that Hub row on retry.

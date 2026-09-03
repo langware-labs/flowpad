@@ -32,6 +32,7 @@ GITHUB = "github"
 ANTHROPIC = "anthropic"
 SLACK = "slack"
 GOOGLE = "google"
+ATLASSIAN = "atlassian"
 
 
 class OAuthFlowKind(str, Enum):
@@ -257,6 +258,32 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_parts=("team_id", "user_id"),
         ),
         hub_required=True,
+        copy_hub_credential=False,
+    ),
+    ATLASSIAN: LocalOAuthProvider(
+        name=ATLASSIAN,
+        display_name="Atlassian",
+        user_credentials_name="atlassian_credentials",
+        icon="Atlassian",
+        # Same shape as Slack: the hub holds the client secret and the
+        # registered callback URLs (exact-match, hub-hosted), so the desktop
+        # can only delegate. `endpoints=None` is what routes it there.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        # Scopes are the hub plugin's; the consent screen shows that list.
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        # `/me` answers with account_id/email/name for any token carrying
+        # `read:me`. Site-scoped calls need a cloud_id and are not a probe.
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.atlassian.com/me",
+            identity_fields=("email", "name"),
+            account_key_fields=("account_id",),
+        ),
+        hub_required=True,
+        # Access tokens expire hourly and the hub refreshes them; a local copy
+        # would go stale within the hour, so read through the hub instead.
         copy_hub_credential=False,
     ),
 }
