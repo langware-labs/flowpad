@@ -49,6 +49,7 @@ from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec import DataSpec
+from tests.hub_tests._hub_agent import create_hub_agent
 from tests.hub_tests._local_login import login_as
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
@@ -67,19 +68,6 @@ def _reclaim_hub_entities_the_tier_creates():
     yield
 
 
-async def _hub_agent(hub_base_url: str, token: str, name: str) -> str:
-    """A hub-side Agent row. Returns its id."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        agent_id = str(uuid.uuid4())
-        response = await client.post(
-            f"{hub_base_url}/api/v1/graph/agent",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"id": agent_id, "name": name, "worker_type": "claude"},
-        )
-        response.raise_for_status()
-    return agent_id
-
-
 @pytest.fixture
 async def mailboxes(hub_base_url, hub_login_payload):
     """Two real mailboxes: the agent's, and an outsider's. Both released.
@@ -92,8 +80,8 @@ async def mailboxes(hub_base_url, hub_login_payload):
     token = login_as(hub_login_payload)
     driver = get_email_inbox_driver()
 
-    agent_id = await _hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
-    outsider_id = await _hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
+    agent_id = await create_hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
+    outsider_id = await create_hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
 
     allocated: list[str] = []
     try:

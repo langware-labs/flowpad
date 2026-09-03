@@ -104,7 +104,12 @@ async def test_agent_enables_email_once():
             try:
                 if logged_in and agent.remote:
                     try:
-                        await (agent.inbox or inbox).release()
+                        # `agent.inbox`, never the local `inbox`: when the test
+                        # fails before that name is bound, referencing it raises
+                        # UnboundLocalError from the finally block and MASKS the
+                        # real failure.
+                        if agent.inbox is not None:
+                            await agent.inbox.release()
                     finally:
                         await agent.unshare()
             finally:
