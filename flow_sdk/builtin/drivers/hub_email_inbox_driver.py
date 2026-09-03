@@ -46,7 +46,7 @@ class HubEmailInboxDriver:
     async def create_inbox(self, agent_id: str, **options: Any) -> dict:
         """Allocate the agent's mailbox.
 
-        Idempotent at the hub: ``Agent.provision_inbox`` returns the existing
+        Idempotent at the hub: ``Agent.allocate_inbox`` returns the existing
         ACTIVE inbox rather than allocating a second one. That is what makes a
         retry safe after a half-finished create — and it matters, because the
         address is billable and permanent.
@@ -61,6 +61,10 @@ class HubEmailInboxDriver:
     async def disable_inbox(self, agent_id: str) -> dict:
         """Pause the Hub allocation without deleting the provider mailbox."""
         return await self._post(agent_id, "disable", {})
+
+    async def configure_inbox(self, agent_id: str, settings: dict) -> dict:
+        """Write the mailbox's allowlist / read defaults. Human-only at the hub."""
+        return await self._post(agent_id, "configure", settings)
 
     async def get_inbox(self, agent_id: str) -> Optional[dict]:
         """The non-deleted mailbox, or None.

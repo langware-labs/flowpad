@@ -227,7 +227,6 @@ async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
         worker_type="claude",
         system_prompt="You answer email. Reply in one short sentence.",
-        email_enabled=True,
         email_allowed_senders=allow,
     )
     await agent.save()
@@ -383,13 +382,14 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         worker_type="claude",
         model="sm",
         system_prompt="Answer like a pirate. Include 'arr' in every reply.",
-        email_allowed_senders=[gmail.account_key],
     )
     await pirate.save()
 
     try:
         await flow_sdk.auth.login()
-        inbox = await pirate.enableEmail()
+        # The allowlist is the mailbox's, declared in the one call that makes it —
+        # the same shape docs/snippets/agent-email.md advertises.
+        inbox = await pirate.allocate_inbox(allowed_senders=[gmail.account_key])
         if inbox.provider != "agentmail":
             pytest.skip(
                 "Gmail delivery requires the local Hub to run with "
@@ -397,7 +397,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
             )
 
         agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
-        assert agent_source is not None, "enableEmail() did not create the polling source"
+        assert agent_source is not None, "allocate_inbox() did not create the polling source"
         # Establish an empty committed cursor before the public message arrives.
         await sync_source(agent_source)
 
@@ -428,7 +428,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         assert "arr" in reply.body.lower()
     finally:
         if pirate.inbox is not None:
-            await pirate.decommission_inbox()
+            await (pirate.inbox).release()
         if pirate.remote:
             await pirate.unshare()
         await pirate.delete()

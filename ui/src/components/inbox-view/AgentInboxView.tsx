@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Agent, type AgentEmailState, TypeId } from '@sdk';
+import { Agent, type AgentInboxState, TypeId } from '@sdk';
 import { Loader2, Mail } from 'lucide-react';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -34,7 +34,7 @@ export function AgentInboxView() {
   const agentRef = useRef<Agent | null>(null);
   agentRef.current = agent ?? null;
   const ensureCloudLogin = useCloudLoginGate();
-  const [state, setState] = useState<AgentEmailState | null>(null);
+  const [state, setState] = useState<AgentInboxState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [senders, setSenders] = useState('');
@@ -46,9 +46,9 @@ export function AgentInboxView() {
     if (!currentAgent || currentAgent.id !== agentId) return;
     setLoading(true);
     try {
-      const next = await currentAgent.emailState();
+      const next = await currentAgent.inboxState();
       setState(next);
-      setSenders(next.allowed_senders.join('\n'));
+      setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
     } catch {
       setState(null);
@@ -69,13 +69,13 @@ export function AgentInboxView() {
           const gate = await ensureCloudLogin();
           if (!gate.ok) throw new Error(gate.error);
         }
-        const next = enabled ? await agent.enableEmail() : await agent.disableEmail();
+        const next = enabled ? await agent.allocateInbox() : await agent.disableInbox();
         setState(next);
-        setSenders(next.allowed_senders.join('\n'));
+        setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
         setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
       } catch (error) {
         notify.error({
-          title: enabled ? t`Could not enable email` : t`Could not disable email`,
+          title: enabled ? t`Could not allocate an inbox` : t`Could not disable the inbox`,
           message: error instanceof Error ? error.message : t`Email settings could not be saved.`,
         });
       } finally {
@@ -98,7 +98,7 @@ export function AgentInboxView() {
       .filter(Boolean);
     setSaving(true);
     try {
-      setState(await agent.configureEmail({ allowed_senders, poll_interval_seconds: seconds }));
+      setState(await agent.configureInbox({ allowed_senders, poll_interval_seconds: seconds }));
       notify.success({ title: t`Inbox settings saved` });
     } catch (error) {
       notify.error({

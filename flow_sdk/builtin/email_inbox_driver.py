@@ -78,6 +78,15 @@ class EmailInboxDriver(Protocol):
         """Pause this agent's allocation without releasing its address."""
         ...
 
+    async def configure_inbox(self, agent_id: str, settings: dict) -> dict:
+        """Set the mailbox's own policy — its allowlist and its read defaults.
+
+        The backend is authoritative for both: an allowlist a client could hold
+        privately would be a second answer to "who may drive this agent", and the
+        one that decides is the one the mailbox enforces.
+        """
+        ...
+
     async def get_inbox(self, agent_id: str) -> Optional[dict]:
         """The agent's non-deleted mailbox descriptor, or None when unallocated."""
         ...

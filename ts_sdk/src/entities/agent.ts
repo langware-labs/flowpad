@@ -243,20 +243,40 @@ export class Agent extends APIEntity<Agent> {
     return (await this.post('deploy')) as AgentDeployResult;
   }
 
-  async emailState(): Promise<AgentEmailState> {
-    return normalizeAgentEmailState(await this.get<AgentEmailStateWire>('email_state'));
+  /**
+   * The Agent's mailbox and the local source polling it.
+   *
+   * An Agent HOLDS a mailbox; it is not one. These five are the whole of the
+   * Agent's mail surface — everything else about a mailbox (its allowlist, its
+   * lifecycle) belongs to `EmailInbox`, which this hydrates.
+   */
+  async inboxState(): Promise<AgentInboxState> {
+    return normalizeAgentInboxState(await this.get<AgentInboxStateWire>('inbox_state'));
   }
 
-  async enableEmail(): Promise<AgentEmailState> {
-    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('enable_email'));
+  /**
+   * Allocate the mailbox, or adopt the one this Agent already has.
+   *
+   * The single door, and idempotent: an address is billable and permanent, so
+   * asking twice never buys twice. It also wires the local source and turns both
+   * on — there is no separate "enable".
+   */
+  async allocateInbox(options: InboxAllocation = {}): Promise<AgentInboxState> {
+    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('allocate_inbox', { ...options }));
   }
 
-  async disableEmail(): Promise<AgentEmailState> {
-    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('disable_email'));
+  /** Pause the mailbox. Reversible — the address and the cursor survive. */
+  async disableInbox(): Promise<AgentInboxState> {
+    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('disable_inbox'));
   }
 
-  async configureEmail(options: AgentEmailConfiguration): Promise<AgentEmailState> {
-    return normalizeAgentEmailState(await this.post<AgentEmailStateWire>('configure_email', { ...options }));
+  async configureInbox(options: InboxConfiguration): Promise<AgentInboxState> {
+    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('configure_inbox', { ...options }));
+  }
+
+  /** Release the address for good. Distinct from disabling, on purpose. */
+  async releaseInbox(): Promise<{ agent_id: string; released: boolean }> {
+    return this.post<{ agent_id: string; released: boolean }>('release_inbox');
   }
 
   async inboxScope(): Promise<AgentInboxScope> {
@@ -264,25 +284,33 @@ export class Agent extends APIEntity<Agent> {
   }
 }
 
-export interface AgentEmailConfiguration {
+export interface InboxConfiguration {
+  /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
   allowed_senders?: string[];
+  /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
+  filters?: Record<string, string>;
+  /** How often THIS machine polls. Local — not a fact about the mailbox. */
   poll_interval_seconds?: number;
 }
 
-interface AgentEmailStateWire {
+export interface InboxAllocation {
+  allowed_senders?: string[];
+  display_name?: string;
+  username?: string;
+}
+
+interface AgentInboxStateWire {
   agent_id: string;
   enabled: boolean;
   inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
-  allowed_senders: string[];
 }
 
-export interface AgentEmailState {
+export interface AgentInboxState {
   agent_id: string;
   enabled: boolean;
   inbox: EmailInbox | null;
   source: DataSource | null;
-  allowed_senders: string[];
 }
 
 export interface AgentInboxScope {
@@ -298,7 +326,7 @@ function entityId(value: { id?: string; typeid?: string } | null): string | unde
   return value.id ?? (value.typeid ? new TypeId(value.typeid).id : undefined);
 }
 
-function normalizeAgentEmailState(state: AgentEmailStateWire): AgentEmailState {
+function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
   const inboxId = entityId(state.inbox);
   const sourceId = entityId(state.source);
   return {
@@ -316,7 +344,6 @@ function normalizeAgentEmailState(state: AgentEmailStateWire): AgentEmailState {
           })
         : null,
     source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
-    allowed_senders: [...(state.allowed_senders ?? [])],
   };
 }
 

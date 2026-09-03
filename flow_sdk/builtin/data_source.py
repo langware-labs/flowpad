@@ -144,6 +144,17 @@ class DataSource(Entity):
     # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
     origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE)
 
+    # The mailbox allowlist, cached for the gate that runs on every inbound
+    # message (`EmailInbox.allowed`). The HUB owns this policy; this is a copy,
+    # refreshed on every reconcile, and it is never read to answer "what is the
+    # policy" — only to apply it without a network call.
+    #
+    # Deliberately NOT inside `config`, for the reason the reflection block below
+    # gives: `config` is provider-opaque and shareable, and these are third
+    # parties' personal addresses. PRIVATE, like `origin`: a fact about this
+    # machine that must not travel to a receiver or back to the hub.
+    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+
     # ── reflection — HOW the payload becomes locally present ──
     #
     # Deliberately NOT inside `config`: `config` is provider-opaque and the
@@ -837,6 +848,74 @@ class DataSource(Entity):
             self.origin = driver.origin_for(self)
         except Exception:  # noqa: BLE001 — a bad root is the driver's verify verdict, not a save failure
             logger.debug("[data_source] origin_for failed for %s", self.id, exc_info=True)
+
+    @core_action.post(action_name="choices")
+    async def choices_action(cls) -> ApiResponse:
+        """POST /api/v1/graph/data_source/choices — the picker's data.
+
+        Body: ``{"provider": str, "field": str, "config": dict}``, read off the request
+        context rather than a declared parameter — the dispatcher resolves an annotated
+        `request` by identity, and this module's postponed annotations make that a
+        string, so a declared one would 400 on every call while direct-call tests passed.
+        Class-level, with no entity id, because the picker's whole job is to fill a form
+        for a source that does not exist yet.
+
+        POST rather than GET though it reads nothing: the in-progress config travels with
+        the call, and a draft config is exactly where a secret lives — ``telegram``'s
+        ``bot_token`` is a config field. That must never reach a URL or an access log.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        provider = str(body.get("provider") or "").strip()
+        field = str(body.get("field") or "").strip()
+        if not provider or not field:
+            return ApiFailResponse(message="provider and field are required")
+        picks = await cls.choices_for(provider, field, body.get("config") or {})
+        if picks is None:
+            return ApiFailResponse(
+                message=f"{provider!r} has no config field {field!r} that offers choices"
+            )
+        return ApiSuccessResponse(data=picks)
+
+    @classmethod
+    async def choices_for(cls, provider: str, field: str, config: Optional[dict] = None):
+        """What *provider* can offer for its *field* — a ``ChoiceSet``, or ``None``.
+
+        ``None`` means the question itself was wrong: no such provider, or a field its
+        manifest never marked ``choices``. The form only asks about fields the manifest
+        marked, so that is a caller bug and says so loudly; answering with an empty list
+        would bury it as "nothing to pick".
+
+        Everything a USER can hit answers with a ChoiceSet instead — an empty ``items``
+        and one sentence — because every one of those failures means the same thing to
+        the person filling the form: type it instead. That is why this catches
+        ``SourceError`` centrally rather than asking each driver to.
+        """
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
+
+        spec = await DataSourceSpec.get_one({"name": provider})
+        field_spec = (spec.config or {}).get(field) if spec is not None else None
+        if field_spec is None or not field_spec.choices:
+            return None
+
+        driver = get_driver(provider)
+        if driver is None or driver.choices is None:
+            # The shipped-manifest test catches this pairing at CI. At runtime — a spec
+            # authored outside this repo — it still must not be a dead end.
+            logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
+            return ChoiceSet(detail="This provider can't list options here — type the value directly.")
+
+        draft = cls(provider=provider, config=spec.coerce_config(dict(config or {})))
+        try:
+            return ChoiceSet(items=await driver.choices(draft, field))
+        except SourceError as exc:
+            return ChoiceSet(detail=str(exc))
+        except Exception as exc:  # noqa: BLE001 — a driver must not 500 the picker
+            logger.warning("choices failed for %s.%s: %s", provider, field, exc, exc_info=True)
+            return ChoiceSet(detail=f"could not list: {exc}")
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
