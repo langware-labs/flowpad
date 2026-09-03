@@ -31,6 +31,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.reflect import ReflectMode
@@ -143,6 +144,19 @@ class DataSource(Entity):
     # where a tree begins, and a `GitOrigin` materializes through the same
     # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
     origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    # ── ownership ──
+    #
+    # Whose source this is: the local user's, or an Agent's. A message source
+    # projects into ITS OWNER'S inbox and speaks with its owner's voice, so the
+    # owner is a key the inbox engine reads — which is why it is a field and
+    # not `config["agent_id"]`, the provider-opaque bag the engine promises not
+    # to open (the same argument that pulled `reflect` out of it, below).
+    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # is the ONE reader and resolves those (config.agent_id → that agent, else
+    # the local user), so nothing depends on a backfill having run. PRIVATE: an
+    # owner is a fact about this machine, never a thing that travels.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
 
     # The mailbox allowlist, cached for the gate that runs on every inbound
     # message (`EmailInbox.allowed`). The HUB owns this policy; this is a copy,
@@ -894,6 +908,7 @@ class DataSource(Entity):
         from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
         from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
+        from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
 
         spec = await DataSourceSpec.get_one({"name": provider})
@@ -901,6 +916,11 @@ class DataSource(Entity):
         if field_spec is None or not field_spec.choices:
             return None
 
+        # The same resolve the create path makes: it registers the shipped drivers and
+        # any script-runtime spec adapter. Without it the registry is empty on a request
+        # that arrives before the first poll, and every picker would report "this provider
+        # can't list" on a driver that can.
+        await refresh_spec_drivers(provider)
         driver = get_driver(provider)
         if driver is None or driver.choices is None:
             # The shipped-manifest test catches this pairing at CI. At runtime — a spec
@@ -912,7 +932,10 @@ class DataSource(Entity):
         try:
             return ChoiceSet(items=await driver.choices(draft, field))
         except SourceError as exc:
-            return ChoiceSet(detail=str(exc))
+            # `detail`, not `str(exc)`: the latter prefixes the machine code
+            # ("no_project: Set 'GCP project'…"), and this sentence is rendered verbatim
+            # under the field for a person to act on.
+            return ChoiceSet(detail=exc.detail or str(exc))
         except Exception as exc:  # noqa: BLE001 — a driver must not 500 the picker
             logger.warning("choices failed for %s.%s: %s", provider, field, exc, exc_info=True)
             return ChoiceSet(detail=f"could not list: {exc}")

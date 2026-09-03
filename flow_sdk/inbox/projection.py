@@ -37,6 +37,7 @@ import logging
 import re
 from typing import Any, Optional
 
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
@@ -476,6 +477,50 @@ def agent_id_of(source) -> str:
     return str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
 
 
+async def default_owner() -> "TypeId | None":
+    """The owner a row gets when nothing said otherwise: the local user.
+
+    ``None`` only on an instance that has not bootstrapped its local user row
+    yet — callers treat that as "unowned", never as "owned by nobody".
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    local = await User.get_local()
+    if local is None or not local.id:
+        return None
+    return TypeId(type=EntityType.USER.value, id=str(local.id))
+
+
+async def owner_of(entity) -> "TypeId | None":
+    """Whose row this is — THE reader of ownership, for every caller.
+
+    Precedence is the migration in one place: an explicit ``owner`` wins; a
+    legacy source that only carries ``config.agent_id`` is that agent's; and
+    anything else is the local user's. Because every reader comes here,
+    correctness never depends on the backfill having run — a row written
+    before ``owner`` existed answers exactly as it will after.
+    """
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    explicit = getattr(entity, "owner", None)
+    if explicit:
+        return explicit if isinstance(explicit, TypeId) else TypeId(str(explicit))
+    agent_id = agent_id_of(entity)
+    if agent_id:
+        return TypeId(type=EntityType.AGENT.value, id=agent_id)
+    return await default_owner()
+
+
+def is_agent_owner(owner) -> bool:
+    """Whether an owner typeid names an Agent (vs a user)."""
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    return owner is not None and str(getattr(owner, "type", "")) == EntityType.AGENT.value
+
+
 def is_self_address(source, address: str) -> bool:
     """Is this address one of OUR account's on that source?
 
@@ -489,9 +534,10 @@ def is_self_address(source, address: str) -> bool:
 
 async def _agent_sender_for(source) -> "tuple[str, str] | None":
     """``(sender_id, display)`` when this source is an agent's own mailbox."""
-    agent_id = agent_id_of(source)
-    if not agent_id:
+    owner = await owner_of(source)
+    if not is_agent_owner(owner):
         return None
+    agent_id = owner.id
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
     agent = await Agent.get_by_id(agent_id)

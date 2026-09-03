@@ -588,6 +588,19 @@ class SQLiteDBDriver(DBDriver):
                 "WHERE type = 'message_thread'"
             )
         )
+        # The same key with its owner. `_v2` rather than a redefinition, for the
+        # reason the SourceItem index carries one: `IF NOT EXISTS` never alters
+        # an index that already exists under a name. v1 stays — the projection's
+        # legacy fallback (`owner IS NULL`) and every pre-owner caller use it.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v2 "
+                "ON entities(json_extract(data, '$.channel'), "
+                "json_extract(data, '$.thread_key'), "
+                "json_extract(data, '$.owner')) "
+                "WHERE type = 'message_thread'"
+            )
+        )
 
         # "Who owns this path" — `Entity.get_by_asset_ref`, and now every
         # identity resolution that recovers a wiped carrier instead of minting a
