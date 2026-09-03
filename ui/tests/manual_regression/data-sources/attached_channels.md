@@ -15,8 +15,7 @@ agent's rows carry `owner`.
 
 What is being proved: the bar is one component over `DataSource.owner` and the
 spec's `sends` flag. The user's inbox and each agent's inbox show DISJOINT rows,
-the toggle is the same verb the Data Sources card uses, and "+" from an agent's bar
-creates a source the agent owns.
+and the toggle is the same verb the Data Sources card uses.
 
 test 1: the user's bar shows the user's channels, lit
 - [browser] navigate to {APP_URL}/dock/inbox
@@ -36,13 +35,10 @@ test 2: click = pause, click = resume, the card agrees
 test 3: "…" folds the row when it is short
 - [browser] with 3+ channels, shrink the window until the bar has fewer than (channels + 1) slots of 32px
 - [browser] validate data-testid="attached-channels-more" is visible and the hidden channels are listed in its menu with the same toggle
-- [browser] validate data-testid="attached-channels-add" stays visible
 
 test 4: an agent's bar is its own
+- [api] create a slack source with `owner: "agent-<agent-id>"` (POST /api/v1/graph/data_source)
 - [browser] navigate to {APP_URL}/dock/agent/<agent-id>/inbox
-- [browser] validate data-testid="attached-channels" has data-owner `agent-<agent-id>` and NO data-testid="attached-channel" (the user's Slack is not there)
-- [browser] click data-testid="attached-channels-add"; only providers whose spec `sends` are offered (no rss / folder)
-- [browser] pick Slack, name it, paste the channel id, Add source
-- [browser] the icon appears in the agent's bar at once (status `setup`, badged) and the agent's inbox list renders
-- [api] the new row's `owner` is `agent-<agent-id>`
-- [browser] back on {APP_URL}/dock/inbox the user's bar still shows only the user's source
+- [browser] validate data-testid="attached-channels" has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), badged `setup`
+- [browser] the agent's inbox list renders (not the "no channel" empty state)
+- [browser] back on {APP_URL}/dock/inbox the user's bar shows only the user's source
