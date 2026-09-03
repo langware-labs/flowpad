@@ -57,12 +57,30 @@ async function recordSignedOut(kind: string, message: string): Promise<void> {
  * modal's first paint already carries the refusal, rather than flashing the
  * stale "Signed in" it was summoned to contradict.
  *
- * Fires once per distinct message: the status is re-derived on every serialize,
- * so without the latch a signed-out process would re-open the modal on each
- * poll. A different message (or the same one after a successful turn clears it)
- * arms it again.
+ * Fires once per refused TURN, keyed on ``detailId`` — the transcript entry's
+ * own uuid, which the backend sends beside the sentence. The status is
+ * re-derived on every serialize, so the same entry arrives many times per turn
+ * and must fire only once; the id is stable across those re-reads and different
+ * for a genuinely new refusal, which is exactly the distinction needed.
+ *
+ * It used to key on the SENTENCE, and that was the bug. Every signed-out turn
+ * writes the byte-identical "Not logged in · Please run /login", so after the
+ * user dismissed the modal once, the next refused turn changed nothing React
+ * could see: the effect's deps were unchanged and it never ran at all — no
+ * modal, just the composer's small red "Error" chip, which is driven by
+ * ``worker_status`` and is a different field. It could not self-heal either,
+ * since the re-arm below needs a turn that SUCCEEDS, and none can while the
+ * harness is signed out.
+ *
+ * The id goes in the dependency array as well as the latch. The latch alone is
+ * not enough — with identical deps the effect is skipped before the latch is
+ * ever reached.
  */
-export function useHarnessLoginOnAuthError(detail: string | null | undefined, workerType?: string | null): void {
+export function useHarnessLoginOnAuthError(
+  detail: string | null | undefined,
+  workerType?: string | null,
+  detailId?: string | null,
+): void {
   const lastFired = useRef<string | null>(null);
 
   useEffect(() => {
@@ -72,12 +90,16 @@ export function useHarnessLoginOnAuthError(detail: string | null | undefined, wo
       lastFired.current = null;
       return;
     }
-    if (lastFired.current === text) return;
-    lastFired.current = text;
+    // Fall back to the sentence when the backend sent no id: that is the old
+    // fire-once-per-message behaviour, which is still better than firing on
+    // every poll.
+    const turnKey = detailId ?? text;
+    if (lastFired.current === turnKey) return;
+    lastFired.current = turnKey;
     const kind = harnessKindForWorkerType(workerType);
     void (async () => {
       if (kind) await recordSignedOut(kind, text).catch(() => undefined);
       openHarnessLoginModal();
     })();
-  }, [detail, workerType]);
+  }, [detail, workerType, detailId]);
 }
