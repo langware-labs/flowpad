@@ -23,6 +23,7 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.unit.test_fs_store._identity_invariants import assert_one_live_row_per_path
@@ -126,6 +127,55 @@ async def test_preexisting_duplicate_row_is_still_swept(tmp_path: Path) -> None:
     assert result.total_dupes_removed == 1
     assert result.per_type[RecordType.MARKDOWN].dupes_removed == 1
     await assert_one_live_row_per_path("markdown")
+
+
+@pytest.mark.asyncio
+async def test_a_superseded_identity_is_swept_without_forcing_a_reindex(tmp_path: Path) -> None:
+    """The residue of a RE-KEYING is reclaimed by an ordinary run, not only `force=True`.
+
+    This is how a duplicate survives in the field. A row forks when a type's identity
+    rule changes under an existing DB — FLOWPAD-2070 re-keyed data-source specs from
+    the install path to the name — and the run that mints the new id cannot see the
+    fork: the dupe map is the preload taken BEFORE the walk, when the path still had
+    one claimant. Every later run skips the file as fresh, because its bytes never
+    moved, so the parse-nominated sweep never hears about it. On a real instance that
+    drew one provider tile per row, forever.
+
+    An id equal to what the OLD path-derived rule would mint for this exact path is
+    that rule's residue by construction — which is what makes it safe to reclaim
+    without a parse, and distinguishable from the random API-minted twin that
+    `test_db_only_row_with_live_source_is_not_swept` deliberately keeps alive.
+    """
+    idx, a, first_id = await seed_one_md(tmp_path)
+    superseded = str(uuid.uuid5(uuid.NAMESPACE_URL, canonical_posix_path(str(a))))
+    assert superseded != first_id, "precondition: the live id is no longer the path-derived one"
+    await _forge_duplicate_row(a, superseded)
+    assert set(await md_sources()) == {first_id, superseded}
+
+    # No `force`: the file is byte-identical since the last run, so this takes the
+    # fresh-skip path every scheduled index takes.
+    result = await idx.index(IndexerOptions(**MD_OPTS))
+
+    assert set(await md_sources()) == {first_id}, "the superseded row is reclaimed"
+    assert result.per_type[RecordType.MARKDOWN].dupes_removed == 1
+    await assert_one_live_row_per_path("markdown")
+
+
+@pytest.mark.asyncio
+async def test_a_random_twin_on_a_live_path_is_left_alone(tmp_path: Path) -> None:
+    """The counterpart guard: only a SUPERSEDED id is reclaimed without a parse.
+
+    A row minted through the API carries a random v4 and is a legitimate second
+    claimant that `_db_missing_orphans` keeps alive on purpose. Reclaiming by
+    "two rows share a path" alone would delete it on the next heartbeat.
+    """
+    idx, a, first_id = await seed_one_md(tmp_path)
+    twin = str(uuid.uuid4())
+    await _forge_duplicate_row(a, twin)
+
+    await idx.index(IndexerOptions(**MD_OPTS))
+
+    assert set(await md_sources()) == {first_id, twin}, "a random twin is not this sweep's business"
 
 
 @pytest.mark.asyncio
