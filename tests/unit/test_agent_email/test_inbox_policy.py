@@ -219,7 +219,7 @@ async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
     "a conflicting record already exists", which describes a constraint rather
     than anything they can do.
     """
-    from flow_sdk.builtin.email_inbox_driver import EmailInboxError
+    from flow_sdk.builtin.email_inbox_driver import EmailInboxError, EmailInboxErrorCode
 
     hub = _HiddenAgentHub(visible_after_publish=False)
     agent = await _agent_that_cannot_publish(monkeypatch, hub)
@@ -227,8 +227,12 @@ async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
     with pytest.raises(EmailInboxError) as raised:
         await agent.allocate_inbox()
 
-    assert "another account" in str(raised.value)
-    assert "conflicting record" not in str(raised.value)
+    # The CODE, not the sentence: the sentence is product copy on its way to a
+    # toast, so asserting it would go red on a rewording and — worse — a
+    # "conflicting record not in message" check passes vacuously the day the hub
+    # rewords its own 409.
+    assert raised.value.code == EmailInboxErrorCode.FOREIGN_TARGET
+    assert raised.value.status_code == 403
     assert agent.remote is False, "a failed adoption must not leave the agent marked published"
 
 

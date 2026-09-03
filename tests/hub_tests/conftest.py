@@ -253,6 +253,38 @@ def hub_login_payload(hub_base_url) -> dict:
 
 
 @pytest.fixture()
+async def bob_token(hub_base_url) -> str:
+    """A bearer token for the tier's SECOND identity.
+
+    Lives here because ``_resolve_identities`` and ``_cleanup_token`` already do,
+    so "who is bob" has one answer. A test that needs an entity this instance
+    does NOT own asks for this rather than signing up an account of its own —
+    a fresh signup would leave a hub user nothing can reclaim (``user`` is not in
+    ``_CLEANUP_TYPES``, and the leak guard's regex only sees ``/graph/`` posts).
+    """
+    import httpx
+
+    _, bob_email = _resolve_identities()
+    app_env_pw = None
+    app_local = Path(__file__).resolve().parents[2].parent / "flowpad-app" / ".env.local"
+    if app_local.exists():
+        for line in app_local.read_text().splitlines():
+            if line.strip().startswith("FLOWPAD_CLOUD_USER_PASSWORD") and "=" in line:
+                app_env_pw = line.partition("=")[2].strip().strip("\"'") or None
+    bob_pw = os.environ.get("BOB_PW") or app_env_pw
+    if not bob_email or not bob_pw:
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(
+            f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw}
+        )
+        response.raise_for_status()
+        data = response.json()["data"]
+    return data.get("api_key") or data["token"]
+
+
+@pytest.fixture()
 def hub_session(hub_base_url, hub_login_payload) -> dict:
     """A persisted local login plus the ids a direct hub call needs.
 

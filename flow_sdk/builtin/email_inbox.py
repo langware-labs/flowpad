@@ -387,11 +387,22 @@ class EmailInbox(Entity):
         "a conflicting record already exists", which describes a database
         constraint rather than anything the reader can act on.
         """
-        from flow_sdk.builtin.email_inbox_driver import EmailInboxError  # noqa: PLC0415
+        from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
+            EmailInboxError,
+            EmailInboxErrorCode,
+        )
 
         try:
             await agent.share()
-        except Exception:  # noqa: BLE001 — what it MEANT is decided by the re-probe below
+        # Narrow on purpose. `share()` reports a refused publish as a ValueError
+        # (`FlowpadClient._unwrap` raises one for any non-200) and a missing login
+        # as a RuntimeError; a transport failure raises httpx's own, and that must
+        # propagate as itself — answering a hub outage with "belongs to another
+        # account" would be a fabricated diagnosis, which is worse than the raw
+        # error this whole change replaced. The real fix is a typed `HubError` out
+        # of `_unwrap`; that is a cross-cutting change to every FlowpadClient
+        # caller, so it stays a follow-up.
+        except (ValueError, RuntimeError):
             agent.remote = True
             try:
                 return await driver.get_inbox(agent.id)
@@ -402,6 +413,7 @@ class EmailInbox(Entity):
                     "this agent already exists on the hub under another account, so its "
                     "mailbox cannot be allocated from here — allocate it from the account "
                     "that owns the agent, or use an agent of your own",
+                    code=EmailInboxErrorCode.FOREIGN_TARGET,
                 ) from still_hidden
         return None
 

@@ -34,6 +34,12 @@ class EmailInboxErrorCode(str, Enum):
     """
 
     TARGET_NOT_FOUND = HubErrorCode.TARGET_NOT_FOUND.value
+    #: Ours, not the hub's — the one member with no counterpart there. The hub
+    #: cannot express it: it masks "exists but not yours" as TARGET_NOT_FOUND on
+    #: purpose, so that this account holds no role is a conclusion only the SDK
+    #: reaches, by publishing and being refused. If the hub ever grows the
+    #: distinction, this adopts its spelling like every other member.
+    FOREIGN_TARGET = "foreign_target"
 
 
 class EmailInboxError(Exception):
