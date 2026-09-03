@@ -90,10 +90,13 @@ class Capability(Entity):
     last_check: dict[str, Any] | None = APIField(default=None)
     last_setup: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
-    # Device-login session state — runtime-only, broadcast but never persisted
-    # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
-    # live DeviceLoginSession for this harness kind; None/idle when no login
-    # is in flight.
+    # Device-login session state — ``Persist.FALSE``: DB-only, never mirrored
+    # into metadata.json (same shape as AgenticProcess.connection_id /
+    # Tab.status). Mirrors the live DeviceLoginSession for this harness kind;
+    # None/idle when no login is in flight. ``login_state`` is the exception to
+    # "broadcast, never written": the startup sweep resolves and SAVES it
+    # (``discovery._resolve_login_states``), because the spawn resolver reads it
+    # back off a freshly-loaded row and would otherwise never see the verdict.
     login_state: DeviceLoginState | None = APIField(default=None, persist=Persist.FALSE)
     login_url: str | None = APIField(default=None, persist=Persist.FALSE)
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
@@ -553,9 +556,10 @@ class Capability(Entity):
         candidate = await resolve_box_llm_endpoint(worker_type) if spec is not None else None
         endpoint, source = candidate if candidate is not None else (None, None)
 
-        # ALWAYS probe the vendor, whatever funds the harness today. This action is the only
-        # producer of ``login_state``, which is ``Persist.FALSE`` and therefore ``None`` after
-        # every restart -- and the resolver reads exactly that field to decide whether a device
+        # ALWAYS probe the vendor, whatever funds the harness today. This action and the
+        # startup sweep (``discovery._resolve_login_states``) are the two producers of
+        # ``login_state`` -- the sweep answers it for every box on boot, this answers it on
+        # demand -- and the resolver reads exactly that field to decide whether a device
         # login is proven. Probing only when device already won closes a loop with no exit: on a
         # box the hub has bound, the endpoint wins because device is unproven, so the probe never
         # runs, so device stays unproven forever -- and the user's "Test sign-in" button stops

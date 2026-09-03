@@ -38,9 +38,34 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     reset_instance_settings()
 
 
+async def _forget_probed_login_states() -> None:
+    """Put the harnesses back to "nobody has asked".
+
+    ``login_state`` used to be ``None`` ambiently, because the only thing that ever wrote it
+    was the login modal's button. The startup sweep now RESOLVES it
+    (``discovery._resolve_login_states``), and the suite shares one session DB — so a real
+    probe run by any earlier test leaks a verdict into every later one. The tests below are
+    about the UNPROBED box specifically, so they have to state that precondition instead of
+    inheriting it.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    for worker in ("claude", "codex", "copilot", "opencode"):
+        cap = await Capability.get_by_kind(worker_capability_kind(worker))
+        if cap is not None and getattr(cap, "login_state", None) is not None:
+            cap.login_state = None
+            cap.login_message = None
+            await cap.save(notify=False)
+
+
 @pytest.fixture(autouse=True)
 async def _reset_harness_auth_mode():
+    # Clear on the way IN as well as out: the startup sweep now resolves login_state, and a
+    # probe run by any earlier test in the session leaks its verdict into these.
+    await _forget_probed_login_states()
     yield
+    await _forget_probed_login_states()
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
 
@@ -452,7 +477,9 @@ async def test_a_failed_catalog_read_still_offers_the_scoped_rows(env, monkeypat
     _login()
 
     async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
-        return None if action == "catalog" else {"data": [{"id": "1" * 8 + "-2222-4333-8444-" + "5" * 12, "name": "mine"}]}
+        return (
+            None if action == "catalog" else {"data": [{"id": "1" * 8 + "-2222-4333-8444-" + "5" * 12, "name": "mine"}]}
+        )
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     assert [e.name for e in await fetch_hub_llm_endpoints()] == ["mine"]
