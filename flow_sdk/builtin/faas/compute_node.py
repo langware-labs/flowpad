@@ -1435,6 +1435,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     def get_host_action(self, port: int, redirect: bool = True):
         return self._desktop_get_host(port, redirect)
 
+    @action.get(action_name="connections")
+    async def connections_action(self, project_id: str = "") -> "ApiResponse":
+        """Every connection this box has, in one read.
+
+        Consolidated HERE rather than in the browser, which used to fetch four
+        separate shapes and decide for itself what "connected" meant — two
+        surfaces then disagreed about the same key, twice.
+
+        ``project_id`` is optional and the answer is honestly smaller without it:
+        API-key credentials are identified by ``(project_id, env_var)`` and the
+        server has no notion of "the selected project", which lives in the
+        client. See ``core/connections/status.py`` for what each kind costs.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id) if project_id else None
+        rows = await list_connections(project=project)
+        return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
+
     @action.all(action_name="get-machine-status")
     async def get_machine_status_action(self):
         return await self._desktop_get_machine_status()

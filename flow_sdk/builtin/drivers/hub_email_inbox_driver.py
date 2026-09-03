@@ -30,7 +30,7 @@ from typing import Any, Optional
 from urllib.parse import quote
 
 from flow_sdk.builtin.email_inbox_driver import EmailInboxError
-from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 #: The hub action every mailbox call hangs off:
@@ -88,7 +88,7 @@ class HubEmailInboxDriver:
         except HubError as exc:
             if exc.status_code == 404:
                 return False
-            raise _as_email_error(exc) from exc
+            raise await _as_email_error(exc) from exc
 
     # ── messages ─────────────────────────────────────────────────────────────
 
@@ -121,7 +121,7 @@ class HubEmailInboxDriver:
                 BuiltinEntityType.AGENT, agent_id, INBOX_ACTION, sub_path, params=params
             )
         except HubError as exc:
-            raise _as_email_error(exc) from exc
+            raise await _as_email_error(exc) from exc
 
     async def _post(self, agent_id: str, sub_path: str, body: dict) -> dict:
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
@@ -129,17 +129,38 @@ class HubEmailInboxDriver:
         try:
             return await hub_post(BuiltinEntityType.AGENT, body, agent_id, INBOX_ACTION, sub_path) or {}
         except HubError as exc:
-            raise _as_email_error(exc) from exc
+            raise await _as_email_error(exc) from exc
 
 
-def _as_email_error(exc: HubError) -> EmailInboxError:
-    """Hub failure → the family's failure, status intact.
+async def _as_email_error(exc: HubError) -> EmailInboxError:
+    """Hub failure → the family's failure, status intact, "missing" normalised.
 
-    ``HubError.status_code`` is already 0 for "no response at all", which is the
-    one distinction the family's contract cares about, so this is a rename
-    rather than a reinterpretation.
+    A missing target is ONE code here whatever the hub said — a 404, the
+    ``target_not_found`` marker, or an older Hub's bare 401 for it. On that last
+    ambiguous shape, verify the same credential against ``current-user``:
+    success proves authentication is valid, so the denial can be classified
+    without matching unstable error prose.
     """
-    return EmailInboxError(exc.status_code, exc.reason or "")
+    code = exc.code
+    if exc.is_target_missing or (
+        exc.status_code == 401 and not code and await _hub_login_is_valid()
+    ):
+        code = HubErrorCode.TARGET_NOT_FOUND.value
+    return EmailInboxError(exc.status_code, exc.reason or "", code=code)
+
+
+async def _hub_login_is_valid() -> bool:
+    """Whether the configured Hub resolves the credential currently in use."""
+    from flow_sdk.cloud_client.transport.hub_http import _hub_client  # noqa: PLC0415
+
+    try:
+        # The process-shared client: a fresh ``FlowpadClient`` per call rebuilds
+        # the TLS context, which is the cost ``hub_http`` exists to avoid.
+        async with _hub_client() as client:
+            await client.get_user()
+    except Exception:  # noqa: BLE001 — preserve the original mailbox failure
+        return False
+    return True
 
 
 def _path_safe(message_id: str) -> str:

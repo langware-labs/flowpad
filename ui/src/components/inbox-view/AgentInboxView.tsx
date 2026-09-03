@@ -202,8 +202,19 @@ export function AgentInboxView() {
           <InboxView agentId={parsed.agentId} />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
-          <Trans>Enable email to allocate this Agent's inbox.</Trans>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+          <p>
+            <Trans>Enable email to allocate this Agent's inbox.</Trans>
+          </p>
+          <Button
+            type="button"
+            disabled={saving}
+            onClick={() => void changeEnabled(true)}
+            data-testid="agent-email-create"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            <Trans>Create email for agent</Trans>
+          </Button>
         </div>
       )}
     </div>

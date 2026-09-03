@@ -20,9 +20,10 @@ from flow_sdk.builtin.email_inbox_driver import (
     EMAIL_INBOX_DRIVERS,
     EmailInboxDriver,
     EmailInboxError,
+    EmailInboxErrorCode,
     get_email_inbox_driver,
 )
-from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode
 
 AGENT_ID = "22222222-2222-4222-8222-222222222222"
 DESCRIPTOR = {
@@ -129,6 +130,36 @@ class TestTheHubMember:
         # driver are supposed to work against any backend.
         with pytest.raises(EmailInboxError):
             await HubEmailInboxDriver().delete_inbox(AGENT_ID)
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_hub_machine_error_code_survives_translation(self, monkeypatch):
+        async def fake_get(*_a, **_k):
+            raise HubError(401, "target unavailable", code=HubErrorCode.TARGET_NOT_FOUND.value)
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+
+        with pytest.raises(EmailInboxError) as caught:
+            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+
+        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_old_hub_target_denial_is_classified_with_valid_login(self, monkeypatch):
+        async def fake_get(*_a, **_k):
+            raise HubError(401, "legacy target denial")
+
+        async def valid_user(_client):
+            return {"id": "user-1"}
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
+
+        with pytest.raises(EmailInboxError) as caught:
+            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+
+        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval

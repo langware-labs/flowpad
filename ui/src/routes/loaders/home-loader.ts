@@ -1,8 +1,9 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
-import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { getViewMode } from '@src/contexts/view-mode-context';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
@@ -45,16 +46,40 @@ export async function loadHomePage(args: LoaderArgs) {
     throw redirect('/dock/hub/home');
   }
 
+  const url = new URL(args.request.url);
+  const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
+
+  // `/` arrives bare on every cold load — the browser loads the URL directly, so
+  // `openDock`'s viewMode stamping never runs for it. Canonicalize it here so the
+  // FIRST history entry states its mode like every other one; otherwise Back onto
+  // it re-resolves through the (mutable) preference and renders whatever mode is
+  // current, making the step invisible.
+  //
+  // `replace`, NOT `redirect`: a redirect on the INITIAL document load pushes,
+  // which would leave the bare `/` sitting behind home as an entry that re-runs
+  // this loader and redirects forward again — the classic redirect trap, i.e.
+  // another Back step that does nothing. Measured: with `redirect` the cold load
+  // landed at idx=1; with `replace` it lands at idx=0.
+  //
+  // FIRST, before any awaited work: this throw discards the rest of the pass and
+  // the router re-runs the whole matched loader tree on the canonical URL. It
+  // fires on every bare cold start, so anything done above it is paid for twice
+  // and thrown away once.
+  if (dock.viewMode === null) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(dock.withViewMode(getViewMode()).toUrl(url.pathname));
+  }
+
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
 
   // `/?scope-…` means what `/dock/home?scope-…` meant: the root is an ordinary
   // location now, so a scoped home has to adopt its project like any other
-  // scoped dock. This is the ONE step the home loader borrows from the dock
-  // loader — the rest (tab setup, canonicalizers, page redirects) stays out
-  // deliberately, because `/` is every cold start and this is the boot path.
-  const url = new URL(args.request.url);
-  await adoptScopeProject(DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`));
+  // scoped dock. Together with the viewMode canonicalization above, these are the
+  // only two steps the home loader borrows from the dock loader — the rest (tab
+  // setup, the other canonicalizers, page redirects) stays out deliberately,
+  // because `/` is every cold start and this is the boot path.
+  await adoptScopeProject(dock);
   t.time('adoptScope');
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load

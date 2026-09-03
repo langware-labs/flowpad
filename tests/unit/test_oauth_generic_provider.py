@@ -223,3 +223,20 @@ async def test_an_unknown_provider_records_nothing(sod_env):
 
     assert await do.record_credential(user, "not-registered", "tok") is False
     assert user.get_env_var("not-registered_credentials") is None
+
+
+def test_atlassian_is_a_hub_run_provider_the_desktop_can_name():
+    """Same contract as Slack: no local endpoints (so `prefers_hub_flow` sends
+    the flow to the hub, which holds the secret and the single registered
+    callback), but a local credential name and probe so the desktop can adopt,
+    test and attach what the hub hands back."""
+    at = registry.get_local_provider("atlassian")
+    assert at is not None
+    assert at.endpoints is None
+    assert at.hub_required is True
+    assert at.kind is OAuthFlowKind.CODE
+    assert registry.prefers_hub_flow("atlassian") is True
+    assert registry.user_credentials_name("atlassian") == "atlassian_credentials"
+    assert at.probe.url == "https://api.atlassian.com/me"
+    # The hub refreshes the hourly token; a local copy would go stale.
+    assert at.copy_hub_credential is False

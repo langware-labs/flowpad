@@ -18,10 +18,22 @@ so the same names mean the same things at both tiers.
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from flow_sdk.builtin.secret_origin_driver import HUB_KIND_ALIASES
+from flow_sdk.cloud_client.shared.errors import HubErrorCode
 from flow_sdk.utils.kind_registry import KindRegistry
+
+
+class EmailInboxErrorCode(str, Enum):
+    """Backend-neutral mailbox failure markers.
+
+    Pinned to the hub's spelling so the hub driver can copy ``code`` across
+    without a translation table; a hub rename cannot desynchronize the two.
+    """
+
+    TARGET_NOT_FOUND = HubErrorCode.TARGET_NOT_FOUND.value
 
 
 class EmailInboxError(Exception):
@@ -35,9 +47,10 @@ class EmailInboxError(Exception):
     dropped packet or spins forever on a mailbox that no longer exists.
     """
 
-    def __init__(self, status_code: int, reason: str):
+    def __init__(self, status_code: int, reason: str, code: str | None = None):
         self.status_code = status_code
         self.reason = reason
+        self.code = code
         super().__init__(f"email inbox error {status_code}: {reason}")
 
 
