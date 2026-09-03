@@ -30,6 +30,20 @@ from flow_sdk.responses.response import ApiResponse
 from flow_sdk.server.app import app
 
 
+@pytest_asyncio.fixture
+async def usable_claude_source():
+    """Give worker lifecycle tests a credential-free, authenticated source."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+    from flow_sdk.builtin.capability import Capability
+
+    capability = await Capability.get_by_kind(worker_capability_kind("claude"))
+    assert capability is not None
+    capability.login_state = DeviceLoginState.AUTHENTICATED
+    capability.login_message = "test source"
+    await capability.save(notify=False)
+
+
 def _invalidate_caches():
     """Cache-only reset between tests.
 
