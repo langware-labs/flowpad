@@ -283,7 +283,9 @@ class DataSource(Entity):
         return ""
 
     @classmethod
-    async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
+    async def find_for_account(
+        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
+    ) -> "Optional[DataSource]":
         """The source of ``provider`` whose ``config[key]`` names ``value``.
 
         The canonical natural-key lookup (same shape as
@@ -291,16 +293,48 @@ class DataSource(Entity):
         semantics ask HERE instead of re-scanning ``get_all`` and filtering by
         hand — the id policy's whole point is that identity is a lookup.
         ``key`` is normally the driver's ``identity_config_key``.
+
+        ``owner`` narrows to that owner's source, so the same account can be
+        watched by the local user AND by an Agent without either reusing the
+        other's row. Omitted, it is the pre-owner lookup. Resolved through
+        ``owner_of`` rather than the column, so a legacy row that only carries
+        ``config.agent_id`` still answers.
         """
+        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
             current = (row.config or {}).get(key)
             # A `lines` field (Slack's ``channels``) is a list; the source
             # serves the account when the value is one of its entries.
             members = current if isinstance(current, list) else [current]
-            if any(str(m or "").strip() == value for m in members):
-                return row
+            if not any(str(m or "").strip() == value for m in members):
+                continue
+            if owner is not None and await owner_of(row) != owner:
+                continue
+            return row
         return None
+
+    @classmethod
+    async def find_owned(cls, owner: "TypeId", *, channel: Optional[str] = None) -> "list[DataSource]":
+        """Every source ``owner`` holds — optionally only those on ``channel``.
+
+        The indexed filter first; then the rows written before ``owner`` existed
+        (``owner`` absent), which ``owner_of`` resolves the same way every other
+        reader does. The two are disjoint, so no row is counted twice.
+        """
+        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
+        rows = list(await cls.get_all({"owner": str(owner)}))
+        legacy = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]))
+        )
+        for row in legacy:
+            if await owner_of(row) == owner:
+                rows.append(row)
+        if channel is not None:
+            rows = [r for r in rows if (r.channel or "").strip() == channel]
+        return rows
 
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.
@@ -697,7 +731,16 @@ class DataSource(Entity):
         human must complete (Slack's bot invite), so it starts in SETUP; one that
         does not is ready the moment it is configured, so it starts ACTIVE. That
         keeps a plain RSS feed from demanding a Verify click it has no use for.
+
+        Also stamps ``owner`` on the way in when nothing set it: the local user,
+        or the agent a legacy ``config.agent_id`` names. One choke-point rather
+        than one per constructor, so the UI create path and every block get it
+        without knowing it exists.
         """
+        if self.owner is None:
+            from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
+            self.owner = await owner_of(self)
         if self.status == SourceStatus.NEW.value:
             # An AUTHORED source's driver comes from a row, not an import, so it
             # may not be registered yet on a cold process. Resolving NEW without
