@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
-import { sdkConfig } from '@sdk/config/index';
+import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
 import { usePreference } from '@src/hooks/use-preference';
@@ -315,10 +315,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`${sdkConfig.apiUrl}/api/v1/version/check`, { credentials: 'include' });
-      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-      const json = (await resp.json()) as VersionCheckResponse;
-      setData(json);
+      setData(await apiClient.get<VersionCheckResponse>('/api/v1/version/check'));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -361,17 +358,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
   // can take a little while, so poll generously before giving up.
   const waitForRestartAndReload = useCallback(async () => {
-    const healthUrl = `${sdkConfig.apiUrl}/health/status`;
     const deadline = Date.now() + 90_000;
     // Give the old server a moment to actually exit first.
     await new Promise((r) => setTimeout(r, 3000));
     while (Date.now() < deadline) {
       try {
-        const r = await fetch(healthUrl, { cache: 'no-store' });
-        if (r.ok) {
-          window.location.reload();
-          return;
-        }
+        await apiClient.get('/health/status', { headers: { 'Cache-Control': 'no-store' } });
+        window.location.reload();
+        return;
       } catch {
         /* server down mid-restart — keep polling */
       }
@@ -388,13 +382,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setUpgrading(true);
       setInstallResult(null);
       try {
-        const resp = await fetch(`${sdkConfig.apiUrl}/api/v1/version/install`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ version }),
-        });
-        const json = (await resp.json()) as InstallVersionResponse;
+        const json = await apiClient.post<InstallVersionResponse>('/api/v1/version/install', { version });
         if (json.success && json.restarting) {
           setRestarting(true);
           void waitForRestartAndReload();

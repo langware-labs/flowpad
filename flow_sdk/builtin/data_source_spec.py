@@ -66,6 +66,8 @@ class ConfigFieldSpec(DataSpec):
     """One field of the user-facing form — the whole reason the frontend can
     stop hardcoding a catalog per provider."""
 
+    model_config = ConfigDict(frozen=True)
+
     type: FieldType = FieldType.TEXT
     required: bool = False
     label: str = ""
@@ -106,6 +108,8 @@ class AuthSpec(DataSpec):
     spawned process at launch. Neither ever carries a value.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     connector: str = ""
     scopes: list[str] = Field(default_factory=list)
     env: list[str] = Field(default_factory=list)
@@ -127,6 +131,8 @@ class TraitsSpec(DataSpec):
     a behaviour nothing implements — ``extra="forbid"`` makes it a load error
     until something reads it.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     emits: str = ""
     channel: str = ""
@@ -254,6 +260,15 @@ class ManifestSpec(DataSpec):
         # copy is a second owner of the same fact.
         if self.traits is not None and runtime is Runtime.BUILTIN:
             raise ManifestError("a builtin source must not declare traits; its driver class owns them")
+        # A script source has no class to hold its kind, so the manifest is the
+        # ONLY owner of `emits` — and `ingest_items` stamps it on every record
+        # unvalidated. Left blank it produced items with an empty kind that
+        # silently fell outside the inbox projection; a load error is the one
+        # place the author can see it.
+        if runtime is Runtime.SCRIPT and (self.traits is None or not self.traits.emits.strip()):
+            raise ManifestError(
+                "an authored source must declare traits.emits — the ontology kind stamped on every record"
+            )
         return runtime
 
 

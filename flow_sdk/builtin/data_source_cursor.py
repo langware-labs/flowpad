@@ -10,7 +10,8 @@ returning 500s leaves its siblings advancing normally.
 driven entirely by ``state`` — an opaque dict only the driver touches (RSS keeps
 ``{etag, last_modified}`` there, Hacker News a changed-id pointer). If the sync
 loop ever reads a key out of it, the abstraction has leaked and the next
-provider will need a special case; ``test_cursor_state_is_opaque`` catches that.
+provider will need a special case; ``test_cursor_state_is_opaque_to_the_subsystem``
+catches that.
 ``high_water`` is the operator-facing half: recorded so a human can see how far
 a stream got, never read back as a floor.
 """

@@ -29,11 +29,25 @@ def test_the_simplest_source_parses():
     assert m.manifest_schema == 1, "the file says `schema`, the row says `manifest_schema`"
 
 
+WIKI = {**RSS, "name": "wiki", "traits": {"emits": "content.page"}}
+
+
 def test_runtime_comes_from_the_folder_not_a_field():
     assert parse(RSS, files={"data_source.json"})[1] is Runtime.BUILTIN
-    assert parse({**RSS, "name": "wiki"}, files={"fetch.py"})[1] is Runtime.SCRIPT
+    assert parse(WIKI, files={"fetch.py"})[1] is Runtime.SCRIPT
     with pytest.raises(ManifestError, match="keep one"):
         parse(RSS, files={"fetch.py", "FETCH.md"})
+
+
+def test_a_script_source_must_declare_emits():
+    """The manifest is the ONLY owner of a script source's kind, and it is
+    stamped on every record unvalidated — blank, every item fell outside the
+    inbox projection with nothing raising."""
+    with pytest.raises(ManifestError, match="traits.emits"):
+        parse({**RSS, "name": "wiki"}, files={"fetch.py"})                      # no traits block
+    with pytest.raises(ManifestError, match="traits.emits"):
+        parse({**RSS, "name": "wiki", "traits": {"emits": "  "}}, files={"fetch.py"})   # blank
+    assert parse(WIKI, files={"fetch.py"})[1] is Runtime.SCRIPT                 # declared: loads
 
 
 def test_a_builtin_may_not_declare_traits():
@@ -90,3 +104,19 @@ def test_schema_version_is_required_and_checked():
 
 def test_title_defaults_to_name():
     assert parse({"schema": 1, "name": "hn"})[0].title == "hn"
+
+
+@pytest.mark.parametrize("build", [
+    lambda: ManifestSpec.model_validate(RSS).config["feed_urls"],
+    lambda: ManifestSpec.model_validate({**RSS, "auth": {"env": ["TOKEN"]}}).auth,
+    lambda: ManifestSpec.model_validate(WIKI).traits,
+], ids=["ConfigFieldSpec", "AuthSpec", "TraitsSpec"])
+def test_the_value_specs_are_frozen(build):
+    """A value is a value (CLAUDE.md): a field, an auth shape and a traits block
+    travel between the manifest, the row and the form, and none of them is
+    edited in place — `model_copy(update=...)` is the way to a changed one."""
+    value = build()
+    field = next(iter(type(value).model_fields))
+    with pytest.raises(ValidationError):
+        setattr(value, field, getattr(value, field))
+    assert value.model_copy(update={field: getattr(value, field)}) == value

@@ -120,6 +120,16 @@ class DatasetLayout:
         reading the payloads. Only a per-example layout can answer."""
         raise NotImplementedError("index is io_folder only — a CSV dataset has no per-example dirs")
 
+    def count_annotated(self, folder, examples: Sequence[Any]) -> int:
+        """How many of the parsed ``examples`` carry gold. THE definition of
+        ``num_annotated``, for every layout — the indexer's extractor and the
+        entity's post-label recount both read it. A row is annotated when its
+        gold slot is present, and ``FolderLayout.read_example`` emits that slot
+        on exactly the scan result ``has_ground_truth`` reports, so the
+        per-example ``index`` flag and this count are one rule without a second
+        pass over the directories."""
+        return sum(1 for ex in examples if getattr(ex, "ground_truth", None) is not None)
+
     def read(self, folder: Path, spec: type, *, dataset_id: str,
              field_spec: Optional[dict[str, str]] = None, delimiter: str = ",") -> list[Any]:
         raise NotImplementedError
@@ -307,12 +317,13 @@ class FolderLayout(DatasetLayout):
             rows.append(spec.model_validate(row))
         return rows
 
-    def read_example(self, ex_dir: Path) -> Optional[dict[str, Any]]:
-        """One example directory as a row dict — ``None`` when it has no input data.
-
-        A single ``iterdir`` pass classifies every entry (each belongs to at most
-        one base). Data is bucketed by ``(base, index)``; sidecars only collected.
-        """
+    @staticmethod
+    def _scan(ex_dir: Path) -> tuple[dict[str, dict[Optional[int], Path]], list[Path]]:
+        """One ``iterdir`` pass over an example directory: data bucketed by
+        ``(base, index)`` (each entry belongs to at most one base), sidecars
+        collected. The ONE classification — ``read_example`` builds the row
+        from it and ``has_ground_truth`` answers from it, so "annotated" can
+        never mean one thing to the reader and another to the index."""
         bases = (*SLOT_BASES, EXPECTED_LEGACY)
         data: dict[str, dict[Optional[int], Path]] = {b: {} for b in bases}
         sidecars: list[Path] = []
@@ -329,6 +340,21 @@ class FolderLayout(DatasetLayout):
                     prev = data[base].get(index)
                     data[base][index] = entry if prev is None else _resolve_ambiguity(prev, entry)
                 break
+        return data, sidecars
+
+    def has_ground_truth(self, ex_dir: Path) -> bool:
+        """Does this example carry gold DATA in any form the reader accepts —
+        ``ground_truth/``, ``ground_truth.txt``, ``ground_truth-N``, or the
+        legacy ``expected*`` alias? Exactly when ``read_example`` would emit a
+        ``ground_truth`` slot — the same ``_scan`` classification, so the
+        index's per-example flag and the counted rows can never disagree. The
+        cheap form of the question, so ``index`` never reads the payloads."""
+        data, _ = self._scan(ex_dir)
+        return bool(data[GROUND_TRUTH] or data[EXPECTED_LEGACY])
+
+    def read_example(self, ex_dir: Path) -> Optional[dict[str, Any]]:
+        """One example directory as a row dict — ``None`` when it has no input data."""
+        data, sidecars = self._scan(ex_dir)
         if not data[INPUT]:
             return None
 
@@ -398,7 +424,10 @@ class FolderLayout(DatasetLayout):
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
         """The rows as scalars — id, source item, kind, gold present — reading
-        only ``example.json`` and one ``exists`` per dir (never the payloads)."""
+        only ``example.json`` and one directory listing per dir (never the
+        payloads). ``annotated`` is ``has_ground_truth``: the same rule the
+        reader applies, so ``Dataset.num_annotated`` agrees whether it was
+        counted here after a label or by the indexer over the parsed rows."""
         out = []
         for ex_dir in _example_dirs(folder):
             meta, _ = _load_example_meta(ex_dir)
@@ -406,7 +435,7 @@ class FolderLayout(DatasetLayout):
                 "example_id": example_id(dataset_id, ex_dir.name),
                 "item_id": (meta.get("source") or {}).get("item_id"),
                 "kind": str(coerce_dataset_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN).value),
-                "annotated": (ex_dir / GROUND_TRUTH).exists(),
+                "annotated": self.has_ground_truth(ex_dir),
             })
         return out
 

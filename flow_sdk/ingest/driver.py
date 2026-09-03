@@ -15,8 +15,8 @@ serve two genuinely different sync shapes:
   when nothing did.
 
 If the sync loop ever needs to look inside ``state``, the abstraction has leaked
-and the next provider will need a special case. ``test_cursor_state_is_opaque``
-greps for exactly that.
+and the next provider will need a special case.
+``test_cursor_state_is_opaque_to_the_subsystem`` greps for exactly that.
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ the INNER project. Today the indexer stamps ``project_id`` from whichever
 walk root reaches the file first — the umbrella root walks the inner
 project's files and stamps them with the umbrella's id (see
 ``_resolve_scoped_roots``: one REAL_PROJECT_CWD root per project, no nested
-handling; and ``real_project_cwd_fn._dedup_nested``: outermost-wins).
+handling, outermost-wins on dedup).
 
 No mocks: real test DB + real Project rows + the real ``build_default_indexer``
 walk over the exact root set the scoped ``/fs-records/index`` route builds.
@@ -58,7 +58,7 @@ async def test_md_in_nested_project_is_associated_with_inner_project(tmp_path: P
     #    ``POST /fs-records/index?projects=<outer>,<inner>`` route builds via
     #    ``_resolve_scoped_roots`` (one REAL_PROJECT_CWD per project, caller
     #    order preserved; the full unscoped scan reaches the same shape through
-    #    ``real_project_cwd_fn``). Umbrella first, like the production listing.
+    #    ``get_all_scope_filter``). Umbrella first, like the production listing.
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(

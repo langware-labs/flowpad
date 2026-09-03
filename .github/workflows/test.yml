@@ -67,6 +67,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history, for the ONE test that reads it:
+          # test_migration_recipes_ship_with_their_version replays each release
+          # tree to prove no migration recipe was committed after its own wheel
+          # was built. The default depth-1 checkout answers "no release commits"
+          # to every `git log -S`, so the guard concluded the debt was gone and
+          # asserted its own premise obsolete — green would have meant nothing.
+          fetch-depth: 0
       - uses: ./.github/actions/backend-tests
         with:
           tier: unit

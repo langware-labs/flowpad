@@ -17,6 +17,7 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import ClassVar, Optional
@@ -422,7 +423,7 @@ class DataSource(Entity):
         Not synchronous — the poller runs off the once-a-minute heartbeat, so
         this means "on the next tick", within 60s. Deliberately not sped up.
         """
-        self._make_due()
+        await self._make_due()
         await self.save()
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
@@ -564,7 +565,7 @@ class DataSource(Entity):
 
         # A parked source would otherwise accept the replay and then never poll
         # to act on it.
-        self._make_due()
+        await self._make_due()
         await self.save()
 
         return {
@@ -675,7 +676,14 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
-        await self._coerce_config()
+        # ONE spec read per save, shared by the three rules below. Each used
+        # to fetch it independently, so a create paid three round trips for the
+        # same row on a request a person is waiting on. `_needs_spec` keeps the
+        # steady state free: the poller's per-tick re-save reads nothing.
+        spec = await self._spec() if self._needs_spec() else None
+        self._coerce_config(spec)
+        self._validate_config(spec)
+        self._coerce_reflect(spec)
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe
             # keys on it (Verify on a fresh source probed nothing) and the UI
@@ -686,7 +694,7 @@ class DataSource(Entity):
             # IS its provider name (agentmail). A driver that answers empty
             # (agent transport with no connector yet) stamps nothing.
             driver = self._driver()
-            if driver is not None:
+            if driver is not None and driver.channel_for is not None:
                 try:
                     stamped = str(driver.channel_for(self) or "").strip()
                 except Exception:  # noqa: BLE001 — a probe must never fail a save
@@ -696,7 +704,28 @@ class DataSource(Entity):
         self._stamp_origin()
         return await super().save(*args, **kwargs)
 
-    async def _coerce_config(self) -> None:
+    def _needs_spec(self) -> bool:
+        """True when any save-time rule below still has a question for the spec.
+
+        A saved row whose config is already typed and whose reflect mode is
+        settled has nothing to ask, which is the poller's case on every tick.
+        """
+        untyped = isinstance(self.config, dict) and any(isinstance(v, str) for v in self.config.values())
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        return untyped or stuck or not self.exist_in_db
+
+    async def _spec(self) -> "Optional[object]":
+        """The provider's definition row, or None when it cannot be resolved —
+        an unresolvable spec changes nothing about any of the three rules."""
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            return await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return None
+
+    def _coerce_config(self, spec) -> None:
         """Shape ``config`` by the definition's field types on save — a URL sent
         as a string where ``lines`` is declared must not produce a source that
         looks configured and fails on its first sync (the rss driver iterating
@@ -710,14 +739,72 @@ class DataSource(Entity):
         """
         if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
             return
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
-
-        try:
-            spec = await DataSourceSpec.get_one({"name": self.provider})
-        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
-            return
         if spec is not None:
             self.config = spec.coerce_config(self.config)
+
+    def _validate_config(self, spec) -> None:
+        """The manifest's ``required`` / ``pattern`` rules, applied where the
+        dialog cannot see: the API and an agent. The form already refuses a
+        blank required field and a value off its regex, so a source created by
+        hand could look configured and park on its first sync with a driver
+        error the author had to decode. Raises ``ValueError`` naming the field,
+        which the create route maps to a 400.
+
+        CREATE only. The poller re-saves a row every tick, and a rule added to
+        the spec after the row was minted must not turn that re-save into an
+        exception nobody is there to read — the sync's own health verdict is
+        where an existing source reports a config it cannot use.
+        """
+        if self.exist_in_db or not isinstance(self.config, dict) or spec is None:
+            return
+        for name, field in (spec.config or {}).items():
+            value = self.config.get(name)
+            blank = value is None or (isinstance(value, str) and not value.strip()) or value in ([], {})
+            if blank:
+                if field.required and field.default is None:
+                    raise ValueError(f"config.{name} is required")
+                continue
+            if not field.pattern:
+                continue
+            # One regex per value, so a multi-line field names the entries at
+            # fault (the form's rule, `source-form.ts`); `search`, as its
+            # `RegExp.test` is.
+            try:
+                regex = re.compile(field.pattern)
+            except re.error:
+                continue  # the spec's fault, not the caller's; the form still applies it
+            values = value if isinstance(value, list) else [value]
+            bad = [str(v) for v in values if isinstance(v, str) and regex.search(v) is None]
+            if bad:
+                raise ValueError(f"config.{name} is not valid: {', '.join(bad)}")
+
+    def _coerce_reflect(self, spec) -> None:
+        """``reflect`` must be a mode the spec offers, or the source ingests
+        nothing: the folder driver returns file refs, and with the row-level
+        default ``record`` there is no reflector to place them — the poll
+        parks on ``reflect_mode`` (``sync.py``) rather than silently dropping
+        them, but the API caller who never sent ``reflect`` did not ask for a
+        parked source. The dialog can only pick from the spec's list; this
+        applies the same list to the API and an agent, and picks the head
+        (the spec's declared default) when the value is not on it.
+
+        Looked up at CREATE, plus on a tree-backed driver still sitting on
+        ``record`` — that is the one combination that cannot be right, so a
+        row minted before this rule heals on its next save, while a correct
+        source never pays a spec read on the poller's per-tick re-save.
+        """
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        if self.exist_in_db and not stuck:
+            return
+        modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
+        if not modes or self.reflect in modes:
+            return
+        logger.warning(
+            "[data_source] %s: reflect=%r is not offered by the %r spec (%s); using %r",
+            self.id, self.reflect, self.provider, ", ".join(modes), modes[0],
+        )
+        self.reflect = modes[0]
 
     def _stamp_origin(self) -> None:
         """``origin`` follows ``config`` on every save — the driver derives it
@@ -833,20 +920,32 @@ class DataSource(Entity):
 
     # ── shared bodies — the actions above are thin wrappers over these ────────
 
-    def _make_due(self) -> None:
+    async def _make_due(self) -> None:
         """Make this source due on the next tick, clearing any error latch.
 
-        THE un-latch. `is_due` refuses a `config_error` source, so a parked
-        source that is not cleared here accepts the operator's verb and then
-        never polls to act on it. One copy, because a second one diverges —
-        the rule `SourceError.for_status` states in `ingest/health.py`.
+        THE un-latch, and it has to cover BOTH latches: `is_due` refuses a
+        `config_error` source, and `_round_robin` skips a `config_error`
+        cursor. Clearing only the row would let an operator fix a credential,
+        press Sync now, and watch the segment sit out every tick while the
+        roll-up re-stamps the source from it. One copy, because a second one
+        diverges — the rule `SourceError.for_status` states in
+        `ingest/health.py`.
         """
+        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+
         self.next_poll_at = None
         if self.health == SourceHealth.CONFIG_ERROR.value:
             self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
                 else SourceHealth.OK.value
         self.error_code = None
         self.error_detail = None
+        for cursor in await DataSourceCursor.get_all({"data_source_id": self.id}):
+            if cursor.health == SourceHealth.CONFIG_ERROR.value:
+                cursor.mark_ok()
+                cursor.error_code = None
+                cursor.error_detail = None
+                cursor.consecutive_failures = 0
+                await cursor.save()
 
     async def _reset_cursors(self) -> int:
         """Forget every segment's position; the cursor rows stay (see ``DataSourceCursor.reset_for``)."""

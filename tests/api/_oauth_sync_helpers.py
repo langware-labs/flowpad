@@ -125,7 +125,27 @@ class HubDouble:
             if not self.held or not self.release_value:
                 return None
             return {"name": HUB_CREDENTIALS_NAME, "value": self.held}
+        if action == "oauth" and sub_path == f"{PROVIDER}/wait-callback":
+            # The hub answers the desktop's "did the browser come back yet?".
+            # It has, whenever the double is holding a token.
+            return {"status": "success"} if self.held else {"status": "pending"}
         return None
+
+    async def hub_get_or_raise(self, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        """The raising twin of :meth:`hub_get`, and it MUST be doubled too.
+
+        `hub_oauth` reaches the hub through both functions, and patching only
+        `hub_get` left `wait-callback` and `start_auth` on the real transport —
+        so a test asserting on a local double quietly issued a GET to
+        `app.flowpad.ai` and read a 422 about a user id that exists nowhere but
+        this file. A double that covers one seam of two is not a double.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import HubError
+
+        payload = await self.hub_get(entity_type, entity_id, action=action, sub_path=sub_path, **kwargs)
+        if payload is None:
+            raise HubError(404, f"no double route for {action}/{sub_path}")
+        return payload
 
 
 @pytest.fixture
@@ -150,6 +170,7 @@ def hub(dummy_provider, monkeypatch):
     from flow_sdk.cloud_client.transport import hub_http
 
     monkeypatch.setattr(hub_http, "hub_get", double.hub_get)
+    monkeypatch.setattr(hub_http, "hub_get_or_raise", double.hub_get_or_raise)
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: True)
     monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: CLOUD_USER)
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)
@@ -174,8 +195,14 @@ def local_dummy_provider(monkeypatch):
 
     `kind=DEVICE` on purpose, two consequences both wanted: `prefers_hub_flow`
     stays True so the hub route is the one exercised, and `get_local_provider`
-    is non-None — which is the ONLY condition under which `_adopt_hub_credential`
-    copies a value into local SOD.
+    is non-None.
+
+    `copy_hub_credential=True` is the OTHER half, and it is not optional here.
+    A registered provider used to be sufficient for `_adopt_hub_credential` to
+    copy the value into local SOD; the copy is now gated on this flag as well
+    (GitHub sets it — `git push` reads the raw token locally — while Slack
+    leaves it False and keeps the token hub-side). Without it these tests model
+    the Slack shape while asserting the GitHub one, and the desktop holds None.
     """
     from flow_sdk.core.oauth import provider_registry as registry
     from flow_sdk.core.oauth.provider_registry import LocalOAuthProvider, OAuthFlowKind
@@ -188,6 +215,7 @@ def local_dummy_provider(monkeypatch):
             display_name="Dummy Auth",
             user_credentials_name=LOCAL_CREDENTIALS_NAME,
             kind=OAuthFlowKind.DEVICE,
+            copy_hub_credential=True,
         ),
     )
     return PROVIDER
