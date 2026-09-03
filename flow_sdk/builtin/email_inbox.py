@@ -541,7 +541,7 @@ class EmailInbox(Entity):
 
     async def state(self) -> dict:
         """The narrow projection the Agent Inbox UI renders."""
-        return _state_payload(self.agent_id, self, await self.source())
+        return await _state_payload(self.agent_id, self, await self.source())
 
     @classmethod
     async def state_for_agent(cls, agent) -> dict:
@@ -569,7 +569,7 @@ class EmailInbox(Entity):
             if source is not None and source.status != SourceStatus.DISABLED.value:
                 source.status = SourceStatus.DISABLED.value
                 await source.save()
-        return _state_payload(agent.id, inbox, source)
+        return await _state_payload(agent.id, inbox, source)
 
     # ── messages ──────────────────────────────────────────────────────────
 
@@ -652,14 +652,40 @@ class EmailInbox(Entity):
             await source.save()
 
 
-def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -> dict:
+def _source_summary(source) -> dict:
+    """The compact row the inbox state carries for one DataSource."""
+    return {
+        "id": source.id,
+        "typeid": str(source.typeid),
+        "status": source.status,
+        "channel": getattr(source, "channel", "") or "",
+        "provider": getattr(source, "provider", "") or "",
+        "poll_interval_seconds": source.poll_interval_seconds,
+        "last_synced_at": (
+            source.last_synced_at.isoformat()
+            if hasattr(source.last_synced_at, "isoformat")
+            else source.last_synced_at
+        ),
+        "health": getattr(source.health, "value", source.health),
+    }
+
+
+async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -> dict:
     """The one shape both state readers return.
 
     ``enabled`` is DERIVED, never stored: the Hub says whether the address is
     live and the source says whether this machine is listening, and a third
     persisted flag could only disagree with both.
+
+    ``sources`` is every message source the agent OWNS — the mailbox is one of
+    them, and today usually the only one. ``source`` stays as the mailbox's
+    row for the readers that predate an agent holding more than one channel.
     """
-    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+    owned = await DataSource.find_owned(TypeId(type=EntityType.AGENT.value, id=str(agent_id)))
+    sources_data = [_source_summary(s) for s in sorted(owned, key=lambda s: str(s.id)) if is_message_source(s)]
 
     source_data = None
     if source is not None:
@@ -677,6 +703,7 @@ def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -> dict
         }
     return {
         "agent_id": agent_id,
+        "sources": sources_data,
         "enabled": bool(
             inbox is not None
             and inbox.is_active

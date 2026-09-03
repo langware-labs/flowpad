@@ -23,11 +23,14 @@ allocated = await pirate.allocate_inbox(allowed_senders=["captain@gmail.com"])
 assert pirate.inbox is allocated
 
 # Inbox is the message-facing view over the cloud_email DataSource that
-# allocate_inbox() wired. agent_id is the stable mailbox identity; the address
-# is allocated and can change.
+# allocate_inbox() wired. owner= says whose inbox this is — the agent's, so
+# its replies are attributed to the agent, not to you. agent_id is the
+# mailbox's stable identity (the address is allocated and can change) and,
+# on its own, implies the same owner.
 mail = Inbox(
     allocated.address,
     provider="cloud_email",
+    owner=pirate,
     agent_id=pirate.id,
     senders=allocated.allowed_senders,
 )
