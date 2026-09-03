@@ -336,6 +336,24 @@ class DataSource(Entity):
             rows = [r for r in rows if (r.channel or "").strip() == channel]
         return rows
 
+    def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+        """The reply to ``item``, in THIS channel's shape.
+
+        The one constructor a caller should reach for, because picking the class
+        by hand is picking the addressing rule by hand: ``EmailMessageSpec``
+        addresses the author, ``SlackMessageSpec`` addresses the channel, and a
+        caller that guesses wrong on a Slack source sends the reply as a DM to
+        the person instead of posting it where everyone is reading. The driver
+        already knows which rule is its own (``outbound_spec``); ask it.
+
+        Synchronous because every ``reply_to`` is a pure constructor — no I/O,
+        so this is safe to call anywhere the item is in hand.
+        """
+        driver = self._driver()
+        if driver is None:
+            raise RuntimeError(f"no driver for {self.provider}")
+        return driver.outbound_spec(self).reply_to(item, body=body, attachments=attachments)
+
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.
 

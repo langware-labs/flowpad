@@ -496,8 +496,23 @@ def agent_id_of(source) -> str:
     of it comes here rather than re-spelling the lookup. `config` really is an
     untyped dict, which is why the defensive read is justified here and nowhere
     else in this file.
+
+    An agent-owned source answers the same question without that key: a channel
+    is not allocated to an agent, it is BOUND to one (``Agent.bind_channel``),
+    and the binding is the ``owner``. Reading it here is what lets one rule serve
+    both — otherwise every reader (the turn, the attribution, the outbound
+    persona) would have to learn a second spelling of "whose agent is this".
+    Config still wins, so a mailbox row is untouched.
     """
-    return str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    configured = str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+    if configured:
+        return configured
+    owner = getattr(source, "owner", None)
+    if owner is not None and getattr(owner, "type", None) == EntityType.AGENT.value:
+        return str(getattr(owner, "id", "") or "").strip()
+    return ""
 
 
 async def default_owner() -> "TypeId | None":

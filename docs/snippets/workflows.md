@@ -102,6 +102,13 @@ Channels disagree on who a reply targets: email replies to the author,
 Telegram replies to the chat. Each `MessageSpec` subclass owns its `reply_to`,
 so the loop body does not change between them.
 
+Name the class only when the loop already knows its channel, as these do. Code
+that handles whichever source it is given should ask instead —
+`await m.reply_spec(body=out.text)` (or `await inbox.reply_spec(m, body=...)`),
+which routes to the driver's own rule. Naming `EmailMessageSpec` on a Slack
+source is not a type error: it sends a DM to the person instead of posting where
+everyone is reading.
+
 ## 3. The same loop in a Slack channel
 
 Slack differs from both: the reply targets the channel, inside the message's

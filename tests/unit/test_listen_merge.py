@@ -40,7 +40,7 @@ async def test_items_from_two_sources_arrive_and_each_ack_moves_only_its_own_pos
             assert set(bodies) == {"from alpha", "from beta"}
             await bodies["from alpha"].ack()
 
-            src_a, src_b = await one._ensure_source(), await two._ensure_source()
+            src_a, src_b = await one.ensure_source(), await two.ensure_source()
             pa = await ConsumerPosition.ensure_for(name, str(src_a.id))
             pb = await ConsumerPosition.ensure_for(name, str(src_b.id))
             assert pa.watermark() is not None, "alpha's ack landed"

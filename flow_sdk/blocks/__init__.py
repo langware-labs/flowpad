@@ -19,8 +19,7 @@ The canonical program::
         async with agent.process_messages():
             async for m in inbox.listen():                # m: SourceItemSpec
                 out   = await agent.process_message(m)    # out: RunOutput
-                reply = EmailMessageSpec.reply_to(m, body=out.text)
-                await inbox.send(reply)
+                await inbox.send(await inbox.reply_spec(m, body=out.text))
 
 Verbs live on their owners (``listen``, ``process_message``, ``send``);
 control flow — allow lists, branches, errors, prints — is never configuration,
@@ -434,7 +433,13 @@ class Inbox:
         key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
         return key, str(self._config.get(key) or self.address).strip()
 
-    async def _ensure_source(self):
+    async def ensure_source(self):
+        """The ``DataSource`` behind this block — adopted if one already watches
+        the address, else created. Public because binding a channel to an agent
+        (``Agent.bind_channel``) needs exactly this adoption rule, gate included;
+        a second copy of it is a second place for the connection check to be
+        forgotten.
+        """
         if self._source is not None:
             return self._source
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
@@ -492,7 +497,7 @@ class Inbox:
         from flow_sdk.inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
-        source = await self._ensure_source()
+        source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
             current_workflow.get(), str(source.id), baseline=await SourceItem.newest_for(str(source.id))
         )
@@ -539,6 +544,12 @@ class Inbox:
 
         return get_driver(self.provider)
 
+    async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+        """The reply to ``item``, in this inbox's own channel shape — the rule
+        and the reason are ``DataSource.reply_spec``'s."""
+        source = await self.ensure_source()
+        return source.reply_spec(item, body=body, attachments=attachments)
+
     async def send(self, spec: MessageSpec) -> str:
         """Deliver an outbound spec through the source's messaging seam.
 
@@ -546,6 +557,6 @@ class Inbox:
         at the provider. The sent copy re-ingests on a later sync and joins
         its thread like any other message.
         """
-        source = await self._ensure_source()
+        source = await self.ensure_source()
         outcome = await source.send(spec)
         return str(outcome.external_id or "")

@@ -40,9 +40,12 @@ from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Sequence
+
     from flow_sdk.blocks import MessageBlock, RunOutput
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
+    from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
@@ -512,6 +515,84 @@ class Agent(Entity):
         the mailbox's own.
         """
         return await EmailInbox.allocate(self, **options)
+
+    async def bind_channel(self, *, provider: str, channel: str, allowed_senders: "Sequence[str]" = ()) -> "DataSource":
+        """Make ``channel`` on ``provider`` reach THIS agent, and answer as it.
+
+        The channel sibling of :meth:`allocate_inbox`. A mailbox is *allocated* —
+        the hub mints an address nobody had. A channel already exists and someone
+        already connected the provider, so binding is a lookup plus an owner: the
+        source that watches this channel becomes the agent's, and everything
+        downstream (the turn, ``agent_id_of``, the outbound persona) keys on that
+        owner.
+
+        The adoption itself is ``Inbox.ensure_source`` — the same seam the SDK
+        block uses, NOT a second copy of it, so a binding gets its
+        connection precheck (``NotConnected`` naming the fix, rather than a row
+        that parks on its first poll) and its idempotency for free. Binding twice
+        adopts the existing row; a twin would double every message in the channel.
+
+        ``allowed_senders`` is the gate, and an empty list means NOBODY: a channel
+        is readable and writable by everyone in it, so an agent that answers
+        whoever speaks is one an unvetted stranger can drive.
+
+        Binding does not make the source listen. A provider with a setup step
+        lands in ``SETUP`` and answers no one until it is verified — the same
+        rule ``EmailInbox.allowed`` enforces for a mailbox.
+        """
+        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
+        from flow_sdk.blocks import Inbox  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        channel = str(channel or "").strip()
+        if not channel:
+            raise ValueError("a binding needs the channel's id")
+        driver = get_driver(provider)
+        if driver is None:
+            raise ValueError(f"unknown provider {provider!r}")
+        if not driver.sends:
+            # A one-way source can still be read, but an agent bound to it could
+            # never answer — which is the whole point of the binding.
+            raise ValueError(f"the {provider} driver cannot send, so an agent cannot converse on it")
+
+        source = await Inbox(channel, provider=provider, owner=self).ensure_source()
+        senders = [t for t in (str(s).strip() for s in allowed_senders) if t]
+        # Only on change: re-binding is the documented common case, and
+        # `DataSource.save` is a spec read plus a write.
+        if list(source.inbound_allowed_senders or []) != senders:
+            source.inbound_allowed_senders = senders
+            await source.save()
+        return source
+
+    @action.post(action_name="bind_channel")
+    @_inbox_failures("bind a channel")
+    async def bind_channel_action(self):
+        """`POST /agent/<id>/bind_channel` — ``{provider, channel, allowed_senders?}``.
+
+        Declares no parameters, for the reason ``allocate_inbox_action`` gives:
+        this module carries ``from __future__ import annotations`` and the
+        dispatcher resolves an annotated ``request`` by identity.
+        """
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required", status_code=401)
+        body = await request_info.get_post_data() or {}
+        try:
+            # `**body` on purpose: an unknown key is a TypeError, which is the
+            # same 400 a hand-rolled key check would produce, and one fewer
+            # place to edit when a parameter is added.
+            source = await self.bind_channel(**body)
+        except (TypeError, ValueError) as e:
+            return ApiFailResponse(message=str(e), status_code=400)
+        return ApiSuccessResponse(
+            data={
+                "source_id": str(source.id),
+                "provider": source.provider,
+                "status": source.status,
+                "owner": str(self.typeid),
+                "allowed_senders": list(source.inbound_allowed_senders or []),
+            }
+        )
 
     @action.get(action_name="inbox_state")
     @_inbox_failures("load the inbox")
