@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { ApiFailResponse } from './ApiResponse';
+import { ApiFailResponse, ApiWarning } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
@@ -123,10 +123,19 @@ function initApiClient(client: ApiAxiosInstance) {
     (response: AxiosResponse) => {
       const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementSuccessful(method);
-      // Any status code that lie within the range of 2xx cause this function to trigger
-      // Do something with response data
+      // The interceptor unwraps to `data`, so anything else on the envelope is
+      // dropped here. `warnings` is a SUCCESS response saying part of the work
+      // did not land (e.g. a record saved to disk whose DB row failed) — the
+      // caller got its payload and would otherwise never learn that, so log it
+      // rather than let it vanish between the server and the app.
+      const warnings = (response.data as { warnings?: ApiWarning[] })?.warnings;
+      if (warnings?.length) {
+        console.warn(
+          `[api] ${method} ${response.config?.url ?? ''} succeeded with warnings:`,
+          warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
+        );
+      }
       return response.data.data;
-      //return response;
     },
     (error) => {
       // Any status codes that falls outside the range of 2xx cause this function to trigger
@@ -202,6 +211,23 @@ export function getErrorMessages(error: AxiosError): string {
 }
 
 export const apiClient = getApiClient(); // Initialize the default API client
+
+/**
+ * GET a route that answers with a BARE body instead of the `{status,data}`
+ * envelope — a hub route, or anything else we do not own.
+ *
+ * The response interceptor unwraps `data.data`, so such a body arrives as
+ * `undefined` unless it is wrapped first. Callers were each spelling the same
+ * `transformResponse` to do that; it belongs here, next to the interceptor
+ * that makes it necessary. A route we DO own should return the envelope
+ * instead of being read through this.
+ */
+export async function getRaw<T>(path: string, config: AxiosRequestConfig = {}): Promise<T> {
+  return apiClient.get<T>(path, {
+    ...config,
+    transformResponse: (raw: string) => ({ data: raw ? JSON.parse(raw) : null }),
+  }) as unknown as Promise<T>;
+}
 
 export default apiClient;
 

@@ -31,10 +31,6 @@ from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS
 
 
 class CloudOrigin(BaseModel):
-    @property
-    def transportable(self) -> bool:
-        return True   # a cloud pointer names a remote resource — it travels
-
     """Where the real record lives. ``None`` on a message means "ours".
 
     **Transportable half only.** Every member here means the same thing on any
@@ -43,6 +39,10 @@ class CloudOrigin(BaseModel):
     The local row pointers live in :class:`CloudOriginLocal`, which is carried by
     a separate PRIVATE field; see that class for why they cannot ride along.
     """
+
+    @property
+    def transportable(self) -> bool:
+        return True   # a cloud pointer names a remote resource — it travels
 
     # The channel — the badge axis, and half of the thread key. See the module
     # docstring for why this is not `provider`.

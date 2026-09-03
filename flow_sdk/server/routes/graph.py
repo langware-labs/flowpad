@@ -374,10 +374,10 @@ def _get_self_heal_indexers() -> dict[str, Any]:
     """Per-type single-file indexers used by the 404 self-heal path. Built
     lazily so import cost only lands when an actual self-heal happens.
 
-    v1 wires PLAN only (the original RCA target). Other file-backed types
-    (markdown, claude_md, claude_command, skill, claude_memory, claude_rules)
-    can be added when the chip→loader→hint_path wiring on the FE starts
-    sending hints for them.
+    Wires the seven file-backed types the FE sends ``hint_path`` for: plan
+    (the original RCA target), markdown, skill, claude_md, claude_memory,
+    claude_rules and command. A further type enrolls by adding its
+    single-file indexer to the map below.
     """
     global _SELF_HEAL_INDEXERS
     if _SELF_HEAL_INDEXERS is not None:

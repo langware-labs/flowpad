@@ -438,9 +438,10 @@ async def test_worker_transcript_route_uses_configured_codex_home(tmp_path, monk
         )
         monkeypatch.setenv("HOME", str(ambient_home))
 
-        response = await get_worker_session_transcript("codex", thread_id)
+        envelope = await get_worker_session_transcript("codex", thread_id)
 
-        assert response["ok"] is True
+        assert envelope.status == "SUCCESS"
+        response = envelope.data
         assert response["path"] == str(configured)
         assert response["header"]["cwd"] == "/configured"
         assert any(entry.get("text") == "Configured-home prompt." for entry in response["entries"])

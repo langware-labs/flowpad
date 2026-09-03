@@ -2,10 +2,10 @@
 
 from flow_sdk.fs_store.indexer.auto_index import ScanMode
 from flow_sdk.fs_store.indexer.builtin import (
-    INDEXABLE_TYPES,
     build_default_indexer,
     get_auto_scan_indexer,
     get_shared_indexer,
+    indexable_types,
     reset_shared_indexer,
 )
 from flow_sdk.fs_store.indexer.index_function import (
@@ -35,7 +35,7 @@ __all__ = [
     "PerTypeIndexResult",
     "ProgressCallback",
     "TypeProgressRow",
-    "INDEXABLE_TYPES",
+    "indexable_types",
     "ScanMode",
     "build_default_indexer",
     "get_auto_scan_indexer",
@@ -43,3 +43,5 @@ __all__ = [
     "reset_shared_indexer",
     "default_roots",
 ]
+
+

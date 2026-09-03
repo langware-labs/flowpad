@@ -89,11 +89,17 @@ class  RecordRef:
 
     @classmethod
     def from_record(cls, record: object) -> RecordRef:
-        """Build a ref from any record with id/type attrs (duck-typed)."""
+        """Build a ref from any record with id/type attrs (duck-typed).
+
+        ``path`` is the record's ``asset_ref`` — an ``FSRef`` on ``FSRecord``
+        (its ``.path`` is the string) or a plain string on a duck-typed record.
+        """
+        asset_ref = getattr(record, "asset_ref", None)
+        path = getattr(asset_ref, "path", asset_ref)
         return cls(
             id=record.id,       # type: ignore[attr-defined]
             type=record.type,   # type: ignore[attr-defined]
-            path=getattr(record, "source_file", None),
+            path=str(path) if path else None,
         )
 
     # Backward compatibility with FsRecordRef.record_path

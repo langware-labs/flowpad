@@ -6392,6 +6392,10 @@ msgstr "עקבה ריקה"
 msgid "Enable Agent"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Enable Agent"
+msgstr ""
+
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Enable agent email"
 msgstr ""

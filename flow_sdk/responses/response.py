@@ -30,12 +30,17 @@ class ApiResponse(BaseModel, Generic[T]):
         message: Optional message describing the response
         request_id: Optional request identifier
         data: Response payload of type T
+        warnings: Non-fatal problems the caller should know about on an otherwise
+            successful response — each ``{"error_code": ..., "message": ...}``.
+            ``status`` stays SUCCESS (the client treats anything else as a
+            failure); the list is only serialized when non-empty.
     """
     model_config = ConfigDict(use_enum_values=True)
     status: ApiResponseStatus = Field(default=ApiResponseStatus.NA, validate_default=True)
     message: str | None = None
     request_id: str | None = None
     data: T | None = None
+    warnings: list[dict] | None = None
 
     def model_dump(self, **kwargs) -> dict:
         """Safely dump response to dict, handling nested models"""
@@ -51,6 +56,8 @@ class ApiResponse(BaseModel, Generic[T]):
         }
         if self.request_id is not None:
             res["request_id"] = self.request_id
+        if self.warnings:
+            res["warnings"] = self.warnings
         return res
 
     @staticmethod

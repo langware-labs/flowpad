@@ -144,8 +144,22 @@ class ComputeNode(
         return activity
 
     def _complete_activity(self, job_name: str) -> None:
-        """Remove a completed activity from the registry."""
-        _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
+        """Remove a completed activity from the registry and wake its waiters."""
+        activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
+        if activity is not None:
+            activity.released.set()
+
+    def _running_activity(self, job_name: str):
+        """The activity holding ``job_name``, or None when the slot is free.
+
+        "Holding" is the same predicate `_start_activity` refuses on, so a
+        caller that waits on this and a caller that claims cannot disagree
+        about whether the slot is taken.
+        """
+        existing = _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
+        if existing is None or existing.is_timed_out or existing.is_complete:
+            return None
+        return existing
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)

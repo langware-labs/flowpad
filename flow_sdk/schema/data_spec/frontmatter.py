@@ -1,8 +1,10 @@
 """``FrontMatter`` — a ``DataSpec`` for a DISK document.
 
-Pure content. No ``id``: identity is not frontmatter, it is a capsule (an HTML
-comment block in a ``.md``, ``.flow/capsules/identity.json`` in a folder) and
-the disk serializer owns that seam for both layouts.
+Pure content. No ``id``: identity is not content, it is a CARRIER — the ``id:``
+key of a markdown document's frontmatter, or ``.flow/capsules/identity.json``
+beside a folder's json main document — and the identity-carrier seam
+(``fs_store/indexer/functions/_asset_identity.py``) reads and writes it for
+every layout. A ``FrontMatter`` class never declares the field.
 
 The one difference from ``DataSpec``: ``extra="ignore"``. A hand-edited file
 may carry keys the class does not declare; they are DROPPED on read and never
