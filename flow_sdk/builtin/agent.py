@@ -40,7 +40,7 @@ from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.blocks import MessageSource, RunOutput
+    from flow_sdk.blocks import MessageBlock, RunOutput
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.mcp import Mcp
@@ -388,7 +388,7 @@ class Agent(Entity):
 
         return await _process_message(self, message)
 
-    def respond_to(self, source: "MessageSource"):
+    def respond_to(self, source: "MessageBlock"):
         """Answer every request from ``source`` until the context exits."""
         from flow_sdk.blocks import _respond_to  # noqa: PLC0415
 

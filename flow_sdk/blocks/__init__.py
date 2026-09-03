@@ -2,12 +2,12 @@
 
 No engine, no hidden graph, no operators: blocks are ordinary classes, the
 script's own ``async for`` loop is the orchestration, and every value that
-moves between blocks is a DataSpec. A ``MessageSource`` request is an ephemeral
+moves between blocks is a DataSpec. A ``MessageBlock`` request is an ephemeral
 DataSpec whose source-owned correlation completes its sender. The rule
 throughout: **the SDK introduces vocabulary, never rows** — entity-backed
 blocks are views over entities that already exist (``DataSource``, ``Agent``,
 ``AgenticProcess``, the ingest and projection machinery), while
-``MessageSource`` owns only a transient queue. Nothing here persists state of
+``MessageBlock`` owns only a transient queue. Nothing here persists state of
 its own.
 
 The canonical program::
@@ -51,7 +51,12 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 from .delivery import Delivered
 from .folder_source import FolderChange, FolderSource
 from .merge import listen
-from .message_source import MessageRequest, MessageSource, _MessageRequestExpired
+from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
+
+#: Deprecated alias, kept so scripts written against the first release keep importing.
+#: ``MessageSource`` is the domain term for a bidirectional ``DataSource``; the
+#: prompt/reply block is ``MessageBlock``. Deliberately not in ``__all__``.
+MessageSource = MessageBlock
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
@@ -64,7 +69,7 @@ __all__ = [
     "FileRef",
     "MessageSpec",
     "MessageRequest",
-    "MessageSource",
+    "MessageBlock",
     "Inbox",
     "RunOutput",
     "listen",
@@ -319,7 +324,7 @@ async def _process_message(agent: "AgentRef", message: _AgentInput) -> RunOutput
 
 
 @contextlib.asynccontextmanager
-async def _respond_to(agent: "AgentRef", source: MessageSource):
+async def _respond_to(agent: "AgentRef", source: MessageBlock):
     """Run ``agent`` behind ``source`` for the lifetime of this scope."""
     async with _process_messages(agent):
         async with source.listen() as messages:

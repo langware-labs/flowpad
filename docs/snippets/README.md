@@ -5,9 +5,9 @@ pinned by a test so it cannot drift silently.
 
 | Category | What it shows | Pinned by |
 | --- | --- | --- |
-| [Simple message source](message-source.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_source.py`, `tests/unit/test_message_source_snippet.py` |
+| [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
-| [Gmail message source](gmail-message-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_snippet.py` |
+| [Gmail source](gmail-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_snippet.py` |
 | [Agent email](agent-email.md) | allocate an Agent inbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
 | [Workflows](workflows.md) | the plain-Python `blocks` surface: an inbox, an agent runner, a typed reply that acks, on email, Telegram and Slack | `tests/unit/test_workflows_snippets.py` (runs every loop), `tests/unit/test_blocks_email.py`, live `tests/long_tests/test_blocks_email_workflow.py` |
 | [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
@@ -29,7 +29,7 @@ pinned by a test so it cannot drift silently.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
   agent returns is a `RunOutput`. They are frozen and refuse unknown keys. A
-  simple `MessageSource` yields an ephemeral `MessageRequest`; the source owns
+  simple `MessageBlock` yields an ephemeral `MessageRequest`; the block owns
   its one-shot reply correlation.
 * **Read before you believe.** A verb returning does not mean rows landed.
   Count with `SourceItem.get_all({"data_source_id": ...})`.

@@ -3,10 +3,10 @@
 `flow_sdk.blocks` is the plain-Python workflow surface. No engine, no hidden
 graph: blocks are ordinary classes, your own `async for` is the orchestration,
 and every value that moves between blocks is a `DataSpec`. The
-[simple message source](message-source.md) yields an ephemeral `MessageRequest`;
-the source owns its one-shot reply correlation. Entity-backed blocks are views
+[simple message block](message-block.md) yields an ephemeral `MessageRequest`;
+the block owns its one-shot reply correlation. Entity-backed blocks are views
 over existing `DataSource`, `Agent`, `AgenticProcess`, ingest, and projection
-machinery; `MessageSource` owns only a transient queue. Nothing here persists
+machinery; `MessageBlock` owns only a transient queue. Nothing here persists
 state of its own.
 
 ## 1. Mail concierge

@@ -1,4 +1,4 @@
-"""The documented simple MessageSource program is executable as written."""
+"""The documented simple MessageBlock program is executable as written."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from tests.utils.snippets import doc, fences, run_fence
 
 
 @pytest.mark.asyncio
-async def test_documented_message_source_program_runs_verbatim(
+async def test_documented_message_block_program_runs_verbatim(
     initialize_test_db,
     monkeypatch,
     tmp_path,
@@ -21,8 +21,8 @@ async def test_documented_message_source_program_runs_verbatim(
         lambda _worker_type: driver,
     )
 
-    (source,) = fences(doc("message-source.md"))
-    namespace = await run_fence(source, filename="message-source.md")
+    (source,) = fences(doc("message-block.md"))
+    namespace = await run_fence(source, filename="message-block.md")
 
     expected = "Mock reply: Where is the treasure?"
     assert driver.received_prompts == ["Where is the treasure?"]

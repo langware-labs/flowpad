@@ -1,14 +1,14 @@
-# Simple message source
+# Simple message block
 
-Use the process-local message source when all you need is prompt/reply: one
-side sends a string, and one listener produces its answer. This source has no
+Use the process-local message block when all you need is prompt/reply: one
+side sends a string, and one listener produces its answer. This block has no
 address, provider, inbox, or persisted rows.
 
 ```python
-from flow_sdk.blocks import MessageSource
+from flow_sdk.blocks import MessageBlock
 from flow_sdk.builtin.agent import Agent
 
-channel = MessageSource.get("simple")
+channel = MessageBlock.get("simple")
 agent = Agent(
     name="pirate",
     worker_type="claude",
@@ -22,7 +22,7 @@ async with agent.respond_to(channel):
 print(reply)
 ```
 
-Run as written by `tests/unit/test_message_source_snippet.py`.
+Run as written by `tests/unit/test_message_block_snippet.py`.
 
 `respond_to()` owns the listener and the Agent's process lifecycle. `send()`
 returns the plain reply string; sending outside that scope fails immediately

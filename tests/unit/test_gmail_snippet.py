@@ -18,8 +18,8 @@ async def test_the_gmail_snippet_runs_and_keeps_the_password_out_of_the_row(monk
     monkeypatch.setenv("GMAIL_ADDRESS", "you@gmail.com")
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "abcdefghijklmnop")
 
-    (source,) = fences(doc("gmail-message-source.md"))
-    ns = await run_fence(source, filename="gmail-message-source.md")
+    (source,) = fences(doc("gmail-source.md"))
+    ns = await run_fence(source, filename="gmail-source.md")
 
     gmail: DataSource = ns["gmail"]
     row = await DataSource.get_one({"id": gmail.id})

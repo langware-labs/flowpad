@@ -1,4 +1,4 @@
-# Gmail message source
+# Gmail source
 
 Set these in `.env.local` first:
 
