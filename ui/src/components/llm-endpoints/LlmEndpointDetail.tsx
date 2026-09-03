@@ -3,7 +3,7 @@
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
  * Models. The active tab is the URL's, so switching is a navigation.
  */
-import type { LLMEndpoint } from '@sdk';
+import type { LLMEndpoint, LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -18,7 +18,7 @@ import { LimitsRemaining } from './LimitsRemaining';
 import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEndpointsList';
 import { ModelsList } from './ModelsList';
 import { UsagePanel } from './UsagePanel';
-import { canConfigure, canRemove, canShare, endpointTypeId } from './endpoint-catalog';
+import { canConfigure, canRemove, canShare, endpointTypeId, kindFromChain } from './endpoint-catalog';
 import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain } from './use-llm-endpoints';
 
@@ -30,7 +30,8 @@ export interface LlmEndpointDetailProps {
   all: readonly LLMEndpoint[];
   onBack: () => void;
   onTab: (tab: LlmEndpointTab) => void;
-  onEdit: (endpoint: LLMEndpoint) => void;
+  /** `kind` is the chain-resolved one; the entity's own is always `root`. */
+  onEdit: (endpoint: LLMEndpoint, kind?: LLMEndpointKind | null) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
   onShare: (endpoint: LLMEndpoint) => void;
 }
@@ -84,6 +85,10 @@ export function LlmEndpointDetail({
   // Hop ids are typeids; the pointer is the bare uuid.
   const entryTypeId = endpointTypeId(endpointId);
   const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
+  // NOT `endpoint.kind`: that reads `sources`, which the hub does not serialize, so it answers
+  // `root` for every endpoint. The chain report resolves the real graph — see `kindFromChain`.
+  // `null` until it arrives, and the badges below render nothing rather than guess.
+  const kind = kindFromChain(chain.data, endpointId);
   const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
@@ -96,17 +101,17 @@ export function LlmEndpointDetail({
           <Trans>All endpoints</Trans>
         </Button>
         <h2 className="text-base font-semibold">{endpoint?.name ?? chain.data?.entry.name ?? endpointId}</h2>
-        {endpoint && <KindBadge kind={endpoint.kind} />}
-        {endpoint?.kind === 'root' && <ProviderBadge provider={endpoint.provider} />}
+        {kind && <KindBadge kind={kind} />}
+        {kind === 'root' && <ProviderBadge provider={endpoint?.provider} />}
         {endpoint && !endpoint.enabled && (
           <span className="text-xs text-muted-foreground">
             <Trans>disabled</Trans>
           </span>
         )}
-        {endpoint && <CredentialChip endpoint={endpoint} />}
+        {endpoint && kind && <CredentialChip endpoint={endpoint} kind={kind} />}
         <span className="flex-1" />
         {endpoint && canConfigure(endpoint) && (
-          <Button variant="outline" size="sm" onClick={() => onEdit(endpoint)} data-testid="llm-detail-edit">
+          <Button variant="outline" size="sm" onClick={() => onEdit(endpoint, kind)} data-testid="llm-detail-edit">
             <Pencil className="me-1 h-3.5 w-3.5" />
             <Trans>Edit</Trans>
           </Button>

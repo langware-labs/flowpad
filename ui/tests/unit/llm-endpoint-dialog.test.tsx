@@ -10,6 +10,7 @@
  * `sources` silently made a keyless ROOT — the hub drops unrecognised fields and still answers 200 —
  * so `save` must NOT be what a chain create reaches.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +49,14 @@ function saved(json: Record<string, unknown>, allowed = ['read', 'update', 'dele
   return e;
 }
 
+/** The dialog resolves an edit target's real kind from its chain report (`entity.kind` answers
+ *  `root` for every endpoint), so it needs query context. Rendering it bare threw
+ *  "No QueryClient set". */
+function renderDialog(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
 describe('LlmEndpointDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,7 +65,7 @@ describe('LlmEndpointDialog', () => {
   afterEach(() => cleanup());
 
   it('root create: name required, then saves provider + base_url and sends the key separately', async () => {
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
 
     const submit = screen.getByTestId('llm-submit');
     expect(submit).toHaveProperty('disabled', true);
@@ -97,8 +106,46 @@ describe('LlmEndpointDialog', () => {
     expect(h.onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('a new endpoint STARTS with the model globs as a real value, and saves them untouched', async () => {
+    // REGRESSION: the field used to seed the example on focus and erase it on blur unless edited.
+    // Both halves read as helpful; together they meant a reader saw two convincing globs, clicked
+    // away, and saved `models_allow: []` -- an endpoint that allowed EVERYTHING, reported as saved.
+    // The defaults are now a real value: what the field shows is what the save sends.
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    await userEvent.type(screen.getByTestId('llm-name'), 'Root test');
+    await userEvent.click(screen.getByTestId('toggle-advanced'));
+
+    const box = screen.getByLabelText('Models allowed (globs)') as HTMLTextAreaElement;
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+    // Visiting and leaving changes nothing -- no seeding, no erasing.
+    await userEvent.click(box);
+    await userEvent.click(screen.getByTestId('llm-name'));
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+
+    await userEvent.click(screen.getByTestId('llm-submit'));
+    await waitFor(() => expect(h.save).toHaveBeenCalledOnce());
+    const json = h.save.mock.calls[0][2] as Record<string, unknown>;
+    expect((json.filters as { models_allow: string[] }).models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-4*']);
+  });
+
+  it('clearing the globs stays cleared, and "Use defaults" puts them back', async () => {
+    // Empty MEANS something ("everything the sources allow"), so emptying the field must be
+    // honoured rather than quietly refilled -- the restore is a button, not a side effect.
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    await userEvent.type(screen.getByTestId('llm-name'), 'Wide open');
+    await userEvent.click(screen.getByTestId('toggle-advanced'));
+
+    const box = screen.getByLabelText('Models allowed (globs)') as HTMLTextAreaElement;
+    await userEvent.clear(box);
+    await userEvent.click(screen.getByTestId('llm-name'));
+    expect(box.value).toBe('');
+
+    await userEvent.click(screen.getByTestId('models-allow-use-default'));
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+  });
+
   it('a root without a key saves without touching the credential action', async () => {
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
     await userEvent.type(screen.getByTestId('llm-name'), 'Keyless');
     await userEvent.click(screen.getByTestId('llm-submit'));
     await waitFor(() => expect(h.save).toHaveBeenCalledOnce());
@@ -109,7 +156,7 @@ describe('LlmEndpointDialog', () => {
     const rootA = saved({ id: uuid(), name: 'Root A', provider: 'openai' });
     const rootB = saved({ id: uuid(), name: 'Root B', provider: 'anthropic' });
     h.allocate.mockResolvedValueOnce(saved({ id: uuid(), name: 'Team chain' }));
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[rootA, rootB]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[rootA, rootB]} />);
 
     await userEvent.click(screen.getByTestId('kind-chain'));
     await userEvent.type(screen.getByTestId('llm-name'), 'Team chain');
@@ -137,7 +184,7 @@ describe('LlmEndpointDialog', () => {
   it('chain edit: the parent is fixed at allocation, so it is not offered', async () => {
     const r = saved({ id: uuid(), name: 'R', provider: 'openai' });
     const b = saved({ id: uuid(), name: 'B', sources: [`llm_endpoint-${r.id}`] });
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={b} all={[r, b]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={b} all={[r, b]} />);
 
     // Re-sourcing is not a thing any more: the link is an edge only `allocate` writes.
     expect(screen.queryByTestId('source-picker')).toBeNull();
@@ -153,7 +200,7 @@ describe('LlmEndpointDialog', () => {
       base_url: 'https://api.openai.com',
       credential_hint: '****9999',
     });
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
 
     expect(screen.getByTestId('provider-openai')).toHaveProperty('disabled', true);
     expect(screen.getByTestId('llm-base-url')).toHaveProperty('disabled', true);
@@ -177,8 +224,25 @@ describe('LlmEndpointDialog', () => {
 
   it('a reader cannot submit an edit', () => {
     const root = saved({ id: uuid(), name: 'RO', provider: 'openai' }, ['read']);
-    render(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
     expect(screen.getByTestId('llm-submit')).toHaveProperty('disabled', true);
     expect(screen.getByTestId('llm-name')).toHaveProperty('disabled', true);
+  });
+
+  it('editing a chain opens a CHAIN form, even though the entity claims to be a root', async () => {
+    // The bug this pins: `entity.kind` reads `sources`, which the hub does not serialize, so every
+    // endpoint reports `root`. Editing a chain therefore opened the ROOT form — provider buttons, a
+    // base URL and a key field, none of which a chain has. The caller passes the chain-resolved
+    // kind, and the form must believe it over the entity.
+    const chain = saved({ id: uuid(), name: 'test7' });
+    expect(chain.kind).toBe('root');
+
+    renderDialog(
+      <LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={chain} editingKind="chain" all={[chain]} />,
+    );
+
+    expect(screen.queryByTestId('llm-base-url')).toBeNull();
+    expect(screen.queryByTestId('provider-openai')).toBeNull();
+    expect(screen.getByTestId('llm-name')).toBeTruthy();
   });
 });

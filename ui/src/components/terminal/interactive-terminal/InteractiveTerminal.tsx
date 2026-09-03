@@ -832,6 +832,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
+        // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
+        // effect below re-decides when worker_type resolves, but it cannot be
+        // the only writer: the container is conditionally mounted
+        // (`!isHeadless`), so a chat⇄terminal round trip mounts a fresh div
+        // while worker_type never changes — leaving it bare, and every
+        // pre-reversed Hebrew row reordered a second time by the browser.
+        applyRtlGridContract(container, workerCliVendor(process?.worker_type));
         terminalRef.current = term;
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);

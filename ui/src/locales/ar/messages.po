@@ -18931,6 +18931,14 @@ msgstr "استخدام AWS Bedrock كخادم خلفي"
 msgid "Use Bedrock"
 msgstr "استخدام Bedrock"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Use defaults"
+msgstr ""
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+#~ msgid "Use example"
+#~ msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
 msgstr "استخدام Google Vertex AI كخادم خلفي"
