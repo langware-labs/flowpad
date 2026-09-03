@@ -22,6 +22,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
+import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
 import { tagAttrs } from '@src/tags/tag-attrs';
@@ -319,7 +320,7 @@ export function CollapsedSidebar() {
               <Bug className="h-4 w-4" />
             </Button>
           )}
-          <JourneyBadge />
+          {AMBIENT_JOURNEYS_ENABLED && <JourneyBadge />}
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />
