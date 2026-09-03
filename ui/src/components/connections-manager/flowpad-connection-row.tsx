@@ -20,13 +20,12 @@ import { TableCell, TableRow } from '../ui/table';
  * whole requirement: show it with its status, and let opening it invoke the
  * FlowPad login.
  *
- * A THIRD row producer, not a synthetic entry in `allConnections`. The OAuth
- * rows read their status from `grantStatuses`, a map derived from the user's env
- * table and keyed by provider name; `flowpad_cloud` is not a registered OAuth
- * provider and has no row there, so a fake entry would read "Not connected"
- * forever no matter who is logged in. The table already composes two independent
- * producers into one `<TableBody>` (the OAuth map and `CredentialConnectionRows`),
- * so a third is the existing shape rather than a special case.
+ * Its own row producer, not a synthetic entry in `allConnections`. The OAuth rows
+ * read their status from `grantStatuses`, a map derived from the user's env table
+ * and keyed by provider name; `flowpad_cloud` is not a registered OAuth provider
+ * and has no row there, so a fake entry would read "Not connected" forever no
+ * matter who is logged in. This `<TableBody>` composes several independent
+ * producers, so one more is the existing shape rather than a special case.
  */
 export function FlowpadConnectionRow() {
   const { t } = useLingui();

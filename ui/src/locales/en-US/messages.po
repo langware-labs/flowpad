@@ -11880,8 +11880,8 @@ msgid "Not available in Local mode"
 msgstr "Not available in Local mode"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "Not checked"
 msgstr "Not checked"
 
@@ -16459,8 +16459,8 @@ msgid "Sign-in not confirmed"
 msgstr "Sign-in not confirmed"
 
 #: src/components/account/user-info.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/llm-source-visuals.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -16481,7 +16481,7 @@ msgstr "Signed in to the remote"
 msgid "signed out"
 msgstr "signed out"
 
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "Signed out"
 msgstr "Signed out"
 

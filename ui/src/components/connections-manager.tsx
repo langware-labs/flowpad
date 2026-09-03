@@ -33,6 +33,8 @@ import { useCredentialConnections } from './connections-manager/use-credential-c
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
+import { openLlmSources } from './llm-sources/llm-sources-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { CredentialRow } from './credentials-view/credential-rows';
 import {
   CredentialValueForm,
@@ -69,10 +71,9 @@ export interface ConnectionsManagerProps {
  * How many columns the Connections table has — Provider · Sign-in · Access
  * requested · Status · Used by · Actions.
  *
- * Exported because THREE files now render rows into this one `<TableBody>` (the
- * OAuth map here, `CredentialConnectionRows`, and `FlowpadConnectionRow`), and
- * each one needs it for its full-width expansion row. Three hardcoded 6s is
- * three places to forget when a column is added.
+ * Exported because several files render rows into this one `<TableBody>` and each
+ * needs it for a full-width row. Deliberately not counting them here: a comment
+ * that counts is a comment that goes stale the next time one is added.
  */
 export const CONNECTIONS_COLUMN_COUNT = 6;
 
@@ -252,6 +253,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // recency-limited list, so a lookup by id here could only ever miss on an
   // instance with many projects.
   const selectedProject = project ?? null;
+  const { navigation } = useDockNavigation();
 
   const {
     rows: credentialRows,
@@ -605,8 +607,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 a synthetic `allConnections` entry. */}
             <FlowpadConnectionRow />
             {/* The harness logins sit with FlowPad: both are accounts this MACHINE
-                holds, above the project-scoped credential rows below. */}
-            <HarnessConnectionRows />
+                holds, above the project-scoped credential rows below. Navigation is
+                the HOST's, like every other row action here — a leaf reaching for the
+                router subscribes the whole table to every location change. */}
+            <HarnessConnectionRows onDetails={(worker) => openLlmSources(navigation, worker)} />
             {allConnections.map((connection) => {
               // Grant vs placement: `grant` says whether the user holds the
               // credential at all (answerable with no project); `status` says
