@@ -18,6 +18,10 @@ msgstr ""
 msgid " · you are {0}"
 msgstr " · you are {0}"
 
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid " (optional)"
+msgstr " (optional)"
+
 #: src/components/organization/member-list.tsx
 msgid " (you)"
 msgstr " (you)"
@@ -267,6 +271,8 @@ msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} deleted"
 msgstr "{0} deleted"
@@ -430,6 +436,11 @@ msgstr "{0} secret{1}"
 msgid "{0} selected"
 msgstr "{0} selected"
 
+#. placeholder {0}: kept.join(', ')
+#: src/components/connections-manager.tsx
+msgid "{0} stayed in your .env.local."
+msgstr "{0} stayed in your .env.local."
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
@@ -578,6 +589,14 @@ msgstr "{name} was added, but another desk answers first"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
 msgstr "{name} was added, but its guides cannot be opened"
+
+#: src/components/connections-manager.tsx
+#~ msgid "{names} stay in your .env.local — Flowpad never removes an entry from that file."
+#~ msgstr "{names} stay in your .env.local — Flowpad never removes an entry from that file."
+
+#: src/components/connections-manager.tsx
+#~ msgid "{names} stays in your .env.local — Flowpad never removes an entry from that file."
+#~ msgstr "{names} stays in your .env.local — Flowpad never removes an entry from that file."
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{pct}% of your token budget used {windowText}"
@@ -4235,6 +4254,10 @@ msgstr "Could not add {0}"
 msgid "Could not add the help desk."
 msgstr "Could not add the help desk."
 
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Could not allocate an inbox"
+msgstr "Could not allocate an inbox"
+
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
@@ -4328,7 +4351,8 @@ msgstr "Could not delete"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: e.name
-#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -4345,8 +4369,12 @@ msgid "Could not deploy"
 msgstr "Could not deploy"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not disable email"
-msgstr "Could not disable email"
+#~ msgid "Could not disable email"
+#~ msgstr "Could not disable email"
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Could not disable the inbox"
+msgstr "Could not disable the inbox"
 
 #: src/notifications/commands.ts
 msgid "Could not disable the sniffer"
@@ -4366,8 +4394,8 @@ msgid "Could not download"
 msgstr "Could not download"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not enable email"
-msgstr "Could not enable email"
+#~ msgid "Could not enable email"
+#~ msgstr "Could not enable email"
 
 #: src/components/account/secrets-section.tsx
 msgid "Could not enable secrets"
@@ -4640,10 +4668,9 @@ msgstr "Could not stop"
 msgid "Could not stop covering {path}"
 msgstr "Could not stop covering {path}"
 
-#. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
-msgid "Could not stop declaring {0}"
-msgstr "Could not stop declaring {0}"
+#~ msgid "Could not stop declaring {0}"
+#~ msgstr "Could not stop declaring {0}"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "Could not store value"
@@ -5271,6 +5298,8 @@ msgstr "Delegating to"
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -5321,8 +5350,10 @@ msgstr "Delete {0} contexts?"
 msgid "Delete {0} credential?"
 msgstr "Delete {0} credential?"
 
+#. placeholder {0}: pendingDeleteCredential?.title ?? ''
 #. placeholder {0}: request?.name ?? 'asset'
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/connections-manager.tsx
 msgid "Delete {0}?"
 msgstr "Delete {0}?"
 
@@ -6224,6 +6255,7 @@ msgstr "Edges"
 msgid "Edges by kind"
 msgstr "Edges by kind"
 
+#: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/conversation/attachment-actions/registry.ts
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9156,6 +9188,10 @@ msgstr "Inviting…"
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 
+#: src/components/connections-manager.tsx
+msgid "It may be only partly removed."
+msgstr "It may be only partly removed."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
@@ -11884,8 +11920,7 @@ msgid "Not available in Local mode"
 msgstr "Not available in Local mode"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/llm-sources/llm-source-visuals.ts
-#: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Not checked"
 msgstr "Not checked"
 
@@ -14043,6 +14078,7 @@ msgid "Reconnect"
 msgstr "Reconnect"
 
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Reconnect needed"
 msgstr "Reconnect needed"
 
@@ -16463,8 +16499,8 @@ msgid "Sign-in not confirmed"
 msgstr "Sign-in not confirmed"
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/llm-source-visuals.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -16485,7 +16521,7 @@ msgstr "Signed in to the remote"
 msgid "signed out"
 msgstr "signed out"
 
-#: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Signed out"
 msgstr "Signed out"
 
@@ -17058,13 +17094,12 @@ msgstr "Stop covering this folder"
 
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Stop declaring"
-msgstr "Stop declaring"
+#~ msgid "Stop declaring"
+#~ msgstr "Stop declaring"
 
-#. placeholder {0}: pendingUndeclare?.title ?? ''
 #: src/components/connections-manager.tsx
-msgid "Stop declaring {0}?"
-msgstr "Stop declaring {0}?"
+#~ msgid "Stop declaring {0}?"
+#~ msgstr "Stop declaring {0}?"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17646,8 +17681,8 @@ msgid "The credential was removed from your account."
 msgstr "The credential was removed from your account."
 
 #: src/components/connections-manager.tsx
-msgid "The declaration may be only partly removed."
-msgstr "The declaration may be only partly removed."
+#~ msgid "The declaration may be only partly removed."
+#~ msgstr "The declaration may be only partly removed."
 
 #: src/components/connections-manager.tsx
 #~ msgid "The declaration was not removed."
@@ -18103,8 +18138,28 @@ msgid "This project is now available in the cloud."
 msgstr "This project is now available in the cloud."
 
 #: src/components/connections-manager.tsx
-msgid "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
-msgstr "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
+msgid "This project stops using it and the stored value is deleted."
+msgstr "This project stops using it and the stored value is deleted."
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it and the values Flowpad stored are deleted. {stays}"
+#~ msgstr "This project stops using it and the values Flowpad stored are deleted. {stays}"
+
+#: src/components/connections-manager.tsx
+msgid "This project stops using it. {names} stay in your .env.local — Flowpad never removes an entry from that file."
+msgstr "This project stops using it. {names} stay in your .env.local — Flowpad never removes an entry from that file."
+
+#: src/components/connections-manager.tsx
+msgid "This project stops using it. {names} stays in your .env.local — Flowpad never removes an entry from that file."
+msgstr "This project stops using it. {names} stays in your .env.local — Flowpad never removes an entry from that file."
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it. {stays}"
+#~ msgstr "This project stops using it. {stays}"
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
+#~ msgstr "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
 
 #: src/routes/loaders/load-project.ts
 msgid "This project tab URL is malformed."
@@ -19006,6 +19061,8 @@ msgstr "Use \"Send to Expert\" to create a task"
 #~ msgid "Use {0}"
 #~ msgstr "Use {0}"
 
+#: src/components/agents/AgentIntroCard.tsx
+#: src/components/agents/AgentIntroCard.tsx
 #: src/components/assets/editor/subagent/SubAgentAssetEditor.tsx
 msgid "Use agent"
 msgstr "Use agent"

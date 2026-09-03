@@ -18,6 +18,10 @@ msgstr ""
 msgid " · you are {0}"
 msgstr ""
 
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid " (optional)"
+msgstr ""
+
 #: src/components/organization/member-list.tsx
 msgid " (you)"
 msgstr " (أنت)"
@@ -267,6 +271,8 @@ msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} حالي · {1} قديم · {2} جزئي · {3} خطأ"
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} deleted"
 msgstr "تم حذف {0}"
@@ -430,6 +436,11 @@ msgstr "{0} سر{1}"
 msgid "{0} selected"
 msgstr "{0} محدد"
 
+#. placeholder {0}: kept.join(', ')
+#: src/components/connections-manager.tsx
+msgid "{0} stayed in your .env.local."
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
@@ -578,6 +589,14 @@ msgstr ""
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
 msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "{names} stay in your .env.local — Flowpad never removes an entry from that file."
+#~ msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "{names} stays in your .env.local — Flowpad never removes an entry from that file."
+#~ msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{pct}% of your token budget used {windowText}"
@@ -4235,6 +4254,10 @@ msgstr ""
 msgid "Could not add the help desk."
 msgstr ""
 
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Could not allocate an inbox"
+msgstr ""
+
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
@@ -4328,7 +4351,8 @@ msgstr "تعذر الحذف"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: e.name
-#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -4345,7 +4369,11 @@ msgid "Could not deploy"
 msgstr "تعذر النشر"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not disable email"
+#~ msgid "Could not disable email"
+#~ msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "Could not disable the inbox"
 msgstr ""
 
 #: src/notifications/commands.ts
@@ -4366,8 +4394,8 @@ msgid "Could not download"
 msgstr "تعذر التنزيل"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not enable email"
-msgstr ""
+#~ msgid "Could not enable email"
+#~ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Could not enable secrets"
@@ -4640,10 +4668,9 @@ msgstr "تعذر الإيقاف"
 msgid "Could not stop covering {path}"
 msgstr ""
 
-#. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
-msgid "Could not stop declaring {0}"
-msgstr ""
+#~ msgid "Could not stop declaring {0}"
+#~ msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "Could not store value"
@@ -5271,6 +5298,8 @@ msgstr "يفوّض إلى"
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -5321,8 +5350,10 @@ msgstr "حذف {0} من السياقات؟"
 msgid "Delete {0} credential?"
 msgstr "حذف بيانات اعتماد {0}؟"
 
+#. placeholder {0}: pendingDeleteCredential?.title ?? ''
 #. placeholder {0}: request?.name ?? 'asset'
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/connections-manager.tsx
 msgid "Delete {0}?"
 msgstr "حذف {0}؟"
 
@@ -6224,6 +6255,7 @@ msgstr "الحواف"
 msgid "Edges by kind"
 msgstr "الحواف حسب النوع"
 
+#: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/conversation/attachment-actions/registry.ts
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9156,6 +9188,10 @@ msgstr "جاري الدعوة…"
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "تشخيصات المشاكل التي سجلها المساعد. انقر على صف لعرض التشخيص الكامل."
 
+#: src/components/connections-manager.tsx
+msgid "It may be only partly removed."
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
@@ -11884,8 +11920,7 @@ msgid "Not available in Local mode"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/llm-sources/llm-source-visuals.ts
-#: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Not checked"
 msgstr "لم يتم الفحص"
 
@@ -14043,6 +14078,7 @@ msgid "Reconnect"
 msgstr "إعادة الاتصال"
 
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Reconnect needed"
 msgstr "يلزم إعادة الاتصال"
 
@@ -16463,8 +16499,8 @@ msgid "Sign-in not confirmed"
 msgstr "لم يتم تأكيد تسجيل الدخول"
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/llm-source-visuals.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
@@ -16485,7 +16521,7 @@ msgstr "تم تسجيل الدخول إلى الخادم البعيد"
 msgid "signed out"
 msgstr "غير مسجّل الدخول"
 
-#: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Signed out"
 msgstr ""
 
@@ -17058,13 +17094,12 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Stop declaring"
-msgstr "إيقاف التصريح"
+#~ msgid "Stop declaring"
+#~ msgstr "إيقاف التصريح"
 
-#. placeholder {0}: pendingUndeclare?.title ?? ''
 #: src/components/connections-manager.tsx
-msgid "Stop declaring {0}?"
-msgstr "إيقاف التصريح عن {0}؟"
+#~ msgid "Stop declaring {0}?"
+#~ msgstr "إيقاف التصريح عن {0}؟"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17646,8 +17681,8 @@ msgid "The credential was removed from your account."
 msgstr "تم حذف بيانات الاعتماد من حسابك."
 
 #: src/components/connections-manager.tsx
-msgid "The declaration may be only partly removed."
-msgstr ""
+#~ msgid "The declaration may be only partly removed."
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #~ msgid "The declaration was not removed."
@@ -18103,8 +18138,28 @@ msgid "This project is now available in the cloud."
 msgstr "أصبح هذا المشروع متاحًا الآن في السحابة."
 
 #: src/components/connections-manager.tsx
-msgid "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
+msgid "This project stops using it and the stored value is deleted."
 msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it and the values Flowpad stored are deleted. {stays}"
+#~ msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "This project stops using it. {names} stay in your .env.local — Flowpad never removes an entry from that file."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "This project stops using it. {names} stays in your .env.local — Flowpad never removes an entry from that file."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it. {stays}"
+#~ msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "This project stops using it. The value stays in .env.local — nothing is deleted from your file."
+#~ msgstr ""
 
 #: src/routes/loaders/load-project.ts
 msgid "This project tab URL is malformed."
@@ -19006,6 +19061,8 @@ msgstr "يمكن استخدام \"Send to Expert\" لإنشاء مهمة"
 #~ msgid "Use {0}"
 #~ msgstr ""
 
+#: src/components/agents/AgentIntroCard.tsx
+#: src/components/agents/AgentIntroCard.tsx
 #: src/components/assets/editor/subagent/SubAgentAssetEditor.tsx
 msgid "Use agent"
 msgstr "استخدام الوكيل"
