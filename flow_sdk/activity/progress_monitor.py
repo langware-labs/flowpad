@@ -104,6 +104,46 @@ class ActivityProgressMonitor:
             self._nodes.pop((desc.scope, desc.path), None)
         self._nodes.pop((node.scope, node.path), None)
 
+    # ------------------------------------------------------------------ single flight
+
+    def holder(self, path: str, scope: Optional[str] = None) -> "Optional[Activity]":
+        """Who holds this address for single-flight work, or ``None`` when it is free.
+
+        Free means exactly what the registry this replaces meant: nobody is tracked here
+        (a finished holder is already evicted), or the holder outlived its claim budget.
+        A caller that WAITS on this and a caller that CLAIMS must not disagree about
+        whether the address is taken, so both ask this one question.
+        """
+        with self._lock:
+            node = self._nodes.get((scope, _norm(path)))
+        if node is None or node.is_terminal or node.claim_expired:
+            return None
+        return node
+
+    def try_claim(
+        self,
+        path: str,
+        scope: Optional[str] = None,
+        *,
+        timeout_seconds: int = 600,
+    ) -> Activity:
+        """Take an address, or raise ``RuntimeError`` naming the job that holds it."""
+        import time
+
+        with self._lock:
+            held = self.holder(path, scope=scope)
+            if held is not None:
+                raise RuntimeError(f"Job '{_norm(path)}' already running")
+            # A stale holder is taken OVER, not resumed: its counters describe a run that
+            # is gone, and a claimant inheriting them would report someone else's work.
+            stale = self._nodes.get((scope, _norm(path)))
+            if stale is not None:
+                stale._wake_waiters()
+                self.drop(_norm(path), scope=scope)
+            node = self.activity(path, scope=scope)
+            node.claim_deadline = time.monotonic() + timeout_seconds
+            return node
+
     # ------------------------------------------------------------------ emission
 
     def subscribe(self, fn: Subscriber) -> "Callable[[], None]":

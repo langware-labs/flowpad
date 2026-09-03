@@ -304,7 +304,7 @@ class FsRecordsActionsMixin:
             )
 
         async def emit(done: int, total: int, text: str | None = None) -> None:
-            activity.latest_table = _table(done, total, text)
+            activity.set_table(_table(done, total, text))
             await broadcast_progress(to_entity=str(self.typeid), flow_data=activity.make_flow_data())
 
         # Friendly-name source, same priority history uses: AgenticProcess.name
@@ -977,7 +977,7 @@ class FsRecordsActionsMixin:
         terminal_table: IndexProgressTable | None = None
 
         async def publish(table: IndexProgressTable) -> None:
-            activity.latest_table = table
+            activity.set_table(table)
             await broadcast_progress(
                 to_entity=str(self.typeid),
                 flow_data=activity.make_flow_data(),
@@ -1153,7 +1153,7 @@ class FsRecordsActionsMixin:
 
         async def emit(text: str | None = None) -> None:
             table = make_table(text=text)
-            activity.latest_table = table
+            activity.set_table(table)
             await broadcast_progress(
                 to_entity=str(self.typeid),
                 flow_data=activity.make_flow_data(),
@@ -1253,7 +1253,7 @@ class FsRecordsActionsMixin:
                 await holder.wait_released()
 
         async def emit(table) -> None:
-            activity.latest_table = table
+            activity.set_table(table)
             await broadcast_progress(
                 to_entity=str(self.typeid),
                 flow_data=activity.make_flow_data(),
@@ -1873,7 +1873,7 @@ class FsRecordsActionsMixin:
             return ApiFailResponse(message=str(e), status_code=409)
 
         async def emit(table: IndexProgressTable) -> None:
-            activity.latest_table = table
+            activity.set_table(table)
             await broadcast_progress(
                 to_entity=str(self.typeid),
                 flow_data=activity.make_flow_data(),
@@ -1945,7 +1945,7 @@ class FsRecordsActionsMixin:
                 return
 
             async def emit(table: "IndexProgressTable") -> None:
-                activity.latest_table = table
+                activity.set_table(table)
                 await broadcast_progress(
                     to_entity=str(self.typeid),
                     flow_data=activity.make_flow_data(),
@@ -2674,8 +2674,8 @@ class FsRecordsActionsMixin:
         """
         try:
             from flow_sdk.api.messages import DataOpMessage, OperationType
-            from flow_sdk.fs_store.type_id import TypeId
             from flow_sdk.core.network.resource_tracker import handle_entity_op
+            from flow_sdk.fs_store.type_id import TypeId
 
             op_enum = OperationType(op)
             broadcast_data = dict(data) if data else {}

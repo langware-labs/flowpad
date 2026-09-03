@@ -209,19 +209,24 @@ async def _send(spec: ActivityProgressSpec) -> None:
 
     Two sends, and which one is used IS the routing rule:
 
-    * **No scope** — the work belongs to the box (an index, a walk, a docs scan), so
-      every connection gets it. ``broadcast_progress`` has no watcher filter, which is
-      correct here and only here. It is still ADDRESSED, to this machine's ComputeNode:
-      the client drops a frame whose ``to_entity`` does not parse as a TypeId.
-    * **A scope** — the work belongs to one entity, so only that entity's watchers get
-      it. Broadcasting a process's activity to everyone is a volume problem on a busy
+    * **The box** — no scope, or this machine's own ComputeNode, which says the same
+      thing two ways. An index, a walk, a docs scan belongs to the instance, so every
+      connection gets it; ``broadcast_progress`` has no watcher filter, which is correct
+      here and only here. It is still ADDRESSED, because the client drops a frame whose
+      ``to_entity`` does not parse as a TypeId.
+    * **Another entity** — the work belongs to one thing, so only that thing's watchers
+      get it. Broadcasting a process's activity to everyone is a volume problem on a busy
       box and, on a shared hub, a privacy one.
+
+    The compute-node case has to be named explicitly: legacy producers scope their work to
+    ``str(compute_node.typeid)``, and treating that as "one entity" hides an index from
+    every client that is not watching the node — which is to say, all of them.
 
     Imported lazily: ``flow_sdk.activity`` stays importable with no server, which is
     what keeps the core unit-testable without standing one up.
     """
     try:
-        if spec.scope:
+        if spec.scope and spec.scope != local_scope_typeid():
             from flow_sdk.core.network.resource_tracker import send_flow_data_to_entity
 
             await send_flow_data_to_entity(spec.scope, envelope(spec))

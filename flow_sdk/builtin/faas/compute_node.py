@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
@@ -38,6 +37,7 @@ from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -128,38 +128,46 @@ class ComputeNode(
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        """Register a new in-process activity, raising RuntimeError if one is already running."""
+        """Claim the single-flight slot for ``job_name``, or raise if it is held.
+
+        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        address is the same statement this registry used to make, so the single-flight
+        decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
+        survives only as the carrier for the legacy ``IndexProgressTable`` payload while
+        producers are migrated; it is not consulted about whether the slot is free.
+        """
+        from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        key = f"{self.typeid}:{job_name}"
-        existing = _COMPUTE_ACTIVITIES.get(key)
-        if existing is not None and not existing.is_timed_out and not existing.is_complete:
-            raise RuntimeError(f"Job '{job_name}' already running")
+        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
             timeout_seconds=timeout_seconds,
+            activity=claimed,
         )
-        _COMPUTE_ACTIVITIES[key] = activity
+        _COMPUTE_ACTIVITIES[f"{self.typeid}:{job_name}"] = activity
         return activity
 
     def _complete_activity(self, job_name: str) -> None:
-        """Remove a completed activity from the registry and wake its waiters."""
+        """Release the slot and wake its waiters."""
         activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
         if activity is not None:
             activity.released.set()
+            if activity.activity is not None and not activity.activity.is_terminal:
+                activity.activity.done()
 
     def _running_activity(self, job_name: str):
         """The activity holding ``job_name``, or None when the slot is free.
 
-        "Holding" is the same predicate `_start_activity` refuses on, so a
-        caller that waits on this and a caller that claims cannot disagree
-        about whether the slot is taken.
+        Freeness is the claim's answer, not this map's, so a caller that waits and a caller
+        that claims cannot disagree about whether the slot is taken.
         """
-        existing = _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
-        if existing is None or existing.is_timed_out or existing.is_complete:
+        from flow_sdk.activity import monitor  # noqa: PLC0415
+
+        if monitor.holder(job_name, scope=str(self.typeid)) is None:
             return None
-        return existing
+        return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)

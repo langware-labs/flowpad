@@ -25,6 +25,9 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 #: enough that a coalesced burst is unambiguous. The production value is TICK_INTERVAL_S.
 INTERVAL = 0.02
 
+#: Resolved once: the address every box-scoped activity must be broadcast to.
+LOCAL_SCOPE_TYPEID = local_scope_typeid()
+
 
 @pytest.fixture(autouse=True)
 def _clean_monitor():
@@ -328,3 +331,21 @@ async def test_a_producer_reporting_from_a_worker_thread_still_reaches_the_wire(
     assert finals, "a thread-borne producer emitted nothing at all"
     assert finals[-1][1]["attributes"]["state"] == ActivityState.COMPLETED.value
     assert finals[-1][1]["attributes"]["done"] == 3
+
+
+async def test_an_activity_scoped_to_this_machines_compute_node_is_broadcast(emitter, sent):
+    """Legacy producers scope their work to ``str(compute_node.typeid)``, which says "this
+    box" — the same thing an absent scope says. Routing it as "one entity" sends it only to
+    clients watching the node, which is none of them, and an index shows in no browser at
+    all. Found live: the backend activity advanced correctly and the chip stayed empty."""
+    Activity.get("index", scope=LOCAL_SCOPE_TYPEID).block("x")
+    await asyncio.sleep(0)
+
+    assert sent[0][0] == f"*broadcast*{LOCAL_SCOPE_TYPEID}"
+
+
+async def test_another_entitys_activity_is_still_watcher_filtered(emitter, sent):
+    Activity.get("run", scope="agentic_process-abc").block("x")
+    await asyncio.sleep(0)
+
+    assert sent[0][0] == "agentic_process-abc"

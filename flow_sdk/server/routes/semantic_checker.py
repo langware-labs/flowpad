@@ -31,14 +31,16 @@ _JOB = "scan"
 
 
 async def _emit(activity: InProcessActivity, *, done: int, total: int, complete: bool = False) -> None:
-    activity.latest_table = IndexProgressTable(
-        job_name=_JOB,
-        rows=(TypeProgressRow(type_name="dependson", done=done, total=total),),
-        current=None if complete else "semantic check",
-        done=done,
-        total=total,
-        text=PROGRESS_TEXT_COMPLETE if complete else None,
-        ts=datetime.now(timezone.utc).isoformat(),
+    activity.set_table(
+        IndexProgressTable(
+            job_name=_JOB,
+            rows=(TypeProgressRow(type_name="dependson", done=done, total=total),),
+            current=None if complete else "semantic check",
+            done=done,
+            total=total,
+            text=PROGRESS_TEXT_COMPLETE if complete else None,
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
     )
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())
 
@@ -48,7 +50,11 @@ async def semantic_checker(body: dict) -> dict:
     type_ids = (body or {}).get("type_ids")
     if not isinstance(type_ids, list) or not type_ids:
         raise HTTPException(status_code=422, detail="type_ids (non-empty list) is required")
-    activity = InProcessActivity(job_name=_JOB, entity_id=str(type_ids[0]))
+    # Same as docs_graph: the legacy ``job_name`` is what the old pill recognises, the
+    # activity path is what this job actually is.
+    activity = InProcessActivity(
+        job_name=_JOB, entity_id=str(type_ids[0]), activity_path="semantic.check"
+    )
     await _emit(activity, done=0, total=0)
 
     async def on_progress(done: int, total: int) -> None:
