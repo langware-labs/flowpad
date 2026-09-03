@@ -7,7 +7,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.secret_origin_driver import make_setup_hint
 from flow_sdk.builtin.secret_origin_refs import LocalSecretRef, SecretOriginLocator
-from flow_sdk.cli.auth.secrets import read_secret, write_secret
+from flow_sdk.cli.auth.secrets import delete_secret, read_secret, write_secret
 
 
 class LocalSecretDriver:
@@ -34,3 +34,11 @@ class LocalSecretDriver:
 
     async def store(self, locator: SecretOriginLocator, value: str, **context: Any) -> None:
         await asyncio.to_thread(write_secret, getattr(locator, "sod_name", ""), value)
+
+    async def forget(self, locator: SecretOriginLocator, **context: Any) -> bool:
+        """Delete the value. This store is Flowpad's own, so deletion is ours to do."""
+        name = getattr(locator, "sod_name", "")
+        if not name:
+            return False
+        await delete_secret(name)
+        return True

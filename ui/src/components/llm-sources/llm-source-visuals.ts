@@ -1,18 +1,15 @@
-import type { MessageDescriptor } from '@lingui/core';
-import { msg } from '@lingui/core/macro';
 import { LLMSourceAuthority, type LLMSource } from '@sdk';
 
 /**
- * How a funding verdict LOOKS — one table, for every surface that shows one.
+ * How a funding verdict LOOKS.
  *
- * Extracted when the Connections table grew harness rows: two screens now report
- * the same `LLMSource` and a second, hand-written ladder had already drifted from
- * this one on every authority — most damagingly on `proven`, the strongest verdict
- * the backend can issue, which the copy read as "nobody has asked". Same failure
- * the account badges had, and the same fix (`account/hub-status-visuals.ts`).
- *
- * `text` is a lazy {@link MessageDescriptor}: this map is module-level, so a `t`
- * macro here would freeze the boot locale. Resolve it at render with `i18n._`.
+ * Extracted when the Connections table grew harness rows, and a second,
+ * hand-written ladder had already drifted from this one — most damagingly on
+ * `proven`, the strongest verdict the backend can issue, which the copy read as
+ * "nobody has asked". Those rows now draw a backend-composed `ConnectionSpec`
+ * and the WORD they show is decided in Python, so only the dot is left here and
+ * only this screen still draws one. The drift pin moved with the fold: it is
+ * `test_a_probed_harness_reads_connected` in `tests/unit/test_connection_status.py`.
  */
 
 /** Authority → dot. Keyed by the enum, so a new authority is a type error.
@@ -41,23 +38,4 @@ const UNKNOWN_DOT = 'bg-muted-foreground/40';
 export function dotFor(source: LLMSource | undefined): string {
   if (!source || !source.eligible) return UNKNOWN_DOT;
   return AUTHORITY_DOT[source.authority] ?? UNKNOWN_DOT;
-}
-
-/**
- * The same verdict as one short word, for a surface with a column rather than a
- * list — the Connections table, where the backend's full sentence rides in the
- * title and the cell has room for one word.
- *
- * "Not checked" is a first-class answer, not a hedge: `Capability.login_state` is
- * not persisted, so "nobody has asked" is the COMMON state after any restart.
- */
-export function sourceVisual(source: LLMSource | undefined): {
-  text: MessageDescriptor;
-  dot: string;
-} {
-  const dot = dotFor(source);
-  if (!source) return { text: msg`Not checked`, dot };
-  if (!source.eligible) return { text: msg`Signed out`, dot };
-  if (source.authority === LLMSourceAuthority.Presumed) return { text: msg`Not checked`, dot };
-  return { text: msg`Signed in`, dot };
 }
