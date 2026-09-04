@@ -94,7 +94,13 @@ export async function showPort(
 }
 
 export async function openVibe(page: Page, processId: string): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=vibe`);
   // Deliberately NOT asserting the URL stayed on the process dock. The display is
   // an address now, so a cold landing on a process that already has a pin is

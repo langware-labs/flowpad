@@ -145,6 +145,22 @@ export class FSManager {
   }
 
   /**
+   * Read a file that may not exist — ONE request, and never a 404.
+   *
+   * Returns the content, or `null` when the file is not there. Use this instead of
+   * `exists()` + `download()`: that pair costs two round trips on the common
+   * (present) path, and `download()`-and-catch costs a browser-level
+   * `Failed to load resource: 404` on the absent one, which no client-side handling
+   * can suppress. Absence is a valid answer here, not an error.
+   */
+  async readIfExists(typeid: TypeId, path: string): Promise<string | null> {
+    const res = await dataManager.callAction<void, { exists?: boolean; content?: string | null }>(
+      this.createFSAction(typeid, 'read_optional', path, 'GET'),
+    );
+    return res?.exists ? (res.content ?? '') : null;
+  }
+
+  /**
    * Get download URL for a file
    * @param typeid - Entity TypeId
    * @param path - File path

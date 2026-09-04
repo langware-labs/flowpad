@@ -107,7 +107,7 @@ function AssetSectionRule({ testid, children }: { testid: string; children: Reac
 function AssetTypeHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
   return (
     <div
-      className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-primary/70"
+      className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-foreground/80"
       data-testid={testid}
     >
       {children}

@@ -4,6 +4,7 @@ import { redirect } from 'react-router';
 import { DockPointer, JOURNEY_PARAM } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { isJourneyDismissed } from './journey-dismissed';
+import { AMBIENT_JOURNEYS_ENABLED } from './journeys-enabled';
 import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 
 /**
@@ -46,4 +47,6 @@ export async function autoLaunchRedirect(request: Request): Promise<Response | n
   return redirect(`${url.pathname}${url.search}`);
 }
 
-registerLoadRedirect(autoLaunchRedirect);
+// Registration IS the switch: with the feature hidden the redirect is never
+// in the load chain at all, rather than running on every load to say "no".
+if (AMBIENT_JOURNEYS_ENABLED) registerLoadRedirect(autoLaunchRedirect);

@@ -21,6 +21,8 @@ import {
   type WorkerListEntry,
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
+import { useActivities } from '@src/store/activity-store';
+import { ActivityRow } from './ActivityRow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
@@ -67,6 +69,16 @@ type WorkerRowData = ReturnType<typeof buildWorkerRow>;
  * Row name and project name come from ``*.getByIdFromCache(id)`` and are NOT
  * reactive; both the linked session/shell and the row's Project are lazily
  * fetched into the cache when the popover opens so the names resolve.
+ *
+ * It also lists ACTIVITIES — the generic progress mechanism every kind of long-running
+ * work reports through (an index, a walk, a RAG pass, a QA cycle). One chip, one count:
+ * "what is happening on this machine" is a single question and deserves a single answer.
+ *
+ * Process-scoped activities are filtered OUT of that list. A running process reports as an
+ * activity on the backend (which is what makes `flow progress list` and every other
+ * consumer see one model), but here it already has a worker row — and that row is the
+ * richer one, carrying inline rename, execution-mode classification and the attach/lens
+ * routing. Showing both would double-count the same work.
  */
 export function PendingActionsChip() {
   const isAdvanced = useIsAdvanced();
@@ -74,6 +86,14 @@ export function PendingActionsChip() {
 
   const allRows = useWorkerList(supported);
   const counts = useWorkerCountsByMode(supported);
+  // See the note above: a process's own activity is represented by its worker row.
+  // Memoized on the snapshot identity — the store hands out a new array only when
+  // something actually changed, and this list is a render dependency below.
+  const allActivities = useActivities();
+  const activities = useMemo(
+    () => allActivities.filter((a) => !a.scope?.startsWith(`${AgenticProcess.type}-`)),
+    [allActivities],
+  );
   const [open, setOpen] = useState(false);
   // Empty = all supported modes shown (mirrors AssetPickerPopover).
   const [selected, setSelected] = useState<string[]>([]);
@@ -153,14 +173,17 @@ export function PendingActionsChip() {
     [navigation],
   );
 
-  // Hide the chip only when there are no supported workers at all. When the user
-  // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
-  // showing 0 so the popover remains reachable to reset the filter. MUST come
-  // after every hook above — see the handlePick note.
-  if (allRows.length === 0) return null;
+  // Hide the chip only when there is nothing happening at all — no supported workers AND
+  // no activities. When the user has narrowed to an empty mode (e.g. External in v1) the
+  // chip stays visible showing 0 so the popover remains reachable to reset the filter.
+  // MUST come after every hook above — see the handlePick note.
+  if (allRows.length === 0 && activities.length === 0) return null;
 
-  const count = rows.length;
-  const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
+  const count = rows.length + activities.length;
+  const tooltipText =
+    activities.length === 0
+      ? `${count} active agent${count === 1 ? '' : 's'}`
+      : `${count} thing${count === 1 ? '' : 's'} in progress`;
 
   const chipClass = [
     'flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
@@ -215,18 +238,43 @@ export function PendingActionsChip() {
               (which opens upward) never resizes when the filtered count
               changes, so the pinned filter bar above stays put. */}
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
-            {rows.length === 0 ? (
+            {rows.length === 0 && activities.length === 0 ? (
               <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
                 {effective.length === 1 && effective[0] === ExecutionMode.External
                   ? 'No external workers detected'
                   : 'No agents match this filter'}
               </div>
             ) : (
-              <ul className="flex flex-col">
-                {rows.map((row) => (
-                  <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
-                ))}
-              </ul>
+              <>
+                {rows.length > 0 && (
+                  <ul className="flex flex-col">
+                    {rows.map((row) => (
+                      <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                    ))}
+                  </ul>
+                )}
+                {activities.length > 0 && (
+                  <>
+                    {/* A heading only when both kinds are present — a lone section needs
+                        no label to tell it apart from the other one. */}
+                    {rows.length > 0 && (
+                      <div
+                        className="px-2 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                        data-testid="activity-section-heading"
+                      >
+                        Activity
+                      </div>
+                    )}
+                    <ul className="flex flex-col" data-testid="activity-list">
+                      {/* Keyed by scope+path: an activity's address is its identity, and a
+                          recycled address is a new activity rather than a moved row. */}
+                      {activities.map((spec) => (
+                        <ActivityRow key={`${spec.scope ?? ''}::${spec.path}`} spec={spec} />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
             )}
           </div>
         </PopoverContent>

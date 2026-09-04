@@ -54,7 +54,11 @@ export function useFavoriteSummaries(bookmarks: Bookmark[]) {
     queryKey: ['favorite-summaries', key],
     queryFn: async () => {
       if (refs.length === 0) return { summaries: [] } as SummaryResponse;
-      return apiClient.post<SummaryResponse>('/api/v1/favorites/summary', { refs });
+      // A backend older than the envelope change answers with a bare body the
+      // client unwraps to undefined; react-query treats undefined as an error,
+      // so normalise to "no summaries" rather than log on every Home load.
+      const res = await apiClient.post<SummaryResponse | undefined>('/api/v1/favorites/summary', { refs });
+      return res ?? ({ summaries: [] } as SummaryResponse);
     },
     staleTime: 15_000,
   });

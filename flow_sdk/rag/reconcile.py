@@ -126,8 +126,11 @@ async def _run_guarded(index: "RagIndex", *, force: bool = False) -> None:
 async def dispatch_due_indexes() -> list[str]:
     """Spawn a pass for every index that needs one. Returns the ids dispatched.
 
-    Cheap by construction: ``pending`` is a field read, and the hash comparison it falls back on
-    is a walk — so an index that nothing marked is only re-checked when it is not already busy.
+    Two reasons to run, and neither is a walk. ``pending`` is a field read, set by the observer
+    when a covered document changed. ``unstamped_roots`` is one sqlite read, and it answers the
+    case a mark can never cover: a root the store has no hash for at all — freshly added, or its
+    store deleted, moved, or rebuilt out from under the row. Without it an index whose vectors
+    vanished sat there looking indexed forever, because nothing was left to mark it.
     """
     from flow_sdk.builtin.rag_index import RagIndex, RagStatus  # noqa: PLC0415
 
@@ -142,7 +145,9 @@ async def dispatch_due_indexes() -> list[str]:
     ]
     for index in candidates:
         key = str(index.id)
-        if key in _inflight or not index.pending:
+        if key in _inflight:
+            continue
+        if not index.pending and not await index.unstamped_roots():
             continue
         if index.status == RagStatus.SETUP and await index.settle_status():
             continue

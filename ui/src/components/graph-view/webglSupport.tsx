@@ -1,4 +1,5 @@
 import { Trans } from '@lingui/react/macro';
+import React, { lazy } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { WikiLabel } from '@src/components/wiki-tip';
@@ -18,6 +19,27 @@ export function isWebglAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Lazy-load a WebGL-dependent (sigma-bearing) view, falling back to
+ * {@link WebglUnavailableView} when the browser cannot mint a WebGL context.
+ *
+ * This exists because the guard used to be repeated at each `lazy(...)` call
+ * site, and two sigma-bearing views added later (`TagGraphView`,
+ * `GenericSubgraphView` — both reaching `GraphView` transitively) were written
+ * without it. They evaluated the sigma chunk at import time on any WebGL-less
+ * client and crashed their React subtree, while their two guarded neighbours
+ * degraded gracefully. One seam that cannot be skipped beats a convention that
+ * has already been missed twice: route EVERY graph view through this.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- React.lazy's own constraint is ComponentType<any>; narrowing it here rejects every real view.
+export function lazyWebglView<T extends React.ComponentType<any>>(
+  load: () => Promise<{ default: T }>,
+): React.LazyExoticComponent<T> {
+  return lazy<T>(() =>
+    isWebglAvailable() ? load() : Promise.resolve({ default: WebglUnavailableView as unknown as T }),
+  );
 }
 
 /** Rendered in place of a graph surface when WebGL is unavailable. */

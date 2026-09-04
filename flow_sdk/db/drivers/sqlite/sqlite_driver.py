@@ -19,7 +19,6 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
@@ -31,6 +30,7 @@ from flow_sdk.db.drivers.db_driver import (
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import RelationshipDirection
+from flow_sdk.fs_store.type_id import TypeId
 
 
 # TODO: request_context methods not available locally
@@ -533,6 +533,36 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # A consumer drains a source in INGEST order — `(created_date, id)`, both real
+        # columns, so ORDER BY and LIMIT push to SQL. Without this the drain is a type scan
+        # per page; with `occurred_at` (a JSON field) it could not push at all.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_by_source_created "
+                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
+                "WHERE type = 'source_item'"
+            )
+        )
+
+        # The position row is found by `(consumer, data_source_id)` on every listen() start.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_position_by_source "
+                "ON entities(json_extract(data, '$.data_source_id'), "
+                "json_extract(data, '$.consumer')) "
+                "WHERE type = 'consumer_position'"
+            )
+        )
+
+        # The change log a folder consumer drains, in the same ingest order.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_change_by_source_created "
+                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
+                "WHERE type = 'source_change'"
+            )
+        )
+
         # A reference FlowMessage keys on the SourceItem it renders. The
         # projection resolves "is this item already placed" by this field on
         # every projected item, the purge cascade IN-queries it, and read-time
@@ -555,6 +585,19 @@ class SQLiteDBDriver(DBDriver):
                 "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key "
                 "ON entities(json_extract(data, '$.channel'), "
                 "json_extract(data, '$.thread_key')) "
+                "WHERE type = 'message_thread'"
+            )
+        )
+        # The same key with its owner. `_v2` rather than a redefinition, for the
+        # reason the SourceItem index carries one: `IF NOT EXISTS` never alters
+        # an index that already exists under a name. v1 stays — the projection's
+        # legacy fallback (`owner IS NULL`) and every pre-owner caller use it.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v2 "
+                "ON entities(json_extract(data, '$.channel'), "
+                "json_extract(data, '$.thread_key'), "
+                "json_extract(data, '$.owner')) "
                 "WHERE type = 'message_thread'"
             )
         )

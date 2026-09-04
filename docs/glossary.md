@@ -134,12 +134,16 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 * **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
 * **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/inbox-projection.md`.
 * **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.Inbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. Inbound stays `SourceItemSpec`.
+* **`MessageBlock`** — ours. The process-local prompt/reply block (`flow_sdk/blocks/message_block.py`): `send(prompt)` waits while one `listen()` consumer handles the corresponding `MessageRequest` DataSpec and calls `reply(text)`; the source owns the one-shot correlation. `Agent.respond_to(source)` owns that loop and the private per-thread process runner. It has no address or rows and is not a `DataSource`, inbox, provider connection, `MessageSpec`, or `FlowMessage`. It briefly carried the name `MessageSource`; `flow_sdk/blocks/message_source.py` is now a shim.
+* **`MessageSource`** — ours. A bidirectional `DataSource`: one with `channel` set whose driver declares `sends=True` and carries an identity (`account_identities`) on that channel — Slack, Telegram, a mailbox. It ingests like any data source and can reply, and it belongs to one owner (the local user or an Agent). Not the block above, not a `MessageSpec`, not a connection.
+* **`Inbox`** — ours. The per-owner projection of a `MessageSource`'s threads into `Conversation`s (`flow_sdk/inbox/projection.py`): `/dock/inbox` is the local user's, `/dock/agent/<id>/inbox` an Agent's. `blocks.Inbox` is the SDK handle for one address of one `MessageSource`, not the projection. The **attached-channels line** on each inbox is the owner's `MessageSource`s — `DataSource.find_owned(owner)` ∩ spec `sends` — as round marks with a status dot; a mark filters the list to that channel, the details popover holds the pause/resume switch (`status`) and delete, `+` creates a source born with that `owner`.
+* **`owner`** — ours. Whose row it is: a user or Agent `TypeId` on `DataSource`, `MessageThread` and `Conversation`, defaulting to the local user. THE key the inbox partitions by — an Agent's inbox is `owner == agent`, a filter, not a walk from one provider. Read only through `inbox.projection.owner_of`, which also resolves rows written before the field existed (`config.agent_id` → that agent). Not `created_by` (the hub's creator mirror) and not the roster's `owner` role (hub-side authz).
 * **`ManifestSpec`** — ours. The shape of a data source's `data_source.json` and the `asset_spec` of the `DataSourceSpec` folder asset; every authoring rule is a validator on it.
-* **`LLMSource`** — ours, and the FOURTH thing this tree calls a "source", so read it precisely.
+* **`LLMSource`** — ours, and the FIFTH thing this tree calls a "source", so read it precisely.
   It is *where a worker's tokens come from* (`flow_sdk/schema/data_spec/llm_source_spec.py`): one
   frozen `DataSpec` covering all three funding paths — a vendor **device login**, a stored
   **api_key**, or a hub **endpoint**. It is NOT `DataSource` (a system of record we ingest from),
-  NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
+  NOT `MessageSource` (a `DataSource` that can also reply), NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
   `source_llmendpoint` relationship, which is the fallback chain an `LLMEndpoint` allocation draws
   *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
   names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
@@ -193,3 +197,28 @@ of which may be absent. Say which one you mean.
 | `identity_carrier` (`FrontmatterCarrier`, `FolderMdCarrier`, `FolderJsonCarrier`, `NativeJsonCarrier`, `DerivedCarrier`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `read` / `write_if_absent` / `convert` — validation and minting stay in `TypeInfo`. |
 | `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `carrier_path_for` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write. `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier. For markdown identity it is **legacy**: read, stripped from bodies, converted in place. Still the live carrier for `tag` blocks in source files and for folder-json identity. |
+
+## Activity (2026-09-03)
+
+**`Activity` is ours, not a provider mirror.** It is the one mechanism any long-running
+work reports progress through — an index, a walk, a RAG pass, a QA cycle, a running
+agentic process — from Python, TypeScript, the REST API, the CLI or an agent.
+
+The noun was free where the near ones were not: `Job` is the FaaS entity, `Task` is a
+folder asset, `Flow` means a chat message and a bus envelope, `Graph` and `Workflow` are
+both already ambiguous. `Activity` collides only with the `InProcessActivity` holder it is
+built to replace in phase 2.
+
+| Ours | One place | Notes |
+|---|---|---|
+| `ActivityProgressSpec` | `flow_sdk/schema/data_spec/activity_spec.py` | The value that travels. A registered `DataSpec` (`activity.progress`), frozen, recursive. `total=None` means UNKNOWN — never 0. `errors_count` is the truth, `errors` a capped sample. |
+| `Activity` (the handle) | `flow_sdk/activity/activity.py` | The mutable node, addressed by `(scope, path)` and found-or-created at every level. `Activity.get("a/b")` and `Activity.get("a").child("b")` are the same node, so code deep in a walk needs no handle threaded to it. |
+| `inc` vs `set_counter` | `flow_sdk/activity/activity.py` | Two counter verbs for two producer shapes: `inc` adds a DELTA (events seen), `set_counter` takes an ABSOLUTE total (a running count, a re-parsed transcript) and never moves backwards. The monotonicity policy lives on the verb so every producer inherits one answer. |
+| `ActivityProgressMonitor` | `flow_sdk/activity/progress_monitor.py` | The in-memory registry — it IS find-or-create. Holds LIVE work only: a root's terminal untracks its whole tree, so a later `get` yields a FRESH node. "Is it running" is its question; "when did it last finish" is the receipt's (phase 2). |
+| **path** vs. **scope** | — | `path` addresses within a scope (`index`, `index/pdf`); `scope` is the TypeId the work belongs to, absent for instance-wide work. Scope is also the WS routing key: unscoped broadcasts, scoped goes to that entity's watchers. |
+| **tick** vs. **transition** | `flow_sdk/activity/emit.py` | A tick is a coalesced snapshot on the `progress_report` envelope and touches nothing else. A transition (started / blocked / completed / failed) publishes on the event bus immediately and is never coalesced away. |
+| `interrupted` | `ActivityState.INTERRUPTED` | Assigned by the system, never a producer: work that STOPPED rather than finished — a child still running when its root ended. The state the old tracker could not express, which is why a restart made the footer indicator vanish silently. |
+
+Verb casing is deliberately per-language: `inc_success` in Python, `incSuccess` in
+TypeScript, `inc-success` from a shell. The route accepts all three, so it stays one
+vocabulary rather than three APIs.

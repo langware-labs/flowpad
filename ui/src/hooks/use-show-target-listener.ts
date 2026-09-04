@@ -167,7 +167,13 @@ export function useShowTargetListener(): void {
   // stale target through. (The per-process vibe surfaces can use that shape
   // because each instance watches exactly one process; this one cannot.)
   const onProcessOp = useCallback(
-    (typeId: TypeId, _op: 'create' | 'update' | 'delete', data: IEntity): void => {
+    (typeId: TypeId, op: 'create' | 'update' | 'delete', data: IEntity | undefined): void => {
+      // A `delete` frame has no payload at all, so there is nothing to read and
+      // nothing a deletion could ever be showing. Returning early here is not
+      // defensive noise: dereferencing the absent payload threw a TypeError that
+      // aborted the bus's `forEach`, so the delete never reached the entity cache,
+      // the tab manager, or any other listener registered after this one.
+      if (op === 'delete' || !data) return;
       const context = (
         data as IEntity & {
           context_data?: { last_shown?: ShowTarget; display_stack?: Array<{ shown_at?: string }> };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
-import { PersonRaisedHandIcon } from '@src/components/icons/PersonRaisedHandIcon';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { VibeAssignTaskDialog } from './VibeAssignTaskDialog';
 import { workspaceToolbarButton } from './workspace-toolbar-button';
 
@@ -32,7 +32,7 @@ export function VibeAssignTaskButton({
         className={workspaceToolbarButton}
         data-testid="vibe-assign-task"
       >
-        <PersonRaisedHandIcon className="h-3.5 w-3.5" />
+        <FlowIcon icon="flowpad.person-raised-hand" className="h-3.5 w-3.5" />
       </button>
 
       {open && (

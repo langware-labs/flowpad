@@ -14,7 +14,8 @@ export type WarningIconName =
   | 'WifiOff'
   | 'Settings'
   | 'Key'
-  | 'KeyRound';
+  | 'KeyRound'
+  | 'FolderX';
 
 /**
  * Color variants for warnings
@@ -60,6 +61,7 @@ export const WARNING_IDS = {
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
+  EMPTY_PROJECTS: 'empty-projects',
 } as const;
 
 /**
@@ -205,6 +207,27 @@ export function createNoHarnessWarning(): UserWarning {
     description: 'Install a coding agent CLI (Claude, Codex or Copilot) to run agents. Click for setup instructions.',
     targetView: ViewType.CAPABILITIES,
     wikiPage: 'Install a harness',
+  };
+}
+
+/**
+ * Empty projects are piling up — old workspace folders with no sessions and no
+ * files, left behind by harness runs.
+ *
+ * Informational, and deliberately gray rather than orange: nothing is broken,
+ * and clicking it opens the cleanup screen rather than cleaning anything up.
+ * The count comes from the project scan, so the warning appears only after a
+ * scan has actually run.
+ */
+export function createEmptyProjectsWarning(count: number): UserWarning {
+  return {
+    id: WARNING_IDS.EMPTY_PROJECTS,
+    icon: 'FolderX',
+    color: 'gray',
+    message: `${count.toLocaleString()} empty projects`,
+    description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
+    targetView: ViewType.LENS,
+    targetPointer: 'projects/cleanup',
   };
 }
 

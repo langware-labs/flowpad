@@ -1,5 +1,5 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
-import { selectViewMode } from '../_shared/view-mode';
+import { selectViewMode, toPathname } from '../_shared/view-mode';
 import { API, destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
 /**
@@ -53,17 +53,29 @@ test.afterAll(async ({ request }) => {
 
 const here = () => page.evaluate(() => window.location.pathname + window.location.search);
 
+/**
+ * The settled path, ignoring the `viewMode` the root loader stamps on.
+ *
+ * `home-loader.ts` canonicalises a bare `/` to `/?viewMode=<current>` on every
+ * cold load — deliberate, and itself the fix for a Back bug (the FIRST history
+ * entry has to state its mode, or Back onto it re-resolves through the mutable
+ * preference). So `here() === '/'` can never hold. Compare the PATHNAME instead:
+ * that still proves the collapse and the history entry, which is what these
+ * tests exist for. Deliberately not relaxed to `toContain('/')`, which any URL
+ * would satisfy.
+ */
+const herePath = async () => toPathname(await here());
+
 test.describe('navigation collapse — root is a location', () => {
   test('`/dock/home` canonicalizes to `/`, and both render the same home', async () => {
 
     await page.goto('/');
     await expect(page.locator('[data-tag]').first()).toBeVisible();
-    const rootPath = await here();
-    expect(rootPath).toBe('/');
+    expect(await herePath()).toBe('/');
 
     await page.goto('/dock/home');
     // The collapse: the dock spelling of the root resolves to the root's URL.
-    await expect.poll(() => here()).toBe('/');
+    await expect.poll(() => herePath()).toBe('/');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
@@ -85,7 +97,7 @@ test.describe('navigation collapse — root is a location', () => {
     await page.goto('/dock/explorer');
     await expect.poll(() => here()).toContain('/dock/explorer');
     await page.goBack();
-    await expect.poll(() => here()).toBe('/');
+    await expect.poll(() => herePath()).toBe('/');
   });
 });
 

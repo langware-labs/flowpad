@@ -20,14 +20,19 @@ from flow_sdk.core.connections.types import (
 
 
 def _spec(provider: str, connected: bool = False) -> ConnectionSpec:
-    return ConnectionSpec(provider, provider.title(), f"{provider}_credentials", connected, None, (), None)
+    return ConnectionSpec(
+        provider=provider,
+        display_name=provider.title(),
+        credential_ref=f"{provider}_credentials",
+        connected=connected,
+    )
 
 
 def test_connections_list_json_preserves_core_order(monkeypatch):
-    async def rows():
+    async def rows(project_id: str = ""):
         return [_spec("slack"), _spec("googledrive", True)]
 
-    monkeypatch.setattr(connections_cmd, "list_connection_specs", rows)
+    monkeypatch.setattr(connections_cmd, "list_connections", rows)
     result = CliRunner().invoke(app, ["connections", "list", "--json"])
 
     assert result.exit_code == 0
@@ -46,10 +51,10 @@ def test_connections_connect_writes_one_success_json(monkeypatch):
 
 
 def test_connections_list_renders_typed_service_failure(monkeypatch):
-    async def rows():
+    async def rows(project_id: str = ""):
         raise ConnectionConnectError("", ConnectionStage.SERVICE, "service_start_failed", "could not start")
 
-    monkeypatch.setattr(connections_cmd, "list_connection_specs", rows)
+    monkeypatch.setattr(connections_cmd, "list_connections", rows)
     result = CliRunner().invoke(app, ["connections", "list", "--json"])
 
     assert result.exit_code == connections_cmd.EXIT_SERVICE

@@ -1,15 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  Project,
-  ProjectSecretOriginSummary,
-  SecretOriginLocator,
-  SecretPointerScope,
-  SecretResolveStatus,
-  SodStore,
-} from '@sdk';
+import type { Project, ProjectSecretOriginSummary, SecretResolveStatus } from '@sdk';
 
 /**
- * Project secrets hook — the Secrets card + setup wizard read everything here.
+ * Project secrets hook — the Connections table reads everything here.
  * The backend owns all logic (value-free pointers, driver resolution, stores);
  * this hook only calls actions and surfaces their results (headless FE).
  */
@@ -46,30 +39,6 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     void refreshStatus();
   }, [project?.id, secretsKey, refreshStatus]);
 
-  /** Add a value-free secret pointer: the provider (where to fetch), the SOD
-   *  store (how to store a provided value), and the env var (how to use it). */
-  const add = useCallback(
-    async (opts: {
-      name: string;
-      envVar: string;
-      locator: SecretOriginLocator;
-      sodStore?: SodStore;
-      scope?: SecretPointerScope;
-      description?: string;
-    }) => {
-      const p = projectRef.current;
-      if (!p || !opts.envVar || !opts.locator) return;
-      await p.addSecretPointer(opts.name || opts.envVar, opts.envVar, {
-        locator: opts.locator,
-        scope: opts.scope ?? 'private',
-        sodStore: opts.sodStore,
-        description: opts.description,
-      });
-      await refreshStatus();
-    },
-    [refreshStatus],
-  );
-
   /** Declare several at once — one project save, so no link can be lost. */
   const addMany = useCallback(
     async (entries: Parameters<Project['addSecretPointers']>[0]) => {
@@ -92,15 +61,31 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
     [refreshStatus],
   );
 
-  const remove = useCallback(
-    async (typeid: string) => {
+  /**
+   * Delete: the declarations AND the values we are allowed to delete.
+   *
+   * One backend call for N pointers, because deleting is one act with one
+   * outcome to report — and the answer says which values actually went, so the
+   * caller can tell the user the truth about the ones that stayed.
+   */
+  const deleteMany = useCallback(
+    async (typeids: string[]): Promise<{ deleted: string[]; kept: string[] }> => {
       const p = projectRef.current;
-      if (!p || !typeid) return;
-      await p.removeSecretPointer(typeid);
+      if (!p || !typeids.length) return { deleted: [], kept: [] };
+      const result = await p.deleteSecrets(typeids);
       await refreshStatus();
+      return result;
     },
     [refreshStatus],
   );
 
-  return { secretOrigins, status, statusReady, add, addMany, provide, remove, refreshStatus } as const;
+  return {
+    secretOrigins,
+    status,
+    statusReady,
+    addMany,
+    provide,
+    deleteMany,
+    refreshStatus,
+  } as const;
 }

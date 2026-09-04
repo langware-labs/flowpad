@@ -1,9 +1,7 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { Project } from '@sdk';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
@@ -64,9 +62,9 @@ const HARNESS_OPTIONS: {
   Icon: React.ComponentType<{ className?: string }>;
 }[] = [
   { value: 'all', title: msg`All harnesses`, Icon: Layers },
-  { value: 'claude', title: msg`Claude Code`, Icon: ClaudeIcon },
-  { value: 'codex', title: msg`Codex`, Icon: CodexIcon },
-  { value: 'copilot', title: msg`Copilot`, Icon: CopilotIcon },
+  { value: 'claude', title: msg`Claude Code`, Icon: flowIconComponent('brands.claude') },
+  { value: 'codex', title: msg`Codex`, Icon: flowIconComponent('brands.codex') },
+  { value: 'copilot', title: msg`Copilot`, Icon: flowIconComponent('brands.copilot') },
   { value: 'none', title: msg`None (project root)`, Icon: CircleSlash },
 ];
 

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { withViewMode } from '../_shared/view-mode';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -8,7 +9,14 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
-  await page.goto('/dock/home');
+  // Pin the mode on the ADDRESS. The surfaces asserted below
+  // (`recent-conversations-strip`, the greeting) exist only on the Standard
+  // HomeLanding; Vibe renders the creator homepage instead. The app legitimately
+  // lands in Vibe after the project-open path (`use-open-project` opens home
+  // `.withViewMode(ViewMode.Vibe)`, and the dock sync persists it instance-wide),
+  // so a test that wants Standard has to say so rather than inherit whatever the
+  // instance was last left in.
+  await page.goto(withViewMode('/dock/home', 'standard'));
   // Wait for the React app root to mount (handles HMR settling)
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 90_000 });
 }
@@ -85,7 +93,7 @@ test.describe('Current Activity — Recent Sessions', () => {
       // the activity strip starts empty when no project is loaded
     });
 
-    await page.goto('/dock/home');
+    await page.goto(withViewMode('/dock/home', 'standard'));
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const strip = page.locator('[data-testid="recent-conversations-strip"]');

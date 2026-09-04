@@ -1,5 +1,7 @@
 import { tabManager, type APIEntity, type TypeId, type AnyEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 
 /**
@@ -8,9 +10,11 @@ import type { FavoriteRef } from '@src/hooks/use-favorites';
  *
  * There are two answers and the choice matters: an entity-backed view is
  * bookmarked by its typeid, so it survives the entity being moved or renamed;
- * anything else (a web app, a shell, a lens) is bookmarked by its DOCK, restored
- * later through `openDock`. Only a full-bleed surface with no tab identity has
- * nothing to bookmark at all.
+ * anything else (a web app, a shell, a lens, the app root) is bookmarked by its
+ * DOCK, restored later through `openDock`. Which docks qualify is
+ * `DockPointer.favoriteKey`'s answer, not one re-derived here: the root is
+ * bookmarkable despite being full-bleed and therefore not a tab, and a bare
+ * shell — the terminal HOST — still is not.
  *
  * This lives in one place because the two callers — the bookmarks menu's "add
  * current" row and the navigation bar's star — must agree on the ANSWER, not
@@ -30,12 +34,17 @@ export function favoriteTargetForDock(
       title: entity.entity?.displayName?.trim() || fallbackTitle,
     };
   }
-  if (!dock?.tabHash) return null;
+  const key = dock?.favoriteKey;
+  if (!dock || !key) return null;
+  // The root has no tab to take a name from, and its two callers hand in
+  // different fallbacks ("Home" from the breadcrumb, "Bookmarked view" from the
+  // menu) — so it is named from the type registry, which is where the breadcrumb
+  // got its string too. That is what keeps the star and the menu row in agreement.
   const tab = tabManager.findByDockKey(dock.tabHash);
   return {
     entityType: 'dock',
-    entityId: dock.tabHash,
-    title: tab?.name?.trim() || fallbackTitle,
-    nav: { pointer: dock.toJSON() },
+    entityId: key,
+    title: tab?.name?.trim() || (dock.isRoot ? labelForType(ViewType.HOME) : '') || fallbackTitle,
+    nav: { pointer: dock.toFavoriteJSON() },
   };
 }

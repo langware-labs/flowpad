@@ -84,6 +84,67 @@ def _documents(root: Path) -> list[tuple[str, str, Path]]:
     return out
 
 
+def remove_documents(store: RagStore, refs: Iterable[str], *, report: IndexReport | None = None) -> int:
+    """Drop every chunk of each document in *refs*. Returns chunks removed."""
+    removed = 0
+    for doc_ref in refs:
+        removed += store.remove_document(doc_ref)
+    if report is not None:
+        report.chunks_removed += removed
+    return removed
+
+
+async def index_documents(
+    store: RagStore,
+    documents: Iterable[tuple[str, str, Path]],
+    *,
+    embed: Embedder,
+    model: str = "",
+    report: IndexReport | None = None,
+    on_progress: ProgressFn = _noop,
+) -> IndexReport:
+    """Chunk and embed *documents* (``(doc_ref, doc_hash, path)``), paying only for new text.
+
+    The per-document half of a pass, usable on its own by a consumer that already knows which
+    documents changed (a folder listener) and has no reason to walk the tree to find out.
+    Per document, the chunks that survived the edit are kept and only the rest dropped —
+    removing a changed document wholesale and re-adding it would buy the surviving sections'
+    vectors a second time, which defeats the entire reason a chunk id keys on its text.
+    """
+    report = report if report is not None else IndexReport()
+    chunks: list[RagChunk] = []
+    changed = list(documents)
+    for doc_ref, doc_hash, path in changed:
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:  # a file that vanished mid-walk is not a failure of the pass
+            report.errors.append(f"{doc_ref}: {exc}")
+            continue
+        chunks.extend(chunk_markdown(text, doc_ref=doc_ref, doc_hash=doc_hash))
+
+    by_doc: dict[str, set[str]] = {}
+    for chunk in chunks:
+        by_doc.setdefault(chunk.doc_ref, set()).add(chunk.chunk_id)
+    for doc_ref, _, _ in changed:
+        report.chunks_removed += store.retain(doc_ref, by_doc.get(doc_ref, set()))
+
+    fresh = store.unknown(chunks)
+    on_progress("embed", 0, len(fresh))
+    if fresh:
+        vectors = await embed([c.text for c in fresh])
+        report.embedded += len(fresh)
+        report.chunks_added += store.add(fresh, vectors, model=model)
+        on_progress("embed", len(fresh), len(fresh))
+    return report
+
+
+def document_hash(path: Path) -> str:
+    """The content hash ``scan_tree`` records for a file — sha256 of its bytes."""
+    import hashlib  # noqa: PLC0415
+
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 async def index_root(
     store: RagStore,
     root: str | Path,
@@ -130,34 +191,8 @@ async def index_root(
     ]
     report.documents_removed = len(gone)
 
-    chunks: list[RagChunk] = []
-    for doc_ref, doc_hash, path in changed:
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:  # a file that vanished mid-walk is not a failure of the pass
-            report.errors.append(f"{doc_ref}: {exc}")
-            continue
-        chunks.extend(chunk_markdown(text, doc_ref=doc_ref, doc_hash=doc_hash))
-
-    # Per document, keep the chunks that survived the edit and drop only the rest. Removing a
-    # changed document wholesale and re-adding it would be simpler and wrong: the surviving
-    # sections' vectors would go with it and be bought a second time, which defeats the entire
-    # reason a chunk id keys on its text.
-    by_doc: dict[str, set[str]] = {}
-    for chunk in chunks:
-        by_doc.setdefault(chunk.doc_ref, set()).add(chunk.chunk_id)
-    for doc_ref, _, _ in changed:
-        report.chunks_removed += store.retain(doc_ref, by_doc.get(doc_ref, set()))
-    for doc_ref in gone:
-        report.chunks_removed += store.remove_document(doc_ref)
-
-    fresh = store.unknown(chunks)
-    on_progress("embed", 0, len(fresh))
-    if fresh:
-        vectors = await embed([c.text for c in fresh])
-        report.embedded = len(fresh)
-        report.chunks_added = store.add(fresh, vectors, model=model)
-        on_progress("embed", len(fresh), len(fresh))
+    remove_documents(store, gone, report=report)
+    await index_documents(store, changed, embed=embed, model=model, report=report, on_progress=on_progress)
 
     store.stamp(tree_hash=report.tree_hash, root=canonical_root)
     store.flush()

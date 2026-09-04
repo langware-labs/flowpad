@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "whatsapp",
+  "title": "WhatsApp",
+  "icon_name": "MessageCircle",
+  "description": "A WhatsApp business number on Meta's Cloud API — people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
+  "setup_wiki": "WhatsApp business number",
+  "config": {
+    "phone_number_id": {
+      "type": "text",
+      "required": true,
+      "label": "Phone number ID",
+      "placeholder": "123456789012345",
+      "hint": "From the Meta app's WhatsApp setup page — the ID, not the number itself. The free test number works and needs no business verification."
+    },
+    "access_token": {
+      "type": "text",
+      "required": true,
+      "label": "Access token",
+      "hint": "The setup page's temporary token expires in 24 hours; a System User token does not. Stored on this machine, like a bot token."
+    },
+    "verify_token": {
+      "type": "text",
+      "required": true,
+      "label": "Webhook verify token",
+      "hint": "Any string you choose. Paste the same one into Meta's webhook configuration — it is what proves the callback URL is yours."
+    }
+  }
+}

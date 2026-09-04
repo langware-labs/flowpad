@@ -283,6 +283,23 @@ export type ProcessIconKey =
   | 'generic-restore';
 
 /**
+ * The icon TAG a process key names — `claude-restore` -> `brands.claude.restore`.
+ *
+ * The two axes the key encodes are exactly the two the tag grammar already has:
+ * the vendor is the icon and `restore` is a role, one more segment. So this is a
+ * spelling change, not a lookup, and it lives here beside the key rather than in
+ * the UI because both halves are the SDK's own vocabulary.
+ *
+ * `generic` is ours rather than a vendor's, hence the `flowpad` pack.
+ */
+export function processIconTag(key: ProcessIconKey): string {
+  const restored = key.endsWith('-restore');
+  const vendor = restored ? key.slice(0, -'-restore'.length) : key;
+  const pack = vendor === 'generic' ? 'flowpad' : 'brands';
+  return `${pack}.${vendor}${restored ? '.restore' : ''}`;
+}
+
+/**
  * True when the process runs on the PTY transport. Keys on ``pty_mode`` (the
  * transport axis); falls back to ``visible`` when ``pty_mode`` isn't carried on
  * the payload (``visible=true ⟹ pty_mode=true``, so the fallback is safe — it can

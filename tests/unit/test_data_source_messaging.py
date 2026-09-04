@@ -193,3 +193,58 @@ class TestDataSourceExpectReply:
     async def test_send_without_external_id_cannot_have_a_correlated_reply(self):
         with pytest.raises(ValueError, match="no external_id"):
             await _source().expect_reply(SendOutcome())
+
+
+class TestReplySpecAsksTheChannel:
+    """Building a reply must not mean guessing the addressing rule.
+
+    The class IS the rule — `EmailMessageSpec` answers the author,
+    `SlackMessageSpec` answers the channel — so a caller that names the class by
+    hand on a Slack source addresses the reply to the person's user id, which
+    Slack delivers as a DM instead of posting it where everyone is reading. The
+    reply path was fixed by asking `driver.outbound_spec(source)`; this pins the
+    SDK path, which is the other way in.
+    """
+
+    def test_a_slack_source_addresses_the_channel(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.source_item import SlackMessageSpec
+
+        source = DataSource(name="Slack", provider="slack-test")
+        monkeypatch.setattr(
+            "flow_sdk.ingest.driver.get_driver",
+            lambda _p: SimpleNamespace(outbound_spec=lambda _s: SlackMessageSpec),
+        )
+        item = SimpleNamespace(
+            author_external_id="U06L8JSQJ1X",
+            segment_key="C08L1P4C95J",
+            thread_key="100.000100",
+            external_id="100.000100",
+            name="hello",
+        )
+
+        spec = source.reply_spec(item, body="on it")
+
+        assert spec.to == ["C08L1P4C95J"], "the SDK path addressed the author — Slack DMs that"
+
+    def test_an_email_source_still_addresses_the_author(self, monkeypatch):
+        from types import SimpleNamespace
+
+        source = _source()
+        monkeypatch.setattr(
+            "flow_sdk.ingest.driver.get_driver",
+            lambda _p: SimpleNamespace(outbound_spec=lambda _s: EmailMessageSpec),
+        )
+        item = SimpleNamespace(
+            author_external_id="friend@example.com",
+            segment_key="INBOX",
+            thread_key="t-1",
+            external_id="<x@mail>",
+            name="Question",
+        )
+
+        spec = source.reply_spec(item, body="answer")
+
+        assert spec.to == ["friend@example.com"]
+        assert spec.subject == "Re: Question"

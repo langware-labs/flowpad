@@ -3,15 +3,10 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound } from 'lucide-react';
 import type { CredentialSpec, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { isLucideName } from '@src/lib/icon-value';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 
 /**
  * The connection catalogue, as tiles.
@@ -40,7 +35,34 @@ export interface AddConnectionDialogProps {
 /** A credential definition's glyph — `icon_name` is asset data, not a TYPE
  *  icon, so `iconForType` is the wrong registry here. */
 function specIcon(iconName?: string) {
-  return isLucideName(iconName) ? lucideByName(iconName) : KeyRound;
+  return iconName ? lucideByName(iconName) : KeyRound;
+}
+
+/** The ref a brand answers to: its own name if the packs know it, else whatever
+ *  the backend published.
+ *
+ *  The provider's NAME first — going straight to the published icon is what put
+ *  a generic key on the Google tile and a theme-blind octocat on GitHub's. The
+ *  packs carry those brands under their own names, so asking by name is both
+ *  the override and the fix.
+ */
+function brandRef(name: string, published?: string): string | undefined {
+  return resolveIcon(name, getIconPacks()).kind !== 'none' ? name : published;
+}
+
+function providerIcon(provider: OAuthProvider) {
+  const ref = brandRef(provider.name, provider.icon);
+  return ref ? flowIconComponent(ref) : KeyRound;
+}
+
+/** A credential definition's glyph, brand first.
+ *
+ *  Same order as a provider's, because the two sections show the same companies:
+ *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
+ *  different colours one row apart. */
+function credentialIcon(spec: CredentialSpec) {
+  const ref = brandRef(String(spec.name ?? ''), spec.icon_name);
+  return ref ? flowIconComponent(ref) : KeyRound;
 }
 
 export function AddConnectionDialog({
@@ -71,7 +93,7 @@ export function AddConnectionDialog({
           {providers.length > 0 && (
             <TileSection title={<Trans>Sign in with a provider</Trans>}>
               {providers.map((p) => {
-                const Icon = specIcon(p.icon);
+                const Icon = providerIcon(p);
                 return (
                   <DesktopTile
                     key={p.name}
@@ -91,7 +113,7 @@ export function AddConnectionDialog({
               {specs.map((spec) => (
                 <DesktopTile
                   key={spec.name}
-                  Icon={specIcon(spec.icon_name)}
+                  Icon={credentialIcon(spec)}
                   label={spec.title || String(spec.name ?? '')}
                   loading={busyKey === spec.name}
                   data-testid={`add-connection-${spec.name}`}

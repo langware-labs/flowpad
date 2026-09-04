@@ -34,6 +34,15 @@ class HubError(Exception):
         self.code = code
         super().__init__(f"hub error {status_code}: {reason}")
 
+    @property
+    def is_target_missing(self) -> bool:
+        """True when the hub's answer means "there is nothing there for you":
+        a plain 404, or the authorizer's ``target_not_found`` code — emitted
+        both when the entity is gone and when the caller holds no role on it
+        (masked so entity existence doesn't leak).
+        """
+        return self.status_code == 404 or self.code == HubErrorCode.TARGET_NOT_FOUND
+
 
 def _extract_reason(resp: httpx.Response) -> str:
     """Pull a short failure reason out of an httpx response body.

@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
@@ -38,6 +37,7 @@ from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -128,38 +128,47 @@ class ComputeNode(
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        """Register a new in-process activity, raising RuntimeError if one is already running."""
+        """Claim the single-flight slot for ``job_name``, or raise if it is held.
+
+        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        address is the same statement this registry used to make, so the single-flight
+        decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
+        survives only as the carrier for the legacy ``IndexProgressTable`` payload while
+        producers are migrated; it is not consulted about whether the slot is free.
+        """
+        from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        key = f"{self.typeid}:{job_name}"
-        existing = _COMPUTE_ACTIVITIES.get(key)
-        if existing is not None and not existing.is_timed_out and not existing.is_complete:
-            raise RuntimeError(f"Job '{job_name}' already running")
+        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
             timeout_seconds=timeout_seconds,
+            activity=claimed,
         )
-        _COMPUTE_ACTIVITIES[key] = activity
+        _COMPUTE_ACTIVITIES[f"{self.typeid}:{job_name}"] = activity
         return activity
 
     def _complete_activity(self, job_name: str) -> None:
-        """Remove a completed activity from the registry and wake its waiters."""
+        """Release the slot and wake its waiters."""
         activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
-        if activity is not None:
-            activity.released.set()
+        if activity is not None and activity.activity is not None:
+            # Ending the activity is what frees the address and wakes its waiters; the
+            # carrier has no release of its own to set.
+            if not activity.activity.is_terminal:
+                activity.activity.done()
 
     def _running_activity(self, job_name: str):
         """The activity holding ``job_name``, or None when the slot is free.
 
-        "Holding" is the same predicate `_start_activity` refuses on, so a
-        caller that waits on this and a caller that claims cannot disagree
-        about whether the slot is taken.
+        Freeness is the claim's answer, not this map's, so a caller that waits and a caller
+        that claims cannot disagree about whether the slot is taken.
         """
-        existing = _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
-        if existing is None or existing.is_timed_out or existing.is_complete:
+        from flow_sdk.activity import monitor  # noqa: PLC0415
+
+        if monitor.holder(job_name, scope=str(self.typeid)) is None:
             return None
-        return existing
+        return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
@@ -1435,6 +1444,46 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     def get_host_action(self, port: int, redirect: bool = True):
         return self._desktop_get_host(port, redirect)
 
+    @action.get(action_name="connections")
+    async def connections_action(self, project_id: str = "") -> "ApiResponse":
+        """Every connection this box has, in one read.
+
+        Consolidated HERE rather than in the browser, which used to fetch four
+        separate shapes and decide for itself what "connected" meant — two
+        surfaces then disagreed about the same key, twice.
+
+        ``project_id`` is optional and the answer is honestly smaller without it:
+        API-key credentials are identified by ``(project_id, env_var)`` and the
+        server has no notion of "the selected project", which lives in the
+        client. See ``core/connections/status.py`` for what each kind costs.
+
+        A pure read. ``check-harness-logins`` is the verb that asks the vendor
+        CLIs; keeping it out of here is what stops a GET from spawning
+        subprocesses on the path ``require()`` resolves through.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id) if project_id else None
+        rows = await list_connections(project=project)
+        return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
+
+    @action.post(action_name="check-harness-logins")
+    async def check_harness_logins_action(self, force: bool = False) -> "ApiResponse":
+        """Ask the installed harness CLIs whether they are signed in.
+
+        A POST because it writes: each verdict is mirrored onto the harness
+        ``Capability``, which is what makes the connections table, the LLM
+        sources screen and the login modal agree at once.
+
+        Only the harnesses nobody has asked about, unless ``force`` — the field
+        it writes means exactly "nobody has asked", so re-probing an answered
+        harness would re-shell a vendor CLI to learn what is already known.
+        """
+        from flow_sdk.core.connections.status import check_harness_logins  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"checked": await check_harness_logins(force=force)})
+
     @action.all(action_name="get-machine-status")
     async def get_machine_status_action(self):
         return await self._desktop_get_machine_status()
@@ -1498,6 +1547,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="list-projects")
     async def list_projects_action(self):
         return await self._scan_list_projects()
+
+    @action.all(action_name="project-cleanup-report")
+    async def project_cleanup_report_action(self):
+        return await self._scan_project_cleanup_report()
+
+    @action.all(action_name="project-git-detail")
+    async def project_git_detail_action(self):
+        return await self._scan_project_git_detail()
+
+    @action.post(action_name="project-remove-from-harness")
+    async def project_remove_from_harness_action(self):
+        return await self._scan_project_cleanup_apply(permanent=False)
+
+    @action.post(action_name="project-delete-permanently")
+    async def project_delete_permanently_action(self):
+        return await self._scan_project_cleanup_apply(permanent=True)
 
     @action.all(action_name="scan-project")
     async def scan_project_action(self):

@@ -26,6 +26,20 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "ingest"
 Responder = Callable[[str, Mapping[str, str]], "tuple[int, bytes, dict]"]
 
 
+def with_token(monkeypatch, driver_class, token: str = "tok"):
+    """*driver_class*, with `_token` answering *token*.
+
+    The one thing a loopback server cannot supply: the credential is fetched from the
+    machine's connection store, not over the wire. Every driver test is about what the driver
+    does WITH a token, so both Google drivers hand themselves one the same way.
+    """
+    async def _answer(self, source):
+        return token
+
+    monkeypatch.setattr(driver_class, "_token", _answer)
+    return driver_class()
+
+
 def fixture_bytes(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 

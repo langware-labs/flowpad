@@ -9,7 +9,6 @@ Routes:
 """
 
 import logging
-from dataclasses import asdict
 
 from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthProvider
 from flow_sdk.app.actions.desktop_oauth import (
@@ -25,6 +24,7 @@ from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, 
 from flow_sdk.core import action
 from flow_sdk.core.oauth import resolve_user_credentials_name, unresolved_provider_reason
 from flow_sdk.core.oauth.hub_oauth import (
+    hub_app_credentials_name_for,
     hub_credential_value,
     hub_credentials_name_for,
     hub_start_auth,
@@ -158,7 +158,7 @@ async def oauth_main() -> ApiResponse:
             from flow_sdk.core.connections.specs import _list_connection_specs_local  # noqa: PLC0415
 
             specs = await _list_connection_specs_local()
-            return ApiSuccessResponse(data={"values": [asdict(spec) for spec in specs]})
+            return ApiSuccessResponse(data={"values": [spec.model_dump(mode="json") for spec in specs]})
 
         if oauth_action_str == OAuthAction.Token:
             from flow_sdk.core.connections.specs import (  # noqa: PLC0415
@@ -278,60 +278,63 @@ async def oauth_main() -> ApiResponse:
         return ApiFailResponse(message=f"OAuth error: {str(e)}")
 
 
+def _status_data(provider: str, token: object, *, error: str | None = None) -> dict:
+    """The status payload, built once.
+
+    Held is held: every field is a function of whether a token resolved, so the
+    four hand-written copies this replaces could — and did — drift from each
+    other. ``error`` is the one axis that is not derivable.
+    """
+    held = bool(token)
+    return {
+        "status": "error" if error else ("available" if held else "missing"),
+        "has_token": held,
+        "is_attached": held,
+        "auth_method": provider if held else "none",
+        **({"error": error} if error else {}),
+    }
+
+
 async def _handle_status(provider: str) -> ApiResponse:
     """Check OAuth connection status for a provider.
 
     Desktop mode reads Flowpad-owned SOD entries. It never inspects Claude Code's
     credential store.
+
+    Every provider resolves through ``token_for``'s precedence chain (request
+    user → local user → hub). This used to answer an unconditional "missing" for
+    anything that was not anthropic or github, so a genuinely connected Slack,
+    Google Drive or Atlassian still reported no token while the Connections row
+    said "Connected" purely because an env-var row existed. A status that never
+    asks whether the secret is there cannot tell "connected" from
+    "connected-looking".
+
+    Anthropic is the one provider that keeps its own resolver: its credential is
+    desktop-local by construction, so it reads with ``hub=False`` and must not
+    pay a hub round trip to learn what it already knows.
+
+    COST: for a provider whose token is not held locally this now costs up to two
+    hub round trips (``hub_holds_credential``'s table read, then the value read),
+    where the old constant cost none. That is fine for the one-provider,
+    on-demand caller this has (``ui/src/lib/github-oauth-status.ts``), and is NOT
+    fine in a loop over the provider list — derive a table from the memoised
+    catalogue (``core/connections/specs.py::_oauth_state``) before doing that.
     """
     try:
+        from flow_sdk.core.oauth.provider_registry import token_for  # noqa: PLC0415
+
         if provider == "anthropic":
-            credentials = await get_anthropic_token_for_current_user()
-            return ApiSuccessResponse(
-                message="Connection status checked",
-                data={
-                    "status": "available" if credentials else "missing",
-                    "has_token": bool(credentials),
-                    "is_attached": bool(credentials),
-                    "auth_method": "anthropic",
-                },
-            )
-
-        if provider == "github":
-            token = await _get_github_token_for_current_user()
-            return ApiSuccessResponse(
-                message="Connection status checked",
-                data={
-                    "status": "available" if token else "missing",
-                    "has_token": bool(token),
-                    "is_attached": bool(token),
-                    "auth_method": "github",
-                },
-            )
-
-        # Default: no credentials available
-        return ApiSuccessResponse(
-            message="Connection status checked",
-            data={
-                "status": "missing",
-                "has_token": False,
-                "is_attached": False,
-                "auth_method": "none",
-            },
-        )
+            token = await get_anthropic_token_for_current_user()
+        else:
+            token = await token_for(provider)
+        return ApiSuccessResponse(message="Connection status checked", data=_status_data(provider, token))
     except Exception as e:
         # Unexpected error path (above branches handle their own errors). Surface
         # status="error" so the UI can distinguish from a genuine "no credential".
         logger.warning(f"OAuth status check error for {provider}: {e}")
         return ApiSuccessResponse(
             message="Connection status checked",
-            data={
-                "status": "error",
-                "has_token": False,
-                "is_attached": False,
-                "auth_method": provider if provider in {"anthropic", "github"} else "none",
-                "error": str(e),
-            },
+            data=_status_data(provider, None, error=str(e)),
         )
 
 
@@ -511,12 +514,18 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
 
     * A provider with LOCAL consumers of the raw token — GitHub, whose token is
       read out of local SOD by ``git push``, the ``gh`` capability and the repo
-      actions — gets the value copied into local SOD under the local name.
-      Without this the Connections tab would say Connected while every one of
-      those kept failing.
-    * A provider with no local consumer — Slack — gets a value-free row only.
+      actions, and Slack, whose ``SlackDriver._token()`` runs on every poll from
+      the request-less poller — gets the value copied into local SOD under the
+      local name. Without this the Connections tab would say Connected while
+      every one of those kept failing.
+    * A provider with no local consumer — Atlassian, whose hourly token the hub
+      refreshes and a local copy would go stale — gets a value-free row only.
       The token stays on the hub and is resolved when a worker actually needs it,
       which is the rule the rest of the secret plane follows.
+
+    Both branches run ONCE, here, in the request that completed the flow. A
+    credential connected on another machine is never adopted; see
+    ``credential_for``'s hub tier for the read path that still covers it.
     """
     from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
     from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
@@ -540,6 +549,24 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
             logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
         else:
             logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
+
+    # The APP (bot) half, when the provider issues one — a SEPARATE policy from
+    # `copy_hub_credential`, not a sub-case of it. They coincide for Slack and
+    # would not for a provider whose user token stays on the hub (Atlassian's
+    # shape) while its bot token has a local consumer. Nesting this under the
+    # user-token branch would have silently adopted nothing there.
+    #
+    # `verify_held=False` because the hub's provider table advertises only the
+    # user token: the value route serves this name, but nothing discoverable
+    # points at it.
+    app_local = descriptor.app_credentials_name if descriptor is not None else None
+    if app_local:
+        app_value = await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
+        if app_value:
+            await record_credential(user, provider, app_value, name=app_local)
+            logger.info("OAuth: adopted the hub's %s BOT token into local %s", provider, app_local)
+        else:
+            logger.info("OAuth: no %s bot token on the hub (app tokens are optional)", provider)
 
     # A provider the hub owns outright has no local value to record, but the row
     # still has to exist or the table reads it as MISSING.

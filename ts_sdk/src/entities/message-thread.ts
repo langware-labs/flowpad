@@ -12,6 +12,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IMessageThread extends IEntity {
+  owner?: string | null;
   /** The channel: gmail | slack | jira. The badge axis. */
   channel?: string;
   /** The provider's own thread handle (Gmail threadId, Slack thread_ts, …). */
@@ -34,6 +35,8 @@ export class MessageThread extends APIEntity<MessageThread> implements IMessageT
 
   channel: string = '';
   thread_key: string = '';
+  /** Whose inbox this thread belongs to — a user or agent typeid string. */
+  owner: string | null = null;
   conversation_id: string = '';
   title: string = '';
   message_count: number = 0;
@@ -42,6 +45,7 @@ export class MessageThread extends APIEntity<MessageThread> implements IMessageT
     super(entity);
     this.channel = entity.channel ?? '';
     this.thread_key = entity.thread_key ?? '';
+    this.owner = entity.owner ?? null;
     this.conversation_id = entity.conversation_id ?? '';
     this.title = entity.title ?? '';
     this.message_count = entity.message_count ?? 0;

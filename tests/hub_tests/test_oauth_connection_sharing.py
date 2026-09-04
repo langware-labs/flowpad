@@ -46,7 +46,6 @@ import httpx
 import pytest
 
 from flow_sdk.core.oauth.hub_oauth import hub_credential_value, hub_holds_credential
-from tests.hub_tests._local_login import login_as
 from tests.utils.dummy_oauth_server import DEFAULT_PORT, dummy_oauth_server
 
 PROVIDER = "dummyauth"
@@ -85,18 +84,6 @@ def _clean_provider_log(dummy_server):
     yield
 
 
-@pytest.fixture
-def hub_session(hub_base_url, hub_login_payload):
-    """A logged-in identity, and the bearer token for direct hub calls.
-
-    `login_as` writes BOTH halves — the sodot token and the config.json user
-    record — because `is_logged_in()` reads the user record; writing only the
-    token yields a state that behaves as logged out.
-    """
-    api_key = login_as(hub_login_payload)
-    user_id = (hub_login_payload.get("user") or {}).get("id")
-    assert user_id, "hub /login returned no user record"
-    return {"api_key": api_key, "user_id": user_id, "base_url": hub_base_url}
 
 
 @pytest.fixture

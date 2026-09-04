@@ -130,6 +130,12 @@ class BootstrapInfo(BaseModel):
     # populated only for public api_visible entity types. Replaces the former
     # ``schemas`` (bare JSON-schema list) channel.
     types: List[Dict[str, Any]] = []
+    # The icon vocabulary — every pack this backend serves, in resolution
+    # order. Static and definitional like ``types``, which is why it rides the
+    # bootstrap payload rather than a second round-trip: a name published in
+    # ``types`` is only renderable if the frontend also knows the pack it lives
+    # in, so the two belong in the same fetch. See ``flow_sdk/icons``.
+    icon_packs: List[Dict[str, Any]] = []
     user: Optional[Dict[str, Any]] = None
     domain: Optional[Dict[str, Any]] = None
     visitor: Optional[Dict[str, Any]] = None

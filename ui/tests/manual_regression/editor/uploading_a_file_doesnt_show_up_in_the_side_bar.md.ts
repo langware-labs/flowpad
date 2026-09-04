@@ -14,7 +14,13 @@ function realConsoleErrors(errors: string[]): string[] {
 test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => {
   test('explorer sidebar/tree surfaces directory structure with entries', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const errors: string[] = [];
     page.on('console', (msg) => {

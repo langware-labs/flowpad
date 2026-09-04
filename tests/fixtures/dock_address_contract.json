@@ -118,6 +118,10 @@
     "api-keys": {
       "view_type": "credentials",
       "pointer": "connections"
+    },
+    "skills": {
+      "view_type": "assets",
+      "pointer": "list/skill"
     }
   },
   "view_meta": {
@@ -136,14 +140,14 @@
       "chrome": "workspace"
     },
     "analysis": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"
     },
     "chat": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -192,7 +196,7 @@
       "chrome": "workspace"
     },
     "reasoning": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -206,7 +210,7 @@
       "chrome": "workspace"
     },
     "unsupported": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -452,14 +456,14 @@
     },
     "assets": {
       "addressable": true,
-      "pointer": "required",
+      "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": true,
       "chrome": "workspace"
     },
     "project": {
       "addressable": true,
-      "pointer": "required",
+      "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"

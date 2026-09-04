@@ -4,11 +4,11 @@ The conversation's canonical program, run for real:
 
     async with workflow("blocks-e2e"):
         inbox  = Inbox(watched, api_key=KEY)
-        runner = AgentRunner("email-summarizer")
-        async for m in inbox.listen():
-            out   = await runner.run(m)
-            reply = EmailMessageSpec.reply_to(m, body=out.text)
-            await inbox.send(reply)
+        agent = await get_agent("email-summarizer")
+        async with agent.process_messages():
+            async for m in inbox.listen():
+                out = await agent.process_message(m)
+                await m.reply(EmailMessageSpec.reply_to(m, body=out.text))
 
 Everything is the shipped machinery: the agentmail driver fetches and sends,
 the projection places messages, the persona spawns through its Deployment and
@@ -35,7 +35,8 @@ import uuid
 import pytest
 
 import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
-from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
 from tests.test_settings import test_service_config
 
 KEY = os.environ.get("AGENTMAIL_API_KEY", "")
@@ -87,7 +88,6 @@ async def test_blocks_snippet_receives_and_replies(local_project):
     assert watched, f"inbox create returned no address: {sorted(created)}"
     mark("inbox created")
 
-    runner = AgentRunner("email-summarizer")
     try:
         # ── seed: the outside correspondent writes in ────────────────────────
         _api("POST", f"/inboxes/{urllib.parse.quote(PROBE)}/messages/send", {
@@ -103,23 +103,26 @@ async def test_blocks_snippet_receives_and_replies(local_project):
         # ── the snippet, verbatim shape ──────────────────────────────────────
         async with workflow("blocks-e2e"):
             inbox = Inbox(watched, api_key=KEY)
+            agent = await get_agent("email-summarizer")
+            assert agent is not None
 
-            async for m in inbox.listen():
-                mark("received (listen yielded)")
-                assert marker in m.name, f"unexpected message: {m.name!r}"
-                assert m.thread_key, "AgentMail supplies a native thread id"
+            async with agent.process_messages():
+                async for m in inbox.listen():
+                    mark("received (listen yielded)")
+                    assert marker in m.name, f"unexpected message: {m.name!r}"
+                    assert m.thread_key, "AgentMail supplies a native thread id"
 
-                out = await runner.run(m)                      # real worker turn
-                mark("turn captured")
-                assert out.text.strip(), "the turn produced no reply text"
+                    out = await agent.process_message(m)  # real worker turn
+                    mark("turn captured")
+                    assert out.text.strip(), "the turn produced no reply text"
 
-                reply = EmailMessageSpec.reply_to(
-                    m, body=f"{out.text}\n[{marker}-reply]"
-                )
-                sent_id = await inbox.send(reply)
-                mark("reply sent")
-                assert sent_id, "the provider must confirm the send"
-                break                                          # one message is the test
+                    reply = EmailMessageSpec.reply_to(
+                        m, body=f"{out.text}\n[{marker}-reply]"
+                    )
+                    outcome = await m.reply(reply)                 # send → record → ack
+                    mark("reply sent")
+                    assert outcome is not None and outcome.external_id, "the provider must confirm the send"
+                    break                                          # one message is the test
 
         # ── the reply really arrived at the counterpart ──────────────────────
         reply_marker = f"{marker}-reply"
@@ -143,5 +146,4 @@ async def test_blocks_snippet_receives_and_replies(local_project):
         # budget belongs to the loop itself: receive → turn → send → verified.
 
     finally:
-        await asyncio.shield(runner.close())
         _api("DELETE", f"/inboxes/{urllib.parse.quote(watched)}")

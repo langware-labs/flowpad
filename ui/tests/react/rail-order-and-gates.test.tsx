@@ -99,11 +99,12 @@ afterEach(() => {
 });
 
 describe('rail — order and gates', () => {
-  it('a fresh instance shows exactly Chats', () => {
+  it('a fresh instance shows exactly Chats and Connections', () => {
     // Home, the project, Bookmarks and Files each moved to the top navigation
-    // bar (7c3e8d74a, 8d4d03dc4), so a fresh rail is down to Chats. The spec
-    // side of the same contract is tests/unit/rail-visibility.test.ts.
-    expect(renderRail().ids()).toEqual(['chats']);
+    // bar (7c3e8d74a, 8d4d03dc4). Connections stays visible because it is how a
+    // fresh instance gains its first credential. The spec-side contract lives
+    // in tests/unit/rail-visibility.test.ts.
+    expect(renderRail().ids()).toEqual(['chats', 'credentials']);
   });
 
   it('drops the project item when no project is active', async () => {
@@ -113,7 +114,7 @@ describe('rail — order and gates', () => {
 
   it('reveals Inbox on the first conversation', () => {
     gates.conversations = true;
-    expect(renderRail().ids()).toEqual(['chats', 'inbox']);
+    expect(renderRail().ids()).toEqual(['chats', 'inbox', 'credentials']);
   });
 
   it('Data sources appears at Advanced, not before, and needs no content gate', () => {

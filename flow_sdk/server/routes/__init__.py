@@ -13,6 +13,7 @@ from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
 from .directory import router as directory_router
 from .display import router as display_router
+from .activity import router as activity_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -40,6 +41,7 @@ from .ui import router as ui_router
 from .version import router as version_router
 from .watch import router as watch_router
 from .webhook import webhook_router as webhook_api_router
+from .whatsapp import router as whatsapp_router
 from .websocket import websocket_router
 from .wiki import router as wiki_router
 from .worldview import router as worldview_router
@@ -60,6 +62,7 @@ __all__ = [
     "ui_router",
     "websocket_router",
     "webhook_api_router",
+    "whatsapp_router",
     "rules_router",
     "watch_router",
     "assets_router",
@@ -79,6 +82,7 @@ __all__ = [
     "version_router",
     "favorites_router",
     "markdown_index_router",
+    "activity_router",
     "docs_graph_router",
     "semantic_checker_router",
     "pty_stream_router",

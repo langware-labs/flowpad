@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "telegram",
   "title": "Telegram",
-  "icon_name": "Send",
+  "icon_name": "Telegram",
   "description": "A Telegram bot account over the Bot API — the bot's chats become conversations, and it really sends.",
   "config": {
     "bot_token": {

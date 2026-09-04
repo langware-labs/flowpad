@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import httpx
 import pytest
 
+from tests.hub_tests._local_login import login_as
+
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _LOCAL_HUB_STATUS: tuple[bool, str] | None = None
 
@@ -248,6 +250,52 @@ def _two_distinct_identities():
 @pytest.fixture()
 def hub_login_payload(hub_base_url) -> dict:
     return _login(hub_base_url)
+
+
+@pytest.fixture()
+async def bob_token(hub_base_url) -> str:
+    """A bearer token for the tier's SECOND identity.
+
+    Lives here because ``_resolve_identities`` and ``_cleanup_token`` already do,
+    so "who is bob" has one answer. A test that needs an entity this instance
+    does NOT own asks for this rather than signing up an account of its own —
+    a fresh signup would leave a hub user nothing can reclaim (``user`` is not in
+    ``_CLEANUP_TYPES``, and the leak guard's regex only sees ``/graph/`` posts).
+    """
+    import httpx
+
+    _, bob_email = _resolve_identities()
+    app_env_pw = None
+    app_local = Path(__file__).resolve().parents[2].parent / "flowpad-app" / ".env.local"
+    if app_local.exists():
+        for line in app_local.read_text().splitlines():
+            if line.strip().startswith("FLOWPAD_CLOUD_USER_PASSWORD") and "=" in line:
+                app_env_pw = line.partition("=")[2].strip().strip("\"'") or None
+    bob_pw = os.environ.get("BOB_PW") or app_env_pw
+    if not bob_email or not bob_pw:
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(
+            f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw}
+        )
+        response.raise_for_status()
+        data = response.json()["data"]
+    return data.get("api_key") or data["token"]
+
+
+@pytest.fixture()
+def hub_session(hub_base_url, hub_login_payload) -> dict:
+    """A persisted local login plus the ids a direct hub call needs.
+
+    Mirrors the production ``cloud_login`` funnel's local writes (sodot token and
+    the ``config.json`` user record) so the desktop-side helpers see a logged-in
+    instance, and hands back the api key for Bearer calls.
+    """
+    api_key = login_as(hub_login_payload)
+    user_id = (hub_login_payload.get("user") or {}).get("id")
+    assert user_id, "hub /login returned no user record"
+    return {"api_key": api_key, "user_id": user_id, "base_url": hub_base_url}
 
 
 @pytest.fixture()

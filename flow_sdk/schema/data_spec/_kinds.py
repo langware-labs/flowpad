@@ -40,8 +40,14 @@ def register_builtin_kinds() -> None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy
 
     SchemaRegistry.register_kind("fs_ref", FSRef)
+    import flow_sdk.core.connections.types  # noqa: F401  — registers ``connection``
+    import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
+    import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
+    import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
+    import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
+    import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``

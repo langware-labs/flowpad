@@ -132,7 +132,7 @@ function renderEditor(fsRef: import('@sdk').FSRef, whiteboard?: import('@sdk').W
   );
 }
 
-/** A tiny FSRef-shaped stub the editor can call: `.child(name)`, `.read()`, `.write()`. */
+/** A tiny FSRef-shaped stub the editor can call. */
 function makeFsRef(name: string, files: Record<string, string>, writeLog: Array<{ path: string; body: string }>) {
   return {
     name,
@@ -143,6 +143,9 @@ function makeFsRef(name: string, files: Record<string, string>, writeLog: Array<
         async read(): Promise<string> {
           if (full in files) return files[full];
           throw new Error('not found');
+        },
+        async readIfExists(): Promise<string | null> {
+          return full in files ? files[full] : null;
         },
         async write(body: string): Promise<void> {
           files[full] = body;

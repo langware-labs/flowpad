@@ -81,8 +81,14 @@ async def get(
     url: str,
     *,
     headers: Optional[dict] = None,
+    params: Optional[dict] = None,
     ok_statuses: tuple[int, ...] = (),
     hint: str = "",
 ) -> httpx.Response:
-    """GET ``url`` — :func:`request` with the method filled in."""
-    return await request(http, "GET", url, headers=headers, ok_statuses=ok_statuses, hint=hint)
+    """GET ``url`` — :func:`request` with the method filled in.
+
+    ``params`` is forwarded like every other argument. It was the one thing this helper
+    dropped, which is why two drivers hand-merged a query string onto the URL before calling
+    it — the same encoding httpx already does, spelled a second way.
+    """
+    return await request(http, "GET", url, headers=headers, params=params, ok_statuses=ok_statuses, hint=hint)

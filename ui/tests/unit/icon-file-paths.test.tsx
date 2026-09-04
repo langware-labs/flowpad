@@ -1,9 +1,9 @@
+import { createElement } from 'react';
 import { describe, it, expect } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { BrainCog, FileText } from 'lucide-react';
 import { iconAssetUrl, isIconPath } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { renderIconValue } from '@src/lib/icon-value';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 
 /**
  * An icon string is either a NAME or a FILE, and one slash tells them apart.
@@ -94,22 +94,35 @@ describe('lucideByName — files and names resolve through one seam', () => {
     expect(lucideByName('icons/agent.svg')).not.toBe(lucideByName('icons/other.svg'));
   });
 
-  it('leaves lucide names and the unknown fallback alone', () => {
-    expect(lucideByName('BrainCog')).toBe(BrainCog);
-    expect(lucideByName('NotARealIcon')).toBe(FileText);
-    expect(lucideByName(null)).toBe(FileText);
+  it('draws the right glyph for a lucide name, and the fallback for anything else', () => {
+    // Identity with the lucide export is no longer the contract — resolution
+    // goes through the SDK, so what comes back is a component bound to the tag.
+    // What must hold is what it DRAWS, and that the same name keeps returning
+    // the same component so React does not remount (asserted separately).
+    const brain = render(<>{createElement(lucideByName('BrainCog'))}</>);
+    expect(brain.container.querySelector('svg')).not.toBeNull();
+
+    // A typo and no name at all must reach the SAME generic glyph — that is the
+    // rule this seam has always kept, so that "unknown icon" and "no icon" look
+    // alike instead of one of them silently vanishing.
+    const generic = render(<>{createElement(lucideByName('FileText'))}</>).container.innerHTML;
+    for (const unknown of ['NotARealIcon', null]) {
+      expect(render(<>{createElement(lucideByName(unknown))}</>).container.innerHTML).toBe(generic);
+    }
   });
 });
 
-describe('renderIconValue — a stored path is a glyph, not literal text', () => {
+describe('a stored icon value — a path is a glyph, an emoji is itself', () => {
   it('renders an img rather than printing the path', () => {
-    const { container } = render(<>{renderIconValue('icons/agent.svg')}</>);
+    const { container } = render(<FlowIcon icon="icons/agent.svg" />);
     expect(container.querySelector('img')).not.toBeNull();
     expect(container.textContent).toBe('');
   });
 
   it('still renders emoji as text and names as glyphs', () => {
-    expect(render(<>{renderIconValue('🚀')}</>).container.textContent).toBe('🚀');
-    expect(render(<>{renderIconValue('BrainCog')}</>).container.querySelector('svg')).not.toBeNull();
+    // The picker writes all three into one field, and one component draws them:
+    // an emoji is not a legal tag, so it comes back as text and IS the glyph.
+    expect(render(<FlowIcon icon="🚀" />).container.textContent).toBe('🚀');
+    expect(render(<FlowIcon icon="BrainCog" />).container.querySelector('svg')).not.toBeNull();
   });
 });

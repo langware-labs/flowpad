@@ -20,6 +20,7 @@
  */
 import { AgenticProcess, Project, ProcessKind } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import type { TestContext } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import {
@@ -38,7 +39,7 @@ describe('last-vibe-chat selection', () => {
 
   beforeEach(async (context: TestContext) => {
     await apiTestSetup(signupInfo, context.task.name);
-    project = await new Project({ name: `/tmp/flow_test_last_vibe_${Date.now()}` }).save([]);
+    project = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_${Date.now()}` }).save([]));
   });
 
   /**
@@ -100,12 +101,12 @@ describe('last-vibe-chat selection', () => {
   });
 
   it('resolves to nothing for a project with no chats at all', async () => {
-    const empty = await new Project({ name: `/tmp/flow_test_last_vibe_empty_${Date.now()}` }).save([]);
+    const empty = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_empty_${Date.now()}` }).save([]));
     expect(await resolve(empty.id)).toBeNull();
   });
 
   it("does not leak another project's chat", async () => {
-    const other = await new Project({ name: `/tmp/flow_test_last_vibe_other_${Date.now()}` }).save([]);
+    const other = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_other_${Date.now()}` }).save([]));
     await makeProcess('mine', ProcessKind.Chat, OLD);
     await new AgenticProcess({
       name: 'theirs',

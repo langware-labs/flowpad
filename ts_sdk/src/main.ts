@@ -5,6 +5,8 @@ import config from './config';
 import { sdkConfig } from './config/index';
 import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
 import { AgentHook } from './entities/agent-hook';
+import { loadIconPacks } from './icons/registry';
+import type { IconPackSpec } from './icons/types';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
 import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
@@ -79,6 +81,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)
       await dataManager.loadTypes(bootstrapInfo.types || []);
+
+      // The icon vocabulary rides the same payload as the types that reference
+      // it: a `TypeInfo.icon` name is only renderable if the pack it lives in
+      // is loaded too, so the two are seeded together or not at all.
+      loadIconPacks((bootstrapInfo as { icon_packs?: IconPackSpec[] }).icon_packs);
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {

@@ -27,20 +27,21 @@ async def test_agent_enables_email_once():
     try:
         assert agent.inbox is None
         with pytest.raises(LoginRequired):
-            await agent.enableEmail()
+            await agent.allocate_inbox()
         assert agent.remote is False
 
         login = await flow_sdk.auth.login()
         logged_in = True
         assert login["status"] == "logged_in"
 
-        inbox = await agent.enableEmail()
+        inbox = await agent.allocate_inbox()
         assert isinstance(inbox, EmailInbox)
         assert agent.inbox is inbox
         assert inbox.agent_typeid == agent.typeid
         assert inbox.address and "@" in inbox.address
         assert agent.remote is True
-        assert agent.email_enabled is True
+        assert inbox.is_active is True
+        assert inbox.newly_allocated is True, "the first call allocates the address"
 
         source = await DataSource.find_for_account(
             CloudEmailDriver.provider,
@@ -52,7 +53,8 @@ async def test_agent_enables_email_once():
         assert source.account_identities == [inbox.address]
 
         agent.remote = False
-        same_inbox = await agent.enableEmail()
+        same_inbox = await agent.allocate_inbox()
+        assert same_inbox.newly_allocated is False, "asking twice must never bill twice"
         assert agent.remote is True, "a retry must adopt an Agent already published to the Hub"
         assert same_inbox is inbox
         assert same_inbox.typeid == inbox.typeid
@@ -65,13 +67,13 @@ async def test_agent_enables_email_once():
         )
         assert same_source is not None and same_source.id == source.id
 
-        disabled_inbox = await agent.disableEmail()
+        disabled_inbox = await inbox.disable()
         assert disabled_inbox is not None
         assert disabled_inbox.typeid == inbox.typeid
         assert disabled_inbox.address == inbox.address
         assert disabled_inbox.status == "disabled"
         assert agent.inbox is disabled_inbox
-        assert agent.email_enabled is False
+        assert disabled_inbox.is_active is False
         paused_source = await DataSource.find_for_account(
             CloudEmailDriver.provider,
             CloudEmailDriver.identity_config_key,
@@ -81,7 +83,8 @@ async def test_agent_enables_email_once():
         assert paused_source.id == source.id
         assert paused_source.status == SourceStatus.DISABLED.value
 
-        resumed_inbox = await agent.enableEmail()
+        resumed_inbox = await agent.allocate_inbox()
+        assert resumed_inbox.newly_allocated is False, "re-allocating must adopt, never buy"
         assert resumed_inbox.typeid == inbox.typeid
         assert resumed_inbox.address == inbox.address
         assert resumed_inbox.status == "active"
@@ -101,7 +104,12 @@ async def test_agent_enables_email_once():
             try:
                 if logged_in and agent.remote:
                     try:
-                        await agent.decommission_inbox()
+                        # `agent.inbox`, never the local `inbox`: when the test
+                        # fails before that name is bound, referencing it raises
+                        # UnboundLocalError from the finally block and MASKS the
+                        # real failure.
+                        if agent.inbox is not None:
+                            await agent.inbox.release()
                     finally:
                         await agent.unshare()
             finally:

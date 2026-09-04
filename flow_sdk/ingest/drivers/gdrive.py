@@ -44,6 +44,7 @@ from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.choice_spec import Choice
 
 logger = logging.getLogger(__name__)
 
@@ -192,10 +193,21 @@ class GoogleDriveDriver(IngestDriver):
         a `driveId` — so it earns a segment and its own cursor. Nothing else in
         Drive does.
         """
-        drives = [str(d).strip() for d in ((source.config or {}).get("drives") or []) if str(d).strip()]
-        if not drives:
+        refs: list[SegmentRef] = []
+        for entry in (source.config or {}).get("drives") or []:
+            # An entry is either a bare id (typed, or stored before the picker existed) or
+            # the `{"id","name"}` the picker writes — the shape Slack's segments already
+            # takes. Keyed on the id either way: a renamed drive is the same drive, and
+            # keying on the name would fork its history.
+            if isinstance(entry, dict):
+                key, label = str(entry.get("id") or "").strip(), str(entry.get("name") or "")
+            else:
+                key, label = str(entry).strip(), ""
+            if key:
+                refs.append(SegmentRef(key=key, label=label or key))
+        if not refs:
             return [SegmentRef(key=ROOT_SEGMENT, label="My Drive")]
-        return [SegmentRef(key=d, label=d) for d in drives]
+        return refs
 
     # ── setup ─────────────────────────────────────────────────────────────
 
@@ -217,6 +229,31 @@ class GoogleDriveDriver(IngestDriver):
                 f"Google refused the stored credential ({exc}). Reconnect Google, granting {DRIVE_SCOPE}."
             )
         return SetupVerdict.ok()
+
+    async def choices(self, source, field: str) -> list[Choice]:
+        """The shared drives this credential can see — the `drives` field's offer.
+
+        `drives.list` is covered by the readonly scope the connection already grants, so
+        this needs no new consent. A personal (non-Workspace) account has no shared drives
+        at all and Drive answers with an empty list or a 403 depending on the account —
+        both of which the caller renders as "nothing to pick, type it instead".
+        """
+        if field != "drives":
+            return []
+        token = await self._token(source)
+        if not token:
+            raise SourceError.config(
+                "no_credential", "No Google credential on this machine. Connect Google first."
+            )
+        async with http.client() as client:
+            body = await self._call(
+                client, source, token, "/drives", {"pageSize": "100", "fields": "drives(id,name)"}
+            )
+        return [
+            Choice(id=str(d["id"]), name=str(d.get("name") or d["id"]))
+            for d in body.get("drives") or []
+            if d.get("id")
+        ]
 
     # ── the sync ──────────────────────────────────────────────────────────
 

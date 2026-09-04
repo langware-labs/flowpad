@@ -66,7 +66,13 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
 test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   test('U1: tree row carries a Palette icon', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const projectId = await pickProjectId(request);
     const { id, assetRef } = await createWhiteboard(
       request,
@@ -95,7 +101,13 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
 
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     // Create in the same project scope the list route reads. Entity.store()
     // updates the searchable record before this POST returns.
     const projectId = await pickProjectId(request);
@@ -175,7 +187,13 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
 
   test('U4: pasted image lives in board.json data.files', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `ui-u4-${Date.now() % 10000}`);
     await openEditor(page, id);
 

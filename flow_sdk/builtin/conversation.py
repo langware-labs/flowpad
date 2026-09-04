@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.tags.envelope import parse_target
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.types import EntityType
+from flow_sdk.tags.envelope import parse_target
 
 
 class MessageRef(NamedTuple):
@@ -157,6 +157,13 @@ class Conversation(ProjectedFields, Entity):
     # sentinel). Ownership for display/authz resolves from the participant
     # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
     created_by: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whose inbox lists this conversation — the local user's or an Agent's. Not
+    # ``created_by`` (the hub's creator mirror, a bare user uuid) and not the
+    # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
+    # the inbox filters by, set from the thread that minted the conversation.
+    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # resolves those to the local user. PRIVATE — never travels.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
