@@ -124,9 +124,19 @@ describe('FlowIcon props', () => {
     expect(stack.querySelector('.fp-icon-sub')?.className).toContain('badge-y');
   });
 
-  it('lets className win over the size prop', () => {
+  it('drops the named size when the caller sizes it themselves', () => {
+    // Emitting both and trusting className to win is not a rule the DOM has —
+    // `h-3 w-3 h-8 w-8` resolves by stylesheet order, not attribute order. The
+    // named size has to be absent for the precedence to be real.
     const { container } = render(<FlowIcon icon="brands.slack" size="xs" className="h-8 w-8" />);
-    expect(glyph(container).className).toContain('h-8 w-8');
+    const cls = glyph(container).className;
+    expect(cls).toContain('h-8 w-8');
+    expect(cls).not.toContain('h-3 w-3');
+  });
+
+  it('still applies the named size when className carries no sizing', () => {
+    const { container } = render(<FlowIcon icon="brands.slack" size="xs" className="text-muted-foreground" />);
+    expect(glyph(container).className).toContain('h-3 w-3');
   });
 
   it('is decorative by default and an image when named', () => {
@@ -160,6 +170,19 @@ describe('FlowIcon props', () => {
     expect(glyph(container).querySelector('.fp-icon-sub')).not.toBeNull();
   });
 
+});
+
+describe('the stylesheet', () => {
+  it('is injected by a PLAIN icon, not only by a badged one', () => {
+    // It used to hang off a ref that was attached only on the badge branch, so
+    // a page using FlowIcon alone got no `.fp-icon-mask` rule and every masked
+    // glyph rendered invisible. The demo hid it by also rendering through
+    // `iconElement`, which injects on its own.
+    document.getElementById('flowpad-icon-css')?.remove();
+    render(<FlowIcon icon="flowpad.wiki" />);
+    const css = document.getElementById('flowpad-icon-css')?.textContent || '';
+    expect(css).toContain('.fp-icon-mask');
+  });
 });
 
 describe('the bundle seam', () => {
