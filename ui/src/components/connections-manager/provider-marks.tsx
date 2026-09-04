@@ -52,14 +52,29 @@ const DriveMark: ProviderMark = ({ className }) => <GoogleDriveIcon className={c
 /** Notion, for the same reason as Drive: the hub publishes a path, not a name. */
 const NotionMark: ProviderMark = ({ className }) => <NotionIcon className={className} aria-hidden="true" />;
 
-/** OpenAI's own mark — the repo already draws it for the Codex harness, which is
- *  OpenAI's CLI. One company, one glyph. */
-const OpenAiMark: ProviderMark = ({ className }) => <CodexIcon className={className} aria-hidden="true" />;
+/** OpenAI's own mark in OpenAI's own teal (#10A37F).
+ *
+ *  The glyph is the one the repo already draws for the Codex harness — Codex is
+ *  OpenAI's CLI, so it is the same company's logo, not a stand-in. The colour is
+ *  applied HERE rather than in the component for Anthropic's reason: the
+ *  terminal strip tints that same glyph per vendor, and a fill would override a
+ *  tint that means something else. */
+const OpenAiMark: ProviderMark = ({ className }) => (
+  <CodexIcon className={cn('text-[#10A37F]', className)} aria-hidden="true" />
+);
 
-/** OpenRouter has no mark in this repo, and inventing one badly is worse than
- *  not having it. A routing glyph at least says what the thing IS, and — the
- *  point — it is not the glyph two neighbouring tiles are wearing. */
-const OpenRouterMark: ProviderMark = ({ className }) => <Waypoints className={className} aria-hidden="true" />;
+/** OpenRouter's slate (#94A3B8) on a routing glyph.
+ *
+ *  Two honest compromises, both worth stating. The shape is not OpenRouter's
+ *  logo — this repo has no copy of it, and inventing one badly is worse than not
+ *  having it; a routing glyph at least says what the thing IS and is not what
+ *  its neighbours wear. The colour IS theirs, and it is a grey: OpenRouter's
+ *  brand is deliberately slate, so this tile reads muted next to Slack's four
+ *  colours by the brand's own choice. Painting it something louder would be
+ *  inventing a colour the company does not use. */
+const OpenRouterMark: ProviderMark = ({ className }) => (
+  <Waypoints className={cn('text-[#94A3B8]', className)} aria-hidden="true" />
+);
 
 /** Twilio's red on the messaging glyph. Same reasoning as OpenRouter for the
  *  shape, plus the one thing about the brand that is unambiguous. */
