@@ -24,14 +24,15 @@ from flow_sdk.core.dock_address import (
     MachineSubview,
     PageId,
     PointerRequirement,
-    ViewType,
     TokenPlanKind,
+    ViewType,
     WebappSubview,
     can_be_tab,
     dock_url,
     normalize_retired,
     parse_dock_url,
     parse_view_type,
+    suggest_views,
 )
 
 CONTRACT = json.loads((Path(__file__).parent.parent / "fixtures" / "dock_address_contract.json").read_text())
@@ -196,8 +197,15 @@ def test_view_types_shadowing_a_real_entity_type_are_pinned():
 
 @pytest.mark.parametrize("retired", sorted(CONTRACT["retired_views"]), ids=lambda name: name)
 def test_retirement_targets_name_a_real_subview(retired):
-    """The forward pointer must be a live CredentialsSubview, not a free string."""
-    CredentialsSubview(CONTRACT["retired_views"][retired]["pointer"])
+    """The forward pointer must be a live subview, not a free string: a
+    credentials target names a ``CredentialsSubview``; the assets target
+    (``skills``) names an asset-list pointer."""
+    target = CONTRACT["retired_views"][retired]
+    if target["view_type"] == ViewType.CREDENTIALS.value:
+        CredentialsSubview(target["pointer"])
+    else:
+        assert target["view_type"] == ViewType.ASSETS.value
+        assert target["pointer"].startswith("list/")
 
 
 def test_flow_data_view_type_is_the_dock_address_enum():
@@ -238,7 +246,23 @@ def test_parse_view_type_is_non_throwing():
 def test_unaddressable_views_are_exactly_the_retired_and_folded_ones():
     """Decodable forever, but never offered as a destination."""
     unaddressable = {view.value for view, meta in VIEW_META.items() if not meta.addressable}
-    assert unaddressable == {"environment", "connections", "api-keys", "skills", "session", "atlas"}
+    assert unaddressable == {
+        # retired aliases, forwarded by RETIRED_DOCK_VIEWS
+        "environment",
+        "connections",
+        "api-keys",
+        # folded away
+        "skills",
+        "session",
+        "atlas",
+        # never built: no content-panel case and no VIEWER_REGISTRY row, so a dock
+        # URL naming one renders the Home landing. They were advertised as
+        # destinations for years and answered every request with the wrong screen.
+        "analysis",
+        "chat",
+        "reasoning",
+        "unsupported",
+    }
 
 
 def test_required_pointer_views_reject_an_empty_pointer():
@@ -247,3 +271,118 @@ def test_required_pointer_views_reject_an_empty_pointer():
     assert ViewType.HELPDESK in required
     assert ViewType.CONVERSATION in required
     assert ViewType.EVENTS not in required
+    # Verified rendering bare before the flip (see their VIEW_META rows); `helpdesk`
+    # was checked the same way, did NOT render, and stays required.
+    assert ViewType.ASSETS not in required
+    assert ViewType.PROJECT not in required
+
+
+# ── the agent-facing vocabulary (label / aliases) ──────────────────────────
+#
+# These exist because the vocabulary rotted once already, silently: nothing
+# checked that every destination is findable by the name a person uses for it.
+# See `docs/display-capabilities.md`.
+
+
+def test_every_addressable_view_has_a_label():
+    """A destination with no name is a slug an agent has to guess from."""
+    unlabelled = sorted(
+        view.value for view, meta in VIEW_META.items() if meta.addressable and not meta.label
+    )
+    assert unlabelled == []
+
+
+def test_unaddressable_views_carry_no_vocabulary():
+    """A view that is not a destination must not advertise itself as one."""
+    for view, meta in VIEW_META.items():
+        if not meta.addressable:
+            assert meta.label == "", view
+            assert meta.aliases == (), view
+
+
+def test_aliases_are_a_tuple_of_strings():
+    """A one-element tuple missing its trailing comma is a STRING, and iterating a
+    string yields single characters — which then substring-match half the table.
+    It is invisible at a glance and silently poisons every lookup, so it is
+    asserted rather than trusted."""
+    for view, meta in VIEW_META.items():
+        assert isinstance(meta.aliases, tuple), f"{view.value}: aliases is not a tuple"
+        for alias in meta.aliases:
+            assert isinstance(alias, str) and len(alias) > 1, f"{view.value}: {alias!r}"
+
+
+def test_an_alias_never_merely_restates_the_label():
+    """The label is already matched, so a duplicate adds noise and no reach."""
+    for view, meta in VIEW_META.items():
+        assert meta.label.lower() not in meta.aliases, view.value
+
+
+def test_aliases_are_normalized_and_unique():
+    """One word, one destination — otherwise the vocabulary has two answers."""
+    seen: dict[str, str] = {}
+    for view, meta in VIEW_META.items():
+        for alias in meta.aliases:
+            assert alias == alias.lower().strip(), f"{view.value}: {alias!r} is not normalized"
+            assert alias not in seen, f"{alias!r} claimed by both {seen[alias]} and {view.value}"
+            seen[alias] = view.value
+
+
+def test_an_alias_never_shadows_an_addressable_view():
+    """One word, one screen. A retired slug as an alias is fine and deliberate —
+    see the `ViewMeta` docstring; a LIVE view's slug never is."""
+    addressable = {view.value for view, meta in VIEW_META.items() if meta.addressable}
+    for view, meta in VIEW_META.items():
+        for alias in meta.aliases:
+            assert alias not in addressable, f"{view.value}: {alias!r} shadows a live view"
+
+
+def test_retired_slugs_used_as_aliases_forward_to_the_aliasing_view():
+    """The agreement above is asserted, not assumed."""
+    slugs = {view.value: view for view in ViewType}
+    for view, meta in VIEW_META.items():
+        for alias in meta.aliases:
+            retired = slugs.get(alias)
+            if retired is None or VIEW_META[retired].addressable:
+                continue
+            forwarded, _ = normalize_retired(retired)
+            assert forwarded is view, (
+                f"{view.value} claims alias {alias!r}, but that slug forwards to {forwarded.value}"
+            )
+
+
+def test_pages_name_real_page_ids():
+    pages = {page.value for page in PageId}
+    for view, meta in VIEW_META.items():
+        assert isinstance(meta.pages, tuple), f"{view.value}: pages is not a tuple"
+        assert meta.pages, view
+        assert set(meta.pages) <= pages, view
+
+
+def test_suggest_views_finds_a_screen_by_the_word_a_person_uses():
+    """The regression that started this: "connections" is the Credentials screen."""
+    assert suggest_views("connections") == [ViewType.CREDENTIALS]
+    assert suggest_views("secrets") == [ViewType.CREDENTIALS]
+    assert suggest_views("files") == [ViewType.EXPLORER]
+    assert suggest_views("runs") == [ViewType.PROCESS_RUNS]
+    assert suggest_views("help desk") == [ViewType.HELPDESK]
+    # Hyphen/underscore spelling of a label must not defeat the match.
+    assert suggest_views("search-indexes")[0] is ViewType.RAG
+
+
+def test_suggest_views_survives_a_misspelling():
+    """A near-miss must not be a dead end — see `suggest_views`."""
+    assert ViewType.CREDENTIALS in suggest_views("conections")
+    assert suggest_views("credentails") == [ViewType.CREDENTIALS]
+    assert suggest_views("serch indexes") == [ViewType.RAG]
+
+
+def test_suggest_views_never_invents_a_match():
+    assert suggest_views("nonsense") == []
+    assert suggest_views("") == []
+    assert suggest_views(None) == []
+
+
+def test_suggest_views_only_offers_real_destinations():
+    for token in ("connections", "environment", "api keys", "skills", "session"):
+        for view in suggest_views(token):
+            assert VIEW_META[view].addressable, f"{token!r} suggested a dead view"

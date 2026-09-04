@@ -2,16 +2,18 @@ import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { isLucideName } from '@src/lib/icon-value';
 import { KeyRound } from 'lucide-react';
 import { Badge } from '../ui/badge';
+import { MoreOnHover } from './more-on-hover';
 import { Button } from '../ui/button';
 import { ProvideValueInline } from '@src/components/credentials-view/ProvideValueInline';
 import { TableCell, TableRow } from '../ui/table';
+import { CONNECTIONS_COLUMN_COUNT } from '../connections-manager';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
-/** Same cap the OAuth scope chips use — the column is one line, not a list. */
-const VARS_SHOWN = 4;
+/** Same cap the OAuth scope chips use — one chip and a count. The column is one
+ *  line, and four chips wrapped the row to four lines. */
+const VARS_SHOWN = 1;
 
 /** The provider glyph for a credential row.
  *
@@ -19,7 +21,7 @@ const VARS_SHOWN = 4;
  *  icon — the row is a provider, not an entity type, so `iconForType` is the
  *  wrong registry. Falls back to a key glyph, never to nothing. */
 function CredentialGlyph({ iconName }: { iconName?: string }) {
-  const Icon = isLucideName(iconName) ? lucideByName(iconName) : null;
+  const Icon = iconName ? lucideByName(iconName) : null;
   return Icon ? (
     <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
   ) : (
@@ -38,6 +40,7 @@ export function CredentialConnectionRows({
   rows,
   onProvide,
   onAdopt,
+  onDelete,
   adoptingKey,
 }: {
   rows: CredentialRow[];
@@ -49,6 +52,10 @@ export function CredentialConnectionRows({
    *  shown in the table, and therefore excluded from Add connection, so there
    *  would be nowhere left to add it from. */
   onAdopt?: (rowKey: string) => Promise<void>;
+  /** Delete the credential: its declarations, and the values it is ours to
+   *  delete. See `deleteCredential` — a value in the user's `.env.local` stays,
+   *  and the confirm dialog is where that is said. */
+  onDelete?: (row: CredentialRow) => void;
   /** Row key currently being adopted, so the button can spell "working". */
   adoptingKey?: string | null;
 }) {
@@ -74,6 +81,9 @@ export function CredentialConnectionRows({
         const shown = row.members.slice(0, VARS_SHOWN);
         const extra = row.members.length - shown.length;
         const unset = row.members.filter((m) => m.declared && m.state !== 'met');
+        const showAdopt = !!onAdopt && row.declaredCount === 0 && row.adoptableCount > 0;
+        const showSetup = !!onProvide && row.declaredCount > 0 && row.state !== 'connected';
+        const showDelete = !!onDelete && row.declaredCount > 0;
         return (
           <React.Fragment key={`credential:${row.key}`}>
           <TableRow data-testid={`connection-row-${row.key}`}>
@@ -99,35 +109,36 @@ export function CredentialConnectionRows({
                 of environment variables. Same badge shape the OAuth scopes use,
                 so the two read as one column. */}
             <TableCell data-testid={`connection-vars-${row.key}`}>
-              <div className="flex flex-wrap items-center gap-1">
-                {shown.map((m) => (
-                  <Badge
-                    key={m.envVar}
-                    variant="secondary"
-                    className={cn(
-                      'font-mono text-[11px] font-normal',
-                      m.state === 'missing' && 'opacity-50',
-                    )}
-                    title={
-                      m.state === 'met'
-                        ? t`Set${m.foundIn ? ` — from ${m.foundIn}` : ''}`
-                        : m.state === 'adoptable'
-                          ? t`In .env.local at line ${m.line ?? 0}, not declared yet`
-                          : t`Not set`
-                    }
-                  >
-                    {m.envVar}
-                  </Badge>
-                ))}
-                {extra > 0 && (
-                  <span
-                    className="text-xs text-muted-foreground"
-                    title={row.members.map((m) => m.envVar).join(', ')}
-                  >
-                    +{extra}
-                  </span>
-                )}
-              </div>
+              <MoreOnHover
+                lines={row.members.map((m) => `${m.envVar}${m.required ? '' : t` (optional)`}`)}
+              >
+                <div className="flex items-center gap-1">
+                  {shown.map((m) => (
+                    <Badge
+                      key={m.envVar}
+                      variant="secondary"
+                      className={cn(
+                        'max-w-[220px] truncate font-mono text-[11px] font-normal',
+                        m.state === 'missing' && 'opacity-50',
+                      )}
+                      title={
+                        m.state === 'met'
+                          ? t`Set${m.foundIn ? ` — from ${m.foundIn}` : ''}`
+                          : m.state === 'adoptable'
+                            ? t`In .env.local at line ${m.line ?? 0}, not declared yet`
+                            : t`Not set`
+                      }
+                    >
+                      {m.envVar}
+                    </Badge>
+                  ))}
+                  {!!extra && (
+                    <span className="shrink-0 cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2">
+                      +{extra}
+                    </span>
+                  )}
+                </div>
+              </MoreOnHover>
             </TableCell>
 
             <TableCell>
@@ -144,17 +155,18 @@ export function CredentialConnectionRows({
 
             <TableCell className="text-sm text-muted-foreground">—</TableCell>
             <TableCell className="text-end">
-              {onAdopt && row.declaredCount === 0 && row.adoptableCount > 0 ? (
+              {showAdopt && (
                 <Button
                   size="sm"
                   className="h-7"
                   disabled={adoptingKey === row.key}
-                  onClick={() => void onAdopt(row.key)}
+                  onClick={() => void onAdopt?.(row.key)}
                   data-testid={`connection-adopt-${row.key}`}
                 >
                   {adoptingKey === row.key ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
                 </Button>
-              ) : onProvide && row.declaredCount > 0 && row.state !== 'connected' ? (
+              )}
+              {showSetup && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -164,7 +176,22 @@ export function CredentialConnectionRows({
                 >
                   <Trans>Set up</Trans>
                 </Button>
-              ) : (
+              )}
+              {showDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ms-1 h-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => onDelete?.(row)}
+                  data-testid={`connection-delete-${row.key}`}
+                >
+                  <Trans>Delete</Trans>
+                </Button>
+              )}
+              {/* The cell is never blank: a row with no action still gets a dash,
+                  which the three-way ternary this replaced could not express once
+                  Delete became a fourth outcome. */}
+              {!showAdopt && !showSetup && !showDelete && (
                 <span className="text-sm text-muted-foreground">—</span>
               )}
             </TableCell>
@@ -175,7 +202,7 @@ export function CredentialConnectionRows({
               verbatim: it is one-way, never reads a value back, and Enter saves. */}
           {settingUp === row.key && (
             <TableRow data-testid={`connection-setup-panel-${row.key}`}>
-              <TableCell colSpan={6} className="bg-muted/30">
+              <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="bg-muted/30">
                 <div className="space-y-2 py-1">
                   {unset.map((m) => (
                     <div key={m.envVar} className="flex items-center gap-3">

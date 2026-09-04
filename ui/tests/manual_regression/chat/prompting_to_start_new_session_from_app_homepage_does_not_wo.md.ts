@@ -7,7 +7,13 @@ import { apiBase } from '../_shared/api';
 import { gotoLanding, submitFromLanding } from './helpers';
 
 test('home prompt starts a usable headless chat session', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await gotoLanding(page, 'vibe');
 
   await submitFromLanding(page, 'hi');

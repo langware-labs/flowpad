@@ -28,6 +28,7 @@
  */
 import { Markdown, Project, Tab, dataManager } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -50,7 +51,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
   });
 
   it('a project-scoped URL adopts its declared project immediately, before the target exists', async () => {
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
 
     // The URL names an EXISTING project (p1) but targets a markdown that does not
     // exist yet. URL-authority backfill stamps p1 on the first load — the tab is
@@ -100,7 +101,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
 
     // The target coming into existence later must NOT resurrect the dead URL:
     // reloading the same dock still persists nothing.
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
     const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
     expect(md.project_id).toBe(p1.id);
     await dataManager.clearCache(); // force a fresh target fetch on reload
@@ -120,7 +121,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
     // found", every time. Contract under test: a load against a non-existent
     // project must CLEAN UP — no persisted tab may keep addressing the dead
     // project, and the project-entry resolver must never return its URL.
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
     const mdId = uuidv4();
     const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
     expect(md.project_id).toBe(p1.id);

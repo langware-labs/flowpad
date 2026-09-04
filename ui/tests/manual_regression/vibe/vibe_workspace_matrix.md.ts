@@ -53,7 +53,13 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
   test('VW-01/VW-15: legacy display links canonicalize to one shell workspace tab', async ({ page, request }) => {
     const fixture = await createVibeFixture(request, 'vibe-entry');
     try {
-      await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
       await page.goto(`/dock/display/agentic_process-${fixture.processId}?viewMode=vibe&matrix=legacy`);
 
       await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`));
@@ -251,7 +257,13 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
     try {
       const source = await seedMarkedMarkdown(request, fixture.projectId, createdIds, 'vibe-origin-source', 'VW17_ORIGINAL');
 
-      await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
       // The file's identity lives in the top bar's current crumb (the editor
       // has no header row of its own); the navigator tree also lists the file

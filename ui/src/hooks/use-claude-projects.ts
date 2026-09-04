@@ -9,6 +9,7 @@ import {
   type ScanProjectResponse,
   type SkillItem,
 } from '@sdk';
+import { ingestCleanupSummary } from '@sdk/stores/project-cleanup-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Stable empty result. A fresh `[]` per render is a new identity, which breaks
@@ -102,6 +103,10 @@ export function useProjectList(options: UseProjectListOptions = {}) {
         const result = await listProjectsFromComputeNode(computeNode.id, controller.signal);
         if (controller.signal.aborted || requestRef.current !== controller) return;
         setData(result);
+        // The scan counted cleanup candidates while it was walking anyway; hand
+        // them to the store so the footer warning needs no call of its own. The
+        // scan is the only writer — nothing here decides whether to warn.
+        ingestCleanupSummary(result.cleanup);
         projectListCache.set(cacheKey, { data: result, timestamp: Date.now() });
       } catch (err) {
         if (controller.signal.aborted || requestRef.current !== controller) return;

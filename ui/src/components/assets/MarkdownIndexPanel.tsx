@@ -72,6 +72,14 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
       .get(`/markdown-index/json?folder=${encodeURIComponent(folderAbsPath)}`, { signal: controller.signal })
       .then((d: unknown) => {
         if (controller.signal.aborted) return;
+        // `data: null` is the route's "no sidecar yet" answer (a 200, not a 404 —
+        // an un-indexed folder is not an error). Keep mapping a 404 to `empty`
+        // below as well: older backends still answer that way.
+        if (d == null) {
+          setData(null);
+          setState('empty');
+          return;
+        }
         setData(d as IndexMdJson);
         setState('idle');
       })

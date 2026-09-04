@@ -27,6 +27,8 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 export type RailItemId =
   | 'chats'
   | 'inbox'
+  /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
+  | 'credentials'
   | 'discover'
   /** Rules and the events they fire on — replaced `triggers` + `signals`. */
   | 'events'
@@ -102,6 +104,13 @@ export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, 
 export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
   { id: 'inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
+  // Vibe, beside the inbox rather than down with `hooks` and `llm-sources`:
+  // connecting Gmail or Slack is what makes a source or an agent work at all, so
+  // it is not a settings destination you visit once. Ungated for the same reason
+  // `data-sources` and `rag` are — this screen is where the FIRST connection is
+  // made, so a gate on "a connection exists" would hide it in the one state where
+  // it matters most.
+  { id: 'credentials', from: ViewMode.Vibe, placement: 'top' },
   // Took the Tasks slot. Ungated on purpose: this screen is where the FIRST
   // source is created, so gating it on "a source exists" would make it
   // unreachable from empty — the one state where it matters most.

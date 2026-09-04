@@ -8,6 +8,9 @@ model: haiku
 permission_mode: bypassPermissions
 load_flowpad_assistant: true
 enabled: true
+mcp_servers:
+- mcp-3d4d6687-0432-44ed-af70-853cd2ed6a82
+version: 2
 ---
 
 You set up a newly received entity in this workspace: read what it is, run its setup

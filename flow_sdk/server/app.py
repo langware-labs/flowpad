@@ -68,6 +68,7 @@ from .routes import (
     detection_router,
     directory_router,
     display_router,
+    activity_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -92,6 +93,7 @@ from .routes import (
     version_router,
     watch_router,
     webhook_api_router,
+    whatsapp_router,
     websocket_router,
     worldview_router,
 )
@@ -106,6 +108,16 @@ async def _on_server_startup():
 
     settings = get_instance_settings()
     clear_backend_restart_request()
+
+    # Start putting activity progress on the socket. Installed HERE rather than at import
+    # time because the emitter captures the running loop to defer its coalesced flushes
+    # onto — at import there is no loop, and every tick would silently go nowhere.
+    try:
+        from flow_sdk.activity.emit import install as _install_activity_emitter
+
+        _install_activity_emitter()
+    except Exception as _e:  # noqa: BLE001 — progress reporting never blocks a boot
+        print(f"  Activity emitter: failed to install ({_e})")
     print(f"  Database path: {get_database_path()}")
 
     # Development: mirror all logs to a file on disk in addition to the
@@ -540,6 +552,7 @@ server.add_router(ui_router)
 server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
+server.add_router(whatsapp_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)
@@ -557,6 +570,7 @@ server.add_router(version_router)
 server.add_router(favorites_router)
 server.add_router(markdown_index_router, prefix="/api/v1")
 server.add_router(pty_stream_router, prefix="/api/v1")
+server.add_router(activity_router)
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)

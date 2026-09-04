@@ -41,7 +41,8 @@ import {
   useEntity,
   useWatch,
 } from '@sdk/react/hooks';
-import { isLucideName, renderIconValue } from '@src/lib/icon-value';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -222,11 +223,13 @@ export function UserDropdown() {
   // initials, same order of preference as the rest of the app.
   const picture = cloudLoginAvailable ? (currentUser?.picture ?? '') : '';
   const pictureIsUrl = /^(https?:|data:|\/)/.test(picture);
-  // A token is a glyph we can actually draw: a lucide export name, or anything
-  // non-wordlike (an emoji). A bare word like "pirate" is neither — drawing it
-  // would put literal text in the avatar circle, so it falls through to initials.
-  const pictureIsToken = !!picture && !pictureIsUrl && (isLucideName(picture) || !/^[\w .-]+$/.test(picture));
-  const pictureIcon = pictureIsToken ? renderIconValue(picture, { className: 'h-5 w-5' }) : null;
+  // A token is a glyph we can actually draw. Resolution answers that directly
+  // and better than the regex it replaces: an emoji is not a legal tag, so it
+  // comes back as text and IS drawable, while a bare word like "pirate" is a
+  // legal tag that nothing claims — `none` — and falls through to initials
+  // rather than putting literal text in the avatar circle.
+  const pictureIsToken = !!picture && !pictureIsUrl && resolveIcon(picture, getIconPacks()).kind !== 'none';
+  const pictureIcon = pictureIsToken ? <FlowIcon icon={picture} className="h-5 w-5" /> : null;
   // Subtitle under the name. `title` is a BASE-entity field in both repos
   // (flow_sdk `Entity.title`, hub `Entity.title`, and `APIEntity.title` here),
   // so it needs no cast and no per-type plumbing: the hub sends it for an agent

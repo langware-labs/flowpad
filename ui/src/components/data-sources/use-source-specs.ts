@@ -39,3 +39,7 @@ export function useSourceSpecs() {
   const specFor = useCallback((provider: string) => byName.get(provider), [byName]);
   return { specs, specFor };
 }
+
+/** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).
+ *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
+export const isMessageSourceSpec = (spec: DataSourceSpec | undefined | null): boolean => !!spec?.sends;

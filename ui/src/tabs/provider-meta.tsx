@@ -11,10 +11,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { AgenticProcess, getDisplayStatus, isProcessRunning, ProcessStatus, Tab, TypeId } from '@sdk';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
-import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
@@ -22,20 +19,31 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
 
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Eye, SquareTerminal } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import React, { useMemo } from 'react';
 
-/** Vendor metadata per terminal provider kind — the single source for the strip
- *  chips' icon resolution and the vendor openers' glyph/color. */
+/**
+ * Vendor presentation per terminal provider kind — the strip chips' and vendor
+ * openers' glyph, tint and label.
+ *
+ * The glyph is RESOLVED, not imported: `flowIconComponent` returns the icon the
+ * packs define for that tag, so this table no longer holds artwork and adding a
+ * fifth vendor is a pack entry rather than a component import.
+ *
+ * The tint stays here on purpose. It is a property of THIS surface, not of the
+ * glyph: the same Claude mark is clay on the connections screen and orange in
+ * the strip, which is exactly why `provider-marks.tsx` argues a shared glyph
+ * must not bake a colour in.
+ */
 export const PROVIDER_META: Record<
   'claude' | 'codex' | 'copilot' | 'opencode' | 'shell',
   { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: MessageDescriptor }
 > = {
-  claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: msg`Claude Code tab` },
-  codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: msg`Codex tab` },
-  copilot: { Icon: CopilotIcon, iconClassName: 'text-sky-500', label: msg`Copilot tab` },
-  opencode: { Icon: OpenCodeIcon, iconClassName: 'text-violet-500', label: msg`OpenCode tab` },
-  shell: { Icon: SquareTerminal, iconClassName: 'text-muted-foreground', label: msg`Shell tab` },
+  claude: { Icon: flowIconComponent('brands.claude'), iconClassName: 'text-orange-500', label: msg`Claude Code tab` },
+  codex: { Icon: flowIconComponent('brands.codex'), iconClassName: 'text-emerald-500', label: msg`Codex tab` },
+  copilot: { Icon: flowIconComponent('brands.copilot'), iconClassName: 'text-sky-500', label: msg`Copilot tab` },
+  opencode: { Icon: flowIconComponent('brands.opencode'), iconClassName: 'text-violet-500', label: msg`OpenCode tab` },
+  shell: { Icon: flowIconComponent('flowpad.shell'), iconClassName: 'text-muted-foreground', label: msg`Shell tab` },
 };
 
 /** Resolve a vendor's presentation, falling back to Claude for an unknown one.
@@ -43,9 +51,13 @@ export const PROVIDER_META: Record<
  *  The table is keyed on the tab-provider spelling; callers hold a `WorkerType`
  *  (`claude_code`) or a raw string off the wire. This owns BOTH the alias and
  *  the fallback policy so consumers don't each carry a cast plus a `??`. */
-export function providerMetaFor(workerType: string | undefined | null) {
+export function providerKeyFor(workerType: string | undefined | null): keyof typeof PROVIDER_META {
   const key = workerType === 'claude_code' ? 'claude' : workerType;
-  return PROVIDER_META[key as keyof typeof PROVIDER_META] ?? PROVIDER_META.claude;
+  return (key as keyof typeof PROVIDER_META) in PROVIDER_META ? (key as keyof typeof PROVIDER_META) : 'claude';
+}
+
+export function providerMetaFor(workerType: string | undefined | null) {
+  return PROVIDER_META[providerKeyFor(workerType)];
 }
 
 function formatDateTime(date: Date | string | undefined | null): string {

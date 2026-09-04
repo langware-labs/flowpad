@@ -235,7 +235,7 @@ export function HubHome() {
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
 
-  /** Open the Credentials view on its Environment tab.
+  /** Open the Credentials view.
    *
    *  Navigation and nothing else — no context writes, per the URL-first rule.
    *  `openPage` and not `openDock`: this card lives on the hub page, and a
@@ -246,7 +246,7 @@ export function HubHome() {
    *  backend, which does not have the attach actions, so the panel shows its
    *  own empty state there rather than this button pretending to work. */
   const openSandboxSecrets = () => {
-    navigation.openPage(PageId.HUB, ViewType.CREDENTIALS, credentialsPointer(CredentialsSubview.ENVIRONMENT));
+    navigation.openPage(PageId.HUB, ViewType.CREDENTIALS, credentialsPointer(CredentialsSubview.CONNECTIONS));
   };
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.

@@ -12,10 +12,11 @@
     "channels": {
       "type": "lines",
       "required": true,
-      "label": "Channel IDs",
+      "choices": true,
+      "label": "Channels",
       "placeholder": "C0123456789",
       "pattern": "^[CGD][A-Z0-9]{6,}$",
-      "hint": "One per line, and the ID \u2014 not the name. A renamed channel keeps its ID; keying on the name would fork its history."
+      "hint": "Pick from the channels this workspace has, or type IDs one per line. The ID is what is stored \u2014 a renamed channel keeps its ID, and keying on the name would fork its history."
     }
   }
 }

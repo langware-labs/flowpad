@@ -24,6 +24,10 @@ allowed-tools:
 - Bash(flow record search:*)
 - Bash(flow show entity:*)
 - Bash(flow show file:*)
+# The third `flow show` form. Entities and files were allow-listed and SCREENS were
+# not, so the one target kind that needs no id was the one this skill could not open.
+- Bash(flow show view:*)
+- Bash(flow schema views:*)
 - Bash(flow process restart:*)
 - Bash(curl:*)
 - Read

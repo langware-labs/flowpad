@@ -1,4 +1,5 @@
 import {
+  ConnectionKind,
   ConnectionStatus,
   type CredentialSpec,
   TypeId,
@@ -18,11 +19,11 @@ import { GrantStatus } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { isLucideName } from '@src/lib/icon-value';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Badge } from './ui/badge';
-import { providerMark } from './connections-manager/provider-marks';
+import { MoreOnHover } from './connections-manager/more-on-hover';
 import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ui/confirm-dialog';
@@ -31,7 +32,18 @@ import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { useCredentialConnections } from './connections-manager/use-credential-connections';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
+import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
+import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
+import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
+import { openLlmSources } from './llm-sources/llm-sources-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { CredentialRow } from './credentials-view/credential-rows';
+import {
+  CredentialValueForm,
+  EnvLocalBlockedNotice,
+} from './connections-manager/credential-value-form';
 import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
+import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -58,6 +70,16 @@ export interface ConnectionsManagerProps {
 }
 
 // Extended OAuth connection type that includes providerName for internal use
+/**
+ * How many columns the Connections table has — Provider · Sign-in · Access
+ * requested · Status · Used by · Actions.
+ *
+ * Exported because several files render rows into this one `<TableBody>` and each
+ * needs it for a full-width row. Deliberately not counting them here: a comment
+ * that counts is a comment that goes stale the next time one is added.
+ */
+export const CONNECTIONS_COLUMN_COUNT = 6;
+
 interface ExtendedOAuthConnection extends OAuthConnection {
   providerName: string;
   kind?: OAuthFlowKind;
@@ -82,7 +104,40 @@ const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
 
 /** How many scopes to show before collapsing the rest into a count. A dozen
  *  chips would bury the row it belongs to. */
-const SCOPES_SHOWN = 4;
+//: One chip plus a count, never a stack. Four chips wrapped a row to four lines
+//: and pushed Status and Actions out of the viewport on a provider like Slack;
+//: the full list is a hover away and was never scannable as chips anyway.
+const SCOPES_SHOWN = 1;
+
+/** The scopes cell: one chip, a count, and the rest a hover away.
+ *
+ *  The reveal itself is `MoreOnHover` — shared with the credential cell next
+ *  door, which had the same dead `title` attribute.
+ */
+function ScopeChips({ scopes }: { scopes: string[] }) {
+  const shown = scopes.slice(0, SCOPES_SHOWN);
+  const hidden = scopes.length - shown.length;
+  return (
+    <MoreOnHover lines={scopes}>
+      <div className="flex items-center gap-1">
+        {shown.map((scope) => (
+          <Badge
+            key={scope}
+            variant="secondary"
+            className="max-w-[220px] truncate rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
+          >
+            {scope}
+          </Badge>
+        ))}
+        {!!hidden && (
+          <span className="shrink-0 cursor-help text-[11px] text-muted-foreground/70 underline decoration-dotted underline-offset-2">
+            +{hidden}
+          </span>
+        )}
+      </div>
+    </MoreOnHover>
+  );
+}
 
 /** Stable fallback for a provider with no placements. */
 const NO_PROJECTS: Project[] = [];
@@ -108,10 +163,18 @@ const ProbeVerdict: React.FC<{ result?: OAuthTestResult }> = ({ result }) => {
 
 /** The remote-icon case, isolated so its failure state lives where it is used
  *  and a changed `icon` remounts it via `key` instead of an effect that resets. */
-const ProviderImage: React.FC<{ src: string; fallback: React.ReactNode }> = ({ src, fallback }) => {
-  const [failed, setFailed] = React.useState(false);
-  if (failed) return <>{fallback}</>;
-  return <img src={src} alt="" className="h-4 w-4 shrink-0 rounded-sm" onError={() => setFailed(true)} />;
+/**
+ * A colour this SURFACE gives a shared glyph.
+ *
+ * Anthropic's clay and OpenAI's teal are not properties of the mark — the
+ * terminal strip tints the very same glyph orange and emerald to mean the
+ * running vendor. `provider-marks.tsx` made that argument and then had to wrap
+ * a component per brand to act on it; the colour is a prop now, so the table is
+ * two lines and the glyph stays shared.
+ */
+const SURFACE_TINT: Record<string, string> = {
+  anthropic: '#D97757',
+  openai: '#10A37F',
 };
 
 const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: string }> = ({
@@ -125,24 +188,21 @@ const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: strin
     </span>
   );
 
-  // Slack only — see provider-marks. Everything else comes from the backend's
-  // published icon name.
-  const Mark = providerMark(providerName);
-  if (Mark) return <Mark className="h-4 w-4 shrink-0" />;
-
-  // `isLucideName` now covers the bespoke brand marks too, which is what makes
-  // Anthropic render its Claude logo instead of a monogram. Guessing from
-  // punctuation would misfile any name containing a dot, so this goes through
-  // the real tables.
-  if (isLucideName(icon)) {
-    const Icon = lucideByName(icon);
-    return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />;
-  }
-  // The hub's paths are relative to ITS static root, so many 404 here — fall
-  // through to the monogram rather than leaving the cell empty, which would read
-  // as "this provider has no icon".
-  if (icon) return <ProviderImage key={icon} src={icon} fallback={monogram} />;
-  return monogram;
+  // The whole ladder, as nested fallbacks: the provider's own identity first
+  // (`anthropic`, `googledrive` — aliases the packs resolve), then whatever the
+  // backend published, then the monogram. The hub publishes paths relative to
+  // ITS static root, so many of those 404 — and a broken image falls through to
+  // the monogram rather than leaving the cell empty, which would read as "this
+  // provider has no icon".
+  const key = (providerName || '').trim().toLowerCase();
+  return (
+    <FlowIcon
+      icon={providerName}
+      className="h-4 w-4 shrink-0"
+      color={SURFACE_TINT[key] ?? SURFACE_TINT[key.replace(/[-_]key$/, '')]}
+      fallback={<FlowIcon icon={icon} className="h-4 w-4 shrink-0 text-muted-foreground" fallback={monogram} />}
+    />
+  );
 };
 
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
@@ -200,24 +260,52 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     onAttachSuccess: handleOAuthAttachSuccess, // Attach completed (status: CONNECTED)
   });
 
-  // Create connections from available providers with their statuses
+  // Create connections from available providers with their statuses.
+  //
+  // HELD ONLY. The table lists what exists; the dialog lists what you could add
+  // (`addableProviders` below is the exact complement). Without this filter a
+  // provider you have never connected is in both at once — a "Not connected"
+  // row you cannot act on, and a tile offering to add the same thing.
   const allConnections: ExtendedOAuthConnection[] = React.useMemo(() => {
-    return availableProviders.map((provider) => ({
-      id: provider.name.toLowerCase(),
-      provider: provider.display_name,
-      providerName: provider.name, // Keep the actual provider name for API calls
-      status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
-      connectedAt: connectionTimestamps[provider.name.toLowerCase()],
-      kind: provider.kind,
-      scopes: provider.scopes,
-      icon: provider.icon,
-    }));
-  }, [availableProviders, providerStatuses, connectionTimestamps]);
+    return availableProviders
+      .filter((provider) => (grantStatuses[provider.name] ?? GrantStatus.NONE) !== GrantStatus.NONE)
+      .map((provider) => ({
+        id: provider.name.toLowerCase(),
+        provider: provider.display_name,
+        providerName: provider.name, // Keep the actual provider name for API calls
+        status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
+        connectedAt: connectionTimestamps[provider.name.toLowerCase()],
+        kind: provider.kind,
+        scopes: provider.scopes,
+        icon: provider.icon,
+      }));
+  }, [availableProviders, providerStatuses, connectionTimestamps, grantStatuses]);
 
   // "Where is this used?" — one env-table fetch per project, answering for every
   // row at once. Gated above a threshold so a large workspace doesn't fan out on
   // arrival; the delete dialog force-enables it, because blast radius must never
   // be guessed.
+  /**
+   * The harness logins, from the ONE consolidated `connections` read.
+   *
+   * The rows used to resolve themselves, which cost a funding read plus a probe
+   * per harness — five requests — and, worse, kept a second definition of
+   * "signed in" in the browser. Only the harness rows are taken from this list
+   * so far: the credential rows below need member-level state (declared,
+   * adoptable, which line of `.env.local`) that a `ConnectionSpec` does not
+   * carry, and the OAuth rows need the grant-vs-placement split that its single
+   * `state` field collapses.
+   */
+  const { connections: consolidated } = useConnections(projectTypeId);
+  // This screen is where a person comes to find out whether they are signed in,
+  // so it is the screen that asks. The rows read "Not checked" until something
+  // does.
+  useCheckHarnessLogins();
+  const harnessRows = React.useMemo(
+    () => (consolidated ?? []).filter((row) => row.kind === ConnectionKind.Harness),
+    [consolidated],
+  );
+
   const { projects } = useProjects();
 
   // The credential half of the table. An API credential is project-scoped
@@ -227,12 +315,53 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // recency-limited list, so a lookup by id here could only ever miss on an
   // instance with many projects.
   const selectedProject = project ?? null;
+  const { navigation } = useDockNavigation();
 
-  const { rows: credentialRows, specs: credentialSpecs, declareCredential, provide: provideCredentialValue } =
-    useCredentialConnections(selectedProject);
+  const {
+    rows: credentialRows,
+    specs: credentialSpecs,
+    envLocalBlocked,
+    envLocalBlockReason,
+    envLocalPresent: envLocalKeys,
+    declareCredential,
+    provide: provideCredentialValue,
+    deleteCredential,
+  } = useCredentialConnections(selectedProject);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [addBusy, setAddBusy] = React.useState<string | null>(null);
+  const [pendingCredential, setPendingCredential] = React.useState<CredentialSpec | null>(null);
+  const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
+
+  /**
+   * What Delete will actually do, said before it happens.
+   *
+   * The prediction keys off the row's STORE, which is what actually decides the
+   * outcome: a declaration's locator kind comes from its definition's store
+   * (`CredentialSpec.locatorFor`), and that kind picks the driver whose
+   * `forget()` the backend calls. Reading `member.foundIn` instead would predict
+   * from where a value was last resolved — a near-enough proxy that is not the
+   * signal the backend acts on.
+   *
+   * One store per credential, so there are two outcomes and not three:
+   * `locatorFor` gives every variable of a definition the same kind, and an
+   * ad-hoc row is a single variable.
+   */
+  const credentialDeleteDescription = React.useMemo(() => {
+    const row = pendingDeleteCredential;
+    if (!row || row.sodStore !== 'env-local') {
+      return t`This project stops using it and the stored value is deleted.`;
+    }
+    // Name the variables that are actually there — those are the lines that stay.
+    const names = row.members
+      .filter((m) => m.state === 'met' || m.state === 'adoptable')
+      .map((m) => m.envVar)
+      .join(', ');
+    return names.includes(',')
+      ? t`This project stops using it. ${names} stay in your .env.local — Flowpad never removes an entry from that file.`
+      : t`This project stops using it. ${names} stays in your .env.local — Flowpad never removes an entry from that file.`;
+  }, [pendingDeleteCredential, t]);
+
   const [usageForced, setUsageForced] = React.useState(false);
   const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
   const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
@@ -316,19 +445,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
    *  entity — and only the attach that follows needs a project. On the hub,
    *  where a user can hold zero projects, that guard made every row a dead end. */
   const handleConnect = async (connectionId: string) => {
-    const connection = allConnections.find((conn) => conn.id === connectionId);
-    if (!connection) return;
+    // From the CATALOGUE, not the rendered rows: the table no longer holds
+    // unconnected providers, so the everyday first-time connect is exactly the
+    // case `allConnections` does not contain.
+    const provider = availableProviders.find((p) => p.name.toLowerCase() === connectionId);
+    if (!provider) return;
+    const displayName = provider.display_name || provider.name;
 
     try {
-      const providerName = connection.providerName;
-      await connect(connectionId, providerName);
+      await connect(connectionId, provider.name);
     } catch (error) {
       // Surfaced, not just logged: every failure here (a provider this instance
       // cannot complete a flow for, a backend refusal) used to land in the
       // console only, so the button looked like it did nothing.
       notify.error({
-        title: t`${connection.provider} connection failed`,
-        message: errorMessage(error, t`Could not connect to ${connection.provider}.`),
+        title: t`${displayName} connection failed`,
+        message: errorMessage(error, t`Could not connect to ${displayName}.`),
       });
     }
   };
@@ -436,15 +568,51 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     void handleConnect(providerName.toLowerCase());
   };
 
-  const pickCredential = async (spec: CredentialSpec) => {
-    setAddBusy(String(spec.name ?? ''));
+  const pickCredential = (spec: CredentialSpec) => {
+    setAddOpen(false);
+    setPendingCredential(spec);
+  };
+
+  /**
+   * Declare one credential, with the busy flag and the failure message both
+   * surfaces share. Returns whether it landed.
+   */
+  const declareWithBusy = async (spec: CredentialSpec, key: string): Promise<boolean> => {
+    setAddBusy(key);
     try {
       await declareCredential(spec);
-      setAddOpen(false);
+      return true;
     } catch (error) {
       notify.error({
-        title: t`Could not add ${spec.title || String(spec.name ?? '')}`,
-        message: errorMessage(error, t`The credential could not be declared.`),
+        title: t`Could not add ${spec.title || key}`,
+        message: errorMessage(error, t`The credential could not be added.`),
+      });
+      return false;
+    } finally {
+      setAddBusy(null);
+    }
+  };
+
+  /**
+   * Declare THEN provide, in that order and never the reverse: `provide-secret`
+   * looks the pointer up on the project and fails when it is absent, so a value
+   * written first has nowhere to go.
+   */
+  const saveCredential = async (values: Record<string, string>) => {
+    const spec = pendingCredential;
+    if (!spec) return;
+    const key = String(spec.name ?? '');
+    if (!(await declareWithBusy(spec, key))) return;
+    setAddBusy(key);
+    try {
+      for (const [envVar, value] of Object.entries(values)) {
+        if (value) await provideCredentialValue({ envVar, value });
+      }
+      setPendingCredential(null);
+    } catch (error) {
+      notify.error({
+        title: t`Could not add ${spec.title || key}`,
+        message: errorMessage(error, t`The value could not be written.`),
       });
     } finally {
       setAddBusy(null);
@@ -460,15 +628,16 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <Trans>Connections</Trans>
           </h2>
         )}
-        <Button
-          size="sm"
-          className="ms-auto h-8 gap-1.5"
+        {/* The same square tile the catalogue it opens is made of, and the same
+            one project home's "New …" affordances use. A pill button here and
+            tiles behind it made one act look like two. */}
+        <DesktopTile
+          className="ms-auto"
+          Icon={Plus}
+          label={t`Add connection`}
           onClick={() => setAddOpen(true)}
           data-testid="add-connection-open"
-        >
-          <Plus className="h-4 w-4" />
-          <Trans>Add connection</Trans>
-        </Button>
+        />
       </div>
 
       <AddConnectionDialog
@@ -480,6 +649,23 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         onPickCredential={pickCredential}
         busyKey={addBusy}
       />
+
+      <CredentialValueForm
+        spec={pendingCredential}
+        presentKeys={envLocalKeys}
+        blocked={envLocalBlocked}
+        blockReason={envLocalBlockReason}
+        busy={!!addBusy}
+        onCancel={() => setPendingCredential(null)}
+        onSave={saveCredential}
+      />
+
+      {envLocalBlocked && (
+        <EnvLocalBlockedNotice
+          reason={envLocalBlockReason}
+          className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+        />
+      )}
 
       <div className="flex-1 overflow-auto">
         {/* Capped: the columns are all short, so a full-width dock strands the
@@ -508,6 +694,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {/* FlowPad first: it is the account the app itself signs in with, so
+                it heads the list rather than sorting in among the providers you
+                added. Its own producer — see the component for why it cannot be
+                a synthetic `allConnections` entry. */}
+            <FlowpadConnectionRow />
+            {/* The harness logins sit with FlowPad: both are accounts this MACHINE
+                holds, above the project-scoped credential rows below. Navigation is
+                the HOST's, like every other row action here — a leaf reaching for the
+                router subscribes the whole table to every location change. */}
+            <HarnessConnectionRows
+              rows={harnessRows}
+              onDetails={(worker) => openLlmSources(navigation, worker)}
+            />
             {allConnections.map((connection) => {
               // Grant vs placement: `grant` says whether the user holds the
               // credential at all (answerable with no project); `status` says
@@ -544,22 +743,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell data-testid={`connection-scopes-${connection.id}`}>
                     {connection.scopes?.length ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        {connection.scopes.slice(0, SCOPES_SHOWN).map((scope) => (
-                          <Badge
-                            key={scope}
-                            variant="secondary"
-                            className="rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
-                          >
-                            {scope}
-                          </Badge>
-                        ))}
-                        {connection.scopes.length > SCOPES_SHOWN && (
-                          <span className="text-[11px] text-muted-foreground/70" title={connection.scopes.join(', ')}>
-                            +{connection.scopes.length - SCOPES_SHOWN}
-                          </span>
-                        )}
-                      </div>
+                      <ScopeChips scopes={connection.scopes} />
                     ) : (
                       // Not "no scopes" — the side that owns the flow did not
                       // publish them. Saying "none" would be a lie.
@@ -672,6 +856,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           onClick={() => void handleConnect(connection.id)}
                           disabled={connectingConnectionId === connection.id}
                           className="h-7"
+                          data-testid={`connection-connect-${connection.id}`}
                         >
                           {connectingConnectionId === connection.id ? (
                             <>
@@ -726,9 +911,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <CredentialConnectionRows
               rows={credentialRows}
               adoptingKey={addBusy}
+              onDelete={(row) => setPendingDeleteCredential(row)}
               onAdopt={async (rowKey) => {
+                // Declares straight away — no value form. A row is only
+                // adoptable when every one of its values is ALREADY on disk, so
+                // there is nothing to ask for and asking would add a click to
+                // the one case that should be a single click.
                 const spec = credentialSpecs.find((c) => String(c.name ?? '') === rowKey);
-                if (spec) await pickCredential(spec);
+                if (spec) await declareWithBusy(spec, rowKey);
               }}
               onProvide={async (envVar, value) => {
                 try {
@@ -744,9 +934,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 }
               }}
             />
+            {/* "Nothing yet" is about what YOU added. The FlowPad row is always
+                present — it is the app's own account, not a connection you chose
+                — so it must not be what suppresses this line. */}
             {allConnections.length === 0 && credentialRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="py-8 text-center text-sm text-muted-foreground">
                   <Trans>No connections yet</Trans>
                 </TableCell>
               </TableRow>
@@ -754,6 +947,48 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           </TableBody>
         </Table>
       </div>
+
+      {/* Delete says what will actually happen, BEFORE it happens. The row
+          already knows which store each value came from (`foundIn`), so the
+          one case where Delete is not total — a value in the user's own
+          `.env.local`, which Flowpad never removes from — is named here rather
+          than discovered afterwards. */}
+      <ConfirmDialog
+        open={!!pendingDeleteCredential}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteCredential(null);
+        }}
+        title={t`Delete ${pendingDeleteCredential?.title ?? ''}?`}
+        description={credentialDeleteDescription}
+        confirmLabel={t`Delete`}
+        variant="destructive"
+        onConfirm={() => {
+          const row = pendingDeleteCredential;
+          setPendingDeleteCredential(null);
+          if (!row) return;
+          void (async () => {
+            try {
+              const { kept } = await deleteCredential(row);
+              // Report what the BACKEND did, not what the dialog predicted: the
+              // driver decides, and a value could have moved stores since the
+              // table was painted.
+              notify.success({
+                title: t`${row.title} deleted`,
+                // No singular/plural split here, unlike the dialog: "stayed"
+                // reads the same for one name or several.
+                ...(kept.length
+                  ? { message: t`${kept.join(', ')} stayed in your .env.local.` }
+                  : {}),
+              });
+            } catch (error) {
+              notify.error({
+                title: t`Could not delete ${row.title}`,
+                message: errorMessage(error, t`It may be only partly removed.`),
+              });
+            }
+          })();
+        }}
+      />
 
       {/* Blast radius, by name. The count comes from the same usage map the
           Used-by column reads, force-loaded when this dialog opens. */}

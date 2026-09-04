@@ -499,10 +499,14 @@ export class NavigationActions {
     // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
     // on a ?viewMode URL) — not for general mode stickiness.
     //
-    // The ROOT is excluded. `/` could not carry a view mode before it was a
-    // pointer, so stamping one now would both change the canonical home URL
-    // (`/?viewMode=…`) and let the home out-rank the persisted preference —
-    // which is what actually decides the mode there.
+    // The ROOT is stamped too (2026-09-03). It used to be excluded, to keep the
+    // canonical home URL bare and let the persisted preference decide the mode
+    // there — but a bare entry does not STATE its mode, it re-resolves through a
+    // preference that the ViewToggle itself mutates. So Back onto a home entry
+    // rendered it in the mode you had just switched TO: a history step that
+    // visibly did nothing, with Forward lit. Every entry must state its own mode
+    // for a Back step to be visible, home included. The cold-load entry is
+    // canonicalized in `loadHomePage`, which this cannot reach.
     //
     // A SESSION dock is the exception, and takes its own remembered mode
     // instead: a session opens in the mode it was last seen in, so switching to
@@ -511,7 +515,7 @@ export class NavigationActions {
     // one, or one that predates the field) — it adopts the ambient mode and
     // records it on load. Cache-only: a cold deep link has no entity to read
     // here, and the loader's `applyProcessViewMode` covers that path.
-    if (dock.viewMode === null && !dock.isRoot) {
+    if (dock.viewMode === null) {
       const liveViewMode =
         rememberedSessionViewMode(dock) ??
         NavigationActions.currentBrowserViewMode() ??

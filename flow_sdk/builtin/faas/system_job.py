@@ -3,10 +3,10 @@ import random
 import string
 from typing import ClassVar
 
+from flow_sdk.builtin.enums.job_enums import JobDeploymentStatus
 from flow_sdk.builtin.faas import Job
 from flow_sdk.core import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.builtin.enums.job_enums import JobDeploymentStatus
 
 
 class SystemJob(Job):

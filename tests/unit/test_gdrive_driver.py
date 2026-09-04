@@ -25,7 +25,7 @@ import pytest
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.health import SourceError
-from tests.unit._ingest_helpers import local_http_server, make_data_source
+from tests.unit._ingest_helpers import local_http_server, make_data_source, with_token
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -49,8 +49,9 @@ def _file(file_id: str, name: str, mime: str = "text/plain") -> dict:
 class _Drive:
     """A minimal Drive that records the order it was called in."""
 
-    def __init__(self, files=(), changes=(), start="T1"):
+    def __init__(self, files=(), changes=(), start="T1", drives=()):
         self.files = list(files)
+        self.drives = list(drives)
         self.changes = list(changes)
         self.start = start
         self.calls: list[str] = []
@@ -67,6 +68,8 @@ class _Drive:
             return 200, b"payload", {}
         if path.startswith("/files"):
             return 200, json.dumps({"files": self.files}).encode(), {}
+        if path.startswith("/drives"):
+            return 200, json.dumps({"drives": self.drives}).encode(), {}
         if path.startswith("/about"):
             return 200, json.dumps({"user": {"emailAddress": "a@b.test"}}).encode(), {}
         return 404, b"{}", {}
@@ -78,18 +81,7 @@ async def _fetch(driver, source, state=None):
 
 @pytest.fixture
 def driver(monkeypatch):
-    d = GoogleDriveDriver()
-    # The token is the one thing a loopback server cannot supply. Every test
-    # below is about what the driver does WITH a token, so it is handed one.
-    monkeypatch.setattr(GoogleDriveDriver, "_token", lambda self, source: _ok("tok"))
-    return d
-
-
-def _ok(value):
-    async def _coro():
-        return value
-
-    return _coro()
+    return with_token(monkeypatch, GoogleDriveDriver)
 
 
 async def test_first_poll_enumerates_then_takes_a_start_token(driver, tmp_path):
@@ -218,6 +210,47 @@ async def test_shared_drives_are_separate_segments(driver, tmp_path):
     source = _source(tmp_path, "", drives=["D1", "D2"])
     assert [s.key for s in await driver.segments(source)] == ["D1", "D2"]
     assert [s.key for s in await driver.segments(_source(tmp_path, ""))] == ["root"]
+
+
+async def test_the_picker_offers_the_shared_drives_the_credential_can_see(driver, tmp_path):
+    """The whole point: the form asks for `0AB1cdEfGhIjKlMnOpQ`, which nobody can type."""
+    drive = _Drive(drives=[{"id": "0ABxyz", "name": "Marketing"}, {"id": "0ABabc", "name": "Legal"}])
+    with local_http_server(drive) as base:
+        picks = await driver.choices(_source(tmp_path, base), "drives")
+
+    assert [(c.id, c.name) for c in picks] == [("0ABxyz", "Marketing"), ("0ABabc", "Legal")]
+
+
+async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver, tmp_path):
+    with local_http_server(_Drive()) as base:
+        assert await driver.choices(_source(tmp_path, base), "cache_root") == []
+
+
+async def test_a_refused_listing_raises_rather_than_returning_an_empty_list(driver, tmp_path):
+    """The hook raises like `fetch`; ONE caller turns that into the user's sentence.
+
+    An empty list here would be indistinguishable from "this account has no shared
+    drives", and the two need different words in the form.
+    """
+    class _Refuse:
+        def __call__(self, path, headers):
+            return 403, b"{}", {}
+
+    with local_http_server(_Refuse()) as base:
+        with pytest.raises(SourceError):
+            await driver.choices(_source(tmp_path, base), "drives")
+
+
+async def test_a_picked_drive_keeps_its_name_as_the_segment_label(driver, tmp_path):
+    """What the picker stores is `{id, name}` — the shape Slack's segments already took.
+
+    Keyed on the id: a renamed drive is the same drive, and keying on the name would fork
+    its history. The name is only the label, and it self-heals on the next pick.
+    """
+    source = _source(tmp_path, "", drives=[{"id": "D1", "name": "Marketing"}, "D2"])
+    assert [(s.key, s.label) for s in await driver.segments(source)] == [
+        ("D1", "Marketing"), ("D2", "D2"),
+    ]
 
 
 async def test_the_cache_is_never_stamped():

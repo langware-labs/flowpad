@@ -57,7 +57,13 @@ test.afterAll(async () => {
 });
 
 async function openScreen(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(SCREEN);
   await expect(page.getByTestId('data-sources-view')).toBeVisible();
 }

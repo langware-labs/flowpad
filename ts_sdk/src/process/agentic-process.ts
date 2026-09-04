@@ -8,6 +8,7 @@
  * - stackFrame: Access to execution variables
  */
 
+import { isNetworkErrorMessage } from '../client';
 import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
@@ -451,11 +452,55 @@ export interface AgenticProcess
  * console.log('Stack frame:', process.stackFrame);
  * ```
  */
+/**
+ * In-flight prompt turns, so a streaming request has an owner that can cancel it.
+ *
+ * The page IS the owner: a Vibe/chat turn is started fire-and-forget
+ * (`proc.prompt(text).catch(...)`) and nothing else outlives the view that fired
+ * it. Without this the minted AbortController was unreachable, so leaving the
+ * page tore the fetch down at the browser level and the teardown was reported as
+ * a hard stream fault — poisoning the logs so a genuine backend failure could not
+ * be told apart from an ordinary navigation.
+ */
+const _inFlightPrompts = new Set<AbortController>();
+let _teardownHookInstalled = false;
+
+function registerInFlightPrompt(ctrl: AbortController): void {
+  _inFlightPrompts.add(ctrl);
+  if (_teardownHookInstalled || typeof window === 'undefined') return;
+  _teardownHookInstalled = true;
+  // `pagehide` (not `beforeunload`) — it fires for SPA-less navigations AND for
+  // bfcache entry, and does not block the unload.
+  window.addEventListener('pagehide', () => {
+    for (const c of _inFlightPrompts) c.abort();
+    _inFlightPrompts.clear();
+  });
+}
+
+function unregisterInFlightPrompt(ctrl: AbortController): void {
+  _inFlightPrompts.delete(ctrl);
+}
+
+/**
+ * Is this the browser tearing a request down, rather than a real failure?
+ *
+ * A navigation kills an in-flight `fetch` with a bare `TypeError`, never an
+ * `AbortError` — the abort came from the browser, not from our signal. The wording
+ * is the only discriminator the platform gives, so it is classified by the SHARED
+ * `isNetworkErrorMessage` (client.ts) that the axios-side outage check also uses,
+ * rather than a second string set that would drift. Narrowed to `TypeError` here so
+ * a genuine transport fault still throws.
+ */
+function isTeardownError(err: unknown): boolean {
+  return err instanceof TypeError && isNetworkErrorMessage(err.message);
+}
+
 // Deliberately no `implements IAgenticProcess`: that interface is the WIRE
 // shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
 // parsed from the wire's `FSRefJson`). Every other member is still checked
 // against it through the declaration merge above.
 @registerEntity
+
 export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
@@ -2363,7 +2408,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
+    // Give the turn a cancellation OWNER. Previously this minted a controller that
+    // was never stored or returned, so nothing in the program could reach it:
+    // `ctrl.abort()` was uncallable, which made both cancellation branches
+    // downstream (`signal.aborted` and `name === 'AbortError'` in
+    // FlowStreamProcessor) unreachable code. A page navigation then tore the
+    // streaming fetch down at the BROWSER level, surfacing as
+    // `TypeError: Failed to fetch` / `network error` — reported as a hard stream
+    // failure and indistinguishable from a real backend fault.
     const ctrl = abortController ?? new AbortController();
+    registerInFlightPrompt(ctrl);
 
     // Bracket the whole turn as "prompting" (the reliable in-flight signal the
     // chat activity indicator watches) — set optimistically before the request
@@ -2405,7 +2459,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       });
 
       await processor.ingestStream(response.body.getReader(), ctrl);
+    } catch (err) {
+      // Leaving the page is not a fault. Once the turn has an owner (above), a
+      // teardown is a CANCELLATION — report it as such instead of logging a
+      // fault that looks identical to the backend dying mid-answer.
+      if (ctrl.signal.aborted || isTeardownError(err)) return;
+      throw err;
     } finally {
+      unregisterInFlightPrompt(ctrl);
       this._setPromptingDelta(-1);
     }
   }

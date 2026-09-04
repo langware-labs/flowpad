@@ -99,7 +99,13 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         }, { message: 'patched asset_ref visible' })
         .toBe(firstFile);
 
-      await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
       await page.goto(`/dock/assets/editor/skill/typeid/skill-${first.id}`);
       await expect(page.getByText('VIBE_FILE_REF_READY')).toBeVisible();
       await expect(page.getByText(/File is missing/i)).toHaveCount(0);

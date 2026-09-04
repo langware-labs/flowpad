@@ -79,6 +79,17 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     const parent = parentOfTab(allTabs, tabByHash(currentDock.tabHash));
     if (parent?.dockPointer) return build(parent, new DockPointer(parent.dockPointer), false);
 
+    // Case 3 — the URL names the host (`?host=agentic_process-<id>`). Answers
+    // when the tab table cannot: the child row is gone (closed — `list_all`
+    // lands before the URL moves) or not minted yet (cold open). Without it the
+    // surface drops to null for that window and flow-page paints the standard
+    // chrome. `build` rejects a non-process host.
+    const host = currentDock.hostProcessId;
+    if (host) {
+      const hostDock = DockPointer.forShell(host);
+      return build(tabByHash(hostDock.tabHash), hostDock, false);
+    }
+
     return null;
   }, [currentDock, allTabs]);
 }

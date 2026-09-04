@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
@@ -19,12 +20,12 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
     codex_projects_fn,
 )
+from flow_sdk.fs_store.operations.project_cleanup import summarize
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.serialization import iso_to_datetime
-from flow_sdk.api.api_types.identifier import mint_uuid
 
 PROJECT_RESOURCE_TYPE = "system_resource_claude_project"
 
@@ -420,4 +421,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         "copilot_count": copilot_count,
         "both_count": both_count,
         "none_count": none_count,
+        # Cleanup candidates, counted here so the footer warning costs no second
+        # call. Shallow signals only — one `listdir` per project, ~0.1s over
+        # 1,250 rows. The per-project detail (file counts, git, harness state)
+        # belongs to `project-cleanup-report`, which the user opens deliberately.
+        "cleanup": summarize(projects).model_dump(),
     }

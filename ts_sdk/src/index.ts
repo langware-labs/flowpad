@@ -30,6 +30,13 @@ export * from './tags/grammar';
 export * from './tags/ws-bridge';
 export * from './tabs/index';
 export * from './stores/ontology-store';
+export * from './icons';
+// NOT `export * from './react/FlowIcon'` — the barrel is imported by non-React
+// consumers, and re-exporting the component drags React into every one of them.
+// `icons/index.ts` advertises itself as framework-free; that has to stay true.
+// Import the component from '@sdk/react/FlowIcon', as the react hooks already
+// are.
+export * from './stores/project-cleanup-store';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';

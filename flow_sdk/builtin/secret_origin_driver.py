@@ -80,6 +80,18 @@ class SecretOriginDriver(Protocol):
         ``SecretProvideUnsupported`` for provider slots that can't cache yet."""
         ...
 
+    async def forget(self, locator: "SecretOriginLocator", **context: Any) -> bool:
+        """Delete the value from this driver's store. ``True`` if it is gone.
+
+        ``False`` is a real answer, not a failure: it means the value lives
+        somewhere this app does not delete from. The whole point of asking the
+        DRIVER is that "may I remove this?" is a property of the store, not of
+        the caller — ``.env.local`` is the user's own file and is append-only by
+        policy, so its driver answers ``False`` and the UI says so instead of
+        promising a deletion that never happened.
+        """
+        ...
+
 
 class ProviderStubDriver:
     """An external-provider slot: value-free pointer that can't resolve or cache
@@ -108,6 +120,10 @@ class ProviderStubDriver:
         raise SecretProvideUnsupported(
             f"Providing values for '{self.kind}' secrets is coming soon — connect the provider."
         )
+
+    async def forget(self, locator: "SecretOriginLocator", **context: Any) -> bool:
+        # Nothing was ever cached here, so nothing can be deleted here.
+        return False
 
 
 def _build_default_registry(registry: "KindRegistry[SecretOriginDriver]") -> None:

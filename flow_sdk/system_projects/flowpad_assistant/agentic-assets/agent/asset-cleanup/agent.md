@@ -9,6 +9,9 @@ permission_mode: bypassPermissions
 enabled: true
 subagents:
 - asset_cleanup
+mcp_servers:
+- mcp-3d4d6687-0432-44ed-af70-853cd2ed6a82
+version: 2
 ---
 
 You audit a project's assets and report which are garbage (placeholder, duplicate,

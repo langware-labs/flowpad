@@ -60,9 +60,17 @@ export function resetSurfaceReconcileState(): void {
  * silently queued to fire minutes later.
  *
  * Reconciles on a mode CHANGE only, never on first sight of a process: merely
- * opening a session must not kill or spawn a worker. By default it returns the
- * reactive entity it subscribes to; an existing `useEntity` owner can disable
- * that subscription and receive its own process back unchanged.
+ * opening a session must not kill or spawn a worker. The one exception is the
+ * transport a terminal surface cannot do without: a chat-born (headless)
+ * session opened straight into a terminal mode (`?viewMode=advanced`) gets its
+ * PTY on first sight. `InteractiveTerminal` renders by transport (`isHeadless`
+ * → SimpleChatPane) and nothing else on the load path supplies one, so without
+ * this the footer says Terminal while the pane shows chat until the user
+ * toggles modes by hand.
+ *
+ * By default it returns the reactive entity it subscribes to; an existing
+ * `useEntity` owner can disable that subscription and receive its own process
+ * back unchanged.
  */
 export function useProcessSurface({
   process,
@@ -102,13 +110,17 @@ export function useProcessSurface({
     if (!modeResolved || !live || switching.current) return;
     const key = live.id;
     const previous = lastReconciledMode.get(key);
-    if (previous === undefined) {
-      lastReconciledMode.set(key, viewMode); // first sight — record, never act
+    const wantPty = viewModePtyMode(viewMode);
+    // First sight records the mode and never acts — except a terminal mode on
+    // a PTY-less process (see the doc comment), which falls through to the PTY
+    // branch. That branch records only once the switch happened, so a startup
+    // `canSwitch=false` still retries instead of stranding the session.
+    if (previous === undefined && !(wantPty && !ptyMode)) {
+      lastReconciledMode.set(key, viewMode);
       return;
     }
     if (previous === viewMode) return;
 
-    const wantPty = viewModePtyMode(viewMode);
     // Chat / vibe need no transport of their own — they render the session's
     // stream, so we never spawn or kill a worker for them (the one-directional
     // rule in this hook's doc comment). They DO need the TRANSCRIPT, though.

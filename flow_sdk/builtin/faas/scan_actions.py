@@ -285,6 +285,128 @@ class ScanActionsMixin:
             logging.exception(f"list-projects failed: {e}")
             return ApiFailResponse(message=str(e))
 
+    # ── project cleanup ────────────────────────────────────────────────────
+    #
+    # The picker's scan counts candidates (cheap, shallow); these three serve
+    # the screen that acts on them. Nothing here runs on its own: the report is
+    # read-only, and both mutations name one project at a time on the caller's
+    # instruction.
+
+    async def _scan_project_cleanup_report(self) -> ApiResponse:
+        """Every project with the detail the cleanup screen shows.
+
+        Reuses the project list rather than re-scanning, so the harness columns
+        agree with the picker by construction. Adds a bounded file walk and a
+        ``.git`` probe — ~0.36s over 1,250 projects.
+        """
+        from flow_sdk.fs_store.operations.project_cleanup import assess_all  # noqa: PLC0415
+
+        try:
+            listing = await _list_projects_from_indexer()
+            specs = assess_all(listing.get("projects") or [])
+            return ApiSuccessResponse(
+                data={
+                    "projects": [spec.model_dump(mode="json") for spec in specs],
+                    "total_count": len(specs),
+                    "cleanup": listing.get("cleanup") or {},
+                }
+            )
+        except Exception as e:
+            logging.exception(f"project-cleanup-report failed: {e}")
+            return ApiFailResponse(message=str(e))
+
+    async def _scan_project_git_detail(self) -> ApiResponse:
+        """Git remote + dirty state for ONE project, resolved on row expand.
+
+        Split out of the report because each answer costs a subprocess pair;
+        resolving them for a whole listing would be a thousand process spawns
+        for information the reader looks at one line of.
+        """
+        from flow_sdk.fs_store.operations.project_cleanup import git_detail  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        cwd = request_info.get_param("cwd") if request_info else None
+        if not cwd:
+            return ApiFailResponse(message="cwd parameter is required", status_code=400)
+        try:
+            return ApiSuccessResponse(data=git_detail(cwd).model_dump(mode="json"))
+        except Exception as e:
+            logging.exception(f"project-git-detail failed: {e}")
+            return ApiFailResponse(message=str(e))
+
+    async def _scan_project_cleanup_apply(self, *, permanent: bool) -> ApiResponse:
+        """Run one cleanup action over a named set of projects.
+
+        Body: ``{"project_ids": [...]}``. Takes a list so a selection is one
+        round trip, and reports **per project** rather than one overall verdict:
+        a refused guard on one row must not read as a failure of the other
+        forty-nine, and a partial result the caller cannot see is worse than
+        either outcome.
+        """
+        from flow_sdk.fs_store.operations.project_cleanup import (  # noqa: PLC0415
+            CleanupRefused,
+            delete_permanently,
+            remove_from_harness,
+        )
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+        try:
+            body = await request_info.request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Body must be a JSON object", status_code=400)
+        wanted = body.get("project_ids") or []
+        if not isinstance(wanted, list) or not wanted:
+            return ApiFailResponse(message="'project_ids' must be a non-empty list", status_code=400)
+
+        listing = await _list_projects_from_indexer()
+        by_id = {str(row.get("id")): row for row in (listing.get("projects") or [])}
+
+        results: list[dict] = []
+        for project_id in wanted:
+            row = by_id.get(str(project_id))
+            if row is None:
+                results.append({"project_id": project_id, "ok": False, "error": "Unknown project"})
+                continue
+            try:
+                if permanent:
+                    outcome = delete_permanently(row)
+                    await self._forget_project_entity(str(project_id))
+                else:
+                    outcome = remove_from_harness(row)
+                results.append({"project_id": project_id, "ok": True, **outcome})
+            except CleanupRefused as refused:
+                results.append({"project_id": project_id, "ok": False, "error": str(refused)})
+            except Exception as e:  # one bad row must not abort the rest
+                logging.exception(f"cleanup failed for {project_id}: {e}")
+                results.append({"project_id": project_id, "ok": False, "error": str(e)})
+
+        succeeded = sum(1 for r in results if r["ok"])
+        return ApiSuccessResponse(
+            data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded}
+        )
+
+    @staticmethod
+    async def _forget_project_entity(project_id: str) -> None:
+        """Drop the Project row after its folder is gone.
+
+        Best-effort and deliberately quiet: the folder is already in the Trash,
+        so a row that outlives it is a stale listing entry, not a failure worth
+        turning a successful delete into an error over. The next scan will not
+        re-mint it — there is no directory left to mint it from.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        try:
+            project = await Project.get_by_id(project_id)
+            if project is not None:
+                await project.destroy()
+        except Exception as e:
+            logging.warning(f"cleanup: could not remove project row {project_id}: {e}")
+
     async def _scan_project(self) -> ApiResponse:
         """Scan all resources for a specific project.
 
@@ -1013,10 +1135,15 @@ class ScanActionsMixin:
             if existing:
                 return ApiSuccessResponse(data=existing.model_dump())
 
-            return ApiFailResponse(
-                message=f"Session {worker_id} not found in Claude, Codex, Copilot or OpenCode history",
-                status_code=404,
-            )
+            # A miss is a valid ANSWER, not an error: "no session carries this id".
+            # `AgenticProcess.getByWorkerId` already maps this to `null` and its
+            # callers (status indicators, shell/worker deep-link recovery) treat
+            # `null` as "nothing to resume". Answering 404 made the browser log
+            # `Failed to load resource: 404` before any client code ran, so the
+            # miss could never be handled quietly — the same reason the caller
+            # had to grow a `wf_`-prefix short-circuit to dodge "a guaranteed
+            # 404". 4xx is reserved for a request that is actually malformed.
+            return ApiSuccessResponse(data=None)
 
         # Palette of the terminal this session is being adopted into. A query
         # hint here, not a body field: this is the GET the frontend actually

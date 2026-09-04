@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
@@ -79,14 +80,16 @@ async def _emit(
     current: str | None,
     complete: bool = False,
 ) -> None:
-    activity.latest_table = IndexProgressTable(
-        job_name=_JOB,
-        rows=(TypeProgressRow(type_name="markdown", done=files, total=0),),
-        current=None if complete else current,
-        done=files,
-        total=0,
-        text=PROGRESS_TEXT_COMPLETE if complete else None,
-        ts=datetime.now(timezone.utc).isoformat(),
+    activity.set_table(
+        IndexProgressTable(
+            job_name=_JOB,
+            rows=(TypeProgressRow(type_name="markdown", done=files, total=0),),
+            current=None if complete else current,
+            done=files,
+            total=0,
+            text=PROGRESS_TEXT_COMPLETE if complete else None,
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
     )
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())
 
@@ -191,7 +194,22 @@ async def docs_graph_diff(root: str = Query(...), rel: str = Query(...)) -> dict
 async def docs_graph(root: str = Query(...)) -> dict:
     """Native scan of ``root`` → ``{nodes, edges, counts, duration_ms}``."""
     root_path = _resolve_root(root)
-    activity = InProcessActivity(job_name=_JOB, entity_id=typeid_for(root_path))
+    # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
+    # names itself honestly, so a docs scan and a real index no longer share one address.
+    activity = InProcessActivity(
+        job_name=_JOB,
+        entity_id=typeid_for(root_path),
+        # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
+        # names itself honestly, so a docs scan and a real index no longer share an address.
+        #
+        # Scoped to the BOX, not to the folder's typeid: scanning a directory on this
+        # machine is the instance's work, and an entity-scoped activity is delivered only
+        # to clients watching that entity — which for a scanned folder is nobody, so the
+        # scan would advance perfectly and appear in no browser at all. One address per
+        # box means two concurrent scans of different roots share a row; `current` names
+        # which root is in hand.
+        activity=Activity.get("docs.scan"),
+    )
 
     # Plain counters mutated by the (sync) scan thread; the async pump reads them
     # and broadcasts — no cross-thread event-loop access.
@@ -222,6 +240,13 @@ async def docs_graph(root: str = Query(...)) -> dict:
         graph = await asyncio.to_thread(
             lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph()
         )
+    except BaseException:
+        # Without this the activity never reaches a terminal state, so the monitor keeps a
+        # permanently "running" root per scanned folder and the chip reports work that
+        # stopped. The terminal table is only sent on the happy path below.
+        if activity.activity is not None:
+            activity.activity.fail("docs scan failed")
+        raise
     finally:
         counter["done"] = True
         await pump_task

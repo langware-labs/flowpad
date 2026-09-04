@@ -49,6 +49,7 @@ from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec import DataSpec
+from tests.hub_tests._hub_agent import create_hub_agent
 from tests.hub_tests._local_login import login_as
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
@@ -67,19 +68,6 @@ def _reclaim_hub_entities_the_tier_creates():
     yield
 
 
-async def _hub_agent(hub_base_url: str, token: str, name: str) -> str:
-    """A hub-side Agent row. Returns its id."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        agent_id = str(uuid.uuid4())
-        response = await client.post(
-            f"{hub_base_url}/api/v1/graph/agent",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"id": agent_id, "name": name, "worker_type": "claude"},
-        )
-        response.raise_for_status()
-    return agent_id
-
-
 @pytest.fixture
 async def mailboxes(hub_base_url, hub_login_payload):
     """Two real mailboxes: the agent's, and an outsider's. Both released.
@@ -92,8 +80,8 @@ async def mailboxes(hub_base_url, hub_login_payload):
     token = login_as(hub_login_payload)
     driver = get_email_inbox_driver()
 
-    agent_id = await _hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
-    outsider_id = await _hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
+    agent_id = await create_hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
+    outsider_id = await create_hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
 
     allocated: list[str] = []
     try:
@@ -227,7 +215,6 @@ async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
         worker_type="claude",
         system_prompt="You answer email. Reply in one short sentence.",
-        email_enabled=True,
         email_allowed_senders=allow,
     )
     await agent.save()
@@ -383,13 +370,14 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         worker_type="claude",
         model="sm",
         system_prompt="Answer like a pirate. Include 'arr' in every reply.",
-        email_allowed_senders=[gmail.account_key],
     )
     await pirate.save()
 
     try:
         await flow_sdk.auth.login()
-        inbox = await pirate.enableEmail()
+        # The allowlist is the mailbox's, declared in the one call that makes it —
+        # the same shape docs/snippets/agent-email.md advertises.
+        inbox = await pirate.allocate_inbox(allowed_senders=[gmail.account_key])
         if inbox.provider != "agentmail":
             pytest.skip(
                 "Gmail delivery requires the local Hub to run with "
@@ -397,7 +385,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
             )
 
         agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
-        assert agent_source is not None, "enableEmail() did not create the polling source"
+        assert agent_source is not None, "allocate_inbox() did not create the polling source"
         # Establish an empty committed cursor before the public message arrives.
         await sync_source(agent_source)
 
@@ -428,7 +416,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         assert "arr" in reply.body.lower()
     finally:
         if pirate.inbox is not None:
-            await pirate.decommission_inbox()
+            await (pirate.inbox).release()
         if pirate.remote:
             await pirate.unshare()
         await pirate.delete()

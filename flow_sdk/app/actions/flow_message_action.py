@@ -918,15 +918,8 @@ async def _find_invitation_for_conversation(conv_id: str) -> Optional["Invitatio
 
 
 def _is_hub_target_missing(e: "HubError") -> bool:
-    """True when the hub's answer means "there is nothing there for you":
-    a plain 404, or the authorizer's ``target_not_found`` error code —
-    emitted both when the entity is gone and when the caller holds no role
-    on it (masked so entity existence doesn't leak). Either way there is
-    nothing left to do remotely, so a delete may proceed locally.
-    """
-    from flow_sdk.utils.hub import HubErrorCode  # noqa: PLC0415
-
-    return e.status_code == 404 or e.code == HubErrorCode.TARGET_NOT_FOUND
+    """Nothing left to do remotely, so a delete may proceed locally."""
+    return e.is_target_missing
 
 
 async def _decline_linked_invitation(conv_id: str) -> None:

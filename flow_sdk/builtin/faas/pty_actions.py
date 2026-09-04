@@ -14,9 +14,9 @@ import uuid
 from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.api.messages import PtyOutputMessage, PtySessionStatusMessage, ResponseMessage
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.network.connection import Connection
 from flow_sdk.core.network.connection_manager import get_connection_handler
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 

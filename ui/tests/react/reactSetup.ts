@@ -4,6 +4,7 @@ import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { installCleanup } from '../_cleanup';
+import { loadShippedIconPacks } from '../_icon-packs';
 import { resolveReactTestInstance } from './_instance';
 
 // Config evaluation must remain safe for `--project unit`, but an actual React
@@ -35,6 +36,11 @@ if (!launchedInstance || __REACT_INSTANCE_NAME__ !== selectedInstance || __REACT
 // sweep also covers agentic_process so an un-tracked live create is caught.
 // Coexists with RTL's own afterEach(cleanup) below — they're independent hooks.
 installCleanup({ sweepTypes: ['agentic_process'] });
+
+// Production loads these manifests during bootstrap. Many component tests do
+// not call apiTestSetup themselves, so install the same packs at tier setup and
+// keep their icon rendering independent of file order.
+loadShippedIconPacks();
 
 // Mock matchMedia for jsdom (used by react-resizable-panels and other UI libraries)
 Object.defineProperty(window, 'matchMedia', {

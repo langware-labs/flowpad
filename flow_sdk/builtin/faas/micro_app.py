@@ -13,8 +13,8 @@ builtin bundle (how the console itself is served in cloud), which is why the FK
 is optional rather than required.
 """
 
+import logging as service_log
 import os
-from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import ClassVar, List, Optional
 
@@ -23,18 +23,18 @@ from pydantic import field_validator
 from starlette.requests import Request
 from starlette.responses import Response
 
-from flow_sdk.config import default_service_config
-import logging as service_log
-from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, Sharing
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_request import APIRequest
+from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.faas.codebase import AppCodebase
 from flow_sdk.builtin.faas.serve_static import ASSET_CACHE_CONTROL, AppNotBuilt, serve_app_bytes
+from flow_sdk.config import default_service_config
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.worldview.ontology import KindStr
 from flow_sdk.utils import ROOT_FOLDER
+from flow_sdk.worldview.ontology import KindStr
 
 
 class AppLocationType(StrEnum):

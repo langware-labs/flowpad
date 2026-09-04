@@ -56,3 +56,19 @@ DATA_SOURCE_CURSOR = TypeMetadata(
     api_visible=True,
     db_only=True,
 )
+
+# The consumer-side cursor: same shape, same reasons, one level up.
+CONSUMER_POSITION = TypeMetadata(
+    type=EntityType.CONSUMER_POSITION,
+    icon="Bookmark",
+    api_visible=True,
+    db_only=True,
+)
+
+# The change log an object-shaped source leaves behind each reflected page.
+SOURCE_CHANGE = TypeMetadata(
+    type=EntityType.SOURCE_CHANGE,
+    icon="FileDiff",
+    api_visible=True,
+    db_only=True,
+)

@@ -10,9 +10,8 @@ permission_mode: bypassPermissions
 enabled: true
 subagents:
 - email_sender
-mcp_servers:
-- mcp-3d4d6687-0432-44ed-af70-853cd2ed6a82
-version: 2
+mcp_servers: []
+version: 3
 ---
 
 You put the user's words in front of another human, unchanged.

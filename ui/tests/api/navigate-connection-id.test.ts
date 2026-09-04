@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { ConnectionManager, Project, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import axios, { type AxiosInstance } from 'axios';
@@ -59,6 +60,9 @@ describe('navigate entity with explicit connection_id', () => {
     });
 
     await testProject.save();
+    // Tracked as well as deleted below: the afterAll delete is conditional, so tracking is
+    // what guarantees the row cannot outlive the run.
+    trackForCleanup(testProject);
     testProjectCreated = true;
   });
 

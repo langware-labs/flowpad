@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Agent } from '@sdk';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, MessageSquare } from 'lucide-react';
 
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -24,15 +24,25 @@ interface AgentIntroCardProps {
    * the session — where a click-trigger would swallow it.
    */
   trigger?: 'click' | 'hover';
+  /** Replace the default editor action with an explicit "Use agent" action. */
+  onUse?: () => void;
+  /** A disabled Agent can still be inspected, but cannot start a session. */
+  useDisabled?: boolean;
 }
 
 /**
  * Who is this? — the agent's intro card, opened from anywhere the agent is
  * named as an actor (a chat turn, the pinned asset row). Avatar, title, slug,
- * the authored one-line description, the runtime it runs on, and one action:
- * open the agent. Read-only; editing is the profile editor's job.
+ * the authored one-line description, the runtime it runs on, and one contextual
+ * action: open it by default, or use it when shown over a launch tile.
  */
-export function AgentIntroCard({ agent, children, trigger = 'click' }: AgentIntroCardProps) {
+export function AgentIntroCard({
+  agent,
+  children,
+  trigger = 'click',
+  onUse,
+  useDisabled = false,
+}: AgentIntroCardProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const title = agent.displayName;
@@ -42,6 +52,7 @@ export function AgentIntroCard({ agent, children, trigger = 'click' }: AgentIntr
     agent.model,
     agent.permission_mode,
   ].filter((chip): chip is string => !!chip);
+  const ActionIcon = onUse ? MessageSquare : ExternalLink;
 
   // ONE card body, two ways of opening it — never a second description popover
   // that could drift from this one. Spelled out as two returns rather than a
@@ -81,12 +92,13 @@ export function AgentIntroCard({ agent, children, trigger = 'click' }: AgentIntr
           size="sm"
           variant="ghost"
           className="w-full justify-start"
-          onClick={() => navigation.openDock(agent.dockPointer)}
-          data-testid="agent-intro-card-open"
-          title={t`Open ${title}`}
+          onClick={onUse ?? (() => navigation.openDock(agent.dockPointer))}
+          disabled={onUse ? useDisabled : false}
+          data-testid={onUse ? 'agent-intro-card-use' : 'agent-intro-card-open'}
+          title={onUse ? t`Use agent` : t`Open ${title}`}
         >
-          <ExternalLink className="me-1.5 h-3.5 w-3.5" />
-          <Trans>Open agent</Trans>
+          <ActionIcon className="me-1.5 h-3.5 w-3.5" />
+          {onUse ? <Trans>Use agent</Trans> : <Trans>Open agent</Trans>}
         </Button>
       </div>
     </>
@@ -117,7 +129,10 @@ export function AgentIntroCard({ agent, children, trigger = 'click' }: AgentIntr
  *  section heading uses — a literal here would fork the type's own name. */
 export function AgentTypeChip({ className }: { className?: string }) {
   return (
-    <Badge variant="outline" className={cn('text-[10px] font-normal uppercase tracking-wider text-muted-foreground', className)}>
+    <Badge
+      variant="outline"
+      className={cn('text-[10px] font-normal uppercase tracking-wider text-muted-foreground', className)}
+    >
       {labelForType(Agent.type)}
     </Badge>
   );

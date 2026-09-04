@@ -37,6 +37,7 @@ import logging
 import re
 from typing import Any, Optional
 
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,55 @@ _thread_locks = new_registry()
 
 def _thread_lock():
     return loop_lock(_thread_locks)
+
+
+async def resolve_thread(channel: str, key: str, owner, *, title: str):
+    """The thread for ``(owner, channel, key)`` — found, adopted, or minted.
+
+    Resolve-or-create, double-checked: the derived id used to absorb this race
+    for free, a lookup does not — two concurrent events on a brand-new thread
+    would each miss and fork it. The lock is taken only on a miss, so the
+    ~100% common already-exists case never serializes on it.
+
+    Between the owner lookup and the mint sits the migration: a thread written
+    before ``owner`` existed has none, and it must become THIS owner's row
+    rather than be forked by a fresh one — the conversation it points at is
+    the one the user has been reading. Scoped to ``owner IS NULL``, never
+    "any owner", so a second owner on the same key mints its own thread.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner)
+    if thread is not None:
+        return thread
+    async with _thread_lock():
+        thread = await MessageThread.find_existing(channel, key, owner)
+        if thread is not None:
+            return thread
+        legacy = await MessageThread.find_unowned(channel, key)
+        if legacy is not None:
+            legacy.owner = owner
+            await legacy.save(notify=False)
+            return legacy
+        # Both ids are ordinary uuid4s, minted here at birth and looked up ever
+        # after. `conversation_id` is authoritative from this moment: a merge
+        # repoints it, which is the whole reason nothing re-derives it from the
+        # key. A mail thread titles by subject. A chat message has none, and
+        # falling back to the KEY put raw Slack ts digits in the inbox; the
+        # root message's opening is what Slack itself titles a thread by.
+        # Stamped at birth only, so it never churns.
+        thread = MessageThread(
+            id=mint_uuid(),
+            channel=channel,
+            thread_key=key,
+            owner=owner,
+            conversation_id=mint_uuid(),
+            title=title,
+            name=title,
+        )
+        await thread.save(notify=False)
+        return thread
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
@@ -174,11 +224,9 @@ async def project_source_item(
     CREATED the row announces (``_place_message``), so the announcement lands
     exactly once without a lane having to know who won.
     """
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -191,34 +239,9 @@ async def project_source_item(
     channel = channel_of(source)
     subject = item.name or ""
     key = thread_key_for(item, subject)
+    owner = await owner_of(source)
 
-    # Resolve-or-create, double-checked: the derived id used to absorb this
-    # race for free, a lookup does not — two concurrent events on a brand-new
-    # thread would each miss and fork it. The lock is taken only on a miss, so
-    # the ~100% common already-exists case never serializes on it.
-    thread = await MessageThread.find_existing(channel, key)
-    if thread is None:
-        async with _thread_lock():
-            thread = await MessageThread.find_existing(channel, key)
-            if thread is None:
-                # Both ids are ordinary uuid4s, minted here at birth and looked
-                # up ever after. `conversation_id` is authoritative from this
-                # moment: a merge repoints it, which is the whole reason
-                # nothing re-derives it from the key.
-                # A mail thread titles by subject. A chat message has none, and
-                # falling back to the KEY put raw Slack ts digits in the inbox;
-                # the root message's opening is what Slack itself titles a
-                # thread by. Stamped at birth only, so it never churns.
-                display = subject or _thread_title(item) or key
-                thread = MessageThread(
-                    id=mint_uuid(),
-                    channel=channel,
-                    thread_key=key,
-                    conversation_id=mint_uuid(),
-                    title=display,
-                    name=display,
-                )
-                await thread.save(notify=False)
+    thread = await resolve_thread(channel, key, owner, title=subject or _thread_title(item) or key)
     thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
@@ -229,6 +252,7 @@ async def project_source_item(
         parent_typeid=None,
         someone_typeid=None,
         title=thread.title or subject or key,
+        owner=thread.owner,
     )
 
     sender_id, sender_name = await _sender_for(item, source, channel)
@@ -472,8 +496,67 @@ def agent_id_of(source) -> str:
     of it comes here rather than re-spelling the lookup. `config` really is an
     untyped dict, which is why the defensive read is justified here and nowhere
     else in this file.
+
+    An agent-owned source answers the same question without that key: a channel
+    is not allocated to an agent, it is BOUND to one (``Agent.bind_channel``),
+    and the binding is the ``owner``. Reading it here is what lets one rule serve
+    both — otherwise every reader (the turn, the attribution, the outbound
+    persona) would have to learn a second spelling of "whose agent is this".
+    Config still wins, so a mailbox row is untouched.
     """
-    return str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    configured = str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+    if configured:
+        return configured
+    owner = getattr(source, "owner", None)
+    if owner is not None and getattr(owner, "type", None) == EntityType.AGENT.value:
+        return str(getattr(owner, "id", "") or "").strip()
+    return ""
+
+
+async def default_owner() -> "TypeId | None":
+    """The owner a row gets when nothing said otherwise: the local user.
+
+    ``None`` only on an instance that has not bootstrapped its local user row
+    yet — callers treat that as "unowned", never as "owned by nobody".
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    local = await User.get_local()
+    if local is None or not local.id:
+        return None
+    return TypeId(type=EntityType.USER.value, id=str(local.id))
+
+
+async def owner_of(entity) -> "TypeId | None":
+    """Whose row this is — THE reader of ownership, for every caller.
+
+    Precedence is the migration in one place: an explicit ``owner`` wins; a
+    legacy source that only carries ``config.agent_id`` is that agent's; and
+    anything else is the local user's. Because every reader comes here,
+    correctness never depends on the backfill having run — a row written
+    before ``owner`` existed answers exactly as it will after.
+    """
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    explicit = getattr(entity, "owner", None)
+    if explicit:
+        return explicit if isinstance(explicit, TypeId) else TypeId(str(explicit))
+    agent_id = agent_id_of(entity)
+    if agent_id:
+        return TypeId(type=EntityType.AGENT.value, id=agent_id)
+    return await default_owner()
+
+
+def is_agent_owner(owner) -> bool:
+    """Whether an owner typeid names an Agent (vs a user)."""
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    return owner is not None and str(getattr(owner, "type", "")) == EntityType.AGENT.value
 
 
 def is_self_address(source, address: str) -> bool:
@@ -489,9 +572,10 @@ def is_self_address(source, address: str) -> bool:
 
 async def _agent_sender_for(source) -> "tuple[str, str] | None":
     """``(sender_id, display)`` when this source is an agent's own mailbox."""
-    agent_id = agent_id_of(source)
-    if not agent_id:
+    owner = await owner_of(source)
+    if not is_agent_owner(owner):
         return None
+    agent_id = owner.id
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
     agent = await Agent.get_by_id(agent_id)

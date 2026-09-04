@@ -57,7 +57,13 @@ const TWO_BOXES_ARROW = [
 test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   test('C1: create opens the whiteboard editor', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     // Whiteboards are created via the API/editor route (the asset-browser tree
     // renders a curated root set — agent/skill/markdown/spec — and does not offer
     // a whiteboard quick-create toolbar entry). Create then open the editor.
@@ -69,7 +75,13 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
 
   test('C2–C3: files on disk + capsule id present (after first save)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c2-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     // Folder materializes lazily on first save — trigger one. The save writes
@@ -114,7 +126,13 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c4-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
@@ -153,7 +171,13 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
 
   test('C5: reload preserves content', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c5-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);

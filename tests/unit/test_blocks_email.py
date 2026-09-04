@@ -7,12 +7,15 @@ end-to-end lives in tests/long_tests/test_blocks_email_workflow.py.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, RunOutput
+import flow_sdk.blocks as blocks
+from flow_sdk.blocks import EmailMessageSpec, Inbox, RunOutput, _AgentRunner
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -55,18 +58,45 @@ class _StubProcess:
     def __init__(self):
         self.id = str(uuid.uuid4())
         self.prompts: list[str] = []
+        self.saved = False
+        self.exited = False
 
     async def save(self):
+        self.saved = True
         return self
 
     async def exit(self):
+        self.exited = True
         return None
 
 
-class TestAgentRunnerSessions:
+class _DelayedDeployment:
+    def __init__(self, process):
+        self.process = process
+        self.started = asyncio.Event()
+        self.finish = asyncio.Event()
+        self.spawn_count = 0
+
+    async def resolve(self, _agent):
+        return self
+
+    async def create_process(self, _prompt, **_options):
+        self.spawn_count += 1
+        self.started.set()
+        await self.finish.wait()
+        return self.process
+
+    def install(self, monkeypatch):
+        monkeypatch.setattr(
+            "flow_sdk.builtin.agent_registry.get_agent_local_deployment",
+            self.resolve,
+        )
+
+
+class TestPrivateAgentRunnerSessions:
     @pytest.fixture
     def runner(self, monkeypatch):
-        r = AgentRunner("stub", max_processes=2)
+        r = _AgentRunner("stub", max_processes=2)
 
         async def _spawn(m):
             key = str(r.session_key(m))
@@ -104,10 +134,187 @@ class TestAgentRunnerSessions:
             await runner.process_for(_inbound(thread_key="t3"))
 
     def test_default_session_key_is_the_thread(self):
-        r = AgentRunner("stub")
+        r = _AgentRunner("stub")
         assert r.session_key(_inbound(thread_key="t9")) == "t9"
         # a threadless message keys on its own id — per-message session
         assert r.session_key(_inbound(thread_key="", external_id="<x>")) == "<x>"
+
+    @pytest.mark.asyncio
+    async def test_closed_runner_rejects_new_messages(self):
+        runner = _AgentRunner("stub")
+        await runner.close()
+
+        with pytest.raises(RuntimeError, match="processing scope is closed"):
+            await runner.process_for(_inbound())
+
+    @pytest.mark.asyncio
+    async def test_process_finishing_spawn_after_close_is_discarded(self, monkeypatch):
+        runner = _AgentRunner("stub")
+        process = _StubProcess()
+        deployment = _DelayedDeployment(process)
+        deployment.install(monkeypatch)
+        pending = asyncio.create_task(runner.process_for(_inbound()))
+        await deployment.started.wait()
+
+        await runner.close()
+        deployment.finish.set()
+
+        with pytest.raises(RuntimeError, match="processing scope is closed"):
+            await pending
+        assert process.exited is True
+        assert process.saved is False
+        assert runner.processes == {}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_key_messages_share_one_spawn(self, monkeypatch):
+        runner = _AgentRunner("stub")
+        process = _StubProcess()
+        deployment = _DelayedDeployment(process)
+        deployment.install(monkeypatch)
+        first = asyncio.create_task(runner.process_for(_inbound(thread_key="same")))
+        await deployment.started.wait()
+        second = asyncio.create_task(runner.process_for(_inbound(thread_key="same")))
+        deployment.finish.set()
+
+        first_process, second_process = await asyncio.gather(first, second)
+        assert first_process is second_process is process
+        assert deployment.spawn_count == 1
+        await runner.close()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_distinct_keys_respect_process_cap(self, monkeypatch):
+        runner = _AgentRunner("stub", max_processes=1)
+        process = _StubProcess()
+        deployment = _DelayedDeployment(process)
+        deployment.install(monkeypatch)
+        first = asyncio.create_task(runner.process_for(_inbound(thread_key="one")))
+        await deployment.started.wait()
+        second = asyncio.create_task(runner.process_for(_inbound(thread_key="two")))
+        deployment.finish.set()
+
+        assert await first is process
+        with pytest.raises(RuntimeError, match="max_processes=1"):
+            await second
+        assert deployment.spawn_count == 1
+        await runner.close()
+
+
+class TestAgentMessageProcessing:
+    @pytest.fixture
+    def fake_runner(self, monkeypatch):
+        instances = []
+
+        class FakeRunner:
+            def __init__(self, agent):
+                self.agent = agent
+                self.messages = []
+                self.closed = False
+                self.started = asyncio.Event()
+                self.release = asyncio.Event()
+                instances.append(self)
+
+            async def run(self, message):
+                if self.closed:
+                    raise RuntimeError("agent message processing scope is closed")
+                self.messages.append(message)
+                if message.body == "explode":
+                    raise RuntimeError("agent turn exploded")
+                if message.body == "wait":
+                    self.started.set()
+                    await self.release.wait()
+                return RunOutput(text=f"answer: {message.body}")
+
+            async def close(self):
+                self.closed = True
+
+        monkeypatch.setattr(blocks, "_AgentRunner", FakeRunner)
+        return instances
+
+    @pytest.mark.asyncio
+    async def test_scope_reuses_the_private_runner_and_closes_it(self, fake_runner):
+        agent = Agent(name="stub")
+        first = _inbound(body="first")
+        second = _inbound(body="second")
+
+        async with agent.process_messages():
+            assert (await agent.process_message(first)).text == "answer: first"
+            assert (await agent.process_message(second)).text == "answer: second"
+
+        assert len(fake_runner) == 1
+        assert fake_runner[0].messages == [first, second]
+        assert fake_runner[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_one_shot_message_closes_its_private_runner(self, fake_runner):
+        agent = Agent(name="stub")
+
+        assert (await agent.process_message(_inbound(body="hello"))).text == "answer: hello"
+        assert len(fake_runner) == 1
+        assert fake_runner[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_respond_to_owns_listening_reply_and_cleanup(self, fake_runner):
+        agent = Agent(name="stub")
+        channel = blocks.MessageBlock.get("simple")
+
+        async with agent.respond_to(channel):
+            reply = await channel.send("hello")
+
+        assert reply == "answer: hello"
+        assert len(fake_runner) == 1
+        assert fake_runner[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_respond_to_propagates_a_failed_agent_turn_to_send(self, fake_runner):
+        agent = Agent(name="stub")
+        channel = blocks.MessageBlock.get("simple")
+
+        with pytest.raises(RuntimeError, match="agent turn exploded"):
+            async with agent.respond_to(channel):
+                await channel.send("explode")
+
+        assert len(fake_runner) == 1
+        assert fake_runner[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_cancelled_send_does_not_stop_the_responder(self, fake_runner):
+        agent = Agent(name="stub")
+        channel = blocks.MessageBlock.get("simple")
+
+        async with agent.respond_to(channel):
+            abandoned = asyncio.create_task(channel.send("wait"))
+            await fake_runner[0].started.wait()
+            fake_runner[0].release.set()
+            abandoned.cancel()
+
+            with pytest.raises(asyncio.CancelledError):
+                await abandoned
+
+            assert await channel.send("next") == "answer: next"
+
+        assert len(fake_runner) == 1
+        assert fake_runner[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_child_task_cannot_reuse_runner_after_scope_exit(self, fake_runner):
+        agent = Agent(name="stub")
+        release_child = asyncio.Event()
+
+        async def run_later():
+            await release_child.wait()
+            return await agent.process_message(_inbound(body="late"))
+
+        async with agent.process_messages():
+            child = asyncio.create_task(run_later())
+
+        release_child.set()
+        with pytest.raises(RuntimeError, match="processing scope is closed"):
+            await child
+        assert len(fake_runner) == 1
+
+    def test_agent_runner_is_not_public(self):
+        assert "AgentRunner" not in blocks.__all__
+        assert not hasattr(blocks, "AgentRunner")
 
 
 class TestInboxSend:
@@ -163,3 +370,26 @@ class TestInboxSend:
 def test_run_output_is_a_value():
     out = RunOutput(text="hi")
     assert out.text == "hi" and out.files == []
+
+
+# ── owner: the block says whose inbox it is; `agent_id=` stays as the alias ──
+
+
+def test_inbox_owner_is_implied_by_the_agent_id_alias():
+    from flow_sdk.fs_store.type_id import TypeId
+    from flow_sdk.schema.types import EntityType
+
+    agent_id = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
+    inbox = blocks.Inbox("pirate@agentmail.to", provider="cloud_email", agent_id=agent_id)
+    assert inbox._owner() == TypeId(type=EntityType.AGENT.value, id=agent_id)
+    # The alias still lands on the source config: it is cloud_email's identity key.
+    assert inbox._config["agent_id"] == agent_id
+
+
+def test_inbox_explicit_owner_wins_and_a_plain_inbox_is_the_local_users():
+    from flow_sdk.fs_store.type_id import TypeId
+
+    tid = TypeId(type="agent", id="3c1d9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c")
+    assert blocks.Inbox("me@agentmail.to", api_key="k", owner=tid, agent_id="ignored")._owner() == tid
+    # None here means "the DataSource stamps the local user on save", not "nobody".
+    assert blocks.Inbox("me@agentmail.to", api_key="k")._owner() is None

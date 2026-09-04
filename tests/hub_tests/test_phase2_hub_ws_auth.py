@@ -12,7 +12,6 @@ from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.ws_client import HubWebSocketAuthError, HubWebSocketManager, connect_hub_websocket
 
-
 pytestmark = pytest.mark.hub
 
 

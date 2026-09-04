@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Checkbox } from '@src/components/ui/checkbox';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { providerMetaFor } from '@src/tabs/provider-meta';
+import { providerKeyFor, providerMetaFor } from '@src/tabs/provider-meta';
 import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal/interactive-terminal/side-windows';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { cn } from '@src/lib/utils';
@@ -57,7 +57,13 @@ function formatFullDate(iso: string | null | undefined): string {
  *  registry is how that drift happened; both now read the registry. */
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
   const meta = providerMetaFor(workerType);
-  return <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} />;
+  // `data-provider` rather than an aria-label: the row already carries the
+  // session's name as text, so announcing the vendor twice is noise — but which
+  // vendor a row wears is exactly what a test needs to see, and it is the
+  // attribute `tab-row-item` already uses for the same purpose.
+  return (
+    <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={providerKeyFor(workerType)} />
+  );
 }
 
 interface HistoryModalProps {

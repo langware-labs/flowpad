@@ -200,16 +200,21 @@ async def hub_holds_credential(credentials_name: str) -> bool:
     )
 
 
-async def hub_credential_value(credentials_name: str) -> Optional[str]:
+async def hub_credential_value(credentials_name: str, *, verify_held: bool = True) -> Optional[str]:
     """Read the token the hub stored, through the one route that returns a value.
 
-    Needed only for providers with LOCAL consumers of the raw token: `git push`,
-    the `gh` capability and the repo actions all read `github_credentials` out of
-    local SOD, so a GitHub token that exists only on the hub would leave them
-    broken while the Connections tab claimed success.
+    Needed for providers with LOCAL consumers of the raw token: `git push`, the
+    `gh` capability and the repo actions read `github_credentials` out of local
+    SOD, and `SlackDriver._token()` reads Slack's on every poll from the
+    request-less ingest poller. A token that exists only on the hub would leave
+    all of those broken while the Connections tab claimed success.
 
-    Providers with no local consumer (Slack) keep their token on the hub and are
-    resolved at launch time, which is the design everything else follows.
+    ``verify_held=False`` skips the discoverability pre-check below. It exists
+    for a credential the hub HOLDS but does not ADVERTISE: the provider table
+    carries one row per provider pointing at the user token, so an app/bot token
+    is never discoverable there even though the value route serves it happily.
+    Emitting a second row hub-side is not the fix — that table drives the
+    Connections UI and would render a duplicate provider line.
     """
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
 
@@ -221,7 +226,7 @@ async def hub_credential_value(credentials_name: str) -> Optional[str]:
     # not hold is not merely wasted — a refusal from the hub surfaces to the user
     # as "Cloud request rejected", so the routine "not connected yet" case would
     # pop an error toast at them for nothing.
-    if not await hub_holds_credential(credentials_name):
+    if verify_held and not await hub_holds_credential(credentials_name):
         logger.debug("[oauth] hub does not hold %r; not asking for its value", credentials_name)
         return None
 
@@ -246,6 +251,20 @@ def hub_credentials_name_for(provider: str) -> str:
     and the poll has to watch the hub's name while the local row keeps ours.
     """
     return f"{(provider or '').strip().upper()}_OAUTH_USER_TOKEN"
+
+
+def hub_app_credentials_name_for(provider: str) -> str:
+    """The hub's naming for a provider's APP (bot) token: ``{PROVIDER}_OAUTH_APP_TOKEN``.
+
+    Mirrors ``OauthProviderConfig.app_credentials_name`` on the hub, the same way
+    ``hub_credentials_name_for`` mirrors its user-token sibling. Slack stores both
+    halves of one grant under these two names.
+
+    Unlike the user token this name is NOT advertised in the hub's provider table
+    (one row per provider, pointing at the user token), so a caller must read it
+    with ``hub_credential_value(..., verify_held=False)``.
+    """
+    return f"{(provider or '').strip().upper()}_OAUTH_APP_TOKEN"
 
 
 #: Ceiling on the redirect-reachability preflight. Not a retry or backoff budget:

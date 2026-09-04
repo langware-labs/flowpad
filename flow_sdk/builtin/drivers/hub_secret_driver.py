@@ -109,3 +109,13 @@ class HubSecretDriver:
         raise SecretProvideUnsupported(
             "Use 'push to cloud' to store a hub secret — it checks the project is published first."
         )
+
+    async def forget(self, locator: SecretOriginLocator, **context: Any) -> bool:
+        """No. A cloud value is deleted deliberately, by its own act.
+
+        ``delete-secret-from-cloud`` is that act, and the docs promise it "removes
+        it from there and nowhere else". Folding it into a local delete would make
+        one button remove a value from every machine the project is shared with —
+        the opposite of the per-secret, deliberate choice pushing to cloud was.
+        """
+        return False

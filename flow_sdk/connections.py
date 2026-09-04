@@ -21,7 +21,7 @@ from typing import Optional
 from flow_sdk.core.connections import (
     Authorization,
     ConnectionSpec,
-    list_connection_specs,
+    list_connections,
     resolve_connection_spec,
     token_for_spec,
 )
@@ -97,11 +97,25 @@ class _SdkPresenter:
 
 @dataclass(frozen=True)
 class Connection:
-    """One row from the same provider catalogue rendered by Connections UI."""
+    """One row of the same list the Connections screen renders.
+
+    Every KIND of connection, not only OAuth providers: an API-key credential,
+    this instance's FlowPad account and a harness CLI login are all connections
+    a person would name, and this list used to share no rows at all with the one
+    on screen. ``kind`` is what tells them apart.
+    """
 
     provider: str
     display_name: str
     connected: bool
+    #: ``oauth`` / ``api_key`` / ``flowpad`` / ``harness``.
+    kind: str = "oauth"
+    #: ``connected`` / ``disconnected`` / ``needs_reauth`` / ``unknown``. Finer
+    #: than ``connected``, which cannot express "nobody has asked" — the normal
+    #: reading of a harness login after a restart.
+    state: str = "disconnected"
+    #: The resolver's own sentence about this row. Rendered as given.
+    detail: str = ""
     identity: Optional[str] = None
     scopes: tuple[str, ...] = ()
     icon: Optional[str] = None
@@ -146,17 +160,26 @@ def _from_spec(
         provider=spec.provider,
         display_name=spec.display_name,
         connected=spec.connected if connected is None else connected,
-        identity=spec.identity if identity is None else identity,
+        kind=str(spec.kind),
+        state=str(spec.state),
+        detail=spec.detail,
+        identity=(spec.identity or None) if identity is None else identity,
         scopes=spec.scopes,
-        icon=spec.icon,
+        icon=spec.icon or None,
         _spec=spec,
     )
 
 
-async def get_connections() -> list[Connection]:
-    """Return the canonical provider rows in their canonical order."""
+async def get_connections(project_id: str = "") -> list[Connection]:
+    """Every connection this box has, in the order the screen shows them.
 
-    return [_from_spec(spec) for spec in await list_connection_specs()]
+    Machine-level kinds always; API-key credentials only when ``project_id`` is
+    given, because their identity is ``(project_id, env_var)`` and the server has
+    no notion of a selected project. Asking without one returns a smaller honest
+    list rather than a guess.
+    """
+
+    return [_from_spec(spec) for spec in await list_connections(project_id)]
 
 
 async def get_connection(provider: str) -> Optional[Connection]:

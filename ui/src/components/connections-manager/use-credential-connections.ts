@@ -60,10 +60,10 @@ const NO_SPECS: CredentialSpec[] = [];
  */
 export function useCredentialConnections(project: Project | null | undefined) {
   const { data: specs = NO_SPECS } = useEntitiesQuery<CredentialSpec>(credentialSpecsQuery);
-  const { secretOrigins, status, addMany, provide } = useProjectSecretOrigins(project ?? null);
+  const { secretOrigins, status, addMany, provide, deleteMany } = useProjectSecretOrigins(project ?? null);
   // `useProjectEnvLocal` returns the already-unwrapped fields, not the raw
   // status object — `keys` is names + line numbers only, never a value.
-  const { keys: envLocalKeys, blocked } = useProjectEnvLocal(project ?? null);
+  const { keys: envLocalKeys, blocked, blockReason } = useProjectEnvLocal(project ?? null);
 
   const rows: CredentialRow[] = useMemo(
     () => buildCredentialRows({ specs, secretOrigins, status, envLocalKeys }),
@@ -138,5 +138,40 @@ export function useCredentialConnections(project: Project | null | undefined) {
     })();
   }, [rows, specs, addMany]);
 
-  return { rows, specs, envLocalBlocked: blocked, declareCredential, provide };
+  /** The env vars already sitting in `.env.local` — names only, never values.
+   *  The Add form asks for a variable only when this does not already have it. */
+  const envLocalPresent = useMemo(
+    () => new Set(envLocalKeys.map((k) => k.key)),
+    [envLocalKeys],
+  );
+
+  /**
+   * Delete one credential: its declarations, and its values where deleting them
+   * is ours to do.
+   *
+   * The split is not ours to decide per row — the backend driver owns it, because
+   * whether a value may be deleted is a property of the STORE. Flowpad's own
+   * encrypted store is emptied; a value in the project's `.env.local` stays
+   * exactly where the user put it, since Flowpad never removes an entry from
+   * that file. The result names which is which so the caller can say so.
+   */
+  const deleteCredential = useCallback(
+    async (row: CredentialRow) => {
+      return await deleteMany(
+        row.members.map((m) => m.typeid).filter((id): id is string => !!id),
+      );
+    },
+    [deleteMany],
+  );
+
+  return {
+    rows,
+    specs,
+    envLocalBlocked: blocked,
+    envLocalBlockReason: blockReason,
+    envLocalPresent,
+    declareCredential,
+    provide,
+    deleteCredential,
+  };
 }

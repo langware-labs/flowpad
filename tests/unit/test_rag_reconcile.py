@@ -93,10 +93,31 @@ async def test_the_tick_does_not_embed(docs, monkeypatch):
     assert await reconcile.dispatch_due_indexes() == [str(index.id)]
 
 
-async def test_an_unmarked_index_is_not_dispatched(docs, monkeypatch):
-    monkeypatch.setattr(reconcile, "_spawn", lambda index: None)
-    await _active(docs, pending=False)
+async def test_an_index_with_nothing_to_do_is_not_dispatched(docs, monkeypatch, local_embedder):
+    """Nothing marked AND every root already stamped — the quiet case, which is most ticks."""
+    index = await _active(docs)
+    await reconcile.run_index(index)
+    # The PASS does not clear the mark — the dispatcher does, before it spawns. Clear it here
+    # so this test is about "nothing to do", not about who owns the flag.
+    index.pending = False
+    await index.save(notify=False)
+
+    monkeypatch.setattr(reconcile, "_spawn", lambda i: None)
+    assert await index.unstamped_roots() == []
     assert await reconcile.dispatch_due_indexes() == []
+
+
+async def test_a_root_the_store_has_no_hash_for_is_dispatched_unmarked(docs, monkeypatch):
+    """The case no marker can announce: the vectors are gone, so nothing is left to mark it.
+
+    A store deleted, moved, or never built leaves the row still claiming it was indexed. Without
+    this the index sits there looking healthy and answering nothing, forever.
+    """
+    monkeypatch.setattr(reconcile, "_spawn", lambda index: None)
+    index = await _active(docs, pending=False)
+
+    assert await index.unstamped_roots() == index.roots
+    assert await reconcile.dispatch_due_indexes() == [str(index.id)]
 
 
 async def test_a_disabled_index_is_never_dispatched(docs, monkeypatch):
