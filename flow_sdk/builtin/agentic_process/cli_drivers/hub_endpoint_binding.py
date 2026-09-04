@@ -84,6 +84,25 @@ async def _sources_by_kind() -> tuple[dict, dict, dict]:
     return sources, resolved, endpoints
 
 
+def _hub_user_typeid() -> str | None:
+    """The hub identity this box is signed in as, in the same spelling an endpoint's
+    ``principal_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
+
+    The box's LOCAL user is a different person as far as ids go -- the bootstrap ``user`` is
+    ``uname: local`` with a v5 id minted here -- so a screen cannot ask "is this budget mine"
+    without being told which hub user the box is. Reported rather than filtered on: the picker
+    and the resolver legitimately spend a pool that belongs to an org, and taking those rows
+    out of the listing would break a spawn to tidy up a screen.
+    """
+    try:
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+        user_id = str((get_user() or {}).get("id") or "")
+    except Exception:  # noqa: BLE001
+        return None
+    return f"user-{user_id}" if user_id else None
+
+
 async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
     # Read the endpoint listing FIRST, then build the sources from the now-warm memo.
@@ -119,6 +138,9 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
         "provider": bound.provider if bound else None,
         "name": bound.name if bound else None,
         "hub_logged_in": hub_logged_in,
+        # Who the hub thinks this box is. Lets a caller tell a budget allocated TO this person
+        # from one they merely administer -- both are listed, and only this says which is which.
+        "hub_user_typeid": _hub_user_typeid(),
         # Every source each harness could be funded by, and which one actually wins. One
         # producer for the resolver and the picker, so what a spawn does and what the UI
         # claims cannot disagree.
@@ -270,3 +292,44 @@ async def select_llm_source(payload: dict) -> dict:
     await cap.save(notify=True)
     logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
     return await _status(hub_key)
+
+
+async def test_hub_llm_endpoint(payload: dict) -> dict:
+    """Send ONE minimal completion down an endpoint's chain and report the verdict.
+
+    A pass-through to the hub's own ``test`` action, and deliberately nothing more: the
+    verdict covers the credential, every hop's filters and budget, the routing and the
+    provider, and none of that is knowable from here. The box has no ``llm_endpoint`` rows
+    (the type is a read-only projection), so the desktop UI cannot reach that action the way
+    the hub UI does -- ``dataManager`` would call this box, which 404s. This is the same
+    channel the listing already rides.
+
+    Returns the hub's answer verbatim. A REFUSED call is a verdict, not an error, and comes
+    back inside the success envelope with ``ok: false``; only a transport/auth failure raises.
+    """
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    raw = str(payload.get("endpoint_typeid") or payload.get("id") or "").strip()
+    if not raw:
+        raise HubEndpointBindError("endpoint_typeid is required", 400)
+    # Three spellings reach here, all of them the hub's own: the row's bare ``id``, the typeid
+    # form ``sources`` and the chain hops carry, and the colon form the bind payload uses. Strip
+    # the prefix rather than parse a ``TypeId`` -- this only needs the suffix to build a path,
+    # and whether that suffix names a real endpoint is the hub's answer to give, not ours.
+    prefix = EntityType.LLM_ENDPOINT.value
+    endpoint_id = raw[len(prefix) + 1 :].strip() if raw.startswith((f"{prefix}-", f"{prefix}:")) else raw
+    if not endpoint_id:
+        raise HubEndpointBindError(f"{raw!r} is not an endpoint id", 400)
+    if not resolve_hub_api_key():
+        raise HubEndpointBindError("this box is not logged in to the hub", 409)
+
+    try:
+        verdict = await hub_post("llm_endpoint", {}, endpoint_id, "test")
+    except HubError as exc:
+        raise HubEndpointBindError(f"hub refused the test: {exc}", 502) from exc
+    if verdict is None:
+        raise HubEndpointBindError("no hub is configured for this box", 409)
+    return verdict

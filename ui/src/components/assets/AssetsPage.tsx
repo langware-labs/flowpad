@@ -50,6 +50,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { LlmEndpointsAssetList } from './LlmEndpointsAssetList';
 import { isProjectHomeSurface, shouldShowIndexPrompt } from './asset-body-content';
 import { ContextFolderBrowser } from './ContextFolderBrowser';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
@@ -636,6 +637,10 @@ export function AssetsPage() {
               </div>
               {folderAbsPath && <MarkdownIndexPanel folderAbsPath={folderAbsPath} />}
             </div>
+          ) : selectedType === (RecordType.LLM_ENDPOINT as string) ? (
+            // Not the index-backed list: these rows have no local record at all (see
+            // LlmEndpointsAssetList), so the generic browser would always show zero.
+            <LlmEndpointsAssetList onOpen={navigateAsset} />
           ) : selectedType ? (
             <AssetListView
               recordType={selectedType}

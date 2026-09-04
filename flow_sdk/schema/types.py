@@ -188,6 +188,10 @@ class EntityType(StrEnum):
     SYSTEM_JOB = "system_job"
     JOB_EXECUTION = "job_execution"
     API_KEY = "api_key"
+    # A hub budget this box may spend. There is never a local row -- the box
+    # holds it as a read-only projection of hub state (builtin/llm_endpoint.py);
+    # the member exists so the type can carry TypeInfo (icon, browse tier).
+    LLM_ENDPOINT = "llm_endpoint"
     CODE_REF = "code_ref"
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
