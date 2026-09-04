@@ -24,7 +24,6 @@ from .fs_actions import (
     delete,
     download,
     download_zip,
-    exists,
     mkdir,
     move,
     read_optional,
@@ -49,7 +48,6 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
     - browse: List directory contents
     - upload: Upload files
     - download: Download file
-    - exists: Report whether a file is present (200 either way, never a 404)
     - read_optional: Read a maybe-absent text file in ONE request (200 either way)
     - serve: Serve a file for the browser to render (inline, url mirrors the path)
     - download_zip: Download directory as zip
@@ -82,8 +80,6 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await upload(current_request_info, fs_info)
         elif fs_info.fs_action == "download":
             return await download(current_request_info, fs_info)
-        elif fs_info.fs_action == "exists":
-            return await exists(current_request_info, fs_info)
         elif fs_info.fs_action == "read_optional":
             return await read_optional(current_request_info, fs_info)
         elif fs_info.fs_action == "serve":

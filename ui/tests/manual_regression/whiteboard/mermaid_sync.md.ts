@@ -100,7 +100,13 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
     const { id, assetRef } = await createWhiteboard(request, `m3-${Date.now() % 10000}`);
     await openEditor(page, id);
-    await injectAndSave(page, [{ type: 'freedraw', x: 0, y: 0, points: [[0, 0], [50, 20], [100, 30]] }]);
+    // `simulatePressure` because this skeleton is hand-built and carries no
+    // `pressures`: Excalidraw's free-draw renderer reads `pressures[i]` unless this
+    // flag is set, and `convertToExcalidrawElements` does not fill it in. A stroke
+    // drawn in the UI always has one of the two — an invented one has to say which.
+    await injectAndSave(page, [
+      { type: 'freedraw', x: 0, y: 0, points: [[0, 0], [50, 20], [100, 30]], simulatePressure: true },
+    ]);
     const md = await waitMermaidContains(page, `${assetRef}/WHITE_BOARD.md`, 'flowchart TD');
     expect(md).toContain('flowchart TD');
     // Loose-elements comment mentioning freedraw; the fenced block is non-empty.
