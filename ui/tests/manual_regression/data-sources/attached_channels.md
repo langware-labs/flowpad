@@ -15,30 +15,30 @@ agent's rows carry `owner`.
 
 What is being proved: the header line is one component over `DataSource.owner`
 and the spec's `sends` flag. The user's inbox and each agent's inbox show
-DISJOINT rows, and chip-present / chip-removed is the same pause/resume verb the
-Data Sources card uses.
+DISJOINT rows; a mark filters the list, the details popover carries the one
+pause/resume verb the Data Sources card uses, and + creates a source born with
+that owner.
 
-test 1: the header line shows the user's channels as chips
+test 1: the header line shows the user's channels as round marks
 - [browser] navigate to {APP_URL}/dock/inbox
 - [browser] validate data-testid="inbox-select-all-row" holds data-testid="attached-channels" with data-owner starting with `user-`
-- [browser] validate exactly one data-testid="attached-channel" with data-provider="slack" and data-state="on", showing the coloured Slack mark and the source name
+- [browser] validate exactly one data-testid="attached-channel" with data-provider="slack" and data-state="on" (green dot, coloured Slack mark), plus data-testid="attached-channels-add" and data-testid="attached-channels-details"
 - [browser] validate every conversation row's source chip (data-chip-type="source") shows the same coloured mark
 
-test 2: × turns a channel off, + turns it back on, the card agrees
-- [browser] click the chip's data-testid="attached-channel-remove"
-- [browser] the chip is gone; [api] GET /api/v1/graph/data_source/<id> — `status` is `disabled`
-- [browser] click data-testid="attached-channels-add"; the menu lists the source (data-testid="attached-channel-off"); pick it
-- [browser] a toast says "Resumed — it polls on the next tick."; the chip is back
-- [api] `status` is `setup` (Slack owes a Verify) — the chip is amber with data-testid="attached-channel-fix"
-- [browser] click that warning: the Data Sources tab opens (URL /dock/data-sources)
-- [browser] press Verify on the card; back on the inbox the chip is plain again
+test 2: a mark filters; × shows everything again
+- [browser] click the mark: it gains a ring (aria-pressed="true"), the other marks dim, the two controls are replaced by data-testid="attached-channels-clear", and only rows whose latest message came through that source stay listed
+- [browser] click ×: every row is back, the + and details controls return
 
-test 3: the + menu when everything is on
-- [browser] with every channel on, open +: one disabled line "Every attached channel is on" and "Attach a channel in Data Sources…", which opens that screen
+test 3: the details popover is where on/off and delete live
+- [browser] click data-testid="attached-channels-details": one data-testid="attached-channel-row" per channel with its switch and trash
+- [browser] flip the switch off: the mark's ring turns dashed; [api] GET /api/v1/graph/data_source/<id> — `status` is `disabled`
+- [browser] flip it on: a toast says "Resumed — it polls on the next tick."; [api] `status` is `setup` (Slack owes a Verify) and the mark wears the "!" badge with "Finish setup, then press Verify." under its name
+- [browser] "Manage in Data Sources…" opens that screen; press Verify; back on the inbox the mark has its green dot
+- [browser] the trash asks "Remove this source?" — cancel
 
 test 4: an agent's bar is its own
-- [api] create a slack source with `owner: "agent-<agent-id>"` (POST /api/v1/graph/data_source)
-- [browser] navigate to {APP_URL}/dock/agent/<agent-id>/inbox
-- [browser] validate data-testid="attached-channels" (in the inbox header line) has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), amber with the fix warning
+- [browser] navigate to {APP_URL}/dock/agent/<agent-id>/inbox; the line shows no mark of the user's
+- [browser] click +, pick Slack, name it, paste a channel id, Add source
+- [browser] validate data-testid="attached-channels" (in the inbox header line) has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), with the "!" badge
 - [browser] the agent's inbox list renders (not the "no channel" empty state)
 - [browser] back on {APP_URL}/dock/inbox the user's bar shows only the user's source

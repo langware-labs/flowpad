@@ -1,10 +1,11 @@
 /**
- * The channels line: a chip per channel that is ON, its × turns it off, a
- * parked one wears a warning, and channels that are off are not chips.
+ * The channels line: a round mark per channel with its status, marks that
+ * FILTER (not toggle), and the two controls that give way to × while filtering.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const LOCAL = 'user-11111111-1111-4111-8111-111111111111';
 function fake(name: string, status = 'active') {
@@ -17,6 +18,7 @@ function fake(name: string, status = 'active') {
     config: {},
     status,
     health: 'ok',
+    setup_detail: '',
     get isActive() {
       return this.status === 'active';
     },
@@ -27,6 +29,7 @@ function fake(name: string, status = 'active') {
       return this.status === 'setup';
     },
     save: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
     markEdit: vi.fn(),
   };
 }
@@ -40,30 +43,54 @@ vi.mock('@src/components/data-sources/use-source-specs', () => ({
   useSourceSpecs: () => ({ specs: [], specFor: () => ({ sends: true, icon_name: 'Slack' }) }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }) }));
+vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDialog: () => null }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
 
 import { AttachedChannelsBar } from '@src/components/inbox-view/AttachedChannelsBar';
 
+function mount(selected = new Set<string>()) {
+  const onSelectedChange = vi.fn();
+  render(
+    <TooltipProvider>
+      <AttachedChannelsBar owner={new TypeId(LOCAL)} selected={selected} onSelectedChange={onSelectedChange} />
+    </TooltipProvider>,
+  );
+  return onSelectedChange;
+}
+
 describe('AttachedChannelsBar', () => {
   afterEach(cleanup);
 
-  it('shows a chip per channel that is on, none for one that is off, and a warning on a parked one', () => {
+  it('shows every channel with its state, and the two controls at rest', () => {
     sources = [fake('a'), fake('b', 'disabled'), fake('c', 'setup')];
-    render(<AttachedChannelsBar owner={new TypeId(LOCAL)} />);
-    const chips = screen.getAllByTestId('attached-channel');
-    expect(chips.map((e) => [e.dataset.provider, e.textContent, e.dataset.state])).toEqual([
-      ['slack', 'a', 'on'],
-      ['slack', 'c', 'parked'],
+    mount();
+    const marks = screen.getAllByTestId('attached-channel');
+    expect(marks.map((e) => [e.getAttribute('aria-label'), e.dataset.state])).toEqual([
+      ['a · listening', 'on'],
+      ['b · paused', 'off'],
+      ['c · needs attention', 'parked'],
     ]);
-    expect(screen.getAllByTestId('attached-channel-fix')).toHaveLength(1);
     expect(screen.getByTestId('attached-channels-add')).toBeTruthy();
+    expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
+    expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
   });
 
-  it('× is the off switch: it pauses the source', async () => {
-    sources = [fake('a')];
-    render(<AttachedChannelsBar owner={new TypeId(LOCAL)} />);
-    fireEvent.click(screen.getByTestId('attached-channel-remove'));
-    await vi.waitFor(() => expect(sources[0].save).toHaveBeenCalledTimes(1));
-    expect(sources[0].status).toBe('disabled');
+  it('a mark filters rather than toggles: nothing is saved, the selection changes', () => {
+    sources = [fake('a'), fake('b')];
+    const onSelectedChange = mount();
+    fireEvent.click(screen.getAllByTestId('attached-channel')[1]);
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['b']));
+    expect(sources[1].save).not.toHaveBeenCalled();
+  });
+
+  it('while filtering, the controls give way to ×, which shows everything again', () => {
+    sources = [fake('a'), fake('b')];
+    const onSelectedChange = mount(new Set(['a']));
+    expect(screen.queryByTestId('attached-channels-add')).toBeNull();
+    expect(screen.queryByTestId('attached-channels-details')).toBeNull();
+    const marks = screen.getAllByTestId('attached-channel');
+    expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    fireEvent.click(screen.getByTestId('attached-channels-clear'));
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set());
   });
 });
