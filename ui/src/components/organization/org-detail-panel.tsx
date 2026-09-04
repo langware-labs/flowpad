@@ -14,6 +14,7 @@ import {
   memberPrincipalId,
   type MemberActions,
 } from '@src/components/organization/member-list';
+import { BudgetSection } from '@src/components/organization/budgets/BudgetSection';
 import { useCreateChildTeamForm } from '@src/components/organization/use-create-child-team';
 import { notify } from '@src/notifications';
 
@@ -154,6 +155,11 @@ export function OrgDetailPanel({
           })
         }
       />
+
+      {/* Who may spend how much of the money. Gated on the same `mayManage` as the roster controls:
+          the hub refuses the read below admin anyway, so rendering it for a member would only
+          produce a box explaining it cannot be seen. */}
+      {mayManage && <BudgetSection nodeType={nodeType} nodeId={nodeId} nodeLabel={nodeLabel} />}
     </section>
   );
 }

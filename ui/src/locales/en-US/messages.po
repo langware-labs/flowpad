@@ -77,6 +77,7 @@ msgstr "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 
@@ -226,6 +227,12 @@ msgstr "{0} · {1} · {2}ms"
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "{0} · new run"
 msgstr "{0} · new run"
+
+#. placeholder {0}: outcome.added.length
+#. placeholder {1}: outcome.updated.length
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{0} added, {1} updated in {teamName}."
+msgstr "{0} added, {1} updated in {teamName}."
 
 #. placeholder {0}: group.length
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -427,9 +434,10 @@ msgid "{0} secret{1}"
 msgstr "{0} secret{1}"
 
 #. placeholder {0}: checkedIds.size
+#. placeholder {0}: picked.length
 #. placeholder {0}: selected.size
-#. placeholder {0}: selectedKeys.size
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/data-sources/ChoiceField.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -469,6 +477,16 @@ msgstr "{0} types · {1}"
 #: src/hooks/use-sandboxes.ts
 msgid "{0} was upgraded and restarted."
 msgstr "{0} was upgraded and restarted."
+
+#. placeholder {0}: removing?.name ?? ''
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} will no longer be able to spend from {teamLabel}. Money already spent is not affected."
+msgstr "{0} will no longer be able to spend from {teamLabel}. Money already spent is not affected."
+
+#. placeholder {0}: p.email
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{0}: the amount must be a number."
+msgstr "{0}: the amount must be a number."
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{amount} left {windowText}"
@@ -579,8 +597,8 @@ msgid "{name} names no support queue"
 msgstr "{name} names no support queue"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} said: {statusReason}"
-msgstr "{name} said: {statusReason}"
+#~ msgid "{name} said: {statusReason}"
+#~ msgstr "{name} said: {statusReason}"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but another desk answers first"
@@ -662,6 +680,10 @@ msgstr "{totalOrphans} orphan{0}"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
 msgstr "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
+
+#: src/components/organization/organization-page.tsx
+msgid "{trimmed} is ready."
+msgstr "{trimmed} is ready."
 
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
@@ -913,6 +935,10 @@ msgstr "A project with that name exists"
 msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
 msgstr "A public desk needs no connection. Connect GitHub to browse your own repos."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "A request just failed because {name} isn't signed in on this machine."
+msgstr "A request just failed because {name} isn't signed in on this machine."
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr "A root talks to a provider with its own key."
@@ -1017,6 +1043,10 @@ msgstr "Actions"
 msgid "Actions ({0})"
 msgstr "Actions ({0})"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Activate"
+msgstr "Activate"
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Activations only"
 msgstr "Activations only"
@@ -1071,6 +1101,7 @@ msgstr "Activity"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
@@ -1087,6 +1118,7 @@ msgid "Add a comment…"
 msgstr "Add a comment…"
 
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Add a data source"
 msgstr "Add a data source"
 
@@ -1119,9 +1151,9 @@ msgstr "Add a personal note…"
 msgid "Add a prompt to your reply"
 msgstr "Add a prompt to your reply"
 
-#: src/components/llm-endpoints/SourcesPicker.tsx
-#~ msgid "Add a source"
-#~ msgstr "Add a source"
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Add a source"
+msgstr "Add a source"
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
 #~ msgid "Add a source…"
@@ -1135,11 +1167,19 @@ msgstr "Add an agent…"
 msgid "Add annotation"
 msgstr "Add annotation"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add another"
+msgstr "Add another"
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-view.tsx
 msgid "Add Artifact"
 msgstr "Add Artifact"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add at least one email address."
+msgstr "Add at least one email address."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -1180,7 +1220,6 @@ msgid "Add context folder"
 msgstr "Add context folder"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-#: src/components/data-sources/DataSourcesView.tsx
 msgid "Add data source"
 msgstr "Add data source"
 
@@ -1235,6 +1274,14 @@ msgstr "Add Machine"
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Add New Hook"
 msgstr "Add New Hook"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Add people"
+msgstr "Add people"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add people to {teamName}"
+msgstr "Add people to {teamName}"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
@@ -2208,6 +2255,10 @@ msgstr "Attach to reply"
 msgid "Attached asset types"
 msgstr "Attached asset types"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Attached channels"
+msgstr "Attached channels"
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
 msgstr "Attachment unavailable — no body was uploaded"
@@ -2531,6 +2582,10 @@ msgstr "breaker open"
 msgid "Bring back"
 msgstr "Bring back"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Bring your own key"
+msgstr "Bring your own key"
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
 msgstr "Browse"
@@ -2553,14 +2608,35 @@ msgstr "Browse the working directory"
 msgid "Browse…"
 msgstr "Browse…"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget"
+msgstr "Budget"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget created for {label}"
+msgstr "Budget created for {label}"
+
 #. placeholder {0}: scope.name
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Budget endpoint created for {0}"
 msgstr "Budget endpoint created for {0}"
 
+#. placeholder {0}: member.name
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget for {0}"
+msgstr "Budget for {0}"
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget for the whole scope"
 msgstr "Budget for the whole scope"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Budget in dollars"
+msgstr "Budget in dollars"
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Budget shared"
@@ -2569,6 +2645,10 @@ msgstr "Budget shared"
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget updated"
 msgstr "Budget updated"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Budgets updated"
+msgstr "Budgets updated"
 
 #: src/i18n/pref-labels.ts
 msgid "Buffer PTY writes between sync markers to prevent visible scroll jumps during TUI redraws."
@@ -2764,6 +2844,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -2918,9 +2999,17 @@ msgstr "Changes ({0})"
 msgid "Changes committed and pushed"
 msgstr "Changes committed and pushed"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Channel details"
+msgstr "Channel details"
+
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "Channel IDs"
 #~ msgstr "Channel IDs"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Channels"
+msgstr "Channels"
 
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/i18n/pref-labels.ts
@@ -3062,6 +3151,10 @@ msgstr "Choose which model each tier uses, or add your own — per assistant and
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Choose which projects to filter by. Sorted by latest activity."
 msgstr "Choose which projects to filter by. Sorted by latest activity."
+
+#: src/components/data-sources/ChoiceField.tsx
+msgid "Choose…"
+msgstr "Choose…"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome"
@@ -3663,6 +3756,10 @@ msgstr "Columns"
 msgid "Columns & Trace"
 msgstr "Columns & Trace"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Columns: name, email, budget"
+msgstr "Columns: name, email, budget"
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "Comes from"
 #~ msgstr "Comes from"
@@ -4166,6 +4263,10 @@ msgstr "Copy email address"
 msgid "Copy entry"
 msgstr "Copy entry"
 
+#: src/notifications/NotificationOutlet.tsx
+msgid "Copy error text"
+msgstr "Copy error text"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Copy event JSON"
 msgstr "Copy event JSON"
@@ -4243,6 +4344,10 @@ msgstr "Cost (USD) / week"
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD), total"
 msgstr "Cost (USD), total"
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Could not activate the organization"
+msgstr "Could not activate the organization"
 
 #. placeholder {0}: spec.title || key
 #: src/components/connections-manager.tsx
@@ -4333,6 +4438,14 @@ msgstr "Could not create an index"
 msgid "Could not create group task"
 msgstr "Could not create group task"
 
+#: src/components/organization/organization-page.tsx
+msgid "Could not create organization"
+msgstr "Could not create organization"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not create the budget"
+msgstr "Could not create the budget"
+
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
 msgstr "Could not create the MCP server"
@@ -4373,8 +4486,8 @@ msgstr "Could not deploy"
 #~ msgstr "Could not disable email"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not disable the inbox"
-msgstr "Could not disable the inbox"
+#~ msgid "Could not disable the inbox"
+#~ msgstr "Could not disable the inbox"
 
 #: src/notifications/commands.ts
 msgid "Could not disable the sniffer"
@@ -4513,6 +4626,13 @@ msgstr "Could not recover this session’s project."
 #: src/components/organization/org-detail-panel.tsx
 msgid "Could not remove"
 msgstr "Could not remove"
+
+#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: target.name
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not remove {0}"
+msgstr "Could not remove {0}"
 
 #: src/components/connections-manager.tsx
 msgid "Could not remove access"
@@ -4689,7 +4809,7 @@ msgid "Could not update"
 msgstr "Could not update"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Could not update {0}"
 msgstr "Could not update {0}"
 
@@ -4839,6 +4959,7 @@ msgstr "CPU:"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -6135,6 +6256,10 @@ msgstr "Download file"
 msgid "Download message"
 msgstr "Download message"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Download sample CSV"
+msgstr "Download sample CSV"
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
@@ -6234,6 +6359,10 @@ msgstr "e.g., \"Read\", \"Edit|Write\", \"*\" (leave empty for all tools)"
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
+msgstr "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
@@ -6365,13 +6494,18 @@ msgstr "Effective filters at this endpoint"
 msgid "Effort"
 msgstr "Effort"
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email disabled"
-msgstr "Email disabled"
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Email"
+msgstr "Email"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email enabled"
-msgstr "Email enabled"
+#~ msgid "Email disabled"
+#~ msgstr "Email disabled"
+
+#: src/components/inbox-view/AgentInboxView.tsx
+#~ msgid "Email enabled"
+#~ msgstr "Email enabled"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/inbox-view/AgentInboxView.tsx
@@ -6438,8 +6572,8 @@ msgid "Enable Agent"
 msgstr "Enable Agent"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Enable agent email"
-msgstr "Enable agent email"
+#~ msgid "Enable agent email"
+#~ msgstr "Enable agent email"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -6458,8 +6592,8 @@ msgid "Enable command sandboxing"
 msgstr "Enable command sandboxing"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Enable email to allocate this Agent's inbox."
-msgstr "Enable email to allocate this Agent's inbox."
+#~ msgid "Enable email to allocate this Agent's inbox."
+#~ msgstr "Enable email to allocate this Agent's inbox."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Enable extended thinking for all conversations"
@@ -7527,6 +7661,7 @@ msgid "Find machine"
 msgstr "Find machine"
 
 #: src/components/data-sources/DataSourceCard.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
 
@@ -8059,6 +8194,10 @@ msgstr "gitignore"
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Give this project access"
 msgstr "Give this project access"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Given out {allocatedNoun}"
+msgstr "Given out {allocatedNoun}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -8833,6 +8972,10 @@ msgid "Inbox Manager"
 msgstr "Inbox Manager"
 
 #: src/components/inbox-view/AgentInboxView.tsx
+msgid "Inbox settings could not be saved."
+msgstr "Inbox settings could not be saved."
+
+#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Inbox settings saved"
 msgstr "Inbox settings saved"
 
@@ -9556,6 +9699,34 @@ msgstr "Line"
 msgid "line {0}"
 msgstr "line {0}"
 
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: \"{1}\" is not an amount."
+msgstr "Line {0}: \"{1}\" is not an amount."
+
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: \"{1}\" is not an email address."
+msgstr "Line {0}: \"{1}\" is not an email address."
+
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: {1} appears more than once."
+msgstr "Line {0}: {1} appears more than once."
+
+#. placeholder {0}: problem.line
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: could not be read."
+msgstr "Line {0}: could not be read."
+
+#. placeholder {0}: problem.line
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: no email address."
+msgstr "Line {0}: no email address."
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "line {cursorLine}"
 msgstr "line {cursorLine}"
@@ -9611,6 +9782,15 @@ msgstr "List of models available for selection"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "List view"
 msgstr "List view"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Listen on {0}"
+msgstr "Listen on {0}"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "listening"
+msgstr "listening"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -9755,6 +9935,10 @@ msgstr "Loading branches..."
 #: src/components/git/BranchPicker.tsx
 msgid "Loading branches…"
 msgstr "Loading branches…"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Loading budgets…"
+msgstr "Loading budgets…"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Loading capabilities…"
@@ -9976,6 +10160,7 @@ msgstr "Loading..."
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/data-sources/ChoiceField.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -10128,6 +10313,10 @@ msgstr "Manage API keys"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Manage assets"
 msgstr "Manage assets"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Manage in Data Sources…"
+msgstr "Manage in Data Sources…"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage LLM providers and CLI integrations"
@@ -10577,6 +10766,10 @@ msgstr "More"
 msgid "More actions"
 msgstr "More actions"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+msgstr "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+
 #: src/components/ui/pagination.tsx
 msgid "More pages"
 msgstr "More pages"
@@ -10617,6 +10810,10 @@ msgstr "Moved, but reindex failed"
 msgid "msgs"
 msgstr "msgs"
 
+#: src/components/organization/budgets/MoneyBox.tsx
+msgid "Must be a number, or blank for no limit."
+msgstr "Must be a number, or blank for no limit."
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
 msgstr "My Schedule"
@@ -10650,6 +10847,9 @@ msgstr "N/A"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10683,6 +10883,7 @@ msgstr "Name this entity"
 msgid "Name:"
 msgstr "Name:"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "name@example.com"
 msgstr "name@example.com"
@@ -10690,6 +10891,10 @@ msgstr "name@example.com"
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "Needs a look"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "needs attention"
+msgstr "needs attention"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Neighbors"
@@ -10724,6 +10929,7 @@ msgstr "Never synced to cloud"
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -10856,6 +11062,10 @@ msgstr "New name"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "New option"
 msgstr "New option"
+
+#: src/components/organization/organization-page.tsx
+msgid "New organization"
+msgstr "New organization"
 
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -11054,6 +11264,14 @@ msgstr "No changes to show"
 msgid "No changes to show."
 msgstr "No changes to show."
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "No channel is attached yet."
+msgstr "No channel is attached yet."
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "No channel reaches this Agent yet. Give it an email address to start."
+msgstr "No channel reaches this Agent yet. Give it an email address to start."
+
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "No chats yet"
 msgstr "No chats yet"
@@ -11177,8 +11395,12 @@ msgid "no edges"
 msgstr "no edges"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "No email address allocated"
-msgstr "No email address allocated"
+msgid "No email address — create one"
+msgstr "No email address — create one"
+
+#: src/components/inbox-view/AgentInboxView.tsx
+#~ msgid "No email address allocated"
+#~ msgstr "No email address allocated"
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11787,6 +12009,7 @@ msgstr "No tasks found for this session."
 msgid "No team budget yet"
 msgstr "No team budget yet"
 
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "No teams yet."
 msgstr "No teams yet."
@@ -11867,6 +12090,10 @@ msgstr "No value discovered"
 #: src/components/webapp-viewer.tsx
 msgid "No web app available"
 msgstr "No web app available"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Nobody has a budget in this team yet."
+msgstr "Nobody has a budget in this team yet."
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "node"
@@ -12028,6 +12255,10 @@ msgstr "Nothing caps this scope yet. Set a daily, weekly or monthly budget in do
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
 msgstr "nothing eligible"
+
+#: src/components/data-sources/ChoiceField.tsx
+msgid "Nothing found."
+msgstr "Nothing found."
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
@@ -12246,6 +12477,10 @@ msgstr "one@example.com"
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
 msgstr "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Only an admin of this organization can see its budgets."
+msgstr "Only an admin of this organization can see its budgets."
+
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "Only harness entries here — enable “Show all” to view them."
@@ -12388,6 +12623,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "Open externally: {childPath}"
+
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "Open Flowpad Cloud"
+msgstr "Open Flowpad Cloud"
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -12805,6 +13044,22 @@ msgstr "Ordered list"
 msgid "Organization"
 msgstr "Organization"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization activated"
+msgstr "Organization activated"
+
+#: src/components/organization/organization-page.tsx
+msgid "Organization created"
+msgstr "Organization created"
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization created, but the key was not saved"
+msgstr "Organization created, but the key was not saved"
+
+#: src/components/organization/organization-page.tsx
+msgid "Organization name…"
+msgstr "Organization name…"
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
 msgstr "Organization WorldView"
@@ -12989,6 +13244,10 @@ msgstr "Paste API key"
 msgid "Paste code from browser"
 msgstr "Paste code from browser"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Paste it again below."
+msgstr "Paste it again below."
+
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Paste Mermaid syntax to replace the current board."
 msgstr "Paste Mermaid syntax to replace the current board."
@@ -13036,11 +13295,15 @@ msgstr "Pause failed."
 msgid "Pause this machine"
 msgstr "Pause this machine"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "paused"
+msgstr "paused"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "Paused"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
 msgstr "Paused."
 
@@ -13750,6 +14013,7 @@ msgstr "protected"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/organization/budgets/OrgRootSetup.tsx
 msgid "Provider"
 msgstr "Provider"
 
@@ -14284,12 +14548,17 @@ msgid "Remote Worker Session"
 msgstr "Remote Worker Session"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove"
 msgstr "Remove"
 
 #. placeholder {0}: source.name
+#. placeholder {0}: source.name || source.provider
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "Remove {0}"
@@ -14369,6 +14638,7 @@ msgid "Remove queued prompt"
 msgstr "Remove queued prompt"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Remove row"
 msgstr "Remove row"
 
@@ -14376,9 +14646,17 @@ msgstr "Remove row"
 #~ msgid "Remove source"
 #~ msgstr "Remove source"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove this budget?"
+msgstr "Remove this budget?"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Remove this source?"
+msgstr "Remove this source?"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -14759,7 +15037,7 @@ msgstr "Resume the context process"
 msgid "Resume this run"
 msgstr "Resume this run"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Resumed — it polls on the next tick."
 msgstr "Resumed — it polls on the next tick."
 
@@ -16012,6 +16290,10 @@ msgstr "Set up an existing git repository as the context folder"
 msgid "Set up as this name"
 msgstr "Set up as this name"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Set up budget"
+msgstr "Set up budget"
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Set up Git"
 msgstr "Set up Git"
@@ -16257,6 +16539,10 @@ msgstr "Show a progress bar in the terminal"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Show all"
 msgstr "Show all"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Show all channels"
+msgstr "Show all channels"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -16801,6 +17087,17 @@ msgstr "Spec created"
 #: src/components/settings-view/settings-utils.ts
 msgid "Specific unix sockets allowed in sandbox"
 msgstr "Specific unix sockets allowed in sandbox"
+
+#. placeholder {0}: spec.label
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Spending now bills your own {0}."
+msgstr "Spending now bills your own {0}."
+
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Spent"
+msgstr "Spent"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Spinner Tips Enabled"
@@ -17490,6 +17787,7 @@ msgid "Tasks"
 msgstr "Tasks"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -17590,6 +17888,10 @@ msgstr "Test trigger"
 msgid "That agent is no longer in your workspace."
 msgstr "That agent is no longer in your workspace."
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "That file has no rows."
+msgstr "That file has no rows."
+
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
@@ -17648,7 +17950,7 @@ msgstr "The assistant's own CLI sign-in, kept by the vendor on this machine"
 msgid "The backend may have restarted. Click to reattach."
 msgstr "The backend may have restarted. Click to reattach."
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "The change was not saved."
 msgstr "The change was not saved."
 
@@ -17841,6 +18143,7 @@ msgid "The source was not queued."
 msgstr "The source was not queued."
 
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "The source was not removed."
 msgstr "The source was not removed."
 
@@ -18093,6 +18396,18 @@ msgstr "this month"
 msgid "This month"
 msgstr "This month"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
+msgstr "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "This organization has no budget yet."
+msgstr "This organization has no budget yet."
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
+msgstr "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -18255,6 +18570,10 @@ msgstr "This starts the machine and sets up whatever it was created with."
 msgid "This task no longer exists or is unavailable."
 msgstr "This task no longer exists or is unavailable."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "This team has no budget yet."
+msgstr "This team has no budget yet."
+
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
 msgid "This terminal no longer exists."
@@ -18384,6 +18703,14 @@ msgstr "to"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "To"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "to people"
+msgstr "to people"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "to teams"
+msgstr "to teams"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -18573,9 +18900,14 @@ msgstr "Top-p ≤"
 msgid "total"
 msgstr "total"
 
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "Total"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Total budget for {label}"
+msgstr "Total budget for {label}"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Total cost"
@@ -18810,6 +19142,7 @@ msgstr "Unknown error"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/organization/use-create-child-team.ts
 msgid "Unknown error."
 msgstr "Unknown error."
@@ -18825,6 +19158,8 @@ msgstr "Unknown provider {0}."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/llm-endpoints/LimitsEditor.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/MoneyBox.tsx
 msgid "unlimited"
 msgstr "unlimited"
 
@@ -18985,6 +19320,10 @@ msgstr "Upgrading…"
 msgid "Upload"
 msgstr "Upload"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Upload CSV"
+msgstr "Upload CSV"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Upload failed."
 msgstr "Upload failed."
@@ -19078,6 +19417,14 @@ msgstr "Use AWS Bedrock as the backend"
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Bedrock"
 msgstr "Use Bedrock"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Use defaults"
+msgstr "Use defaults"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+#~ msgid "Use example"
+#~ msgstr "Use example"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"

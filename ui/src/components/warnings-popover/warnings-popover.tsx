@@ -15,6 +15,7 @@ import {
   Check,
   CloudOff,
   Copy,
+  FolderX,
   Info,
   Key,
   Settings,
@@ -36,6 +37,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   WifiOff,
   Settings,
   Key,
+  FolderX,
 };
 
 // Map color names to Tailwind classes

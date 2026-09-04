@@ -20,6 +20,7 @@ Matrix (asset shape × scenario):
     single-file (agent)       P1  expected pass        N1  GAP 1  → fails today
     folder, main md (skill)   P2  expected pass
     folder, internal (skill)  P3  GAP 2  → fails today
+    folder, main JSON (mcp)                           N2  GAP 3  → fails today
 
 GAP 1 — a save whose body + non-version frontmatter equal HEAD (only the
         auto-managed ``version`` line / benign frontmatter formatting differs)
@@ -27,8 +28,12 @@ GAP 1 — a save whose body + non-version frontmatter equal HEAD (only the
 GAP 2 — editing an INTERNAL file of a folder-backed asset (a skill's script,
         which carries no frontmatter) produces no commit at all → the change is
         untracked and unsurfaced.
+GAP 3 — a folder-backed asset whose main file is JSON (mcp.json) gets a YAML
+        frontmatter ``version:`` header stamped into it, destroying the JSON —
+        and the hook commits the wreckage (FLOWPAD-2084).
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -56,6 +61,17 @@ version: 1
 # slick
 
 Body one.
+"""
+
+MCP_JSON_V1 = """{
+  "name": "deep-wiki-mcp",
+  "transport": "http",
+  "command": "",
+  "args": [],
+  "env": {},
+  "url": "https://mcp.deepwiki.com/mcp",
+  "entrypoint": ""
+}
 """
 
 INNER_SCRIPT_V1 = "print('hello from v1')\n"
@@ -218,4 +234,86 @@ async def test_folder_asset_internal_change_is_tracked(skill_repo: Path):
     assert len(_log_messages(skill_repo)) == before + 1, (
         "internal file change to a folder-backed asset produced no revision — "
         "the change is untracked"
+    )
+
+
+# ── N2 — folder asset whose main file is JSON → must stay valid JSON (GAP 3) ──
+@pytest.fixture
+def mcp_repo(tmp_path) -> Path:
+    """Folder-backed asset whose main file is JSON, not markdown: a flowpad-native
+    MCP asset at ``agentic-assets/mcp/<name>/mcp.json`` (mcp's ``main_subdir``)."""
+    _git(["init"], tmp_path)
+    _git(["config", "user.email", "t@t.test"], tmp_path)
+    _git(["config", "user.name", "t"], tmp_path)
+    folder = tmp_path / "agentic-assets" / "mcp" / "deep-wiki-mcp"
+    folder.mkdir(parents=True)
+    (folder / "mcp.json").write_text(MCP_JSON_V1, encoding="utf-8")
+    _git(["add", "-A"], tmp_path)
+    _git(["commit", "-m", "Flowpad: deep-wiki-mcp v1"], tmp_path)
+    return tmp_path
+
+
+async def test_json_main_file_survives_the_version_stamp(mcp_repo: Path):
+    """An MCP asset's main file IS its ``McpSpec`` document — JSON, which cannot
+    carry a YAML frontmatter header. Saving it must leave it parseable.
+
+    The regression (FLOWPAD-2084): the folder branch of ``_asset_scope`` resolved
+    a stamp target from ``asset_scope.folder_backed_types`` — every folder asset,
+    JSON-bodied ones included — while only the single-file branch below it checked
+    that the target could hold a header. So a save handed ``mcp.json`` to the
+    stamper, which prepended ``---\nversion: N\n---`` and committed it, leaving the
+    asset unreadable by ``json.loads`` and by ``McpSpec`` (``extra="forbid"``, and
+    there is no ``version`` field). The folder branch now asks the same question
+    the single-file branch does, via ``_versionable_main_files``.
+    """
+    main = mcp_repo / "agentic-assets" / "mcp" / "deep-wiki-mcp" / "mcp.json"
+    rel = "agentic-assets/mcp/deep-wiki-mcp/mcp.json"
+    storage = _LocalStorage(mcp_repo)
+
+    # The MCP editor serializes the whole document on every commit and writes it
+    # through fs.write (McpViewer.tsx: `mainRef.write(JSON.stringify(next))`) —
+    # here, a real edit to the url, exactly the change the reported asset carried.
+    edited = json.dumps({**json.loads(MCP_JSON_V1), "url": "http://mcp.deepwiki.com/mcp"}, indent=2) + "\n"
+    main.write_text(edited, encoding="utf-8")
+    await autoversion_commit_local(storage, rel, edited)
+
+    on_disk = main.read_text(encoding="utf-8")
+    try:
+        json.loads(on_disk)
+    except ValueError as exc:
+        pytest.fail(f"mcp.json is no longer valid JSON after the save: {exc}\n--- file ---\n{on_disk}")
+
+    # …and the wreckage must not be what got committed.
+    committed = subprocess.run(
+        ["git", "show", f"HEAD:./{rel}"], cwd=mcp_repo, capture_output=True, text=True
+    ).stdout
+    try:
+        json.loads(committed)
+    except ValueError as exc:
+        pytest.fail(f"the corrupted mcp.json was committed to git: {exc}\n--- HEAD blob ---\n{committed}")
+
+
+def test_versioning_never_selects_a_non_frontmatter_type():
+    """Registry-level guard on the predicate itself.
+
+    ``test_json_main_file_survives_the_version_stamp`` catches the corruption for
+    ONE type through the real hook; this catches the next one the day it is
+    registered, without needing a fixture per family. A type is eligible for
+    asset-scoped versioning only if its main file can hold the ``version:`` header
+    the stamper writes — which is exactly what a ``FrontmatterCarrier`` declares.
+    """
+    from flow_sdk.actions.fs.asset_versioning import _versionable_folder_types
+    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier
+
+    selected = _versionable_folder_types()
+    assert selected, "registry unavailable — the predicate returned nothing"
+
+    offenders = [
+        (t.type_name, t.main_file, type(t.identity_carrier).__name__)
+        for t in selected
+        if not isinstance(t.identity_carrier, FrontmatterCarrier)
+    ]
+    assert not offenders, (
+        "these types would get a YAML `version:` header stamped into a main file "
+        f"that cannot carry one: {offenders}"
     )

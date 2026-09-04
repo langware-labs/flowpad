@@ -37,6 +37,7 @@ def load_credentials() -> "UserHubCredentials | None":
 
     return _load()
 
+
 InboundHandler = Callable[[dict], Awaitable[None]]
 HUB_WS_REQUEST_DEFAULT_TIMEOUT_SECONDS = 10.0
 HUB_WS_OUTBOUND_QUEUE_MAX = 256
@@ -208,9 +209,7 @@ async def connect_hub_websocket(
                     if current_creds and not secrets.compare_digest(current_creds.api_key, creds.api_key):
                         raise
                     reason = (
-                        "expired"
-                        if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS))
-                        else "rejected"
+                        "expired" if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
                     )
                     await invalidate_hub_login(reason)
                     raise HubWebSocketAuthError("hub websocket auth rejected") from exc
@@ -231,19 +230,38 @@ async def _catch_up_after_reconnect() -> None:
     is the same entry point the conversation view uses on open — reusing it keeps
     one (already idempotent) sync path instead of inventing a second.
 
+    The same hole exists for LLM endpoints, and it is worse there because the state it
+    leaves behind is acted on rather than merely displayed: the hub announces a budget
+    being deleted exactly once, so a box that was down for that frame goes on pointing
+    every spawn at a row the hub now answers ``Entity ... not found`` for -- retried to
+    exhaustion, because a bound endpoint outranks an unproven device login. Re-reading the
+    listing here is what closes it, and it is also what makes the resolver's own staleness
+    check able to fire at all: that check needs a listing NEWER than the binding before it
+    will treat an absence as an answer, and on a fresh process there is none.
+
     Best-effort: a catch-up hiccup must never take down the connection that just
-    came back.
+    came back. Each half is guarded separately so one failing does not skip the other.
     """
     try:
         from flow_sdk.app.actions.flow_message_action import handle_conversation_list
         from flow_sdk.builtin.user import User
 
         user = await User.get_local()
-        if user is None:
-            return
-        await handle_conversation_list(user.typeid)
+        if user is not None:
+            await handle_conversation_list(user.typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
+
+    try:
+        from flow_sdk.instance_settings.llm_endpoint import (
+            fetch_hub_llm_endpoints,
+            invalidate_endpoint_listing,
+        )
+
+        invalidate_endpoint_listing()  # the memo predates the outage; do not answer from it
+        await fetch_hub_llm_endpoints()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect LLM endpoint catch-up failed (non-fatal): %s", e)
 
 
 def _renew_stale_worker_credentials() -> None:
@@ -650,11 +668,7 @@ class HubWebSocketManager:
     ) -> bool:
         if exc.code in AUTH_WS_CLOSE_CODES:
             creds = load_credentials()
-            if (
-                rejected_api_key
-                and creds
-                and not secrets.compare_digest(creds.api_key, rejected_api_key)
-            ):
+            if rejected_api_key and creds and not secrets.compare_digest(creds.api_key, rejected_api_key):
                 logger.info("Ignoring auth close for a superseded Hub API key; reconnecting with the current key")
                 return False
             locally_expired = bool(creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS))

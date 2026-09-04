@@ -31,6 +31,7 @@ from flow_sdk.instance_settings.llm_endpoint import (
     fetch_hub_llm_endpoints,
     get_hub_llm_endpoint,
     hub_llm_endpoint_invoke_url,
+    listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
 
@@ -90,6 +91,19 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
     # out), so computing sources before this ran left every endpoint out of the FIRST
     # answer and put it in the second -- a picker that fills in on its own second poll.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
+    if refresh and bound is not None and listing_supersedes_binding():
+        # Drop a binding the hub has just told us it will not honour. ``_endpoint_sources``
+        # already stops OFFERING it, so routing is correct either way -- but the record itself
+        # is read as "this box was given a budget" (``box_bound`` demotes an unproven device
+        # login), so leaving a dead id in place keeps that claim alive and makes every status
+        # answer name an endpoint that no longer exists.
+        #
+        # Only on an explicit refresh: ``bind`` answers through here too, and it has just been
+        # handed an endpoint the listing may not have heard of yet.
+        if not any(str(e.typeid) == bound.endpoint_typeid for e in available):
+            logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
+            clear_hub_llm_endpoint()
+            bound = None
     sources, resolved, endpoints = await _sources_by_kind()
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {

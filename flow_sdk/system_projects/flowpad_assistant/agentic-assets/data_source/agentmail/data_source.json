@@ -3,7 +3,7 @@
   "name": "agentmail",
   "title": "AgentMail",
   "icon_name": "Mail",
-  "description": "A hosted mailbox over its HTTP API — reads the inbox and really sends.",
+  "description": "A hosted mailbox over its HTTP API \u2014 reads the inbox and really sends.",
   "config": {
     "inbox": {
       "type": "text",
@@ -11,13 +11,6 @@
       "label": "Inbox",
       "placeholder": "you@agentmail.to",
       "account_key": true
-    },
-    "api_key": {
-      "type": "text",
-      "required": true,
-      "label": "API key",
-      "placeholder": "am_...",
-      "hint": "The AgentMail API key this inbox was created under. The driver reads config.api_key — the old auth.env declaration was consumed by nothing on a builtin driver, so a form-created source could never authenticate."
     },
     "base_url": {
       "type": "text",

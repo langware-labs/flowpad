@@ -133,3 +133,23 @@ async def test_require_remains_the_cheap_credential_gate(monkeypatch):
 
 async def _async_value(value):
     return value
+
+
+# ── the token exchange's encoding ────────────────────────────────────────────
+
+
+def test_the_token_exchange_is_form_encoded_unless_a_provider_says_otherwise():
+    """RFC 6749 §4.1.3: the token request is `application/x-www-form-urlencoded`.
+
+    A spec-following endpoint does not merely prefer it — Entra answers
+    `AADSTS900144: the request body must contain 'grant_type'` for a JSON body,
+    because it never parsed it. JSON was hard-coded while Anthropic was the only
+    local code grant, so one endpoint's tolerance read as the rule; the default
+    is now the spec and the exception is named on the provider.
+    """
+    from flow_sdk.core.oauth.provider_registry import ANTHROPIC, MICROSOFT, local_providers
+
+    by_name = {p.name: p for p in local_providers()}
+    assert by_name[ANTHROPIC].token_request_json is True
+    assert by_name[MICROSOFT].token_request_json is False
+    assert [p.name for p in local_providers() if p.token_request_json] == [ANTHROPIC]

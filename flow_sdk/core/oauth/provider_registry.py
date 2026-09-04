@@ -132,6 +132,17 @@ class LocalOAuthProvider:
     #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
     #: dataclass frozen and hashable.
     extra_authorize_params: tuple[tuple[str, str], ...] = ()
+    #: Send the token exchange as JSON instead of a form.
+    #:
+    #: RFC 6749 §4.1.3 says the token request is
+    #: ``application/x-www-form-urlencoded``, and a spec-following provider
+    #: (Microsoft, Google) rejects a JSON body outright — Entra answers
+    #: ``AADSTS900144: the request body must contain 'grant_type'`` because it
+    #: never parsed it. Anthropic's endpoint takes JSON, and it was the only
+    #: local code/loopback provider for long enough that JSON became the
+    #: hard-coded default. So the DEFAULT is the spec and the exception is
+    #: named, rather than the other way round.
+    token_request_json: bool = False
     token_shape: TokenShape = TokenShape.BEARER_STRING
     probe: Optional[OAuthProbeSpec] = None
     #: The standard route is delegated to the Hub; local endpoints/client id
@@ -178,6 +189,8 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
+        # Its token endpoint takes JSON; see the field's note.
+        token_request_json=True,
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
         icon="ClaudeCode",
