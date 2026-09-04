@@ -10698,6 +10698,11 @@ msgstr "Model not saved"
 msgid "Model Override"
 msgstr "Model Override"
 
+#. placeholder {0}: next[0]
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Model pinned to {0}"
+msgstr "Model pinned to {0}"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "model slug"
@@ -14829,6 +14834,12 @@ msgstr "Requests (month)"
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
 msgstr "Requests / minute"
+
+#. placeholder {0}: redirected.join(' and ')
+#. placeholder {1}: next[0]
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Requests for {0} will be served as {1} — nobody has to change their own settings."
+msgstr "Requests for {0} will be served as {1} — nobody has to change their own settings."
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Requests through this root will fail until a new key is saved."

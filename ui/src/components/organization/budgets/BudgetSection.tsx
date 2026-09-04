@@ -167,7 +167,7 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
 
       {org.endpoint_id && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
-          <EndpointControls endpointId={org.endpoint_id} testIdPrefix="org" />
+          <EndpointControls endpointId={org.endpoint_id} scope="org" testIdPrefix="org" />
           <AdvancedButton endpointId={org.endpoint_id} scopeLabel={org.name} testId="org-advanced" />
         </div>
       )}
@@ -325,7 +325,11 @@ function MemberRow({
         <TokenCount tokens={member.spent_tokens ?? 0} testIdPrefix={`member-spent-${member.endpoint_id}`} />
       </TableCell>
       <TableCell>
-        <EndpointControls endpointId={member.endpoint_id} testIdPrefix={`member-${member.endpoint_id}`} />
+        <EndpointControls
+          endpointId={member.endpoint_id}
+          scope="person"
+          testIdPrefix={`member-${member.endpoint_id}`}
+        />
       </TableCell>
       <TableCell className="text-end">
         <div className="flex items-center justify-end gap-1">
@@ -456,7 +460,7 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
 
       {poolId && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
-          <EndpointControls endpointId={poolId} testIdPrefix={`team-${team.id}`} />
+          <EndpointControls endpointId={poolId} scope="team" testIdPrefix={`team-${team.id}`} />
           <AdvancedButton endpointId={poolId} scopeLabel={team.name} testId={`team-advanced-${team.id}`} />
         </div>
       )}

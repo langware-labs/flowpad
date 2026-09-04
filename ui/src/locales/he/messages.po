@@ -10698,6 +10698,11 @@ msgstr "הדגם לא נשמר"
 msgid "Model Override"
 msgstr "דריסת מודל"
 
+#. placeholder {0}: next[0]
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Model pinned to {0}"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "model slug"
@@ -14828,6 +14833,12 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
+msgstr ""
+
+#. placeholder {0}: redirected.join(' and ')
+#. placeholder {1}: next[0]
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Requests for {0} will be served as {1} — nobody has to change their own settings."
 msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx

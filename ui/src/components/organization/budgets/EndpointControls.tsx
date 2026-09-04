@@ -21,29 +21,110 @@ import { notify } from '@src/notifications';
 import { useInvalidateBudgets } from './use-budgets';
 
 /**
- * What a budget row allows when nobody has narrowed it — the SAME glob pair the expert page offers
- * as `MODELS_ALLOW_DEFAULT`, and for the same reason.
+ * What a budget row allows when nobody has narrowed it: the cheapest tier, and ONLY that.
  *
- * This used to seed one exact slug, `anthropic/claude-haiku-4.5`, on the theory that a budget row
- * should default to the cheap model. That silently broke every wallet it touched. A worker asks for
- * a TIER, and `CLAUDE_API_AUTH_SPEC.tier_models` maps those to three different slugs — `sm` haiku,
- * `md` sonnet, `lg` opus — with `md` the ordinary default. An allow-list holding only the `sm` slug
- * therefore refuses the very model a normal prompt asks for, so the person could not send anything.
- * The failure hid well: `test` probes the cheapest ALLOWED model, which was the one on the list, so
- * the row reported a green tick while real traffic was refused.
+ * A budget row should default to the cheap model — that is the whole point of a wallet with a $1
+ * cap on it. What made this dangerous before was not the narrowness but the missing half: a worker
+ * asks for a TIER, `CLAUDE_API_AUTH_SPEC.tier_models` maps sm/md/lg onto three different slugs, and
+ * a machine configured for `md` therefore asked for sonnet and was REFUSED by a haiku-only list —
+ * with no way for that person to fix it, since the tier lives in their own CLI config. It hid well,
+ * too: `test` probes the cheapest ALLOWED model, so the row showed a green tick while real traffic
+ * bounced.
  *
- * Capping SPEND is what `limits.cost_usd_total` is for. Pinning the model list is a different knob,
- * and defaulting it to one tier is not a cheaper wallet — it is a broken one.
+ * `aliasesForPinnedModel` is the missing half. Pinning now also REDIRECTS the other tiers onto the
+ * pinned slug, so a narrow wallet serves every caller instead of refusing most of them. Cheap and
+ * working, rather than cheap and broken.
  */
-export const DEFAULT_MODELS = ['anthropic/claude-*', 'openai/gpt-*'];
+export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5'];
+
+/** What each level of the hierarchy starts with when its list is empty. */
+export type BudgetScope = 'org' | 'team' | 'person';
+
+/**
+ * Seeds by level, and the two blanks are the point.
+ *
+ * A child may only ever NARROW its parent (`filters.is_subset`, enforced on write with a 400), and
+ * the check runs against the IMMEDIATE parent chain — not just the root. So every row that states a
+ * model becomes a ceiling for everything beneath it. Pinning the team to one model would therefore
+ * make "put this one person on sonnet" an illegal write, which is exactly the freedom this page
+ * exists to give an admin.
+ *
+ * Hence: the ORG states the ceiling (what the payer is willing to fund at all), the TEAM states
+ * nothing so it can never be the thing that blocks a person, and each PERSON gets the cheap default
+ * — visible, and overridable one at a time without touching anyone else.
+ */
+export const SEED_BY_SCOPE: Record<BudgetScope, string[]> = {
+  org: ['anthropic/claude-*', 'openai/gpt-*'],
+  team: [],
+  person: DEFAULT_MODELS,
+};
+
+/**
+ * The family a slug belongs to, as a glob. `anthropic/claude-haiku-4.5` -> `anthropic/claude-*`.
+ *
+ * Deliberately a PATTERN and not a list of sibling slugs. An admin setting a budget knows which
+ * model they are willing to fund; they do not know which slug each person's CLI is configured to
+ * ask for, and enumerating every tier would restate a list that really lives in the worker specs
+ * (`CLAUDE_API_AUTH_SPEC.tier_models`) -- a copy that silently stops matching the day a tier is
+ * renamed there, taking the redirect with it. One pattern says the intent directly and keeps
+ * working for models that did not exist when this was written.
+ */
+function familyGlobOf(slug: string): string | null {
+  const match = /^([^/]+\/[a-z]+)-/.exec(slug);
+  return match ? `${match[1]}-*` : null;
+}
+
+/**
+ * The redirects that make an allowed list STICK, whatever each person's machine asks for.
+ *
+ * Allowing a model alone only ever produces a refusal: a worker asks for the tier IT is configured
+ * for, and if that is not on the list the call dies with "model X not allowed by endpoint Y" --
+ * which the person cannot fix, because the tier lives in their own CLI config, not on this page.
+ * The hub resolves `filters.aliases` at the ENTRY endpoint BEFORE any filter check and rewrites the
+ * request body (`llm_endpoint.py:1340`), so a machine set to sonnet transparently gets what the
+ * wallet actually funds.
+ *
+ * Worked out PER FAMILY, because one list routinely spans several: `anthropic/claude-haiku-4.5` +
+ * `openai/gpt-5-mini` is a wallet that serves Claude Code with the first and codex with the second.
+ * A redirect never crosses families -- answering a request for one vendor with another's model
+ * would be worse than refusing.
+ *
+ * Two things are deliberately left alone:
+ *
+ * * **A family already opened by a glob** (`anthropic/claude-*`) needs no redirect -- everything in
+ *   it passes on its own -- and adding one would NARROW what the admin opened.
+ * * **A model the admin explicitly listed** keeps working as itself. Where a family lists several,
+ *   the family glob points at the first and each of the rest is given an identity entry, which wins
+ *   because `resolve_alias` prefers an exact key over a glob. So an unlisted tier falls through to
+ *   the first, while every listed one is still reachable — a choice the admin made stays a choice.
+ */
+export function aliasesForPinnedModel(models_allow: string[]): Record<string, string> {
+  const byFamily = new Map<string, string[]>();
+  for (const slug of models_allow) {
+    if (slug.includes('*')) continue; // a glob allows a range; there is nothing to redirect to
+    const family = familyGlobOf(slug);
+    if (!family) continue;
+    byFamily.set(family, [...(byFamily.get(family) ?? []), slug]);
+  }
+
+  const out: Record<string, string> = {};
+  for (const [family, slugs] of byFamily) {
+    if (models_allow.includes(family)) continue; // the family is open by glob already
+    out[family] = slugs[0];
+    for (const also of slugs.slice(1)) out[also] = also;
+  }
+  return out;
+}
 
 export interface EndpointControlsProps {
   /** A typeid or bare uuid — normalized before every hub call, the way `MembersTable` documents. */
   endpointId: string;
+  /** Which level of org -> team -> person this row is; decides what an empty list is seeded with. */
+  scope: BudgetScope;
   testIdPrefix: string;
 }
 
-export function EndpointControls({ endpointId, testIdPrefix }: EndpointControlsProps) {
+export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointControlsProps) {
   const { t } = useLingui();
   const id = endpointIdFromTypeId(endpointId);
   const endpoint = useLlmEndpoint(id);
@@ -57,15 +138,28 @@ export function EndpointControls({ endpointId, testIdPrefix }: EndpointControlsP
   const seeding = useRef(false);
 
   const models = endpoint?.filters.models_allow ?? [];
+  // A pinned row whose redirect is missing or stale. Every row pinned BEFORE aliasing existed is in
+  // exactly this state: the right `models_allow`, no `aliases`, and no way for anyone to fix it by
+  // hand — re-typing the same model is a no-op at `commit`, and the empty-list seed below never
+  // fires on a row that already has a model. Without this they would refuse every `md`-tier caller
+  // forever. Comparing the whole map (not just its presence) also repairs a row pinned to a slug
+  // whose sibling tiers have since changed.
+  const wantedAliases = aliasesForPinnedModel(models);
+  const aliasesStale = !!endpoint && JSON.stringify(endpoint.filters.aliases ?? {}) !== JSON.stringify(wantedAliases);
 
   // "It should not remain empty": a wallet created before this control existed, or one whose
   // field was cleared and left, is put back onto the cheap default on its own — the same "a new
   // endpoint starts with the defaults as a real value" rule the expert dialog already applies at
   // CREATE time, just enforced here for every row instead of once at creation.
   useEffect(() => {
-    if (!endpoint || models.length > 0 || seeding.current) return;
+    if (!endpoint || seeding.current) return;
+    const seed = SEED_BY_SCOPE[scope];
+    // A level seeded with nothing (the team) is left blank on purpose — blank INHERITS, and that is
+    // what keeps it from becoming a ceiling over the people beneath it.
+    if (models.length === 0 && seed.length === 0) return;
+    if (models.length > 0 && !aliasesStale) return;
     seeding.current = true;
-    void saveModels(endpoint.typeId.toString(), endpoint.filters, DEFAULT_MODELS)
+    void saveModels(endpoint.typeId.toString(), endpoint.filters, models.length > 0 ? models : seed)
       .then(() => invalidate())
       .catch((e) => notify.error({ title: t`Could not set a default model`, message: String(e), id: 'models-allow' }))
       .finally(() => {
@@ -75,7 +169,7 @@ export function EndpointControls({ endpointId, testIdPrefix }: EndpointControlsP
     // identity change would refire the seed check every render, which the `seeding` guard already
     // exists to prevent regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint?.id, models.length]);
+  }, [endpoint?.id, models.length, aliasesStale, scope]);
 
   if (!endpoint) {
     return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
@@ -100,6 +194,17 @@ export function EndpointControls({ endpointId, testIdPrefix }: EndpointControlsP
     try {
       await saveModels(endpoint.typeId.toString(), endpoint.filters, next);
       await invalidate();
+      // Say what the pin actually DOES. An admin pinning a wallet to one model has no way to know
+      // that the other tiers are being redirected onto it rather than refused, and the difference
+      // is the whole question of whether the person can still send anything.
+      const redirected = Object.keys(aliasesForPinnedModel(next));
+      if (redirected.length > 0) {
+        notify.success({
+          title: t`Model pinned to ${next[0]}`,
+          message: t`Requests for ${redirected.join(' and ')} will be served as ${next[0]} — nobody has to change their own settings.`,
+          id: 'models-allow',
+        });
+      }
     } catch (e) {
       notify.error({ title: t`Could not save the allowed models`, message: String(e), id: 'models-allow' });
     } finally {
@@ -168,5 +273,11 @@ async function saveModels(typeId: string, currentFilters: LLMEndpointFilters, mo
   // are) — sending just `{models_allow}` would silently reset every other filter (streaming,
   // max_tokens_ceiling, …) to its default. Rebuilding the full object from what the entity already
   // has, with only this one field changed, is what keeps the rest of the filters untouched.
-  await dataManager.save(new TypeId(typeId), [], { filters: { ...currentFilters, models_allow } } as never);
+  //
+  // `aliases` is rewritten from the new list on every save, never merged into what was there. It is
+  // derived state — "whatever this wallet is pinned to" — so widening a wallet back to the globs
+  // must CLEAR the redirect, or a wallet that visibly allows everything would go on quietly forcing
+  // the model it used to be pinned to.
+  const aliases = aliasesForPinnedModel(models_allow);
+  await dataManager.save(new TypeId(typeId), [], { filters: { ...currentFilters, models_allow, aliases } } as never);
 }
