@@ -20,6 +20,12 @@
  * endpoint exists (`buildEntityJson` omits both when editing), so an editable field would be a
  * form that lies. A chain has neither, and shows what it draws from instead.
  *
+ * **`readOnly` makes it a report instead of a form.** Every field renders disabled and Save is
+ * replaced by Close. That is the state an ORGANISATION's row is in for an admin: the per-window
+ * ceilings and rate caps in here bound what the organization may spend, so they belong with its
+ * total — the owner's answer — rather than with dividing the money. Read-only rather than hidden,
+ * because an admin who cannot see the ceilings has no way to understand a refusal coming from one.
+ *
  * **`filters` is a whole-object write, `limits` is a merge.** The hub PUTs filters wholesale, so
  * this sends the complete object rebuilt from the form — which is why the form is seeded from the
  * live entity and not from defaults. Getting that backwards silently resets every filter the
@@ -71,9 +77,17 @@ export interface AdvancedEndpointDialogProps {
   endpointId: string;
   /** What this budget belongs to, for the dialog's title. */
   scopeLabel: string;
+  /** Show the settings without offering to change them. */
+  readOnly?: boolean;
 }
 
-export function AdvancedEndpointDialog({ open, onOpenChange, endpointId, scopeLabel }: AdvancedEndpointDialogProps) {
+export function AdvancedEndpointDialog({
+  open,
+  onOpenChange,
+  endpointId,
+  scopeLabel,
+  readOnly = false,
+}: AdvancedEndpointDialogProps) {
   const { t } = useLingui();
   const id = endpointIdFromTypeId(endpointId);
   const endpoint = useLlmEndpoint(open ? id : undefined);
@@ -106,7 +120,7 @@ export function AdvancedEndpointDialog({ open, onOpenChange, endpointId, scopeLa
       : [];
 
   const save = async () => {
-    if (!endpoint || !filters || !limits || problems.length > 0) return;
+    if (readOnly || !endpoint || !filters || !limits || problems.length > 0) return;
     setSaving(true);
     try {
       await dataManager.save(new TypeId(endpoint.typeId.toString()), [], {
@@ -137,10 +151,17 @@ export function AdvancedEndpointDialog({ open, onOpenChange, endpointId, scopeLa
             <Trans>Advanced settings — {scopeLabel}</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>
-              Everything this budget can be tuned with beyond its total and its allowed models. Leave a field empty for
-              no limit.
-            </Trans>
+            {readOnly ? (
+              <Trans>
+                Everything this budget is tuned with beyond its total and its allowed models. These are set by the
+                organization's owner.
+              </Trans>
+            ) : (
+              <Trans>
+                Everything this budget can be tuned with beyond its total and its allowed models. Leave a field empty
+                for no limit.
+              </Trans>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -177,14 +198,14 @@ export function AdvancedEndpointDialog({ open, onOpenChange, endpointId, scopeLa
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Trans>Limits</Trans>
               </h3>
-              <LimitsEditor value={limits} onChange={setLimits} disabled={saving} omit={OMITTED_LIMITS} />
+              <LimitsEditor value={limits} onChange={setLimits} disabled={saving || readOnly} omit={OMITTED_LIMITS} />
             </section>
 
             <section className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Trans>Filters</Trans>
               </h3>
-              <FiltersEditor value={filters} onChange={setFilters} disabled={saving} omitModelsAllow />
+              <FiltersEditor value={filters} onChange={setFilters} disabled={saving || readOnly} omitModelsAllow />
             </section>
 
             {problems.length > 0 && (
@@ -197,15 +218,17 @@ export function AdvancedEndpointDialog({ open, onOpenChange, endpointId, scopeLa
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            <Trans>Cancel</Trans>
+            {readOnly ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
           </Button>
-          <Button
-            onClick={() => void save()}
-            disabled={saving || !endpoint || !filters || problems.length > 0}
-            data-testid="advanced-save"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Save</Trans>}
-          </Button>
+          {!readOnly && (
+            <Button
+              onClick={() => void save()}
+              disabled={saving || !endpoint || !filters || problems.length > 0}
+              data-testid="advanced-save"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Save</Trans>}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -228,11 +251,14 @@ export function AdvancedButton({
   scopeLabel,
   testId,
   iconOnly,
+  readOnly,
 }: {
   endpointId: string;
   scopeLabel: string;
   testId: string;
   iconOnly?: boolean;
+  /** Open the dialog as a report. The BUTTON still shows — see the dialog's `readOnly` note. */
+  readOnly: boolean;
 }) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
@@ -243,14 +269,26 @@ export function AdvancedButton({
         variant="ghost"
         className={iconOnly ? 'h-6 w-6 shrink-0 text-muted-foreground' : 'gap-1 text-muted-foreground'}
         aria-label={t`Advanced`}
-        title={t`Advanced: per-window limits, rate caps and filters`}
+        title={
+          readOnly
+            ? t`Advanced: per-window limits, rate caps and filters (view only)`
+            : t`Advanced: per-window limits, rate caps and filters`
+        }
         data-testid={testId}
         onClick={() => setOpen(true)}
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
         {!iconOnly && <Trans>Advanced</Trans>}
       </Button>
-      {open && <AdvancedEndpointDialog open onOpenChange={setOpen} endpointId={endpointId} scopeLabel={scopeLabel} />}
+      {open && (
+        <AdvancedEndpointDialog
+          open
+          onOpenChange={setOpen}
+          endpointId={endpointId}
+          scopeLabel={scopeLabel}
+          readOnly={readOnly}
+        />
+      )}
     </>
   );
 }

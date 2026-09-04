@@ -41,9 +41,32 @@ export interface ScopeBudget {
    * rather than fanning out over every person for a number that screen does not show.
    *
    * It may legitimately exceed `limit_usd`: a pool is allowed to promise more than it holds, and
-   * the excess is caught when the money is spent, not when it is promised.
+   * the excess is caught when the money is spent, not when it is promised. The PAGE nonetheless
+   * refuses to create such an overspend at the point of typing — see `available-to-allocate.ts`.
    */
   allocated_usd: number | null;
+  /**
+   * May the caller change what this pool itself holds — its total, its name, its per-window
+   * ceilings? Answered by the hub, as the same `update` policy question the resulting request will
+   * be judged by, so a control the page offers always works and one it hides would always have
+   * been refused. Never re-derive it here from a role string: an org admin's standing on a budget
+   * row is DERIVED from the scope it hangs under, and only the hub can resolve that.
+   */
+  can_configure: boolean;
+  /**
+   * May the caller hand a share of this pool downward (`allocate`)? What "Add people" needs on a
+   * team's pool. False on an organization's own pool, and that is not a gap: people are funded
+   * from their team's pool, never straight off the org's.
+   */
+  can_allocate: boolean;
+  /**
+   * May the caller rename or delete this team/organization — the `update` question on the SCOPE
+   * ENTITY, not on its pool. Different entity, different answer: a shared org's admin renames its
+   * teams freely and the organization itself not at all.
+   */
+  can_manage: boolean;
+  /** May the caller add a team here? Adding one is a scoped `create` on the organization. */
+  can_add_child: boolean;
 }
 
 /**
@@ -58,6 +81,14 @@ export interface OrgScopeBudget extends ScopeBudget {
   provider: string | null;
   /** `****last4` when a root has a stored key, `''` otherwise. Never the key itself. */
   credential_hint: string;
+  /** May the caller set or replace the provider key the organization pays with? Owner-only today. */
+  can_set_credential: boolean;
+  /**
+   * May the caller share this organization — invite people, re-role them, remove them? Admin and
+   * above, and so deliberately WIDER than everything else on this row: running the people is what
+   * an organization is shared for.
+   */
+  can_invite: boolean;
 }
 
 /** One person's allowance under a team pool. */
@@ -76,6 +107,8 @@ export interface MemberBudget {
    * no remove on these.
    */
   system_default: boolean;
+  /** May the caller change this person's allowance? The `update` question, asked of one allowance. */
+  can_configure: boolean;
 }
 
 export interface OrgBudgets {

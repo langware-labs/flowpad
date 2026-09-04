@@ -40,6 +40,7 @@ import {
   PROVIDERS,
   isProvider,
   keyShapeProblem,
+  providerSpec,
   type ProviderSpec,
 } from '@src/components/llm-endpoints/endpoint-catalog';
 import { Button } from '@src/components/ui/button';
@@ -52,10 +53,19 @@ import { useInvalidateBudgets, useSetPayingProvider } from './use-budgets';
 
 export interface PayingProviderSetupProps {
   orgId: string;
-  org: Pick<OrgScopeBudget, 'endpoint_id' | 'is_root' | 'provider' | 'credential_hint'>;
+  org: Pick<OrgScopeBudget, 'endpoint_id' | 'is_root' | 'provider' | 'credential_hint' | 'can_set_credential'>;
 }
 
 export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
+  // Whose key the organization pays with is the OWNER's answer, so an admin gets a statement of
+  // fact instead of a form. Shown rather than hidden on purpose: an admin dividing this money
+  // needs to know which provider it runs on and that a key is actually in place, or a refusal
+  // coming back from the provider is unreadable to them. The last four characters are all a hint
+  // ever contains -- the hub never sends the key itself to anyone.
+  if (!org.can_set_credential) {
+    return <PayingProviderSummary org={org} />;
+  }
+
   if (org.endpoint_id && !org.is_root) {
     return (
       <p className="text-xs text-muted-foreground" data-testid="org-root-legacy-chain">
@@ -78,6 +88,45 @@ export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
   }
 
   return <OrgKeyCreateForm orgId={orgId} />;
+}
+
+/** What an admin sees where the owner sees the key form: the provider, and whether a key is set. */
+function PayingProviderSummary({ org }: Pick<PayingProviderSetupProps, 'org'>) {
+  const { t } = useLingui();
+  const spec = org.provider ? providerSpec(org.provider) : undefined;
+  const providerLabel = spec ? t(spec.label) : '';
+  if (!org.endpoint_id) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="org-root-owner-only">
+        <Trans>This organization has no budget yet. Its owner sets one up.</Trans>
+      </p>
+    );
+  }
+  if (!org.is_root) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="org-root-owner-only">
+        <Trans>This organization draws its budget from Flowpad's shared pool.</Trans>
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1 text-xs text-muted-foreground" data-testid="org-root-owner-only">
+      <p>
+        {providerLabel ? (
+          <Trans>This organization pays on its own {providerLabel} key.</Trans>
+        ) : (
+          <Trans>This organization pays on its own provider key.</Trans>
+        )}
+      </p>
+      <p data-testid="org-root-hint">
+        {org.credential_hint ? (
+          <Trans>Key ending {org.credential_hint} — only the owner can change it.</Trans>
+        ) : (
+          <Trans>No key has been set yet. Its owner sets one.</Trans>
+        )}
+      </p>
+    </div>
+  );
 }
 
 /**

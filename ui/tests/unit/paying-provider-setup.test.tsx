@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe('PayingProviderSetup — no budget yet', () => {
-  const org = { endpoint_id: null, is_root: false, provider: null, credential_hint: '' };
+  const org = { endpoint_id: null, is_root: false, provider: null, credential_hint: '', can_set_credential: true };
 
   it('defaults to the first provider and lets another be picked from the dropdown', async () => {
     const user = userEvent.setup();
@@ -75,7 +75,7 @@ describe('PayingProviderSetup — no budget yet', () => {
 
   it('creates the root then stores the key, in that order, with the chosen provider', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
-    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
+    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd', can_set_credential: true });
     const user = userEvent.setup();
     render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
@@ -99,7 +99,7 @@ describe('PayingProviderSetup — no budget yet', () => {
 
   it('trims the key before sending it', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
-    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
+    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd', can_set_credential: true });
     render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: `  ${OPENROUTER_KEY}  ` } });
@@ -145,7 +145,13 @@ describe('PayingProviderSetup — the hub sends a prefixed typeid, the credentia
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: 'openai',
+          credential_hint: '',
+          can_set_credential: true,
+        }}
       />,
     );
 
@@ -167,7 +173,13 @@ describe('PayingProviderSetup — already a root', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '****z9z9' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: 'openai',
+          credential_hint: '****z9z9',
+          can_set_credential: true,
+        }}
       />,
     );
 
@@ -183,7 +195,13 @@ describe('PayingProviderSetup — already a root', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '****z9z9' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: 'openai',
+          credential_hint: '****z9z9',
+          can_set_credential: true,
+        }}
       />,
     );
 
@@ -195,7 +213,13 @@ describe('PayingProviderSetup — already a root', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: null, credential_hint: '' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: null,
+          credential_hint: '',
+          can_set_credential: true,
+        }}
       />,
     );
     expect(screen.getByTestId('org-root-key')).toBeTruthy();
@@ -214,7 +238,13 @@ describe('PayingProviderSetup — moving to a different provider', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: 'openrouter',
+          credential_hint: '',
+          can_set_credential: true,
+        }}
       />,
     );
 
@@ -232,7 +262,13 @@ describe('PayingProviderSetup — moving to a different provider', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '****wxyz' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: true,
+          provider: 'openrouter',
+          credential_hint: '****wxyz',
+          can_set_credential: true,
+        }}
       />,
     );
     expect(screen.getByTestId('org-root-replace')).toBeTruthy();
@@ -244,7 +280,13 @@ describe('PayingProviderSetup — an existing shared-pool chain', () => {
     render(
       <PayingProviderSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: false, provider: null, credential_hint: '' }}
+        org={{
+          endpoint_id: ENDPOINT_TYPEID,
+          is_root: false,
+          provider: null,
+          credential_hint: '',
+          can_set_credential: true,
+        }}
       />,
     );
 

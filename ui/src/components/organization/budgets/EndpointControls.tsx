@@ -122,9 +122,19 @@ export interface EndpointControlsProps {
   /** Which level of org -> team -> person this row is; decides what an empty list is seeded with. */
   scope: BudgetScope;
   testIdPrefix: string;
+  /**
+   * May the caller CHANGE this endpoint (the hub's `update` answer)? Required rather than
+   * defaulted, because the wrong answer here is silent.
+   *
+   * It gates the self-heal below as well as the controls, and that half is not cosmetic: the seed
+   * effect WRITES on mount, so a viewer who may only read would fire a doomed save and an error
+   * toast every time the row rendered. An org admin looking at the organization's own row is
+   * exactly that viewer.
+   */
+  manage: boolean;
 }
 
-export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointControlsProps) {
+export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: EndpointControlsProps) {
   const { t } = useLingui();
   const id = endpointIdFromTypeId(endpointId);
   const endpoint = useLlmEndpoint(id);
@@ -152,7 +162,9 @@ export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointCo
   // endpoint starts with the defaults as a real value" rule the expert dialog already applies at
   // CREATE time, just enforced here for every row instead of once at creation.
   useEffect(() => {
-    if (!endpoint || seeding.current) return;
+    // A reader never repairs the row. Somebody who may configure it will, the next time they open
+    // the page, and until then a stale alias map is a wrong model — not a broken screen.
+    if (!endpoint || seeding.current || !manage) return;
     const seed = SEED_BY_SCOPE[scope];
     // A level seeded with nothing (the team) is left blank on purpose — blank INHERITS, and that is
     // what keeps it from becoming a ceiling over the people beneath it.
@@ -169,7 +181,7 @@ export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointCo
     // identity change would refire the seed check every render, which the `seeding` guard already
     // exists to prevent regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint?.id, models.length, aliasesStale, scope]);
+  }, [endpoint?.id, models.length, aliasesStale, scope, manage]);
 
   if (!endpoint) {
     return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
@@ -226,13 +238,14 @@ export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointCo
       <label className="flex items-center gap-1.5 text-muted-foreground" data-testid={`${testIdPrefix}-enabled`}>
         <Switch
           checked={endpoint.enabled}
+          disabled={!manage}
           onCheckedChange={(v) => void toggleEnabled(v)}
           aria-label={endpoint.enabled ? t`Enabled` : t`Disabled`}
         />
         {endpoint.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
       </label>
 
-      {editing ? (
+      {editing && manage ? (
         <input
           autoFocus
           value={draft}
@@ -254,9 +267,10 @@ export function EndpointControls({ endpointId, scope, testIdPrefix }: EndpointCo
       ) : (
         <button
           type="button"
-          className="max-w-64 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground hover:bg-muted"
+          disabled={!manage}
+          className="max-w-64 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground enabled:hover:bg-muted"
           data-testid={`${testIdPrefix}-models`}
-          title={t`Click to edit which models this budget may call`}
+          title={manage ? t`Click to edit which models this budget may call` : t`Which models this budget may call`}
           onClick={startEdit}
         >
           {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : models.join(', ') || DEFAULT_MODELS.join(', ')}
