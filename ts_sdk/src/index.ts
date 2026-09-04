@@ -30,6 +30,7 @@ export * from './tags/grammar';
 export * from './tags/ws-bridge';
 export * from './tabs/index';
 export * from './stores/ontology-store';
+export * from './icons';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';

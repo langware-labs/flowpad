@@ -1,0 +1,169 @@
+/* Flowpad's own tokens, copied verbatim from ui/src/styles/index.css so the
+   gallery is judged against the surface it documents. The app toggles a `dark`
+   class on <html>; an un-toggled document still resolves through
+   prefers-color-scheme, which is the state most viewers are actually in. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --primary: 0 0% 9%;
+  --brand: 221 87% 45%;
+  --secondary: 0 0% 96.1%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --accent: 0 0% 96.1%;
+  --destructive: 0 84.2% 60.2%;
+  --border: 0 0% 89.8%;
+  --ring: 0 0% 3.9%;
+  --radius: 0.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --brand: 221 87% 58%;
+    --secondary: 0 0% 14.9%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --destructive: 0 72% 51%;
+    --border: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+  }
+}
+:root.dark {
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --brand: 221 87% 58%;
+  --secondary: 0 0% 14.9%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --destructive: 0 72% 51%;
+  --border: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: 14px/1.55 ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+code, .mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 72px; }
+
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  background: hsl(var(--background) / 0.86);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid hsl(var(--border));
+}
+.top-inner { max-width: 1180px; margin: 0 auto; padding: 14px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+h1 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.sub { color: hsl(var(--muted-foreground)); font-size: 12.5px; margin: 2px 0 0; }
+.spacer { flex: 1 1 auto; }
+
+input[type='search'] {
+  width: 260px; padding: 7px 11px; border-radius: var(--radius);
+  border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+  color: hsl(var(--foreground)); outline: none; font: inherit; font-size: 13px;
+}
+input[type='search']:focus-visible { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / 0.18); }
+
+button.ghost {
+  padding: 7px 12px; border-radius: var(--radius); font: inherit; font-size: 13px;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+  color: hsl(var(--foreground)); cursor: pointer;
+}
+button.ghost:hover { background: hsl(var(--accent)); }
+button.ghost[aria-pressed='true'] { background: hsl(var(--primary)); color: hsl(var(--background)); border-color: hsl(var(--primary)); }
+:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+section { margin-top: 40px; }
+h2 { font-size: 15px; font-weight: 650; margin: 0 0 3px; letter-spacing: -0.01em; }
+h2 .count { color: hsl(var(--muted-foreground)); font-weight: 450; }
+.lede { color: hsl(var(--muted-foreground)); font-size: 13px; margin: 0 0 16px; max-width: 68ch; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px;
+  border-radius: 999px; font-size: 11px; font-weight: 550; letter-spacing: 0.02em;
+  border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground));
+  background: hsl(var(--secondary));
+}
+.chip.brand { color: hsl(var(--brand)); border-color: hsl(var(--brand) / 0.35); background: hsl(var(--brand) / 0.08); }
+.chip.warn { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.35); background: hsl(var(--destructive) / 0.08); }
+
+.grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); }
+.tile {
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 16px 10px 11px; border: 1px solid hsl(var(--border));
+  border-radius: var(--radius); background: hsl(var(--card));
+  text-align: center; cursor: pointer; min-width: 0;
+  /* A <button> inherits neither colour nor font from the page — without these
+     the labels render in the UA default, which is invisible on the dark ground. */
+  color: hsl(var(--foreground)); font: inherit;
+}
+.tile:hover { background: hsl(var(--accent)); }
+.tile .glyph { font-size: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: hsl(var(--foreground)); }
+.tile .nm { font-size: 11.5px; overflow-wrap: anywhere; line-height: 1.35; }
+.tile .ref { font-size: 10px; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+
+.rows { display: flex; flex-direction: column; gap: 8px; }
+.row {
+  display: flex; align-items: center; gap: 14px; padding: 11px 14px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card));
+}
+.row .glyph { font-size: 22px; height: 22px; display: flex; align-items: center; }
+.row .txt { flex: 1 1 auto; min-width: 0; }
+.row .txt b { font-weight: 600; }
+.row .txt div { color: hsl(var(--muted-foreground)); font-size: 12.5px; }
+
+table { border-collapse: collapse; width: 100%; }
+.scroll-x { overflow-x: auto; }
+th, td { border: 1px solid hsl(var(--border)); padding: 9px 12px; text-align: left; font-size: 13px; }
+th { background: hsl(var(--secondary)); color: hsl(var(--muted-foreground)); font-weight: 550; }
+td .glyph { font-size: 22px; display: inline-flex; vertical-align: middle; }
+
+.swatches { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.swatch .glyph { font-size: 30px; height: 30px; display: flex; align-items: center; }
+
+.note {
+  border: 1px solid hsl(var(--border)); border-left: 3px solid hsl(var(--brand));
+  border-radius: var(--radius); padding: 12px 15px; background: hsl(var(--card));
+  font-size: 13px; color: hsl(var(--muted-foreground)); margin: 0 0 16px; max-width: 78ch;
+}
+.note.bad { border-left-color: hsl(var(--destructive)); }
+.empty { padding: 40px; text-align: center; color: hsl(var(--muted-foreground)); }
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: hsl(var(--primary)); color: hsl(var(--background));
+  padding: 8px 15px; border-radius: 999px; font-size: 12.5px; z-index: 50;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Chips take the host's tokens — the SDK ships the shape, not a palette. */
+.fp-chip {
+  --fp-chip-bg: hsl(var(--muted));
+  --fp-chip-fg: hsl(var(--muted-foreground));
+  --fp-chip-border: hsl(var(--border));
+  /* The plate a sub-icon sits on, so a badge reads against the artwork under it. */
+  --fp-icon-badge-bg: hsl(var(--muted));
+}
+.chips { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row .glyph, .swatch .glyph, .tile .glyph { --fp-icon-badge-bg: hsl(var(--card)); }
