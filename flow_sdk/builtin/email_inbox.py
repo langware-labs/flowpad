@@ -40,6 +40,7 @@ their tests changing: only the constructors do.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
@@ -219,9 +220,7 @@ class EmailInbox(Entity):
             or not is_valid_entity_id(linked_agent.id)
             or linked_agent != agent_typeid
         ):
-            raise ValueError(
-                f"EmailInbox belongs to {linked_agent}, expected {agent_typeid}"
-            )
+            raise ValueError(f"EmailInbox belongs to {linked_agent}, expected {agent_typeid}")
 
         return cls(
             id=inbox_typeid.id,
@@ -354,6 +353,21 @@ class EmailInbox(Entity):
                 raise LoginRequired("FlowPad cloud login required to allocate an inbox") from exc
             raise
 
+        # PERSIST the `remote` flip before returning. `share()` sets
+        # `self.remote = True` in memory only (`entity_model.py:2092` — no save),
+        # and `agent.remote = True` above is likewise in-memory. Every subsequent
+        # request loads a FRESH Agent row, so an unpersisted flip reads back
+        # `False` — and `for_agent()` short-circuits on exactly that before it ever
+        # asks the Hub. The symptom was: allocate succeeds and the address renders,
+        # then the very next `configure_inbox` answers 404 "this agent has no
+        # inbox". Proven from the backend log: the failing request logged NO hub
+        # `GET .../email_inbox` at all, i.e. it never reached the driver.
+        if getattr(agent, "remote", False):
+            try:
+                await agent.save()
+            except Exception:  # noqa: BLE001 - the mailbox exists either way
+                logging.exception("EmailInbox.allocate: could not persist agent.remote")
+
         inbox = cls._adopt_onto(agent, descriptor)
         inbox.newly_allocated = not existing
         # The source first: it is where the gate's cache lives, so it has to
@@ -478,9 +492,7 @@ class EmailInbox(Entity):
 
         if poll_interval_seconds is not None:
             if poll_interval_seconds < MIN_POLL_INTERVAL_SECONDS:
-                raise ValueError(
-                    f"poll_interval_seconds must be at least {MIN_POLL_INTERVAL_SECONDS}"
-                )
+                raise ValueError(f"poll_interval_seconds must be at least {MIN_POLL_INTERVAL_SECONDS}")
             source = await self.source()
             if source is None:
                 raise ValueError("allocate the inbox before configuring its refresh interval")
@@ -578,9 +590,7 @@ class EmailInbox(Entity):
     #: reaches the wire instead of being silently dropped by a forgotten literal.
     #: ``allowed_senders`` and ``filters`` are listed although they are
     #: ``Persist.FALSE``: a UI that cannot see the policy cannot render it.
-    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        (*_HUB_FIELDS, "allowed_senders", "filters")
-    )
+    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset((*_HUB_FIELDS, "allowed_senders", "filters"))
 
     def descriptor(self) -> dict:
         """The wire view of this mailbox — the Hub's descriptor shape, plus policy."""
@@ -712,9 +722,7 @@ def _source_summary(source) -> dict:
         "provider": getattr(source, "provider", "") or "",
         "poll_interval_seconds": source.poll_interval_seconds,
         "last_synced_at": (
-            source.last_synced_at.isoformat()
-            if hasattr(source.last_synced_at, "isoformat")
-            else source.last_synced_at
+            source.last_synced_at.isoformat() if hasattr(source.last_synced_at, "isoformat") else source.last_synced_at
         ),
         "health": getattr(source.health, "value", source.health),
     }
@@ -755,10 +763,7 @@ async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -
         "agent_id": agent_id,
         "sources": sources_data,
         "enabled": bool(
-            inbox is not None
-            and inbox.is_active
-            and source is not None
-            and source.status == SourceStatus.ACTIVE.value
+            inbox is not None and inbox.is_active and source is not None and source.status == SourceStatus.ACTIVE.value
         ),
         "inbox": inbox.descriptor() if inbox is not None else None,
         "source": source_data,

@@ -419,6 +419,55 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
         return ApiFailResponse(message=f"Failed to serve file: {str(e)}")
 
 
+async def read_optional(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Read a file that may not be there — one request, 200 either way.
+
+    ``{"exists": bool, "content": str | None}``. This is the read half of the same
+    rule ``exists`` answers: absence is a valid answer, not an error status. Callers
+    that used ``exists`` then ``download`` paid TWO round trips on the common
+    (present) path just to avoid a 404 on the rare one; this answers both questions
+    at once.
+
+    Text only, deliberately: the callers are editors reading their own documents.
+    Binary stays on ``download``, which streams instead of buffering.
+    """
+    if request_info.method != "get":
+        return ApiFailResponse(message="read_optional action requires GET method")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="read_optional action requires typeid")
+
+    storage = await _get_storage_for_entity(request_info)
+    path = fs_info.vpath.abs_vfspath
+    if not await storage.exists(path):
+        return ApiSuccessResponse(data={"exists": False, "content": None})
+    raw = b"".join([chunk async for chunk in storage.stream(path)])
+    return ApiSuccessResponse(data={"exists": True, "content": raw.decode("utf-8", errors="replace")})
+
+
+async def exists(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Answer whether a file is there — a 200 either way.
+
+    "Is this file present?" has two correct answers, and neither is an error. The
+    only way to ask used to be to attempt a ``download`` and catch its 404, which
+    made every routine probe emit a browser-level
+    ``Failed to load resource: 404`` before any application code ran — noise no
+    client-side handling can suppress. A whiteboard that has never been saved
+    logged one on every open; that single probe accounted for 39 of the console
+    errors in one QA sweep.
+
+    Deliberately does NOT fall back to ``fetch_remote_entity_file`` the way
+    ``download`` does: this answers about the local store only, so it stays cheap
+    enough to call before every read.
+    """
+    if request_info.method != "get":
+        return ApiFailResponse(message="Exists action requires GET method")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Exists action requires typeid")
+
+    storage = await _get_storage_for_entity(request_info)
+    return ApiSuccessResponse(data={"exists": await storage.exists(fs_info.vpath.abs_vfspath)})
+
+
 async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
     """Download file.
 

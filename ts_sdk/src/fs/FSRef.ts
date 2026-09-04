@@ -122,13 +122,26 @@ export class FSRef {
   }
 
   async exists(): Promise<boolean> {
-    try {
-      const { fsManager } = await import('../services/fsService');
-      await fsManager.download(this.typeId, this.path);
-      return true;
-    } catch {
-      return false;
-    }
+    // Deliberately NOT "attempt a download and catch the 404". That probe made a
+    // routine question ("has this been saved yet?") emit a browser-level
+    // `Failed to load resource: 404` before any application code could run, and
+    // it also transferred the whole file just to learn that it was there.
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.exists(this.typeId, this.path);
+  }
+
+  /**
+   * Read this file, or `null` when it does not exist yet.
+   *
+   * The sanctioned way to read a maybe-unsaved document. `read()`-and-catch emits a
+   * browser-level 404 for the ordinary "not created yet" case, and `exists()` then
+   * `read()` costs two round trips on the common path — this is one request that
+   * answers both. Encoded here rather than at each editor so the next caller cannot
+   * re-invent the noisy pattern.
+   */
+  async readIfExists(): Promise<string | null> {
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.readIfExists(this.typeId, this.path);
   }
 
   /**

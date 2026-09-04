@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { withViewMode } from '../_shared/view-mode';
 
 // Helper: dismiss the DesktopSetupModal by setting localStorage before page load
 async function dismissSetupModal(page: import('@playwright/test').Page) {
@@ -10,7 +11,13 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 // Helper: navigate to home and wait for the page to settle
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
-  await page.goto('/');
+// The home search surfaces asserted here (`record-search-bar`, `search-input`)
+// exist only on the Standard HomeLanding — Vibe renders the creator homepage,
+// which has neither. The app legitimately ends up in Vibe (the project-open path
+// opens home `.withViewMode(ViewMode.Vibe)` and the dock sync persists that
+// instance-wide), so a test wanting Standard must pin it on the ADDRESS rather
+// than inherit whatever the instance was last left in.
+  await page.goto(withViewMode('/', 'standard'));
   // Wait for initial render — look for something stable
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 }

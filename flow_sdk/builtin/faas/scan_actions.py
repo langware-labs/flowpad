@@ -1013,10 +1013,15 @@ class ScanActionsMixin:
             if existing:
                 return ApiSuccessResponse(data=existing.model_dump())
 
-            return ApiFailResponse(
-                message=f"Session {worker_id} not found in Claude, Codex, Copilot or OpenCode history",
-                status_code=404,
-            )
+            # A miss is a valid ANSWER, not an error: "no session carries this id".
+            # `AgenticProcess.getByWorkerId` already maps this to `null` and its
+            # callers (status indicators, shell/worker deep-link recovery) treat
+            # `null` as "nothing to resume". Answering 404 made the browser log
+            # `Failed to load resource: 404` before any client code ran, so the
+            # miss could never be handled quietly — the same reason the caller
+            # had to grow a `wf_`-prefix short-circuit to dodge "a guaranteed
+            # 404". 4xx is reserved for a request that is actually malformed.
+            return ApiSuccessResponse(data=None)
 
         # Palette of the terminal this session is being adopted into. A query
         # hint here, not a body field: this is the GET the frontend actually
