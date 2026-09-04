@@ -18,6 +18,7 @@
 
 import { AgenticProcess, Project } from '@sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -82,7 +83,7 @@ describe('every dock address round-trips the control plane', () => {
     // Real entities for the addresses whose pointer must resolve. Built here
     // rather than skipped so the lookup path is proven to ACCEPT as well as
     // reject — the negative case lives in the api route tests.
-    const project = await new Project({ uname: `dockseq-${Date.now()}` }).save([]);
+    const project = trackForCleanup(await new Project({ uname: `dockseq-${Date.now()}` }).save([]));
     realCases = [
       { name: 'project (real id)', address: `project/${project.id}`, view_type: 'project', pointer: project.id },
       {

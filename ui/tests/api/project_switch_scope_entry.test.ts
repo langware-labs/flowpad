@@ -23,6 +23,7 @@
  */
 import { ContextEntitiesEnum, dataContext, Markdown, Project, Tab, TypeId } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -69,8 +70,8 @@ describe('project switch scope entry adopts the destination project', () => {
   });
 
   it('landing on a project-pinned assets tab (the known last tab) switches the active project', async () => {
-    const p = await new Project({ name: `/tmp/flow_switch_p_${uuidv4()}` }).save([]);
-    const q = await new Project({ name: `/tmp/flow_switch_q_${uuidv4()}` }).save([]);
+    const p = trackForCleanup(await new Project({ name: `/tmp/flow_switch_p_${uuidv4()}` }).save([]));
+    const q = trackForCleanup(await new Project({ name: `/tmp/flow_switch_q_${uuidv4()}` }).save([]));
 
     // P's only tab: a scope-keyed assets tab BORN from a doc-open (target
     // stamped → pickable) — the exact poison state from the RCA.
@@ -97,7 +98,7 @@ describe('project switch scope entry adopts the destination project', () => {
   }, 15000);
 
   it('with no recency-stamped tab, entry falls back to the project landing — never the tab_order guess', async () => {
-    const p = await new Project({ name: `/tmp/flow_switch_ns_${uuidv4()}` }).save([]);
+    const p = trackForCleanup(await new Project({ name: `/tmp/flow_switch_ns_${uuidv4()}` }).save([]));
     const md = await new Markdown({ id: uuidv4(), name: `switch-${p.id}`, project_id: p.id }).save([]);
 
     // Materialize the assets tab WITHOUT the lifecycle (no recency stamp) —
@@ -115,8 +116,8 @@ describe('project switch scope entry adopts the destination project', () => {
   }, 15000);
 
   it('with no recency-stamped tab and a scope-keyed current view, entry re-scopes that view to the destination', async () => {
-    const p = await new Project({ name: `/tmp/flow_switch_sk_${uuidv4()}` }).save([]);
-    const q = await new Project({ name: `/tmp/flow_switch_sq_${uuidv4()}` }).save([]);
+    const p = trackForCleanup(await new Project({ name: `/tmp/flow_switch_sk_${uuidv4()}` }).save([]));
+    const q = trackForCleanup(await new Project({ name: `/tmp/flow_switch_sq_${uuidv4()}` }).save([]));
 
     // Switching from Q's Assets browser to (tab-less) P stays on Assets, scoped to P.
     const currentDock = new DockPointer(ViewType.ASSETS, '').withScopeFilter(projectScope(q.id));
