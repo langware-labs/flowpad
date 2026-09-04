@@ -144,6 +144,9 @@ class LLMEndpoint(Entity):
     member_default_limits: LLMLimits = APIField(default_factory=LLMLimits)
     #: ``****last4`` of the provider key, when this endpoint is a root. Never the key itself.
     credential_hint: str = APIField(default="")
+    #: Whose pot this is on the hub -- ``organization-``/``team-``/``user-<uuid>`` -- or ``None``
+    #: for a root or an allocation. Read-only here, like every other field in this projection.
+    principal_typeid: str | None = APIField(default=None)
     #: True for an endpoint the hub made for a user/team/org rather than one somebody created.
     system_default: bool = APIField(default=False)
 
@@ -216,26 +219,29 @@ class LLMEndpoint(Entity):
     #: What an endpoint IS, as opposed to what every SDK ``Entity`` carries. A dump of the whole
     #: model would bury these under ~30 fields of local plumbing (tab_order, semantic_lock, ...)
     #: that are all defaults on a projection and mean nothing to a picker.
-    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset((
-        "id",
-        "type",
-        "name",
-        "provider",
-        "base_url",
-        "enabled",
-        "filters",
-        "limits",
-        "member_default_limits",
-        "credential_hint",
-        "system_default",
-        # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
-        # would offer the user a device endpoint the backend can never call.
-        "kind",
-        "secret_name",
-        "models",
-        "harness",
-        "invocable",
-    ))
+    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        (
+            "id",
+            "type",
+            "name",
+            "provider",
+            "base_url",
+            "enabled",
+            "filters",
+            "limits",
+            "member_default_limits",
+            "credential_hint",
+            "principal_typeid",
+            "system_default",
+            # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
+            # would offer the user a device endpoint the backend can never call.
+            "kind",
+            "secret_name",
+            "models",
+            "harness",
+            "invocable",
+        )
+    )
 
     def to_wire(self) -> dict[str, Any]:
         """The endpoint as something choosing between endpoints needs to see it."""

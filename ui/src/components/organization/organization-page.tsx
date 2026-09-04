@@ -1,5 +1,5 @@
 import { Organization, PageId, QueryRequest, ViewType, WorldViewProjection } from '@sdk';
-import { Building2, ChevronDown, ChevronRight, GitGraph, Loader2, Users } from 'lucide-react';
+import { Building2, ChevronDown, ChevronRight, GitGraph, Loader2, Plus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -9,6 +9,8 @@ import { useMembershipAvailability } from '@src/hooks/use-membership-availabilit
 import { OrgDetailPanel } from '@src/components/organization/org-detail-panel';
 import { useGroupChildren } from '@src/components/organization/use-group-children';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { createOrganization } from '@src/components/organization/create-organization';
+import { notify } from '@src/notifications';
 
 /**
  * People and teams — the plain screen.
@@ -34,13 +36,43 @@ export function OrganizationPage() {
   const orgQuery = useMemo(() => new QueryRequest({ type: Organization.type, query: {} }), []);
   const { data: orgs, isLoading } = useEntitiesQuery<Organization>(orgQuery);
   const [selected, setSelected] = useState<{ type: string; id: string; label: string } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const submitOrganization = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || creating) return;
+    setCreating(true);
+    try {
+      await createOrganization(trimmed);
+      setName('');
+      setCreateOpen(false);
+      notify.success({ title: t`Organization created`, message: t`${trimmed} is ready.`, id: 'org-create' });
+    } catch (err) {
+      notify.error({
+        title: t`Could not create organization`,
+        message: err instanceof Error ? err.message : t`Unknown error.`,
+        id: 'org-create',
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const organizations = useMemo(() => (Array.isArray(orgs) ? orgs : []), [orgs]);
   const current = selected ?? firstOrgNode(organizations);
 
   if (!available) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <EmptyState
           icon={Users}
           title={reason === 'local' ? t`Not available in Local mode` : t`Sign in to manage people`}
@@ -58,7 +90,14 @@ export function OrganizationPage() {
 
   if (isLoading && organizations.length === 0) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           <Trans>Loading organizations…</Trans>
@@ -69,7 +108,14 @@ export function OrganizationPage() {
 
   if (organizations.length === 0) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <EmptyState
           icon={Building2}
           title={t`No organization yet`}
@@ -80,7 +126,14 @@ export function OrganizationPage() {
   }
 
   return (
-    <Shell>
+    <Shell
+      createOpen={createOpen}
+      setCreateOpen={setCreateOpen}
+      name={name}
+      setName={setName}
+      creating={creating}
+      onCreate={() => void submitOrganization()}
+    >
       <div className="flex min-h-0 flex-1 gap-6">
         <nav className="w-64 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label={t`Organization`}>
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -174,7 +227,24 @@ function TreeNode({
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  createOpen,
+  setCreateOpen,
+  name,
+  setName,
+  creating,
+  onCreate,
+}: {
+  children: React.ReactNode;
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
+  name: string;
+  setName: (name: string) => void;
+  creating: boolean;
+  onCreate: () => void;
+}) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
   return (
@@ -188,6 +258,31 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Trans>Organizations, the teams inside them, and who belongs to each.</Trans>
           </p>
         </div>
+        {!createOpen ? (
+          <Button size="sm" data-testid="org-create-open" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" />
+            <Trans>New organization</Trans>
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onCreate();
+                if (e.key === 'Escape') setCreateOpen(false);
+              }}
+              placeholder={t`Organization name…`}
+              data-testid="org-create-name"
+              className="w-44 rounded-md border border-border bg-background px-2.5 py-1 text-sm"
+            />
+            <Button size="sm" disabled={creating || !name.trim()} onClick={onCreate} data-testid="org-create-submit">
+              {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Trans>Create</Trans>
+            </Button>
+          </div>
+        )}
         <Button
           size="sm"
           variant="outline"

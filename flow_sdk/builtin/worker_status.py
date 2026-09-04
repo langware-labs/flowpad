@@ -25,6 +25,7 @@ import json
 import time as _time
 from datetime import datetime as _datetime
 from pathlib import Path as _Path
+from typing import NamedTuple
 
 from flow_sdk._compat import StrEnum
 
@@ -436,7 +437,30 @@ def _scan_reversed(
     )
 
 
-def tail_status_detail(path: "str | _Path") -> str | None:
+class StatusDetail(NamedTuple):
+    """One synthetic-error entry: what it said, and WHICH entry said it.
+
+    ``text`` alone is not enough to tell two failures apart. Every signed-out
+    turn produces the byte-identical ``"Not logged in · Please run /login"``, so
+    a consumer keyed on the text cannot distinguish "the same entry, re-read on
+    the next serialize" from "a new turn was refused". ``entry_id`` is the
+    transcript entry's own ``uuid``: stable across re-reads of the same entry —
+    which is what makes a poll idempotent — and different for a genuinely new
+    one. A timestamp would not do: it is millisecond-resolution, so two entries
+    can share one, and a clock adjustment can move it backwards.
+
+    A NamedTuple rather than a ``DataSpec`` on purpose: this module is
+    deliberately neutral with no intra-package imports (see the module
+    docstring), and importing the schema package here would reintroduce exactly
+    the circular dependency that neutrality exists to prevent. The shape does
+    not travel either — the serializer flattens it into sibling API fields.
+    """
+
+    text: str
+    entry_id: str | None
+
+
+def tail_status_detail(path: "str | _Path") -> StatusDetail | None:
     """The CLI's OWN words for the most recent synthetic error, or ``None``.
 
     :data:`WorkerStatus.ERROR` is a single token, and collapsing into it throws
@@ -493,7 +517,7 @@ def tail_status_detail(path: "str | _Path") -> str | None:
             continue
         text = text.strip()
         if text:
-            return text
+            return StatusDetail(text=text, entry_id=entry.get("uuid") or None)
     return None
 
 

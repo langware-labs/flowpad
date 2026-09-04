@@ -15,6 +15,20 @@ import { DEFAULT_LLM_FILTERS, DEFAULT_LLM_LIMITS } from '@sdk';
 
 export const STREAMING_POLICIES: readonly LLMStreamingPolicy[] = ['allow', 'require', 'deny'];
 
+/**
+ * The globs a NEW endpoint starts with — a real, saved value, not a hint.
+ *
+ * An empty `models_allow` means "everything the sources allow", and on a hub whose seeded root
+ * carries no filters that is the entire OpenRouter catalogue: free-tier models, moderation models,
+ * even music models. Defaulting to the two families anything routed through here actually asks for
+ * makes the safe configuration the one you get by doing nothing.
+ *
+ * `anthropic/claude-*` is what a Claude Code harness routed through the hub sends —
+ * `CLAUDE_API_AUTH_SPEC.tier_models` stamps OpenRouter slugs (`anthropic/claude-haiku-4.5`,
+ * `-sonnet-4.5`, `-opus-4.1`) onto argv before spawn, so one glob covers every tier.
+ */
+export const MODELS_ALLOW_DEFAULT = 'anthropic/claude-*\nopenai/gpt-*';
+
 /** One `from → to` row of an aliases / model_map editor. */
 export interface MappingRow {
   from: string;

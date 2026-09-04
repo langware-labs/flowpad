@@ -206,6 +206,13 @@ export interface StatusBearingProcess {
   /** The CLI's own sentence behind a bare ERROR ("Not logged in · Please run /login"). */
   workerStatusDetail?: string | null;
   worker_status_detail?: string | null;
+  /**
+   * WHICH refused turn the detail came from — the transcript entry's own uuid.
+   * The sentence cannot identify a turn: every signed-out turn writes the
+   * identical one, so anything keyed on the text treats a new failure as a
+   * re-read of the old one. Stable across re-reads, different per entry.
+   */
+  worker_status_detail_id?: string | null;
   session_id?: string | null;
   /** Tab visibility only — NOT the transport router (see ``pty_mode``). */
   visible?: boolean;

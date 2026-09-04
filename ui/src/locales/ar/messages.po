@@ -77,6 +77,7 @@ msgstr "\"{0}\" يتجاوز {MAX_FILE_SIZE_LABEL} ولم يُرفَق."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 msgstr "سيتم حذف \"{0}\" مع تدفقاته وكل السجلات التي استقبلها. لا يمكن التراجع عن هذا الإجراء."
 
@@ -226,6 +227,12 @@ msgstr ""
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "{0} · new run"
 msgstr "{0} · تشغيل جديد"
+
+#. placeholder {0}: outcome.added.length
+#. placeholder {1}: outcome.updated.length
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{0} added, {1} updated in {teamName}."
+msgstr ""
 
 #. placeholder {0}: group.length
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -427,9 +434,10 @@ msgid "{0} secret{1}"
 msgstr "{0} سر{1}"
 
 #. placeholder {0}: checkedIds.size
+#. placeholder {0}: picked.length
 #. placeholder {0}: selected.size
-#. placeholder {0}: selectedKeys.size
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/data-sources/ChoiceField.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -468,6 +476,16 @@ msgstr "{0} نوع · {1}"
 #. placeholder {0}: node.name || 'The sandbox'
 #: src/hooks/use-sandboxes.ts
 msgid "{0} was upgraded and restarted."
+msgstr ""
+
+#. placeholder {0}: removing?.name ?? ''
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} will no longer be able to spend from {teamLabel}. Money already spent is not affected."
+msgstr ""
+
+#. placeholder {0}: p.email
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{0}: the amount must be a number."
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -579,8 +597,8 @@ msgid "{name} names no support queue"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} said: {statusReason}"
-msgstr "{name} يقول: {statusReason}======="
+#~ msgid "{name} said: {statusReason}"
+#~ msgstr "{name} يقول: {statusReason}======="
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but another desk answers first"
@@ -662,6 +680,10 @@ msgstr "{totalOrphans} سجل يتيم{0}"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
 msgstr "{totalResolved} مشكلة{0} متطابقة — مما يوفر عليك وقت تصحيح {1} يدويًا."
+
+#: src/components/organization/organization-page.tsx
+msgid "{trimmed} is ready."
+msgstr ""
 
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
@@ -913,6 +935,10 @@ msgstr "يوجد مشروع بهذا الاسم بالفعل"
 msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "A request just failed because {name} isn't signed in on this machine."
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr ""
@@ -1017,6 +1043,10 @@ msgstr "الإجراءات"
 msgid "Actions ({0})"
 msgstr "الإجراءات ({0})"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Activate"
+msgstr ""
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Activations only"
 msgstr "التفعيلات فقط"
@@ -1071,6 +1101,7 @@ msgstr "النشاط"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
@@ -1087,6 +1118,7 @@ msgid "Add a comment…"
 msgstr "إضافة تعليق…"
 
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Add a data source"
 msgstr "إضافة مصدر بيانات"
 
@@ -1119,9 +1151,9 @@ msgstr "إضافة ملاحظة شخصية…"
 msgid "Add a prompt to your reply"
 msgstr "إضافة مطالبة إلى ردك"
 
-#: src/components/llm-endpoints/SourcesPicker.tsx
-#~ msgid "Add a source"
-#~ msgstr ""
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Add a source"
+msgstr ""
 
 #: src/components/llm-endpoints/SourcesPicker.tsx
 #~ msgid "Add a source…"
@@ -1135,11 +1167,19 @@ msgstr "إضافة وكيل…"
 msgid "Add annotation"
 msgstr "إضافة تعليق توضيحي"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add another"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-view.tsx
 msgid "Add Artifact"
 msgstr "إضافة عنصر"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add at least one email address."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -1180,7 +1220,6 @@ msgid "Add context folder"
 msgstr "إضافة مجلد السياق"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-#: src/components/data-sources/DataSourcesView.tsx
 msgid "Add data source"
 msgstr "إضافة مصدر بيانات"
 
@@ -1235,6 +1274,14 @@ msgstr ""
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Add New Hook"
 msgstr "إضافة خطاف جديد"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Add people"
+msgstr ""
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Add people to {teamName}"
+msgstr ""
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
@@ -2208,6 +2255,10 @@ msgstr "إرفاق بالرد"
 msgid "Attached asset types"
 msgstr ""
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Attached channels"
+msgstr ""
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
 msgstr "المرفق غير متاح — لم يتم رفع أي محتوى"
@@ -2531,6 +2582,10 @@ msgstr ""
 msgid "Bring back"
 msgstr "استرجاع"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Bring your own key"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
 msgstr "تصفح"
@@ -2553,13 +2608,34 @@ msgstr "استعراض دليل العمل"
 msgid "Browse…"
 msgstr "استعراض…"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget"
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget created for {label}"
+msgstr ""
+
 #. placeholder {0}: scope.name
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Budget endpoint created for {0}"
 msgstr ""
 
+#. placeholder {0}: member.name
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Budget for {0}"
+msgstr ""
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget for the whole scope"
+msgstr ""
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Budget in dollars"
 msgstr ""
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
@@ -2568,6 +2644,10 @@ msgstr ""
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget updated"
+msgstr ""
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Budgets updated"
 msgstr ""
 
 #: src/i18n/pref-labels.ts
@@ -2764,6 +2844,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -2918,9 +2999,17 @@ msgstr "التغييرات ({0})"
 msgid "Changes committed and pushed"
 msgstr "تم تثبيت التغييرات ودفعها"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Channel details"
+msgstr ""
+
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "Channel IDs"
 #~ msgstr "معرّفات القنوات"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Channels"
+msgstr ""
 
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/i18n/pref-labels.ts
@@ -3062,6 +3151,10 @@ msgstr "يمكن اختيار النموذج الذي تستخدمه كل طبق
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Choose which projects to filter by. Sorted by latest activity."
 msgstr "تحديد المشاريع المراد التصفية بها. مرتبة حسب آخر نشاط."
+
+#: src/components/data-sources/ChoiceField.tsx
+msgid "Choose…"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome"
@@ -3663,6 +3756,10 @@ msgstr "الأعمدة"
 msgid "Columns & Trace"
 msgstr "الأعمدة والتتبع"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Columns: name, email, budget"
+msgstr ""
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "Comes from"
 #~ msgstr "المصدر"
@@ -4166,6 +4263,10 @@ msgstr ""
 msgid "Copy entry"
 msgstr "نسخ العنصر"
 
+#: src/notifications/NotificationOutlet.tsx
+msgid "Copy error text"
+msgstr ""
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Copy event JSON"
 msgstr "نسخ JSON للحدث"
@@ -4242,6 +4343,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD), total"
+msgstr ""
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Could not activate the organization"
 msgstr ""
 
 #. placeholder {0}: spec.title || key
@@ -4333,6 +4438,14 @@ msgstr ""
 msgid "Could not create group task"
 msgstr "تعذر إنشاء مهمة المجموعة"
 
+#: src/components/organization/organization-page.tsx
+msgid "Could not create organization"
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not create the budget"
+msgstr ""
+
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
 msgstr ""
@@ -4373,8 +4486,8 @@ msgstr "تعذر النشر"
 #~ msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not disable the inbox"
-msgstr ""
+#~ msgid "Could not disable the inbox"
+#~ msgstr ""
 
 #: src/notifications/commands.ts
 msgid "Could not disable the sniffer"
@@ -4513,6 +4626,13 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 #: src/components/organization/org-detail-panel.tsx
 msgid "Could not remove"
 msgstr "تعذر الحذف"
+
+#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: target.name
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not remove {0}"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Could not remove access"
@@ -4689,7 +4809,7 @@ msgid "Could not update"
 msgstr "تعذر التحديث"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Could not update {0}"
 msgstr "تعذر تحديث {0}"
 
@@ -4839,6 +4959,7 @@ msgstr "المعالج:"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -6135,6 +6256,10 @@ msgstr "تنزيل الملف"
 msgid "Download message"
 msgstr "تنزيل الرسالة"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Download sample CSV"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Downloaded"
 msgstr "تم التحميل"
@@ -6234,6 +6359,10 @@ msgstr "مثال: \"Read\"، \"Edit|Write\"، \"*\" (اترك الحقل فار�
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "مثال: /path/to/script.sh أو if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
+msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
@@ -6365,13 +6494,18 @@ msgstr ""
 msgid "Effort"
 msgstr "مستوى الجهد"
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email disabled"
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Email"
 msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email enabled"
-msgstr ""
+#~ msgid "Email disabled"
+#~ msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+#~ msgid "Email enabled"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/inbox-view/AgentInboxView.tsx
@@ -6438,8 +6572,8 @@ msgid "Enable Agent"
 msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Enable agent email"
-msgstr ""
+#~ msgid "Enable agent email"
+#~ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -6458,8 +6592,8 @@ msgid "Enable command sandboxing"
 msgstr "تفعيل عزل الأوامر"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Enable email to allocate this Agent's inbox."
-msgstr ""
+#~ msgid "Enable email to allocate this Agent's inbox."
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Enable extended thinking for all conversations"
@@ -7527,6 +7661,7 @@ msgid "Find machine"
 msgstr ""
 
 #: src/components/data-sources/DataSourceCard.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
 
@@ -8059,6 +8194,10 @@ msgstr "gitignore"
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Give this project access"
 msgstr "منح هذا المشروع الوصول"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Given out {allocatedNoun}"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -8833,6 +8972,10 @@ msgid "Inbox Manager"
 msgstr "مدير البريد الوارد"
 
 #: src/components/inbox-view/AgentInboxView.tsx
+msgid "Inbox settings could not be saved."
+msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Inbox settings saved"
 msgstr ""
 
@@ -9556,6 +9699,34 @@ msgstr "السطر"
 msgid "line {0}"
 msgstr "السطر {0}"
 
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: \"{1}\" is not an amount."
+msgstr ""
+
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: \"{1}\" is not an email address."
+msgstr ""
+
+#. placeholder {0}: problem.line
+#. placeholder {1}: problem.value
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: {1} appears more than once."
+msgstr ""
+
+#. placeholder {0}: problem.line
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: could not be read."
+msgstr ""
+
+#. placeholder {0}: problem.line
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Line {0}: no email address."
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "line {cursorLine}"
 msgstr "السطر {cursorLine}"
@@ -9611,6 +9782,15 @@ msgstr "قائمة النماذج المتاحة للاختيار"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "List view"
 msgstr "عرض القائمة"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Listen on {0}"
+msgstr ""
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "listening"
+msgstr ""
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -9755,6 +9935,10 @@ msgstr "جاري تحميل الفروع..."
 #: src/components/git/BranchPicker.tsx
 msgid "Loading branches…"
 msgstr "جاري تحميل الفروع…"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Loading budgets…"
+msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Loading capabilities…"
@@ -9976,6 +10160,7 @@ msgstr "جاري التحميل..."
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/data-sources/ChoiceField.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -10128,6 +10313,10 @@ msgstr "إدارة مفاتيح API"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Manage assets"
 msgstr "إدارة الأصول"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Manage in Data Sources…"
+msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage LLM providers and CLI integrations"
@@ -10577,6 +10766,10 @@ msgstr "المزيد"
 msgid "More actions"
 msgstr "المزيد من الإجراءات"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+msgstr ""
+
 #: src/components/ui/pagination.tsx
 msgid "More pages"
 msgstr "صفحات أخرى"
@@ -10617,6 +10810,10 @@ msgstr "تم النقل، لكن فشلت إعادة الفهرسة"
 msgid "msgs"
 msgstr "رسائل"
 
+#: src/components/organization/budgets/MoneyBox.tsx
+msgid "Must be a number, or blank for no limit."
+msgstr ""
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
 msgstr "جدولي الزمني"
@@ -10650,6 +10847,9 @@ msgstr "غير متاح"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10683,6 +10883,7 @@ msgstr "تسمية هذا الكيان"
 msgid "Name:"
 msgstr "الاسم:"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "name@example.com"
 msgstr ""
@@ -10690,6 +10891,10 @@ msgstr ""
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "يتطلب مراجعة"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "needs attention"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Neighbors"
@@ -10724,6 +10929,7 @@ msgstr "لم تتم المزامنة مع السحابة أبدًا"
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -10856,6 +11062,10 @@ msgstr "الاسم الجديد"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "New option"
 msgstr "إضافة خيار"
+
+#: src/components/organization/organization-page.tsx
+msgid "New organization"
+msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -11054,6 +11264,14 @@ msgstr "لا توجد تغييرات لعرضها"
 msgid "No changes to show."
 msgstr "لا توجد تغييرات لعرضها."
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "No channel is attached yet."
+msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+msgid "No channel reaches this Agent yet. Give it an email address to start."
+msgstr ""
+
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "No chats yet"
 msgstr "لا توجد محادثات بعد"
@@ -11177,8 +11395,12 @@ msgid "no edges"
 msgstr "لا توجد حواف"
 
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "No email address allocated"
+msgid "No email address — create one"
 msgstr ""
+
+#: src/components/inbox-view/AgentInboxView.tsx
+#~ msgid "No email address allocated"
+#~ msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11787,6 +12009,7 @@ msgstr "لا توجد مهام لهذه الجلسة."
 msgid "No team budget yet"
 msgstr ""
 
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "No teams yet."
 msgstr ""
@@ -11867,6 +12090,10 @@ msgstr "لم يتم اكتشاف قيمة"
 #: src/components/webapp-viewer.tsx
 msgid "No web app available"
 msgstr "لا يوجد تطبيق ويب متاح"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Nobody has a budget in this team yet."
+msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "node"
@@ -12027,6 +12254,10 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
+msgstr ""
+
+#: src/components/data-sources/ChoiceField.tsx
+msgid "Nothing found."
 msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
@@ -12246,6 +12477,10 @@ msgstr ""
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
 msgstr "يمكن لمالك الرمل فقط تشغيله. عند مشاركته بصيغته الحالية، سيحصل المستلم على الرابط لكن لن يتمكن من فتحه — إذ سيُطلب منه أن يطلب منك تشغيله أولاً."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Only an admin of this organization can see its budgets."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "توجد هنا إدخالات Harness فقط — يمكن تفعيل \"عرض الكل\" لعرضها."
@@ -12388,6 +12623,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "فتح خارجياً: {childPath}"
+
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "Open Flowpad Cloud"
+msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -12805,6 +13044,22 @@ msgstr "قائمة مرقمة"
 msgid "Organization"
 msgstr "المنظمة"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization activated"
+msgstr ""
+
+#: src/components/organization/organization-page.tsx
+msgid "Organization created"
+msgstr ""
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Organization created, but the key was not saved"
+msgstr ""
+
+#: src/components/organization/organization-page.tsx
+msgid "Organization name…"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
 msgstr "العرض الشامل للهيكل التنظيمي"
@@ -12989,6 +13244,10 @@ msgstr "لصق مفتاح API"
 msgid "Paste code from browser"
 msgstr "لصق الرمز من المتصفح"
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Paste it again below."
+msgstr ""
+
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Paste Mermaid syntax to replace the current board."
 msgstr "يُرجى لصق بناء جملة Mermaid لاستبدال اللوحة الحالية."
@@ -13036,11 +13295,15 @@ msgstr "فشل الإيقاف المؤقت."
 msgid "Pause this machine"
 msgstr "إيقاف هذا الجهاز مؤقتاً"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "paused"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "متوقف مؤقتاً"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
 msgstr "متوقف مؤقتاً."
 
@@ -13750,6 +14013,7 @@ msgstr "محمي"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/organization/budgets/OrgRootSetup.tsx
 msgid "Provider"
 msgstr "المزود"
 
@@ -14284,12 +14548,17 @@ msgid "Remote Worker Session"
 msgstr "جلسة العامل البعيد"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove"
 msgstr "إزالة"
 
 #. placeholder {0}: source.name
+#. placeholder {0}: source.name || source.provider
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "إزالة {0}"
@@ -14369,6 +14638,7 @@ msgid "Remove queued prompt"
 msgstr "إزالة التعليمات المعلقة"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Remove row"
 msgstr ""
 
@@ -14376,9 +14646,17 @@ msgstr ""
 #~ msgid "Remove source"
 #~ msgstr ""
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove this budget?"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "إزالة هذا الملف من الـ commit القادم (git restore --staged)"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Remove this source?"
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -14759,7 +15037,7 @@ msgstr "استئناف معالجة السياق"
 msgid "Resume this run"
 msgstr "استئناف هذا التشغيل"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "Resumed — it polls on the next tick."
 msgstr "استُؤنِف — سيتم الفحص في الدورة التالية."
 
@@ -16012,6 +16290,10 @@ msgstr "إعداد مستودع Git موجود كمجلد السياق"
 msgid "Set up as this name"
 msgstr "إعداد بهذا الاسم"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Set up budget"
+msgstr ""
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Set up Git"
 msgstr "إعداد Git"
@@ -16257,6 +16539,10 @@ msgstr "عرض شريط تقدم في الطرفية"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Show all"
 msgstr "عرض الكل"
+
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Show all channels"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -16801,6 +17087,17 @@ msgstr "تم إنشاء المواصفة"
 #: src/components/settings-view/settings-utils.ts
 msgid "Specific unix sockets allowed in sandbox"
 msgstr "مآخذ Unix المحددة المسموح بها في بيئة العزل"
+
+#. placeholder {0}: spec.label
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "Spending now bills your own {0}."
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Spent"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Spinner Tips Enabled"
@@ -17490,6 +17787,7 @@ msgid "Tasks"
 msgstr "المهام"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -17590,6 +17888,10 @@ msgstr "اختبار المحفز"
 msgid "That agent is no longer in your workspace."
 msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك."
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "That file has no rows."
+msgstr ""
+
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "هذا المشروع ليس له مجلد عمل محلي"
@@ -17648,7 +17950,7 @@ msgstr ""
 msgid "The backend may have restarted. Click to reattach."
 msgstr "ربما أُعيد تشغيل الخادم. اضغط لإعادة الاتصال."
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/use-source-toggle.ts
 msgid "The change was not saved."
 msgstr "لم يتم حفظ التغيير."
 
@@ -17841,6 +18143,7 @@ msgid "The source was not queued."
 msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
 
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "The source was not removed."
 msgstr "لم يتم حذف المصدر."
 
@@ -18093,6 +18396,18 @@ msgstr ""
 msgid "This month"
 msgstr ""
 
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "This organization has no budget yet."
+msgstr ""
+
+#: src/components/organization/budgets/OrgRootSetup.tsx
+msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "سيتم حذف الرسالة وجميع بياناتها بشكل نهائي لجميع المشاركين في المحادثة. هذا الإجراء غير قابل للتراجع."
@@ -18255,6 +18570,10 @@ msgstr "يؤدي هذا إلى تشغيل الجهاز وتهيئته بالإع
 msgid "This task no longer exists or is unavailable."
 msgstr "هذه المهمة لم تعد موجودة أو أصبحت غير متاحة."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "This team has no budget yet."
+msgstr ""
+
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
 msgid "This terminal no longer exists."
@@ -18384,6 +18703,14 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "إلى"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "to people"
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "to teams"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -18573,9 +18900,14 @@ msgstr ""
 msgid "total"
 msgstr "الإجمالي"
 
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "الإجمالي"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Total budget for {label}"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Total cost"
@@ -18810,6 +19142,7 @@ msgstr "خطأ غير معروف"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/organization-page.tsx
 #: src/components/organization/use-create-child-team.ts
 msgid "Unknown error."
 msgstr "خطأ غير معروف."
@@ -18825,6 +19158,8 @@ msgstr "مزود غير معروف {0}."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/llm-endpoints/LimitsEditor.tsx
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+#: src/components/organization/budgets/MoneyBox.tsx
 msgid "unlimited"
 msgstr "غير محدود"
 
@@ -18985,6 +19320,10 @@ msgstr "جاري الترقية…"
 msgid "Upload"
 msgstr "رفع"
 
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "Upload CSV"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Upload failed."
 msgstr "فشل الرفع."
@@ -19078,6 +19417,14 @@ msgstr "استخدام AWS Bedrock كخادم خلفي"
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Bedrock"
 msgstr "استخدام Bedrock"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Use defaults"
+msgstr ""
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+#~ msgid "Use example"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
