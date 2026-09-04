@@ -1,7 +1,8 @@
-import { Github } from 'lucide-react';
+import { Github, MessageSquare, Waypoints } from 'lucide-react';
 import * as React from 'react';
 
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
 import { NotionIcon } from '@src/components/icons/NotionIcon';
 import { cn } from '@src/lib/utils';
@@ -51,6 +52,21 @@ const DriveMark: ProviderMark = ({ className }) => <GoogleDriveIcon className={c
 /** Notion, for the same reason as Drive: the hub publishes a path, not a name. */
 const NotionMark: ProviderMark = ({ className }) => <NotionIcon className={className} aria-hidden="true" />;
 
+/** OpenAI's own mark — the repo already draws it for the Codex harness, which is
+ *  OpenAI's CLI. One company, one glyph. */
+const OpenAiMark: ProviderMark = ({ className }) => <CodexIcon className={className} aria-hidden="true" />;
+
+/** OpenRouter has no mark in this repo, and inventing one badly is worse than
+ *  not having it. A routing glyph at least says what the thing IS, and — the
+ *  point — it is not the glyph two neighbouring tiles are wearing. */
+const OpenRouterMark: ProviderMark = ({ className }) => <Waypoints className={className} aria-hidden="true" />;
+
+/** Twilio's red on the messaging glyph. Same reasoning as OpenRouter for the
+ *  shape, plus the one thing about the brand that is unambiguous. */
+const TwilioMark: ProviderMark = ({ className }) => (
+  <MessageSquare className={cn('text-[#F22F46]', className)} aria-hidden="true" />
+);
+
 const MARKS: Record<string, ProviderMark> = {
   github: GithubMark,
   anthropic: AnthropicMark,
@@ -59,6 +75,12 @@ const MARKS: Record<string, ProviderMark> = {
   google: DriveMark,
   googledrive: DriveMark,
   notion: NotionMark,
+  // The API-key half of the catalogue. These three shipped one shared
+  // brain-circuit between them — a section whose whole job is telling keys apart
+  // said nothing about which was which.
+  openai: OpenAiMark,
+  openrouter: OpenRouterMark,
+  twilio: TwilioMark,
 };
 
 /** The bespoke mark for a provider, or `null` — callers then fall back to the
