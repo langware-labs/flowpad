@@ -924,13 +924,23 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             "code_verifier": session.code_verifier,
         }
 
-        # Exchange code for token
+        # Exchange code for token.
+        #
+        # FORM-encoded unless the provider is the exception: RFC 6749 §4.1.3
+        # says the token request is `application/x-www-form-urlencoded`, and a
+        # spec-following endpoint rejects a JSON body outright rather than
+        # ignoring it (Entra answers `AADSTS900144: the request body must
+        # contain 'grant_type'` — it never parsed the JSON). JSON was hard-coded
+        # here while Anthropic was the only local code grant, so its endpoint's
+        # tolerance read as the rule.
+        body = {"json": token_data} if provider.token_request_json else {"data": token_data}
+        content_type = "application/json" if provider.token_request_json else "application/x-www-form-urlencoded"
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 provider.endpoints.token_url,
-                json=token_data,
+                **body,
                 headers={
-                    "Content-Type": "application/json",
+                    "Content-Type": content_type,
                     "Accept": "application/json",
                 },
                 timeout=30.0,
