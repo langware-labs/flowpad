@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
+import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { notify } from '@src/notifications';
@@ -108,16 +109,27 @@ export function DataSourceDialog({
   open,
   onOpenChange,
   editing,
+  owner,
+  only,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When set, the form edits this source instead of creating one. */
   editing?: DataSource | null;
+  /** Who the new source belongs to (a user or an agent). Omitted → the backend
+   *  stamps the local user, so every existing caller is unchanged. */
+  owner?: TypeId | null;
+  /** Narrow the provider tiles. Never to nothing: a backend that predates the
+   *  flag a filter reads answers false for every spec, and an empty picker
+   *  reads as a broken dialog — so the full list is the fallback. */
+  only?: (spec: DataSourceSpec) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
-  const { specs, specFor } = useSourceSpecs();
+  const { specs: installed, specFor } = useSourceSpecs();
+  const narrowed = only ? installed.filter(only) : installed;
+  const specs = narrowed.length ? narrowed : installed;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -185,6 +197,7 @@ export function DataSourceDialog({
           status: draft.enabled ? 'new' : 'disabled',
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
+          owner: owner ? owner.toString() : null,
         });
         await source.save();
         notify.success({ title: t`Added ${source.name}` });

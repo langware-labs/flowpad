@@ -91,7 +91,7 @@ export function useChannelAttribution() {
 const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
 // The source chip is the one a row is recognised BY, so its glyph is bigger than
 // a category's and keeps its brand colour — the text stays quiet.
-const SOURCE_CHIP = 'gap-1 rounded border border-border/60 bg-muted px-1 py-0 align-middle text-[10px] font-medium leading-tight text-muted-foreground';
+const SOURCE_CHIP = 'gap-1 rounded border border-border bg-muted ps-1 pe-1.5 py-px align-middle text-[10px] font-semibold leading-tight text-muted-foreground';
 
 /** The per-row source chip: icon + channel, only for channel conversations.
  *  Hub-native rows pass no origin and render nothing — absence means "ours". */

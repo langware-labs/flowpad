@@ -56,7 +56,8 @@ import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
 import { SourceChip } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar } from './AttachedChannelsBar';
+import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { sourceForOrigin } from '@src/components/conversation/channel-attribution';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -137,6 +138,9 @@ interface ConversationListRowProps {
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
+  /** Source ids the list is narrowed to (empty = all) and how a message names its source. */
+  channelFilter?: ReadonlySet<string>;
+  sourceIdOf?: (message: FlowMessage) => string | undefined;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
   allowedMessageIds?: ReadonlySet<string>;
@@ -156,6 +160,8 @@ export function ConversationListRow({
   onRequestDelete,
   cloudUserId,
   onVisibilityChange,
+  channelFilter,
+  sourceIdOf,
   refSetter,
   agentId,
   allowedMessageIds,
@@ -240,6 +246,12 @@ export function ConversationListRow({
     isHidden = facets.isArchived || !facets.isUnread || inLoadingState;
   } else {
     isHidden = facets.isArchived || inLoadingState;
+  }
+  // The channel filter narrows on the latest message's source; a row whose
+  // message is not loaded yet cannot claim a channel, so it waits hidden.
+  if (!isHidden && channelFilter && channelFilter.size > 0) {
+    const sid = latestMessage && sourceIdOf ? sourceIdOf(latestMessage) : undefined;
+    isHidden = !sid || !channelFilter.has(sid);
   }
 
   const convId = conv.id ?? '';
@@ -434,6 +446,12 @@ export function ConversationListRow({
 
 // ── InboxView ───────────────────────────────────────────────────────────────
 
+/** Whose channels an inbox shows: the agent's on an agent inbox, else the local user's. */
+function channelsOwnerFor(agentId: string | undefined, localUserId: string | undefined): TypeId | null {
+  if (agentId) return new TypeId(Agent.type, agentId);
+  return localUserId ? new TypeId(User.type, localUserId) : null;
+}
+
 export function InboxView({ agentId }: { agentId?: string } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -459,10 +477,15 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   // and rows carry the user's real id.
   const { localUser } = useContext();
   const localUserId = localUser?.id;
-  const channelsOwner = useMemo(
-    () => (agentId ? new TypeId(Agent.type, agentId) : localUserId ? new TypeId(User.type, localUserId) : null),
-    [agentId, localUserId],
+  // The channel filter: source ids the list is narrowed to. Local like the text
+  // search, and empty means everything.
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  const { rows: ownerChannels } = useAttachedChannels(channelsOwnerFor(agentId, localUserId));
+  const sourceIdOf = useCallback(
+    (m: FlowMessage) => sourceForOrigin(ownerChannels, m.origin, m.origin_local)?.id,
+    [ownerChannels],
   );
+  const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
   const hubReachable = connection.status === 'connected' || connection.status === 'verified';
@@ -1225,7 +1248,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             how one gets some. */}
         {!inHelpdeskView && !initialLoading && (
           <div
-            className="flex h-9 items-center gap-3 border-b border-border/40 bg-muted/10 px-3"
+            className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
             data-testid="inbox-select-all-row"
           >
             {visibleCount > 0 && (
@@ -1242,7 +1265,14 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 </span>
               </>
             )}
-            {channelsOwner && <AttachedChannelsBar owner={channelsOwner} className="ms-auto" />}
+            {channelsOwner && (
+              <AttachedChannelsBar
+                owner={channelsOwner}
+                selected={channelFilter}
+                onSelectedChange={setChannelFilter}
+                className="ms-auto"
+              />
+            )}
           </div>
         )}
 
@@ -1294,6 +1324,8 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
+              channelFilter={channelFilter}
+              sourceIdOf={sourceIdOf}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}
