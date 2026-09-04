@@ -40,6 +40,13 @@ export interface SpecConfigField {
   pattern?: string;
   /** Marks the field naming the remote account. Descriptive only. */
   account_key?: boolean;
+  /**
+   * The provider can enumerate this field's legal values — GCS buckets, Drive shared
+   * drives, Slack channels — so the form offers a picker instead of asking for an id
+   * nobody can produce from memory. `type` still decides the shape: `text` picks one,
+   * `lines` picks many. Mirrors `ConfigFieldSpec.choices`.
+   */
+  choices?: boolean;
 }
 
 export interface IDataSourceSpec extends IEntity {
@@ -50,6 +57,8 @@ export interface IDataSourceSpec extends IEntity {
   channel_icon_names?: Record<string, string>;
   setup_wiki?: string;
   runtime?: string;
+  /** The driver can push a reply back to its channel — a source of this provider is a MessageSource. */
+  sends?: boolean;
   reflect?: string[];
   /** The form's fields, under the manifest's own key. */
   config?: Record<string, SpecConfigField>;

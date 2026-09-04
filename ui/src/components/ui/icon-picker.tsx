@@ -9,7 +9,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * IconPicker — generic, reusable two-tab icon chooser.
  *
  * Stores a single string value of either kind (rendered everywhere by
- * `lib/icon-value.tsx`):
+ * `FlowIcon`):
  *  - lucide tab: a curated, searchable subset of lucide export names — the
  *    app's existing `lucideByName` convention;
  *  - emoji tab: a curated emoji grid, stores the character.

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from typing import Optional
+from urllib.parse import quote
 
 from flow_sdk.core.connections.types import (
     ConnectionConnectError,
+    ConnectionKind,
     ConnectionSpec,
     ConnectionStage,
+    ConnectionState,
     ConnectionTokenResult,
     ConnectionTokenStatus,
 )
@@ -36,6 +39,15 @@ def _display_name(row) -> str:
     return str(row.name).replace("_", " ").replace("-", " ").title()
 
 
+def _oauth_state(row) -> ConnectionState:
+    """A grant's three readings, from the one env row that knows them."""
+    if row.needs_reauth:
+        return ConnectionState.NEEDS_REAUTH
+    if row.var_status == EnvStatusEnum.AVAILABLE:
+        return ConnectionState.CONNECTED
+    return ConnectionState.DISCONNECTED
+
+
 async def _list_connection_specs_local() -> list[ConnectionSpec]:
     """Return exactly the providers visible in the canonical Connections table."""
     from flow_sdk.core.oauth import get_oauth_providers_as_env_table  # noqa: PLC0415
@@ -45,46 +57,79 @@ async def _list_connection_specs_local() -> list[ConnectionSpec]:
         ConnectionSpec(
             provider=row.name,
             display_name=_display_name(row),
+            kind=ConnectionKind.OAUTH,
+            state=_oauth_state(row),
             credential_ref=row.ref_name or "",
-            connected=row.var_status == EnvStatusEnum.AVAILABLE and not row.needs_reauth,
-            identity=None,
+            connected=_oauth_state(row) is ConnectionState.CONNECTED,
+            identity="",
             scopes=tuple(row.oauth_scopes or ()),
-            icon=row.icon,
+            icon=row.icon or "",
         )
         for row in table.values
         if row.name and row.ref_name
     ]
 
 
-async def _list_connection_specs_with_client(client) -> list[ConnectionSpec]:
-    response = await client.request("GET", "/api/v1/graph/oauth/_/catalogue")
+async def _fetch_rows(client, path: str, key: str, what: str) -> list[ConnectionSpec]:
+    """GET *path* through a leased local service and project ``data[key]``."""
+    response = await client.request("GET", path)
     if not response.success or not isinstance(response.data, dict):
         raise ConnectionConnectError(
             "",
             ConnectionStage.CATALOG,
             response.error_code or "catalog_unavailable",
-            response.message or "Connection catalogue is unavailable",
+            response.message or f"Connection {what} is unavailable",
         )
-    values = response.data.get("values")
+    values = response.data.get(key)
     if not isinstance(values, list):
         raise ConnectionConnectError(
-            "",
-            ConnectionStage.CATALOG,
-            "invalid_response",
-            "Connection catalogue returned invalid values",
+            "", ConnectionStage.CATALOG, "invalid_response", f"Connection {what} returned invalid values"
         )
-    return [ConnectionSpec(**value) for value in values if isinstance(value, dict)]
+    return [ConnectionSpec.from_wire(value) for value in values if isinstance(value, dict)]
 
 
-async def list_connection_specs() -> list[ConnectionSpec]:
-    """Read the canonical catalogue through the selected local service."""
+async def _list_connection_specs_with_client(client) -> list[ConnectionSpec]:
+    return await _fetch_rows(client, "/api/v1/graph/oauth/_/catalogue", "values", "catalogue")
+
+
+async def _list_connections_with_client(client, project_id: str = "") -> list[ConnectionSpec]:
+    query = f"?project_id={quote(project_id, safe='')}" if project_id else ""
+    return await _fetch_rows(
+        client, f"/api/v1/graph/compute_node/@local/connections{query}", "connections", "list"
+    )
+
+
+async def _leased(fetch):
+    """Run *fetch(client)* against the selected local service, typing its failure."""
     from flow_sdk.core.connections.service import FlowServiceError, flow_service  # noqa: PLC0415
 
     try:
         async with flow_service() as lease:
-            return await _list_connection_specs_with_client(lease.client)
+            return await fetch(lease.client)
     except FlowServiceError as exc:
         raise ConnectionConnectError("", ConnectionStage.SERVICE, exc.code, exc.detail) from exc
+
+
+async def list_connections(project_id: str = "") -> list[ConnectionSpec]:
+    """Every connection this box HAS — all four kinds, consolidated by the backend.
+
+    Distinct from :func:`list_connection_specs`, and the distinction is the same
+    one the screen makes between its table and its Add dialog: this is what you
+    have, that is the catalogue of what you could connect. A provider you have
+    never authorized is in the catalogue and not in this list, which is exactly
+    why ``connect`` cannot be built on it.
+    """
+    return await _leased(lambda client: _list_connections_with_client(client, project_id))
+
+
+async def list_connection_specs() -> list[ConnectionSpec]:
+    """Read the canonical OAuth CATALOGUE — every provider, connected or not.
+
+    The connect/test state machines run off this: you authorize a provider you do
+    NOT yet hold, so a held-only list could never serve them. For "what does this
+    box have", use :func:`list_connections`.
+    """
+    return await _leased(_list_connection_specs_with_client)
 
 
 async def resolve_connection_spec(provider: str) -> Optional[ConnectionSpec]:

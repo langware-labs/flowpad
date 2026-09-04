@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "name": "gcs",
+  "title": "Google Cloud Storage",
+  "icon_name": "GoogleCloudStorage",
+  "description": "Objects from a GCS bucket, downloaded and indexed. Needs a Google connection.",
+  "auth": {
+    "connector": "google",
+    "scopes": [
+      "https://www.googleapis.com/auth/devstorage.read_only"
+    ]
+  },
+  "reflect": [
+    "none",
+    "copy"
+  ],
+  "config": {
+    "bucket": {
+      "type": "text",
+      "required": true,
+      "account_key": true,
+      "choices": true,
+      "label": "Bucket",
+      "placeholder": "acme-docs",
+      "hint": "Pick from the buckets in the project below, or type the name (the gs:// prefix is optional). This names WHICH remote account the source serves."
+    },
+    "project": {
+      "type": "text",
+      "label": "GCP project",
+      "placeholder": "acme-prod",
+      "hint": "Only needed to LIST buckets — a bucket you name yourself syncs without it. Google has no way to enumerate buckets except within one project."
+    },
+    "prefixes": {
+      "type": "lines",
+      "label": "Prefixes",
+      "placeholder": "handbook/",
+      "hint": "One per line. Leave empty for the whole bucket. GCS has no directories — a prefix is a query, and each gets its own cursor, so keep them non-overlapping or the objects under both are enumerated twice."
+    },
+    "cache_root": {
+      "type": "path",
+      "advanced": true,
+      "label": "Cache folder",
+      "hint": "Where downloaded bytes land. Defaults to this instance's own directory."
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}

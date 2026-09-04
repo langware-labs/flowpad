@@ -13,9 +13,10 @@ interface ProvideValueInlineProps {
 }
 
 /**
- * The inline "type the value here" wizard. Used by the Project Environment tab
- * and by ProjectHome's Secrets card, which it was lifted out of, so both
- * surfaces provide a value the same way.
+ * The inline "type the value here" wizard. Lifted out of ProjectHome's Secrets
+ * card so several surfaces could provide a value the same way; both of those
+ * surfaces have since been retired, and the sole consumer is now the Connections
+ * table's setup panel (`connections-manager/credential-rows-view.tsx`).
  *
  * It never reads a value back and never receives one — providing is one-way. The
  * caller decides where the value goes (`provide-secret` routes it to the

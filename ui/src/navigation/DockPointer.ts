@@ -2103,7 +2103,46 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
       return `${pagePrefix}${this.viewType}|`;
     }
+    return this.plainKey;
+  }
+
+  /** Identity for a dock that none of `tabHash`'s special arms claim: the page
+   *  namespace, the viewType and the pointer. Named because `favoriteKey` needs
+   *  the same string for a surface `tabHash` refuses to answer for at all. */
+  private get plainKey(): string {
+    const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
     return `${pagePrefix}${this.viewType}|${this.pointer ?? ''}`;
+  }
+
+  /** The JSON form of {@link plainKey} — `toJSON`'s default arm, likewise shared
+   *  with `toFavoriteJSON` so the shape `fromJSON` must accept is written once. */
+  private get plainJSON(): string {
+    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+  }
+
+  /**
+   * Identity for a FAVORITE — a different question from identity for a TAB, and
+   * the app root is where the two answers diverge.
+   *
+   * Home is `chrome: 'fullbleed'`, so it is deliberately not a tab and `tabHash`
+   * returns null for it; that null is load-bearing (nothing materializes a Tab
+   * row for `/`, the strip highlights no chip). It is still a place you can want
+   * to come back to. So this is `tabHash` without the full-bleed veto — the same
+   * `plainKey` every ordinary dock gets — rather than a bespoke key invented
+   * elsewhere and kept in sync by hand.
+   *
+   * Restricted to the root: a bare shell (`/dock/shell` with no session) is the
+   * terminal HOST, and bookmarking it would bookmark nothing.
+   */
+  get favoriteKey(): string | null {
+    return this.tabHash ?? (this.isRoot ? this.plainKey : null);
+  }
+
+  /** What a favorite of this dock stores, restored through `fromJSON` +
+   *  `openDock`. Mirrors {@link favoriteKey}: `toJSON` when there is a tab, the
+   *  plain form for the root, null for anything else. */
+  toFavoriteJSON(): string | null {
+    return this.toJSON() ?? (this.isRoot ? this.plainJSON : null);
   }
 
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
@@ -2165,7 +2204,7 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
       return JSON.stringify({ viewType: this.viewType, pointer: '' });
     }
-    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+    return this.plainJSON;
   }
 
   /** Deserialize a stored Tab.pointer JSON back to a navigable DockPointer.
@@ -2281,6 +2320,17 @@ export class DockPointer implements IDockPointer {
     if (assetSub !== null) {
       const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
       return typeid ? DockPointer.tryTypeId(typeid) : null;
+    }
+    // A K_BROWSER dock is `<method>/<value>` (`typeid/<type>-<id>` | `vfs/<path>`),
+    // so its value must be split off by the parser that owns that grammar. Without
+    // this branch it fell to the generic fallback below, whose `/typeid/` test only
+    // matches an EMBEDDED marker — a pointer that *begins* `typeid/` slips past it,
+    // and `new TypeId('typeid/markdown-<uuid>')` then splits on the first `-` and
+    // yields type `typeid/markdown`. That produced `GET /graph/typeid/markdown/<uuid>`
+    // → 422, plus the `TypeId null` follow-ons, on every k-browser typeid address.
+    if (this.viewType === ViewType.K_BROWSER) {
+      const kb = DockPointer.parseKnowledgeBrowserPointer(pointer);
+      return kb?.method === 'typeid' ? DockPointer.tryTypeId(kb.value) : null;
     }
     const candidate = pointer.includes('/typeid/') ? (pointer.split('/typeid/').pop() ?? '') : pointer;
     return (

@@ -546,7 +546,7 @@ async def _stamp_identity(user, name: str, provider: str, value: Any) -> None:
         logger.debug("could not stamp identity on %s", name, exc_info=True)
 
 
-async def record_credential(user, provider: str, value: Any) -> bool:
+async def record_credential(user, provider: str, value: Any, *, name: str | None = None) -> bool:
     """THE place a provider credential is written. Latest login wins.
 
     One seam rather than a save function per provider, because "latest wins" is
@@ -559,17 +559,27 @@ async def record_credential(user, provider: str, value: Any) -> bool:
     The credential NAME comes from the registry, never a literal — a name typed
     at the write site and resolved from the registry at the read site is a
     silently-unreadable token.
+
+    ``name`` overrides which registry name is written, for a provider that
+    issues a SECOND identity: Slack's one grant returns a bot token beside the
+    user's. Without the override this function re-derives the user name and
+    ignores its caller, so adopting the bot token would overwrite the user token
+    in place — the caller would look right and the credential would be gone.
+    The identity stamp is skipped for a non-default name: `account_key` belongs
+    to the account that authorized, and a bot row must not compete for it.
     """
     from flow_sdk.request_context.methods import set_user_credentials  # noqa: PLC0415
 
-    name = user_credentials_name(provider)
+    default_name = user_credentials_name(provider)
+    name = name or default_name
     if not name:
         logger.warning("record_credential: unknown provider %r", provider)
         return False
     try:
         await set_user_credentials(user, name, value, user.id)
         await _mirror_credential_row(user, name)
-        await _stamp_identity(user, name, provider, value)
+        if name == default_name:
+            await _stamp_identity(user, name, provider, value)
     except Exception as e:  # noqa: BLE001
         logger.error("record_credential(%s) failed: %s", provider, e)
         return False
@@ -914,13 +924,23 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             "code_verifier": session.code_verifier,
         }
 
-        # Exchange code for token
+        # Exchange code for token.
+        #
+        # FORM-encoded unless the provider is the exception: RFC 6749 §4.1.3
+        # says the token request is `application/x-www-form-urlencoded`, and a
+        # spec-following endpoint rejects a JSON body outright rather than
+        # ignoring it (Entra answers `AADSTS900144: the request body must
+        # contain 'grant_type'` — it never parsed the JSON). JSON was hard-coded
+        # here while Anthropic was the only local code grant, so its endpoint's
+        # tolerance read as the rule.
+        body = {"json": token_data} if provider.token_request_json else {"data": token_data}
+        content_type = "application/json" if provider.token_request_json else "application/x-www-form-urlencoded"
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 provider.endpoints.token_url,
-                json=token_data,
+                **body,
                 headers={
-                    "Content-Type": "application/json",
+                    "Content-Type": content_type,
                     "Accept": "application/json",
                 },
                 timeout=30.0,

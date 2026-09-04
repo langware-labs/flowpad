@@ -36,6 +36,25 @@ def change_tag(provider: str) -> str:
     return f"ingest.{provider}.{CHANGE_LAYER}.{CHANGE_VERB}"
 
 
+def _payload(
+    source_id: str, provider: str, *, scope: str, refs, tombstones, origin, from_sha: str, to_sha: str, reason: str
+) -> dict:
+    return {
+        "source_id": str(source_id),
+        "provider": provider,
+        "scope": scope,
+        "refs": list(refs),
+        "tombstones": list(tombstones),
+        "origin": origin or {},
+        "from_sha": from_sha,
+        "to_sha": to_sha,
+        # Diagnostics only. Nothing may branch on it — the moment something
+        # does, the producer stops being interchangeable and the whole point
+        # of one envelope is gone.
+        "reason": reason,
+    }
+
+
 def emit_change(
     source_id: str,
     provider: str,
@@ -54,21 +73,41 @@ def emit_change(
     return emit_tag(
         change_tag(provider),
         target_of("data_source", str(source_id)),
-        {
-            "source_id": str(source_id),
-            "provider": provider,
-            "scope": scope,
-            "refs": list(refs),
-            "tombstones": list(tombstones),
-            "origin": origin or {},
-            "from_sha": from_sha,
-            "to_sha": to_sha,
-            # Diagnostics only. Nothing may branch on it — the moment something
-            # does, the producer stops being interchangeable and the whole point
-            # of one envelope is gone.
-            "reason": reason,
-        },
+        _payload(source_id, provider, scope=scope, refs=refs, tombstones=tombstones,
+                 origin=origin, from_sha=from_sha, to_sha=to_sha, reason=reason),
     )
+
+
+#: The verb a SYNC announces once it has placed a page — a sibling of ``received``, never
+#: the same tag. ``handle_change`` polls on ``received``; a sync that emitted ``received``
+#: would re-poll itself after every reflecting cycle, forever.
+APPLIED_VERB = "applied"
+
+
+def applied_tag(provider: str) -> str:
+    return f"ingest.{provider}.{CHANGE_LAYER}.{APPLIED_VERB}"
+
+
+def emit_applied(
+    source_id: str,
+    provider: str,
+    *,
+    refs: Iterable[str] = (),
+    tombstones: Iterable[str] = (),
+    renames: Optional[dict] = None,
+) -> Any:
+    """Announce that a source's change has been APPLIED locally — the paths are final.
+
+    Same envelope as ``emit_change`` (identity and a locator, never content), same rule that
+    the hint is an optimization: a consumer that missed it re-derives from the ``SourceChange``
+    row the sync wrote, which is the durable form of the same fact.
+    """
+    from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
+
+    payload = _payload(source_id, provider, scope="", refs=refs, tombstones=tombstones,
+                       origin=None, from_sha="", to_sha="", reason="applied")
+    payload["renames"] = dict(renames or {})
+    return emit_tag(applied_tag(provider), target_of("data_source", str(source_id)), payload)
 
 
 async def handle_change(event: Any) -> bool:

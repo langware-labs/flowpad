@@ -256,7 +256,7 @@ async def test_logged_out_hub_provider_connects_after_one_correlated_cloud_login
         display_name="Slack",
         credential_ref="slack_credentials",
         connected=False,
-        identity=None,
+        identity="",
         scopes=("chat:write",),
         icon="Slack",
     )
@@ -378,3 +378,36 @@ async def test_logged_out_hub_provider_connects_after_one_correlated_cloud_login
         ("GET", "/api/v1/graph/oauth/slack/wait-callback?state=slack-request"),
         ("GET", "/api/v1/graph/oauth/slack/test"),
     ]
+
+
+async def test_catalogue_rows_survive_a_server_that_disagrees_about_the_shape():
+    """The `from_wire` guarantee, and why the splat had to go.
+
+    The CLI leases whatever backend is running, so a new client meets an old
+    server and an old client meets a new one. `ConnectionSpec(**value)` turned
+    either mismatch into a `TypeError` out of the transport layer; projecting
+    means an unknown key is ignored and a missing one takes its default.
+    """
+    from flow_sdk.core.connections.types import ConnectionSpec
+
+    # A NEWER server sending a field this client has never heard of.
+    newer = ConnectionSpec.from_wire(
+        {
+            "provider": "slack",
+            "display_name": "Slack",
+            "credential_ref": "slack_credentials",
+            "connected": True,
+            "identity": None,
+            "scopes": ["channels:read"],
+            "icon": "Slack",
+            "kind": "oauth",
+            "state": "connected",
+        }
+    )
+    assert newer.provider == "slack" and newer.connected is True
+    assert newer.scopes == ("channels:read",)
+
+    # An OLDER server omitting fields this client knows about.
+    older = ConnectionSpec.from_wire({"provider": "github", "display_name": "GitHub"})
+    assert older.credential_ref == "" and older.connected is False
+    assert older.scopes == () and older.identity == "" and older.icon == ""

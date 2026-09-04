@@ -25,7 +25,9 @@ describe('AgenticProcess spawn regression', () => {
       context_data: {},
     }).save();
 
-    await process.start({ instruction: 'echo hello', ptyTimeout: 3000 });
+    // Opening an idle composer proves the spawn/attach path without making a
+    // provider request; CI supplies an inert funding source for the resolver.
+    await process.start();
     expect(process.shell_id).toBeTruthy();
   }, 10000);
 });

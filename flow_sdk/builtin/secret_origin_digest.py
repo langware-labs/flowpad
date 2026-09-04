@@ -86,6 +86,23 @@ def record_digest(project_id: str, env_var: str, value: str) -> None:
         logger.debug("[secret-digest] could not record digest for %s: %s", env_var, e)
 
 
+async def clear_digest(project_id: str, env_var: str) -> None:
+    """Forget the baseline. Best-effort; never raises.
+
+    Paired with deleting the value: a digest that outlives its secret would make
+    the next value someone provides look like a CHANGE to a value that is no
+    longer there, and raise a drift warning about nothing.
+
+    Async, unlike its ``record_`` sibling, only because ``delete_secret`` is.
+    """
+    from flow_sdk.cli.auth.secrets import delete_secret  # noqa: PLC0415
+
+    try:
+        await delete_secret(digest_name(project_id, env_var))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[secret-digest] could not clear digest for %s: %s", env_var, e)
+
+
 def read_digest(project_id: str, env_var: str) -> Optional[str]:
     from flow_sdk.cli.auth.secrets import read_secret  # noqa: PLC0415
 

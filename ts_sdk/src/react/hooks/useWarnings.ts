@@ -5,6 +5,7 @@ import {
   createCloudDisconnectedWarning,
   createHarnessLoginWarning,
   createHubRequestFailedWarning,
+  createEmptyProjectsWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
@@ -13,6 +14,11 @@ import {
   HubClientErrorInfo,
   UserWarning,
 } from '../..';
+import {
+  getCleanupSummary,
+  shouldWarnAboutEmptyProjects,
+  subscribeToCleanupSummary,
+} from '../../stores/project-cleanup-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { HARNESS_CAPABILITY_KINDS, capabilityManager } from '../../capabilities';
 import { useContext } from './useContext';
@@ -77,6 +83,22 @@ export function useWarnings() {
       cloudManager.off('last_hub_error_changed', handler);
     };
   }, []);
+
+  // Empty-project count from the last project scan. Stored as the boolean-plus-
+  // count the warning needs rather than an event tick, so an unchanged scan
+  // result does not rewrite the global warnings context.
+  const [emptyProjects, setEmptyProjects] = useState<number>(() => {
+    const held = getCleanupSummary();
+    return shouldWarnAboutEmptyProjects(held) ? (held?.empty_count ?? 0) : 0;
+  });
+  useEffect(
+    () =>
+      subscribeToCleanupSummary(() => {
+        const held = getCleanupSummary();
+        setEmptyProjects(shouldWarnAboutEmptyProjects(held) ? (held?.empty_count ?? 0) : 0);
+      }),
+    [],
+  );
 
   // Re-derive the no-harness verdict on capability events, but store the
   // boolean, not an event counter: setState with an unchanged value bails
@@ -158,8 +180,15 @@ export function useWarnings() {
       warnings.push(createSnifferNotFoundWarning());
     }
 
+    // Empty workspace folders piling up. Informational — the click opens the
+    // cleanup screen, and nothing is removed until the user says so there.
+    if (emptyProjects > 0) {
+      warnings.push(createEmptyProjectsWarning(emptyProjects));
+    }
+
     return warnings;
   }, [
+    emptyProjects,
     isDesktop,
     cloudLoginAvailable,
     cloudConnectionStatus,

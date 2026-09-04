@@ -19,6 +19,9 @@ export const RETIRED_DOCK_VIEWS: Partial<Record<ViewType, { viewType: ViewType; 
   [ViewType.ENVIRONMENT]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
   [ViewType.CONNECTIONS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
   [ViewType.API_KEYS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
+  // Skills folded into the Assets browser; `/dock/skills` otherwise rendered
+  // nothing (no registry entry) and fell through to Home.
+  [ViewType.SKILLS]: { viewType: ViewType.ASSETS, pointer: 'list/skill' },
 };
 
 /**

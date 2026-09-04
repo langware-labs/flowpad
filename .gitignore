@@ -335,3 +335,7 @@ flow_sdk/system_projects/**/.claude/journeys/*/runs/
 # received Claude Code transcripts installed into this checkout as a project
 # (claude_session assets land in <project>/agentic-assets/claude_session/) — not repo content
 /agentic-assets/claude_session/
+
+# Icon-gallery example: vite's dep cache and build output (see examples/icon-gallery/README.md)
+examples/icon-gallery/.vite/
+examples/icon-gallery/dist/

@@ -18,12 +18,15 @@
     "types": ["vite/client", "vitest/jsdom", "node"],
     /* Bundler mode */
     "moduleResolution": "bundler",
+    /* The SDK now ships one component (react/FlowIcon.tsx). React itself stays
+       external — see ui/vite.sdk.config.ts — this only lets tsc read the JSX. */
+    "jsx": "react-jsx",
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["dist", "node_modules"]
 }

@@ -20,8 +20,6 @@ import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from 
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { lucideByName } from '@src/lib/lucide-by-name';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader } from '@src/components/ui/card';
@@ -31,8 +29,10 @@ import { cn } from '@src/lib/utils';
 import { WikiButton } from '@src/components/wiki-tip';
 import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
+import { sourceIcon } from './source-icon';
 import { SourceMenu } from './SourceMenu';
 import { SourceStreams } from './SourceStreams';
+import { useSourceToggle } from './use-source-toggle';
 
 interface Props {
   source: DataSource;
@@ -52,13 +52,9 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // The spec's glyph when one is installed, else the type's — and for a
-  // multi-channel transport (agent), the CHANNEL's own glyph from the spec's
-  // channel_icon_names, so a Gmail card and a Slack card don't both read
-  // "robot". A screen of sources is scanned by what they reach, not by
-  // 'these are all data sources'.
-  const channelIcon = source.channel ? spec?.channel_icon_names?.[source.channel] : undefined;
-  const iconName = channelIcon || spec?.icon_name;
-  const Icon = iconName ? lucideByName(iconName) : iconForType(DataSource.type);
+  // multi-channel transport (agent), the CHANNEL's own glyph. A screen of
+  // sources is scanned by what they reach, not by 'these are all data sources'.
+  const Icon = sourceIcon(spec, source.channel);
 
   // Gated on `open`: a collapsed card issues no request at all (the hook
   // returns before `watchQuery` when disabled), and the filter means one
@@ -124,27 +120,7 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
     }
   }, [source, t]);
 
-  const toggleEnabled = useCallback(async () => {
-    const previous = source.status;
-    // Un-pausing returns it to `new` rather than `active`: the backend decides
-    // whether this driver still owes a setup step, and a source paused mid-setup
-    // must not skip it.
-    const next = source.isActive || source.needsSetup ? 'disabled' : 'new';
-    try {
-      source.status = next;
-      await source.save();
-      source.markEdit();
-      notify.success({
-        title: next === 'disabled' ? t`Paused.` : t`Resumed — it polls on the next tick.`,
-      });
-    } catch (error) {
-      source.status = previous; // the save failed, so the row never moved
-      notify.error({
-        title: t`Could not update ${source.name || source.provider}`,
-        message: errorMessage(error, t`The change was not saved.`),
-      });
-    }
-  }, [source, t]);
+  const { toggle: toggleEnabled } = useSourceToggle(source);
 
   // Active, but `is_due` will still refuse it. Without calling this out the
   // card reads as healthy-but-idle and the user waits forever.

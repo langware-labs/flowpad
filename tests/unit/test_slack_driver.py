@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -476,3 +477,63 @@ async def test_slack_message_spec_replies_into_the_channel_thread():
     assert r.reply_to_external_id == "100.000100"
     with pytest.raises(Exception):
         r.body = "edited"
+
+
+@pytest.fixture
+def post_as(serve, monkeypatch):
+    """Post from a source owned by `agent`; returns (payload, outcome).
+
+    The three identity tests differ only in the Agent row and the assertions,
+    and this file already keeps its setup in helpers (`serve`, `_source`,
+    `_view`) for exactly that reason.
+    """
+
+    async def _run(agent):
+        async def _get(_id):
+            return agent
+
+        monkeypatch.setattr("flow_sdk.builtin.agent.Agent.get_by_id", _get)
+        slack = serve(
+            [
+                {"ok": True, "ts": "300.000300", "channel": CHANNEL},
+                {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"},
+            ]
+        )
+        source = _source(agent_id="a-1")
+        await source.save()
+        outcome = await SlackDriver().send(source, thread_key="100.000100", to=CHANNEL, text="on it")
+        return json.loads(slack.bodies[0]), outcome
+
+    return _run
+
+
+async def test_send_posts_as_the_agent_that_owns_the_source(post_as):
+    """The demo, at the payload level: the post carries the agent's name and emoji.
+
+    Resolved from `config["agent_id"]` — the same key the INBOUND half already
+    reads — so a channel shows one identity for an agent, not one name in
+    Flowpad and another in Slack.
+    """
+    posted, _ = await post_as(SimpleNamespace(name="slack-summarizer", avatar="\U0001f4ac"))
+
+    assert posted["username"] == "slack-summarizer"
+    assert posted["icon_emoji"] == ":speech_balloon:"
+
+
+async def test_a_non_emoji_avatar_sends_a_name_and_never_an_icon_url(post_as):
+    """An uploaded avatar lives at 127.0.0.1 behind auth; Slack fetches
+    ``icon_url`` from its own network, so there is nothing to point at. Sending
+    one would be a broken image on every post."""
+    posted, _ = await post_as(SimpleNamespace(name="researcher", avatar="./avatar.png"))
+
+    assert posted["username"] == "researcher"
+    assert "icon_emoji" not in posted
+    assert "icon_url" not in posted
+
+
+async def test_a_missing_agent_row_still_posts(post_as):
+    """Identity is a nicety — exactly how `_ensure_identity` already treats it."""
+    posted, outcome = await post_as(None)
+
+    assert outcome.external_id == "300.000300"
+    assert "username" not in posted

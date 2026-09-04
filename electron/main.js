@@ -405,6 +405,18 @@ ipcMain.on('set-menu-visible', (_event, visible) => {
   applyMenu();
 });
 
+// THE navigation-state string for the `[nav]` trace. Module scope so `startApp`
+// can log it too, not just createWindow()'s closure — one formatter, so the
+// fields can never drift between call sites.
+function navStateFor(win) {
+  try {
+    const h = win.webContents.navigationHistory;
+    return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${win.webContents.getURL()}`;
+  } catch (err) {
+    return `<navState unavailable: ${err.message}>`;
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -437,14 +449,7 @@ function createWindow() {
   // two did-navigate lines. Pairs with the frontend toplog `navigation` tag
   // (window.history pushState/popstate from NavigationActions) — together they
   // tell us whether the main process or the renderer is double-stepping.
-  const navState = () => {
-    try {
-      const h = nav();
-      return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${mainWindow.webContents.getURL()}`;
-    } catch (err) {
-      return `<navState unavailable: ${err.message}>`;
-    }
-  };
+  const navState = () => navStateFor(mainWindow);
   const goBack = (source) => {
     const can = nav().canGoBack();
     log.info(`[nav] goBack source=${source} willNavigate=${can} ${navState()}`);
@@ -468,15 +473,32 @@ function createWindow() {
   });
 
   if (isMac) {
-    // macOS surfaces the buttons two ways and never reaches the renderer:
-    //  - a raw mouse `input-event` (button 'back'/'forward'); and
-    //  - with drivers like Logitech Options / Options+ (or the trackpad), a
-    //    `swipe` GESTURE — left = back, right = forward — and ONLY a swipe, no
-    //    mouse button / app-command (confirmed by event capture). Handle both.
+    // macOS delivers the buttons two different ways, and only ONE of them needs
+    // us — proved by real-hardware capture 2026-09-03 (see the `[nav]` trace):
+    //
+    //  - A real X1/X2 button. Chromium ALREADY navigates on it, on mouseUp, all
+    //    by itself. `webContents.on('input-event')` only OBSERVES the event — it
+    //    cannot consume it — so handling mouseDown here does not replace that
+    //    navigation, it ADDS one. That was the double-back: our step on
+    //    mouseDown, Chromium's on mouseUp, ~100ms apart.
+    //  - With drivers like Logitech Options / Options+ (or the trackpad), a
+    //    `swipe` GESTURE instead — left = back, right = forward — and ONLY a
+    //    swipe: no mouse button for Chromium to act on, so this handler is the
+    //    only thing that makes those work.
+    //
+    // Hence: swipe yes, input-event no. Do NOT "restore" the input-event branch
+    // without a physical press against a built artifact — CDP-injected mouse
+    // events do NOT drive Chromium's native path, so under automation the
+    // button looks dead without our handler. That false signal is what sent the
+    // 09-02 fix down the wrong path.
+    // Observation only — Chromium performs the navigation itself. The log line
+    // keeps the button visible in the `[nav]` trace so a future double/missing
+    // step can still be attributed.
     mainWindow.webContents.on('input-event', (_e, input) => {
       if (input.type !== 'mouseDown') return;
-      if (input.button === 'back') goBack('mac:mouse-input-event');
-      else if (input.button === 'forward') goForward('mac:mouse-input-event');
+      if (input.button === 'back' || input.button === 'forward') {
+        log.info(`[nav] mouse ${input.button} button — Chromium navigates ${navState()}`);
+      }
     });
     mainWindow.on('swipe', (_e, direction) => {
       if (direction === 'left') goBack('mac:swipe');
@@ -838,6 +860,18 @@ async function startApp() {
   const startUrl = pendingDeepLink || BACKEND_URL;
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
+  // The splash (`loading.html`) is a real document load, so without this it
+  // stays in the navigation history as entry 0 — and Back from the app's home
+  // screen lands the user on the loading screen. Drop it once the UI commits,
+  // so the app's first screen is the first history entry.
+  mainWindow.webContents.once('did-finish-load', () => {
+    try {
+      mainWindow.webContents.navigationHistory.clear();
+      log.info(`[nav] cleared startup history (splash dropped) ${navStateFor(mainWindow)}`);
+    } catch (err) {
+      log.info(`[nav] could not clear startup history: ${err.message}`);
+    }
+  });
   mainWindow.loadURL(startUrl);
 
   // Open DevTools in development

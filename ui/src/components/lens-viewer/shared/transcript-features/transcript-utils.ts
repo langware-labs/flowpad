@@ -7,7 +7,8 @@ import type { GenericEntry, ProcessIconKey } from '@sdk';
 import { isToolUse } from '@sdk';
 import type { WorkerType } from '@src/hooks/use-transcript';
 
-import { pickProcessIcon } from '../../../icons/process-icons';
+import { processIconTag } from '@sdk';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import type { UnifiedEntry } from './types';
 
 export { formatNumber, formatAgo, formatDuration, formatTime } from '../format-utils';
@@ -72,7 +73,7 @@ export function workerIcon(worker: string | undefined): ComponentType<{ classNam
     if (w.startsWith('opencode')) return 'opencode';
     return 'generic';
   })();
-  return pickProcessIcon(key);
+  return flowIconComponent(processIconTag(key));
 }
 
 export function resolveEntryTimestamp(entry: UnifiedEntry): string | null {

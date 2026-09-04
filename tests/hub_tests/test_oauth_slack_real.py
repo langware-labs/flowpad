@@ -38,7 +38,6 @@ from flow_sdk.core.oauth.provider_registry import (
     prefers_hub_flow,
     user_credentials_name,
 )
-from tests.hub_tests._local_login import login_as
 
 HUB_NAME = hub_credentials_name_for(SLACK)  # SLACK_OAUTH_USER_TOKEN
 
@@ -59,12 +58,6 @@ CONNECT_HINT = (
 )
 
 
-@pytest.fixture
-def hub_session(hub_base_url, hub_login_payload):
-    api_key = login_as(hub_login_payload)
-    user_id = (hub_login_payload.get("user") or {}).get("id")
-    assert user_id, "hub /login returned no user record"
-    return {"api_key": api_key, "user_id": user_id, "base_url": hub_base_url}
 
 
 # ── unattended: everything short of the consent click ────────────────────────

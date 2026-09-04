@@ -4,8 +4,10 @@ import { useTheme } from 'next-themes';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, X, type LucideIcon } from 'lucide-react';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import type { NotificationData, NotificationLevel } from './types';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { notificationText, type NotificationData, type NotificationLevel } from './types';
 import { runAction } from './commands';
+import { isAlertLevel } from './notify';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
 import { NotificationProcessLine } from './NotificationProcessLine';
 
@@ -77,6 +79,20 @@ export function renderToast(data: NotificationData, toastId: string) {
         )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-0.5">
+        {/* A failure is the one notification people need to paste into an issue
+            or a chat, and it is also the one that disappears on a timer. The
+            warnings popover has offered this for a while; the toast is where the
+            text is actually in front of you. Alert levels only — nobody copies
+            "Saved". */}
+        {isAlertLevel(data.level) && (
+          <CopyButton
+            value={() => notificationText(data)}
+            testId="notification-copy"
+            title={t`Copy error text`}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            iconClassName="h-3.5 w-3.5"
+          />
+        )}
         <DiagnoseIconButton subject={data} />
         <button
           onClick={() => sonnerToast.dismiss(toastId)}

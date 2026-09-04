@@ -49,6 +49,7 @@ async def ensure_conversation_entity(
     someone_typeid: Optional[str] = None,
     created_by: Optional[str] = None,
     remote: bool = False,
+    owner=None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
 
@@ -99,6 +100,17 @@ async def ensure_conversation_entity(
             payload["title"] = title_clean
         if parent_typeid is not None:
             payload["shared_context_entities"] = [str(parent_typeid)]
+        # Whose inbox lists it. The thread that minted it says for an ingested
+        # conversation; every other path is the local user's. Distinct from
+        # ``someone_typeid`` (the save-time attribution stamp) and from
+        # ``created_by`` (the hub's creator mirror).
+        resolved_owner = owner
+        if resolved_owner is None:
+            from flow_sdk.inbox.projection import default_owner  # noqa: PLC0415
+
+            resolved_owner = await default_owner()
+        if resolved_owner is not None:
+            payload["owner"] = str(resolved_owner)
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
         # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
@@ -106,6 +118,11 @@ async def ensure_conversation_entity(
             conv = await conv.save(someone_typeid, notify=False)
     else:
         dirty = False
+        if owner is not None and getattr(conv, "owner", None) is None:
+            # A pre-owner row being touched by a caller that knows the owner:
+            # stamp it, so the inbox filter finds it without the backfill.
+            conv.owner = owner
+            dirty = True
         if participants and not (conv.members or []):
             # Backfill the roster from the bundle so the reply-recipient
             # resolver can find the other party's email.

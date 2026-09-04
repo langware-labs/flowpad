@@ -756,6 +756,25 @@ export class Project extends APIEntity<Project> {
     this.adoptSecretOrigins(await this.post('remove-secret-pointer', { typeid }));
   }
 
+  /**
+   * Delete credentials: the declarations, and every value it is ours to delete.
+   *
+   * A batch, because a credential is several variables and removing them one
+   * request at a time can fail half-way and leave a row that is neither there
+   * nor gone.
+   *
+   * The answer names what actually happened. `kept` is not a failure — it is the
+   * variables whose values live in the user's own `.env.local`, which Flowpad
+   * never removes from; the caller says so rather than claiming a deletion that
+   * did not happen.
+   */
+  async deleteSecrets(typeids: string[]): Promise<{ deleted: string[]; kept: string[] }> {
+    const res = await this.post<{ deleted?: string[]; kept?: string[] }>('delete-secrets', {
+      typeids,
+    });
+    return { deleted: res?.deleted ?? [], kept: res?.kept ?? [] };
+  }
+
   /** Value-free per-secret resolve status (available/missing) for the Secrets
    *  card + setup wizard. Never fetches a value. */
   async secretResolveStatus(): Promise<SecretResolveStatus[]> {

@@ -2103,12 +2103,17 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
         _t.time("build_all_type_payloads")
+        from flow_sdk.icons import icons as icon_registry  # noqa: PLC0415
+
+        icon_packs = icon_registry.payload()
+        _t.time("icon_packs")
         from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
 
         bootstrap_info = BootstrapInfo(
             types=types,
+            icon_packs=icon_packs,
             user=entity_to_dict(user),
             domain=None,
             visitor=None,

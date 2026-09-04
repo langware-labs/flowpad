@@ -76,7 +76,8 @@ export async function openInboxMessage(messageId: string): Promise<OpenResult | 
  */
 export async function syncConversationMessages(conversationId: string, agentId?: string): Promise<void> {
   const action = new ActionInfo('conversation-message-sync', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId, ...(agentId ? { agent_id: agentId } : {}) };
+  // The route reads only `conversation_id`; scoping there is the hub's authorization.
+  action.bodyParameters = { conversation_id: conversationId };
   await dataManager.callAction(action);
 }
 

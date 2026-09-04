@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
+import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { notify } from '@src/notifications';
@@ -30,12 +31,19 @@ import {
   accountKeyFor,
   buildConfig,
   emptyDraft,
+  pickedFrom,
+  pickedIn,
   specFields,
   validateDraft,
   type SourceDraft,
 } from './source-form';
+import { ChoiceField } from './ChoiceField';
+import { sourceIconName } from './source-icon';
+import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { cn } from '@src/lib/utils';
 import { useSourceSpecs } from './use-source-specs';
-import { FieldType, type DataSourceSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataSourceSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -53,6 +61,18 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
 function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
   const raw = config?.[key];
   if (raw === undefined || raw === null) return '';
+  // A choosable field's entries may be `{id, name}`. Joining those directly is how a
+  // Slack source configured with named channels rendered as `[object Object]` — and then
+  // SAVED that back over the real ids.
+  //
+  // IDs, not names, even though a name is friendlier: this string is only ever shown in
+  // the TYPED fallback, and whatever sits there is what gets stored the moment someone
+  // edits it. Showing "Marketing" in a box whose next keystroke saves "Marketing" as a
+  // drive id is a silent corruption. The name belongs to the picker, which reads `picked`.
+  if (field.choices) {
+    const picked = pickedFrom(key, field, config);
+    return picked.map((c) => c.id).join(field.type === FieldType.LINES ? '\n' : ', ');
+  }
   if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
   // Only scalars round-trip through an input. A nested object in config means
   // the driver grew a shape this form does not model — show nothing rather than
@@ -64,8 +84,10 @@ function fieldValue(key: string, field: SpecConfigField, config: Record<string, 
 
 function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
   const fields: Record<string, string> = {};
+  const picked: Record<string, DataSourceChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
     fields[key] = fieldValue(key, field, source.config ?? {});
+    if (field.choices) picked[key] = pickedFrom(key, field, source.config ?? {});
   }
   return {
     name: source.name,
@@ -79,6 +101,7 @@ function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
     fields,
+    picked,
   };
 }
 
@@ -86,16 +109,27 @@ export function DataSourceDialog({
   open,
   onOpenChange,
   editing,
+  owner,
+  only,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When set, the form edits this source instead of creating one. */
   editing?: DataSource | null;
+  /** Who the new source belongs to (a user or an agent). Omitted → the backend
+   *  stamps the local user, so every existing caller is unchanged. */
+  owner?: TypeId | null;
+  /** Narrow the provider tiles. Never to nothing: a backend that predates the
+   *  flag a filter reads answers false for every spec, and an empty picker
+   *  reads as a broken dialog — so the full list is the fallback. */
+  only?: (spec: DataSourceSpec) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
-  const { specs, specFor } = useSourceSpecs();
+  const { specs: installed, specFor } = useSourceSpecs();
+  const narrowed = only ? installed.filter(only) : installed;
+  const specs = narrowed.length ? narrowed : installed;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -117,7 +151,14 @@ export function DataSourceDialog({
   const spec = specFor(draft.provider);
   const problems = useMemo(() => validateDraft(draft, spec), [draft, spec]);
 
-  const setField = (key: string, value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
+  const setField = (key: string, value: string) =>
+    // Typing into a choosable field drops its picks: the two inputs are never both
+    // authoritative, and `buildConfig` prefers a pick — so a stale one would silently
+    // beat what the person just typed.
+    setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value }, picked: { ...d.picked, [key]: [] } }));
+
+  const setPicked = (key: string, choices: DataSourceChoice[]) =>
+    setDraft((d) => ({ ...d, picked: { ...d.picked, [key]: choices } }));
 
   const submit = async () => {
     if (problems.length) return;
@@ -156,6 +197,7 @@ export function DataSourceDialog({
           status: draft.enabled ? 'new' : 'disabled',
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
+          owner: owner ? owner.toString() : null,
         });
         await source.save();
         notify.success({ title: t`Added ${source.name}` });
@@ -168,30 +210,51 @@ export function DataSourceDialog({
     }
   };
 
+  // Built once per render, not once per choosable field: `buildConfig` walks the whole
+  // spec, so asking it per field rebuilt every other field's value too.
+  const draftConfig = useMemo(() => buildConfig(draft, spec), [draft, spec]);
+
   const renderField = ([key, field]: [string, SpecConfigField]) => {
     const value = draft.fields[key] ?? '';
+    const input =
+      field.type === FieldType.LINES ? (
+        <Textarea
+          id={`ds-${key}`}
+          rows={3}
+          value={value}
+          placeholder={field.placeholder || undefined}
+          onChange={(e) => setField(key, e.target.value)}
+        />
+      ) : (
+        <Input
+          id={`ds-${key}`}
+          type={field.type === FieldType.NUMBER ? 'number' : 'text'}
+          value={value}
+          placeholder={field.placeholder || undefined}
+          onChange={(e) => setField(key, e.target.value)}
+        />
+      );
     return (
       <div key={key} className="space-y-1">
         <Label htmlFor={`ds-${key}`}>
           {field.label || key}
           {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
-        {field.type === FieldType.LINES ? (
-          <Textarea
-            id={`ds-${key}`}
-            rows={3}
-            value={value}
-            placeholder={field.placeholder || undefined}
-            onChange={(e) => setField(key, e.target.value)}
+        {/* A choosable field hands its own input over as the fallback, so the picker and
+            the text box are one decision made in one place rather than two branches here
+            that could both be true. */}
+        {field.choices ? (
+          <ChoiceField
+            fieldKey={key}
+            field={field}
+            provider={draft.provider}
+            config={draftConfig}
+            picked={pickedIn(draft, key, field)}
+            onPicked={(choices) => setPicked(key, choices)}
+            fallback={input}
           />
         ) : (
-          <Input
-            id={`ds-${key}`}
-            type={field.type === FieldType.NUMBER ? 'number' : 'text'}
-            value={value}
-            placeholder={field.placeholder || undefined}
-            onChange={(e) => setField(key, e.target.value)}
-          />
+          input
         )}
         {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
       </div>
@@ -210,36 +273,40 @@ export function DataSourceDialog({
 
         <div className="space-y-4">
           {!editing && (
-            <div className="space-y-1">
-              <Label>
-                <Trans>Provider</Trans>
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                {specs.map((p) => {
-                  // The spec's own glyph. `iconForType` answers "what is a data
-                  // source" — one antenna for all of them — which is right for
-                  // the type and useless for telling nine providers apart.
-                  const Glyph = lucideByName(p.icon_name);
-                  return (
-                    <button
-                      key={p.name}
-                      type="button"
-                      data-testid={`provider-${p.name}`}
-                      onClick={() => setDraft(emptyDraft(p.name ?? ''))}
-                      className={`flex gap-2 rounded border p-2 text-start text-xs ${
-                        draft.provider === p.name ? 'border-primary bg-primary/5' : 'border-border'
-                      }`}
-                    >
-                      <Glyph className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0">
-                        <span className="block font-medium">{p.title || p.name}</span>
-                        <span className="block text-muted-foreground">{p.description}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <TileSection title={<Trans>Provider</Trans>}>
+              {specs.map((p) => {
+                // Through the one source→glyph rule, so the tile a person picks and the
+                // card it becomes cannot disagree. No channel here: a provider is being
+                // chosen, not one of a multi-channel transport's channels.
+                const Glyph = lucideByName(sourceIconName(p, null));
+                const label = p.title || p.name || '';
+                return (
+                  <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
+                    <TooltipTrigger asChild>
+                      <DesktopTile
+                        data-testid={`provider-${p.name}`}
+                        Icon={Glyph}
+                        label={label}
+                        onClick={() => setDraft(emptyDraft(p.name ?? ''))}
+                        className={cn(
+                          draft.provider === p.name &&
+                            'border-primary bg-accent text-foreground ring-1 ring-primary',
+                        )}
+                      />
+                    </TooltipTrigger>
+                    {/* What the tile used to spell out underneath. A 10px line
+                        of body copy per provider made the grid a wall of text
+                        to read before you could pick anything; the sentence is
+                        still one hover away, where it answers a question you
+                        actually have. */}
+                    <TooltipContent side="bottom" className="max-w-[16rem]">
+                      <span className="font-medium">{label}</span>
+                      {p.description && <span className="mt-0.5 block opacity-90">{p.description}</span>}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </TileSection>
           )}
 
           <div className="space-y-1">

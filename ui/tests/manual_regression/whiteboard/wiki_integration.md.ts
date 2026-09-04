@@ -47,7 +47,13 @@ test.describe('Whiteboard participates in the wiki graph', () => {
   test('a whiteboard whose WHITE_BOARD.md has a [[wiki-link]] creates a links-table edge', async ({ page, request }) => {
     test.setTimeout(60_000);
     test.skip(!fs.existsSync(DB), `instance DB not found at ${DB}`);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const targetName = `wiki-target-q2-${Date.now() % 100000}`;
     const srcName = `wiki-src-q2-${Date.now() % 100000}`;

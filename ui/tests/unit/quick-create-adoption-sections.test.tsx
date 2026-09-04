@@ -40,7 +40,6 @@ import {
 
 const handlers: PanelHandlers = {
   onPick: vi.fn(),
-  onBindSecret: vi.fn(),
   onAddFolder: vi.fn(),
   onAddHelpdesk: mocks.onAddHelpdesk,
   onNewMessage: vi.fn(),

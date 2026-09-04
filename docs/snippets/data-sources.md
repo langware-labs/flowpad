@@ -1,33 +1,32 @@
 # Data sources — snippets
 
 A data source is one remote account or tree Flowpad syncs from. The row is a
-`DataSource`; every item it produces is a `SourceItem`; the poller is one
-function, `sync_source`. Everything below runs in-process against the session
-DB. Deeper reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
+`DataSource`; every item it produces is a `SourceItem`; one cycle is one verb,
+`source.sync()` (the heartbeat calls the same code through `sync_source`).
+Everything below runs in-process against the session DB, and every `python`
+fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
+reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
 
 ```python
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the eleven shipped drivers
+import flow_sdk.ingest.drivers  # noqa: F401 — registers the twelve shipped drivers
 ```
 
 ## 1. Connect a feed and sync it once
 
-Pinned by `tests/unit/test_ingest_end_to_end.py`.
+Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from datetime import datetime, timezone
-
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.ingest.sync import sync_source
 
 src = DataSource(
     name="Hacker News front page",
     provider="rss",
-    config={"feed_urls": ["https://hnrss.org/frontpage"]},
+    config={"feed_urls": [FEED_URL]},
 )
 await src.save()                       # NEW → ACTIVE; channel and origin stamped
 
-outcome = await sync_source(src, now=datetime.now(timezone.utc))
+outcome = await src.sync()
 outcome.created, outcome.updated, outcome.unchanged   # what this cycle did
 
 rows = await SourceItem.get_all({"data_source_id": src.id})
@@ -36,7 +35,7 @@ for item in rows:
 ```
 
 A first run only takes items newer than `window_days` (default 7) before
-`now`; widen it on the row if you want history. A second `sync_source` on an
+`now`; widen it on the row if you want history. A second `sync()` on an
 unchanged feed writes nothing: `created == 0`,
 `updated == 0`, no row's `updated_date` moves, no `ingest.*.item.*` event
 fires. That silence is the contract the whole subsystem rests on.
@@ -53,6 +52,7 @@ The config keys are the manifest's, one dict per provider:
 | `telegram` | `bot_token`, `base_url` | `bot_token` |
 | `slack` | `channels: list[str]` | `channels` (membership) |
 | `gdrive` | `drives`, `cache_root`, `base_url` | — |
+| `gcs` | `bucket`, `project`, `prefixes`, `cache_root`, `base_url` | `bucket` |
 | `gmail` | `address` | `address` |
 | `cloud_email` | `agent_id`, `address` | `agent_id` |
 | `agent` | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector` |
@@ -94,23 +94,23 @@ flow record search "zebrafish" 7d 10
 
 ## 4. Watch a folder and mirror it into a project
 
-Pinned by `tests/unit/test_folder_source/test_crud_matrix.py`.
+Pinned by `tests/unit/test_data_sources_snippets.py` (the CRUD matrix is
+`tests/unit/test_folder_source/test_crud_matrix.py`).
 
 ```python
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.reflect import ReflectMode
-from flow_sdk.ingest.sync import sync_source
 
 src = DataSource(
     name="Shared drive notes",
     provider="folder",
-    config={"root": "/Volumes/team/notes"},
+    config={"root": WATCHED},                # the tree to watch
     reflect=ReflectMode.COPY.value,          # none | copy | symlink
-    reflect_into="/Users/me/projects/notes", # absolute, the destination tree
+    reflect_into=DESTINATION,                # absolute, the destination tree
 )
 await src.save()
 
-await sync_source(src)   # enumerate → reflect bytes → reindex the destination
+await src.sync()   # enumerate → reflect bytes → reindex the destination
 ```
 
 `reflect` is the one axis that decides where a payload lands: `record` (the
@@ -120,7 +120,7 @@ saves fine and ingests nothing.
 
 ## 5. Subscribe to arrivals
 
-Pinned by `tests/unit/test_ingest_end_to_end.py`.
+Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
 from flow_sdk.tags import event_bus
@@ -130,7 +130,7 @@ def on_item(event):
 
 unsub = event_bus.on("ingest.*.item.created", on_item)
 try:
-    await sync_source(src)
+    await src.sync()
 finally:
     unsub()                               # lifetime is the caller's job
 ```
@@ -180,16 +180,17 @@ flow record create source_item --json - --first-run < big_backfill.json
 
 ## 7. Operate a source
 
-The verbs the Data Sources screen calls, as Python. Pinned by
-`tests/unit/test_data_source_actions.py`.
+The verbs the Data Sources screen calls, as Python. Each is a method on the
+row; the HTTP route of the same name is a thin wrapper over it. Pinned by
+`tests/unit/test_data_sources_snippets.py` and `tests/unit/test_data_source_actions.py`.
 
 ```python
-await src.verify_action()        # connection + setup probe → status ACTIVE or SETUP
-await src.poll_now_action()      # mark due; the heartbeat picks it up within 60s
-await src.replay(since=None)     # re-emit item events from what is stored
-await src.reset_cursors_action() # forget high-water marks, keep rows
-await src.purge_items_action()   # drop rows AND their read/starred state
-await src.delete()               # cascade: cursors, items, projected messages
+await src.verify()          # connection + setup probe → status ACTIVE or SETUP
+await src.poll_now()        # mark due; the heartbeat picks it up within 60s
+await src.replay(since=None)   # re-emit item events from what is stored
+await src.reset_cursors()   # forget high-water marks, keep rows
+await src.purge_items()     # drop rows AND their read/starred state
+await src.delete()          # cascade: cursors, items, projected messages
 ```
 
 Read the row before poking it. `poll_now` clears `health`, `error_code` and
@@ -230,3 +231,34 @@ reply.body
 For a typed reply that threads correctly per channel, use the
 [workflows](workflows.md) surface: `EmailMessageSpec.reply_to(item, body=...)`
 and `Inbox.send(...)`.
+
+## 9. Ask a provider what you can pick
+
+Three providers ask for values nobody can produce from memory — a shared drive is
+`0AB1cdEfGhIjKlMnOpQ`. A manifest field marked `choices` can be listed instead.
+Pinned by `tests/unit/test_data_sources_snippets.py`.
+
+```python
+from flow_sdk.builtin.data_source import DataSource
+
+picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+
+[(c.id, c.name) for c in picks.items]   # what this credential can actually see
+picks.detail                            # why the list is empty, when it is
+```
+
+A refusal is an **empty `items` and a sentence**, never an exception: no connection, a
+scope the consent screen never asked for, a project id nobody set — all of them mean the
+same thing to the person filling the form, which is *type it instead*. So the field falls
+back to a plain text input carrying `picks.detail`, and never blocks a save.
+
+`choices_for` answers `None` for a provider that does not exist or a field its manifest
+never marked — that is the form asking about something it had no business asking about,
+and it is a caller bug rather than a refusal. `type` still decides the shape: `text` picks
+one, `lines` picks many.
+
+| provider | field | what it lists |
+| --- | --- | --- |
+| `gcs` | `bucket` | buckets in `config.project` — the project is read for THIS call only |
+| `gdrive` | `drives` | the shared drives the Google account can see |
+| `slack` | `channels` | every channel the token can see, joined or not |
