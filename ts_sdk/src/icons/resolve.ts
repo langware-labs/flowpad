@@ -1,4 +1,4 @@
-import { normalizeTag, tagAncestors } from '../tags/grammar';
+import { tagAncestors, tryTag } from '../tags/grammar';
 import { iconAssetUrl, isIconPath } from '../utils/icon-asset';
 import type { IconPackSpec, IconResolution, IconSpec } from './types';
 
@@ -32,13 +32,10 @@ export function kebab(name: string): string {
   return name.replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])/g, '-').toLowerCase();
 }
 
-/** A caller's string as a tag, or `null` if it is not one. */
+/** A caller's string as a tag, or `null` if it is not one.
+ *  `tryTag` is the grammar's own null-returning gate for untrusted input. */
 export function iconTag(value: string): string | null {
-  try {
-    return normalizeTag(kebab(value));
-  } catch {
-    return null;
-  }
+  return tryTag(kebab(value));
 }
 
 function assetUrl(pack: IconPackSpec, asset: string | undefined): string | undefined {
