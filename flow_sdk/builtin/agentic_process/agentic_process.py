@@ -65,7 +65,7 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.worker_status import StatusDetail, WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.compute.providers.compute_provider import (
     LOOPBACK_HOSTNAMES,
@@ -376,6 +376,7 @@ class SystemInstructionAssets:
         The one place the "no text ⇒ no file to point at" coercion is stated.
         """
         return str(self.claude_file) if self.claude_file else None
+
     # The owning process. Every vendor but opencode reaches these assets through
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
@@ -747,7 +748,6 @@ async def _read_json_body() -> dict | ApiFailResponse:
     from flow_sdk.request_context.json_body import read_json_body  # noqa: PLC0415
 
     return await read_json_body(get_current_request_info())
-
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -5607,7 +5607,9 @@ class AgenticProcess(Entity):
             # them via --add-dir), but their paths aren't consumed — write without capturing.
             asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
             asset_dir.load_asset(".agents", content=instructions + "\n")
-            copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            copilot_body = (
+                f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            )
             asset_dir.load_asset(
                 ".github/instructions/flowpad.instructions.md",
                 content=copilot_body,
@@ -5685,8 +5687,7 @@ class AgenticProcess(Entity):
         driver = self.driver
         if not bool(getattr(driver, "supports_process_mcp", False)):
             raise NotImplementedError(
-                f"{getattr(driver, 'name', self.worker_type)} does not support "
-                "per-process MCP servers"
+                f"{getattr(driver, 'name', self.worker_type)} does not support per-process MCP servers"
             )
 
     async def add_mcp(self, spec: "McpSpec") -> bool:
@@ -5811,9 +5812,7 @@ class AgenticProcess(Entity):
         cmd.apply_instruction_assets(assets)
 
     @classmethod
-    def _apply_process_assets(
-        cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = ""
-    ) -> None:
+    def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = "") -> None:
         # Order is no longer load-bearing: opencode's generated config is written
         # lazily at spawn (``_sync_config_env``), so every contribution is on
         # ``cmd`` by the time anything is rendered.
@@ -7082,7 +7081,13 @@ class AgenticProcess(Entity):
         # The CLI's own sentence behind a bare ERROR ("Not logged in · Please
         # run /login"). Only resolved for the error status — it costs a second
         # tail read, and there is nothing to say for any other state.
-        data["worker_status_detail"] = self._worker_status_detail(computed)
+        detail = self._worker_status_detail(computed)
+        data["worker_status_detail"] = detail.text if detail else None
+        # WHICH refused turn this is, so a consumer can tell a re-read of the
+        # same entry from a genuinely new failure. The sentence cannot: every
+        # signed-out turn writes the identical one, so the harness-login modal
+        # keyed on it never re-opened after the user dismissed it once.
+        data["worker_status_detail_id"] = detail.entry_id if detail else None
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -7147,8 +7152,9 @@ class AgenticProcess(Entity):
             return WorkerStatus.ERROR
         return self._discover_status_from_transcript()
 
-    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> str | None:
-        """The CLI's own error sentence, when the worker status is ERROR.
+    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
+        """The CLI's own error entry — its sentence and its entry id — when the
+        worker status is ERROR.
 
         Best-effort and never raising: a missing transcript, an unreadable file
         or a driver without a detail hook all yield ``None``, and the surface

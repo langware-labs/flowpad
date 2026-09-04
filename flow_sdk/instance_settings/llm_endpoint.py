@@ -106,7 +106,12 @@ def set_hub_llm_endpoint(
     """
     bound = _validated(endpoint_typeid, invoke_path, provider, name)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
-    _cache[get_instance_settings().instance_name] = bound
+    instance = get_instance_settings().instance_name
+    _cache[instance] = bound
+    # When this binding was written, so a listing fetched BEFORE it cannot be read as denying
+    # it (see ``listing_supersedes_binding``). Monotonic: only ever compared with the memo's
+    # own clock, never with wall time.
+    _bound_at[instance] = time.monotonic()
     return bound
 
 
@@ -122,6 +127,7 @@ def reset_cache() -> None:
     """Drop the memos. For tests, which move instance dirs under the module's feet."""
     _cache.clear()
     _list_cache.clear()
+    _bound_at.clear()
 
 
 def hub_origin() -> str:
@@ -148,6 +154,46 @@ def hub_llm_endpoint_invoke_url() -> str | None:
 
 #: instance name -> (fetched_at, endpoints)
 _list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
+
+
+#: instance name -> monotonic time the binding was last WRITTEN in this process.
+#: Absent means the binding was loaded from disk, i.e. it predates everything this process has
+#: done -- which is why the default below is ``0.0`` rather than "now".
+_bound_at: dict[str, float] = {}
+
+
+def invalidate_endpoint_listing() -> None:
+    """Drop the cached listing so the next read asks the hub again.
+
+    Called when the hub says a budget changed. Deliberately does NOT touch
+    ``_bound_at``: the binding did not move, only our picture of what exists, and
+    forgetting when we were bound would let an older listing start denying a newer
+    binding (see ``listing_supersedes_binding``).
+
+    Dropping rather than refetching here keeps this callable from anywhere; the
+    caller decides whether a refresh is worth a round trip.
+    """
+    _list_cache.pop(get_instance_settings().instance_name, None)
+
+
+def listing_supersedes_binding() -> bool:
+    """Whether a successful hub listing is NEWER than the binding, and so may contradict it.
+
+    "Has a listing ever succeeded" is the tempting test and it is wrong. The push is
+    deliberately allowed to run ahead of the cache -- the hub binds a box to an endpoint the
+    listing has not heard of yet, and ``_inventory`` reads the listing ``cached_only`` -- so a
+    STALE-but-successful listing would deny a binding that had just arrived, which is exactly
+    the case the stub in ``_endpoint_sources`` exists to serve.
+
+    Only a listing fetched AFTER the binding was written can be read as "the hub knows about
+    this box's endpoint and did not list it". A binding loaded from disk has no write time in
+    this process, so it predates every listing here and any successful one supersedes it.
+    """
+    name = get_instance_settings().instance_name
+    cached = _list_cache.get(name)
+    if cached is None:
+        return False  # nobody has managed to ask; the push stands
+    return cached[0] > _bound_at.get(name, 0.0)
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:

@@ -31,10 +31,16 @@ Rung 4 is the only one that yields, because nothing was asked for in the first p
 
 ### Why the device rung is not simply "first"
 
-``Capability.login_state`` is ``Persist.FALSE`` -- runtime-only. It is ``None`` after
-every backend restart, and ``_mirror_probe_to_login_state`` deliberately never writes a
-verdict for a probe that did not decide. So ``None`` means *"nobody has asked"*, not
-*"asked and it failed"*, and it is the COMMON state, not an edge case.
+``Capability.login_state`` is ``Persist.FALSE`` -- DB-only, never mirrored into
+metadata.json. The startup sweep RESOLVES it (``discovery._resolve_login_states``) and
+re-probes on every boot, so it is normally a real verdict rather than ``None`` by the time
+anything resolves a spawn. ``_mirror_probe_to_login_state`` deliberately never writes a
+verdict for a probe that did not decide, so ``None`` still means *"nobody has asked"*, not
+*"asked and it failed"* -- it just is no longer the COMMON state.
+
+It used to be. Nothing probed at startup, so ``None`` was what every box had, and the rule
+below silently resolved every unbound desktop box to a device login nobody had verified --
+a spawn handed no credentials at all when that login did not exist.
 
 That leaves two failure modes pulling in opposite directions:
 
@@ -75,6 +81,7 @@ _RANK_DEVICE = 0
 _RANK_KEY = 10
 _RANK_ENDPOINT = 20
 _RANK_DEVICE_UNPROVEN = 30
+
 
 def _hub_stub(typeid: str, *, name: str = "", provider: str = "") -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
@@ -120,7 +127,9 @@ class LLMSourceError(Exception):
         body = "\n".join(lines) if lines else "  (no source of any kind is configured)"
         super().__init__(f"{worker_type} has no usable LLM source:\n{body}")
 
+
 # ── inventory ────────────────────────────────────────────────────────────────────
+
 
 def _device_source(worker_type: str, login_state, box_bound: bool) -> Candidate:
     """The vendor device login for *worker_type*, and what we actually know about it.
@@ -144,32 +153,49 @@ def _device_source(worker_type: str, login_state, box_bound: bool) -> Candidate:
     # turn to a vendor login picker and hangs it.
     state = getattr(login_state, "value", login_state) or ""
     if state == "authenticated":
-        return Candidate(endpoint, LLMSource(
-            endpoint_typeid=typeid, name=name, rank=_RANK_DEVICE, eligible=True, auto=True,
-            authority=LLMSourceAuthority.CACHED, detail="signed in",
-        ))
+        return Candidate(
+            endpoint,
+            LLMSource(
+                endpoint_typeid=typeid,
+                name=name,
+                rank=_RANK_DEVICE,
+                eligible=True,
+                auto=True,
+                authority=LLMSourceAuthority.CACHED,
+                detail="signed in",
+            ),
+        )
     if state in ("idle", "error"):
         # A probe positively said so. We only assert signed-out when we were told.
-        return Candidate(endpoint, LLMSource(
-            endpoint_typeid=typeid, name=name, rank=_RANK_DEVICE, eligible=False,
-            reason=f"{worker_type} is signed out", authority=LLMSourceAuthority.CACHED,
-        ))
+        return Candidate(
+            endpoint,
+            LLMSource(
+                endpoint_typeid=typeid,
+                name=name,
+                rank=_RANK_DEVICE,
+                eligible=False,
+                reason=f"{worker_type} is signed out",
+                authority=LLMSourceAuthority.CACHED,
+            ),
+        )
     # Nobody has asked (the common case: the field does not survive a restart). Usable, so
     # no ``reason`` -- the caveat is display, and putting it in ``reason`` made a perfectly
     # good device login report it as its status message.
-    return Candidate(endpoint, LLMSource(
-        endpoint_typeid=typeid,
-        name=name,
-        rank=_RANK_DEVICE_UNPROVEN if box_bound else _RANK_DEVICE,
-        eligible=True,
-        auto=not box_bound,
-        authority=LLMSourceAuthority.PRESUMED,
-        detail=(
-            "sign-in not checked; this box is bound to a hub endpoint"
-            if box_bound
-            else "sign-in state not checked"
+    return Candidate(
+        endpoint,
+        LLMSource(
+            endpoint_typeid=typeid,
+            name=name,
+            rank=_RANK_DEVICE_UNPROVEN if box_bound else _RANK_DEVICE,
+            eligible=True,
+            auto=not box_bound,
+            authority=LLMSourceAuthority.PRESUMED,
+            detail=(
+                "sign-in not checked; this box is bound to a hub endpoint" if box_bound else "sign-in state not checked"
+            ),
         ),
-    ))
+    )
+
 
 def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
     """One candidate per provider this harness supports, over that provider's endpoint row.
@@ -200,19 +226,24 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
         has_key = secret_name in stored
-        out.append(Candidate(endpoint, LLMSource(
-            endpoint_typeid=str(endpoint.typeid),
-            name=endpoint.name or f"{provider.value} key",
-            rank=_RANK_KEY,
-            eligible=has_key,
-            auto=has_key,
-            authority=LLMSourceAuthority.PROVEN,
-            reason="" if has_key else f"no {provider.value} key is stored on this machine",
-        )))
+        out.append(
+            Candidate(
+                endpoint,
+                LLMSource(
+                    endpoint_typeid=str(endpoint.typeid),
+                    name=endpoint.name or f"{provider.value} key",
+                    rank=_RANK_KEY,
+                    eligible=has_key,
+                    auto=has_key,
+                    authority=LLMSourceAuthority.PROVEN,
+                    reason="" if has_key else f"no {provider.value} key is stored on this machine",
+                ),
+            )
+        )
     return out
 
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_authoritative: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -225,9 +256,17 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
     rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
-    if bound_typeid and bound_typeid not in rows:
+    if bound_typeid and bound_typeid not in rows and not listing_authoritative:
         # The push is authoritative even when the listing has not caught up: a freshly
         # bound (or freshly shared) endpoint must work before any cache has heard of it.
+        #
+        # But only while we have not managed to ask. Once a listing has SUCCEEDED and does not
+        # contain the bound endpoint, its absence is an answer rather than a gap -- the endpoint
+        # was deleted, or the role that made it spendable was revoked -- and synthesising it
+        # anyway is what strands a box: the stub is eligible, a bound endpoint outranks an
+        # unproven device login, and every spawn then posts to an invoke URL that answers
+        # "Entity ... not found" until the harness exhausts its retries. Leaving it out makes
+        # the ladder fall through to whatever the box can actually spend.
         rows[bound_typeid] = _hub_stub(
             bound_typeid,
             name=bound.name if bound else "",
@@ -241,16 +280,21 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
             reason = "this box is not logged in to the hub"
         elif not endpoint.enabled:
             reason = f"endpoint {name} is disabled"
-        out.append(Candidate(endpoint, LLMSource(
-            endpoint_typeid=typeid,
-            name=name,
-            detail=endpoint.provider,
-            rank=_RANK_ENDPOINT,
-            eligible=not reason,
-            auto=(not reason) and typeid == bound_typeid,
-            authority=LLMSourceAuthority.PRESUMED,
-            reason=reason,
-        )))
+        out.append(
+            Candidate(
+                endpoint,
+                LLMSource(
+                    endpoint_typeid=typeid,
+                    name=name,
+                    detail=endpoint.provider,
+                    rank=_RANK_ENDPOINT,
+                    eligible=not reason,
+                    auto=(not reason) and typeid == bound_typeid,
+                    authority=LLMSourceAuthority.PRESUMED,
+                    reason=reason,
+                ),
+            )
+        )
     return out
 
 
@@ -270,7 +314,11 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.cli.auth.secrets import get_secrets
-    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, get_hub_llm_endpoint
+    from flow_sdk.instance_settings.llm_endpoint import (
+        fetch_hub_llm_endpoints,
+        get_hub_llm_endpoint,
+        listing_supersedes_binding,
+    )
 
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
@@ -290,7 +338,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     candidates = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
     candidates += _key_sources(spec, rows, stored)
-    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in)
+    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
     return candidates, cap
 
 
@@ -320,6 +368,7 @@ async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
 
 
 # ── overlay ──────────────────────────────────────────────────────────────────────
+
 
 def _hub_logged_in() -> bool:
     """Whether a hub request from this box would carry a key.
@@ -362,6 +411,7 @@ async def _constraint(process) -> tuple[str, LLMSourceOrigin] | None:
         return typeid, LLMSourceOrigin.PROJECT
     return None
 
+
 def _apply_constraint(
     candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, hub_logged_in: bool
 ) -> list[Candidate]:
@@ -380,9 +430,9 @@ def _apply_constraint(
     for endpoint, source in candidates:
         if endpoint.kind == LLMEndpointKind.HUB and source.endpoint_typeid == typeid:
             named = True
-            out.append(Candidate(endpoint, source.model_copy(
-                update={"rank": -1, "auto": source.eligible, "origin": origin}
-            )))
+            out.append(
+                Candidate(endpoint, source.model_copy(update={"rank": -1, "auto": source.eligible, "origin": origin}))
+            )
         else:
             out.append(Candidate(endpoint, source.ineligible(why)))
     if not named:
@@ -394,16 +444,21 @@ def _apply_constraint(
         # emphatically it was named.
         unusable = "" if hub_logged_in else "this box is not logged in to the hub"
         stub = _hub_stub(typeid, name=typeid)
-        out.append(Candidate(stub, LLMSource(
-            endpoint_typeid=typeid,
-            name=typeid,
-            rank=-1,
-            eligible=not unusable,
-            auto=not unusable,
-            authority=LLMSourceAuthority.PRESUMED,
-            origin=origin,
-            reason=unusable,
-        )))
+        out.append(
+            Candidate(
+                stub,
+                LLMSource(
+                    endpoint_typeid=typeid,
+                    name=typeid,
+                    rank=-1,
+                    eligible=not unusable,
+                    auto=not unusable,
+                    authority=LLMSourceAuthority.PRESUMED,
+                    origin=origin,
+                    reason=unusable,
+                ),
+            )
+        )
     return out
 
 
@@ -471,9 +526,7 @@ async def list_llm_candidates(worker_type: str, process=None) -> list[Candidate]
 
     preferred = _preferred(cap)
     if preferred:
-        name = next(
-            (c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred
-        )
+        name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
         why = f"{worker_type} is set to use {name}"
         candidates = [
             Candidate(endpoint, source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER}))
@@ -490,6 +543,7 @@ async def list_llm_sources(worker_type: str, process=None) -> list[LLMSource]:
 
 
 # ── resolution ───────────────────────────────────────────────────────────────────
+
 
 def pick_llm_candidate(candidates: list[Candidate]) -> Candidate | None:
     """The winner of a ranked list: *first eligible AND auto*, else *first eligible*.

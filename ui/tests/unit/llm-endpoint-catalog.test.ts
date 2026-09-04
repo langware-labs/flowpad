@@ -23,6 +23,7 @@ import {
   PROVIDERS,
   providerSpec,
   buildAllocateBody,
+  kindFromChain,
   validateDraft,
   withProvider,
   type EndpointDraft,
@@ -182,5 +183,52 @@ describe('buildAllocateBody', () => {
     expect(body.limits.cost_usd_total).toBe(1);
     expect(body).not.toHaveProperty('source');
     expect(body).not.toHaveProperty('sources');
+  });
+});
+
+describe('kindFromChain', () => {
+  const ID = '11111111-1111-4111-8111-111111111111';
+  const chain = (isRoot: boolean) =>
+    ({
+      entry: { id: endpointTypeId(ID), name: 'x' },
+      hops: [{ id: endpointTypeId(ID), is_root: isRoot }],
+      paths: [],
+      missing_sources: [],
+      sticky_root_for_me: null,
+    }) as never;
+
+  it('reads the entry hop, because the entity cannot answer this at all', () => {
+    // `LLMEndpoint.kind` is `sources.length ? 'chain' : 'root'`, and the hub does not serialize
+    // `sources` — a source is an edge, deliberately not a client-writable field. So the entity says
+    // `root` for EVERY endpoint, and a real chain is indistinguishable from a keyless orphan. Only
+    // the chain report resolves the graph.
+    expect(kindFromChain(chain(false), ID)).toBe('chain');
+    expect(kindFromChain(chain(true), ID)).toBe('root');
+  });
+
+  it('answers null before the report arrives, rather than guessing', () => {
+    // `root` is the wrong guess in exactly the case this exists to fix, so callers render nothing
+    // until the answer is known instead of flashing a label that is wrong.
+    expect(kindFromChain(undefined, ID)).toBeNull();
+  });
+
+  it('answers null when the entry is not among the hops', () => {
+    const other = '22222222-2222-4222-8222-222222222222';
+    expect(kindFromChain(chain(true), other)).toBeNull();
+  });
+});
+
+describe('draftFrom', () => {
+  it("takes the chain-resolved kind over the entity's own", () => {
+    // The entity reports `root` for a chain, which opened the EDIT form with provider, base URL and
+    // a key field — none of which a chain has.
+    const chainEndpoint = new LLMEndpoint({ id: '33333333-3333-4333-8333-333333333333', name: 'c' });
+    expect(chainEndpoint.kind).toBe('root');
+    expect(draftFrom(chainEndpoint, 'chain').kind).toBe('chain');
+  });
+
+  it('falls back to the entity when the kind is not known yet', () => {
+    const root = new LLMEndpoint({ id: '44444444-4444-4444-8444-444444444444', name: 'r' });
+    expect(draftFrom(root, null).kind).toBe('root');
   });
 });

@@ -12,6 +12,7 @@ import base64
 import pytest
 
 from flow_sdk.responses.response import ApiResponse
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 
 def _default_compute_node_id(bootstrap_payload: dict) -> str:

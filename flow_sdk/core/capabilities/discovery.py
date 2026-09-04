@@ -137,9 +137,7 @@ async def _run_env_probe(executables: list[str]) -> dict:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS
-                )
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
                 # The timeout fires on OUR clock, not on the child's liveness,
                 # so the child is often already reaped by now — and uvloop raises
@@ -150,14 +148,10 @@ async def _run_env_probe(executables: list[str]) -> dict:
                     await proc.wait()
                 except ProcessLookupError:
                     pass
-                raise RuntimeError(
-                    f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s"
-                ) from None
+                raise RuntimeError(f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s") from None
             if proc.returncode == 0:
                 return json.loads(out.decode("utf-8"))
-            raise RuntimeError(
-                f"env probe exited {proc.returncode}: {err.decode('utf-8', 'replace')[:200]}"
-            )
+            raise RuntimeError(f"env probe exited {proc.returncode}: {err.decode('utf-8', 'replace')[:200]}")
         except Exception as exc:
             # Name the TYPE, never just str(exc). Several exceptions that land
             # here — ProcessLookupError, NotImplementedError, CancelledError —
@@ -235,6 +229,7 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
             discovered[value.kind] = value
 
     await _mirror_to_rows(discovered)
+    await _resolve_login_states(discovered)
     if kinds is None:
         _DISCOVERED_ONCE.set()  # unblock ensure_discovered() waiters
     return discovered
@@ -248,6 +243,66 @@ async def _discover_one(runner, probe: dict) -> CapabilityValue | None:
         return None
     set_capability_value(value)
     return value
+
+
+async def _resolve_login_states(discovered: dict[str, CapabilityValue]) -> None:
+    """Ask every installed harness whether it is signed in, and mirror the verdict.
+
+    ``Capability.login_state`` is ``Persist.FALSE`` -- ``None`` after every restart -- and
+    ``llm_source._device_source`` reads exactly that field to decide whether the device rung
+    is proven. ``None`` means "nobody has asked", so the rung stays eligible at
+    ``_RANK_DEVICE`` and ``pick_llm_candidate`` returns it on its first pass; on an unbound
+    box the ladder therefore never descends to a hub endpoint at ``_RANK_ENDPOINT``, and
+    ``resolve_worker_api_auth`` hands the spawn no credentials at all.
+
+    Until now the ONLY producer of ``login_state`` was ``Capability.auth_status_action`` --
+    the login modal's button. A box whose user never opened that screen kept ``None`` for the
+    life of the process, so a desktop install with a granted budget and no vendor login died
+    on the vendor's own "Could not resolve authentication method" with the budget untouched.
+    The sweep is where that question belongs: it already runs before any spawn resolves.
+
+    Deliberately narrow:
+
+    * only harness CLIs (``worker_type_for_kind``), and only ones the sweep found INSTALLED --
+      a probe against a missing binary answers ``NOT_INSTALLED``, which
+      ``_mirror_probe_to_login_state`` correctly refuses to write, so it is a subprocess spent
+      to learn nothing;
+    * concurrent, so N harnesses cost about one probe of wall clock rather than N;
+    * per-harness failures are swallowed -- a vendor CLI that hangs or misbehaves must not
+      take the whole capability sweep down with it.
+
+    It writes through ``_mirror_probe_to_login_state``, the same one writer the action uses,
+    so an undecided probe still moves nothing and a login in flight is still not clobbered.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.core.capabilities.registry import get_capability_registry
+
+    registry = get_capability_registry()
+
+    async def probe(kind: str, worker_type: str) -> None:
+        try:
+            row = await Capability.get_by_kind(kind)
+            if row is None:
+                return
+            before = row.login_state
+            await row._mirror_probe_to_login_state(await get_driver(worker_type).auth_probe())
+            if row.login_state != before:
+                # ``_mirror_probe_to_login_state`` writes the field and broadcasts, but does
+                # NOT save -- ``notify_updated`` only publishes. ``login_state`` is
+                # ``Persist.FALSE``, which means DB-only (never mirrored into
+                # metadata.json), not in-memory-only; without this the verdict dies with
+                # this row object and the resolver's own ``Capability.get_by_kind`` read in
+                # ``llm_source._inventory`` -- a DIFFERENT instance -- still sees ``None``.
+                # ``notify=False``: the mirror already emitted the frame.
+                await row.save(notify=False)
+        except Exception:
+            logger.exception("Failed to resolve login state for %s", kind)
+
+    installed = [
+        (kind, registry.worker_type_for_kind(kind)) for kind, value in discovered.items() if value.value is not None
+    ]
+    await asyncio.gather(*(probe(k, w) for k, w in installed if w))
 
 
 async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:

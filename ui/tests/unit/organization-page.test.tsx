@@ -1,4 +1,5 @@
-import { cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,9 +13,17 @@ import { OrganizationPage } from '@src/components/organization/organization-page
  * the graph is offered as a named alternative, never as the default.
  */
 
-// Rendered inside a router: the roster pulls in navigation-aware pieces, and a
-// component test should not be the thing that discovers that.
-const render = (ui: React.ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+// Rendered inside a router AND a query client: the roster pulls in navigation-aware pieces and the
+// budgets section is react-query backed, and a component test should not be the thing that
+// discovers that. Both providers are real in the app, so wrapping here matches the tree rather
+// than mocking the page's own dependencies away.
+const Providers = ({ children }: { children: React.ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter>{children}</MemoryRouter>
+  </QueryClientProvider>
+);
+
+const render = (ui: React.ReactElement) => rtlRender(<Providers>{ui}</Providers>);
 
 const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner', type: 'user' };
 const A_PERSON = { user_id: 'p-1', email: 'ann@example.com', name: 'Ann', role: 'member', type: 'user' };
@@ -41,6 +50,17 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: navigationMock }),
 }));
 
+const h = vi.hoisted(() => ({
+  createOrganization: vi.fn(),
+  createChildTeam: vi.fn(),
+}));
+vi.mock('@src/components/organization/create-organization', () => ({
+  createOrganization: (...args: unknown[]) => h.createOrganization(...args),
+}));
+vi.mock('@src/components/organization/create-child-team', () => ({
+  createChildTeam: (...args: unknown[]) => h.createChildTeam(...args),
+}));
+
 function mockRoster(members: unknown[]) {
   membersMock.mockReturnValue({
     members,
@@ -58,6 +78,7 @@ function mockRoster(members: unknown[]) {
 describe('OrganizationPage', () => {
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
     availabilityMock.mockReturnValue({ available: true, reason: 'available' });
     orgsMock.mockReturnValue({ data: [{ id: 'org-1', name: 'Springfield High' }], isLoading: false });
   });
@@ -82,9 +103,9 @@ describe('OrganizationPage', () => {
     const { rerender } = render(<OrganizationPage />);
     const callsAfterFirst = orgsMock.mock.calls.length;
     rerender(
-      <MemoryRouter>
+      <Providers>
         <OrganizationPage />
-      </MemoryRouter>,
+      </Providers>,
     );
     // Re-rendering may call the hook again, but it must never spiral: a handful
     // of calls is a render, thousands is the loop this pins shut.
@@ -139,5 +160,41 @@ describe('OrganizationPage', () => {
     mockRoster([]);
     render(<OrganizationPage />);
     expect(screen.getByText('Not available in Local mode')).toBeTruthy();
+  });
+
+  it('creates a new organization from the header form', async () => {
+    h.createOrganization.mockResolvedValue({ type: 'organization', id: 'org-new' });
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-open'));
+    fireEvent.change(screen.getByTestId('org-create-name'), { target: { value: 'Acme Inc' } });
+    fireEvent.click(screen.getByTestId('org-create-submit'));
+
+    await waitFor(() => expect(h.createOrganization).toHaveBeenCalledWith('Acme Inc'));
+  });
+
+  it('does nothing when the organization name is left blank', () => {
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-open'));
+    fireEvent.click(screen.getByTestId('org-create-submit'));
+
+    expect(h.createOrganization).not.toHaveBeenCalled();
+  });
+
+  it('creates a team under the organization from the roster panel', async () => {
+    h.createChildTeam.mockResolvedValue({ type: 'team', id: 'team-new' });
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-team'));
+    fireEvent.change(screen.getByTestId('org-create-team-name'), { target: { value: 'Platform' } });
+    fireEvent.click(screen.getByTestId('org-create-team-submit'));
+
+    await waitFor(() => expect(h.createChildTeam).toHaveBeenCalled());
+    // Scoped under the currently selected organization, by NAME — not a bare string.
+    expect(h.createChildTeam.mock.calls[0][1]).toBe('Platform');
   });
 });
