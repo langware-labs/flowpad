@@ -23,6 +23,7 @@ requires_codex = pytest.mark.skipif(
     shutil.which("codex") is None,
     reason="codex CLI not installed — optional worker; the claude sibling covers this path",
 )
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 
 def _get_default_compute_node_id(bootstrap_payload: dict) -> str:

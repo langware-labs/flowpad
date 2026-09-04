@@ -16,8 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
@@ -154,8 +153,6 @@ async def _maybe_eager_pull_bundle(
         logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
     finally:
         _INFLIGHT_BUNDLE_PULLS.discard(fm_id)
-
-
 
 
 async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: Any) -> Any:
@@ -322,6 +319,8 @@ class HubWsBridge:
                 await self._handle_task_op(op, eid, data)
             elif etype == "deployment":
                 await self._handle_deployment_op(op, eid, data)
+            elif etype == "llm_endpoint":
+                await self._handle_llm_endpoint_op(op, eid, data)
             elif etype in MEMBERSHIP_MIRROR_TYPES:
                 await self._handle_membership_container_op(op, etype, eid, data)
             else:
@@ -868,6 +867,50 @@ class HubWsBridge:
         if hub_owner and existing.created_by != hub_owner:
             existing.created_by = hub_owner
         await existing.save(someone_typeid, notify=True)
+
+    async def _handle_llm_endpoint_op(self, op: str, eid: str, data: dict) -> None:
+        """A budget this user holds a role on changed on the hub.
+
+        These frames were already arriving and falling through to the "no handler" debug
+        line, which is why a box went on spending a budget that had been deleted -- and on
+        DESKTOP nothing else ever told it: the hub's other route (``configure_llm_endpoint``)
+        dials into a box by ``ComputeNode`` row, and a desktop install has none. This is the
+        route both kinds of box already share, so it needs no new transport and cannot wake a
+        sleeping sandbox: a sleeping box holds no connection, so there is nothing to deliver
+        to.
+
+        Two things happen, and only two:
+
+        * the cached listing is dropped, because any change makes our picture of "what may I
+          spend" stale -- a new share to offer, a limit moved, a row gone;
+        * a binding naming an endpoint that was just DELETED is cleared, so the resolver falls
+          back down its own ladder instead of pointing every spawn at a row the hub will
+          answer ``Entity ... not found`` for.
+
+        What deliberately does NOT happen is re-selecting a different budget. On desktop the
+        binding is an explicit user choice, and quietly moving someone onto another pot is the
+        exact failure the "an explicit preference is a constraint" rule exists to prevent. The
+        hub re-selects for a SANDBOX through ``setup_llm_endpoint``, where it knows the
+        accountable principal; here we only ever clear.
+
+        A refresh is attempted afterwards so a newly shared budget is spendable without the
+        user opening a screen -- best effort, because the listing is repaired on the next read
+        either way and an unreachable hub must not raise into the bridge's dispatcher.
+        """
+        from flow_sdk.instance_settings import llm_endpoint as settings
+
+        settings.invalidate_endpoint_listing()
+
+        bound = settings.get_hub_llm_endpoint()
+        if bound is not None and bound.endpoint_typeid == f"llm_endpoint-{eid}":
+            if op == "delete" or data.get("deleted_at"):
+                settings.clear_hub_llm_endpoint()
+                logger.info("hub_bridge: bound LLM endpoint %s was deleted on the hub; binding cleared", eid)
+
+        try:
+            await settings.fetch_hub_llm_endpoints()
+        except Exception as e:  # noqa: BLE001 -- the listing repairs itself on the next read
+            logger.debug("hub_bridge: llm_endpoint listing refresh failed: %s", e)
 
     async def _handle_invitation_op(self, op: str, inv_id: str, data: dict) -> None:
         """A new/updated Invitation was pushed by the hub.
