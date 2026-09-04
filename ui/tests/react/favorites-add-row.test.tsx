@@ -11,7 +11,12 @@ const h = vi.hoisted(() => ({
   addFavorite: vi.fn(() => Promise.resolve({})),
   activeEntity: null as { displayName: string } | null,
   activeEntityTypeId: null as { type: string; id: string } | null,
-  currentDock: null as { tabHash: string | null; toJSON: () => string | null } | null,
+  currentDock: null as {
+    tabHash: string | null;
+    favoriteKey: string | null;
+    isRoot: boolean;
+    toFavoriteJSON: () => string | null;
+  } | null,
   allTabs: [] as { getKey: () => string; name: string }[],
   onPick: null as ((d: unknown) => void) | null,
 }));
@@ -100,7 +105,12 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
   it('bookmarks the current DOCK when no entity is open (any view)', () => {
     h.activeEntity = null;
     h.activeEntityTypeId = null;
-    h.currentDock = { tabHash: 'web_app|4098', toJSON: () => '{"viewType":"web_app","pointer":"4098"}' };
+    h.currentDock = {
+      tabHash: 'web_app|4098',
+      favoriteKey: 'web_app|4098',
+      isRoot: false,
+      toFavoriteJSON: () => '{"viewType":"web_app","pointer":"4098"}',
+    };
     h.allTabs = [{ getKey: () => 'web_app|4098', name: 'localhost:4098' }];
     tabManager.adoptGlobal(h.allTabs as never);
     render(<FavoritesAddRow parentId="folder-9" />);
