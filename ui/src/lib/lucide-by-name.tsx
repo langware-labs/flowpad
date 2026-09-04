@@ -12,6 +12,7 @@ import { GitlabIcon } from '@src/components/icons/GitlabIcon';
 import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
 import { MicrosoftIcon } from '@src/components/icons/MicrosoftIcon';
 import { LinearIcon } from '@src/components/icons/LinearIcon';
+import { NotionIcon } from '@src/components/icons/NotionIcon';
 import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import { SlackIcon } from '@src/components/icons/SlackIcon';
 import { TelegramIcon } from '@src/components/icons/TelegramIcon';
@@ -44,6 +45,7 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   // both providers fell through to the generic key in the catalogue — a tile
   // that said "no icon found" where a person is choosing BETWEEN providers.
   Microsoft: MicrosoftIcon,
+  Notion: NotionIcon,
   // Drive's mark for the `google` provider deliberately: that one grant covers
   // Drive and Cloud Storage, and Drive is the half a person recognises. A
   // four-colour "G" would be the accurate mark and is not worth approximating

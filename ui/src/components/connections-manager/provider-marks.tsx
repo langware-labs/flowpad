@@ -3,6 +3,7 @@ import * as React from 'react';
 
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
+import { NotionIcon } from '@src/components/icons/NotionIcon';
 import { cn } from '@src/lib/utils';
 
 /**
@@ -47,6 +48,9 @@ const AnthropicMark: ProviderMark = ({ className }) => (
 
 const DriveMark: ProviderMark = ({ className }) => <GoogleDriveIcon className={className} aria-hidden="true" />;
 
+/** Notion, for the same reason as Drive: the hub publishes a path, not a name. */
+const NotionMark: ProviderMark = ({ className }) => <NotionIcon className={className} aria-hidden="true" />;
+
 const MARKS: Record<string, ProviderMark> = {
   github: GithubMark,
   anthropic: AnthropicMark,
@@ -54,10 +58,16 @@ const MARKS: Record<string, ProviderMark> = {
   // Cloud Storage), `googledrive` the hub's plugin for the same brand.
   google: DriveMark,
   googledrive: DriveMark,
+  notion: NotionMark,
 };
 
 /** The bespoke mark for a provider, or `null` — callers then fall back to the
  *  backend's published icon name. */
 export function providerMark(providerName: string | undefined): ProviderMark | null {
-  return MARKS[(providerName || '').trim().toLowerCase()] ?? null;
+  const name = (providerName || '').trim().toLowerCase();
+  // A credential definition names the same brand with a suffix
+  // (`anthropic-key`), and the catalogue shows both tiles side by side — one
+  // clay, one white, for one company. The suffix says which KIND of credential
+  // it is, never which brand, so it is not part of the lookup.
+  return MARKS[name] ?? MARKS[name.replace(/[-_]key$/, '')] ?? null;
 }
