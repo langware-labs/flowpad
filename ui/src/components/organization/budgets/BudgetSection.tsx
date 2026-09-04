@@ -105,14 +105,17 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
   const [settingsOpen, setSettingsOpen] = useState<boolean | null>(null); // null = "not touched yet"
   const createTeam = useCreateChildTeamForm({
     parentTypeId: new TypeId('organization', orgId),
-    parentLabel: data?.org.name ?? '',
+    parentLabel: data?.org?.name ?? '',
     isOrganization: true,
     organizationCreatedTitle: t`Team created`,
     onCreated: () => void invalidate(),
   });
 
   if (error) return <Denied />;
-  if (isLoading || !data) return <Loading />;
+  // `!data.org`, not just `!data`: the declared shape promises `org`, and a hub that answers with
+  // a payload lacking it (an older deployment, a partial error envelope) used to white-screen the
+  // whole page on `org.limit_usd` below. A shape we cannot render is a shape we have not got yet.
+  if (isLoading || !data?.org) return <Loading />;
 
   const org = data.org;
   const over = org.limit_usd !== null && org.allocated_usd !== null && org.allocated_usd > org.limit_usd;

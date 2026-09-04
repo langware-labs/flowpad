@@ -134,6 +134,18 @@ afterEach(() => {
 });
 
 describe('OrgUnit', () => {
+  it('waits rather than white-screening when the payload arrives without an org', () => {
+    // `OrgBudgets.org` is declared non-optional, so nothing in the types stops a hub that answers
+    // otherwise -- an older deployment, a partial error envelope. It used to crash the whole page
+    // with "Cannot read properties of undefined (reading 'name')" from the parentLabel argument,
+    // which is evaluated BEFORE the loading guard it sits above.
+    h.org.mockReturnValue({ data: { teams: [] }, isLoading: false, error: null });
+    h.team.mockReturnValue(idle);
+
+    expect(() => draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />)).not.toThrow();
+    expect(screen.queryByTestId('org-unit')).toBeNull();
+  });
+
   it('shows the org total, spent and given-out, and no team fetch until a team is opened', () => {
     h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
     h.team.mockReturnValue(idle);
