@@ -53,7 +53,13 @@ async function materialize(page: Page, id: string, assetRef: string) {
 test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   test('Sc1: project-scoped board creation materializes under the project mount', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id: projectId, mount } = await pickProject(request);
 
     const res = await request.post(`${API}/api/v1/graph/project/${projectId}/whiteboard`, {
@@ -77,7 +83,13 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id: projectId, mount } = await pickProject(request);
 
     const userRes = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name: `sc2-user-${Date.now() % 10000}` } });

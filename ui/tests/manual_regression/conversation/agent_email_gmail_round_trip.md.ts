@@ -188,7 +188,13 @@ async function cleanup(agentId: string, gmailCreated: string, env: NodeJS.Proces
 }
 
 async function openAgentInbox(page: Page, agentId: string): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/agent/${agentId}/inbox`);
   await expect(page.getByTestId('agent-inbox-view')).toBeVisible();
 }

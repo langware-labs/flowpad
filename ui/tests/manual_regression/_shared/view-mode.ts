@@ -35,3 +35,22 @@ export async function selectViewMode(page: Page, mode: QaViewMode): Promise<void
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('html')).toHaveAttribute('data-view', mode);
 }
+
+/**
+ * Seed the "LLM setup modal already seen" flag before the app boots.
+ *
+ * The `try` is load-bearing, not defensive noise: `addInitScript` runs in EVERY
+ * frame, and a page that embeds a sandboxed iframe without `allow-same-origin`
+ * (the mcp-ui surfaces) has no `localStorage` there — the bare call throws a
+ * SecurityError inside that frame, which surfaces as a pageerror and fails a
+ * console-error gate for a reason that has nothing to do with the app.
+ */
+export async function seedSetupModalSeen(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame: no storage, and nothing there needs the flag */
+    }
+  });
+}

@@ -14,7 +14,13 @@ const UNSCOPED_ASSETS = '/dock/assets?scope-mode=all';
 const API = apiBase();
 
 async function dismissSetupModal(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 }
 // Assets page = collapsible BrowseableTree (asset-type roots) + AssetListView.
 // The older LayoutList/Network mode toggle + type pills never shipped.
