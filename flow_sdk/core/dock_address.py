@@ -231,10 +231,15 @@ class TokenPlanKind(StrEnum):
 
 @dataclass(frozen=True)
 class RetiredTarget:
-    """Where a retired view forwards to."""
+    """Where a retired view forwards to.
+
+    Every row remains decodable for saved history. ``accepts_direct_address``
+    separately says whether a new navigation command may use the retired name.
+    """
 
     view_type: ViewType
     pointer: str
+    accepts_direct_address: bool = True
 
 
 #: Mirrors ``RETIRED_DOCK_VIEWS`` in ``ts_sdk/src/utils/ui/retired-views.ts``.
@@ -251,7 +256,11 @@ RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
     ViewType.CONNECTIONS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     ViewType.API_KEYS: RetiredTarget(ViewType.CREDENTIALS, CredentialsSubview.CONNECTIONS.value),
     # Skills folded into the Assets browser (`/dock/assets/list/skill`).
-    ViewType.SKILLS: RetiredTarget(ViewType.ASSETS, "list/skill"),
+    ViewType.SKILLS: RetiredTarget(
+        ViewType.ASSETS,
+        "list/skill",
+        accepts_direct_address=False,
+    ),
 }
 
 

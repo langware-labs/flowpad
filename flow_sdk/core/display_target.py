@@ -359,12 +359,11 @@ async def dock_target(address: str) -> dict:
     ``tests/fixtures/dock_address_contract.json``), so the rules cannot drift
     from what the UI will actually accept:
 
-    * unknown view, or a view with no ``VIEWER_REGISTRY`` row (the retired
-      aliases, and the folded-away ``skills`` / ``session`` / ``atlas``) →
-      ``InvalidDisplayTarget``. Those still DECODE — history is forever — but
-      they are never a destination;
-    * a RETIRED view forwards first (``environment`` → ``credentials/environment``)
-      rather than erroring, so an address saved before the retirement still opens;
+    * unknown view, or a historic view that is not a new destination (the
+      folded-away ``skills`` / ``session`` / ``atlas``) → ``InvalidDisplayTarget``.
+      Those still DECODE — history is forever — but direct navigation rejects them;
+    * a directly-addressable RETIRED view forwards first (``environment`` →
+      ``credentials/environment``) rather than erroring;
     * a required pointer that is missing → ``InvalidDisplayTarget``;
     * a view asked for on a page whose renderer has no case for it (``organization``
       on ``desk``) → ``InvalidDisplayTarget`` naming the address that works. Without
@@ -404,6 +403,11 @@ async def dock_target(address: str) -> dict:
             )
         raise InvalidDisplayTarget(f"Not a dock address: {address!r}")
 
+    retired = da.RETIRED_DOCK_VIEWS.get(parsed.view_type)
+    if retired is not None and not retired.accepts_direct_address:
+        raise InvalidDisplayTarget(
+            f"View '{parsed.view_type.value}' is not addressable (it decodes for history only)"
+        )
     view, pointer = da.normalize_retired(parsed.view_type, parsed.pointer)
     meta = da.VIEW_META[view]
     if not meta.addressable:
