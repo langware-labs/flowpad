@@ -44,6 +44,7 @@ import {
   EnvLocalBlockedNotice,
 } from './connections-manager/credential-value-form';
 import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
+import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -180,8 +181,8 @@ const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: strin
     </span>
   );
 
-  // Slack only — see provider-marks. Everything else comes from the backend's
-  // published icon name.
+  // The bespoke override first — see provider-marks. Everything else comes from
+  // the backend's published icon name, which now carries the brand colours.
   const Mark = providerMark(providerName);
   if (Mark) return <Mark className="h-4 w-4 shrink-0" />;
 
@@ -623,15 +624,16 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <Trans>Connections</Trans>
           </h2>
         )}
-        <Button
-          size="sm"
-          className="ms-auto h-8 gap-1.5"
+        {/* The same square tile the catalogue it opens is made of, and the same
+            one project home's "New …" affordances use. A pill button here and
+            tiles behind it made one act look like two. */}
+        <DesktopTile
+          className="ms-auto"
+          Icon={Plus}
+          label={t`Add connection`}
           onClick={() => setAddOpen(true)}
           data-testid="add-connection-open"
-        >
-          <Plus className="h-4 w-4" />
-          <Trans>Add connection</Trans>
-        </Button>
+        />
       </div>
 
       <AddConnectionDialog

@@ -3,6 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound } from 'lucide-react';
 import type { CredentialSpec, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { providerMark } from './provider-marks';
 import { isLucideName } from '@src/lib/icon-value';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import {
@@ -43,6 +44,18 @@ function specIcon(iconName?: string) {
   return isLucideName(iconName) ? lucideByName(iconName) : KeyRound;
 }
 
+/** A provider's glyph: its bespoke mark, else its published icon name.
+ *
+ *  Through `providerMark` FIRST — the same order the table's `ProviderIcon`
+ *  uses. Going straight to the icon name is what put a generic key on the
+ *  Google tile and a theme-blind octocat on GitHub's: the override exists
+ *  precisely for the providers whose published asset resolves badly, and this
+ *  dialog is where a person is choosing between them.
+ */
+function providerIcon(provider: OAuthProvider) {
+  return providerMark(provider.name) ?? specIcon(provider.icon);
+}
+
 export function AddConnectionDialog({
   open,
   onOpenChange,
@@ -71,7 +84,7 @@ export function AddConnectionDialog({
           {providers.length > 0 && (
             <TileSection title={<Trans>Sign in with a provider</Trans>}>
               {providers.map((p) => {
-                const Icon = specIcon(p.icon);
+                const Icon = providerIcon(p);
                 return (
                   <DesktopTile
                     key={p.name}

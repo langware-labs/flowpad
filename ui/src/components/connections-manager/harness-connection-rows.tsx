@@ -4,7 +4,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ConnectionState, type ConnectionSpec } from '@sdk';
 import { cn } from '@src/lib/utils';
-import { providerMetaFor } from '@src/tabs/provider-meta';
+import { HarnessMark } from './harness-mark';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
@@ -64,14 +64,13 @@ export function HarnessConnectionRows({
     <>
       {rows.map((row) => {
         const worker = row.provider;
-        const { Icon, iconClassName } = providerMetaFor(worker);
         const visual = STATE_VISUAL[row.state] ?? STATE_VISUAL[ConnectionState.Unknown];
 
         return (
           <TableRow key={`harness:${worker}`} data-testid={`connection-row-harness-${worker}`}>
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
-                <Icon className={cn('h-4 w-4 shrink-0', iconClassName)} />
+                <HarnessMark worker={worker} />
                 <span>{row.display_name || worker}</span>
               </div>
             </TableCell>

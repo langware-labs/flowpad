@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FileText } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { isLucideName } from '@src/lib/icon-value';
 
 const MANIFEST_ROOT = join(
   __dirname,
@@ -59,5 +60,40 @@ describe('provider icons', () => {
       shared.map(([icon, names]) => `${icon}: ${names.join(', ')}`),
       'these providers are indistinguishable in the picker',
     ).toEqual([]);
+  });
+});
+
+/**
+ * The same two failure modes, one screen over: the CONNECTION catalogue.
+ *
+ * `provider_registry.py` publishes an icon NAME per OAuth provider, and the Add
+ * dialog is the grid whose whole job is telling providers apart. Nothing checked
+ * that those names resolve, and two of them did not: lucide has no `Google` and
+ * no `Microsoft` glyph, so both tiles fell through to the generic key — a tile
+ * that says "no icon found" where a person is choosing between providers.
+ *
+ * Read off the Python rather than restated here, for the reason the manifest
+ * block gives: a provider added tomorrow is covered the moment it lands.
+ */
+const REGISTRY = join(__dirname, '../../../flow_sdk/core/oauth/provider_registry.py');
+const providerIcons = [...readFileSync(REGISTRY, 'utf8').matchAll(/^\s*icon="([^"]+)",/gm)].map((m) => m[1]);
+
+describe('connection provider icons', () => {
+  it('finds the published icon names', () => {
+    expect(providerIcons.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(providerIcons)('%s resolves to a real glyph', (name) => {
+    // `isLucideName` is what the dialog and the table both gate on before
+    // calling `lucideByName`; a name that fails it never reaches a glyph at all
+    // and the caller draws its generic fallback instead.
+    expect(isLucideName(name), `${name} resolves to nothing — the tile draws a generic fallback`).toBe(true);
+    expect(lucideByName(name)).not.toBe(FileText);
+  });
+
+  it('gives every provider a glyph of its own', () => {
+    // Two providers wearing one mark is the other invisible failure: the grid
+    // renders, and says nothing about which row is which.
+    expect(new Set(providerIcons).size).toBe(providerIcons.length);
   });
 });

@@ -8,7 +8,9 @@ import { CloudMailboxIcon } from '@src/components/icons/CloudMailboxIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { GmailIcon } from '@src/components/icons/GmailIcon';
 import { GoogleCloudStorageIcon } from '@src/components/icons/GoogleCloudStorageIcon';
+import { GitlabIcon } from '@src/components/icons/GitlabIcon';
 import { GoogleDriveIcon } from '@src/components/icons/GoogleDriveIcon';
+import { MicrosoftIcon } from '@src/components/icons/MicrosoftIcon';
 import { LinearIcon } from '@src/components/icons/LinearIcon';
 import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import { SlackIcon } from '@src/components/icons/SlackIcon';
@@ -36,6 +38,17 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   // icon is rendered.
   Atlassian: AtlassianIcon,
   Linear: LinearIcon,
+  // Shadows lucide's monochrome `Gitlab` with the same shape in GitLab's orange.
+  Gitlab: GitlabIcon,
+  // Names nothing resolved before: lucide has no Microsoft or Google glyph, so
+  // both providers fell through to the generic key in the catalogue — a tile
+  // that said "no icon found" where a person is choosing BETWEEN providers.
+  Microsoft: MicrosoftIcon,
+  // Drive's mark for the `google` provider deliberately: that one grant covers
+  // Drive and Cloud Storage, and Drive is the half a person recognises. A
+  // four-colour "G" would be the accurate mark and is not worth approximating
+  // badly — if Google ever needs its own, it gets its own component.
+  Google: GoogleDriveIcon,
   // Shadows lucide's monochrome `Slack`: on an inbox row the colour is the
   // attribution, so the brand mark wears its own.
   Slack: SlackIcon,
