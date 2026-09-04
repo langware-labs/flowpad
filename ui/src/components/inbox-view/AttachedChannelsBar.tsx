@@ -147,7 +147,10 @@ export function AttachedChannelsBar({ owner, selected, onSelectedChange, classNa
                 <SlidersHorizontal />
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-0">
+            {/* `onFocusOutside` is refused: flipping a switch disables it while it
+                saves, focus falls to the body, and Radix would read that as
+                "clicked elsewhere" and close the list mid-action. */}
+            <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
               <div className="px-3 pb-1 pt-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{t`Channels`}</div>
               {rows.map((source) => (
                 <ChannelRow key={source.id} source={source} spec={specFor(source.provider)} onDelete={() => setDeleting(source)} />
@@ -249,7 +252,8 @@ function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: Data
       </span>
       <Switch
         checked={state !== 'off'}
-        disabled={busy}
+        aria-busy={busy || undefined}
+        onClick={(e) => e.stopPropagation()}
         onCheckedChange={() => void toggle()}
         aria-label={t`Listen on ${source.name || source.provider}`}
         data-testid="attached-channel-switch"
