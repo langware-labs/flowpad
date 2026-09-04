@@ -24,15 +24,15 @@ import logging
 from typing import Any, Optional
 
 from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import (
-    IngestDriver,
     FetchResult,
+    IngestDriver,
     SegmentCursorView,
     SegmentRef,
     SendOutcome,
     SendStatus,
 )
-from flow_sdk.ingest import http
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -167,11 +167,32 @@ class AgentMailDriver(IngestDriver):
             raise SourceError.config("no_inbox", "config.inbox is required")
         return inbox
 
-    @staticmethod
-    def _auth(source) -> dict[str, str]:
-        key = str((source.config or {}).get("api_key") or "").strip()
+    #: Machine SOD-store name the AgentMail key lives under. A machine-level
+    #: secret (like ``LLMEndpoint``'s ``lm_api.<provider>``) so the key is NOT a
+    #: form field on the source row: an ingest driver has no project, so a
+    #: project-scoped credential is unreachable here, but a per-instance SOD
+    #: secret resolves by name with no project at all.
+    SECRET_NAME = "ingest_api.agentmail"
+
+    @classmethod
+    def _auth(cls, source) -> dict[str, str]:
+        # SOD store first (the account-bound key, off the form), then the legacy
+        # ``config.api_key`` so sources created before this change keep working.
+        key = ""
+        try:
+            from flow_sdk.cli.auth.secrets import read_secret  # noqa: PLC0415
+
+            key = str(read_secret(cls.SECRET_NAME) or "").strip()
+        except Exception:  # noqa: BLE001 — a locked/absent store is "no key", not a crash
+            key = ""
         if not key:
-            raise SourceError.config("no_api_key", "config.api_key is required")
+            key = str((source.config or {}).get("api_key") or "").strip()
+        if not key:
+            raise SourceError.config(
+                "no_api_key",
+                f"No AgentMail key. Store it in the machine secret '{cls.SECRET_NAME}' "
+                f"(the inbox is account-bound; the key is not a per-source form field).",
+            )
         return {"Authorization": f"Bearer {key}"}
 
     @staticmethod
