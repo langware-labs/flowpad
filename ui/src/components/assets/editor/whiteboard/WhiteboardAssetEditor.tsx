@@ -133,6 +133,30 @@ function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
   return `${trimmed}\n${wrapped}\n`;
 }
 
+/**
+ * Make freehand strokes safe for Excalidraw's renderer, in place.
+ *
+ * Its free-draw path does `points.map(([x, y], i) => [x, y, pressures[i]])` whenever
+ * `simulatePressure` is falsy, so a `freedraw` element that carries points but no
+ * matching `pressures` throws `Cannot read properties of undefined (reading '0')` and
+ * takes the whole board render down with it. A stroke drawn in the UI always has one
+ * of the two; a scene that did NOT come from the UI need not — and this editor
+ * deliberately accepts those: a plain Excalidraw scene "what agents and exported
+ * .excalidraw files write", and whatever `convertToExcalidrawElements` returns for a
+ * hand-built skeleton. Both entry points run through here.
+ */
+function normalizeFreedraw(elements: unknown): void {
+  if (!Array.isArray(elements)) return;
+  for (const el of elements as Array<Record<string, unknown>>) {
+    if (el?.type !== 'freedraw') continue;
+    const pressures = el.pressures;
+    const points = el.points;
+    if (!Array.isArray(pressures) || !Array.isArray(points) || pressures.length !== points.length) {
+      el.simulatePressure = true;
+    }
+  }
+}
+
 export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
@@ -212,6 +236,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
           appState?: unknown;
           files?: unknown;
         };
+        normalizeFreedraw(data.elements);
         if (data.appState && typeof data.appState === 'object') {
           data.appState = stripEphemeralAppState(data.appState);
         }
@@ -392,6 +417,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         }
       ).convertToExcalidrawElements;
       const elements = convertToExcalidrawElements(result.elements);
+      normalizeFreedraw(elements);
 
       apiRef.current.updateScene({ elements });
       if (result.files && Object.keys(result.files).length > 0) {
