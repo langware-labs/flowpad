@@ -86,6 +86,22 @@ def emitted_names() -> dict[str, set[str]]:
                 if isinstance(ref, str):
                     add(ref.rpartition(".")[2], f"{path.parent.name} pack sub-icon")
 
+    # The picker persists its chosen name, so every option it offers is an
+    # emitted icon just as surely as a TypeInfo or provider manifest is. Read
+    # the source array itself: the generator must not grow a second,
+    # hand-maintained copy of the picker vocabulary.
+    picker = REPO / "ui" / "src" / "components" / "ui" / "icon-picker.tsx"
+    picker_text = picker.read_text(errors="ignore")
+    match = re.search(
+        r"\bICON_PICKER_LUCIDE_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const",
+        picker_text,
+        re.S,
+    )
+    if not match:
+        raise ValueError(f"could not find ICON_PICKER_LUCIDE_NAMES in {picker}")
+    for found in re.findall(r"['\"]([A-Za-z][A-Za-z0-9]*)['\"]", match.group(1)):
+        add(found, picker.name)
+
     return names
 
 

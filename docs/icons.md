@@ -56,7 +56,7 @@ family* the renderer already has.
 |---|---|---|
 | `brands` | assets | 16 vendor marks |
 | `flowpad` | assets | 6 of our own UI glyphs |
-| `lucide` | bundle | declares the family; 64 files served |
+| `lucide` | bundle | declares the family; 105 files served |
 
 They live at `flow_sdk/server/icons/<pack>/icon_pack.json` (+ `assets/`), are
 served at `/icons` by the static mount in `flow_sdk/server/app.py`, and ship in

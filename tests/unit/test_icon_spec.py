@@ -208,6 +208,11 @@ class TestPacks:
 
 
 class TestTheFence:
+    def test_picker_values_are_emitted_names(self):
+        """A picker option is persisted data, not a preview-only glyph; the
+        generator must therefore serve it for every later render surface."""
+        assert "icon-picker.tsx" in emitted_names()["Rocket"]
+
     def test_every_emitted_name_resolves_exactly(self):
         """The check that pays for all of this.
 

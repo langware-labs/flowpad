@@ -39,6 +39,10 @@ vi.mock('@src/components/assets/editor/agent-profile/AgentRunDialog', () => ({
   AgentRunDialog: () => null,
 }));
 
+vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({
+  AgentMcpField: () => null,
+}));
+
 const AGENT_ID = 'ebed6648-ad32-4611-a63e-b12bb38b984b';
 const PNG_1X1 = Uint8Array.from(
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
@@ -124,7 +128,8 @@ describe('Agent profile avatar', () => {
 
   it('keeps Lucide and emoji values while unknown words fall back safely', () => {
     const first = render(<AvatarValue value="Star" alt="star" fallback={<span>fallback</span>} />);
-    expect(first.container.querySelector('svg')).toBeInTheDocument();
+    expect(first.container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+    expect(screen.queryByText('fallback')).toBeNull();
     first.unmount();
 
     const second = render(<AvatarValue value="🧪" alt="test tube" fallback={<span>fallback</span>} />);
