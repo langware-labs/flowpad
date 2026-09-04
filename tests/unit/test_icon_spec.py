@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from flow_sdk.icons import IconRegistry, icons
 from flow_sdk.icons.registry import icon_tag, kebab
 from flow_sdk.schema.data_spec._kinds import register_builtin_kinds, resolve_kind
-from flow_sdk.schema.data_spec.icon_spec import IconPackSpec, IconSpec
+from flow_sdk.schema.data_spec.icon_spec import IconPackPayload, IconPackSpec, IconSpec
 from flow_sdk.tags.grammar import is_valid_tag
 from scripts.build_lucide_icons import emitted_names
 
@@ -31,6 +31,7 @@ class TestRegistration:
         register_builtin_kinds()
         assert resolve_kind("icon") is IconSpec
         assert resolve_kind("icon.pack") is IconPackSpec
+        assert resolve_kind("icon.pack_payload") is IconPackPayload
 
     def test_misspelled_manifest_field_is_rejected(self):
         """`extra="forbid"` is inherited from DataSpec, and it is the point: a
@@ -174,11 +175,23 @@ class TestPacks:
         that only shows up as a hole in the UI."""
         assert icons.missing_assets() == []
 
-    def test_payload_publishes_served_for_bundle_packs_only(self):
+    def test_payload_publishes_what_a_bundle_pack_serves(self):
         by_kind = {p["kind"]: p for p in icons.payload()}
         assert by_kind["lucide"]["icons"] == []
         assert len(by_kind["lucide"]["served"]) > 50
-        assert "served" not in by_kind["brands"]
+        # An enumerated pack's `icons` already say; nothing is derived for it.
+        assert by_kind["brands"]["served"] == []
+
+    def test_the_travelling_shape_is_a_dataspec_that_round_trips(self):
+        """`served` is derived and must never be authorable — but "derived" is
+        not a reason to leave the type system. Patching the key into a
+        `model_dump()` made the payload something no DataSpec could parse, which
+        is what CLAUDE.md forbids for a shape that travels."""
+        for blob in icons.payload():
+            assert IconPackPayload(**blob).kind == blob["kind"]
+        # The manifest shape still cannot carry it, which is the other half.
+        with pytest.raises(ValidationError):
+            IconPackSpec(kind="p", served=["x"])  # type: ignore[call-arg]
 
     def test_packs_are_shipped_in_the_wheel(self):
         """`server/icons/**/*` in pyproject's package-data is what carries these

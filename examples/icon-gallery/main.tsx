@@ -19,6 +19,7 @@ import {
   iconChip,
   iconElement,
   loadIconPacks,
+  pascalLeaf,
   registerBundleRenderer,
   resolveIcon,
   type IconPackSpec,
@@ -31,11 +32,10 @@ import './gallery.css';
  * The bundle seam, installed once. Without it a `bundle` icon falls back to
  * fetching its SVG — turning tree-shaken inline geometry into one request per
  * glyph. The SDK cannot do this itself: it depends on `dotenv` and nothing else.
- * Lucide exports PascalCase, so the leaf is converted here, where the app knows
- * its own library's convention.
+ * Lucide exports PascalCase; `pascalLeaf` is the SDK's inverse of the slug rule,
+ * so each app does not copy the same regex.
  */
-const pascal = (leaf: string) => leaf.replace(/(^|-)([a-z0-9])/g, (_, __, c) => c.toUpperCase());
-registerBundleRenderer((name) => (lucideIcons as unknown as Record<string, never>)[pascal(name)]);
+registerBundleRenderer((name) => (lucideIcons as unknown as Record<string, never>)[pascalLeaf(name)]);
 
 /* ------------------------------------------------------------------- parts */
 

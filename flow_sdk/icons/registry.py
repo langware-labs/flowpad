@@ -43,7 +43,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.schema.data_spec.icon_spec import IconPackSpec, IconSpec
+from flow_sdk.schema.data_spec.icon_spec import IconPackPayload, IconPackSpec, IconSpec
 from flow_sdk.tags.grammar import normalize_tag, tag_ancestors
 
 #: The one manifest filename a pack directory is recognised by.
@@ -267,21 +267,18 @@ class IconRegistry:
         return gone
 
     def payload(self) -> list[dict]:
-        """The packs as plain dicts, for bootstrap and the ``icons`` action.
+        """The packs as they travel, for bootstrap and the ``icons`` action.
 
-        This is a WIRE shape, not a manifest: ``served`` is derived here and is
-        deliberately not an ``IconPackSpec`` field, because a field would be
-        authorable and a hand-written list is the second copy this whole design
-        avoids. The consequence is that a blob from here does not round-trip
-        through ``IconPackSpec(**blob)`` — ``extra="forbid"`` rejects it. Read a
-        pack from disk to get a spec; read this to get what a client renders."""
-        out = []
-        for pack in self.packs:
-            blob = pack.model_dump(mode="json")
-            if pack.is_bundle:
-                blob["served"] = sorted(self._served.get(pack.kind, frozenset()))
-            out.append(blob)
-        return out
+        Built through ``IconPackPayload`` rather than by patching a key into
+        ``model_dump()`` output: a shape that travels IS a ``DataSpec``, so the
+        payload a client receives is one the backend can parse back."""
+        return [
+            IconPackPayload(
+                **pack.model_dump(),
+                served=sorted(self._served.get(pack.kind, frozenset())) if pack.is_bundle else [],
+            ).model_dump(mode="json")
+            for pack in self.packs
+        ]
 
 
 #: The process-wide registry.

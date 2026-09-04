@@ -7,7 +7,7 @@
  * function rather than editing 81 files. If either quietly stops holding, the
  * migration breaks at ~1,600 call sites instead of here.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FlowIcon, FLOW_ICON_SIZES, flowIconComponent } from '@sdk/react/FlowIcon';
 import { loadIconPacks, registerBundleRenderer, setIconFallback, type IconPackSpec } from '@sdk/icons';
@@ -170,6 +170,18 @@ describe('FlowIcon props', () => {
     expect(glyph(container).querySelector('.fp-icon-sub')).not.toBeNull();
   });
 
+});
+
+describe('a broken asset', () => {
+  it('lands where a typo lands, not on nothing', () => {
+    // `registry.ts` promises "a null name, a typo and a missing file all land
+    // on FileText". A 404 that rendered null broke that promise on the one case
+    // nobody can see coming — the file being gone.
+    const { container } = render(<FlowIcon icon="brands.slack" />);
+    const img = container.querySelector('img')!;
+    fireEvent.error(img);
+    expect(glyph(container).getAttribute('style')).toContain('file-text.svg');
+  });
 });
 
 describe('the stylesheet', () => {

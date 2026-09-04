@@ -1,6 +1,5 @@
 import apiClient, { GRAPH_API_PREFIX } from '../client';
-import { resolveIcon } from './resolve';
-import type { IconPackSpec, IconResolution } from './types';
+import type { IconPackSpec } from './types';
 
 /**
  * The loaded icon vocabulary, held once per app.
@@ -73,7 +72,3 @@ export async function fetchIconPacks(): Promise<IconPackSpec[]> {
   return packs;
 }
 
-/** Resolve against the loaded packs — the non-React entry point. */
-export function resolve(ref: string | null | undefined): IconResolution {
-  return resolveIcon(ref, packs);
-}
