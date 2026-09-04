@@ -130,6 +130,7 @@ EXPECTED = {
     "SYSTEM_JOB": "system_job",
     "JOB_EXECUTION": "job_execution",
     "API_KEY": "api_key",
+    "LLM_ENDPOINT": "llm_endpoint",
     "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",

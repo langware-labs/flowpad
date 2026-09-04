@@ -10,8 +10,14 @@
  *
  * A refused or failed call is a verdict, not an error: it renders as a red
  * status here rather than as a toast.
+ *
+ * TWO transports, one button. On the hub the `test` action is addressed directly
+ * (`/graph/llm_endpoint/<id>/test`); on a box that path is a 404, because the type has no
+ * local rows — there the same action is reached through the `llm-endpoint` box action,
+ * which already carries the listing. The verdict shape is identical either way, so every
+ * surface renders one button and never has to know which runtime it is on.
  */
-import { llmEndpointsService, type LLMEndpointTestResult } from '@sdk';
+import { isHubOnly, llmEndpointsService, llmSourcesService, type LLMEndpointTestResult } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { Check, Loader2, X, Zap } from 'lucide-react';
 import { useState } from 'react';
@@ -32,7 +38,9 @@ export function TestEndpointButton({ endpointId }: TestEndpointButtonProps) {
     setBusy(true);
     setVerdict(null);
     try {
-      setVerdict(await llmEndpointsService.testEndpoint(endpointId));
+      setVerdict(
+        isHubOnly() ? await llmEndpointsService.testEndpoint(endpointId) : await llmSourcesService.test(endpointId),
+      );
     } catch (e) {
       // Only a transport/permission failure lands here — the hub answers a
       // refused call inside a success envelope.

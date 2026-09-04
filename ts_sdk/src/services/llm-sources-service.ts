@@ -12,6 +12,8 @@
  */
 import apiClient from '../client';
 import { isHubOnly } from '../utils/hub-runtime';
+import type { LLMEndpointFilters, LLMEndpointLimits } from '../entities/llm-endpoint';
+import type { LLMEndpointTestResult } from './llm-endpoints-service';
 import type { LLMSource } from '../entities/llm-source';
 
 const ACTION = 'llm-endpoint';
@@ -41,6 +43,17 @@ export interface LLMEndpointOffer {
   models: Record<string, string>;
   /** False for a device login: the backend can never call it. */
   invocable: boolean;
+  /** Where the provider is reached. Empty for a hub budget — the hub owns the URL. */
+  base_url: string;
+  /** What this endpoint lets through: the model allow/deny lists, the ceilings, the
+   *  aliases a narrow wallet redirects with. */
+  filters: LLMEndpointFilters;
+  /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
+  limits: LLMEndpointLimits;
+  /** Whose pot this is — `organization-`/`team-`/`user-<uuid>`, or null for a root or an
+   *  allocation. The one field that says whether a budget is a person's own or a pool they
+   *  merely draw through, which is what the user-scoped asset view filters on. */
+  principal_typeid: string | null;
 }
 
 export interface LLMFundingStatus {
@@ -52,6 +65,11 @@ export interface LLMFundingStatus {
   name: string | null;
   provider: string | null;
   hub_logged_in: boolean;
+  /** Who the hub thinks this box is (`user-<uuid>`), in the spelling an endpoint's
+   *  `principal_typeid` uses — null when signed out. The box's LOCAL user is a different
+   *  id entirely, so this is the only way a screen can tell a budget allocated TO this
+   *  person from one they merely administer. */
+  hub_user_typeid: string | null;
   /** Per capability kind (`harness.claude.cli`), every source that could fund it. */
   sources: Record<string, LLMSource[]>;
   /** Per capability kind, the one the resolver picks — `null` when nothing can fund it. */
@@ -80,6 +98,20 @@ export class LlmSourcesService {
   status(): Promise<LLMFundingStatus | null> {
     if (isHubOnly()) return Promise.resolve(null);
     return apiClient.get(this.base);
+  }
+
+  /**
+   * Does a call through `endpointId` actually succeed?
+   *
+   * A pass-through to the hub's own `test` action, and the ONLY route to it from the desktop:
+   * `llmEndpointsService.testEndpoint` addresses `/graph/llm_endpoint/<id>/test`, which on a box
+   * is a 404 — the type has no local rows (`flow_sdk/builtin/llm_endpoint.py`). Same channel the
+   * listing already rides, so a screen never has to know which of the two it is talking to.
+   *
+   * Accepts a bare uuid or a typeid; a refused call resolves with `ok: false` rather than throwing.
+   */
+  test(endpointId: string): Promise<LLMEndpointTestResult> {
+    return apiClient.post(`${this.base}/test`, { endpoint_typeid: endpointId });
   }
 
   /**

@@ -24,6 +24,11 @@ export enum AssetEditor {
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey', // guided onboarding — overview + Start, opens the journey tray
   MCP = 'mcp', // an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
+  // A hub LLM budget, rendered READ-ONLY: what this person may spend, which
+  // models it lets through, and a Test button. Entity-backed but never
+  // file-backed — the row is a projection of hub state with no local record, so
+  // the router resolves it from the box listing instead of an FSRef.
+  LLM_ENDPOINT = 'llm_endpoint',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -60,6 +65,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],
   [AssetEditor.MCP]: [RecordType.MCP],
+  [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],
@@ -75,9 +81,7 @@ export function isFileOnlyEditor(editor: AssetEditor): boolean {
 
 /** Derived inverse: record type → the editor that edits it. */
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
-  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) =>
-    types.map((t) => [t as string, editor as AssetEditor]),
-  ),
+  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) => types.map((t) => [t as string, editor as AssetEditor])),
 );
 
 /** The editor that edits `type`, or undefined if the type has no asset editor. */

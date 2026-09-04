@@ -41,6 +41,11 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     dataManager: { ...(actual.dataManager as object), delete: h.deleteEntity },
+    // This screen exists only on the hub, and `TestEndpointButton` picks its transport off
+    // that: on a hub it addresses the `test` action directly, on a box it goes through the
+    // `llm-endpoint` box action (the type has no local rows there). Declaring the runtime
+    // is what keeps `testEndpoint` the call under test.
+    isHubOnly: () => true,
     llmEndpointsService: {
       ...(actual.llmEndpointsService as object),
       getUsage: h.getUsage,

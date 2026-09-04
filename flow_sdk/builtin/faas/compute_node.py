@@ -1364,6 +1364,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             bind_hub_llm_endpoint,
             hub_llm_endpoint_status,
             select_llm_source,
+            test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
         )
 
@@ -1377,8 +1378,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # ``select`` is the USER picking a source; the bare POST is the HUB binding this
                 # box and 409s without a hub key. Keeping them apart is what lets someone choose
                 # their own OpenRouter key on a box that has never talked to a hub.
-                if (request_info.sub_path or "").strip("/") == "select":
+                sub_path = (request_info.sub_path or "").strip("/")
+                if sub_path == "select":
                     return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``test`` is a pass-through to the hub's own verdict. It lives here for the
+                # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
+                # desktop screen has no other way to reach that action.
+                if sub_path == "test":
+                    return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())

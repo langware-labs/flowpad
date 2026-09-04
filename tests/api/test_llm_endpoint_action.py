@@ -129,3 +129,58 @@ async def test_select_rejects_what_it_cannot_honour(bootstrapped_client) -> None
     ):
         body = (await bootstrapped_client.post(path, json=payload)).json()
         assert body["status"] != "SUCCESS", f"{payload} should have been refused: {body}"
+
+
+# ── test: the box's pass-through to the hub's own verdict ────────────────────────────
+#
+# The desktop has no other route to it. ``llm_endpoint`` is ``_api_visible=False`` -- there are
+# no local rows -- so a screen calling ``/graph/llm_endpoint/<id>/test`` through dataManager
+# would be asking THIS box about an entity it does not have. Hence the sub-action, beside the
+# listing it already serves.
+
+TEST_PATH = f"{PATH}/test"
+VERDICT = {"ok": True, "status": 200, "model": "anthropic/claude-haiku-4.5", "latency_ms": 412, "message": ""}
+
+
+@pytest.fixture
+def hub_test_call(monkeypatch):
+    """Capture the hub call the sub-action makes, and answer it with a verdict."""
+    calls: list[tuple] = []
+
+    async def _hub_post(entity_type, payload, entity_id=None, action=None, **kwargs):
+        calls.append((entity_type, entity_id, action))
+        return VERDICT
+
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", _hub_post)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sent", ["ep1", "llm_endpoint-ep1", "llm_endpoint:ep1"])
+async def test_test_forwards_to_the_hub_and_returns_the_verdict(bootstrapped_client, hub_login, hub_test_call, sent):
+    """Every spelling the hub itself hands out resolves to the same bare id: the row's own
+    ``id``, the typeid form in ``sources``/chain hops, and the colon form the bind payload uses.
+    A caller that guessed wrong would otherwise get a 400 on a perfectly good endpoint."""
+    r = await bootstrapped_client.post(TEST_PATH, json={"endpoint_typeid": sent})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "SUCCESS"
+    assert body["data"] == VERDICT
+    assert hub_test_call == [("llm_endpoint", "ep1", "test")]
+
+
+@pytest.mark.asyncio
+async def test_test_without_login_is_409(bootstrapped_client, monkeypatch, hub_test_call):
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.resolve_hub_api_key", lambda: None)
+    r = await bootstrapped_client.post(TEST_PATH, json={"endpoint_typeid": "ep1"})
+    assert r.json()["status"] == "FAIL"
+    assert r.json().get("status_code") == 409 or r.status_code == 409
+    assert hub_test_call == [], "a signed-out box must not reach the hub at all"
+
+
+@pytest.mark.asyncio
+async def test_test_without_an_endpoint_is_400(bootstrapped_client, hub_login, hub_test_call):
+    r = await bootstrapped_client.post(TEST_PATH, json={})
+    assert r.json()["status"] == "FAIL"
+    assert r.json().get("status_code") == 400 or r.status_code == 400
+    assert hub_test_call == []
