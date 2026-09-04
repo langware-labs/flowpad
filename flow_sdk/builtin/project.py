@@ -2906,8 +2906,17 @@ class Project(Entity):
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
-    async def _delete_with_children(self) -> dict:
+    async def _delete_with_children(self, *, folder: str = "rmtree") -> dict:
         """Permanently delete this project and everything that belongs to it.
+
+        ``folder`` says what happens to the user's own files at
+        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default, what
+        the assets-page delete has always done), ``trash`` moves them to the
+        desktop Trash so the deletion is recoverable, and ``keep`` leaves them
+        alone. Everything else — the child records, their bundles, the ``@local``
+        detach and the project's own record — is identical in all three, which
+        is why the cleanup screen calls this rather than growing its own
+        deletion: the cascade guards below are the part nobody should re-derive.
 
         Irreversible. Removes, for the project and for every indexed record
         whose ``project_id`` is this project:
@@ -2993,13 +3002,21 @@ class Project(Entity):
         #    install. Portal checkouts live under the workspace and stay
         #    deletable.
         mount = self.fs_storage_mount_path
-        if mount and not self.protected_path:
+        folder_mechanism: str | None = None
+        if mount and folder == "keep":
+            log.info("[project-delete] keeping source folder %s", mount)
+        elif mount and not self.protected_path:
             try:
-                shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+                if folder == "trash":
+                    from flow_sdk.fs_store.path_utils import trash_path  # noqa: PLC0415
+
+                    folder_mechanism = trash_path(mount)
+                else:
+                    shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
+                log.warning("[project-delete] source folder %s failed %s: %s", folder, mount, exc)
         elif mount:
             log.warning("[project-delete] preserved protected source path %s", mount)
 
@@ -3021,7 +3038,12 @@ class Project(Entity):
         # 5. Delete the project's own record (DB row + FTS + wiki + shadow + data).
         await _destroy({"type": self.type, "id": pid})
 
-        return {"project_id": pid, "deleted_children": len(targets)}
+        return {
+            "project_id": pid,
+            "deleted_children": len(targets),
+            "folder": folder,
+            "folder_mechanism": folder_mechanism,
+        }
 
     @action.post(action_name="delete-with-children")
     async def _http_delete_with_children(self) -> ApiResponse:

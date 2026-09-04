@@ -15,6 +15,7 @@
  */
 
 import type { CleanupSummary } from '../entities/compute-node/system-profile';
+import { useSyncExternalStore } from 'react';
 
 let summary: CleanupSummary | null = null;
 const listeners = new Set<() => void>();
@@ -48,6 +49,8 @@ export function ingestCleanupSummary(next: CleanupSummary | null | undefined): v
   ) {
     return;
   }
+  // The held reference is replaced only on a real change, which is what makes
+  // it safe as a `useSyncExternalStore` snapshot.
   summary = next;
   for (const listener of listeners) listener();
 }
@@ -69,4 +72,15 @@ export function shouldWarnAboutEmptyProjects(next: CleanupSummary | null): boole
 export function __resetCleanupStoreForTest(): void {
   summary = null;
   listeners.clear();
+}
+
+/**
+ * The last counts, re-rendering when a scan updates them.
+ *
+ * `useSyncExternalStore` rather than a `useState` + `useEffect` pair, matching
+ * every sibling store (`activity-store`, `pending-actions-store`): it is one
+ * call instead of two hooks, and it cannot tear during a concurrent render.
+ */
+export function useCleanupSummary(): CleanupSummary | null {
+  return useSyncExternalStore(subscribeToCleanupSummary, getCleanupSummary, getCleanupSummary);
 }
