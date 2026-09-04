@@ -8,29 +8,46 @@
  * landed and re-submitting it would be wrong.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   setCredential: vi.fn(),
+  invalidate: vi.fn(() => Promise.resolve()),
+  del: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useSetupOrgRoot: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
+  useInvalidateBudgets: () => h.invalidate,
 }));
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     llmEndpointsService: { ...(actual.llmEndpointsService as object), setCredential: h.setCredential },
+    dataManager: { ...(actual.dataManager as object), delete: h.del },
   };
 });
 
 import { OrgRootSetup } from '@src/components/organization/budgets/OrgRootSetup';
 
+// Radix Select opens through pointer capture and keeps the active item in view; jsdom
+// implements neither, so without these the provider dropdown never opens. Same stubs as
+// `vibe-worker-select.test.tsx` — the unit tier's setup carries none of them.
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.setPointerCapture = () => {};
+Element.prototype.releasePointerCapture = () => {};
+Element.prototype.scrollIntoView = () => {};
+
 const ORG_ID = '550e8400-e29b-41d4-a716-446655440000';
-const ENDPOINT_UUID = '550e8400-e29b-41d4-a716-446655440099';
-const ENDPOINT_TYPEID = `llm_endpoint-${ENDPOINT_UUID}`;
+const ENDPOINT_TYPEID = 'llm_endpoint-550e8400-e29b-41d4-a716-446655440099';
+const ENDPOINT_BARE = '550e8400-e29b-41d4-a716-446655440099';
+// Real length and real prefixes: the field refuses a key whose SHAPE is wrong for the provider,
+// so a toy string like 'sk-or-secret' is now (correctly) rejected before it is ever sent.
+const ANTHROPIC_KEY = `sk-ant-api03-${'b'.repeat(40)}`;
+const OPENROUTER_KEY = `sk-or-v1-${'a'.repeat(40)}`;
 
 afterEach(() => {
   cleanup();
@@ -40,13 +57,14 @@ afterEach(() => {
 describe('OrgRootSetup — no budget yet', () => {
   const org = { endpoint_id: null, is_root: false, provider: null, credential_hint: '' };
 
-  it('defaults to the first provider and lets another be picked', () => {
+  it('defaults to the first provider and lets another be picked from the dropdown', async () => {
+    const user = userEvent.setup();
     render(<OrgRootSetup orgId={ORG_ID} org={org} />);
 
-    expect(screen.getByTestId('org-root-provider-openrouter').getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByTestId('org-root-provider-anthropic'));
-    expect(screen.getByTestId('org-root-provider-anthropic').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByTestId('org-root-provider-openrouter').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('org-root-provider').textContent).toContain('OpenRouter');
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-anthropic'));
+    expect(screen.getByTestId('org-root-provider').textContent).toContain('Anthropic');
   });
 
   it('does nothing when Activate is pressed with no key typed', () => {
@@ -58,10 +76,12 @@ describe('OrgRootSetup — no budget yet', () => {
   it('creates the root then stores the key, in that order, with the chosen provider', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
     h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
+    const user = userEvent.setup();
     render(<OrgRootSetup orgId={ORG_ID} org={org} />);
 
-    fireEvent.click(screen.getByTestId('org-root-provider-anthropic'));
-    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: 'sk-ant-secret' } });
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-anthropic'));
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: ANTHROPIC_KEY } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
 
     await waitFor(() => expect(h.setCredential).toHaveBeenCalled());
@@ -70,9 +90,7 @@ describe('OrgRootSetup — no budget yet', () => {
       provider: 'anthropic',
       baseUrl: 'https://api.anthropic.com',
     });
-    // `mutateAsync` answers with a TYPEID; `setCredential`'s action URL takes the bare uuid -- a
-    // typeid in the path answers 422/404, so this has to be the normalised form, not the raw one.
-    expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-ant-secret');
+    expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_BARE, ANTHROPIC_KEY);
     // The order matters: the key can only be stored once the id creating it returns.
     const rootCallOrder = h.mutateAsync.mock.invocationCallOrder[0];
     const credentialCallOrder = h.setCredential.mock.invocationCallOrder[0];
@@ -84,10 +102,10 @@ describe('OrgRootSetup — no budget yet', () => {
     h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
     render(<OrgRootSetup orgId={ORG_ID} org={org} />);
 
-    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: '  sk-or-secret  ' } });
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: `  ${OPENROUTER_KEY}  ` } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
 
-    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-or-secret'));
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_BARE, OPENROUTER_KEY));
   });
 
   it('reports it distinctly when the root is created but the key fails to store', async () => {
@@ -95,7 +113,7 @@ describe('OrgRootSetup — no budget yet', () => {
     h.setCredential.mockRejectedValue(new Error('network blip'));
     render(<OrgRootSetup orgId={ORG_ID} org={org} />);
 
-    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: 'sk-or-secret' } });
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: OPENROUTER_KEY } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
 
     await waitFor(() => expect(h.setCredential).toHaveBeenCalled());
@@ -108,7 +126,7 @@ describe('OrgRootSetup — no budget yet', () => {
     h.mutateAsync.mockRejectedValue(new Error('this organization already draws its budget from a shared pool'));
     render(<OrgRootSetup orgId={ORG_ID} org={org} />);
 
-    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: 'sk-or-secret' } });
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: OPENROUTER_KEY } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
 
     await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
@@ -116,8 +134,36 @@ describe('OrgRootSetup — no budget yet', () => {
   });
 });
 
+/**
+ * The budgets action answers with a PREFIXED typeid; the credential calls build
+ * `new TypeId('llm_endpoint', id)` and want the BARE uuid. Passing the prefixed form through made
+ * that constructor throw inside the service call before any HTTP — a dead Save button, no network
+ * request, and `Invalid (0)` from Test's own catch.
+ */
+describe('OrgRootSetup — the hub sends a prefixed typeid, the credential calls want a bare id', () => {
+  it('hands CredentialField the bare uuid for an org that already has a root', () => {
+    render(
+      <OrgRootSetup
+        orgId={ORG_ID}
+        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '' }}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: `sk-proj-${'c'.repeat(40)}` } });
+    fireEvent.click(screen.getByTestId('credential-save'));
+
+    expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_BARE, `sk-proj-${'c'.repeat(40)}`);
+  });
+});
+
 describe('OrgRootSetup — already a root', () => {
-  it('shows the provider and the masked hint, with no provider picker', () => {
+  /**
+   * The provider control is SHOWN and disabled, not hidden. The hub refuses to change
+   * `provider`/`base_url` once the endpoint exists, so an open dropdown would be a form that lies —
+   * but hiding it answers "which provider is this org on?" with nothing. Disabled says both, and
+   * matches what the expert dialog does on edit.
+   */
+  it('shows the provider, locked, alongside the masked hint', () => {
     render(
       <OrgRootSetup
         orgId={ORG_ID}
@@ -126,27 +172,23 @@ describe('OrgRootSetup — already a root', () => {
     );
 
     expect(screen.getByTestId('org-root-key')).toBeTruthy();
-    expect(screen.getByText('OpenAI')).toBeTruthy();
-    expect(screen.queryByTestId('org-root-provider-openai')).toBeNull();
+    const picker = screen.getByTestId<HTMLButtonElement>('org-root-provider');
+    expect(picker.textContent).toContain('OpenAI');
+    expect(picker.disabled).toBe(true);
     expect(screen.getByTestId<HTMLInputElement>('credential-input').placeholder).toMatch(/replace/i);
   });
 
-  it('replaces the key against the normalised (bare) id, not the raw typeid the org row carries', async () => {
-    // Regression: `org.endpoint_id` is a typeid; passing it straight through to `CredentialField`
-    // meant every Save/Test/Delete on an ALREADY-ACTIVATED org silently hit a malformed URL and
-    // never reached the hub -- the same bug the create flow had, one component down.
-    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****beef' });
+  it('cannot be opened when locked — a disabled trigger reveals no options', async () => {
+    const user = userEvent.setup();
     render(
       <OrgRootSetup
         orgId={ORG_ID}
-        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'anthropic', credential_hint: '****abcd' }}
+        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '****z9z9' }}
       />,
     );
 
-    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: 'sk-ant-replacement' } });
-    fireEvent.click(screen.getByTestId('credential-save'));
-
-    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_UUID, 'sk-ant-replacement'));
+    await user.click(screen.getByTestId('org-root-provider'));
+    expect(screen.queryByTestId('org-root-provider-anthropic')).toBeNull();
   });
 
   it('offers no provider chip when the org has a root but no key stored yet', () => {
@@ -158,6 +200,42 @@ describe('OrgRootSetup — already a root', () => {
     );
     expect(screen.getByTestId('org-root-key')).toBeTruthy();
     expect(screen.getByTestId<HTMLInputElement>('credential-input').placeholder).toMatch(/paste/i);
+  });
+});
+
+/**
+ * `provider` and `base_url` are in the hub's `_immutable_update`, so moving an organization to a
+ * different provider means deleting its root and building another. Deleting the stored KEY does
+ * not do that — it clears the credential and leaves the endpoint — which is why a key delete looks
+ * like it changes nothing about the locked dropdown. This is the control that actually does it.
+ */
+describe('OrgRootSetup — moving to a different provider', () => {
+  it('asks first, then deletes the root so the provider picker comes back', async () => {
+    render(
+      <OrgRootSetup
+        orgId={ORG_ID}
+        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('org-root-replace'));
+    expect(h.del).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove budget' }));
+    await waitFor(() => expect(h.del).toHaveBeenCalled());
+    // The ENDPOINT, by its bare uuid — not the organization.
+    expect(h.del.mock.calls[0][0]).toEqual(expect.objectContaining({ type: 'llm_endpoint', id: ENDPOINT_BARE }));
+    await waitFor(() => expect(h.invalidate).toHaveBeenCalled());
+  });
+
+  it('offers the way out even while a key is still stored', () => {
+    render(
+      <OrgRootSetup
+        orgId={ORG_ID}
+        org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '****wxyz' }}
+      />,
+    );
+    expect(screen.getByTestId('org-root-replace')).toBeTruthy();
   });
 });
 

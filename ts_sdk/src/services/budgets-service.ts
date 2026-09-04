@@ -32,6 +32,9 @@ export interface ScopeBudget {
   /** The pool's lifetime cap (`limits.cost_usd_total`); null = uncapped. */
   limit_usd: number | null;
   spent_usd: number;
+  /** Lifetime tokens billed against this pool, off the same report as `spent_usd` — the two
+   *  numbers can never disagree with each other. */
+  spent_tokens: number;
   /**
    * Sum of the CHILDREN's caps, and `null` where the call did not read them — the org view totals
    * its teams, the team view totals its people, and a team row inside the ORG view leaves it null
@@ -66,6 +69,7 @@ export interface MemberBudget {
   user_id: string | null;
   limit_usd: number | null;
   spent_usd: number;
+  spent_tokens: number;
   /**
    * True for the hub's own per-user default. Its cap is editable like any other, but deleting it
    * is pointless — the token plan mints it again on that user's next read — so the screen offers
