@@ -60,6 +60,15 @@ runs:
         } >> "$GITHUB_ENV"
       shell: bash
 
+    # The API-tier PTY regression exercises AgenticProcess save -> open ->
+    # attach, not provider authentication. The scratch Claude config above is
+    # deliberately signed out, so give the resolver an explicit, inert source.
+    # The test opens an idle composer (no prompt), therefore this key is never
+    # sent to OpenRouter.
+    - name: Seed LLM source for PTY contract test
+      run: .venv/bin/python -c 'from flow_sdk.cli.auth.lm_api_keys import set_lm_api; set_lm_api("ci-e2e-inert-key", "openrouter")'
+      shell: bash
+
     - name: Write .env.ci-e2e.local (headless tier reads it via loadEnv)
       run: |
         cat > .env.ci-e2e.local <<EOF
