@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, SourceItem, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
+import { Agent, APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, SourceItem, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -230,6 +230,16 @@ export function FlowMessageBubble({
   const { data: creator } = useEntity<User>(
     fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
+  // An agent's own sent copies carry `agent:<id>` as sender_id (never a roster
+  // member, so the roster tiers below cannot name it). Resolve the Agent so an
+  // empty wire name does not read as the "roster says no" alert.
+  const agentSenderTypeId = useMemo(() => {
+    const raw = fm?.sender_id ?? '';
+    if (!raw.startsWith('agent:')) return null;
+    const id = raw.slice('agent:'.length);
+    return isValidIdentifier(id) ? new TypeId(Agent.type, id) : null;
+  }, [fm?.sender_id]);
+  const { data: agentSender } = useEntity<Agent>(agentSenderTypeId);
   const { localUser, updateName } = useLocalUser();
   const { t } = useLingui();
   // `created_by` on receiver-materialized rows is whoever ran the local sync
@@ -374,6 +384,8 @@ export function FlowMessageBubble({
     displayName = localUser?.name?.trim() || t`You`;
   } else if (wireSenderName) {
     displayName = wireSenderName;
+  } else if (agentSender?.name?.trim()) {
+    displayName = agentSender.name.trim();
   } else if (creatorLabel) {
     displayName = creatorLabel;
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {

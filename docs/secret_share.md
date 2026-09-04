@@ -144,7 +144,7 @@ in place on re-mint).
   hub credentials. It caches **nothing** — every launch re-asks, so a revoked
   grant stops working immediately — and its `can_resolve` answers from the
   project's env-var table (masked metadata) rather than the gated route, since
-  the Secrets card probes it per secret on every render.
+  the Connections table probes it per secret on every render.
 
 ## Project linking (actions)
 
@@ -348,16 +348,22 @@ The pointer / driver core is unchanged; these extend its documented seams:
   provider: the local stores exist for usage, so a value in `.env.local` under
   the right env var satisfies a `gcp` declaration on this machine.
   `Project.provide-secret` writes a user value into the secret's store via
-  `driver.store()`. The Secrets card
-  (`ui/src/components/project-home/SecretsCard.tsx`) surfaces the whole model.
+  `driver.store()`. The Connections table
+  (`ui/src/components/connections-manager.tsx` and
+  `connections-manager/credential-rows-view.tsx`) surfaces the whole model — it
+  replaced the Project Home Secrets card, which was one of five surfaces over
+  the same data.
 - **`.env.local` inventory and hard block.** `Project.env-local-status` lists
   the keys detected in the file — **names and line numbers only** — alongside a
   git verdict. Writing a value is refused outright when the file is
   committable: `gitignore_status` asks git (`check-ignore` plus `ls-files`,
   because ignore rules do not apply to a file git already **tracks**), and
   `ensure_gitignored` appends and then re-verifies rather than assuming.
-  `EnvLocalCard` renders the list and opens the file at a key's line; declaring
-  a key is additive and never edits `.env.local`.
+  `useCredentialConnections` folds that list into `envLocalPresent` (a key
+  already on disk is never re-asked for) and the refusal renders as the
+  `connections-env-local-blocked` banner *before* any typing. Declaring a key is
+  additive and never edits `.env.local`. The "open the file at a key's line"
+  affordance was retired with `EnvLocalCard` and has no replacement.
 - **Value-change warning.** `Project.secret-drift-status` reports
   `value-changed` when a value no longer matches the one that was provided. The
   baseline is a **salted** digest in the per-instance `sodot`

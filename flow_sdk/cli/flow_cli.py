@@ -1243,8 +1243,10 @@ from flow_sdk.cli.commands.schema_cmd import schema_app
 
 app.add_typer(schema_app, name="schema")
 
+from flow_sdk.cli.commands.progress_cmd import progress_app
 from flow_sdk.cli.commands.record_cmd import record_app
 
+app.add_typer(progress_app, name="progress")
 app.add_typer(record_app, name="record")
 
 from flow_sdk.cli.commands.conversation_cmd import conversation_app

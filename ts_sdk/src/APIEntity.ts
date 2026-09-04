@@ -1819,7 +1819,29 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       // silently dropped every argument after the first, so consumers
       // subscribing via `on('entity_event', (event, payload) => ...)` received
       // an undefined payload. Single-arg emits are unaffected (callback(arg)).
-      listeners.forEach((callback) => callback(...args));
+      // Per-listener isolation. `forEach` aborts on the first throw, so ONE bad
+      // subscriber used to starve every subscriber registered after it — an
+      // entity `delete` that threw in a view hook never reached the entity cache,
+      // the tab manager, or the conversation/flow-message taps, and which
+      // listeners lost it depended on mount order. Fan-out must be all-or-each,
+      // never all-or-nothing.
+      //
+      // This isolates; it does NOT hide. The error is still reported at
+      // console.error, so a throwing subscriber stays as visible as it was
+      // before — it simply no longer takes the other subscribers down with it.
+      // Deliberately a plain loop: `forEach` with a try inside would work, but
+      // this keeps the control flow obvious at the one place it matters.
+      // Indexed loop, not a spread copy: this fans out every WS entity
+      // create/update/delete, so an allocation per emit is real cost on a hot path.
+      // Indexing also preserves the previous `forEach` visiting semantics exactly —
+      // the only intended change here is the per-listener isolation.
+      for (let i = 0; i < listeners.length; i++) {
+        try {
+          listeners[i](...args);
+        } catch (err) {
+          console.error(`[EventEmitter] listener for "${eventType}" threw; other listeners still ran`, err);
+        }
+      }
     }
   }
 

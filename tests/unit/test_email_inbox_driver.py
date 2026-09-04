@@ -11,27 +11,27 @@ mailbox never allocates twice.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
+from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.builtin.email_inbox_driver import (
     EMAIL_INBOX_DRIVERS,
     EmailInboxDriver,
     EmailInboxError,
+    EmailInboxErrorCode,
     get_email_inbox_driver,
 )
-from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode
 
 AGENT_ID = "22222222-2222-4222-8222-222222222222"
 DESCRIPTOR = {
-    "typeid": "agent_mailbox/33333333-3333-4333-8333-333333333333",
+    "typeid": "agent_mailbox-33333333-3333-4333-8333-333333333333",
     "address": "agent-7@agentmail.to",
     "provider": "agentmail",
     "provider_inbox_id": "agent-7@agentmail.to",
     "status": "active",
-    "agent_typeid": f"agent/{AGENT_ID}",
+    "agent_typeid": f"agent-{AGENT_ID}",
 }
 
 
@@ -132,6 +132,36 @@ class TestTheHubMember:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_hub_machine_error_code_survives_translation(self, monkeypatch):
+        async def fake_get(*_a, **_k):
+            raise HubError(401, "target unavailable", code=HubErrorCode.TARGET_NOT_FOUND.value)
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+
+        with pytest.raises(EmailInboxError) as caught:
+            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+
+        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_old_hub_target_denial_is_classified_with_valid_login(self, monkeypatch):
+        async def fake_get(*_a, **_k):
+            raise HubError(401, "legacy target denial")
+
+        async def valid_user(_client):
+            return {"id": "user-1"}
+
+        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
+
+        with pytest.raises(EmailInboxError) as caught:
+            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+
+        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_a_message_id_is_encoded_into_the_path(self, monkeypatch):
         """Message-IDs carry angle brackets and ride in the URL path; the URL
         builder does no quoting."""
@@ -154,18 +184,19 @@ class TestTheAgentVerb:
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_an_agent_with_a_mailbox_adopts_it_rather_than_allocating(self, monkeypatch):
         """THE assertion that makes a retry safe. An address is billable and
-        permanent, and the UI creates the DataSource in a second step that can
-        fail — so asking twice must never bill twice."""
+        permanent, and a caller retries — so asking twice must never bill twice.
+
+        ``newly_allocated`` is what carries that fact now: it is a property of
+        the CALL, not of the mailbox, which is why it rides on the projection as
+        a runtime-only field rather than being persisted anywhere."""
         from flow_sdk.builtin.agent import Agent
 
         allocated = _patch_mailbox(monkeypatch, existing=DESCRIPTOR)
 
-        result = await Agent(name="mailer", remote=True).provision_inbox(
-            actor=SimpleNamespace(type="user", id="u1")
-        )
+        inbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
 
-        assert result["already_allocated"] is True
-        assert result["inbox"]["address"] == DESCRIPTOR["address"]
+        assert inbox.newly_allocated is False
+        assert inbox.address == DESCRIPTOR["address"]
         assert allocated == [], "a second address was allocated for an agent that had one"
 
     @pytest.mark.asyncio
@@ -175,12 +206,26 @@ class TestTheAgentVerb:
 
         _patch_mailbox(monkeypatch, existing=None)
 
-        result = await Agent(name="mailer", remote=True).provision_inbox(
-            actor=SimpleNamespace(type="user", id="u1")
-        )
+        inbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
 
-        assert result["already_allocated"] is False
-        assert result["inbox"]["address"] == DESCRIPTOR["address"]
+        assert inbox.newly_allocated is True
+        assert inbox.address == DESCRIPTOR["address"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_allocating_without_a_cloud_login_refuses_before_reaching_the_hub(
+        self, monkeypatch
+    ):
+        """The address costs money, so a logged-out caller must be stopped here
+        rather than discovering it as a 401 halfway through allocation."""
+        from flow_sdk.auth import LoginRequired
+        from flow_sdk.builtin.agent import Agent
+
+        allocated = _patch_mailbox(monkeypatch, existing=None, logged_in=False)
+
+        with pytest.raises(LoginRequired):
+            await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
+        assert allocated == []
 
     def test_the_action_is_routable_and_declares_no_parameters(self):
         """`agent.py` carries `from __future__ import annotations`, and the
@@ -191,14 +236,19 @@ class TestTheAgentVerb:
         from flow_sdk.actions.action_registry import action as registry
         from flow_sdk.builtin.agent import Agent
 
-        assert "agent.provision_inbox" in registry.function_registry
+        assert "agent.allocate_inbox" in registry.function_registry
 
-        params = set(inspect.signature(Agent.provision_inbox_action).parameters) - {"self", "cls"}
-        assert not params, f"provision_inbox_action declares {sorted(params)}"
+        params = set(inspect.signature(Agent.allocate_inbox_action).parameters) - {"self", "cls"}
+        assert not params, f"allocate_inbox_action declares {sorted(params)}"
 
 
-def _patch_mailbox(monkeypatch, *, existing):
-    """Swap in a mailbox backend. Returns the list of agents it allocated for."""
+def _patch_mailbox(monkeypatch, *, existing, logged_in=True):
+    """Swap in a mailbox backend. Returns the list of agents it allocated for.
+
+    Also stubs the two things allocation touches beyond the backend: the cloud
+    login gate, and the local source it wires. Neither is what these tests are
+    about — they pin the adopt-vs-allocate decision, and keeping them free of a
+    database is what keeps that decision cheap to assert."""
     allocated: list[str] = []
 
     class _Driver:
@@ -207,11 +257,20 @@ def _patch_mailbox(monkeypatch, *, existing):
         async def get_inbox(self, agent_id):
             return existing
 
-        async def create_inbox(self, agent_id, **_options):
-            allocated.append(agent_id)
+        async def enable_inbox(self, agent_id, **_options):
+            if not existing:
+                allocated.append(agent_id)
             return DESCRIPTOR
 
     monkeypatch.setattr(
         "flow_sdk.builtin.email_inbox_driver.get_email_inbox_driver", lambda *_a, **_k: _Driver()
     )
+    monkeypatch.setattr(
+        "flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: logged_in
+    )
+
+    async def _no_source(self):
+        return None
+
+    monkeypatch.setattr(EmailInbox, "ensure_source", _no_source)
     return allocated

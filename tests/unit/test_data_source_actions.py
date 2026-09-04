@@ -47,7 +47,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     from flow_sdk.actions.action_registry import action as registry
 
     registered = set(registry.function_registry)
-    for name in ("poll_now", "reset_cursors", "purge_items", "replay"):
+    for name in ("poll_now", "reset_cursors", "purge_items", "replay", "choices"):
         assert f"data_source.{name}" in registered, f"{name} is not routable"
 
     # There is deliberately NO `create` override: the generic handler already
@@ -56,7 +56,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     assert "data_source.create" not in registered
 
     for name in ("poll_now_action", "reset_cursors_action", "purge_items_action",
-                 "replay_action"):
+                 "replay_action", "choices_action"):
         params = set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
         assert not params, (
             f"DataSource.{name} declares {sorted(params)}; the dispatcher must fill "
@@ -377,3 +377,43 @@ async def test_channel_is_stamped_at_create_not_first_poll():
     # error and left agentmail sources channel-less at create.
     src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to", "api_key": "k"})
     assert src.channel == "agentmail"
+
+
+# ── the verbs under the routes ───────────────────────────────────────────────
+#
+# Each *_action is a thin route over a real method (the replay/replay_action
+# split). An in-process caller — a block, a snippet — uses the verb and never
+# unwraps an ApiResponse.
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_poll_now_is_a_verb_and_the_route_is_thin():
+    src = await _source(health=SourceHealth.CONFIG_ERROR.value, error_code="auth_failed",
+                        next_poll_at=NOW - timedelta(hours=1))
+    result = await src.poll_now()
+    assert result["status"] == "due"
+    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
+    assert (await src.poll_now_action()).data == await src.poll_now()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reset_cursors_is_a_verb():
+    src = await _source()
+    cursor = await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")
+    cursor.state = {"etag": "x"}
+    await cursor.save()
+    assert await src.reset_cursors() == 1
+    assert (await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")).state == {}
+    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_purge_items_is_a_verb():
+    src = await _source()
+    await SourceItem(data_source_id=src.id, provider="rss", kind="content.feed.item",
+                     segment_key="s", external_id="x1", name="h", body="b").save()
+    assert await src.purge_items() == 1
+    assert await SourceItem.get_all({"data_source_id": src.id}) == []

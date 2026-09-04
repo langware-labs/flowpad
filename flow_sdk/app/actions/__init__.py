@@ -13,6 +13,7 @@ from . import (  # noqa: F401
     graph_crud_actions,
     group_task_action,
     helpdesk_action,
+    icons_action,
     machine_enroll_action,
     members_action,
     message_attachment_action,

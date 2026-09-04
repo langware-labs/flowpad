@@ -1,4 +1,4 @@
-import { WikiIcon } from '@src/components/icons/WikiIcon';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { cn } from '@src/lib/utils';
 import { openWikiModal } from './wiki-modal';
 
@@ -42,7 +42,7 @@ export function WikiButton({ wikiword, fragment, label, linkText, className }: W
       aria-label={title}
       title={title}
     >
-      {linkText ?? <WikiIcon className="h-4 w-4" />}
+      {linkText ?? <FlowIcon icon="flowpad.wiki" className="h-4 w-4" />}
     </button>
   );
 }

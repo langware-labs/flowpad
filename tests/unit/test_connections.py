@@ -18,7 +18,7 @@ from flow_sdk.core.connections.types import (
 pytestmark = pytest.mark.asyncio
 
 
-def _spec(provider: str, *, connected: bool = False, identity: str | None = None) -> ConnectionSpec:
+def _spec(provider: str, *, connected: bool = False, identity: str = "") -> ConnectionSpec:
     return ConnectionSpec(
         provider=provider,
         display_name=provider.title(),
@@ -31,13 +31,13 @@ def _spec(provider: str, *, connected: bool = False, identity: str | None = None
 
 
 def _catalogue(monkeypatch, rows: list[ConnectionSpec]) -> None:
-    async def list_rows():
+    async def list_rows(project_id: str = ""):
         return rows
 
     async def resolve(provider: str):
         return next((row for row in rows if row.provider == provider), None)
 
-    monkeypatch.setattr(connections, "list_connection_specs", list_rows)
+    monkeypatch.setattr(connections, "list_connections", list_rows)
     monkeypatch.setattr(connections, "resolve_connection_spec", resolve)
 
 
@@ -48,7 +48,12 @@ async def test_rows_preserve_canonical_order_and_metadata(monkeypatch):
 
     assert [row.provider for row in rows] == ["slack", "googledrive"]
     assert rows[1].connected and rows[1].scopes == ("read",)
-    assert not hasattr(rows[0], "kind") and not hasattr(rows[0], "hub_only")
+    # `kind` IS a field now, and deliberately: this list carries every kind of
+    # connection — an API key, the FlowPad account, a harness CLI login — where
+    # it once carried OAuth providers only and shared no rows with the screen.
+    # `hub_only` stays absent; nothing needed it.
+    assert rows[0].kind == "oauth"
+    assert not hasattr(rows[0], "hub_only")
 
 
 async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, capsys):
@@ -128,3 +133,23 @@ async def test_require_remains_the_cheap_credential_gate(monkeypatch):
 
 async def _async_value(value):
     return value
+
+
+# ── the token exchange's encoding ────────────────────────────────────────────
+
+
+def test_the_token_exchange_is_form_encoded_unless_a_provider_says_otherwise():
+    """RFC 6749 §4.1.3: the token request is `application/x-www-form-urlencoded`.
+
+    A spec-following endpoint does not merely prefer it — Entra answers
+    `AADSTS900144: the request body must contain 'grant_type'` for a JSON body,
+    because it never parsed it. JSON was hard-coded while Anthropic was the only
+    local code grant, so one endpoint's tolerance read as the rule; the default
+    is now the spec and the exception is named on the provider.
+    """
+    from flow_sdk.core.oauth.provider_registry import ANTHROPIC, MICROSOFT, local_providers
+
+    by_name = {p.name: p for p in local_providers()}
+    assert by_name[ANTHROPIC].token_request_json is True
+    assert by_name[MICROSOFT].token_request_json is False
+    assert [p.name for p in local_providers() if p.token_request_json] == [ANTHROPIC]

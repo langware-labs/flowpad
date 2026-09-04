@@ -12,7 +12,6 @@
  */
 import {
   LLMFundingKind,
-  LLMSourceAuthority,
   llmSourceRef,
   selectKindFor,
   type LLMEndpointOffer,
@@ -24,6 +23,7 @@ import { useCallback, useMemo } from 'react';
 
 import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
+import { dotFor } from './llm-source-visuals';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
 import { Badge } from '@src/components/ui/badge';
@@ -37,27 +37,6 @@ import { notify } from '@src/notifications';
 import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
 import { harnessKinds, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
 
-/** How much the eligibility answer is worth. A probed device login is evidence; an endpoint we
- *  merely believe is reachable is not the same claim, and flattening them would let a caller
- *  treat an assumption as a fact. Keyed by the enum, so a new authority is a type error. */
-const AUTHORITY_DOT: Record<LLMSourceAuthority, string> = {
-  [LLMSourceAuthority.Proven]: 'bg-emerald-400',
-  [LLMSourceAuthority.Cached]: 'bg-emerald-400/50',
-  [LLMSourceAuthority.Presumed]: 'bg-amber-400/70',
-};
-
-/** The dot for one row.
- *
- *  Ineligibility wins over authority, and that ordering is the whole point.
- *  `_key_sources` reports `PROVEN` for a provider with NO key — correctly, since
- *  it listed the store and an absence is as authoritative as a presence — so
- *  reading authority alone put a confident green dot beside "no openrouter key
- *  is stored on this machine" next to a disabled button. Authority says how much
- *  the answer is worth; the dot has to say what the answer WAS. */
-function dotFor(source: LLMSource): string {
-  if (!source.eligible) return 'bg-muted-foreground/40';
-  return AUTHORITY_DOT[source.authority] ?? 'bg-muted-foreground/40';
-}
 
 /** Vendor label from the ONE table, falling back to the raw worker so a harness added to the
  *  capability registry renders as itself rather than not at all. */

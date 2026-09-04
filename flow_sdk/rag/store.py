@@ -25,6 +25,7 @@ No entity, no network, no async. A RAG script imports this.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -93,7 +94,16 @@ class RagStore:
         # loads it and hands 1536-float vectors to a metric expecting none. usearch does not
         # raise at that point — it segfaults, taking the whole backend with it.
         if self._index is not None and self.dimensions:
-            self._index.save(str(self.dir / INDEX_FILE))
+            # Written beside the real file and RENAMED over it. A save is a whole-file rewrite,
+            # so a process that dies partway through — a restart, a kill, a crash in another
+            # thread — otherwise leaves a truncated file in place. usearch does not reject one:
+            # its loader walks the short header into the heap and aborts the process on the next
+            # open, which makes the damage permanent and unrecoverable from inside the app.
+            # os.replace is atomic on the same filesystem, so the old index survives instead.
+            final = self.dir / INDEX_FILE
+            staged = final.with_suffix(final.suffix + ".writing")
+            self._index.save(str(staged))
+            os.replace(staged, final)
         self._db.commit()
 
     def close(self) -> None:

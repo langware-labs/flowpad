@@ -138,18 +138,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.ANALYSIS]: {
-    title: msg`Analysis`,
-    iconName: 'Sparkles',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.CHAT]: {
-    title: msg`Chat`,
-    iconName: 'MessageSquare',
-    tabLocation: 'overview',
-    canAddAsTab: false,
-  },
+  // ANALYSIS / CHAT / REASONING / UNSUPPORTED deliberately have NO row. A registry
+  // row is what makes a view addressable (see `addressable` in the Python
+  // ViewMeta), and none of these four has a case in the content panel — a dock URL
+  // naming one falls through to `default: <HomeLanding/>`. They kept their rows for
+  // years, so `flow schema views` advertised them and `flow show view chat` returned
+  // exit 0 while showing the user Home. Retiring the row is what makes the catalogue
+  // honest; the enum members stay, because old URLs must keep decoding.
   [ViewType.SHELL]: {
     title: msg`Worker`,
     iconName: 'Terminal',
@@ -187,18 +182,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'ListCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
-  },
-  [ViewType.REASONING]: {
-    title: msg`Reasoning`,
-    iconName: 'Brain',
-    tabLocation: 'overview',
-    canAddAsTab: false,
-  },
-  [ViewType.UNSUPPORTED]: {
-    title: msg`Unsupported`,
-    iconName: 'FileQuestion',
-    tabLocation: 'overview',
-    canAddAsTab: false,
   },
   [ViewType.MARKDOWN]: {
     title: msg`Markdown`,

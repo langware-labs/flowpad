@@ -14,7 +14,13 @@ function realConsoleErrors(errors: string[]): string[] {
 test.describe('File explorer is accessible and shows directory contents (FLOWPAD-1603)', () => {
   test('explorer shows at least one directory/file item', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const errors: string[] = [];
     page.on('console', (msg) => {

@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "cloud_email",
   "title": "Cloud mailbox",
-  "icon_name": "Mail",
+  "icon_name": "CloudMailbox",
   "description": "A mailbox the hub allocates and holds the credential for. Nothing to paste.",
   "config": {
     "agent_id": {

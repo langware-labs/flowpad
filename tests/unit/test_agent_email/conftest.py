@@ -1,9 +1,9 @@
 """Isolated DB for the agent-mail gates."""
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver()
+import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
-import pytest_asyncio
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
+import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver()
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver

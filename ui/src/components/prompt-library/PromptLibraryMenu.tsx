@@ -8,7 +8,7 @@ import { BrowseableMenu, useMenuDialogs } from '@src/components/ui/browseable-me
 import { groupRoot } from '@src/components/browseable-tree/adapters/groupRoot';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { useGroupTreeRefresh } from '@src/hooks/useGroupTreeRefresh';
-import { renderIconValue } from '@src/lib/icon-value';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { PromptEditDialog } from './PromptEditDialog';
 
 const PROMPT_LEAF_TYPES = ['prompt'];
@@ -73,7 +73,7 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
           const prompt = entity as Prompt;
           return {
             label: prompt.name || '(untitled)',
-            icon: renderIconValue(prompt.icon ?? 'BookMarked', { color: prompt.color }),
+            icon: <FlowIcon icon={prompt.icon ?? 'BookMarked'} className="h-4 w-4" color={prompt.color ?? undefined} />,
             pointer: AssetDocPointer.forEntity({ type: Prompt.type, typeId: prompt.typeId }).toDockPointer(),
             toolbar: [
               {

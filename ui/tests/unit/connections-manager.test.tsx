@@ -8,7 +8,7 @@
  * Attach/detach are placements and do need one. And deleting the credential is
  * neither: it is a third, confirmed act that must never happen implicitly.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -23,6 +23,13 @@ const h = vi.hoisted(() => ({
   grants: {} as Record<string, string>,
   projects: [] as unknown[],
   usage: {} as Record<string, unknown[]>,
+  checkHarnessLogins: vi.fn(),
+  declare: vi.fn(async () => undefined),
+  provide: vi.fn(async () => undefined),
+  deleteCredential: vi.fn(async () => ({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
+  rows: [] as unknown[],
+  blocked: false,
+  connections: null as unknown[] | null,
 }));
 
 // Spread the original: the barrel `@sdk/react/hooks` re-exports this module, so
@@ -49,6 +56,43 @@ vi.mock('@src/components/connections-manager/use-credential-usage', async (impor
   ...(await importOriginal<Record<string, unknown>>()),
   useCredentialUsage: () => ({ usage: h.usage, isLoading: false, isEnabled: true, isComplete: true }),
 }));
+// The credential half is a fixture here: this file is about the table, and the
+// fold itself is covered by `credential-rows.test.ts`.
+vi.mock('@src/components/connections-manager/use-credential-connections', () => ({
+  useCredentialConnections: () => ({
+    rows: h.rows,
+    specs: [
+      {
+        id: 'spec-twilio',
+        name: 'twilio',
+        title: 'Twilio',
+        vars: { TWILIO_SID: { label: 'Account SID', required: true } },
+        // A real `CredentialSpec` exposes `varNames`; the form reads variables
+        // through it so the set it ASKS for cannot drift from the set
+        // `pointersFor` declares.
+        varNames: ['TWILIO_SID'],
+      },
+    ],
+    envLocalBlocked: h.blocked,
+    envLocalPresent: new Set<string>(),
+    declareCredential: h.declare,
+    provide: h.provide,
+    deleteCredential: h.deleteCredential,
+  }),
+}));
+// The consolidated read. Stubbed rather than provided with a QueryClient: this
+// file is about the table's own producers, and the harness rows it feeds are
+// presenters covered by their own file. `null` is also the real hub answer, so
+// the component takes the same path it takes off-desk.
+vi.mock('@src/hooks/use-connections', () => ({
+  useConnections: () => ({ connections: h.connections, isLoading: false, refetch: vi.fn() }),
+  useCheckHarnessLogins: () => h.checkHarnessLogins(),
+}));
+// `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
+// not render. The host owns navigation so the harness rows can stay presenters.
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: {}, currentDock: null }),
+}));
 vi.mock('@src/notifications', () => ({
   notify: { error: h.notifyError, success: vi.fn(), info: vi.fn() },
 }));
@@ -66,6 +110,8 @@ describe('ConnectionsManager', () => {
     h.grants = { github: 'none' };
     h.projects = [];
     h.usage = {};
+    h.blocked = false;
+    h.rows = [];
     h.providers = [{ name: 'github', display_name: 'GitHub', icon: undefined }];
   });
   afterEach(() => cleanup());
@@ -91,9 +137,13 @@ describe('ConnectionsManager', () => {
     // The inverted case. A grant is user-scoped on both backends (neither `auth`
     // handler reads a target entity), so with no project this must run the flow,
     // not raise "No project selected" at a user who has no project to select.
+    //
+    // Driven from the Add dialog, because that is where connecting something for
+    // the first time now begins: the table lists only what you hold.
     render(<ConnectionsManager />);
 
-    await userEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-github'));
 
     expect(h.connect).toHaveBeenCalledTimes(1);
     expect(h.attach).not.toHaveBeenCalled();
@@ -123,9 +173,11 @@ describe('ConnectionsManager', () => {
   });
 
   it('separates the grant from the placement', async () => {
-    // No credential → Connect runs the full flow.
+    // No credential → the row does not exist; Connect runs the full flow from
+    // the Add dialog.
     const { rerender } = render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-github'));
     expect(h.connect).toHaveBeenCalledTimes(1);
     expect(h.attach).not.toHaveBeenCalled();
 
@@ -160,27 +212,49 @@ describe('ConnectionsManager', () => {
     expect(screen.getByText(/No connections yet/i)).toBeTruthy();
   });
 
-  it('names the grant and lists the scopes it will request', () => {
+  it('names the grant and lists the scopes it will request', async () => {
     // The two things a user needs before granting: which flow runs, and what it
     // will be allowed to do. Both used to be invisible.
     h.providers = [
       { name: 'github', display_name: 'GitHub', kind: 'code', scopes: ['repo', 'read:org'] },
       { name: 'anthropic', display_name: 'Anthropic', kind: 'loopback', scopes: ['user:profile'] },
     ] as unknown[];
+    // Held: these are row facts, and only held providers are rows.
+    h.grants = { github: 'held', anthropic: 'held' };
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(screen.getByTestId('connection-kind-github').textContent).toBe('OAuth');
     expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
 
-    const scopes = screen.getByTestId('connection-scopes-github').textContent;
-    expect(scopes).toContain('repo');
-    expect(scopes).toContain('read:org');
+    // One chip and a count, not a stack: four chips wrapped the row to four
+    // lines and pushed Status and Actions out of view. The rest is a hover away.
+    const cell = screen.getByTestId('connection-scopes-github');
+    expect(cell.textContent).toBe('repo+1');
+
+    // And the hover actually reveals them. This used to be a native `title`,
+    // which asks for a second of stillness and often never appeared in the
+    // desktop shell at all — so the count read as a dead end.
+    await userEvent.hover(cell.querySelector('[tabindex]') as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getAllByText('read:org').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('asks the box to check the harness logins', () => {
+    // This screen is where a person comes to find out whether they are signed
+    // in, and the harness rows read "Not checked" until someone asks the vendor
+    // CLIs. Asking is a separate verb because it WRITES — the same list read
+    // resolves `require()` and must not spawn subprocesses.
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(h.checkHarnessLogins).toHaveBeenCalled();
   });
 
   it('does not claim "no scopes" when the owning side never published them', () => {
     // A hub provider's scopes live in its manifest, which the table does not
     // carry. Rendering an empty list would assert something false.
     h.providers = [{ name: 'slack', display_name: 'slack', kind: 'code' }] as unknown[];
+    h.grants = { slack: 'held' };
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(screen.getByTestId('connection-scopes-slack').textContent).toContain('Shown at approval');
@@ -196,6 +270,8 @@ describe('ConnectionsManager — where a credential is used', () => {
     h.grants = { github: 'held' };
     h.projects = [ALPHA];
     h.usage = {};
+    h.blocked = false;
+    h.rows = [];
   });
   afterEach(() => cleanup());
 
@@ -215,6 +291,27 @@ describe('ConnectionsManager — where a credential is used', () => {
     h.statuses = { github: 'DISCONNECTED' };
     render(<ConnectionsManager projectTypeId={PROJECT} />);
     expect(screen.queryByTestId('connection-usage-trigger')).toBeNull();
+    // Stronger than it used to be: there is no row to manage anything on.
+    expect(screen.queryByTestId('connection-kind-github')).toBeNull();
+  });
+
+  it('lists only what you hold, and offers the rest in Add connection', async () => {
+    // The table and the dialog are complements, not overlapping lists. A
+    // provider used to be in both at once: a "Not connected" row you could not
+    // act on, beside a tile offering to add the very same thing.
+    h.providers = [
+      { name: 'github', display_name: 'GitHub' },
+      { name: 'slack', display_name: 'Slack' },
+    ] as unknown[];
+    h.grants = { github: 'held' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-kind-github')).toBeTruthy();
+    expect(screen.queryByTestId('connection-kind-slack')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    expect(screen.getByTestId('add-connection-slack')).toBeTruthy();
+    expect(screen.queryByTestId('add-connection-github')).toBeNull();
   });
 });
 
@@ -227,6 +324,8 @@ describe('ConnectionsManager — a credential that is held but dead', () => {
     h.grants = { googledrive: 'needs_reauth' };
     h.projects = [];
     h.usage = {};
+    h.blocked = false;
+    h.rows = [];
   });
   afterEach(() => cleanup());
 
@@ -241,5 +340,137 @@ describe('ConnectionsManager — a credential that is held but dead', () => {
     await userEvent.click(screen.getByRole('button', { name: /reconnect/i }));
     expect(h.connect).toHaveBeenCalledWith('googledrive', 'googledrive');
     expect(h.attach).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConnectionsManager — adding a credential writes the key', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.providers = [];
+    h.statuses = {};
+    h.grants = {};
+    h.projects = [];
+    h.usage = {};
+    h.blocked = false;
+    h.rows = [];
+  });
+  afterEach(() => cleanup());
+
+  it('asks for the values before declaring anything', async () => {
+    // Declaring an empty shell was the bug: it produced a "connection" that
+    // connects nothing and — because a credential exists when its values do —
+    // does not even render as a row afterwards.
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-twilio'));
+
+    expect(screen.getByTestId('credential-value-form')).toBeTruthy();
+    expect(h.declare).not.toHaveBeenCalled();
+  });
+
+  it('declares before it provides — the pointer must exist first', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-twilio'));
+
+    await userEvent.type(screen.getByTestId('credential-value-TWILIO_SID'), 'sid-1');
+    await userEvent.click(screen.getByTestId('credential-value-save'));
+
+    await waitFor(() => expect(h.provide).toHaveBeenCalled());
+    // `provide-secret` resolves the pointer on the project, so a value written
+    // before the declaration has nowhere to land.
+    expect(h.declare.mock.invocationCallOrder[0]).toBeLessThan(
+      h.provide.mock.invocationCallOrder[0],
+    );
+    expect(h.provide).toHaveBeenCalledWith({ envVar: 'TWILIO_SID', value: 'sid-1' });
+  });
+
+  it('refuses, and says why, when .env.local is committable', async () => {
+    h.blocked = true;
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getAllByTestId('env-local-blocked-notice').length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-twilio'));
+    // Shown again inside the modal, which covers the table's copy.
+    expect(screen.getAllByTestId('env-local-blocked-notice').length).toBe(2);
+    expect((screen.getByTestId('credential-value-save') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('ConnectionsManager — withdrawing a declaration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.providers = [];
+    h.grants = {};
+    h.projects = [];
+    h.usage = {};
+    h.blocked = false;
+    h.rows = [
+      {
+        key: 'twilio',
+        title: 'Twilio',
+        state: 'connected',
+        sodStore: 'sodot',
+        declaredCount: 2,
+        adoptableCount: 0,
+        members: [
+          { envVar: 'TWILIO_SID', label: 'SID', secret: false, required: true, state: 'met', declared: true, typeid: 'secret_origin-1' },
+        ],
+      },
+    ] as unknown[];
+  });
+  afterEach(() => cleanup());
+
+  it('deletes the credential — one plain verb, not "stop declaring"', async () => {
+    // Without this there is no way to remove anything in the app at all — the
+    // row is permanent, and so is its entry in the machine's attachable
+    // secrets list.
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('connection-delete-twilio'));
+
+    // A value in Flowpad's own store really is deleted, so the dialog says so
+    // without hedging.
+    expect(document.body.textContent).toMatch(/stored value is deleted/i);
+    expect(document.body.textContent).not.toMatch(/\.env\.local/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(h.deleteCredential).toHaveBeenCalledTimes(1));
+  });
+
+  it('names the variables it will NOT delete, before deleting', async () => {
+    // The one case where Delete is not total. `.env.local` is the user's own
+    // file and Flowpad never removes an entry from it, so the dialog has to say
+    // which variables stay — discovering it afterwards is how a delete button
+    // starts lying.
+    //
+    // The STORE decides, not where a value was last found: a declaration's
+    // locator kind comes from its definition's store, and that kind is what
+    // picks the driver the backend asks to forget the value.
+    h.rows = [
+      {
+        key: 'gmail',
+        title: 'Gmail',
+        state: 'connected',
+        sodStore: 'env-local',
+        declaredCount: 2,
+        adoptableCount: 0,
+        members: [
+          { envVar: 'GMAIL_ADDRESS', label: 'Address', secret: false, required: true, state: 'met', declared: true, typeid: 'secret_origin-9' },
+          { envVar: 'GMAIL_APP_PASSWORD', label: 'Password', secret: true, required: true, state: 'met', declared: true, typeid: 'secret_origin-10' },
+        ],
+      },
+    ] as unknown[];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('connection-delete-gmail'));
+
+    const text = document.body.textContent ?? '';
+    expect(text).toMatch(/GMAIL_ADDRESS, GMAIL_APP_PASSWORD stay in your \.env\.local/i);
+    // And it must not also claim the value was deleted.
+    expect(text).not.toMatch(/stored value is deleted/i);
   });
 });

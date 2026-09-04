@@ -31,7 +31,6 @@ import pytest
 
 # Wire the full entity registry. Pytest does not run the server startup path.
 import flow_sdk.models.entities  # noqa: F401
-
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, FlowMessage
 from flow_sdk.builtin.folder import Folder

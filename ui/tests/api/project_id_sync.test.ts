@@ -1,5 +1,6 @@
 import { Project, QueryRequest, dataManager } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { v4 as uuidv4, v5 as uuidv5, validate as uuidValidate, version as uuidVersion } from 'uuid';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import fs from 'node:fs';
@@ -43,7 +44,7 @@ async function findOrCreateProject(mountPath: string): Promise<Project> {
     (project) =>
       !!project.fs_storage_mount_path && canonicalPosixPath(project.fs_storage_mount_path) === canonicalMountPath,
   );
-  return existing ?? new Project({ name: mountPath }).save([]);
+  return existing ?? trackForCleanup(await new Project({ name: mountPath }).save([]));
 }
 
 describe('project id sync', () => {
@@ -58,7 +59,7 @@ describe('project id sync', () => {
 
     const p = new Project({ name: mountPath });
     const clientId = p.id;
-    const saved = await p.save([]);
+    const saved = trackForCleanup(await p.save([]));
 
     expect(saved.id).toBe(clientId);
     expectOpaqueProjectId(saved.id, mountPath);
@@ -70,7 +71,7 @@ describe('project id sync', () => {
 
     const p = new Project({ name: 'proj_b', fs_storage_mount_path: mountPath });
     const clientId = p.id;
-    const saved = await p.save([]);
+    const saved = trackForCleanup(await p.save([]));
 
     expect(saved.id).toBe(clientId);
     expectOpaqueProjectId(saved.id, mountPath);
@@ -97,7 +98,7 @@ describe('project id sync', () => {
     const canonicalMountPath = canonicalPosixPath(mountPath);
 
     const p = new Project({ name: mountPath });
-    const saved = await p.save([]);
+    const saved = trackForCleanup(await p.save([]));
 
     await dataManager.clearCache();
     const fetched = await Project.getById(saved.id);

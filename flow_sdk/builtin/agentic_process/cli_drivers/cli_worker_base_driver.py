@@ -1201,23 +1201,31 @@ def prepend_path_dir(folder: str, path: str | None) -> str:
     return f"{folder}{os.pathsep}{base}" if base else folder
 
 
-def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
-    """(abs executable path, probe env) for a short vendor-CLI probe, or
-    ``None`` ⇔ not installed. The executable name IS the worker type
-    (claude/codex/copilot) -- callers must pass the DRIVER name, which
-    ``run_worker_auth_probe`` guarantees.
+def worker_executable(worker_type: str) -> str | None:
+    """This worker's CLI as an absolute path, or ``None`` ⇔ not installed.
 
-    Resolution is disk-verified against the DISCOVERED bin folder (same shape
-    as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
-    uninstalled after discovery — surfaces as not-installed here rather than
-    as a spawn error. The env pins the folder first on PATH so the CLI's
-    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend
-    was launched.
+    Disk-verified against the DISCOVERED bin folder (same shape as
+    ``CliCapabilityRunner.test``): a stale discovered folder — CLI uninstalled
+    after discovery — answers ``None`` here rather than surfacing as a spawn
+    error later. The executable name IS the worker type (claude/codex/copilot),
+    so callers must pass the DRIVER name.
+
+    Ask this when the question is "is it installed"; ``resolve_worker_probe_context``
+    is the same answer plus the env a subprocess needs.
     """
     folder = worker_bin_folder(worker_type)
-    if folder is None:
-        return None
-    path = shutil.which(worker_type, path=folder)
+    return shutil.which(worker_type, path=folder) if folder is not None else None
+
+
+def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
+    """(abs executable path, probe env) for a short vendor-CLI probe, or
+    ``None`` ⇔ not installed.
+
+    The env pins the discovered folder first on PATH so the CLI's
+    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend was
+    launched.
+    """
+    path = worker_executable(worker_type)
     if path is None:
         return None
     return path, {**os.environ, **(worker_path_env(worker_type) or {})}

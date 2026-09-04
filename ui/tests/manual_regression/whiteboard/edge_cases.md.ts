@@ -43,7 +43,13 @@ const TWO_BOXES_ARROW = [
 test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   test('E1: idle does not loop the debounced save (no repeated writes without onChange)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e1-${Date.now() % 10000}`);
     await openEditor(page, id);
 
@@ -85,7 +91,13 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E2: close without save (documented behavior, no pass/fail gate)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e2-${Date.now() % 10000}`);
     await openEditor(page, id);
 
@@ -122,7 +134,13 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E3: crash-mid-edit recovery preserves saved elements', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e3-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
@@ -153,7 +171,13 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E4: large board (100 rects) persists all elements + mermaid block', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e4-${Date.now() % 10000}`);
     await openEditor(page, id);
 

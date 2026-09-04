@@ -7,7 +7,13 @@ import { apiBase } from '../_shared/api';
 const API = apiBase();
 
 test('a VFS editor URL selects the real file in the Files tree', async ({ page, request }) => {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   // macOS exposes the temp tree through both /var and /private/var. The project
   // route adopts the canonical mount, so build the VFS URL from that same
   // identity instead of manufacturing two names for one file.

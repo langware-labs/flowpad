@@ -6,10 +6,12 @@
  * Case 1: a SHELL dock with an agentic_process pointer → session on the
  *         process URL (processTab may lag the store).
  * Case 2: any tab whose parent is a live process tab → child session.
+ * Case 3: the URL carries `?host=agentic_process-…` → child session from the
+ *         URL alone (the tab row may be closed or not yet minted).
  * Everything else → null.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { Tab, tabManager, type ITab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -129,5 +131,25 @@ describe('useVibeWorkspaceSession', () => {
 
     const { result } = renderHook(() => useVibeWorkspaceSession());
     expect(result.current).toBeNull();
+  });
+
+  it('Case 3: closing the active-display child keeps the session while the URL still names the host', () => {
+    // The real close sequence: the user is on the child URL (which carries
+    // `?host=` and `activeDisplay=1`), clicks X, and the child row leaves the
+    // store on the next list_all — BEFORE the URL moves. The workspace must
+    // stay resolved from the URL's host; dropping to null is what flashes the
+    // standard chrome (flow-page falls through to ContentPanel).
+    currentDock = DockPointer.fromUrl(
+      `/dock/credentials/connections?viewMode=vibe&host=agentic_process-${AP}&activeDisplay=1`,
+    );
+    tabManager.adoptGlobal([row(PROCESS_TAB_ID), childRowFor(currentDock)]);
+
+    const { result } = renderHook(() => useVibeWorkspaceSession());
+    expect(result.current?.processId).toBe(AP);
+
+    act(() => tabManager.adoptGlobal([row(PROCESS_TAB_ID)]));
+
+    expect(result.current?.processId).toBe(AP);
+    expect(result.current?.onProcessUrl).toBe(false);
   });
 });

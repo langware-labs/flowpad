@@ -21,7 +21,13 @@ test('home prompt → close chat emits no 401', async ({ page }) => {
     }
   });
 
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   // Home submissions enter the Vibe workspace. Closing that workspace is the
   // current user-facing close path for its process tab.
   await gotoLanding(page, 'advanced');

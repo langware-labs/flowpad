@@ -158,10 +158,14 @@ async def list_schema_views():
     folded-away `skills`/`session`/`atlas`) are omitted: they still DECODE for
     history, but offering them as a destination would be a lie.
 
+    `label` and `aliases` are the half that makes this usable: without a screen's
+    name, a row of bare slug gives an agent nothing to match a request against.
+    `page` says which SPA surface renders it. See `docs/display-capabilities.md`.
+
     Output shape:
         {
           ok: true,
-          views: [ { view_type, pointer: none|optional|required,
+          views: [ { view_type, label, aliases, page, pointer: none|optional|required,
                      folds_pointer, scope_keyed, can_be_tab } ]
         }
     """
@@ -170,6 +174,9 @@ async def list_schema_views():
     views = [
         {
             "view_type": view.value,
+            "label": meta.label,
+            "aliases": list(meta.aliases),
+            "page": list(meta.pages),
             "pointer": meta.pointer.value,
             "folds_pointer": meta.folds_pointer,
             "scope_keyed": meta.scope_keyed,

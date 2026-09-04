@@ -16,7 +16,13 @@ async function snifferHook(request: APIRequestContext) {
 test.describe('Sniffer — default-off survives SPA navigation', () => {
   test('1: default-off sniffer state is unchanged after SPA navigation', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const errors: string[] = [];
     page.on('console', (m) => {
       if (m.type() === 'error') errors.push(m.text());

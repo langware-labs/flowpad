@@ -1,4 +1,5 @@
 from .codebase import AppCodebase as Codebase
+
 # ComputeNode has complex dependencies on external_apis modules that don't exist in flow-cli
 # It can be imported directly when needed: from builtin.faas.compute_node import ComputeNode
 # from .compute_node import ComputeNode
