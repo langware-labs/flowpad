@@ -14,11 +14,7 @@ import {
   HubClientErrorInfo,
   UserWarning,
 } from '../..';
-import {
-  getCleanupSummary,
-  shouldWarnAboutEmptyProjects,
-  subscribeToCleanupSummary,
-} from '../../stores/project-cleanup-store';
+import { shouldWarnAboutEmptyProjects, useCleanupSummary } from '../../stores/project-cleanup-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { HARNESS_CAPABILITY_KINDS, capabilityManager } from '../../capabilities';
 import { useContext } from './useContext';
@@ -84,21 +80,11 @@ export function useWarnings() {
     };
   }, []);
 
-  // Empty-project count from the last project scan. Stored as the boolean-plus-
-  // count the warning needs rather than an event tick, so an unchanged scan
-  // result does not rewrite the global warnings context.
-  const [emptyProjects, setEmptyProjects] = useState<number>(() => {
-    const held = getCleanupSummary();
-    return shouldWarnAboutEmptyProjects(held) ? (held?.empty_count ?? 0) : 0;
-  });
-  useEffect(
-    () =>
-      subscribeToCleanupSummary(() => {
-        const held = getCleanupSummary();
-        setEmptyProjects(shouldWarnAboutEmptyProjects(held) ? (held?.empty_count ?? 0) : 0);
-      }),
-    [],
-  );
+  // Empty-project count from the last project scan. The store only replaces its
+  // held value on a real change, so an unchanged scan result does not rewrite
+  // the global warnings context.
+  const cleanup = useCleanupSummary();
+  const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
 
   // Re-derive the no-harness verdict on capability events, but store the
   // boolean, not an event counter: setState with an unchanged value bails

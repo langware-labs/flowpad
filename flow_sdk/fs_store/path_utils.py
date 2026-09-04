@@ -308,3 +308,38 @@ def is_path_under(path: str, root: str) -> bool:
     r = root.rstrip("/")
     p = path.rstrip("/")
     return p == r or p.startswith(r + "/")
+
+
+def trash_path(path: Path | str) -> str:
+    """Move ``path`` to the desktop Trash. Returns which mechanism was used.
+
+    The recoverable counterpart of ``shutil.rmtree`` for paths that hold the
+    USER's files rather than flow-owned internal state. It lives beside
+    ``is_protected_path`` deliberately: this module already owns "what must
+    never be recursively deleted", and the safe action belongs with the policy.
+
+    ``send2trash`` is preferred because it produces a real, restorable Trash
+    entry — on macOS that is the user's own Trash, so it is where Finder's "Put
+    Back" can find it regardless of ``$HOME``. The fallback is a plain move into
+    ``~/.Trash``, reached only when the package is missing; any other failure
+    propagates, because a trash call that quietly did something else is worse
+    than one that fails. Callers report the mechanism so their confirmation text
+    can stay honest about what happened.
+    """
+    import shutil  # noqa: PLC0415
+
+    target = Path(path)
+    try:
+        from send2trash import send2trash  # noqa: PLC0415 — optional dependency
+    except ImportError:
+        trash_dir = Path.home() / ".Trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        destination = trash_dir / target.name
+        suffix = 1
+        while destination.exists():
+            destination = trash_dir / f"{target.name} {suffix}"
+            suffix += 1
+        shutil.move(str(target), str(destination))
+        return "trash_fallback"
+    send2trash(str(target))
+    return "trash"
