@@ -338,6 +338,18 @@ async function expectStripTabs(page: Page, ids: string[]) {
  * slot (`RailItemId` has no 'home' member — see rail-visibility.ts), so it is
  * addressed by its own testid; only `chats` is a rail item.
  */
+/**
+ * Wait until the settled URL is the app root.
+ *
+ * The home loader canonicalises the bare root to `/?viewMode=<mode>`
+ * (`home-loader.ts`, deliberate — the first history entry must state its mode,
+ * or Back re-resolves through the mutable preference), so a `/\/$/` regex never
+ * matches: the URL ends in the mode, not a slash. Match the PATHNAME instead.
+ */
+function waitForRootUrl(page: Page) {
+  return page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+}
+
 async function clickRail(page: Page, target: 'home' | 'chats') {
   const sel = target === 'home' ? '[data-testid="top-nav-home"]' : '[data-rail-item="chats"]';
   await page.locator(sel).click();
@@ -489,12 +501,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator(tabSel).nth(1).click();
     await expect(page).toHaveURL(new RegExp(selected));
     await clickRail(page, 'home');
-    // The bare root is canonicalised to `/?viewMode=<mode>` by the home loader
-    // (`home-loader.ts:70`, deliberate — the first history entry must state its
-    // mode or Back re-resolves through the mutable preference). So `/\/$/` can
-    // never match: the settled URL ends in the mode, not a slash. Match the
-    // PATHNAME — same guarantee, nothing relaxed.
-    await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+    await waitForRootUrl(page);
     await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
@@ -546,7 +553,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
     const targetUrl = `/dock/shell/shell-${ids[1]}`;
     await clickRail(page, 'home');
-    await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+    await waitForRootUrl(page);
     await page.goto(targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
@@ -1392,7 +1399,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // is re-activated by clicking it, as a user would. Idempotent across rounds.)
     for (let r = 0; r < 2; r++) {
       await clickRail(page, 'home');
-      await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+      await waitForRootUrl(page);
       await clickRail(page, 'chats');
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
@@ -1442,14 +1449,11 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator(tabSel).nth(1).click();
     await expect(page).toHaveURL(new RegExp(target));
     await clickRail(page, 'home');
-    await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+    await waitForRootUrl(page);
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
     await page.goForward();
-    // Same reason as the root waits above — match the PATHNAME, not the whole URL.
-    await expect
-      .poll(async () => new URL(page.url()).pathname, { timeout: 15_000 })
-      .toBe('/');
+    await expect.poll(async () => new URL(page.url()).pathname, { timeout: 15_000 }).toBe('/');
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
     await rq.dispose();
@@ -1478,7 +1482,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await clickRail(page, 'home');
-    await page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+    await waitForRootUrl(page);
     await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
