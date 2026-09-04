@@ -1,5 +1,5 @@
-import { AgenticProcess, type APIEntity, type ProcessIconKey, type AnyEntity } from '@sdk';
-import { pickProcessIcon } from '@src/components/icons/process-icons';
+import { AgenticProcess, processIconTag, type APIEntity, type ProcessIconKey, type AnyEntity } from '@sdk';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import type { IconComp } from './IconWithBadge';
 
 /** Per-entity-type sub-icon selector: instance state → a small badge glyph (or null). */
@@ -17,7 +17,7 @@ const SUB_ICON_SELECTORS: Record<string, SubIconSelector> = {
     // drop the `-restore` state axis: the *-restore glyphs are themselves composite
     // (a badge inside a badge), and this sub-icon only conveys the vendor.
     const key = proc.processIconKey.replace('-restore', '') as ProcessIconKey;
-    return pickProcessIcon(key);
+    return flowIconComponent(processIconTag(key));
   },
 };
 

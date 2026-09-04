@@ -1,19 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { AgenticProcess } from '@sdk';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { subIconForEntity } from '@src/components/graph-view/icons/subIconRegistry';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
-import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
-import {
-  ClaudeRestoreIcon,
-} from '@src/components/icons/ClaudeRestoreIcon';
-import { CodexRestoreIcon } from '@src/components/icons/CodexRestoreIcon';
-import { CopilotRestoreIcon } from '@src/components/icons/CopilotRestoreIcon';
-import { OpenCodeRestoreIcon } from '@src/components/icons/OpenCodeRestoreIcon';
-import { Sparkles } from 'lucide-react';
 
-const RESTORE_COMPOSITES = [ClaudeRestoreIcon, CodexRestoreIcon, CopilotRestoreIcon, OpenCodeRestoreIcon];
+/**
+ * The badge conveys WHICH VENDOR a process runs on, and nothing else.
+ *
+ * Written against tags rather than component identity because that is now what
+ * the mapping produces — and it says the claim more directly: the restored and
+ * fresh forms of a vendor must land on the SAME tag, since a `.restore` badge
+ * inside a badge would nest one composite in another.
+ *
+ * `flowIconComponent` is memoized per tag, so identity comparison still works
+ * and still means "the same icon".
+ */
+const iconFor = (tag: string) => flowIconComponent(tag);
 
 let seq = 0;
 const proc = (worker_type?: string, restored = false) =>
@@ -25,23 +26,24 @@ const proc = (worker_type?: string, restored = false) =>
 
 describe('subIconForEntity — AgenticProcess worker sub-icon', () => {
   it('maps each worker_type to its plain vendor glyph', () => {
-    expect(subIconForEntity(proc('claude'))).toBe(ClaudeIcon);
-    expect(subIconForEntity(proc('claude_code'))).toBe(ClaudeIcon);
-    expect(subIconForEntity(proc(''))).toBe(ClaudeIcon); // empty defaults to claude
-    expect(subIconForEntity(proc(undefined))).toBe(ClaudeIcon);
-    expect(subIconForEntity(proc('codex'))).toBe(CodexIcon);
-    expect(subIconForEntity(proc('copilot'))).toBe(CopilotIcon);
-    expect(subIconForEntity(proc('opencode'))).toBe(OpenCodeIcon);
-    expect(subIconForEntity(proc('some-future-worker'))).toBe(Sparkles); // generic
+    expect(subIconForEntity(proc('claude'))).toBe(iconFor('brands.claude'));
+    expect(subIconForEntity(proc('claude_code'))).toBe(iconFor('brands.claude'));
+    expect(subIconForEntity(proc(''))).toBe(iconFor('brands.claude')); // empty defaults to claude
+    expect(subIconForEntity(proc(undefined))).toBe(iconFor('brands.claude'));
+    expect(subIconForEntity(proc('codex'))).toBe(iconFor('brands.codex'));
+    expect(subIconForEntity(proc('copilot'))).toBe(iconFor('brands.copilot'));
+    expect(subIconForEntity(proc('opencode'))).toBe(iconFor('brands.opencode'));
+    expect(subIconForEntity(proc('some-future-worker'))).toBe(iconFor('flowpad.generic'));
   });
 
-  it('never returns a -restore composite (would nest a badge in a badge)', () => {
+  it('drops the restore role — a badge inside a badge is a drawing, not an icon', () => {
     for (const wt of ['claude', 'codex', 'copilot', 'opencode', 'other']) {
-      const icon = subIconForEntity(proc(wt, /* restored */ true));
-      expect(RESTORE_COMPOSITES).not.toContain(icon);
+      const restored = subIconForEntity(proc(wt, /* restored */ true));
+      const fresh = subIconForEntity(proc(wt));
+      expect(restored).toBe(fresh);
     }
     // The vendor is still conveyed on a restored process.
-    expect(subIconForEntity(proc('codex', true))).toBe(CodexIcon);
+    expect(subIconForEntity(proc('codex', true))).toBe(iconFor('brands.codex'));
   });
 
   it('returns null when there is no instance', () => {
