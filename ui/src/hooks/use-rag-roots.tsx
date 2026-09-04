@@ -18,7 +18,7 @@
  * branding a whole subtree would make it say something vaguer.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { QueryRequest, RagIndex } from '@sdk';
+import { isHubOnly, QueryRequest, RagIndex } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** Stable empty value — a fresh `Set` per render would churn every consumer's memo. */
@@ -30,11 +30,11 @@ export function RagRootsProvider({ children }: { children: ReactNode }) {
   // Built inside the component, not at module scope: `RagIndex` comes through the `@sdk`
   // barrel, and reading its static `type` during this module's own initialisation depends on
   // import order — losing that race mints a query with no type that quietly never fires.
-  const request = useMemo(
-    () => new QueryRequest({ type: RagIndex.type, scope: [], name: 'rag:indexes' }),
-    [],
-  );
-  const { data: indexes } = useEntitiesQuery<RagIndex>(request);
+  const request = useMemo(() => new QueryRequest({ type: RagIndex.type, scope: [], name: 'rag:indexes' }), []);
+  // `isHubOnly()`, not a page check: `rag_index` is a DESK type, absent from the hub's
+  // type registry, so the query is a 422 there and can never return roots. The provider
+  // still wraps the tree on the hub — it just has nothing to ask.
+  const { data: indexes } = useEntitiesQuery<RagIndex>(request, { enabled: !isHubOnly() });
   const roots = useMemo(() => {
     if (!indexes?.length) return NO_ROOTS;
     return new Set(indexes.flatMap((index) => index.roots ?? []));
