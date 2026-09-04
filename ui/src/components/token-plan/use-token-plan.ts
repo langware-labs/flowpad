@@ -40,7 +40,7 @@ export function useSetupScope() {
   const invalidate = useInvalidateTokenPlan();
   return useMutation({
     mutationFn: ({ kind, id }: { kind: Exclude<TokenPlanScopeKind, 'me'>; id: string }) =>
-      kind === 'team' ? tokenPlanService.setupTeam(id) : tokenPlanService.setupOrg(),
+      kind === 'team' ? tokenPlanService.setupTeam(id) : tokenPlanService.setupOrg(id),
     onSuccess: () => invalidate(),
   });
 }

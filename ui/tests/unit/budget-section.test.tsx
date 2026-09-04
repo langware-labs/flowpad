@@ -31,7 +31,7 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
   useRemoveAllowance: () => ({ mutate: h.removeAllowance, isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useSetupOrgRoot: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidateBudgets: () => vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@src/components/token-plan/use-token-plan', () => ({
