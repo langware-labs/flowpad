@@ -41,6 +41,7 @@ from .ui import router as ui_router
 from .version import router as version_router
 from .watch import router as watch_router
 from .webhook import webhook_router as webhook_api_router
+from .whatsapp import router as whatsapp_router
 from .websocket import websocket_router
 from .wiki import router as wiki_router
 from .worldview import router as worldview_router
@@ -61,6 +62,7 @@ __all__ = [
     "ui_router",
     "websocket_router",
     "webhook_api_router",
+    "whatsapp_router",
     "rules_router",
     "watch_router",
     "assets_router",
