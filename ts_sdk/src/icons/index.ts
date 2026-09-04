@@ -11,5 +11,5 @@ export type { IconChipOptions, IconElementOptions } from './element';
 export { fetchIconPacks, getIconFallback, getIconPacks, loadIconPacks, onIconPacksChanged, resolve, setIconFallback } from './registry';
 export { iconTag, kebab, resolveIcon } from './resolve';
 export type { IconPackSpec, IconResolution, IconSpec } from './types';
-export { bundleIcon, bundleRenderer, registerBundleRenderer } from './bundle';
+export { bundleIcon, registerBundleRenderer } from './bundle';
 export type { BundleIcon, BundleRenderer } from './bundle';

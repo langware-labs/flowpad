@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, useRef, useState, type ComponentType, type ReactElement } from 'react';
+import { createElement, useEffect, useMemo, useState, type ComponentType, type ReactElement } from 'react';
 import { bundleIcon } from '../icons/bundle';
 import { ensureIconStyles, resolveForRender, withRole } from '../icons/element';
 import { getIconPacks, onIconPacksChanged } from '../icons/registry';
@@ -99,6 +99,24 @@ function classes(...parts: (string | undefined | false)[]): string | undefined {
   return joined || undefined;
 }
 
+/** Does a class string already size the element? */
+const SIZES_IT = /(^|\s)!?(h-|w-|size-)/;
+
+/**
+ * The size class to emit, or nothing when the caller sized it themselves.
+ *
+ * Emitting BOTH and trusting `className` to win is not a rule the DOM has:
+ * `h-3 w-3 h-8 w-8` resolves by stylesheet order, not attribute order, so
+ * "className wins" would have been true only by Tailwind's generation
+ * accident. Dropping the named size when the caller supplies one makes the
+ * precedence real. The app has `cn()` (clsx + tailwind-merge) for exactly this,
+ * but it lives in `ui/` and `ts_sdk` depends on `dotenv` alone.
+ */
+function sizeClass(size: FlowIconSize | number | undefined, className: string | undefined): string | undefined {
+  if (typeof size !== 'string') return undefined;
+  return className && SIZES_IT.test(className) ? undefined : FLOW_ICON_SIZES[size];
+}
+
 /** A11y: a named icon is an image, an unnamed one is decoration. */
 function a11y(title: string | undefined): Record<string, unknown> {
   return title ? { role: 'img', 'aria-label': title, title } : { 'aria-hidden': 'true' };
@@ -141,7 +159,7 @@ function Leaf({
     }
   }
 
-  const url = res.kind === 'path' ? res.url : res.url;
+  const url = res.url;
   if (!url) return null;
 
   const tintable = res.kind === 'asset' || res.kind === 'bundle' ? res.tintable : false;
@@ -192,9 +210,15 @@ function Rendered({
   baseClassName,
   badgeClassName,
 }: Parameters<typeof Leaf>[0] & { baseClassName?: string; badgeClassName?: string }): ReactElement | null {
-  const host = useRef<HTMLSpanElement>(null);
+  // Unconditionally, and NOT behind a ref: the ref was only ever attached on
+  // the badge branch, so a plain icon never injected the stylesheet at all. A
+  // page using only FlowIcon would then render every masked glyph invisible —
+  // the mask paints with `background-color: currentColor`, which lives here.
+  // Nothing caught it because the demo also renders through `iconElement`,
+  // which injects on its own, and an inline mask-image URL keeps the assertions
+  // passing either way.
   useEffect(() => {
-    if (host.current) ensureIconStyles(host.current.ownerDocument);
+    ensureIconStyles();
   }, []);
 
   const badge = (res.kind === 'asset' || res.kind === 'bundle') && res.badge ? res.badge : undefined;
@@ -209,7 +233,6 @@ function Rendered({
     <span
       className={classes('fp-icon-stack', className)}
       style={{ ...(px ? { width: px, height: px } : {}), ...(rest.style as object) }}
-      ref={host}
       {...a11y(title)}
       {...rest}
     >
@@ -281,7 +304,7 @@ export function FlowIcon({
   ...rest
 }: FlowIconProps) {
   const res = useResolution(withRole(icon, role) || '', badge);
-  const named = typeof size === 'string' ? FLOW_ICON_SIZES[size] : undefined;
+  const named = sizeClass(size, className);
   const px = typeof size === 'number' ? size : undefined;
   return (
     <Rendered

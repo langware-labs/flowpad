@@ -33,11 +33,6 @@ export function registerBundleRenderer(fn: BundleRenderer | null): void {
   renderer = fn;
 }
 
-/** The registered lookup, or `null` when the app never installed one. */
-export function bundleRenderer(): BundleRenderer | null {
-  return renderer;
-}
-
 /** The component for a bundle leaf, or `undefined` — the caller then falls back
  *  to the served file, which is what a plain HTML page does. */
 export function bundleIcon(name: string): BundleIcon | undefined {

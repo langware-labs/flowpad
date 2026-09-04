@@ -49,32 +49,45 @@ function isBundle(pack: IconPackSpec): boolean {
   return !pack.icons || pack.icons.length === 0;
 }
 
-/** Every key an icon answers to: its own leaf, and each alias. */
-function keysFor(spec: IconSpec): string[] {
-  return [spec.kind, ...(spec.aliases || []).map((a) => iconTag(a) || a)];
-}
-
 type Hit = { pack: IconPackSpec; spec: IconSpec; role: string };
 
-/** One addressable key to the icon that owns it. */
-function lookup(packs: IconPackSpec[], key: string): Hit | null {
-  const [head, ...restParts] = key.split('.');
+/**
+ * Every addressable key -> the icon that owns it, built once per packs array.
+ *
+ * Mirrors the Python registry's `_by_tag`. Without it `lookup` was a nested
+ * scan over every pack × every icon that re-derived each icon's alias list on
+ * every call, once per ancestor, once per rendered glyph. The index makes it a
+ * single `Map.get` and keeps the two sides of the system the same shape.
+ *
+ * Keyed on the array identity in a WeakMap: `loadIconPacks` replaces the array
+ * when packs arrive, so a new array rebuilds and the old index is collectable.
+ */
+const INDEX = new WeakMap<IconPackSpec[], Map<string, Hit>>();
+
+function indexOf(packs: IconPackSpec[]): Map<string, Hit> {
+  const cached = INDEX.get(packs);
+  if (cached) return cached;
+
+  const index = new Map<string, Hit>();
+  const put = (key: string, hit: Hit) => {
+    if (!index.has(key)) index.set(key, hit);
+  };
   for (const pack of packs) {
     for (const spec of pack.icons || []) {
-      const keys = keysFor(spec);
-      // Qualified: `<pack>.<leafOrAlias>[.role]`
-      if (head === pack.kind && restParts.length) {
-        const leaf = restParts[0];
-        const role = restParts[1] || '';
-        if (keys.includes(leaf) && (!role || (spec.sub || {})[role])) {
-          return { pack, spec, role };
+      const keys = [spec.kind, ...(spec.aliases || []).map((a) => iconTag(a) || a)];
+      for (const key of keys) {
+        // Qualified is the identity; the bare key is the legacy spelling and is
+        // deliberately first-wins, which is what makes it arbitrary.
+        put(`${pack.kind}.${key}`, { pack, spec, role: '' });
+        put(key, { pack, spec, role: '' });
+        for (const role of Object.keys(spec.sub || {})) {
+          put(`${pack.kind}.${key}.${role}`, { pack, spec, role });
         }
       }
-      // Bare: `<leafOrAlias>` with no pack segment.
-      if (!restParts.length && keys.includes(head)) return { pack, spec, role: '' };
     }
   }
-  return null;
+  INDEX.set(packs, index);
+  return index;
 }
 
 function build(hit: Hit, asked: string, degraded: boolean, packs: IconPackSpec[]): IconResolution {
@@ -155,7 +168,7 @@ export function resolveIcon(
   for (let depth = 0; depth < chain.length; depth++) {
     const key = chain[depth];
     const degraded = depth > 0;
-    const hit = lookup(packs, key);
+    const hit = indexOf(packs).get(key);
     if (hit) return build(hit, asked, degraded, allowSub ? packs : []);
     const bundle = bundleHit(packs, key, asked, degraded);
     if (bundle) return bundle;
