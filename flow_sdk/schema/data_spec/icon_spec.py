@@ -130,4 +130,26 @@ class IconPackSpec(DataSpec):
         return not self.icons
 
 
-__all__ = ["IconPackSpec", "IconSpec"]
+class IconPackPayload(IconPackSpec):
+    """A pack as it travels — the manifest plus what the backend actually serves.
+
+    ``served`` is DERIVED (read off the pack's directory) and must never be
+    authorable: a hand-written list is the second copy this whole design exists
+    to avoid. But "derived" is not a reason to leave the type system. Patching
+    the key into ``model_dump()`` output made the travelling shape something no
+    ``DataSpec`` could parse — ``extra="forbid"`` rejected the backend's own
+    payload — which is exactly what CLAUDE.md forbids for a shape that travels.
+
+    A subclass keeps both properties: the manifest on disk is an
+    ``IconPackSpec`` and cannot carry ``served``, while the wire shape is a
+    ``DataSpec`` that round-trips.
+    """
+
+    spec_kind: ClassVar[str] = "icon.pack_payload"
+
+    #: Leaf names the pack has artwork for. Only a bundle pack needs it — an
+    #: enumerated pack's ``icons`` already say.
+    served: list[str] = []
+
+
+__all__ = ["IconPackPayload", "IconPackSpec", "IconSpec"]

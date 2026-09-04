@@ -1,7 +1,7 @@
 import { createElement, useEffect, useMemo, useState, type ComponentType, type ReactElement } from 'react';
 import { bundleIcon } from '../icons/bundle';
 import { ensureIconStyles, resolveForRender, withRole } from '../icons/element';
-import { getIconPacks, onIconPacksChanged } from '../icons/registry';
+import { getIconFallback, getIconPacks, onIconPacksChanged } from '../icons/registry';
 import { resolveIcon } from '../icons/resolve';
 import type { IconResolution } from '../icons/types';
 
@@ -94,6 +94,11 @@ export const FLOW_ICON_SIZES: Record<FlowIconSize, string> = {
   xl: 'h-6 w-6',
 };
 
+/** The explicit pixel box, or nothing — spread into a style object. */
+function box(px: number | undefined) {
+  return px ? { width: px, height: px } : undefined;
+}
+
 function classes(...parts: (string | undefined | false)[]): string | undefined {
   const joined = parts.filter(Boolean).join(' ').trim();
   return joined || undefined;
@@ -122,6 +127,11 @@ function a11y(title: string | undefined): Record<string, unknown> {
   return title ? { role: 'img', 'aria-label': title, title } : { 'aria-hidden': 'true' };
 }
 
+/** A resolution worth drawing, or nothing. */
+function orNothing(res: IconResolution): IconResolution | undefined {
+  return res.kind === 'none' ? undefined : res;
+}
+
 /** One glyph, no badge — the shared half of the renderer. */
 function Leaf({
   res,
@@ -130,6 +140,7 @@ function Leaf({
   color,
   px,
   rest,
+  onBroken,
 }: {
   res: IconResolution;
   className?: string;
@@ -137,6 +148,8 @@ function Leaf({
   color?: string;
   px?: number;
   rest: Record<string, unknown>;
+  /** What to draw when the artwork 404s. Absent ⇒ draw nothing. */
+  onBroken?: IconResolution;
 }): ReactElement | null {
   const [failed, setFailed] = useState(false);
   const tint = color || ((res.kind === 'asset' || res.kind === 'bundle') && res.color) || undefined;
@@ -171,7 +184,7 @@ function Leaf({
           WebkitMaskImage: `url("${url}")`,
           maskImage: `url("${url}")`,
           ...(tint ? { backgroundColor: tint } : {}),
-          ...(px ? { width: px, height: px } : {}),
+          ...box(px),
           ...(rest.style as object),
         }}
         {...a11y(title)}
@@ -180,9 +193,14 @@ function Leaf({
     );
   }
 
-  // A broken asset must land on nothing rather than the browser's torn-page
-  // chrome, which reads as a rendering bug instead of a missing file.
-  if (failed) return null;
+  // A broken asset lands where a TYPO lands. The browser's torn-page chrome
+  // reads as a rendering bug rather than a missing file — but so does an icon
+  // that silently vanishes, and `lucideByName` deliberately makes both cases
+  // look alike. `onBroken` is absent only for the fallback itself, so a missing
+  // fallback cannot recurse.
+  if (failed) {
+    return onBroken ? <Leaf res={onBroken} className={className} title={title} px={px} rest={rest} /> : null;
+  }
   const darkUrl = res.kind === 'asset' ? res.darkUrl : undefined;
   const img = (src: string, cls: string) => (
     <img key={cls || 'only'} src={src} alt="" className={classes('fp-icon-img', cls)} onError={() => setFailed(true)} />
@@ -190,7 +208,7 @@ function Leaf({
   return (
     <span
       className={classes('fp-icon', darkUrl && 'fp-icon-themed', className)}
-      style={{ ...(px ? { width: px, height: px } : {}), ...(rest.style as object) }}
+      style={{ ...box(px), ...(rest.style as object) }}
       {...a11y(title)}
       {...rest}
     >
@@ -221,9 +239,27 @@ function Rendered({
     ensureIconStyles();
   }, []);
 
+  // Resolved once here, not inside Leaf, so the fallback itself renders with
+  // `onBroken` absent and a missing fallback cannot loop.
+  const fallbackTag = getIconFallback();
+  const broken =
+    fallbackTag && !(('tag' in res) && res.tag === fallbackTag)
+      ? orNothing(resolveIcon(fallbackTag, getIconPacks()))
+      : undefined;
+
   const badge = (res.kind === 'asset' || res.kind === 'bundle') && res.badge ? res.badge : undefined;
   if (!badge) {
-    return <Leaf res={res} className={classes(className, baseClassName)} title={title} color={color} px={px} rest={rest} />;
+    return (
+      <Leaf
+        res={res}
+        className={classes(className, baseClassName)}
+        title={title}
+        color={color}
+        px={px}
+        rest={rest}
+        onBroken={broken}
+      />
+    );
   }
 
   // Base and badge are addressed separately, matching `IconWithBadge`, whose
@@ -232,11 +268,11 @@ function Rendered({
   return (
     <span
       className={classes('fp-icon-stack', className)}
-      style={{ ...(px ? { width: px, height: px } : {}), ...(rest.style as object) }}
+      style={{ ...box(px), ...(rest.style as object) }}
       {...a11y(title)}
       {...rest}
     >
-      <Leaf res={res} className={classes('fp-icon-base', baseClassName)} color={color} rest={{}} />
+      <Leaf res={res} className={classes('fp-icon-base', baseClassName)} color={color} rest={{}} onBroken={broken} />
       <span className={classes('fp-icon-sub', badgeClassName)} aria-hidden="true">
         <Leaf res={badge} rest={{}} />
       </span>
@@ -257,19 +293,9 @@ export function flowIconComponent(icon: string | null | undefined): FlowIconComp
   const cached = COMPONENTS.get(key);
   if (cached) return cached;
 
-  const Component: FlowIconComponent = ({ className, title, color, size, ...rest }) => {
-    const res = useResolution(key);
-    return (
-      <Rendered
-        res={res}
-        className={className}
-        title={title}
-        color={color}
-        px={typeof size === 'number' ? size : undefined}
-        rest={rest}
-      />
-    );
-  };
+  // Literally `FlowIcon` with its tag bound — same props, same size handling.
+  // Writing it out again was a second copy of the resolve-and-render path.
+  const Component: FlowIconComponent = (props) => <FlowIcon icon={key} {...props} />;
   Component.displayName = `FlowIcon(${key})`;
   COMPONENTS.set(key, Component);
   return Component;

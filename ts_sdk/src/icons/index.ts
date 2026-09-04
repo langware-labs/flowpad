@@ -8,8 +8,8 @@
  */
 export { ICON_CSS, ICON_STYLE_ID, ensureIconStyles, iconChip, iconElement, iconElementFor, resolveForRender, withRole } from './element';
 export type { IconChipOptions, IconElementOptions } from './element';
-export { fetchIconPacks, getIconFallback, getIconPacks, loadIconPacks, onIconPacksChanged, resolve, setIconFallback } from './registry';
+export { fetchIconPacks, getIconFallback, getIconPacks, loadIconPacks, onIconPacksChanged, setIconFallback } from './registry';
 export { iconTag, kebab, resolveIcon } from './resolve';
 export type { IconPackSpec, IconResolution, IconSpec } from './types';
-export { bundleIcon, registerBundleRenderer } from './bundle';
+export { bundleIcon, pascalLeaf, registerBundleRenderer } from './bundle';
 export type { BundleIcon, BundleRenderer } from './bundle';

@@ -17,9 +17,15 @@ import type { ComponentType } from 'react';
  * renderer already has the geometry"; this is what makes that claim true.
  *
  * The lookup takes the LEAF (`rss`, `bar-chart-3`), because that is what the tag
- * carries. An app whose library is keyed differently — lucide exports PascalCase
- * — converts inside its own renderer, where it knows its own convention.
+ * carries. Libraries keyed by PascalCase — lucide is — can use `pascalLeaf`
+ * rather than every app copying the same regex.
  */
+
+/** `bar-chart-3` -> `BarChart3`, the inverse of `kebab`, for a library whose
+ *  exports are PascalCase. */
+export function pascalLeaf(leaf: string): string {
+  return leaf.replace(/(^|-)([a-z0-9])/g, (_m, _sep, c: string) => c.toUpperCase());
+}
 
 export type BundleIcon = ComponentType<{ className?: string } & Record<string, unknown>>;
 
