@@ -163,13 +163,13 @@ describe('EndpointControls', () => {
 
   it('shows a spinner until the endpoint itself has loaded', () => {
     h.endpoint.mockReturnValue(null);
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
     expect(screen.queryByTestId('org-enabled')).toBeNull();
   });
 
   it('seeds the cheapest model onto a wallet that has none, exactly once', async () => {
     h.endpoint.mockReturnValue(endpoint());
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
     expect(h.save.mock.calls[0][0].toString()).toBe(TYPE_ID);
@@ -190,7 +190,7 @@ describe('EndpointControls', () => {
     // and the empty-list seed never fires here, so if this did not self-heal the row would refuse
     // every `md`-tier caller forever.
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
     const filters = (h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters;
@@ -207,7 +207,7 @@ describe('EndpointControls', () => {
         },
       }),
     );
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
     expect(h.save).not.toHaveBeenCalled();
   });
 
@@ -220,7 +220,7 @@ describe('EndpointControls', () => {
 
   it('seeds an org row with the ceiling, not the cheap default', async () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: [] } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
     await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
     const filters = (h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters;
     expect(filters.models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-*']);
@@ -237,13 +237,13 @@ describe('EndpointControls', () => {
         },
       }),
     );
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
     expect(h.save).not.toHaveBeenCalled();
   });
 
   it('shows the models already on the wallet, and the default only as a placeholder otherwise', () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-*', 'openai/gpt-4*'] } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
     expect(screen.getByTestId('org-models').textContent).toBe('anthropic/claude-*, openai/gpt-4*');
   });
 
@@ -258,7 +258,7 @@ describe('EndpointControls', () => {
         },
       }),
     );
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     fireEvent.click(screen.getByTestId('org-models'));
     fireEvent.change(screen.getByTestId('org-models-input'), {
@@ -280,7 +280,7 @@ describe('EndpointControls', () => {
 
   it('writes the tier redirect when an admin pins the row to one model', async () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-*', 'openai/gpt-*'] } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     fireEvent.click(screen.getByTestId('org-models'));
     fireEvent.change(screen.getByTestId('org-models-input'), {
@@ -304,7 +304,7 @@ describe('EndpointControls', () => {
         },
       }),
     );
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     fireEvent.click(screen.getByTestId('org-models'));
     fireEvent.change(screen.getByTestId('org-models-input'), { target: { value: '   ' } });
@@ -318,7 +318,7 @@ describe('EndpointControls', () => {
 
   it('flips enabled through the switch', async () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: DEFAULT_MODELS }, enabled: true }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     fireEvent.click(screen.getByRole('switch'));
 
@@ -327,7 +327,61 @@ describe('EndpointControls', () => {
 
   it('renders the Test button for this endpoint', () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: DEFAULT_MODELS } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" />);
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
     expect(screen.getByTestId(`stub-test-${UUID}`)).toBeTruthy();
+  });
+});
+
+/**
+ * `manage={false}` — the state an ORG ADMIN is in on the organization's own row, where the hub
+ * answers `can_configure: false`.
+ *
+ * The half that is not cosmetic is the seed. This component REPAIRS the row it renders, by writing
+ * to it on mount; for someone who may only read, that is a request the hub refuses and an error
+ * toast on every single render. Disabling the visible controls without stopping the seed would
+ * have left exactly that.
+ */
+describe('EndpointControls — read-only', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    h.save.mockResolvedValue(undefined);
+    h.invalidate.mockResolvedValue(undefined);
+  });
+
+  it('never writes on mount, even on a wallet that would otherwise be repaired', async () => {
+    // An empty `models_allow` on a person row is precisely the shape the seed fires on.
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage={false} />);
+
+    await waitFor(() => expect(screen.getByTestId('org-enabled')).toBeTruthy());
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('still repairs it for someone who may configure it — the guard is the flag, not the row', async () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+  });
+
+  it('disables the enable switch and the models field', async () => {
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage={false} />);
+
+    const models = await screen.findByTestId<HTMLButtonElement>('org-models');
+    expect(models.disabled).toBe(true);
+    // The switch is a button with aria-disabled/disabled depending on the primitive; either way it
+    // must not be operable.
+    const enabled = screen.getByTestId('org-enabled').querySelector('button');
+    expect(enabled?.hasAttribute('disabled') || enabled?.getAttribute('aria-disabled') === 'true').toBe(true);
+  });
+
+  it('does not open the models editor when the field is clicked', async () => {
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage={false} />);
+
+    fireEvent.click(await screen.findByTestId('org-models'));
+    expect(screen.queryByTestId('org-models-input')).toBeNull();
   });
 });

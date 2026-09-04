@@ -4,10 +4,14 @@
  *
  * Locked here: a team's people list is fetched lazily (only once opened or "Add people" is
  * pressed — a fifty-team org must not read every team's spend on first paint), a person who has
- * spent nothing still has a row, over-promising is SHOWN and not blocked, renaming and deleting
- * both org and team rows work and are gated on the right permission, and the org's three
- * bring-your-own-key states (no pool / has a root / an older shared-pool chain) still render
- * correctly now that they live inside `OrgUnit` instead of a selected-node `BudgetSection`.
+ * spent nothing still has a row, an over-promise that ALREADY EXISTS is shown and not blocked,
+ * renaming and deleting both org and team rows work and are gated on the right permission, and the
+ * org's three bring-your-own-key states (no pool / has a root / an older shared-pool chain) still
+ * render correctly now that they live inside `OrgUnit` instead of a selected-node `BudgetSection`.
+ *
+ * The default fixtures describe an OWNER — every `can_*` true — because that is who the page was
+ * built for and what these tests were written against. What a SHARED organization's admin sees
+ * instead is the subject of `shared-org-admin-page.test.tsx`, which flips the same flags off.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -23,6 +27,7 @@ const h = vi.hoisted(() => ({
   removeAllowance: vi.fn(),
   save: vi.fn(),
   del: vi.fn(),
+  getByTypeId: vi.fn(),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
@@ -51,7 +56,12 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    dataManager: { ...(actual.dataManager as object), save: h.save, delete: h.del },
+    dataManager: {
+      ...(actual.dataManager as object),
+      save: h.save,
+      delete: h.del,
+      getByTypeId: h.getByTypeId,
+    },
   };
 });
 // `EndpointControls` renders on every row that has a pool; it is its own dedicated suite
@@ -73,6 +83,13 @@ const orgScope = (over: Record<string, unknown> = {}) => ({
   is_root: false,
   provider: null,
   credential_hint: '',
+  // The hub answers these per caller; an owner gets all of them.
+  can_configure: true,
+  can_allocate: true,
+  can_manage: true,
+  can_add_child: true,
+  can_set_credential: true,
+  can_invite: true,
   ...over,
 });
 
@@ -84,6 +101,10 @@ const teamScope = (over: Record<string, unknown> = {}) => ({
   spent_usd: 5,
   spent_tokens: 900,
   allocated_usd: null,
+  can_configure: true,
+  can_allocate: true,
+  can_manage: true,
+  can_add_child: true,
   ...over,
 });
 
@@ -96,6 +117,7 @@ const person = (over: Record<string, unknown> = {}) => ({
   spent_usd: 0,
   spent_tokens: 0,
   system_default: false,
+  can_configure: true,
   ...over,
 });
 
@@ -292,15 +314,23 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     );
   });
 
-  it('deletes a team after confirming', async () => {
+  it('deletes a team after confirming, loading it as an entity first', async () => {
+    // The load is half the behaviour, not a detail. `dataManager.delete` is cache-first and throws
+    // before any request for an id it has not fetched as an entity — and a team row comes from the
+    // `budgets` aggregate, never from an entity read. Without the fetch the DELETE never left the
+    // browser at all: the team stayed in the database and the screen said nothing useful.
     h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
     h.team.mockReturnValue(idle);
+    h.getByTypeId.mockResolvedValue({ id: UUID(4), type: 'team' });
     h.del.mockResolvedValue(undefined);
     draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
 
     fireEvent.click(screen.getByTestId(`team-${UUID(4)}-delete`));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
+    await waitFor(() =>
+      expect(h.getByTypeId).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(4), type: 'team' })),
+    );
     await waitFor(() => expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(4), type: 'team' })));
   });
 

@@ -74,6 +74,13 @@ function orgBudgetsOf(name: string, teams: unknown[] = []) {
         is_root: false,
         provider: null,
         credential_hint: '',
+        // The caller here is the org's owner, so every control the page can show is offered.
+        can_configure: true,
+        can_allocate: true,
+        can_manage: true,
+        can_add_child: true,
+        can_set_credential: true,
+        can_invite: true,
       },
       teams,
     },

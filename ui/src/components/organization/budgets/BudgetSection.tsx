@@ -20,9 +20,21 @@
  * for the twenty-odd knobs that do not (per-window ceilings, rate caps, path and beta lists, alias
  * maps). Putting those on the row would bury the four that matter.
  *
- * **Over-promising is shown, not blocked.** A pool may hand out more than it holds; the hub
- * catches the excess when the money is SPENT, along the whole chain, not when it is promised. So
- * a total that exceeds the pool is rendered as a plain warning line rather than a refused edit.
+ * **Over-promising is shown where it already exists, and refused where it would be created.** The
+ * hub still permits it — the excess is caught when the money is SPENT, along the whole chain — so
+ * rows that already exceed their pool keep rendering the plain warning line rather than becoming
+ * uneditable. What changed is the point of entry: an amount TYPED here that would exceed what the
+ * pool above still has free is refused in the box (`available-to-allocate.ts`), because telling
+ * someone at the keyboard beats letting them discover it as a stalled worker weeks later.
+ *
+ * **Every control is gated on what the hub says the caller may press**, never on a role read here.
+ * `can_configure` / `can_allocate` / `can_manage` / `can_add_child` / `can_set_credential` come off the budgets
+ * payload as the same policy questions the resulting request will be judged by. This is what makes
+ * a SHARED organization legible: its admin runs the teams and the people and divides the money,
+ * while the org's own total, its provider key and its name stay with the owner and simply do not
+ * offer a control. Deriving that here from a role string would be a second implementation of an
+ * authorization rule — and an org admin's standing on a budget row is derived by the hub from the
+ * scope it hangs under, which the browser cannot see at all.
  */
 import { TypeId, dataManager, type MemberBudget, type ScopeBudget } from '@sdk';
 import { ChevronDown, ChevronRight, Hash, Loader2, Pencil, Trash2, UserPlus, Wallet } from 'lucide-react';
@@ -43,9 +55,12 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 import { AddPeopleDialog } from './AddPeopleDialog';
+import { availableToAllocate, type PoolFunds } from './available-to-allocate';
 import { AdvancedButton } from './AdvancedEndpointDialog';
 import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
+import { ShareOrgButton } from './OrgSharePanel';
+import { ShareProjectButton } from './ShareProjectPanel';
 import { MoneyBox } from './MoneyBox';
 import { PayingProviderSetup } from './PayingProviderSetup';
 import {
@@ -101,6 +116,10 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
 
   const org = data.org;
   const over = org.limit_usd !== null && org.allocated_usd !== null && org.allocated_usd > org.limit_usd;
+  // Adding a team is a scoped CREATE on the organization, which is its own policy answer -- not a
+  // reading of the org's budget rights. It used to be gated on `can_allocate`, which was wrong in
+  // both directions once an admin stopped holding `allocate` on the org's own pot.
+  const canAddTeam = org.can_add_child;
   // Opens on its own only while there is NO POOL AT ALL — a fresh org needs the key form in front
   // of it. Once a root exists the form is a thing you go to, not a thing you read every visit, so it
   // starts closed. Either way the admin's own toggle wins from the first click.
@@ -121,28 +140,37 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
   return (
     <section className="rounded-lg border border-border" data-testid="org-unit">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <EditableTitle
-          name={org.name}
-          onRename={async (next) => {
-            await renameEntity('organization', orgId, next);
-            await invalidate();
-          }}
-          onDelete={() => setConfirmDelete(true)}
-          deleting={deleting}
-          headingClassName="text-lg font-semibold"
-          testIdPrefix="org"
-        />
+        <div className="flex min-w-0 items-center gap-2">
+          <EditableTitle
+            name={org.name}
+            onRename={async (next) => {
+              await renameEntity('organization', orgId, next);
+              await invalidate();
+            }}
+            onDelete={() => setConfirmDelete(true)}
+            deleting={deleting}
+            manage={org.can_manage}
+            headingClassName="text-lg font-semibold"
+            testIdPrefix="org"
+          />
+          {/* Wider than every other control on this row on purpose: running the people is the job
+              an organization is SHARED for, so an admin gets it and only the money's ceiling and
+              the key stay behind. */}
+          {org.can_invite && <ShareOrgButton orgId={orgId} orgName={org.name} />}
+        </div>
         {org.endpoint_id && (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
             <label className="flex items-center gap-2">
               <span className="text-muted-foreground">
                 <Trans>Total</Trans>
               </span>
+              {/* The org's own total is the owner's answer. An admin sees the number — they are
+                  being asked to divide it — but the box does not accept one. */}
               <MoneyBox
                 value={org.limit_usd}
                 ariaLabel={t`Total budget for ${org.name}`}
                 data-testid="org-total-cap"
-                disabled={setCap.isPending}
+                disabled={setCap.isPending || !org.can_configure}
                 onCommit={(usd) => setCap.mutate({ endpointId: org.endpoint_id as string, usd })}
               />
             </label>
@@ -167,8 +195,15 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
 
       {org.endpoint_id && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
-          <EndpointControls endpointId={org.endpoint_id} scope="org" testIdPrefix="org" />
-          <AdvancedButton endpointId={org.endpoint_id} scopeLabel={org.name} testId="org-advanced" />
+          <EndpointControls endpointId={org.endpoint_id} scope="org" testIdPrefix="org" manage={org.can_configure} />
+          {/* Read-only for an admin: the per-window ceilings and rate caps in here are the org's
+              total wearing a different hat, so they follow it rather than `can_allocate`. */}
+          <AdvancedButton
+            endpointId={org.endpoint_id}
+            scopeLabel={org.name}
+            testId="org-advanced"
+            readOnly={!org.can_configure}
+          />
         </div>
       )}
 
@@ -206,11 +241,17 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
         ) : (
           <div className="flex flex-col gap-3">
             {data.teams.map((team) => (
-              <TeamUnit key={team.id} team={team} onChanged={() => void invalidate()} />
+              <TeamUnit
+                key={team.id}
+                team={team}
+                orgFunds={org}
+                orgName={org.name}
+                onChanged={() => void invalidate()}
+              />
             ))}
           </div>
         )}
-        {createTeam.open ? (
+        {!canAddTeam ? null : createTeam.open ? (
           <div className="flex items-center gap-2">
             <input
               autoFocus
@@ -278,11 +319,16 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
  */
 function MemberRow({
   member,
+  teamFunds,
+  teamName,
   capPending,
   onSetCap,
   onRemove,
 }: {
   member: MemberBudget;
+  /** The team's pool, for "how much is left to give this person". */
+  teamFunds: PoolFunds;
+  teamName: string;
   capPending: boolean;
   onSetCap: (usd: number | null) => void;
   onRemove: () => void;
@@ -316,7 +362,9 @@ function MemberRow({
           value={member.limit_usd}
           ariaLabel={t`Budget for ${member.name}`}
           data-testid={`member-cap-${member.endpoint_id}`}
-          disabled={capPending}
+          disabled={capPending || !member.can_configure}
+          available={availableToAllocate(teamFunds, member.limit_usd)}
+          availableFrom={teamName}
           onCommit={onSetCap}
         />
       </TableCell>
@@ -327,6 +375,7 @@ function MemberRow({
       <TableCell>
         <EndpointControls
           endpointId={member.endpoint_id}
+          manage={member.can_configure}
           scope="person"
           testIdPrefix={`member-${member.endpoint_id}`}
         />
@@ -337,6 +386,7 @@ function MemberRow({
             endpointId={member.endpoint_id}
             scopeLabel={member.name}
             testId={`member-advanced-${member.endpoint_id}`}
+            readOnly={!member.can_configure}
             iconOnly
           />
           <Button
@@ -374,7 +424,18 @@ function MemberRow({
 
 /** `team` is the org's own summary of it (name, total, spent) — cheap, always known, so the row
  *  renders fully before anything about its PEOPLE is ever fetched. */
-function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => void }) {
+function TeamUnit({
+  team,
+  orgFunds,
+  orgName,
+  onChanged,
+}: {
+  team: ScopeBudget;
+  /** The organization's pool, for "how much is left to give this team". */
+  orgFunds: PoolFunds;
+  orgName: string;
+  onChanged: () => void;
+}) {
   const { t } = useLingui();
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -389,10 +450,20 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
 
   const poolId = team.endpoint_id;
   const over = team.limit_usd !== null && team.allocated_usd !== null && team.allocated_usd > team.limit_usd;
+  // What the ORG still has free for this team — its own current cap added back, because raising a
+  // team from $20 to $80 inside a $100 org is a replacement, not another $80 on top.
+  const freeInOrg = availableToAllocate(orgFunds, team.limit_usd);
 
   const removeTeam = async () => {
     setDeleting(true);
     try {
+      // Load the team as an ENTITY first. `dataManager.delete` is cache-first — it reads
+      // `entities.get(typeId)` and throws `Can not delete, Entity not defined` before issuing any
+      // request when the id was never fetched as an entity. A team row on this page comes from the
+      // `budgets` AGGREGATE (a `ScopeBudget` DTO: id, name, endpoint_id and the numbers), so the
+      // team had never been through the entity cache and the DELETE never left the browser. The
+      // org row above only works by accident of `organization-page` listing orgs as entities.
+      await dataManager.getByTypeId(new TypeId('team', team.id));
       await dataManager.delete(new TypeId('team', team.id));
       onChanged();
     } catch (e) {
@@ -413,6 +484,7 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
           }}
           onDelete={() => setConfirmDelete(true)}
           deleting={deleting}
+          manage={team.can_manage}
           headingClassName="text-sm font-semibold"
           testIdPrefix={`team-${team.id}`}
         />
@@ -427,7 +499,9 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
                   value={team.limit_usd}
                   ariaLabel={t`Budget for ${team.name}`}
                   data-testid={`team-cap-${team.id}`}
-                  disabled={setCap.isPending}
+                  disabled={setCap.isPending || !team.can_configure}
+                  available={freeInOrg}
+                  availableFrom={orgName}
                   onCommit={(usd) => setCap.mutate({ endpointId: poolId, usd }, { onSuccess: onChanged })}
                 />
               </label>
@@ -438,14 +512,21 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
                   <TokenCount tokens={team.spent_tokens ?? 0} testIdPrefix={`team-spent-${team.id}`} />
                 </span>
               </span>
-              <Button size="sm" data-testid={`team-add-people-${team.id}`} onClick={() => setAdding(true)}>
-                <UserPlus className="h-4 w-4" />
-                <Trans>Add people</Trans>
-              </Button>
+              {team.can_allocate && (
+                <Button size="sm" data-testid={`team-add-people-${team.id}`} onClick={() => setAdding(true)}>
+                  <UserPlus className="h-4 w-4" />
+                  <Trans>Add people</Trans>
+                </Button>
+              )}
             </>
           ) : (
             <SetUpButton kind="team" scopeId={team.id} label={team.name} onDone={onChanged} />
           )}
+          {/* Outside the pool branch on purpose: handing a team a project is not
+              spending its money, so a team that has not been given a budget yet
+              can still be given work. Gated on the same hub answer as "Add
+              people" — whoever runs this team is who shares work with it. */}
+          {team.can_allocate && <ShareProjectButton teamId={team.id} teamName={team.name} />}
         </div>
       </div>
 
@@ -460,8 +541,18 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
 
       {poolId && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
-          <EndpointControls endpointId={poolId} scope="team" testIdPrefix={`team-${team.id}`} />
-          <AdvancedButton endpointId={poolId} scopeLabel={team.name} testId={`team-advanced-${team.id}`} />
+          <EndpointControls
+            endpointId={poolId}
+            scope="team"
+            testIdPrefix={`team-${team.id}`}
+            manage={team.can_configure}
+          />
+          <AdvancedButton
+            endpointId={poolId}
+            scopeLabel={team.name}
+            testId={`team-advanced-${team.id}`}
+            readOnly={!team.can_configure}
+          />
         </div>
       )}
 
@@ -514,6 +605,8 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
                       <MemberRow
                         key={member.endpoint_id}
                         member={member}
+                        teamFunds={detail.data.team}
+                        teamName={team.name}
                         capPending={setCap.isPending}
                         onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}
                         onRemove={() => setRemovingMember(member)}
@@ -534,6 +627,7 @@ function TeamUnit({ team, onChanged }: { team: ScopeBudget; onChanged: () => voi
           poolId={poolId}
           teamName={team.name}
           existing={detail.data.members}
+          poolFunds={detail.data.team}
         />
       )}
 

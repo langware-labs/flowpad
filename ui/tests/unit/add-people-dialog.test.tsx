@@ -20,7 +20,13 @@ import { AddPeopleDialog } from '@src/components/organization/budgets/AddPeopleD
 
 const POOL_ID = 'llm_endpoint-550e8400-e29b-41d4-a716-446655440000';
 
-function draw(existing: unknown[] = []) {
+function draw(
+  existing: unknown[] = [],
+  // Uncapped by default: most of these tests are about WHAT is sent, not about the ceiling. The
+  // ceiling's own arithmetic is `available-to-allocate.test.ts`; that it is actually WIRED to this
+  // dialog is the last describe block below.
+  poolFunds: { limit_usd: number | null; allocated_usd: number | null } = { limit_usd: null, allocated_usd: null },
+) {
   const onOpenChange = vi.fn();
   render(
     <AddPeopleDialog
@@ -29,6 +35,7 @@ function draw(existing: unknown[] = []) {
       poolId={POOL_ID}
       teamName="Platform"
       existing={existing as never}
+      poolFunds={poolFunds}
     />,
   );
   return { onOpenChange };
@@ -178,5 +185,79 @@ describe('AddPeopleDialog — uploading a CSV', () => {
 
     await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
     expect(h.mutateAsync.mock.calls[0][0].existing).toHaveLength(1);
+  });
+});
+
+/**
+ * The whole sheet is weighed at once against what the team pool has left. Row by row would wave
+ * through forty $10 allowances against a pool holding $50 — each one fits, the sheet does not.
+ */
+describe('AddPeopleDialog — more than the team has left', () => {
+  const capped = { limit_usd: 50, allocated_usd: 0 };
+
+  function typeRow(index: number, email: string, budget: string) {
+    if (index > 0) fireEvent.click(screen.getByTestId('add-person-row'));
+    fireEvent.change(screen.getByTestId(`add-person-email-${index}`), { target: { value: email } });
+    fireEvent.change(screen.getByTestId(`add-person-budget-${index}`), { target: { value: budget } });
+  }
+
+  it('refuses a sheet whose total exceeds the pool, and sends nothing', async () => {
+    draw([], capped);
+    typeRow(0, 'a@example.com', '30');
+    typeRow(1, 'b@example.com', '30');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('add-people-problems')).toBeTruthy());
+    expect(screen.getByTestId('add-people-problems').textContent).toMatch(/\$60.*\$50.*Platform/);
+    expect(h.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('accepts the same rows when they fit', async () => {
+    h.mutateAsync.mockResolvedValue({ added: ['a@example.com', 'b@example.com'], updated: [], failed: [] });
+    draw([], capped);
+    typeRow(0, 'a@example.com', '30');
+    typeRow(1, 'b@example.com', '20');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
+  });
+
+  it('frees what a re-budget overwrites before judging the sheet', async () => {
+    // Ada is the only allocation on the pool: $40 of $50. Moving her to $45 costs $5, not $45.
+    // Without crediting back what she already holds this reads as "$10 left, $45 asked" and an
+    // edit that plainly fits gets refused.
+    h.mutateAsync.mockResolvedValue({ added: [], updated: ['ada@example.com'], failed: [] });
+    draw([{ endpoint_id: 'llm_endpoint-x', email: 'ada@example.com', limit_usd: 40 }], {
+      limit_usd: 50,
+      allocated_usd: 40,
+    });
+    typeRow(0, 'ada@example.com', '45');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
+  });
+
+  it('still holds the ceiling for a re-budget, counting what OTHERS hold', async () => {
+    // Same $50 pool, but $50 is out: Ada's $40 plus $10 to somebody else. Her real ceiling is $40,
+    // so $45 is refused — the credit above frees her own money back, never anyone else's.
+    draw([{ endpoint_id: 'llm_endpoint-x', email: 'ada@example.com', limit_usd: 40 }], {
+      limit_usd: 50,
+      allocated_usd: 50,
+    });
+    typeRow(0, 'ada@example.com', '45');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('add-people-problems')).toBeTruthy());
+    expect(h.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('requires an amount on every row when the pool is capped', async () => {
+    draw([], capped);
+    typeRow(0, 'a@example.com', '');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('add-people-problems')).toBeTruthy());
+    expect(screen.getByTestId('add-people-problems').textContent).toMatch(/needs an amount/i);
+    expect(h.mutateAsync).not.toHaveBeenCalled();
   });
 });

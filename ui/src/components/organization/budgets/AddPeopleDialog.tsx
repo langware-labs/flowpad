@@ -9,6 +9,12 @@
  * Nothing is sent until Add is pressed. A file that half-parses shows what it got and what it could
  * not read, and the good rows are still importable — someone with forty new hires and one bad
  * address should not have to fix the file to make any progress.
+ *
+ * **The whole sheet is weighed against the team's remaining money at once**, not row by row. Row by
+ * row would wave forty $10 allowances through a team holding $50: each one fits, the sheet does
+ * not. A repeated address re-budgets that person rather than adding a second allowance, so the cap
+ * it replaces comes back into the pot before the sum is judged. See `available-to-allocate.ts` for
+ * why this is a UI refusal and not a rule the hub enforces.
  */
 import { downloadFile } from '@sdk';
 import type { MemberBudget } from '@sdk';
@@ -29,6 +35,7 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 
 import type { PersonDraft } from './add-people';
+import { batchFits, type PoolFunds } from './available-to-allocate';
 import { useAddPeople } from './use-budgets';
 import { PEOPLE_CSV_FILENAME, SAMPLE_PEOPLE_CSV, parsePeopleCsv, type PeopleCsvProblem } from './people-csv';
 
@@ -48,6 +55,8 @@ export interface AddPeopleDialogProps {
   teamName: string;
   /** The team's current roster — a repeated address re-budgets that person instead of duplicating. */
   existing: readonly MemberBudget[];
+  /** The team pool's own cap and what it has already given out, for the whole-sheet check. */
+  poolFunds: PoolFunds;
 }
 
 /** The problem sentences. Kept beside the dialog rather than in the parser so the rules stay pure
@@ -70,7 +79,7 @@ function useProblemText() {
   };
 }
 
-export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing }: AddPeopleDialogProps) {
+export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing, poolFunds }: AddPeopleDialogProps) {
   const { t } = useLingui();
   const problemText = useProblemText();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -123,6 +132,23 @@ export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing
     const bad = people.filter((p) => p.budget !== null && (!Number.isFinite(p.budget) || p.budget < 0));
     if (bad.length > 0) {
       setProblems(bad.map((p) => t`${p.email}: the amount must be a number.`));
+      return;
+    }
+    // What these rows OVERWRITE is freed first: re-budgeting someone from $5 to $8 costs the team
+    // $3, not $8, and charging the full amount would refuse a sheet that plainly fits.
+    const byEmail = new Map(existing.map((m) => [(m.email ?? '').toLowerCase(), m]));
+    const replacing = people.reduce((sum, p) => sum + (byEmail.get(p.email)?.limit_usd ?? 0), 0);
+    const check = batchFits(
+      people.map((p) => p.budget),
+      poolFunds,
+      replacing,
+    );
+    if (!check.fits) {
+      setProblems([
+        check.available === null || people.some((p) => p.budget === null)
+          ? t`${teamName} has a limit, so every person needs an amount.`
+          : t`That comes to $${check.total}, but only $${check.available} is left in ${teamName}.`,
+      ]);
       return;
     }
     const outcome = await addPeople.mutateAsync({ poolId, drafts: people, existing });

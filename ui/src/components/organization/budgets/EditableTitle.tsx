@@ -5,10 +5,16 @@
  * tiles already use — rather than a second implementation: focus-and-select-all on entry, trim +
  * no-op guard on commit, Enter commits, Escape cancels.
  *
- * Delete is deliberately never inferred as safe from being SHOWN: the button always renders when
- * `onDelete` is passed, and a wrong permission is surfaced as a plain error toast on the attempt
- * rather than guessed at client-side — the hub is the one source of truth for who may delete an
- * organization outright (owner) versus a team (admin), and duplicating that rule here would drift.
+ * **`manage` decides whether this is a control at all.** Renaming and deleting are the same right,
+ * so they are one flag: without it the name renders as plain text and the delete button is absent.
+ *
+ * That flag is READ from the hub, never inferred here. The distinction matters and is the reason
+ * this component used to show the controls unconditionally and let the attempt fail with a toast:
+ * guessing client-side at who may delete an organization (owner) versus a team (admin) meant a
+ * second copy of an authorization rule, and a second copy drifts. It is not a guess any more —
+ * `OrgScopeBudget.can_manage_org` is the hub answering the `update` policy question on the
+ * organization itself, so the button is hidden exactly when the request would have been refused.
+ * A failed attempt still surfaces as an error toast; this only stops offering a dead control.
  */
 import { Loader2, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
@@ -22,6 +28,9 @@ export interface EditableTitleProps {
   onRename: (next: string) => void | Promise<void>;
   onDelete?: () => void;
   deleting?: boolean;
+  /** May the caller rename and delete this thing? The hub's own answer; required, so a new call
+   *  site cannot silently default itself into showing controls that do not work. */
+  manage: boolean;
   headingClassName: string;
   testIdPrefix: string;
 }
@@ -34,11 +43,24 @@ export function EditableTitle({
   onRename,
   onDelete,
   deleting,
+  manage,
   headingClassName,
   testIdPrefix,
 }: EditableTitleProps) {
   const { t } = useLingui();
   const rename = useInlineRename(name, onRename);
+
+  // Plain text, not a disabled button: a control that cannot ever do anything for this person is
+  // noise, and a greyed-out name reads as "broken" rather than as "not yours to change".
+  if (!manage) {
+    return (
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`truncate px-1 py-0.5 ${headingClassName}`} data-testid={`${testIdPrefix}-name`}>
+          {name}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-w-0 items-center gap-2">
