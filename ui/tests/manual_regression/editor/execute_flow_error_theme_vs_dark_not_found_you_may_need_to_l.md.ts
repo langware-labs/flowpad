@@ -13,7 +13,13 @@ function realConsoleErrors(errors: string[]): string[] {
 test.describe('Execute flow view loads without theme errors (FLOWPAD-1668)', () => {
   test('execute-flow dock loads without vs-dark / theme console errors', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const errors: string[] = [];
     page.on('console', (msg) => {

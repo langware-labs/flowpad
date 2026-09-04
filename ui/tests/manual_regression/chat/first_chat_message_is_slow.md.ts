@@ -10,7 +10,13 @@ import { expect, test } from '@playwright/test';
 import { gotoLanding } from './helpers';
 
 test('first home message immediately acknowledges submit and opens chat', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await gotoLanding(page);
 
   const prompt =

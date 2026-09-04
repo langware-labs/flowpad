@@ -89,7 +89,13 @@ async function entity(request: APIRequestContext, type: string, id: string): Pro
 }
 
 async function openAsset(page: Page, type: 'subagent' | 'skill', id: string): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/assets/editor/${type}/typeid/${type}-${id}`);
   await expect(page.locator('[data-testid="asset-collision-warning"]')).toBeVisible();
 }
