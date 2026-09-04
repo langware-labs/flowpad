@@ -5,6 +5,7 @@
 import '@sdk';
 import { beforeEach, vi } from 'vitest';
 import { installLeakTripwire } from '../_cleanup';
+import { loadShippedIconPacks } from '../_icon-packs';
 
 // The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
 // listed first in this tier's setupFiles) and shared with the api/react tiers.
@@ -13,6 +14,13 @@ import { installLeakTripwire } from '../_cleanup';
 // a cheap regression guard for a future unit test that starts creating real
 // backend entities. No-ops silently when no backend is reachable.
 installLeakTripwire(['skill']);
+
+// Icons resolve through the SDK registry, which the app fills from bootstrap
+// before its first render. This tier has no backend, so load the shipped
+// manifests off disk — otherwise every pack-defined name (Linear, Atlassian,
+// ClaudeCode…) answers "unknown" and the failure is the fixture's, not the
+// code's.
+loadShippedIconPacks();
 
 // Mock the ResizeObserver
 const ResizeObserverMock = vi.fn(() => ({
