@@ -316,6 +316,13 @@ function App() {
                 </Swatch>
               ))}
             </Row>
+            <Row label="size={n}" note="a live pattern: 35 call sites pass a number, and EntityIcon derives one from its density">
+              {[12, 14, 16, 22, 26].map((n) => (
+                <Swatch key={n} caption={`${n}px`}>
+                  <FlowIcon icon="brands.gmail" size={n} />
+                </Swatch>
+              ))}
+            </Row>
           </div>
         </Section>
 
@@ -386,13 +393,21 @@ function App() {
               <Swatch caption="animate-pulse"><FlowIcon icon="lucide.bell" className="glyph-lg animate-pulse" /></Swatch>
             </Row>
             <Row
-              label="strokeWidth — a real limit, shown not hidden"
-              note="it reaches a bundle glyph, which is a real SVG. A masked asset has no strokes and an image has its own, so it is inert there."
+              label="strokeWidth — a limit, shown not hidden"
+              note="it reaches a bundle glyph, which is a real SVG; a masked asset has no strokes, so it is inert there. Only 5 icon call sites pass it, so the limit is cheap — but it is real."
             >
               <Swatch caption="bundle · 1"><FlowIcon icon="lucide.database" className="glyph-lg" strokeWidth={1} /></Swatch>
               <Swatch caption="bundle · 3"><FlowIcon icon="lucide.database" className="glyph-lg" strokeWidth={3} /></Swatch>
               <Swatch caption="asset · 1"><FlowIcon icon="flowpad.wiki" className="glyph-lg" strokeWidth={1} /></Swatch>
               <Swatch caption="asset · 3"><FlowIcon icon="flowpad.wiki" className="glyph-lg" strokeWidth={3} /></Swatch>
+            </Row>
+            <Row label="base / badge classes" note="addressed separately, as IconWithBadge's call sites require">
+              <Swatch caption="default">
+                <FlowIcon icon="brands.claude" role="restore" className="glyph-lg" />
+              </Swatch>
+              <Swatch caption="tinted badge">
+                <FlowIcon icon="brands.claude" role="restore" className="glyph-lg" badgeClassName="text-blue-500" />
+              </Swatch>
             </Row>
             <Row label="onClick" note="rest props land on the element">
               <Swatch caption="click me">

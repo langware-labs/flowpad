@@ -93,6 +93,37 @@ describe('FlowIcon props', () => {
     }
   });
 
+  it('accepts a pixel size, which is a live pattern not a convenience', () => {
+    // 35 call sites pass `size={14}`, and EntityIcon computes one from its
+    // density (`size ?? (compact ? 14 : 16)`). A names-only prop rejects those.
+    const { container } = render(<FlowIcon icon="flowpad.wiki" size={14} />);
+    expect(glyph(container).style.width).toBe('14px');
+    expect(glyph(container).style.height).toBe('14px');
+  });
+
+  it('hands a pixel size to the bundle renderer as its own size prop', () => {
+    const seen: Record<string, unknown>[] = [];
+    const Bundled = (props: Record<string, unknown>) => {
+      seen.push(props);
+      return <svg />;
+    };
+    registerBundleRenderer(() => Bundled);
+    render(<FlowIcon icon="lucide.rss" size={22} />);
+    expect(seen[0]?.size).toBe(22);
+  });
+
+  it('addresses the base and the badge separately', () => {
+    // `IconWithBadge` — the composer this replaces — has baseClassName and
+    // badgeClassName because call sites tint the badge alone, and RagFolderIcon
+    // replaces the corner geometry outright. One shared className cannot do it.
+    const { container } = render(
+      <FlowIcon icon="brands.claude" role="restore" baseClassName="base-x" badgeClassName="badge-y" />,
+    );
+    const stack = glyph(container);
+    expect(stack.querySelector('.fp-icon-base')?.className).toContain('base-x');
+    expect(stack.querySelector('.fp-icon-sub')?.className).toContain('badge-y');
+  });
+
   it('lets className win over the size prop', () => {
     const { container } = render(<FlowIcon icon="brands.slack" size="xs" className="h-8 w-8" />);
     expect(glyph(container).className).toContain('h-8 w-8');
