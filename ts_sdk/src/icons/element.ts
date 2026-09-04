@@ -1,3 +1,4 @@
+import { getIconFallback } from './registry';
 import { resolveIcon } from './resolve';
 import type { IconPackSpec, IconResolution } from './types';
 
@@ -28,8 +29,18 @@ import type { IconPackSpec, IconResolution } from './types';
 
 export const ICON_STYLE_ID = 'flowpad-icon-css';
 
+/**
+ * Sizing defaults are wrapped in `:where()` so they carry ZERO specificity.
+ *
+ * This stylesheet is injected at runtime, which puts it last in the cascade —
+ * so a plain `.fp-icon{width:1em}` would beat `h-4 w-4`, `size-4` and every
+ * other class the app already sizes icons with, at all ~1,600 call sites. A
+ * default has to lose to anything the caller says; `:where()` is how a rule
+ * says that. The painting rules below keep normal specificity: nothing in the
+ * app competes with them.
+ */
 export const ICON_CSS = `
-.fp-icon{display:inline-block;width:1em;height:1em;flex:none;vertical-align:-0.125em;line-height:1}
+:where(.fp-icon){display:inline-block;width:1em;height:1em;flex:none;vertical-align:-0.125em;line-height:1}
 .fp-icon-mask{background-color:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
   -webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
 .fp-icon-img{width:100%;height:100%;object-fit:contain;display:block}
@@ -51,7 +62,8 @@ export const ICON_CSS = `
 /* A sub-icon sits on the host's corner, on a plate so it reads against the
    artwork underneath. The plate takes the surrounding background — override
    --fp-icon-badge-bg where the icon sits on a tinted surface. */
-.fp-icon-stack{position:relative;display:inline-block;width:1em;height:1em;flex:none;vertical-align:-0.125em}
+:where(.fp-icon-stack){position:relative;display:inline-block;width:1em;height:1em;flex:none;vertical-align:-0.125em}
+.fp-icon-stack{position:relative}
 .fp-icon-stack>.fp-icon-base{position:absolute;inset:0;width:100%;height:100%;vertical-align:baseline}
 /* The plate is its OWN element, not a class on the badge glyph. A tintable
    glyph paints itself with background-color: currentColor -- put the plate on
@@ -84,8 +96,8 @@ export function ensureIconStyles(doc: Document = document): void {
 }
 
 export interface IconElementOptions {
-  /** `restore` — a role from the icon's `variants`. */
-  variant?: string;
+  /** `restore` — a role, appended to the tag as one more segment. */
+  role?: string;
   /** Extra classes on the returned element. */
   className?: string;
   /** Accessible name. Omit for a decorative icon, which is the default. */
@@ -208,7 +220,7 @@ export function iconChip(
     .join(' ');
   chip.title = label;
   chip.appendChild(
-    iconElementFor(resolveIcon(ref ? (opts.variant ? `${ref}@${opts.variant}` : ref) : ref, packs), {
+    iconElementFor(resolveForRender(ref, packs, opts.role), {
       ...opts,
       className: undefined,
       doc,
@@ -218,6 +230,28 @@ export function iconChip(
   return chip;
 }
 
+/** A tag plus an optional role — the ONE place that join is spelled. */
+export function withRole(ref: string | null | undefined, role?: string): string | null | undefined {
+  return ref && role ? `${ref}.${role}` : ref;
+}
+
+/**
+ * Resolve, applying the unknown-icon fallback — the one call a plain page needs.
+ *
+ * `resolveIcon` stays honest and answers `none`, because a caller inspecting a
+ * resolution needs to know. Rendering is where the fallback belongs.
+ */
+export function resolveForRender(
+  ref: string | null | undefined,
+  packs: IconPackSpec[],
+  role?: string,
+): IconResolution {
+  const res = resolveIcon(withRole(ref, role), packs);
+  if (res.kind !== 'none') return res;
+  const fallback = getIconFallback();
+  return fallback ? resolveIcon(fallback, packs) : res;
+}
+
 /** Resolve a reference and build its DOM — the one call a plain page needs. */
 export function iconElement(
   ref: string | null | undefined,
@@ -225,5 +259,5 @@ export function iconElement(
   opts: IconElementOptions = {},
 ): HTMLElement {
   ensureIconStyles(opts.doc || document);
-  return iconElementFor(resolveIcon(ref ? (opts.variant ? `${ref}@${opts.variant}` : ref) : ref, packs), opts);
+  return iconElementFor(resolveForRender(ref, packs, opts.role), opts);
 }

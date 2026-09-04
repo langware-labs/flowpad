@@ -1,25 +1,25 @@
 {
   "version": 1,
-  "name": "flowpad",
+  "kind": "flowpad",
   "base": "icons/flowpad/assets",
   "license": "Flowpad — MIT, with the rest of this repo.",
   "icons": [
     {
-      "name": "wiki",
+      "kind": "wiki",
       "asset": "wiki.svg",
       "aliases": [
         "Wiki"
       ]
     },
     {
-      "name": "person-raised-hand",
+      "kind": "person-raised-hand",
       "asset": "person-raised-hand.svg",
       "aliases": [
         "PersonRaisedHand"
       ]
     },
     {
-      "name": "cloud-mailbox",
+      "kind": "cloud-mailbox",
       "asset": "cloud-mailbox.svg",
       "tintable": false,
       "aliases": [
@@ -27,22 +27,22 @@
       ]
     },
     {
-      "name": "google-cloud-storage",
+      "kind": "google-cloud-storage",
       "asset": "google-cloud-storage.svg",
       "aliases": [
         "GoogleCloudStorage"
       ]
     },
     {
-      "name": "generic",
+      "kind": "generic",
       "asset": "generic.svg",
-      "source": "lucide `sparkles` / `history` (ISC)",
       "sub": {
-        "restore": "lucide:history"
-      }
+        "restore": "lucide.history"
+      },
+      "source": "lucide `sparkles` / `history` (ISC)"
     },
     {
-      "name": "shell",
+      "kind": "shell",
       "asset": "shell.svg",
       "source": "lucide `square-terminal` (ISC)"
     }

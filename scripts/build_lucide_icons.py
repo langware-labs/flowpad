@@ -84,7 +84,7 @@ def emitted_names() -> dict[str, set[str]]:
         for spec in pack.get("icons") or []:
             for ref in (spec.get("sub") or {}).values():
                 if isinstance(ref, str):
-                    add(ref.split(":", 1)[-1], f"{path.parent.name} pack sub-icon")
+                    add(ref.rpartition(".")[2], f"{path.parent.name} pack sub-icon")
 
     return names
 
@@ -140,8 +140,13 @@ def main() -> int:
     from flow_sdk.icons import IconRegistry
 
     registry = IconRegistry()
-    enumerated = {p.name: p for p in registry.packs if not p.is_bundle}
-    covered = {key for pack in enumerated.values() for spec in pack.icons for key in (spec.name, *spec.aliases)}
+    covered = {
+        key
+        for pack in registry.packs
+        if not pack.is_bundle
+        for spec in pack.icons
+        for key in (spec.kind, *spec.aliases)
+    }
 
     wanted, unknown = {}, []
     for name in sorted(set(emitted_names()) - covered):

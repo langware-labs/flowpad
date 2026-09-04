@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "lucide",
+  "kind": "lucide",
   "base": "icons/lucide/assets",
   "license": "ISC — lucide-react v0.525.0, https://lucide.dev",
   "icons": []

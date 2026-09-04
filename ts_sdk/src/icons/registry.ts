@@ -18,6 +18,28 @@ import type { IconPackSpec, IconResolution } from './types';
 let packs: IconPackSpec[] = [];
 const listeners = new Set<() => void>();
 
+/**
+ * What renders when nothing claims a tag.
+ *
+ * `lucideByName` never returns nothing — a null name, a typo and a missing file
+ * all land on `FileText`, deliberately, so "unknown icon" and "no icon" look the
+ * same rather than one of them vanishing. A drop-in has to keep that: an icon
+ * that silently disappears reads as a layout bug, and a row loses the column
+ * that told you what it was.
+ *
+ * A tag rather than a component, so it resolves through the same registry and
+ * works on the no-React path too. Set to `null` to render nothing instead.
+ */
+let fallbackTag: string | null = 'lucide.file-text';
+
+export function setIconFallback(tag: string | null): void {
+  fallbackTag = tag;
+}
+
+export function getIconFallback(): string | null {
+  return fallbackTag;
+}
+
 /** Seed the registry from a bootstrap payload. */
 export function loadIconPacks(next: IconPackSpec[] | undefined | null): void {
   packs = Array.isArray(next) ? next : [];

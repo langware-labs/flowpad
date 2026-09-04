@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "name": "brands",
+  "kind": "brands",
   "base": "icons/brands/assets",
   "license": "Vendor trademarks, used for identification. Each mark belongs to its owner.",
   "icons": [
     {
-      "name": "slack",
+      "kind": "slack",
       "asset": "slack.svg",
       "tintable": false,
       "aliases": [
@@ -14,7 +14,7 @@
       "source": "brand guidelines"
     },
     {
-      "name": "atlassian",
+      "kind": "atlassian",
       "asset": "atlassian.svg",
       "color": "#2684FF",
       "aliases": [
@@ -22,7 +22,7 @@
       ]
     },
     {
-      "name": "linear",
+      "kind": "linear",
       "asset": "linear.svg",
       "color": "#5E6AD2",
       "aliases": [
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "name": "gitlab",
+      "kind": "gitlab",
       "asset": "gitlab.svg",
       "color": "#FC6D26",
       "aliases": [
@@ -40,7 +40,7 @@
       "source": "lucide `gitlab` (ISC)"
     },
     {
-      "name": "github",
+      "kind": "github",
       "asset": "github.svg",
       "aliases": [
         "Github",
@@ -49,7 +49,7 @@
       "source": "lucide `github` (ISC)"
     },
     {
-      "name": "microsoft",
+      "kind": "microsoft",
       "asset": "microsoft.svg",
       "tintable": false,
       "aliases": [
@@ -57,19 +57,17 @@
       ]
     },
     {
-      "name": "notion",
+      "kind": "notion",
       "asset": "notion.svg",
-      "variants": {
-        "dark": "notion-dark.svg"
-      },
+      "tintable": false,
+      "dark": "notion-dark.svg",
       "aliases": [
         "Notion"
       ],
-      "tintable": false,
       "source": "brand mark; light and dark artwork"
     },
     {
-      "name": "gmail",
+      "kind": "gmail",
       "asset": "gmail.svg",
       "tintable": false,
       "aliases": [
@@ -77,7 +75,7 @@
       ]
     },
     {
-      "name": "telegram",
+      "kind": "telegram",
       "asset": "telegram.svg",
       "tintable": false,
       "aliases": [
@@ -85,7 +83,7 @@
       ]
     },
     {
-      "name": "googledrive",
+      "kind": "googledrive",
       "asset": "googledrive.svg",
       "tintable": false,
       "aliases": [
@@ -96,64 +94,52 @@
       ]
     },
     {
-      "name": "claude",
+      "kind": "claude",
       "asset": "claude.svg",
+      "sub": {
+        "restore": "lucide.history"
+      },
       "aliases": [
         "ClaudeCode",
-        "Claude"
-      ],
-      "sub": {
-        "restore": "lucide:history"
-      }
-    },
-    {
-      "name": "anthropic",
-      "asset": "claude.svg",
-      "color": "#D97757",
-      "aliases": [
+        "Claude",
+        "anthropic",
         "anthropic-key"
       ]
     },
     {
-      "name": "codex",
+      "kind": "codex",
       "asset": "codex.svg",
-      "aliases": [
-        "Codex"
-      ],
       "sub": {
-        "restore": "lucide:history"
-      }
-    },
-    {
-      "name": "openai",
-      "asset": "codex.svg",
-      "color": "#10A37F",
+        "restore": "lucide.history"
+      },
       "aliases": [
+        "Codex",
+        "openai",
         "openai-key"
       ]
     },
     {
-      "name": "copilot",
+      "kind": "copilot",
       "asset": "copilot.svg",
+      "sub": {
+        "restore": "lucide.history"
+      },
       "aliases": [
         "Copilot"
-      ],
-      "sub": {
-        "restore": "lucide:history"
-      }
+      ]
     },
     {
-      "name": "opencode",
+      "kind": "opencode",
       "asset": "opencode.svg",
+      "sub": {
+        "restore": "lucide.history"
+      },
       "aliases": [
         "OpenCode"
-      ],
-      "sub": {
-        "restore": "lucide:history"
-      }
+      ]
     },
     {
-      "name": "openrouter",
+      "kind": "openrouter",
       "asset": "openrouter.svg",
       "color": "#94A3B8",
       "aliases": [
@@ -162,7 +148,7 @@
       "source": "lucide `waypoints` (ISC)"
     },
     {
-      "name": "twilio",
+      "kind": "twilio",
       "asset": "twilio.svg",
       "color": "#F22F46",
       "aliases": [

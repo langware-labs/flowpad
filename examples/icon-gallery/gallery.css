@@ -167,3 +167,10 @@ td .glyph { font-size: 22px; display: inline-flex; vertical-align: middle; }
 }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .row .glyph, .swatch .glyph, .tile .glyph { --fp-icon-badge-bg: hsl(var(--card)); }
+
+/* FlowIcon sizes itself from className like the app does; the demo's default. */
+.glyph-lg { width: 26px; height: 26px; }
+.row .glyph-lg, .swatch .glyph-lg { flex: none; }
+.tile .glyph-lg { width: 26px; height: 26px; }
+.resolved { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
+.swatch { min-width: 56px; }
