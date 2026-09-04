@@ -23,6 +23,7 @@ requires_codex = pytest.mark.skipif(
     shutil.which("codex") is None,
     reason="codex CLI not installed — optional worker; the claude sibling covers this path",
 )
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 
 def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
@@ -376,18 +377,18 @@ async def test_get_by_worker_id_codex(bootstrapped_client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_by_worker_id_404(bootstrapped_client):
-    """terminals/get_by_worker_id returns 404 + FAIL for unknown ids."""
+async def test_get_by_worker_id_missing_returns_null(bootstrapped_client):
+    """An unknown worker id is a successful lookup with no matching process."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
     response = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{compute_node_id}/terminals/get_by_worker_id/00000000-0000-0000-0000-000000000000",
     )
-    assert response.status_code == 404, response.text
+    assert response.status_code == 200, response.text
     result = ApiResponse(**response.json())
-    assert result.status == "FAIL"
-    assert "not found" in (result.message or "").lower()
+    assert result.status == "SUCCESS"
+    assert result.data is None
 
 
 def test_flowpad_pty_pid_in_env():

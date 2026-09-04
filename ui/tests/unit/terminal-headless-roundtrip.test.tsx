@@ -19,6 +19,28 @@
  * Note the tri-state skin: the Standard-view chat OVERLAY (chatUiOverride)
  * deliberately keeps the xterm mounted underneath (same `!isHeadless` gate),
  * so only the pty_mode TRANSPORT flip exercises this unmount/remount path.
+ *
+ * Regression 2 (Hebrew reversed for a whole session) is the OPPOSITE leg of
+ * the same conditional mount, and it is the one a user can actually reach:
+ * useProcessSurface only ever calls switchMode(WorkerMode.Interactive) — chat
+ * and vibe need no transport of their own — so a PTY session never returns to
+ * headless, but a session CREATED headless (`pty_mode: false`: open-new-chat,
+ * use-start-vibe-session, start-wizard-process) mounts its container for the
+ * first time when the user opens the Terminal view.
+ *
+ * The RTL/bidi contract `.xterm-rtl-grid` was stamped ONLY from the layout
+ * effect keyed on `[process?.worker_type]`. Through the whole headless phase
+ * that effect ran with no container to stamp, and by the time one mounts
+ * worker_type has long since resolved — so it never fires again and the
+ * first-ever container is bare. On Windows + Claude Code, whose RTL text is
+ * pre-reversed into visual order, the browser then reorders every RTL run a
+ * second time and the session reads backwards; a session started directly in
+ * the terminal is fine, because there the container exists on the first render
+ * while worker_type is still undefined. Container-mount and vendor-resolution
+ * are independent triggers, so the contract has to be stamped at term.open()
+ * too. What a bare container then PAINTS is asserted in
+ * tests/browser_render/xterm-rtl.spec.ts — jsdom has no bidi engine, so this
+ * tier can only assert the contract itself.
  */
 import { act, cleanup, render } from '@testing-library/react';
 import { ProcessStatus, type AgenticProcess } from '@sdk';
@@ -191,11 +213,11 @@ vi.mock('@src/components/terminal/interactive-terminal/pty-replay', () => ({
   fetchPtyStream: () => Promise.resolve(null),
   replayPtyStream: () => Promise.resolve(null),
 }));
-vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', () => ({
-  FONT_FAMILY: 'monospace',
-  FONT_SIZE_PX: 12,
-  applyRtlGridContract: () => {},
-  openTerminalLink: () => {},
+// terminalConfig is REAL: applyRtlGridContract is under test below. Only the
+// OSC 52 registration is stubbed — it installs an OSC handler on the terminal,
+// and the xterm stand-in above exposes `parser.registerCsiHandler` alone.
+vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/terminal/interactive-terminal/terminalConfig')>()),
   registerOsc52ClipboardWrite: () => {},
 }));
 
@@ -288,13 +310,19 @@ afterEach(() => {
 // pty_mode/isHeadless from it, exactly like the entity after switchMode.
 let headless = false;
 
+// The CLI in the terminal. Only the RTL contract reads it, and only `claude`
+// takes the pre-reversed buffer-order contract — see applyRtlGridContract.
+let workerType = 'codex';
+
 const mockProcess = {
   id: '0b54c9f6-8f6e-4f0a-9a4e-2f0d64f7c111',
   typeId: null,
   status: ProcessStatus.RUNNING,
   busy: false,
   session_id: 'shell-sess-1',
-  worker_type: 'codex',
+  get worker_type() {
+    return workerType;
+  },
   workdir: '/tmp/proj',
   project_id: null,
   plan_path: null,
@@ -373,5 +401,45 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
       vi.advanceTimersByTime(15);
     });
     expect(xtermSpies.dispose.calls).toBe(1);
+  });
+});
+
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_bidi.rules: FAILING? read this tag's rules before editing
+//       — the contract has TWO triggers (container mount AND vendor resolution); do
+//       not delete either stamp
+// flowpad:endcapsule tag
+describe('InteractiveTerminal — a session opened from chat gets the RTL grid contract', () => {
+  let savedPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    // The reporting host: applyRtlGridContract reads navigator.platform, and
+    // Windows + claude is the one pair that takes the buffer-order contract.
+    savedPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true });
+    workerType = 'claude';
+  });
+  afterEach(() => {
+    if (savedPlatform) Object.defineProperty(navigator, 'platform', savedPlatform);
+    workerType = 'codex';
+  });
+
+  it('stamps the container a chat session mounts when it switches to the terminal', () => {
+    // A vibe/chat session (pty_mode=false): no container exists, so the
+    // vendor-keyed effect has nothing to stamp for the whole headless phase.
+    headless = true;
+    const { rerender } = render(ui('s1'));
+    expect(xtermSpies.open.calls).toBe(0);
+
+    // The user opens the Terminal view — the one direction switchMode goes.
+    // worker_type resolved long ago and does not move, so the vendor-keyed
+    // effect cannot be what stamps this first-ever container.
+    headless = false;
+    rerender(ui('s2'));
+    expect(xtermSpies.open.calls).toBe(1);
+    expect(xtermSpies.open.lastContainer!.classList.contains('xterm-rtl-grid')).toBe(true);
   });
 });

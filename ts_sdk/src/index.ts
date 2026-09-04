@@ -36,6 +36,7 @@ export * from './icons';
 // `icons/index.ts` advertises itself as framework-free; that has to stay true.
 // Import the component from '@sdk/react/FlowIcon', as the react hooks already
 // are.
+export * from './stores/project-cleanup-store';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';

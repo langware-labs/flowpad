@@ -25,6 +25,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     get_worker_mode,
 )
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 
 @pytest.mark.asyncio

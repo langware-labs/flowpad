@@ -12,10 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
-import { Check, FolderOpen, FolderPlus, Loader2, Search } from 'lucide-react';
+import { Check, FolderOpen, FolderPlus, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { AdvancedOnly } from '@src/components/view-mode';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
@@ -71,6 +73,7 @@ function CompactProjectSelectDialog({
   remoteProjectName,
 }: CompactProjectSelectDialogProps) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
@@ -118,27 +121,48 @@ function CompactProjectSelectDialog({
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
     return (
-      <button
+      // A row, not a button: the info icon is a second control, and a button
+      // inside a button is invalid markup whose clicks would open the project
+      // instead of the lens.
+      <div
         key={project.id}
-        onClick={() => onProjectClick(project)}
-        disabled={!!openingProjectId || isSubmitting}
-        title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+        className={`flex w-full items-center transition-colors hover:bg-accent/50 ${isCurrent ? 'bg-accent/30' : ''}`}
       >
-        {isOpening ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : isCurrent ? (
-          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-        ) : (
-          <div className="h-3.5 w-3.5 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
-        {tabCount !== undefined && (
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-            {tabCount}
-          </span>
-        )}
-      </button>
+        <button
+          onClick={() => onProjectClick(project)}
+          disabled={!!openingProjectId || isSubmitting}
+          title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 ps-3 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isOpening ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+          ) : isCurrent ? (
+            <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+          ) : (
+            <div className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
+          {tabCount !== undefined && (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+              {tabCount}
+            </span>
+          )}
+        </button>
+        <AdvancedOnly reserve={false}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChange(false);
+              navigation.openLens('projects', 'cleanup', project.id);
+            }}
+            title="Project status & cleanup"
+            aria-label={`Status for ${getProjectDisplayName(project)}`}
+            className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </AdvancedOnly>
+      </div>
     );
   };
 

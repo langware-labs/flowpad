@@ -5,7 +5,8 @@
  * dialog surfaces that message verbatim.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useRef } from 'react';
+
+import { Button } from '@src/components/ui/button';
 
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
@@ -13,16 +14,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 
 import { AliasesEditor } from './AliasesEditor';
-import { STREAMING_POLICIES, type FiltersForm } from './filters-limits-forms';
-
-/**
- * The globs offered when `Models allowed` is empty — a starting point to edit, not a default.
- *
- * `anthropic/claude-*` is what a Claude Code harness routed through the hub actually sends:
- * `CLAUDE_API_AUTH_SPEC.tier_models` stamps OpenRouter slugs (`anthropic/claude-haiku-4.5`,
- * `-sonnet-4.5`, `-opus-4.1`) onto argv before spawn, so one glob covers every tier.
- */
-const MODELS_ALLOW_EXAMPLE = 'anthropic/claude-*\nopenai/gpt-4*';
+import { MODELS_ALLOW_DEFAULT, STREAMING_POLICIES, type FiltersForm } from './filters-limits-forms';
 
 export interface FiltersEditorProps {
   value: FiltersForm;
@@ -34,27 +26,12 @@ export function FiltersEditor({ value, onChange, disabled }: FiltersEditorProps)
   const { t } = useLingui();
   const set = <K extends keyof FiltersForm>(key: K, v: FiltersForm[K]) => onChange({ ...value, [key]: v });
 
-  const modelsAllowRef = useRef<HTMLTextAreaElement>(null);
-
-  // An EDITABLE placeholder: a real `placeholder` vanishes the moment you type, which is the
-  // wrong affordance for a syntax you are meant to copy and adjust. The example is written into
-  // the field when an empty one is focused, and taken back on blur if it was left exactly as
-  // offered — because empty MEANS something here ("everything the sources allow"), so tabbing
-  // through the form must never leave a filter nobody typed.
-  const seedModelsAllow = () => {
-    if (value.models_allow !== '') return;
-    set('models_allow', MODELS_ALLOW_EXAMPLE);
-    // The seeded value only lands on the next render; move the caret to the end once it has, so
-    // typing extends the example rather than inserting in front of it.
-    requestAnimationFrame(() => {
-      const el = modelsAllowRef.current;
-      el?.setSelectionRange(el.value.length, el.value.length);
-    });
-  };
-
-  const clearUntouchedModelsAllow = () => {
-    if (value.models_allow === MODELS_ALLOW_EXAMPLE) set('models_allow', '');
-  };
+  // What this field shows is what the endpoint has — always. It used to seed the example on focus
+  // and erase it on blur unless you had edited it, so a reader who clicked in, read two convincing
+  // globs and clicked away saved `models_allow: []` and got an endpoint that allowed EVERYTHING,
+  // with a green toast. A new endpoint now STARTS with the defaults as a real value
+  // (`emptyDraft`), the placeholder only echoes them for a field someone deliberately emptied, and
+  // "Use defaults" puts them back.
 
   const numeric = (
     key: 'max_tokens_ceiling' | 'max_input_chars' | 'temperature_max' | 'top_p_max',
@@ -86,17 +63,25 @@ export function FiltersEditor({ value, onChange, disabled }: FiltersEditorProps)
           </Label>
           <Textarea
             id="llm-f-models_allow"
-            ref={modelsAllowRef}
             rows={3}
             value={value.models_allow}
             disabled={disabled}
-            placeholder={MODELS_ALLOW_EXAMPLE}
-            onFocus={seedModelsAllow}
-            onBlur={clearUntouchedModelsAllow}
+            placeholder={MODELS_ALLOW_DEFAULT}
             onChange={(e) => set('models_allow', e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             <Trans>One per line. Empty means everything the sources allow.</Trans>
+            {value.models_allow === '' && !disabled && (
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto p-0 text-xs"
+                data-testid="models-allow-use-default"
+                onClick={() => set('models_allow', MODELS_ALLOW_DEFAULT)}
+              >
+                <Trans>Use defaults</Trans>
+              </Button>
+            )}
           </p>
         </div>
         <div className="space-y-1">
