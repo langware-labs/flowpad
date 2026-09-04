@@ -202,17 +202,39 @@ function Leaf({
     return onBroken ? <Leaf res={onBroken} className={className} title={title} px={px} rest={rest} /> : null;
   }
   const darkUrl = res.kind === 'asset' ? res.darkUrl : undefined;
+
+  // No dark variant ⇒ the image IS the icon, with the caller's className on it
+  // rather than on a wrapper. That is what `imageIcon` did, and the difference
+  // is not cosmetic: a class like `rounded-full` on an avatar has to reach the
+  // element that draws the pixels, and a wrapper would need `overflow:hidden`
+  // to clip anything. One less DOM level too.
+  if (!darkUrl) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className={className}
+        style={{ ...box(px), ...(rest.style as object) }}
+        onError={() => setFailed(true)}
+        {...a11y(title)}
+        {...rest}
+      />
+    );
+  }
+
+  // A dark variant needs both artworks in the DOM for CSS to choose between, so
+  // here the wrapper is unavoidable and the className sizes it.
   const img = (src: string, cls: string) => (
-    <img key={cls || 'only'} src={src} alt="" className={classes('fp-icon-img', cls)} onError={() => setFailed(true)} />
+    <img key={cls} src={src} alt="" className={classes('fp-icon-img', cls)} onError={() => setFailed(true)} />
   );
   return (
     <span
-      className={classes('fp-icon', darkUrl && 'fp-icon-themed', className)}
+      className={classes('fp-icon', 'fp-icon-themed', className)}
       style={{ ...box(px), ...(rest.style as object) }}
       {...a11y(title)}
       {...rest}
     >
-      {darkUrl ? [img(url, 'fp-icon-light'), img(darkUrl, 'fp-icon-dark')] : img(url, '')}
+      {[img(url, 'fp-icon-light'), img(darkUrl, 'fp-icon-dark')]}
     </span>
   );
 }

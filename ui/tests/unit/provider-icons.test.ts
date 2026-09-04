@@ -4,7 +4,7 @@
  * The provider picker is a grid of icons — it is the one screen whose whole job is telling
  * providers apart — and two failure modes are invisible until someone looks at it:
  *
- * 1. **A name nothing resolves.** `lucideByName` falls back to `FileText`, so a typo, or a
+ * 1. **A name nothing resolves.** Resolution falls back to a generic glyph, so a typo, or a
  *    lucide release dropping a brand glyph, renders a generic page icon that still *looks*
  *    deliberate. `Slack` is one upstream removal away from exactly that.
  * 2. **Two providers wearing the same glyph.** Three of these ship a mailbox; when they all
@@ -16,8 +16,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FileText } from 'lucide-react';
-import { lucideByName } from '@src/lib/lucide-by-name';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { isLucideName } from '@src/lib/icon-value';
 
 const MANIFEST_ROOT = join(
@@ -42,10 +41,10 @@ describe('provider icons', () => {
     (name, iconName) => {
       expect(iconName, `${name} declares no icon_name`).not.toBe('');
       expect(
-        lucideByName(iconName),
+        resolveIcon(iconName, getIconPacks()).kind,
         `${name}'s icon_name "${iconName}" resolves to nothing, so the picker draws the generic ` +
-          `document glyph — register a mark in lucide-by-name or name one lucide exports`,
-      ).not.toBe(FileText);
+          `document glyph — add it to a pack under flow_sdk/server/icons, or name one lucide serves`,
+      ).not.toBe('none');
     },
   );
 
@@ -88,7 +87,11 @@ describe('connection provider icons', () => {
     // calling `lucideByName`; a name that fails it never reaches a glyph at all
     // and the caller draws its generic fallback instead.
     expect(isLucideName(name), `${name} resolves to nothing — the tile draws a generic fallback`).toBe(true);
-    expect(lucideByName(name)).not.toBe(FileText);
+    // `not.toBe(FileText)` used to catch a name falling through to the generic
+    // glyph. Resolution now returns a component bound to the tag, so identity
+    // can never equal FileText and that assertion would pass vacuously — ask
+    // the resolver instead, which is the question the test was really asking.
+    expect(resolveIcon(name, getIconPacks()).kind, `${name} resolves to nothing`).not.toBe('none');
   });
 
   it('gives every provider a glyph of its own', () => {
