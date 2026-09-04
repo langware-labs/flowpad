@@ -1548,6 +1548,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def list_projects_action(self):
         return await self._scan_list_projects()
 
+    @action.all(action_name="project-cleanup-report")
+    async def project_cleanup_report_action(self):
+        return await self._scan_project_cleanup_report()
+
+    @action.all(action_name="project-git-detail")
+    async def project_git_detail_action(self):
+        return await self._scan_project_git_detail()
+
+    @action.post(action_name="project-remove-from-harness")
+    async def project_remove_from_harness_action(self):
+        return await self._scan_project_cleanup_apply(permanent=False)
+
+    @action.post(action_name="project-delete-permanently")
+    async def project_delete_permanently_action(self):
+        return await self._scan_project_cleanup_apply(permanent=True)
+
     @action.all(action_name="scan-project")
     async def scan_project_action(self):
         return await self._scan_project()

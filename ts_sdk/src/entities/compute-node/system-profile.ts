@@ -832,6 +832,180 @@ export interface ListProjectsResponse {
   copilot_count?: number;
   both_count?: number;
   none_count?: number;
+  /** Cleanup candidates counted during the same scan. Absent on older backends. */
+  cleanup?: CleanupSummary;
+}
+
+/**
+ * How many projects look like leftovers, from `project_cleanup.summarize`.
+ *
+ * The `threshold` travels with the counts so the backend stays the single
+ * writer of the warn-or-not policy — the frontend has no number of its own to
+ * drift from it.
+ */
+export interface CleanupSummary {
+  empty_count: number;
+  orphaned_count: number;
+  stale_count: number;
+  empty_size_bytes: number;
+  threshold: number;
+}
+
+/** What the classifier concluded — mirrors `CleanupVerdict` in Python. */
+export type CleanupVerdict = 'orphaned' | 'empty' | 'stale' | 'active';
+
+/** One harness's relationship to a project. */
+export interface HarnessUse {
+  harness: string;
+  session_count: number;
+  last_session_at: string | null;
+  /** Exactly what "remove from harness" would delete. Empty ⇒ the action is refused. */
+  state_paths: string[];
+}
+
+export interface GitInfo {
+  has_repo: boolean;
+  /** Null until resolved — the bulk report carries `has_repo` only. */
+  remote: string | null;
+  dirty: boolean | null;
+}
+
+/** One project as the cleanup screen sees it. Mirrors `ProjectCleanupSpec`. */
+export interface ProjectCleanupItem {
+  project_id: string;
+  name: string;
+  cwd: string;
+  verdict: CleanupVerdict;
+  /** Capped at 500 — see `file_count_capped`, which says the real number is higher. */
+  file_count: number;
+  file_count_capped: boolean;
+  size_bytes: number;
+  dir_modified_at: string | null;
+  modified_at: string | null;
+  last_active_at: string | null;
+  harnesses: HarnessUse[];
+  git: GitInfo | null;
+}
+
+export interface ProjectCleanupReport {
+  projects: ProjectCleanupItem[];
+  total_count: number;
+  cleanup: CleanupSummary;
+}
+
+/** Per-project outcome. A refusal on one row says nothing about the others. */
+export interface CleanupResult {
+  project_id: string;
+  ok: boolean;
+  error?: string;
+  cwd?: string;
+  removed_paths?: string[];
+  trashed?: boolean;
+  /** `trash` (send2trash) or `trash_fallback` (a move into ~/.Trash). */
+  mechanism?: string | null;
+  codex_config_entry_removed?: boolean;
+}
+
+export interface CleanupApplyResponse {
+  results: CleanupResult[];
+  succeeded: number;
+  failed: number;
+}
+
+/**
+ * Every project with the detail the cleanup screen shows.
+ *
+ * Costs a bounded file walk per project (~0.36s over 1,250), so it belongs to a
+ * page the user opened — never to a picker or a mount effect.
+ */
+export async function getProjectCleanupReport(
+  computeNodeId: string,
+  signal?: AbortSignal,
+): Promise<ProjectCleanupReport> {
+  const actionInfo = new ActionInfo('project-cleanup-report', 'compute_node', computeNodeId, 'GET');
+  actionInfo.abortSignal = signal ?? null;
+  return (
+    (await dataManager.callAction<undefined, ProjectCleanupReport>(actionInfo)) || {
+      projects: [],
+      total_count: 0,
+      cleanup: {
+        empty_count: 0,
+        orphaned_count: 0,
+        stale_count: 0,
+        empty_size_bytes: 0,
+        threshold: 10,
+      },
+    }
+  );
+}
+
+/** Git remote + dirty for ONE project. A subprocess pair, so it is per-row. */
+export async function getProjectGitDetail(
+  computeNodeId: string,
+  cwd: string,
+): Promise<GitInfo> {
+  const actionInfo = new ActionInfo('project-git-detail', 'compute_node', computeNodeId, 'GET');
+  actionInfo.queryParameters = { cwd };
+  return (
+    (await dataManager.callAction<undefined, GitInfo>(actionInfo)) || {
+      has_repo: false,
+      remote: null,
+      dirty: null,
+    }
+  );
+}
+
+/**
+ * Delete the named projects' harness state. Folders and rows are untouched.
+ *
+ * Refused per project when there is nothing to remove, which is the case for
+ * every empty workspace folder — a harness that never opened a session there
+ * left nothing behind.
+ */
+export async function removeProjectsFromHarness(
+  computeNodeId: string,
+  projectIds: string[],
+): Promise<CleanupApplyResponse> {
+  const actionInfo = new ActionInfo(
+    'project-remove-from-harness',
+    'compute_node',
+    computeNodeId,
+    'POST',
+  );
+  actionInfo.bodyParameters = { project_ids: projectIds };
+  return (
+    (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
+      results: [],
+      succeeded: 0,
+      failed: 0,
+    }
+  );
+}
+
+/**
+ * Harness state, then the folder to the Trash, then the row.
+ *
+ * Recoverable by design: the folder lands in the desktop Trash, so the
+ * confirmation must not claim this cannot be undone.
+ */
+export async function deleteProjectsPermanently(
+  computeNodeId: string,
+  projectIds: string[],
+): Promise<CleanupApplyResponse> {
+  const actionInfo = new ActionInfo(
+    'project-delete-permanently',
+    'compute_node',
+    computeNodeId,
+    'POST',
+  );
+  actionInfo.bodyParameters = { project_ids: projectIds };
+  return (
+    (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
+      results: [],
+      succeeded: 0,
+      failed: 0,
+    }
+  );
 }
 
 /**
