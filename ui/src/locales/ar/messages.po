@@ -1018,7 +1018,7 @@ msgstr "الإجراءات"
 msgid "Actions ({0})"
 msgstr "الإجراءات ({0})"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Activate"
 msgstr ""
 
@@ -2565,7 +2565,7 @@ msgstr ""
 msgid "Bring back"
 msgstr "استرجاع"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Bring your own key"
 msgstr ""
 
@@ -2619,7 +2619,7 @@ msgstr ""
 msgid "Budget in dollars"
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Budget removed"
 msgstr ""
 
@@ -4319,7 +4319,7 @@ msgstr ""
 msgid "Cost (USD), total"
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Could not activate the organization"
 msgstr ""
 
@@ -4607,7 +4607,7 @@ msgstr "تعذر إزالة الوصول"
 msgid "Could not remove member"
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Could not remove the budget"
 msgstr ""
 
@@ -13009,7 +13009,7 @@ msgstr "قائمة مرقمة"
 msgid "Organization"
 msgstr "المنظمة"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr ""
 
@@ -13017,7 +13017,7 @@ msgstr ""
 msgid "Organization created"
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization created, but the key was not saved"
 msgstr ""
 
@@ -13217,7 +13217,7 @@ msgstr "لصق مفتاح API"
 msgid "Paste code from browser"
 msgstr "لصق الرمز من المتصفح"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Paste it again below."
 msgstr ""
 
@@ -13356,7 +13356,7 @@ msgstr "اختيار شخص أو كتابة بريد إلكتروني"
 msgid "Pick a project"
 msgstr "اختيار مشروع"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Pick a provider and paste a key to set it up again."
 msgstr ""
 
@@ -13989,8 +13989,8 @@ msgstr "محمي"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/OrgRootSetup.tsx
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Provider"
 msgstr "المزود"
 
@@ -14555,7 +14555,7 @@ msgstr "إزالة الصورة الرمزية"
 msgid "Remove bookmark"
 msgstr "إزالة الإشارة المرجعية"
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove budget"
 msgstr ""
 
@@ -14622,7 +14622,7 @@ msgstr ""
 #~ msgid "Remove source"
 #~ msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove this budget and start again?"
 msgstr ""
 
@@ -17062,7 +17062,7 @@ msgid "Specific unix sockets allowed in sandbox"
 msgstr "مآخذ Unix المحددة المسموح بها في بيئة العزل"
 
 #. placeholder {0}: spec.label
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Spending now bills your own {0}."
 msgstr ""
 
@@ -17866,7 +17866,7 @@ msgid "That file has no rows."
 msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "That key does not look right"
 msgstr ""
 
@@ -18039,7 +18039,7 @@ msgstr "مستودع الأسرار المحلي غير مفعّل بعد."
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "تم إنشاء مهام الأعضاء؛ {messageFailures} رسالة إشعار لم تصل."
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 msgstr ""
 
@@ -18063,11 +18063,11 @@ msgstr "سيتم إرفاق المطالبة برسالتك التالية. سي
 msgid "The provider accepted the token."
 msgstr "قَبِل المزود الرمز المميز."
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The provider cannot be changed once the budget exists."
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The provider is fixed once a budget exists."
 msgstr ""
 
@@ -18375,7 +18375,7 @@ msgstr ""
 msgid "This month"
 msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
 msgstr ""
 
@@ -18383,7 +18383,7 @@ msgstr ""
 #~ msgid "This organization has no budget yet."
 #~ msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 msgstr ""
 
@@ -19366,7 +19366,7 @@ msgstr "يمكن استخدام \"Send to Expert\" لإنشاء مهمة"
 #~ msgid "Use {0}"
 #~ msgstr ""
 
-#: src/components/organization/budgets/OrgRootSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Use a different provider"
 msgstr ""
 

@@ -8,7 +8,7 @@
  * chains and nine limit fields per hop; this one answers the only question a paying customer's
  * admin has — how much has each team and each person got, and how much is left.
  *
- * **Two things collapse, for different reasons.** The org's key form (`OrgRootSetup`) starts open
+ * **Two things collapse, for different reasons.** The org's key form (`PayingProviderSetup`) starts open
  * only while the org has no pool at all, and closed once a root exists — it is somewhere you go,
  * not something you read every visit. A team's people list stays closed until opened OR "Add
  * people" is pressed, and that one is load-bearing: a person costs a spend read each, so showing
@@ -47,7 +47,7 @@ import { AdvancedButton } from './AdvancedEndpointDialog';
 import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
 import { MoneyBox } from './MoneyBox';
-import { OrgRootSetup } from './OrgRootSetup';
+import { PayingProviderSetup } from './PayingProviderSetup';
 import {
   useInvalidateBudgets,
   useOrgBudgets,
@@ -182,7 +182,7 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2">
-            <OrgRootSetup orgId={orgId} org={org} />
+            <PayingProviderSetup orgId={orgId} org={org} />
           </CollapsibleContent>
         </Collapsible>
         {over && (

@@ -1,5 +1,5 @@
 /**
- * `OrgRootSetup` — bringing your own provider key at the organization level.
+ * `PayingProviderSetup` — bringing your own provider key at the organization level.
  *
  * The whole point of this component: an admin creating a new organization and allocating money
  * never has to visit the expert LLM Endpoints page first. Submitting here is two hub calls in
@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
-  useSetupOrgRoot: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
+  useSetPayingProvider: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
   useInvalidateBudgets: () => h.invalidate,
 }));
 vi.mock('@sdk', async (importOriginal) => {
@@ -31,7 +31,7 @@ vi.mock('@sdk', async (importOriginal) => {
   };
 });
 
-import { OrgRootSetup } from '@src/components/organization/budgets/OrgRootSetup';
+import { PayingProviderSetup } from '@src/components/organization/budgets/PayingProviderSetup';
 
 // Radix Select opens through pointer capture and keeps the active item in view; jsdom
 // implements neither, so without these the provider dropdown never opens. Same stubs as
@@ -54,12 +54,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('OrgRootSetup — no budget yet', () => {
+describe('PayingProviderSetup — no budget yet', () => {
   const org = { endpoint_id: null, is_root: false, provider: null, credential_hint: '' };
 
   it('defaults to the first provider and lets another be picked from the dropdown', async () => {
     const user = userEvent.setup();
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     expect(screen.getByTestId('org-root-provider').textContent).toContain('OpenRouter');
     await user.click(screen.getByTestId('org-root-provider'));
@@ -68,7 +68,7 @@ describe('OrgRootSetup — no budget yet', () => {
   });
 
   it('does nothing when Activate is pressed with no key typed', () => {
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
     expect(screen.getByTestId('org-root-activate')).toHaveProperty('disabled', true);
     expect(h.mutateAsync).not.toHaveBeenCalled();
   });
@@ -77,7 +77,7 @@ describe('OrgRootSetup — no budget yet', () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
     h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
     const user = userEvent.setup();
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     await user.click(screen.getByTestId('org-root-provider'));
     await user.click(await screen.findByTestId('org-root-provider-anthropic'));
@@ -100,7 +100,7 @@ describe('OrgRootSetup — no budget yet', () => {
   it('trims the key before sending it', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
     h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd' });
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: `  ${OPENROUTER_KEY}  ` } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
@@ -111,7 +111,7 @@ describe('OrgRootSetup — no budget yet', () => {
   it('reports it distinctly when the root is created but the key fails to store', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
     h.setCredential.mockRejectedValue(new Error('network blip'));
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: OPENROUTER_KEY } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
@@ -124,7 +124,7 @@ describe('OrgRootSetup — no budget yet', () => {
 
   it('reports plainly when creating the root itself fails, and never calls setCredential', async () => {
     h.mutateAsync.mockRejectedValue(new Error('this organization already draws its budget from a shared pool'));
-    render(<OrgRootSetup orgId={ORG_ID} org={org} />);
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: OPENROUTER_KEY } });
     fireEvent.click(screen.getByTestId('org-root-activate'));
@@ -140,10 +140,10 @@ describe('OrgRootSetup — no budget yet', () => {
  * that constructor throw inside the service call before any HTTP — a dead Save button, no network
  * request, and `Invalid (0)` from Test's own catch.
  */
-describe('OrgRootSetup — the hub sends a prefixed typeid, the credential calls want a bare id', () => {
+describe('PayingProviderSetup — the hub sends a prefixed typeid, the credential calls want a bare id', () => {
   it('hands CredentialField the bare uuid for an org that already has a root', () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '' }}
       />,
@@ -156,7 +156,7 @@ describe('OrgRootSetup — the hub sends a prefixed typeid, the credential calls
   });
 });
 
-describe('OrgRootSetup — already a root', () => {
+describe('PayingProviderSetup — already a root', () => {
   /**
    * The provider control is SHOWN and disabled, not hidden. The hub refuses to change
    * `provider`/`base_url` once the endpoint exists, so an open dropdown would be a form that lies —
@@ -165,7 +165,7 @@ describe('OrgRootSetup — already a root', () => {
    */
   it('shows the provider, locked, alongside the masked hint', () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '****z9z9' }}
       />,
@@ -181,7 +181,7 @@ describe('OrgRootSetup — already a root', () => {
   it('cannot be opened when locked — a disabled trigger reveals no options', async () => {
     const user = userEvent.setup();
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openai', credential_hint: '****z9z9' }}
       />,
@@ -193,7 +193,7 @@ describe('OrgRootSetup — already a root', () => {
 
   it('offers no provider chip when the org has a root but no key stored yet', () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: null, credential_hint: '' }}
       />,
@@ -209,10 +209,10 @@ describe('OrgRootSetup — already a root', () => {
  * not do that — it clears the credential and leaves the endpoint — which is why a key delete looks
  * like it changes nothing about the locked dropdown. This is the control that actually does it.
  */
-describe('OrgRootSetup — moving to a different provider', () => {
+describe('PayingProviderSetup — moving to a different provider', () => {
   it('asks first, then deletes the root so the provider picker comes back', async () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '' }}
       />,
@@ -230,7 +230,7 @@ describe('OrgRootSetup — moving to a different provider', () => {
 
   it('offers the way out even while a key is still stored', () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: true, provider: 'openrouter', credential_hint: '****wxyz' }}
       />,
@@ -239,10 +239,10 @@ describe('OrgRootSetup — moving to a different provider', () => {
   });
 });
 
-describe('OrgRootSetup — an existing shared-pool chain', () => {
+describe('PayingProviderSetup — an existing shared-pool chain', () => {
   it('explains that bringing a key is unavailable, and offers no form', () => {
     render(
-      <OrgRootSetup
+      <PayingProviderSetup
         orgId={ORG_ID}
         org={{ endpoint_id: ENDPOINT_TYPEID, is_root: false, provider: null, credential_hint: '' }}
       />,

@@ -14,7 +14,7 @@
  *   `GET /api/v1/graph/team/<id>/budgets`
  *
  * These are READS. A scope with no pool answers `endpoint_id: null` rather than creating one —
- * setting a budget up is `tokenPlanService.setupOrg()` / `setupTeam()`, a separate decision.
+ * setting a budget up is `tokenPlanService.setupOrg(orgId)` / `setupTeam(teamId)`, a separate decision.
  * Writing a budget is a plain `LLMEndpoint` entity update (`limits.cost_usd_total`); handing one
  * out is `llmEndpointsService.allocate()`. No budgets action does any of that.
  */
@@ -107,8 +107,8 @@ export class BudgetsService {
    * surfaced as a thrown error) if the org already draws from a shared pool, since converting a
    * chain into a root in place is not offered.
    */
-  setupOrgRoot(orgId: string, body: { provider: string; base_url?: string }): Promise<TokenPlanSetupResult> {
-    const info = hubAction('root', 'organization', orgId, 'POST');
+  setPayingProvider(orgId: string, body: { provider: string; base_url?: string }): Promise<TokenPlanSetupResult> {
+    const info = hubAction('set-paying-provider', 'organization', orgId, 'POST');
     info.bodyParameters = { provider: body.provider, base_url: body.base_url ?? '' };
     return dataManager.callAction<undefined, TokenPlanSetupResult>(info);
   }

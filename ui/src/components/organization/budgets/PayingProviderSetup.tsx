@@ -5,7 +5,7 @@
  * (another admin finished setup, a key was replaced elsewhere) must move this forward on its own:
  *
  * * **No pool yet:** pick a provider, paste a key, Activate. Two hub calls in sequence — create
- *   the org's root (`setupOrgRoot`), then store the key on the id that call returns
+ *   the org's root (`setPayingProvider`), then store the key on the id that call returns
  *   (`setCredential`). If the second call fails, the root now exists with no key; the component
  *   re-renders into the "has a root, no key yet" state on its own once the mutation's invalidate
  *   lands, and `CredentialField` picks up from there — nothing is lost, there is no partial state
@@ -48,14 +48,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
-import { useInvalidateBudgets, useSetupOrgRoot } from './use-budgets';
+import { useInvalidateBudgets, useSetPayingProvider } from './use-budgets';
 
-export interface OrgRootSetupProps {
+export interface PayingProviderSetupProps {
   orgId: string;
   org: Pick<OrgScopeBudget, 'endpoint_id' | 'is_root' | 'provider' | 'credential_hint'>;
 }
 
-export function OrgRootSetup({ orgId, org }: OrgRootSetupProps) {
+export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
   if (org.endpoint_id && !org.is_root) {
     return (
       <p className="text-xs text-muted-foreground" data-testid="org-root-legacy-chain">
@@ -130,7 +130,7 @@ function OrgKeyCreateForm({ orgId }: { orgId: string }) {
   const [providerId, setProviderId] = useState<ProviderSpec['id']>(PROVIDERS[0].id);
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
-  const setup = useSetupOrgRoot();
+  const setup = useSetPayingProvider();
   const spec = PROVIDERS.find((p) => p.id === providerId) ?? PROVIDERS[0];
 
   const submit = async () => {
