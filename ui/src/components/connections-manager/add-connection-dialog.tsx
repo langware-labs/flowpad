@@ -6,13 +6,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { providerMark } from './provider-marks';
 import { isLucideName } from '@src/lib/icon-value';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 
 /**
  * The connection catalogue, as tiles.
@@ -54,6 +48,15 @@ function specIcon(iconName?: string) {
  */
 function providerIcon(provider: OAuthProvider) {
   return providerMark(provider.name) ?? specIcon(provider.icon);
+}
+
+/** A credential definition's glyph, brand mark first.
+ *
+ *  Same order as a provider's, because the two sections show the same companies:
+ *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
+ *  different colours one row apart. */
+function credentialIcon(spec: CredentialSpec) {
+  return providerMark(String(spec.name ?? '')) ?? specIcon(spec.icon_name);
 }
 
 export function AddConnectionDialog({
@@ -104,7 +107,7 @@ export function AddConnectionDialog({
               {specs.map((spec) => (
                 <DesktopTile
                   key={spec.name}
-                  Icon={specIcon(spec.icon_name)}
+                  Icon={credentialIcon(spec)}
                   label={spec.title || String(spec.name ?? '')}
                   loading={busyKey === spec.name}
                   data-testid={`add-connection-${spec.name}`}
