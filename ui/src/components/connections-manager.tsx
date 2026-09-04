@@ -19,12 +19,11 @@ import { GrantStatus } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { isLucideName } from '@src/lib/icon-value';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Badge } from './ui/badge';
 import { MoreOnHover } from './connections-manager/more-on-hover';
-import { providerMark } from './connections-manager/provider-marks';
 import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ui/confirm-dialog';
@@ -164,10 +163,18 @@ const ProbeVerdict: React.FC<{ result?: OAuthTestResult }> = ({ result }) => {
 
 /** The remote-icon case, isolated so its failure state lives where it is used
  *  and a changed `icon` remounts it via `key` instead of an effect that resets. */
-const ProviderImage: React.FC<{ src: string; fallback: React.ReactNode }> = ({ src, fallback }) => {
-  const [failed, setFailed] = React.useState(false);
-  if (failed) return <>{fallback}</>;
-  return <img src={src} alt="" className="h-4 w-4 shrink-0 rounded-sm" onError={() => setFailed(true)} />;
+/**
+ * A colour this SURFACE gives a shared glyph.
+ *
+ * Anthropic's clay and OpenAI's teal are not properties of the mark — the
+ * terminal strip tints the very same glyph orange and emerald to mean the
+ * running vendor. `provider-marks.tsx` made that argument and then had to wrap
+ * a component per brand to act on it; the colour is a prop now, so the table is
+ * two lines and the glyph stays shared.
+ */
+const SURFACE_TINT: Record<string, string> = {
+  anthropic: '#D97757',
+  openai: '#10A37F',
 };
 
 const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: string }> = ({
@@ -181,24 +188,21 @@ const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: strin
     </span>
   );
 
-  // The bespoke override first — see provider-marks. Everything else comes from
-  // the backend's published icon name, which now carries the brand colours.
-  const Mark = providerMark(providerName);
-  if (Mark) return <Mark className="h-4 w-4 shrink-0" />;
-
-  // `isLucideName` now covers the bespoke brand marks too, which is what makes
-  // Anthropic render its Claude logo instead of a monogram. Guessing from
-  // punctuation would misfile any name containing a dot, so this goes through
-  // the real tables.
-  if (isLucideName(icon)) {
-    const Icon = lucideByName(icon);
-    return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />;
-  }
-  // The hub's paths are relative to ITS static root, so many 404 here — fall
-  // through to the monogram rather than leaving the cell empty, which would read
-  // as "this provider has no icon".
-  if (icon) return <ProviderImage key={icon} src={icon} fallback={monogram} />;
-  return monogram;
+  // The whole ladder, as nested fallbacks: the provider's own identity first
+  // (`anthropic`, `googledrive` — aliases the packs resolve), then whatever the
+  // backend published, then the monogram. The hub publishes paths relative to
+  // ITS static root, so many of those 404 — and a broken image falls through to
+  // the monogram rather than leaving the cell empty, which would read as "this
+  // provider has no icon".
+  const key = (providerName || '').trim().toLowerCase();
+  return (
+    <FlowIcon
+      icon={providerName}
+      className="h-4 w-4 shrink-0"
+      color={SURFACE_TINT[key] ?? SURFACE_TINT[key.replace(/[-_]key$/, '')]}
+      fallback={<FlowIcon icon={icon} className="h-4 w-4 shrink-0 text-muted-foreground" fallback={monogram} />}
+    />
+  );
 };
 
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({

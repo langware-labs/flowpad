@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { iconAssetUrl, isIconPath } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { renderIconValue } from '@src/lib/icon-value';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 
 /**
  * An icon string is either a NAME or a FILE, and one slash tells them apart.
@@ -112,15 +112,17 @@ describe('lucideByName — files and names resolve through one seam', () => {
   });
 });
 
-describe('renderIconValue — a stored path is a glyph, not literal text', () => {
+describe('a stored icon value — a path is a glyph, an emoji is itself', () => {
   it('renders an img rather than printing the path', () => {
-    const { container } = render(<>{renderIconValue('icons/agent.svg')}</>);
+    const { container } = render(<FlowIcon icon="icons/agent.svg" />);
     expect(container.querySelector('img')).not.toBeNull();
     expect(container.textContent).toBe('');
   });
 
   it('still renders emoji as text and names as glyphs', () => {
-    expect(render(<>{renderIconValue('🚀')}</>).container.textContent).toBe('🚀');
-    expect(render(<>{renderIconValue('BrainCog')}</>).container.querySelector('svg')).not.toBeNull();
+    // The picker writes all three into one field, and one component draws them:
+    // an emoji is not a legal tag, so it comes back as text and IS the glyph.
+    expect(render(<FlowIcon icon="🚀" />).container.textContent).toBe('🚀');
+    expect(render(<FlowIcon icon="BrainCog" />).container.querySelector('svg')).not.toBeNull();
   });
 });

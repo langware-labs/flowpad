@@ -30,7 +30,6 @@ import { harnessWarning } from '@src/components/workers/harness-availability';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -39,6 +38,7 @@ import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { Cloud, History, SquareTerminal } from 'lucide-react';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -49,11 +49,18 @@ import { TerminalOpenerToolbar } from '@src/components/terminal/openers/Terminal
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
 import { HARNESS_CAPABILITY_BY_WORKER, type WorkerType } from '@src/components/workers/worker-types';
 
+/** Claude, badged to say this opener RESUMES a session rather than starting one.
+ *
+ *  The badge is composed, not drawn: `brands.claude.restore` is the same icon
+ *  with a `restore` role, so a fifth vendor's resume glyph is a pack entry
+ *  rather than another hand-rolled span. */
 const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
-    <ClaudeIcon className="!h-4 !w-4 text-orange-500" />
-    <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
-  </span>
+  <FlowIcon
+    icon="brands.claude"
+    role="restore"
+    className={`h-4 w-4 text-orange-500 ${className ?? ''}`}
+    badgeClassName="text-foreground/80"
+  />
 );
 
 export interface TerminalStripControllerOptions {

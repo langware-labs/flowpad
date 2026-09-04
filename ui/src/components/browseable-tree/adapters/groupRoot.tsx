@@ -3,7 +3,7 @@ import React, { type ReactNode } from 'react';
 import { FolderPlus, Pencil, Trash2 } from 'lucide-react';
 import { Group, type GroupChildren, type IEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation';
-import { renderIconValue } from '@src/lib/icon-value';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { refreshNode } from '../refresh-store';
 import type { Browseable, BrowseableDragData, BrowseableRoot, ToolbarAction } from '../types';
 
@@ -172,7 +172,7 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
     id: `group-folder:${group.id}`,
     kind: 'folder',
     label: group.name,
-    icon: renderIconValue(group.icon ?? 'Folder', { color: group.color }),
+    icon: <FlowIcon icon={group.icon ?? 'Folder'} className="h-4 w-4" color={group.color ?? undefined} />,
     hasChildren: 'unknown',
     pointer: null,
     toolbar: containerToolbar(group),
