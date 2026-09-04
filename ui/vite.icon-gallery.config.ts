@@ -33,8 +33,11 @@ export default defineConfig(({ mode }) => {
         // ui's copy rather than standing up a second dependency tree.
         react: path.resolve(__dirname, 'node_modules/react'),
         'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+        // The page registers lucide as the SDK's bundle renderer, which is the
+        // thing that keeps a bundle glyph tree-shaken instead of fetched.
+        'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
       },
-      dedupe: ['react', 'react-dom'],
+      dedupe: ['react', 'react-dom', 'lucide-react'],
     },
     define: {
       'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),

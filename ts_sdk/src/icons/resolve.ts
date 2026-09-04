@@ -1,31 +1,47 @@
+import { normalizeTag, tagAncestors } from '../tags/grammar';
 import { iconAssetUrl, isIconPath } from '../utils/icon-asset';
 import type { IconPackSpec, IconResolution, IconSpec } from './types';
 
 /**
- * Turning an icon reference into something renderable.
+ * Turning an icon tag into something renderable.
  *
- * The grammar is four forms and no more:
+ * Icons are named in the repo's ONE dot grammar (`tags/grammar.ts`), the same
+ * one that serves bus tags and the kind ontology:
  *
- *     Rss                     bare — packs in order, i.e. exactly today's behaviour
- *     brands:slack            qualified
- *     brands:claude@restore   a variant
- *     icons/my_type.svg       a path — still works, still resolved last
+ *     brands.slack            a pack's icon
+ *     brands.claude.restore   a role — one more segment
+ *     Rss                     a bare legacy name; normalizes to a leaf tag
+ *     icons/my_type.svg       a path — a location, never a name
  *
- * Theme is deliberately not in that list. A `dark` variant is handed back
- * alongside the default artwork and selected by CSS, never by a caller passing a
- * theme in — the viewer has three states and only two are legible to JS (an
- * explicit choice stamps the document; the default "system" setting stamps
- * nothing at all). CSS can see all three, so CSS decides.
+ * **Resolution is best-match** — the deepest registered ancestor. So
+ * `brands.claude.restore` resolves to itself when that role exists and to
+ * `brands.claude` when it does not, and the result says which happened via
+ * `degraded`. An icon is decoration; a base glyph beats nothing. The walk is
+ * `tagAncestors`, so nothing here parses a tag by hand.
  *
- * This module is pure and has no React in it. `useIcon` is a thin wrapper.
+ * Theme is deliberately not in the grammar. A `dark` variant comes back
+ * alongside the default and is selected by CSS, never by a caller passing a
+ * theme in — the viewer has three states and only two are legible to JS.
+ *
+ * This module is pure and has no React in it.
  */
 
-/** Lucide's own file-slug convention: `BarChart3` -> `bar-chart-3`. */
+/** `BarChart3` -> `bar-chart-3`. Runs BEFORE normalization: normalizing first
+ *  lowercases the word boundaries the slug needs out of existence. */
 export function kebab(name: string): string {
   return name.replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])/g, '-').toLowerCase();
 }
 
-function assetUrl(pack: IconPackSpec, asset: string): string | undefined {
+/** A caller's string as a tag, or `null` if it is not one. */
+export function iconTag(value: string): string | null {
+  try {
+    return normalizeTag(kebab(value));
+  } catch {
+    return null;
+  }
+}
+
+function assetUrl(pack: IconPackSpec, asset: string | undefined): string | undefined {
   if (!asset) return undefined;
   const base = (pack.base || '').replace(/\/$/, '');
   return iconAssetUrl(base ? `${base}/${asset}` : asset);
@@ -36,17 +52,87 @@ function isBundle(pack: IconPackSpec): boolean {
   return !pack.icons || pack.icons.length === 0;
 }
 
-function findSpec(pack: IconPackSpec, name: string): IconSpec | undefined {
-  return (pack.icons || []).find((s) => s.name === name || (s.aliases || []).includes(name));
+/** Every key an icon answers to: its own leaf, and each alias. */
+function keysFor(spec: IconSpec): string[] {
+  return [spec.kind, ...(spec.aliases || []).map((a) => iconTag(a) || a)];
+}
+
+type Hit = { pack: IconPackSpec; spec: IconSpec; role: string };
+
+/** One addressable key to the icon that owns it. */
+function lookup(packs: IconPackSpec[], key: string): Hit | null {
+  const [head, ...restParts] = key.split('.');
+  for (const pack of packs) {
+    for (const spec of pack.icons || []) {
+      const keys = keysFor(spec);
+      // Qualified: `<pack>.<leafOrAlias>[.role]`
+      if (head === pack.kind && restParts.length) {
+        const leaf = restParts[0];
+        const role = restParts[1] || '';
+        if (keys.includes(leaf) && (!role || (spec.sub || {})[role])) {
+          return { pack, spec, role };
+        }
+      }
+      // Bare: `<leafOrAlias>` with no pack segment.
+      if (!restParts.length && keys.includes(head)) return { pack, spec, role: '' };
+    }
+  }
+  return null;
+}
+
+function build(hit: Hit, asked: string, degraded: boolean, packs: IconPackSpec[]): IconResolution {
+  const { pack, spec, role } = hit;
+  const tag = `${pack.kind}.${spec.kind}` + (role ? `.${role}` : '');
+  const tintable = spec.tintable !== false;
+  const color = spec.color || '';
+  const subTag = role ? (spec.sub || {})[role] : '';
+  const badge = subTag ? orUndefined(resolveIcon(subTag, packs, false)) : undefined;
+  const url = assetUrl(pack, spec.asset);
+  if (!url) {
+    return { kind: 'bundle', pack: pack.kind, tag, asked, degraded, name: spec.kind, tintable, color, badge };
+  }
+  return {
+    kind: 'asset',
+    pack: pack.kind,
+    tag,
+    asked,
+    degraded,
+    url,
+    tintable,
+    color,
+    darkUrl: assetUrl(pack, spec.dark),
+    badge,
+  };
+}
+
+/** A bundle pack answering for a leaf it does not list, if it serves it. */
+function bundleHit(packs: IconPackSpec[], key: string, asked: string, degraded: boolean): IconResolution | null {
+  const dot = key.lastIndexOf('.');
+  if (dot < 0) return null;
+  const [head, leaf] = [key.slice(0, dot), key.slice(dot + 1)];
+  const pack = packs.find((p) => p.kind === head && isBundle(p));
+  // `served` is authoritative when the backend sent it: the same set Python
+  // validates against. Without this a typo resolves to a URL and 404s silently.
+  if (!pack || (pack.served && !pack.served.includes(leaf))) return null;
+  return {
+    kind: 'bundle',
+    pack: pack.kind,
+    tag: `${pack.kind}.${leaf}`,
+    asked,
+    degraded,
+    name: leaf,
+    url: assetUrl(pack, `${leaf}.svg`),
+    tintable: true,
+    color: '',
+  };
 }
 
 /**
- * Resolve one reference against the packs, in order.
+ * Resolve one reference against the packs.
  *
  * `packs` arrive from the backend (bootstrap's `icon_packs`, or the `icons`
- * action) already in resolution order — earlier packs win a bare name, which is
- * what preserves the existing rule that a bespoke glyph beats a lucide export of
- * the same name.
+ * action). Pack order no longer decides anything for a qualified tag — a full
+ * tag names exactly one icon — it only breaks the tie for a bare legacy name.
  */
 export function resolveIcon(
   ref: string | null | undefined,
@@ -64,69 +150,28 @@ export function resolveIcon(
     return url ? { kind: 'path', url } : { kind: 'none', ref: raw };
   }
 
-  const [head, variant = ''] = raw.split('@', 2);
-  const qualified = head.includes(':');
-  const [packName, bare] = qualified ? [head.slice(0, head.indexOf(':')), head.slice(head.indexOf(':') + 1)] : ['', head];
+  const asked = iconTag(raw);
+  if (!asked) return { kind: 'none', ref: raw };
 
-  const candidates = qualified ? packs.filter((p) => p.name === packName) : packs;
-
-  for (const pack of candidates) {
-    const spec = findSpec(pack, bare);
-
-    if (spec) {
-      const baked = variant ? (spec.variants || {})[variant] : '';
-      const composed = variant && !baked ? (spec.sub || {})[variant] : '';
-      if (variant && !baked && !composed) {
-        // The icon exists but not in that role — a miss, not a silent default.
-        return { kind: 'none', ref: raw };
-      }
-      // A role declared both ways is not an error: the vendor's own drawing
-      // beats a generic badge, so the baked file wins and `sub` goes unused.
-      const asset = baked || spec.asset || '';
-      const url = assetUrl(pack, asset);
-      const tintable = spec.tintable !== false;
-      const color = spec.color || '';
-      const badge =
-        composed && allowSub ? orUndefined(resolveIcon(composed, packs, false)) : undefined;
-      if (!url) {
-        return { kind: 'bundle', pack: pack.name, name: spec.name, tintable, color, badge };
-      }
-      return {
-        kind: 'asset',
-        pack: pack.name,
-        name: spec.name,
-        url,
-        tintable,
-        color,
-        darkUrl: assetUrl(pack, (spec.variants || {}).dark || ''),
-        badge,
-      };
-    }
-
-    // A bundle pack answers for a name it does not list — the renderer holds
-    // the geometry. Its `base`, when set, also serves a file, which is what
-    // lets a caller with no React render the same icon.
-    //
-    // `served` is authoritative when the backend sent it: it is the set of
-    // names that pack actually has artwork for, and it is the same set Python
-    // validates against. Without this check a typo would resolve to a URL and
-    // 404 silently — which is precisely the failure this registry exists to
-    // end. An older backend sends no `served`; then the pack still claims the
-    // name, because its renderer may hold the glyph even where no file does.
-    if (isBundle(pack) && !variant) {
-      const slug = kebab(bare);
-      if (pack.served && !pack.served.includes(slug)) continue;
-      return {
-        kind: 'bundle',
-        pack: pack.name,
-        name: bare,
-        url: assetUrl(pack, `${slug}.svg`),
-        tintable: true,
-        color: '',
-      };
-    }
+  // Deepest registered ancestor wins; `tagAncestors` runs broadest-first.
+  const chain = tagAncestors(asked, true).reverse();
+  for (let depth = 0; depth < chain.length; depth++) {
+    const key = chain[depth];
+    const degraded = depth > 0;
+    const hit = lookup(packs, key);
+    if (hit) return build(hit, asked, degraded, allowSub ? packs : []);
+    const bundle = bundleHit(packs, key, asked, degraded);
+    if (bundle) return bundle;
   }
 
+  // A bare leaf naming no pack — legacy `Rss`, `Slack`. Arbitrary by
+  // definition: whichever pack answers first. Not a degradation.
+  if (!asked.includes('.')) {
+    for (const pack of packs) {
+      const bundle = bundleHit(packs, `${pack.kind}.${asked}`, asked, false);
+      if (bundle) return bundle;
+    }
+  }
   return { kind: 'none', ref: raw };
 }
 
