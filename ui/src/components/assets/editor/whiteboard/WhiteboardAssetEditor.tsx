@@ -188,8 +188,19 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
     let cancelled = false;
     (async () => {
       try {
-        const raw = await boardRef.read();
+        // A board that has never been saved has no `board.json`, and that is the
+        // ordinary first-open case — not an error. `read()`-and-catch emitted a
+        // browser-level `Failed to load resource: 404` on EVERY such open (39 of the
+        // console errors in one QA sweep came from this line) AND fell into the
+        // `catch` below, which calls `setLoadError(...)`, so a brand-new board
+        // opened showing a load-failure state it had no business showing.
+        const raw = await boardRef.readIfExists();
         if (cancelled) return;
+        if (raw === null) {
+          lastSemanticRef.current = semanticBoardFingerprint([], {});
+          setInitialData({});
+          return;
+        }
         const parsed: WrappedBoard = JSON.parse(raw);
         // Accept BOTH shapes: the editor's `{kind, version, data}` envelope and
         // a plain Excalidraw scene `{elements, appState}` (what agents and
@@ -229,12 +240,11 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       await boardRef.write(serialized);
 
       const mermaid = excalidrawToMermaid(data);
-      let currentDoc = '';
-      try {
-        currentDoc = await docRef.read();
-      } catch {
-        currentDoc = '';
-      }
+      // Same rule as the board read above: a whiteboard whose WHITE_BOARD.md has not
+      // been written yet is the NORMAL first-save case. One request, no 404 — an
+      // `exists()`-then-`read()` pair would cost a second round trip on EVERY
+      // subsequent save just to avoid one 404 on the first.
+      const currentDoc = (await docRef.readIfExists()) ?? '';
       const nextDoc = spliceMermaidBlock(currentDoc, mermaid);
       await docRef.write(nextDoc);
 

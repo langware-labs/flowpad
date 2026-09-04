@@ -73,6 +73,19 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
 
   const dialog = await openProvider(page, 'slack');
   await dialog.locator('#ds-name').fill('e2etest-slack-gate');
+
+  // `channels` is now a ChoiceField (`type: lines`, `choices: true`) — a picker,
+  // not a bare input. Its listing fires ON OPEN, not on mount, so the plain-input
+  // fallback only appears once the picker has tried to list and been refused
+  // (`fallsBackToTyping`). With no Slack connection on a QA instance that refusal
+  // IS the expected outcome, so drive the real flow: open the picker, let it fail,
+  // then type into the fallback the component hands back.
+  const picker = dialog.getByTestId(`ds-choice-${channelKey}`);
+  if (await picker.isVisible().catch(() => false)) {
+    await picker.click();
+    await expect(dialog.getByTestId(`ds-choice-detail-${channelKey}`)).toBeVisible();
+    await page.keyboard.press('Escape');
+  }
   await dialog.locator(`#ds-${channelKey}`).fill('definitely-not-a-channel-id');
   await expect(
     dialog.getByRole('button', { name: 'Add source' }),

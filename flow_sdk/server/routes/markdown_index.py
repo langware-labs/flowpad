@@ -14,12 +14,23 @@ router = APIRouter()
 
 
 def _json_for_folder(folder: Path) -> dict:
-    """Return parsed sidecar in the frontend apiClient `{status, data}` envelope."""
+    """Return parsed sidecar in the frontend apiClient `{status, data}` envelope.
+
+    A folder with no sidecar answers ``data: None``, NOT 404. "This folder has not
+    been indexed yet" is an ordinary, expected answer to "is there an index?" — the
+    caller (``MarkdownIndexPanel``) already treats it as the empty state rather than
+    an error. Sending it as an HTTP error status made the browser log
+    ``Failed to load resource: 404`` for every un-indexed folder a user opens, before
+    any application code could run, so no client-side handling could suppress it.
+    4xx stays for input that is actually wrong.
+    """
     sidecar = folder / "index.md.json"
     parsed = load_index_md_json(sidecar)
-    if parsed is None:
-        raise HTTPException(status_code=404, detail=f"No index.md.json at {sidecar}")
-    return {"status": "SUCCESS", "message": "success", "data": parsed.model_dump()}
+    return {
+        "status": "SUCCESS",
+        "message": "success",
+        "data": parsed.model_dump() if parsed is not None else None,
+    }
 
 
 @router.get("/markdown-index/json")

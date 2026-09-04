@@ -130,7 +130,15 @@ async function openMatrix(page: Page) {
     localStorage.setItem('llm-setup-modal-seen', 'true');
   });
   await page.route(`**/api/v1/workers/codex/${SESSION}/transcript`, async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(matrixTranscript()) });
+    // The route answers in the standard `{status, message, data}` envelope (every
+    // backend route does — CLAUDE.md), and `apiClient` unwraps `data`. Fulfilling
+    // with the BARE fixture handed the consumer `undefined`, so the transcript
+    // rendered zero rows and every count assertion below read 0.
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'SUCCESS', message: 'success', data: matrixTranscript() }),
+    });
   });
   await page.goto(
     withViewMode(`/dock/lens/codex/transcript/${SESSION}?transcriptMode=chat`, 'advanced'),

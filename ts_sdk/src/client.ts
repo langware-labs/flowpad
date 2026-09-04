@@ -248,6 +248,26 @@ window['client'] = apiClient;
  * covers errors minted by `navigationService.error()`, which never pass through
  * the interceptor.
  */
+/**
+ * Does this error MESSAGE describe the browser tearing a request down?
+ *
+ * A navigation kills an in-flight `fetch` with a bare `TypeError` whose wording is
+ * the only signal the platform gives, and it differs per engine — Chrome
+ * "Failed to fetch", Firefox "NetworkError"/"network error", Safari "Load failed".
+ * Shared so the axios-side outage check below and the raw-`fetch` streaming path
+ * (`AgenticProcess.prompt`) classify off ONE string set instead of drifting apart.
+ */
+export function isNetworkErrorMessage(message: string | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('network request failed') ||
+    m.includes('network error') ||
+    m.includes('load failed')
+  );
+}
+
 export function isBackendUnreachable(error: unknown): boolean {
   const e = error as
     | { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string }
@@ -260,7 +280,6 @@ export function isBackendUnreachable(error: unknown): boolean {
     e.type === 'config' ||
     e.code === 'ERR_NETWORK' ||
     e.code === 'ERR_CONNECTION_REFUSED' ||
-    e.message?.includes('Failed to fetch') ||
-    e.message?.includes('Network request failed'),
+    isNetworkErrorMessage(e.message),
   );
 }

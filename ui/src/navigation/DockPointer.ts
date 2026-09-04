@@ -2321,6 +2321,17 @@ export class DockPointer implements IDockPointer {
       const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
       return typeid ? DockPointer.tryTypeId(typeid) : null;
     }
+    // A K_BROWSER dock is `<method>/<value>` (`typeid/<type>-<id>` | `vfs/<path>`),
+    // so its value must be split off by the parser that owns that grammar. Without
+    // this branch it fell to the generic fallback below, whose `/typeid/` test only
+    // matches an EMBEDDED marker — a pointer that *begins* `typeid/` slips past it,
+    // and `new TypeId('typeid/markdown-<uuid>')` then splits on the first `-` and
+    // yields type `typeid/markdown`. That produced `GET /graph/typeid/markdown/<uuid>`
+    // → 422, plus the `TypeId null` follow-ons, on every k-browser typeid address.
+    if (this.viewType === ViewType.K_BROWSER) {
+      const kb = DockPointer.parseKnowledgeBrowserPointer(pointer);
+      return kb?.method === 'typeid' ? DockPointer.tryTypeId(kb.value) : null;
+    }
     const candidate = pointer.includes('/typeid/') ? (pointer.split('/typeid/').pop() ?? '') : pointer;
     return (
       DockPointer.tryTypeId(candidate) ??

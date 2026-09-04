@@ -4,6 +4,9 @@ import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
 
+/** Latched false the first time the backend cannot answer `fs/exists`. */
+let _existsActionSupported = true;
+
 /**
  * Heuristic: does a UTF-8-decoded string look like binary rather than text?
  *
@@ -123,6 +126,22 @@ export class FSManager {
    */
   async exists(typeid: TypeId, path: string): Promise<boolean> {
     try {
+      // `exists` answers 200 either way, so a "no" costs no console error.
+      // `_existsActionSupported` latches a failure so an older backend (or a route
+      // that simply is not there) costs ONE wasted probe for the session rather
+      // than doubling every call — the fallback is a compatibility path, not a
+      // per-call retry.
+      if (_existsActionSupported) {
+        const res = await dataManager.callAction<void, { exists?: boolean }>(
+          this.createFSAction(typeid, 'exists', path, 'GET'),
+        );
+        if (res && typeof res.exists === 'boolean') return res.exists;
+        _existsActionSupported = false;
+      }
+    } catch {
+      _existsActionSupported = false;
+    }
+    try {
       const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
       const filename = path.substring(path.lastIndexOf('/') + 1);
 
@@ -142,6 +161,22 @@ export class FSManager {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Read a file that may not exist — ONE request, and never a 404.
+   *
+   * Returns the content, or `null` when the file is not there. Use this instead of
+   * `exists()` + `download()`: that pair costs two round trips on the common
+   * (present) path, and `download()`-and-catch costs a browser-level
+   * `Failed to load resource: 404` on the absent one, which no client-side handling
+   * can suppress. Absence is a valid answer here, not an error.
+   */
+  async readIfExists(typeid: TypeId, path: string): Promise<string | null> {
+    const res = await dataManager.callAction<void, { exists?: boolean; content?: string | null }>(
+      this.createFSAction(typeid, 'read_optional', path, 'GET'),
+    );
+    return res?.exists ? (res.content ?? '') : null;
   }
 
   /**
