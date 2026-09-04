@@ -3187,8 +3187,8 @@ msgid "Claude"
 msgstr "Claude"
 
 #: src/components/icons/ClaudeRestoreIcon.tsx
-msgid "Claude (restored session)"
-msgstr "Claude (סשן שוחזר)"
+#~ msgid "Claude (restored session)"
+#~ msgstr "Claude (סשן שוחזר)"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -3690,8 +3690,8 @@ msgid "Codex"
 msgstr "Codex"
 
 #: src/components/icons/CodexRestoreIcon.tsx
-msgid "Codex (restored session)"
-msgstr "קודקס (סשן שוחזר)"
+#~ msgid "Codex (restored session)"
+#~ msgstr "קודקס (סשן שוחזר)"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 #~ msgid "Codex session"
@@ -8180,8 +8180,8 @@ msgid "GitHub connection failed."
 msgstr "החיבור ל-GitHub נכשל."
 
 #: src/components/icons/CopilotRestoreIcon.tsx
-msgid "GitHub Copilot (restored session)"
-msgstr "GitHub Copilot (סשן מחודש)"
+#~ msgid "GitHub Copilot (restored session)"
+#~ msgstr "GitHub Copilot (סשן מחודש)"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -12956,8 +12956,8 @@ msgid "OpenCode"
 msgstr ""
 
 #: src/components/icons/OpenCodeRestoreIcon.tsx
-msgid "OpenCode (restored session)"
-msgstr ""
+#~ msgid "OpenCode (restored session)"
+#~ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 #~ msgid "OpenCode session"
