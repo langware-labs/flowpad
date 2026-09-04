@@ -12,6 +12,7 @@ import type { IconPackSpec, IconResolution, IconSpec } from './types';
  *     brands.claude.restore   a role — one more segment
  *     Rss                     a bare legacy name; normalizes to a leaf tag
  *     icons/my_type.svg       a path — a location, never a name
+ *     🎨                      not a tag at all — the value IS the glyph
  *
  * **Resolution is best-match** — the deepest registered ancestor. So
  * `brands.claude.restore` resolves to itself when that role exists and to
@@ -160,8 +161,11 @@ export function resolveIcon(
     return url ? { kind: 'path', url } : { kind: 'none', ref: raw };
   }
 
+  // Not a tag and not a path: the value IS the glyph. An emoji fails the tag
+  // grammar by construction (no letters), which is exactly the discriminator —
+  // no guessing from punctuation, no separate predicate.
   const asked = iconTag(raw);
-  if (!asked) return { kind: 'none', ref: raw };
+  if (!asked) return { kind: 'text', text: raw };
 
   // Deepest registered ancestor wins; `tagAncestors` runs broadest-first.
   const chain = tagAncestors(asked, true).reverse();

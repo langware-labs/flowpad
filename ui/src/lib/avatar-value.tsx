@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { isIconPath } from '@sdk';
-import { isLucideName, renderIconValue } from '@src/lib/icon-value';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 
 export interface AvatarValueProps {
   value?: string | null;
@@ -11,18 +10,19 @@ export interface AvatarValueProps {
   alt: string;
 }
 
-const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
-
-/** Render a caller-resolved image, a stored icon/emoji, or a safe fallback. */
+/**
+ * Render a caller-resolved image, a stored icon value, or a safe fallback.
+ *
+ * The stored value may be a name, a served path or an emoji — the icon picker
+ * writes all three into one field. That used to need a three-way gate here
+ * (`isLucideName || isIconPath || EMOJI_PATTERN`); resolution answers it now, so
+ * the only thing left is the choice between a URL the caller already resolved
+ * and everything else.
+ */
 export function AvatarValue({ value, imageUrl, fallback = null, className, alt }: AvatarValueProps): ReactNode {
   if (imageUrl) {
     return <img src={imageUrl} alt={alt} className={className} />;
   }
-  // `isIconPath` is in the gate because a stored value can be a FILE now; without
-  // it a path-shaped icon fails both tests and silently renders the fallback,
-  // even though `renderIconValue` knows how to draw it.
-  if (value && (isLucideName(value) || isIconPath(value) || EMOJI_PATTERN.test(value))) {
-    return renderIconValue(value, { className });
-  }
-  return fallback;
+  if (!value) return fallback;
+  return <FlowIcon icon={value} className={className} fallback={fallback} />;
 }

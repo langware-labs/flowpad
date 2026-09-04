@@ -44,6 +44,8 @@ export const ICON_CSS = `
 .fp-icon-mask{background-color:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
   -webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
 .fp-icon-img{width:100%;height:100%;object-fit:contain;display:block}
+:where(.fp-icon-text){display:inline-flex;align-items:center;justify-content:center;
+  line-height:1;vertical-align:-0.125em}
 .fp-icon-themed>.fp-icon-dark{display:none}
 .fp-icon-themed>.fp-icon-light{display:block}
 @media (prefers-color-scheme: dark){
@@ -118,6 +120,13 @@ function leaf(res: IconResolution, opts: IconElementOptions, extraClass = ''): H
     span.title = opts.title;
   } else {
     span.setAttribute('aria-hidden', 'true');
+  }
+
+  // The value IS the glyph — an emoji from the picker, or initials.
+  if (res.kind === 'text') {
+    span.classList.add('fp-icon-text');
+    span.textContent = res.text;
+    return span;
   }
 
   const url = res.kind === 'asset' || res.kind === 'path' ? res.url : res.kind === 'bundle' ? res.url : undefined;

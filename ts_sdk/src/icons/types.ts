@@ -74,6 +74,9 @@ export interface IconPackSpec {
  *               registered bundle renderer draws it directly; `url` is the
  *               fallback for a caller that has no such renderer (plain HTML).
  *  - `path`   — the reference was already a location, not a name
+ *  - `text`   — the value IS the glyph: an emoji, or initials. The icon picker
+ *               has an emoji tab that stores the character, so `Group.icon` may
+ *               literally be "🎨" — a live authoring format, not legacy data.
  *  - `none`   — nothing claims it; the caller draws its own fallback
  */
 export type IconResolution =
@@ -108,4 +111,5 @@ export type IconResolution =
       badge?: IconResolution;
     }
   | { kind: 'path'; url: string }
+  | { kind: 'text'; text: string }
   | { kind: 'none'; ref: string };

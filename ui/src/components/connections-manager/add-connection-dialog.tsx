@@ -3,8 +3,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound } from 'lucide-react';
 import type { CredentialSpec, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { providerMark } from './provider-marks';
-import { isLucideName } from '@src/lib/icon-value';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 
@@ -35,28 +35,34 @@ export interface AddConnectionDialogProps {
 /** A credential definition's glyph — `icon_name` is asset data, not a TYPE
  *  icon, so `iconForType` is the wrong registry here. */
 function specIcon(iconName?: string) {
-  return isLucideName(iconName) ? lucideByName(iconName) : KeyRound;
+  return iconName ? lucideByName(iconName) : KeyRound;
 }
 
-/** A provider's glyph: its bespoke mark, else its published icon name.
+/** The ref a brand answers to: its own name if the packs know it, else whatever
+ *  the backend published.
  *
- *  Through `providerMark` FIRST — the same order the table's `ProviderIcon`
- *  uses. Going straight to the icon name is what put a generic key on the
- *  Google tile and a theme-blind octocat on GitHub's: the override exists
- *  precisely for the providers whose published asset resolves badly, and this
- *  dialog is where a person is choosing between them.
+ *  The provider's NAME first — going straight to the published icon is what put
+ *  a generic key on the Google tile and a theme-blind octocat on GitHub's. The
+ *  packs carry those brands under their own names, so asking by name is both
+ *  the override and the fix.
  */
-function providerIcon(provider: OAuthProvider) {
-  return providerMark(provider.name) ?? specIcon(provider.icon);
+function brandRef(name: string, published?: string): string | undefined {
+  return resolveIcon(name, getIconPacks()).kind !== 'none' ? name : published;
 }
 
-/** A credential definition's glyph, brand mark first.
+function providerIcon(provider: OAuthProvider) {
+  const ref = brandRef(provider.name, provider.icon);
+  return ref ? flowIconComponent(ref) : KeyRound;
+}
+
+/** A credential definition's glyph, brand first.
  *
  *  Same order as a provider's, because the two sections show the same companies:
  *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
  *  different colours one row apart. */
 function credentialIcon(spec: CredentialSpec) {
-  return providerMark(String(spec.name ?? '')) ?? specIcon(spec.icon_name);
+  const ref = brandRef(String(spec.name ?? ''), spec.icon_name);
+  return ref ? flowIconComponent(ref) : KeyRound;
 }
 
 export function AddConnectionDialog({

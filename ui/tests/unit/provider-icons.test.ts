@@ -17,7 +17,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getIconPacks, resolveIcon } from '@sdk/icons';
-import { isLucideName } from '@src/lib/icon-value';
 
 const MANIFEST_ROOT = join(
   __dirname,
@@ -83,10 +82,12 @@ describe('connection provider icons', () => {
   });
 
   it.each(providerIcons)('%s resolves to a real glyph', (name) => {
-    // `isLucideName` is what the dialog and the table both gate on before
-    // calling `lucideByName`; a name that fails it never reaches a glyph at all
-    // and the caller draws its generic fallback instead.
-    expect(isLucideName(name), `${name} resolves to nothing — the tile draws a generic fallback`).toBe(true);
+    // The connection surfaces ask the resolver directly now; a name it does not
+    // claim draws the caller's own fallback — a monogram — instead of a glyph.
+    expect(
+      resolveIcon(name, getIconPacks()).kind,
+      `${name} resolves to nothing — the tile draws a monogram instead of the brand`,
+    ).not.toBe('none');
     // `not.toBe(FileText)` used to catch a name falling through to the generic
     // glyph. Resolution now returns a component bound to the tag, so identity
     // can never equal FileText and that assertion would pass vacuously — ask

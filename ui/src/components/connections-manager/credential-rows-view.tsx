@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { isLucideName } from '@src/lib/icon-value';
 import { KeyRound } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { MoreOnHover } from './more-on-hover';
@@ -22,7 +21,7 @@ const VARS_SHOWN = 1;
  *  icon — the row is a provider, not an entity type, so `iconForType` is the
  *  wrong registry. Falls back to a key glyph, never to nothing. */
 function CredentialGlyph({ iconName }: { iconName?: string }) {
-  const Icon = isLucideName(iconName) ? lucideByName(iconName) : null;
+  const Icon = iconName ? lucideByName(iconName) : null;
   return Icon ? (
     <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
   ) : (

@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, useState, type ComponentType, type ReactElement } from 'react';
+import { createElement, useEffect, useMemo, useState, type ComponentType, type ReactElement, type ReactNode } from 'react';
 import { bundleIcon } from '../icons/bundle';
 import { ensureIconStyles, resolveForRender, withRole } from '../icons/element';
 import { getIconFallback, getIconPacks, onIconPacksChanged } from '../icons/registry';
@@ -77,6 +77,15 @@ export interface FlowIconProps extends FlowIconCommonProps {
   baseClassName?: string;
   /** Classes for the badge only — a vendor colour, or different geometry. */
   badgeClassName?: string;
+  /**
+   * What to draw when nothing claims the tag, instead of the configured
+   * fallback glyph.
+   *
+   * A tag can express "some other icon"; it cannot express `ProviderGlyph`'s
+   * monogram, which is built from a SIBLING field (`name.slice(0,1)`) and so is
+   * not an icon at all. Per-site because that is where the material lives.
+   */
+  fallback?: ReactNode;
 }
 
 /**
@@ -156,6 +165,22 @@ function Leaf({
 
   if (res.kind === 'none') return null;
 
+  // The value IS the glyph — an emoji from the picker, or initials supplied as
+  // a fallback. Sized by the caller's className like every other icon, and
+  // decorative unless named, so it sits in a row exactly where a mark would.
+  if (res.kind === 'text') {
+    return (
+      <span
+        className={classes('fp-icon-text', className)}
+        style={{ ...box(px), ...(rest.style as object) }}
+        {...a11y(title)}
+        {...rest}
+      >
+        {res.text}
+      </span>
+    );
+  }
+
   if (res.kind === 'bundle') {
     const Bundled = bundleIcon(res.name);
     if (Bundled) {
@@ -172,7 +197,7 @@ function Leaf({
     }
   }
 
-  const url = res.url;
+  const url = res.kind === 'path' ? res.url : res.url;
   if (!url) return null;
 
   const tintable = res.kind === 'asset' || res.kind === 'bundle' ? res.tintable : false;
@@ -324,19 +349,20 @@ export function flowIconComponent(icon: string | null | undefined): FlowIconComp
 }
 
 /** Resolve against the loaded packs, re-resolving if they arrive after mount. */
-function useResolution(tag: string, badge?: string): IconResolution {
+function useResolution(tag: string, badge?: string, ownFallback = false): IconResolution {
   const [, bump] = useState(0);
   useEffect(() => onIconPacksChanged(() => bump((v) => v + 1)), []);
   return useMemo(() => {
     const packs = getIconPacks();
     // `resolveForRender` applies the unknown-icon fallback, so a missing icon
     // renders the generic glyph rather than vanishing — the rule `lucideByName`
-    // already follows.
-    const base = resolveForRender(tag, packs);
+    // already follows. A caller with its OWN fallback needs the honest `none`
+    // instead, so it can draw what it has.
+    const base = ownFallback ? resolveIcon(tag, packs) : resolveForRender(tag, packs);
     if (!badge || (base.kind !== 'asset' && base.kind !== 'bundle')) return base;
     const sub = resolveIcon(badge, packs, false);
     return sub.kind === 'none' ? base : { ...base, badge: sub };
-  }, [tag, badge]);
+  }, [tag, badge, ownFallback]);
 }
 
 export function FlowIcon({
@@ -349,9 +375,13 @@ export function FlowIcon({
   badgeClassName,
   title,
   color,
+  fallback,
   ...rest
 }: FlowIconProps) {
-  const res = useResolution(withRole(icon, role) || '', badge);
+  const res = useResolution(withRole(icon, role) || '', badge, fallback !== undefined);
+  // A caller-supplied fallback wins over the configured glyph — it is the more
+  // specific answer, and the only one that can carry a monogram.
+  if (fallback !== undefined && res.kind === 'none') return <>{fallback}</>;
   const named = sizeClass(size, className);
   const px = typeof size === 'number' ? size : undefined;
   return (
