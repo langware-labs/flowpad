@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "name": "brands",
+  "base": "icons/brands/assets",
+  "license": "Vendor trademarks, used for identification. Each mark belongs to its owner.",
+  "icons": [
+    {
+      "name": "slack",
+      "asset": "slack.svg",
+      "tintable": false,
+      "aliases": [
+        "Slack"
+      ],
+      "source": "brand guidelines"
+    },
+    {
+      "name": "atlassian",
+      "asset": "atlassian.svg",
+      "color": "#2684FF",
+      "aliases": [
+        "Atlassian"
+      ]
+    },
+    {
+      "name": "linear",
+      "asset": "linear.svg",
+      "color": "#5E6AD2",
+      "aliases": [
+        "Linear"
+      ]
+    },
+    {
+      "name": "gitlab",
+      "asset": "gitlab.svg",
+      "color": "#FC6D26",
+      "aliases": [
+        "Gitlab",
+        "GitLab"
+      ],
+      "source": "lucide `gitlab` (ISC)"
+    },
+    {
+      "name": "github",
+      "asset": "github.svg",
+      "aliases": [
+        "Github",
+        "GitHub"
+      ],
+      "source": "lucide `github` (ISC)"
+    },
+    {
+      "name": "microsoft",
+      "asset": "microsoft.svg",
+      "tintable": false,
+      "aliases": [
+        "Microsoft"
+      ]
+    },
+    {
+      "name": "notion",
+      "asset": "notion.svg",
+      "variants": {
+        "dark": "notion-dark.svg"
+      },
+      "aliases": [
+        "Notion"
+      ],
+      "tintable": false,
+      "source": "brand mark; light and dark artwork"
+    },
+    {
+      "name": "gmail",
+      "asset": "gmail.svg",
+      "tintable": false,
+      "aliases": [
+        "Gmail"
+      ]
+    },
+    {
+      "name": "telegram",
+      "asset": "telegram.svg",
+      "tintable": false,
+      "aliases": [
+        "Telegram"
+      ]
+    },
+    {
+      "name": "googledrive",
+      "asset": "googledrive.svg",
+      "tintable": false,
+      "aliases": [
+        "GoogleDrive",
+        "Google",
+        "google",
+        "gdrive"
+      ]
+    },
+    {
+      "name": "claude",
+      "asset": "claude.svg",
+      "aliases": [
+        "ClaudeCode",
+        "Claude"
+      ],
+      "sub": {
+        "restore": "lucide:history"
+      }
+    },
+    {
+      "name": "anthropic",
+      "asset": "claude.svg",
+      "color": "#D97757",
+      "aliases": [
+        "anthropic-key"
+      ]
+    },
+    {
+      "name": "codex",
+      "asset": "codex.svg",
+      "aliases": [
+        "Codex"
+      ],
+      "sub": {
+        "restore": "lucide:history"
+      }
+    },
+    {
+      "name": "openai",
+      "asset": "codex.svg",
+      "color": "#10A37F",
+      "aliases": [
+        "openai-key"
+      ]
+    },
+    {
+      "name": "copilot",
+      "asset": "copilot.svg",
+      "aliases": [
+        "Copilot"
+      ],
+      "sub": {
+        "restore": "lucide:history"
+      }
+    },
+    {
+      "name": "opencode",
+      "asset": "opencode.svg",
+      "aliases": [
+        "OpenCode"
+      ],
+      "sub": {
+        "restore": "lucide:history"
+      }
+    },
+    {
+      "name": "openrouter",
+      "asset": "openrouter.svg",
+      "color": "#94A3B8",
+      "aliases": [
+        "openrouter-key"
+      ],
+      "source": "lucide `waypoints` (ISC)"
+    },
+    {
+      "name": "twilio",
+      "asset": "twilio.svg",
+      "color": "#F22F46",
+      "aliases": [
+        "twilio-key"
+      ],
+      "source": "lucide `message-square` (ISC)"
+    }
+  ]
+}
