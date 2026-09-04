@@ -11,6 +11,7 @@ import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
 import { LlmIndexersViewer } from './LlmIndexersViewer';
 import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
+import { ProjectCleanupViewer } from './ProjectCleanupViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
 
 /**
@@ -154,6 +155,10 @@ export function LensViewer() {
       return <LlmIndexersViewer />;
     case 'trigger/log':
       return <TriggerLogViewer triggerId={lensParts.ref} />;
+    // `ref` is optional: the warning opens the whole list, the picker's info
+    // icon names one project to start selected.
+    case 'projects/cleanup':
+      return <ProjectCleanupViewer focusProjectId={lensParts.ref || undefined} />;
     default:
       return (
         <div className="flex h-full items-center justify-center p-4 text-muted-foreground">

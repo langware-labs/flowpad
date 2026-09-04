@@ -20,6 +20,7 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
     codex_projects_fn,
 )
+from flow_sdk.fs_store.operations.project_cleanup import summarize
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
@@ -420,4 +421,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         "copilot_count": copilot_count,
         "both_count": both_count,
         "none_count": none_count,
+        # Cleanup candidates, counted here so the footer warning costs no second
+        # call. Shallow signals only — one `listdir` per project, ~0.1s over
+        # 1,250 rows. The per-project detail (file counts, git, harness state)
+        # belongs to `project-cleanup-report`, which the user opens deliberately.
+        "cleanup": summarize(projects).model_dump(),
     }
