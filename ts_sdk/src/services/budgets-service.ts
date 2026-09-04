@@ -20,6 +20,7 @@
  */
 import { dataManager } from '../APIEntity';
 import { hubAction } from './llm-endpoints-service';
+import type { TokenPlanSetupResult } from './token-plan-service';
 
 /** One principal's pool, as the budgets screen reads it. */
 export interface ScopeBudget {
@@ -42,6 +43,20 @@ export interface ScopeBudget {
   allocated_usd: number | null;
 }
 
+/**
+ * The organization's own row — the one place a pool may hold its OWN provider credential instead
+ * of drawing on another endpoint. A team's and a person's pool are always chains, so these three
+ * fields exist only here rather than on the shared `ScopeBudget` every row uses: on a chain they
+ * would forever read `false` / `null` / `''`, sent and never looked at.
+ */
+export interface OrgScopeBudget extends ScopeBudget {
+  is_root: boolean;
+  /** `'openrouter' | 'anthropic' | 'openai'` when `is_root`; `null` otherwise. */
+  provider: string | null;
+  /** `****last4` when a root has a stored key, `''` otherwise. Never the key itself. */
+  credential_hint: string;
+}
+
 /** One person's allowance under a team pool. */
 export interface MemberBudget {
   /** The person's own endpoint (a typeid) — the thing whose cap is edited. */
@@ -60,7 +75,7 @@ export interface MemberBudget {
 }
 
 export interface OrgBudgets {
-  org: ScopeBudget;
+  org: OrgScopeBudget;
   teams: ScopeBudget[];
 }
 
@@ -78,6 +93,20 @@ export class BudgetsService {
   /** One team's pool and one row per person drawing on it. Admin on the team. */
   teamBudgets(teamId: string): Promise<TeamBudgets> {
     return dataManager.callAction<undefined, TeamBudgets>(hubAction('budgets', 'team', teamId, 'GET'));
+  }
+
+  /**
+   * Make the organization the paying entity on its OWN provider key, instead of an allowance
+   * drawn from Flowpad's shared global root. Creates the org's default as a ROOT with no sources;
+   * the key itself is set afterward through `llmEndpointsService.setCredential` on the returned
+   * `endpoint_id` — this call never carries one. Idempotent on an existing root; refuses (409,
+   * surfaced as a thrown error) if the org already draws from a shared pool, since converting a
+   * chain into a root in place is not offered.
+   */
+  setupOrgRoot(orgId: string, body: { provider: string; base_url?: string }): Promise<TokenPlanSetupResult> {
+    const info = hubAction('root', 'organization', orgId, 'POST');
+    info.bodyParameters = { provider: body.provider, base_url: body.base_url ?? '' };
+    return dataManager.callAction<undefined, TokenPlanSetupResult>(info);
   }
 }
 

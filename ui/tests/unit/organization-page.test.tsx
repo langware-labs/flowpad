@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +50,17 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: navigationMock }),
 }));
 
+const h = vi.hoisted(() => ({
+  createOrganization: vi.fn(),
+  createChildTeam: vi.fn(),
+}));
+vi.mock('@src/components/organization/create-organization', () => ({
+  createOrganization: (...args: unknown[]) => h.createOrganization(...args),
+}));
+vi.mock('@src/components/organization/create-child-team', () => ({
+  createChildTeam: (...args: unknown[]) => h.createChildTeam(...args),
+}));
+
 function mockRoster(members: unknown[]) {
   membersMock.mockReturnValue({
     members,
@@ -67,6 +78,7 @@ function mockRoster(members: unknown[]) {
 describe('OrganizationPage', () => {
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
     availabilityMock.mockReturnValue({ available: true, reason: 'available' });
     orgsMock.mockReturnValue({ data: [{ id: 'org-1', name: 'Springfield High' }], isLoading: false });
   });
@@ -148,5 +160,41 @@ describe('OrganizationPage', () => {
     mockRoster([]);
     render(<OrganizationPage />);
     expect(screen.getByText('Not available in Local mode')).toBeTruthy();
+  });
+
+  it('creates a new organization from the header form', async () => {
+    h.createOrganization.mockResolvedValue({ type: 'organization', id: 'org-new' });
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-open'));
+    fireEvent.change(screen.getByTestId('org-create-name'), { target: { value: 'Acme Inc' } });
+    fireEvent.click(screen.getByTestId('org-create-submit'));
+
+    await waitFor(() => expect(h.createOrganization).toHaveBeenCalledWith('Acme Inc'));
+  });
+
+  it('does nothing when the organization name is left blank', () => {
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-open'));
+    fireEvent.click(screen.getByTestId('org-create-submit'));
+
+    expect(h.createOrganization).not.toHaveBeenCalled();
+  });
+
+  it('creates a team under the organization from the roster panel', async () => {
+    h.createChildTeam.mockResolvedValue({ type: 'team', id: 'team-new' });
+    mockRoster([ME]);
+    render(<OrganizationPage />);
+
+    fireEvent.click(screen.getByTestId('org-create-team'));
+    fireEvent.change(screen.getByTestId('org-create-team-name'), { target: { value: 'Platform' } });
+    fireEvent.click(screen.getByTestId('org-create-team-submit'));
+
+    await waitFor(() => expect(h.createChildTeam).toHaveBeenCalled());
+    // Scoped under the currently selected organization, by NAME — not a bare string.
+    expect(h.createChildTeam.mock.calls[0][1]).toBe('Platform');
   });
 });
