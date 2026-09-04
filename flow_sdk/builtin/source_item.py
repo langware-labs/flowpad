@@ -167,6 +167,35 @@ class TeamsMessageSpec(ChannelMessageSpec):
     """
 
 
+class WhatsAppMessageSpec(MessageSpec):
+    """Outbound WhatsApp message: the generic shape, person-targeted replies.
+
+    No extra fields — WhatsApp has no subject, and templates, media and
+    interactive replies are explicit non-goals for now (the driver sends plain
+    text inside the 24-hour window).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "WhatsAppMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        WhatsApp replies target the PERSON, and the person IS the thread: a
+        conversation is the pair (business number, wa_id), so ``to`` and
+        ``thread_key`` carry the same id and there is nothing to derive. The
+        replied-to id rides ``reply_to_external_id`` and becomes Meta's
+        ``context`` — which renders as a quote and does not start a thread,
+        because WhatsApp has none.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        return cls(
+            to=[thread_key],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
+
+
 class SourceItem(Entity):
     """The ROW; the snapshot the medium persists is ``SourceItemSpec``
     (``TypeInfo.asset_spec``)."""

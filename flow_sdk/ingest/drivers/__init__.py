@@ -19,6 +19,7 @@ from flow_sdk.ingest.drivers.rss import RssDriver
 from flow_sdk.ingest.drivers.slack import SlackDriver
 from flow_sdk.ingest.drivers.teams import TeamsDriver
 from flow_sdk.ingest.drivers.telegram import TelegramDriver
+from flow_sdk.ingest.drivers.whatsapp import WhatsAppDriver
 
 register_driver(RssDriver())
 register_driver(HackerNewsDriver())
@@ -33,6 +34,7 @@ register_driver(GmailDriver())
 register_driver(SlackDriver())
 register_driver(TeamsDriver())
 register_driver(TelegramDriver())
+register_driver(WhatsAppDriver())
 
 __all__ = [
     "AgentDriver",
@@ -47,4 +49,5 @@ __all__ = [
     "SlackDriver",
     "TeamsDriver",
     "TelegramDriver",
+    "WhatsAppDriver",
 ]

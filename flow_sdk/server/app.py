@@ -93,6 +93,7 @@ from .routes import (
     version_router,
     watch_router,
     webhook_api_router,
+    whatsapp_router,
     websocket_router,
     worldview_router,
 )
@@ -551,6 +552,7 @@ server.add_router(ui_router)
 server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
+server.add_router(whatsapp_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)
