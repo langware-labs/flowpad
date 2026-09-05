@@ -19487,6 +19487,10 @@ msgstr "טריגרים"
 msgid "Try again"
 msgstr "נסה שוב"
 
+#: src/components/terminal/openers/AskInstallOneOfDialog.tsx
+msgid "Try auto install"
+msgstr ""
+
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
 msgstr "התאם את Flowpad לדרך העבודה שלך — השינויים נשמרים אוטומטית."

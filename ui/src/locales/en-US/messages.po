@@ -19487,6 +19487,10 @@ msgstr "Triggers"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/components/terminal/openers/AskInstallOneOfDialog.tsx
+msgid "Try auto install"
+msgstr "Try auto install"
+
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
 msgstr "Tune Flowpad to how you work — changes save automatically."
