@@ -1,7 +1,8 @@
-"""Walker + extractor + id mint for SPEC records.
+"""Extractor + id mint for SPEC records.
 
-Specs live at ``<project>/agentic-assets/spec/<name>/spec.md`` (markdown + YAML frontmatter).
-Replaces the deleted ``SpecRecord`` subclass. Registration at module bottom.
+Specs live at ``<project>/agentic-assets/spec/<name>/spec.md`` (markdown + YAML
+frontmatter) and are discovered by the repo-assets walker. Replaces the deleted
+``SpecRecord`` subclass.
 """
 
 from __future__ import annotations
@@ -13,32 +14,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-
-
-def spec_project_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        specs_root = Path(node.path) / "specs"
-        if not specs_root.is_dir():
-            continue
-        for spec_dir in sorted(specs_root.iterdir()):
-            md = spec_dir / "spec.md"
-            if not md.is_file():
-                continue
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                FSRef(md, record_type=RecordType.SPEC, parent=node)
-            )
-    return out
 
 
 def _spec_id_from_path(path: Path) -> str:

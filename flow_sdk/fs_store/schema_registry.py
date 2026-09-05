@@ -290,6 +290,10 @@ class TypeInfo:
     # shipped in the bootstrap so the frontend derives its editor tables from
     # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
     editor: str | None = None
+    # The declarative SCAN for this type (``flow_sdk.schema.layout.Walk``):
+    # which root nodes it hangs on and which mounts it looks in. None ⇒ the
+    # type is walked by a bespoke function (or not walked at all).
+    walk: Any = None  # flow_sdk.schema.layout.Walk | None
     # Fields the ASSIGNEE of a shared entity owns. When the local user is the
     # entity's assignee (and not its reporter), a hub-reflected update carries
     # ONLY these — everything else on the row belongs to whoever handed the work
@@ -955,6 +959,8 @@ class SchemaRegistry:
                 existing._project_shape()
             if info.editor is not None:
                 existing.editor = info.editor
+            if info.walk is not None:
+                existing.walk = info.walk
             if info.cloud_file_transport == "git":
                 existing.cloud_file_transport = "git"
             if info.assignee_owned_fields:
@@ -1095,31 +1101,77 @@ class SchemaRegistry:
             type_name = type_name.type  # TypeId duck-type: .type is the type string
         return cls._types.get(type_name)
 
-    # --- SCAN tables: name → walked folder types; ext → walked file types.
-    # Built lazily from the declarations, keyed on the registry generation so a
-    # (re)registration or a test clearing ``_types`` rebuilds them. One dict
-    # lookup per classification instead of a scan of every type.
+    # --- SCAN tables, built lazily from the declarations and keyed on the
+    # registry generation so a (re)registration or a test clearing ``_types``
+    # rebuilds them. One dict lookup per classification instead of a scan of
+    # every type:
+    #   main name → walked folder types      (``SKILL.md`` → skill)
+    #   fixed filename → walked file types   (``CLAUDE.md`` → claude_md)
+    #   (ext, mount) → placed file types     (``.md`` under ``.claude/commands``)
+    #   ext → walked file types              (``.csv`` → spreadsheet)
+    # A "mount" is a scope-relative dir a file type lives in: its declared
+    # ``Walk.mounts`` plus ``placement.scan_mounts`` (every harness prefix for a
+    # SHARED type — ``.claude/agents`` and ``.agents/agents`` alike).
     _registry_generation: int = 0
     _shape_tables_key: Any = None
     _by_main_file: "dict[str, tuple[TypeInfo, ...]]" = {}
     _by_ext: "dict[str, tuple[TypeInfo, ...]]" = {}
+    _by_name: "dict[str, tuple[TypeInfo, ...]]" = {}
+    _by_mount: "dict[tuple[str, tuple[str, ...]], tuple[TypeInfo, ...]]" = {}
+    _wild_mounts: "tuple[tuple[str, tuple[str, ...], TypeInfo], ...]" = ()   # a ``*`` segment
+    _mount_depths: tuple[int, ...] = ()
 
     @classmethod
     def _shape_tables(cls) -> "tuple[dict[str, tuple[TypeInfo, ...]], dict[str, tuple[TypeInfo, ...]]]":
         cls._ensure_loaded()
         key = (len(cls._types), cls._registry_generation)
         if cls._shape_tables_key != key:
+            from flow_sdk.fs_store.placement import scan_mounts  # noqa: PLC0415
+            from flow_sdk.schema.layout import Walk  # noqa: PLC0415
+
             by_main: dict[str, list[TypeInfo]] = {}
             by_ext: dict[str, list[TypeInfo]] = {}
+            by_name: dict[str, list[TypeInfo]] = {}
+            by_mount: dict[tuple[str, tuple[str, ...]], list[TypeInfo]] = {}
+            wild_mounts: list[tuple[str, tuple[str, ...], TypeInfo]] = []
             for info in cls._types.values():
                 if info.from_disk_fn is None:
                     continue   # a type with no walker never claims a path (test probes register too)
-                if isinstance(info.shape, Folder) and info.shape.main:
-                    by_main.setdefault(info.shape.main.lower(), []).append(info)
-                elif isinstance(info.shape, File):
-                    by_ext.setdefault(info.shape.ext, []).append(info)
+                if isinstance(info.shape, Folder):
+                    if info.shape.main:
+                        by_main.setdefault(info.shape.main.lower(), []).append(info)
+                    continue
+                if not isinstance(info.shape, File):
+                    continue
+                if info.shape.names:
+                    for name in info.shape.names:
+                        by_name.setdefault(name.lower(), []).append(info)
+                    continue   # a fixed-name file is never "any file of that extension"
+                for ext in info.shape.exts:
+                    by_ext.setdefault(ext, []).append(info)
+                # A declared ``Walk`` names the dirs its scan looks in
+                # (``.claude/plans``); placement names where a canonical or
+                # received copy lands (``agentic-assets/plan``). Both are
+                # declarations; a path under either is the type.
+                walks = (info.walk,) if isinstance(info.walk, Walk) else tuple(info.walk or ())
+                mounts = {mount for walk in walks for mount in walk.mounts}
+                mounts.update(scan_mounts(info.asset_class, info.harness, info.family))
+                for mount in mounts:
+                    parts = tuple(part.lower() for part in Path(mount or ".").parts)
+                    if not parts:
+                        continue   # ``"."`` is the anywhere-walk, not a placed dir
+                    for ext in info.shape.exts:
+                        if "*" in parts:
+                            wild_mounts.append((ext, parts, info))
+                        else:
+                            by_mount.setdefault((ext, parts), []).append(info)
             cls._by_main_file = {k: tuple(v) for k, v in by_main.items()}
             cls._by_ext = {k: tuple(v) for k, v in by_ext.items()}
+            cls._by_name = {k: tuple(v) for k, v in by_name.items()}
+            cls._by_mount = {k: tuple(v) for k, v in by_mount.items()}
+            cls._wild_mounts = tuple(wild_mounts)
+            depths = {len(parts) for _ext, parts in by_mount} | {len(parts) for _ext, parts, _i in wild_mounts}
+            cls._mount_depths = tuple(sorted(depths, reverse=True))
             cls._shape_tables_key = key
         return cls._by_main_file, cls._by_ext
 
@@ -1145,6 +1197,48 @@ class SchemaRegistry:
         )
 
     @classmethod
+    def _placed_owners(cls, p: Path, suffix: str) -> "tuple[TypeInfo, ...]":
+        """The file types whose declared mount is the NEAREST ancestor of ``p``
+        that is any type's mount, for ``p``'s extension. ``.claude/commands/x.md``
+        → command; ``docs/guide/index.md`` → the docs family; a loose ``x.md`` → ().
+        A mount segment of ``*`` (``.claude/skills/*``) matches any one dir."""
+        cls._shape_tables()
+        parts = tuple(part.lower() for part in p.parent.parts)
+        for cut in range(len(parts), 0, -1):
+            for depth in cls._mount_depths:
+                if depth > cut:
+                    continue
+                tail = parts[cut - depth:cut]
+                hit = cls._by_mount.get((suffix, tail))
+                if hit:
+                    return hit
+                wild = tuple(
+                    info
+                    for ext, mount, info in cls._wild_mounts
+                    if ext == suffix and len(mount) == depth and all(m in ("*", seg) for m, seg in zip(mount, tail))
+                )
+                if wild:
+                    return wild
+        return ()
+
+    @staticmethod
+    def _declared_type(p: Path) -> str | None:
+        """The ``type:`` a markdown document's own frontmatter declares, if any —
+        how two types sharing one mount and extension (``markdown`` and
+        ``markdown_index`` under ``docs``) are told apart."""
+        from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
+
+        try:
+            head = p.read_text(encoding="utf-8", errors="ignore")[:4096]
+        except OSError:
+            return None
+        fm = _extract_frontmatter(head)
+        if not fm:
+            return None
+        declared = _yaml_load(fm).get("type")
+        return str(declared).strip() if declared else None
+
+    @classmethod
     def type_for(cls, path: "Path | str") -> str | None:
         """THE registry-wide path → type classifier (name + placement + stat;
         no walk roots). Precedence:
@@ -1152,14 +1246,22 @@ class SchemaRegistry:
         1. a folder type's declared main document, by name and placement
            (``SKILL.md`` → ``skill``; ``agentic-assets/mcp/x/mcp.json`` → ``mcp``;
            a folder holding one → that type);
-        2. a file type whose declared extension is unique among walked file
+        2. a file type's declared FIXED filename (``CLAUDE.md`` → ``claude_md``);
+        3. a file type's declared family dir, for its extension, as the nearest
+           such ancestor (``.claude/commands/x.md`` → ``command``,
+           ``.agents/agents/x.md`` → ``subagent``, ``agentic-assets/plan/x.md``
+           → ``plan``); when several types share the mount, the document's own
+           frontmatter ``type:`` decides (``docs/index.md`` declaring
+           ``markdown_index``), else fall through;
+        4. a file type whose declared extension is unique among walked file
            types (``.js`` → dynamic_workflow, ``.csv`` → spreadsheet);
-        3. ``markdown`` for any remaining ``.md``;
-        4. ``None`` — not an asset, or ambiguous (``.json``/``.jsonl`` are
+        5. ``markdown`` for any remaining ``.md``;
+        6. ``None`` — not an asset, or ambiguous (``.json``/``.jsonl`` are
            claimed by several bespoke-walked types and need their roots).
 
-        A name shared by two folder types at one placement is ``None``, never
-        registration order.
+        A name shared by two types at one tier is ``None``, never registration
+        order. Every tier is read off the declarations (``shape``, ``asset_class``
+        / ``harness`` / ``family``); there is no hand-written path table.
         """
         p = Path(path)
         by_main, by_ext = cls._shape_tables()
@@ -1178,13 +1280,23 @@ class SchemaRegistry:
             return next(iter(owners))
         if owners:
             return None
+        named = cls._by_name.get(p.name.lower(), ())
+        if named:
+            return named[0].type_name if len(named) == 1 else None
         suffix = p.suffix.lower()
-        if suffix and suffix != ".md":
+        if not suffix:
+            return None
+        placed = cls._placed_owners(p, suffix)
+        if len(placed) == 1:
+            return placed[0].type_name
+        if placed:
+            declared = cls._declared_type(p)
+            if declared in {info.type_name for info in placed}:
+                return declared
+        if suffix != ".md":
             by = by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
-        if suffix == ".md" and "markdown" in cls._types:
-            return "markdown"
-        return None
+        return "markdown" if "markdown" in cls._types else None
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:

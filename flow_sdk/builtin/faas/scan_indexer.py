@@ -15,22 +15,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.asset_occurrences import (
-    asset_occurrence_dicts,
-    resolve_asset_collisions,
-    stored_asset_occurrences,
-)
-from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.asset_occurrences import asset_occurrence_dicts
 from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.indexer.index_function import (
+    preload_owners,
+    resolve_collisions,
+    resolve_ref_identity,
+)
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
-from flow_sdk.utils.git import git_asset_introduction
 
 SYSTEM_RESOURCE_PREFIX = "system_resource_claude_"
 
@@ -103,55 +101,30 @@ async def _project_nodes(
     seen: set[str] = set()
     resolved: list[tuple[Any, str, str]] = []
 
-    # Rows first: identity resolution needs to know who already owns each path,
-    # or a source whose capsule was wiped mints a fresh id and forks its entity.
-    # The same rows also feed the stored-occurrence view below — one fetch.
+    # The SAME pipeline the walk runs (``index_function``): rows first — who
+    # already owns each path, or a source whose capsule was wiped mints a fresh
+    # id and forks its entity — then one identity per ref, then collision
+    # resolution against the stored occurrences. One fetch feeds all three.
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
-    from flow_sdk.fs_store.path_owners import PathOwnerIndex  # noqa: PLC0415
 
-    driver = get_db_driver()
-    rows = (
-        await driver.list_entity_sources_by_type(et) if hasattr(driver, "list_entity_sources_by_type") else {}
-    )
-    owners = PathOwnerIndex.from_preload({et: {rid: src[0] for rid, src in rows.items() if src and src[0]}})
-    live_ids = rows.keys()
-
+    preload = await preload_owners(get_db_driver(), [et])
     for n in nodes:
         if n.record_type is None or str(n.record_type) != et:
             continue
         try:
-            canon = canonical_posix_path(str(n._path))
-            rid = info.mint_entity_id(n, owner_id=owners.owner_for(et, str(n._path), canon), live_ids=live_ids)
+            rid, canon = resolve_ref_identity(info, n, preload)
             resolved.append((n, rid, canon))
         except Exception:
             continue
 
     if stored is None:
-        stored = stored_asset_occurrences(et, rows)
+        stored = preload.occurrences
 
-    def _resolve_projection():
-        def _identity(candidate):
-            if not isinstance(candidate, str):
-                _node, rid, path = candidate
-                return et, rid, path
-            try:
-                ref = FSRef(candidate, record_type=RecordType(et))
-                rid = info.read_id(ref)
-            except Exception:
-                return None
-            if not rid:
-                return None
-            return et, rid, canonical_posix_path(candidate)
+    def _live_identity(candidate):
+        _node, rid, path = candidate
+        return et, rid, path
 
-        return resolve_asset_collisions(
-            resolved,
-            stored,
-            _identity,
-            git_asset_introduction,
-            datetime.now(timezone.utc),
-        )
-
-    decisions = await asyncio.to_thread(_resolve_projection)
+    decisions = await asyncio.to_thread(resolve_collisions, resolved, stored, _live_identity)
     decision_by_id = {item.entity_id: item for item in decisions}
     duplicates = {
         (item.entity_id, path)
@@ -199,13 +172,7 @@ async def _walk_type_records(
     nodes = await idx.scan(
         IndexerOptions(types=[RecordType(str(entity_type))], roots=scoped_roots)
     )
-    from flow_sdk.db import get_db_driver  # noqa: PLC0415
-    driver = get_db_driver()
-    stored = {}
-    if hasattr(driver, "list_entity_sources_by_type"):
-        rows = await driver.list_entity_sources_by_type(str(entity_type))
-        stored = stored_asset_occurrences(str(entity_type), rows)
-    return await _project_nodes(nodes, entity_type, simple, full, stored=stored)
+    return await _project_nodes(nodes, entity_type, simple, full)
 
 
 def _in_window(modified_at: str | None, start: str | None, end: str | None) -> bool:

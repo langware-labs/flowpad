@@ -17,7 +17,7 @@ from sqlalchemy import text
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import ScopeFilter
 
@@ -45,7 +45,7 @@ async def _seed_scoped_markdowns(tmp_path: Path) -> tuple[str, str]:
     idx.add_root(FSRef(user_root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_root(FSRef(proj_a_root, record_type=RecordType.USER_HOME_FOLDER, scope="project", project_id="proj-A"))
     idx.add_root(FSRef(proj_b_root, record_type=RecordType.USER_HOME_FOLDER, scope="project", project_id="proj-B"))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
 
     return "proj-A", "proj-B"

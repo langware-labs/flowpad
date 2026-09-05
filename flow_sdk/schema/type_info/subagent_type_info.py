@@ -2,7 +2,7 @@
 from flow_sdk.builtin.subagent import SubAgentSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -23,5 +23,9 @@ SUBAGENT = TypeInfo(
     index_fields=["description"],
     asset_class="shared",
     family="agents",
+    # ``<prefix>/agents/*.md`` under EVERY harness dot-dir (the class is
+    # shared: a codex-default machine writes ``.agents/agents``), so the read
+    # side agrees with wherever placement may write.
+    walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
     asset_spec=SubAgentSpec,
 )

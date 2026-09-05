@@ -224,6 +224,30 @@ def placed_under(asset_class: "AssetClass | None", family: "str | None", parent_
     return parts == [layout.root_prefix.lower(), family.lower()]
 
 
+def scan_mounts(
+    asset_class: "AssetClass | None",
+    harness: "HarnessType | None",
+    family: str | None,
+) -> tuple[str, ...]:
+    """Every scope-relative directory the SCAN looks in for a type — the read
+    side of ``family_subdir``.
+
+    ``family_subdir`` answers "where does flowpad WRITE the one canonical copy";
+    this answers "where may a copy already BE". They differ only for a
+    fan-out (SHARED) class: any harness's dot-dir may hold it (a codex-default
+    machine writes ``.agents/skills``), so every ``WORKER_PREFIX`` mount is
+    scanned — deduped (github/copilot share ``.github``) and sorted so
+    discovery order is deterministic across machines. ``()`` when the type has
+    no placement at all.
+    """
+    if asset_class is None or family is None:
+        return ()
+    layout = LAYOUT_REGISTRY[asset_class]
+    if layout.fan_out:
+        return tuple(sorted({layout.mount(family, harness=h) for h in WORKER_PREFIX}))
+    return (family_subdir(asset_class, harness, family, default_worker=HarnessType.CLAUDE),)
+
+
 def user_scope_allowed(asset_class: "AssetClass | None", *, is_git: bool = False) -> bool:
     """Whether "Install global" (user scope) is offered for a received asset —
     the single owner of that policy, replacing the old ``.claude``-prefix hack.

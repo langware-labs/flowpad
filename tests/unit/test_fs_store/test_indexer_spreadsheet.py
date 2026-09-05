@@ -1,8 +1,8 @@
 """Indexer tests for the SPREADSHEET type (flat CSV/XLSX file asset).
 
 Covers the slot functions end-to-end:
-- ``spreadsheet_in_folder_fn`` emits one FSRef per direct ``*.csv``/``*.xlsx``
-  child of a walked FOLDER (mirrors ``markdown_in_folder_fn``).
+- the declared spreadsheet walk emits one FSRef per direct ``*.csv``/``*.xlsx``
+  child of a walked FOLDER (the per-FOLDER emitter pattern).
 - ``extract_spreadsheet`` denormalizes format + row/col counts (CSV) and sheet
   names (XLSX) and gates on the extension.
 - ``TypeInfo.mint_id`` produces a stable, valid (v5) entity id.
@@ -25,8 +25,8 @@ from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
     spreadsheet_asset_hash,
-    spreadsheet_in_folder_fn,
 )
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -75,7 +75,7 @@ def test_walker_emits_one_ref_per_tabular_file(tmp_path: Path) -> None:
     _seed_xlsx(tmp_path, "b.xlsx")
     (tmp_path / "notes.md").write_text("# not tabular", encoding="utf-8")  # skipped
 
-    refs = spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False))
+    refs = walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False))
 
     assert all(r.record_type == RecordType.SPREADSHEET for r in refs)
     assert sorted(Path(r.path).name for r in refs) == ["a.csv", "b.xlsx"]
@@ -85,18 +85,18 @@ def test_walker_ignores_non_folder_nodes(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "a.csv")
     # A non-FOLDER node must not emit (only project_folder_walker FOLDER refs feed us).
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert spreadsheet_in_folder_fn([node], IndexerOptions(verbose=False)) == []
+    assert walker_for("spreadsheet")([node], IndexerOptions(verbose=False)) == []
 
 
 def test_walker_skips_appledouble(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "._resource.csv")
-    assert spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False)) == []
+    assert walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False)) == []
 
 
 def test_walker_is_not_recursive(tmp_path: Path) -> None:
     # A csv in a SUBfolder is emitted when THAT folder is walked, not the parent's.
     _seed_csv(tmp_path / "sub", "deep.csv")
-    refs = spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False))
+    refs = walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False))
     assert refs == []
 
 

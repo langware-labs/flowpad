@@ -94,7 +94,6 @@ def register_default_functions(idx: FSIndexer) -> None:
     anything to get it.
     """
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
-    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_files_extras_fn,
         claude_hook_files_fn,
@@ -105,20 +104,14 @@ def register_default_functions(idx: FSIndexer) -> None:
         claude_md_in_project_root_fn,
     )
     from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
 
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
-    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
-    from flow_sdk.fs_store.indexer.functions.markdown import (
-        markdown_flat_fn,
-        markdown_in_folder_fn,
-    )
+    from flow_sdk.fs_store.indexer.functions.markdown import markdown_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.mcp_server import (
         mcp_servers_in_file_fn,
         mcp_source_files_fn,
@@ -128,12 +121,8 @@ def register_default_functions(idx: FSIndexer) -> None:
         project_folder_walker_fn,
     )
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
-    from flow_sdk.fs_store.indexer.functions.secret_origin import secret_origin_in_folder_fn
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn, skill_in_folder_fn
-    from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn
-    from flow_sdk.fs_store.indexer.functions.todo import todo_fn
     from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
+    from flow_sdk.fs_store.indexer.walkers.generic import layout_walker, walk_roots
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     # USER_HOME_FOLDER expanders.
@@ -151,22 +140,9 @@ def register_default_functions(idx: FSIndexer) -> None:
     # type is reachable from its output (e.g. ``?type=skill`` skips every
     # function whose output is FOLDER / MARKDOWN / TASK / …).
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn, RecordType.PROJECT)
-    # Harness-ingest walker, NOT placement: ``~/.claude/plans/`` is Claude Code's
-    # own plan-mode output directory, so flowpad reads it the same way
-    # ``claude_sessions_fn`` reads ``~/.claude/projects/``. Flowpad's OWN plans are
-    # repo assets (``agentic-assets/plan/``) found by ``repo_assets_fn`` — which is
-    # why this is registered on user scope only.
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_plan_fn, RecordType.PLAN)
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_md_in_claude_subdir_fn, RecordType.CLAUDE_MD)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn, RecordType.CLAUDE_RULES)
-    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
-    idx.add_function(RecordType.USER_HOME_FOLDER, subagent_fn, RecordType.SUBAGENT)
-    # Dynamic workflows (.js) live beside the .md AMD workflows in .claude/workflows/.
-    idx.add_function(RecordType.USER_HOME_FOLDER, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
-    idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn, RecordType.MARKDOWN)
     # Hook indexing is two-stage (recursive into-file walk):
     #   stage 1: <root> → CLAUDE_HOOK_SOURCE (one per settings.json-like file)
     #   stage 2: CLAUDE_HOOK_SOURCE → CLAUDE_HOOK (one per hook entry, with json_path)
@@ -174,9 +150,8 @@ def register_default_functions(idx: FSIndexer) -> None:
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_files_extras_fn, RecordType.CLAUDE_HOOK_SOURCE)
     # MCP servers are two-stage (source file → per-server, with json_path).
     idx.add_function(RecordType.USER_HOME_FOLDER, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
-    # Plugins + todos are user-global single-file registries.
+    # Plugins are a user-global single-file registry.
     idx.add_function(RecordType.USER_HOME_FOLDER, plugin_fn, RecordType.PLUGIN)
-    idx.add_function(RecordType.USER_HOME_FOLDER, todo_fn, RecordType.TODO_FILE)
     # codex_projects_fn consolidates codex cwds into RecordType.PROJECT.
     # Annotating it with anything else makes the type-gating dispatcher skip it
     # for ``?type=project`` queries and silently drop every Codex-discovered
@@ -191,29 +166,17 @@ def register_default_functions(idx: FSIndexer) -> None:
 
     # REAL_PROJECT_CWD (decoded cwd) expanders
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_rules_fn, RecordType.CLAUDE_RULES)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, subagent_fn, RecordType.SUBAGENT)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
 
     # SYSTEM_ROOT (flowpad_assistant) expanders
-    idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.SYSTEM_ROOT, subagent_fn, RecordType.SUBAGENT)
     idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 
     # CWD_ROOT expanders. A cloned repo is scanned as a CWD_ROOT
     # (``_index_additional_dir``), so a journey a project SHIPS in
     # ``agentic-assets/journey/`` only becomes an entity — and can only
     # auto-launch — because ``repo_assets_fn`` below runs for this root too.
-    idx.add_function(RecordType.CWD_ROOT, claude_rules_fn, RecordType.CLAUDE_RULES)
-    idx.add_function(RecordType.CWD_ROOT, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.CWD_ROOT, subagent_fn, RecordType.SUBAGENT)
-    idx.add_function(RecordType.CWD_ROOT, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
-    idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
 
@@ -239,12 +202,25 @@ def register_default_functions(idx: FSIndexer) -> None:
     ):
         idx.add_function(_root, repo_assets_fn, repo_output_types)
 
-    # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
+    # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders.
+    # ``markdown_in_folder_fn`` stays bespoke: its typed-ancestor fence (skip
+    # every ``.md`` under a family dir another type claims, and the skill doc
+    # by name) is a cross-type rule the per-type ``Walk`` cannot state.
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
-    idx.add_function(RecordType.FOLDER, skill_in_folder_fn, RecordType.SKILL)
-    idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn, RecordType.SPREADSHEET)
-    idx.add_function(RecordType.FOLDER, secret_origin_in_folder_fn, RecordType.SECRET_ORIGIN)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
+
+    # Declared walks. Every type carrying ``TypeInfo.walk`` is scanned by the
+    # ONE generic walker, registered on each root its ``Walk`` names and
+    # emitting the type itself — a new declared type enrolls with no edit here.
+    # (claude_rules, command, plan, todo_file, subagent, skill, markdown's docs
+    # walk, secret_origin, dynamic_workflow, spreadsheet, …)
+    for type_name in SchemaRegistry.get_all_types():
+        info = SchemaRegistry.get(type_name)
+        if info is None or info.walk is None:
+            continue
+        walker = layout_walker(info)
+        for root in walk_roots(info):
+            idx.add_function(root, walker, RecordType(info.type_name))
 
     # Stage 2 of recursive hook walk: descend into each settings.json source
     # file emitted above and emit one CLAUDE_HOOK FSRef per hook entry.

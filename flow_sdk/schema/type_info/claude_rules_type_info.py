@@ -8,7 +8,7 @@ from flow_sdk.fs_store.indexer.functions.claude_rules import (
     extract_claude_rules,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -24,6 +24,8 @@ CLAUDE_RULES = TypeInfo(
     asset_class="harness",
     harness="claude",
     family="rules",
+    # ``.claude/rules/*.md`` (mount derived from placement) at user + both project roots.
+    walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root")),
     from_disk_fn=extract_claude_rules,
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),

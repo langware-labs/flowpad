@@ -75,7 +75,7 @@ async def test_an_unindexed_file_is_reported_not_indexed_and_never_indexed(clien
     for ``discover=False``. Patching the recovery to explode proves the branch
     is not merely unlikely — it is unreachable.
 
-    The fixture has to sit under ``docs/``: ``_typed_asset_shape`` only infers a
+    The fixture has to sit under ``docs/``: ``SchemaRegistry.type_for`` names a
     record type for markdown it can place, so a bare ``tmp_path/*.md`` never
     reaches the recovery branch at all and would make this test vacuous. That
     is also the real tagit path — ``docs/breadcrumbs/<slug>.md``.

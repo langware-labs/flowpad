@@ -355,7 +355,7 @@ async def test_index_status_reports_a_type_with_pending_changes_as_stale(
     from flow_sdk.fs_store.fs_record import FSRecord
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-    from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+    from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 
     root = tmp_path / "proj"
     (root / "docs").mkdir(parents=True)
@@ -364,7 +364,7 @@ async def test_index_status_reports_a_type_with_pending_changes_as_stale(
 
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     assert r1.per_type[RecordType.MARKDOWN].indexed == 1
 

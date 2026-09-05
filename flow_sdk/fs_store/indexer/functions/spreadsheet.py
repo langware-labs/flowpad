@@ -1,9 +1,9 @@
-"""Walker + extractor + id mint for SPREADSHEET records.
+"""Extractor + id mint for SPREADSHEET records.
 
 A spreadsheet is a flat file — ``*.csv`` (plain text) or ``*.xlsx`` (Office Open
-XML, a zip) discovered anywhere in a walked project, exactly like ``*.md``. This
-mirrors the MARKDOWN per-FOLDER emitter (``markdown_in_folder_fn``), NOT the
-DECK folder-marker walker.
+XML, a zip) discovered anywhere in a walked project, exactly like ``*.md``.
+Discovery is the type's declared ``walk`` (``spreadsheet_type_info.py``): the
+FOLDER-scaffold walk over ``File(ext=".csv", also=(".xlsx",))``.
 
 The extractor denormalizes lightweight shape metadata (row/col counts for CSV,
 sheet names for XLSX) and a bounded FTS ``content`` preview. XLSX sheet names are
@@ -24,59 +24,12 @@ from xml.etree import ElementTree as ET
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 _EXTS: frozenset[str] = frozenset({".csv", ".xlsx"})
 # Bound the FTS preview so a 50k-row CSV doesn't balloon the index.
 _MAX_PREVIEW_ROWS = 50
 _MAX_PREVIEW_CHARS = 8_000
-
-
-def _is_appledouble(name: str) -> bool:
-    """macOS AppleDouble sidecars (``._foo.csv``) — resource-fork binaries that
-    share the extension but hold no tabular data."""
-    return name.startswith("._")
-
-
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def spreadsheet_in_folder_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """For each walked FOLDER, emit its direct ``*.csv`` / ``*.xlsx`` children.
-
-    The folder walker already descended + gitignore-filtered every directory;
-    this only emits (``glob``, not ``rglob``). Mirrors ``markdown_in_folder_fn``.
-    """
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        if node.record_type != RecordType.FOLDER:
-            continue
-        folder_path = Path(node.path)
-        try:
-            entries = sorted(
-                p for p in folder_path.iterdir()
-                if p.suffix.lower() in _EXTS
-            )
-        except OSError:
-            continue
-        for entry in entries:
-            if _is_appledouble(entry.name):
-                continue
-            try:
-                if not entry.is_file():
-                    continue
-            except OSError:
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.SPREADSHEET, parent=node))
-    return out
 
 
 # ── id mint ───────────────────────────────────────────────────────────────────
