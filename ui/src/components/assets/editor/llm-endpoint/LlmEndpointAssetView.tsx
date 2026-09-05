@@ -13,12 +13,13 @@
  * minimal completion down the resolved chain, which is the only honest way to say
  * "this works", since the credential and the limits live on hops this view cannot see.
  */
-import { type LLMEndpointOffer } from '@sdk';
+import { type LLMEndpointOffer, type LLMEndpointTestResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound, Lock } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { FundingProvenance } from '@src/components/llm-endpoints/FundingProvenance';
 import { ProviderBadge } from '@src/components/llm-endpoints/LlmEndpointsList';
 import { TestEndpointButton } from '@src/components/llm-endpoints/TestEndpointButton';
 import { LIMIT_LABELS } from '@src/components/llm-endpoints/LimitsEditor';
@@ -157,6 +158,9 @@ export interface LlmEndpointAssetViewProps {
 export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
   const { t } = useLingui();
   const { endpoint, isLoading } = useMyEndpoint(value);
+  // Mirrored out of the Test button so the provenance below can name what the run spent. A
+  // tick on its own says a call worked, not whose key worked — see `FundingProvenance`.
+  const [verdict, setVerdict] = useState<LLMEndpointTestResult | null>(null);
   // The type's glyph comes from the backend registry, never a literal (CLAUDE.md's icon law).
   const EndpointIcon = iconForType('llm_endpoint');
 
@@ -207,8 +211,10 @@ export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
             <Trans>read only</Trans>
           </Badge>
           <span className="flex-1" />
-          <TestEndpointButton endpointId={endpoint.id} />
+          <TestEndpointButton endpointId={endpoint.id} onVerdict={setVerdict} />
         </div>
+
+        <FundingProvenance endpoint={endpoint} verdict={verdict} />
 
         <Section title={<Trans>Budget</Trans>}>
           <Budget limits={endpoint.limits} />

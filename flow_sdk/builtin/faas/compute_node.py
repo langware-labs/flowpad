@@ -1371,6 +1371,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
             HubEndpointBindError,
             bind_hub_llm_endpoint,
+            chain_hub_llm_endpoint,
             hub_llm_endpoint_status,
             select_llm_source,
             test_hub_llm_endpoint,
@@ -1381,6 +1382,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         method = (request_info.request.method if request_info and request_info.request else "GET").upper()
         try:
             if method == "GET":
+                sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+                # ``chain/<id>`` is a READ of the hub's resolved chain -- which hops a call
+                # travels and whose key it ends up spending. A GET because it is a report,
+                # unlike ``test``, which spends money.
+                if sub_path.startswith("chain/"):
+                    return ApiSuccessResponse(data=await chain_hub_llm_endpoint(sub_path[len("chain/") :]))
                 return ApiSuccessResponse(data=await hub_llm_endpoint_status())
             if method == "POST":
                 body = (await request_info.get_post_data() if request_info else {}) or {}

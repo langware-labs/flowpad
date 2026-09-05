@@ -184,3 +184,60 @@ async def test_test_without_an_endpoint_is_400(bootstrapped_client, hub_login, h
     assert r.json()["status"] == "FAIL"
     assert r.json().get("status_code") == 400 or r.status_code == 400
     assert hub_test_call == []
+
+
+# ── chain: what a call through the endpoint actually spends ──────────────────────────
+#
+# The companion of ``test``, and the reason both exist: a verdict says the call SUCCEEDED, it
+# does not say whose key paid. Same box channel, for the same reason -- the hub's ``chain``
+# action addresses an entity this box has no row for.
+
+CHAIN = {
+    "entry": {"id": "llm_endpoint-ep1", "name": "mine"},
+    "hops": [{"id": "llm_endpoint-root1", "name": "Acme pool", "provider": "openrouter", "is_root": True}],
+    "paths": [["llm_endpoint-ep1", "llm_endpoint-root1"]],
+    "missing_sources": [],
+    "sticky_root_for_me": None,
+}
+
+
+@pytest.fixture
+def hub_chain_call(monkeypatch):
+    """Capture the hub GET the sub-action makes, and answer it with a chain report."""
+    calls: list[tuple] = []
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        calls.append((entity_type, entity_id, action))
+        return {"status": "SUCCESS", "data": CHAIN}
+
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", _hub_get)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sent", ["ep1", "llm_endpoint-ep1", "llm_endpoint:ep1"])
+async def test_chain_reports_which_root_holds_the_key(bootstrapped_client, hub_login, hub_chain_call, sent):
+    r = await bootstrapped_client.get(f"{PATH}/chain/{sent}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "SUCCESS"
+    # Unwrapped out of the hub's envelope, and every id spelling resolves to the same bare id.
+    assert body["data"] == CHAIN
+    assert hub_chain_call == [("llm_endpoint", "ep1", "chain")]
+
+
+@pytest.mark.asyncio
+async def test_chain_without_login_is_409(bootstrapped_client, monkeypatch, hub_chain_call):
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.resolve_hub_api_key", lambda: None)
+    r = await bootstrapped_client.get(f"{PATH}/chain/ep1")
+    assert r.json()["status"] == "FAIL"
+    assert r.json().get("status_code") == 409 or r.status_code == 409
+    assert hub_chain_call == [], "a signed-out box must not reach the hub at all"
+
+
+@pytest.mark.asyncio
+async def test_the_bare_get_is_still_the_status(bootstrapped_client, hub_login, hub_chain_call):
+    """The sub-path is what selects the chain; without one this stays the funding status."""
+    body = (await bootstrapped_client.get(PATH)).json()
+    assert body["status"] == "SUCCESS"
+    assert "available" in body["data"] and "hub_user_typeid" in body["data"]
