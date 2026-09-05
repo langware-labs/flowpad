@@ -33,8 +33,10 @@ export const HEALTH_STYLE: Record<SourceHealth, { label: string; chip: string; b
   },
   config_error: {
     label: 'needs attention',
-    chip: 'bg-destructive/10 text-destructive',
-    border: 'border-s-destructive/70',
+    // Not `text-destructive`: on the dark theme that is a 10% red tint under a
+    // saturated red, which does not read. Same pairing the amber states use.
+    chip: 'bg-red-500/10 text-red-700 dark:text-red-300',
+    border: 'border-s-red-500/70',
   },
 };
 
