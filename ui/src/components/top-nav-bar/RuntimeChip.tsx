@@ -48,7 +48,12 @@ const WIKI_PAGE = 'Runtime environments';
 function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string }) {
   const { base, badge } = RUNTIME_APPEARANCE[kind];
   return (
-    <IconWithBadge Base={base} Badge={badge} className={cn('bg-inherit', className)} badgeClassName="bg-inherit" />
+    <IconWithBadge
+      Base={base}
+      Badge={badge ?? null}
+      className={cn('bg-inherit', className)}
+      badgeClassName="bg-inherit"
+    />
   );
 }
 

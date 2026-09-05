@@ -21,7 +21,6 @@ from pydantic import BaseModel, Field, model_validator
 from flow_sdk import service_log
 from flow_sdk.api.api_types.api_field import NoDBAPIField, Sharing
 from flow_sdk.api.api_types.messages import DataOpMessage, OperationType
-from flow_sdk.fs_store.type_id import TypeId, is_namespace_key
 from flow_sdk.db.db_relationship import DBRelationshipType
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, db_fields_sync
 from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver
@@ -35,6 +34,7 @@ from flow_sdk.db.rolerelationship import RoleRelationship
 from flow_sdk.db.tracked_collections import TrackedDict, TrackedList
 from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes, ExpansionType, RelationshipDirection
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId, is_namespace_key
 
 DBEntityType = TypeVar("DBEntityType", bound="DBEntity")
 

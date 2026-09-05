@@ -20,9 +20,11 @@ beforeEach(async () => {
   vi.spyOn(realm.sdk.dataManager, 'bootstrap').mockImplementation(() => Promise.resolve(bootstrap));
   vi.spyOn(realm.sdk.authManager, 'init').mockResolvedValue(undefined);
   vi.spyOn(realm.sdk.dataContext, 'initContext').mockResolvedValue(undefined);
-  vi.spyOn(realm.sdk.cloudManager, 'bootstrap').mockResolvedValue(undefined);
+  vi.spyOn(realm.sdk.cloudManager, 'seedBootstrap').mockResolvedValue(undefined);
+  vi.spyOn(realm.sdk.cloudManager, 'startSubscriptions').mockResolvedValue(undefined);
+  vi.spyOn(realm.sdk.cloudManager, 'refreshStatus').mockResolvedValue(null);
   const { privacyManager } = await import('@sdk/services/privacy_mode');
-  vi.spyOn(privacyManager, 'bootstrap').mockResolvedValue(undefined);
+  vi.spyOn(privacyManager, 'startSubscriptions').mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -33,26 +35,38 @@ afterEach(() => {
 describe('SDK discovery after readiness', () => {
   it('completes initialization once while info remains pending', async () => {
     const pending = deferred<DeferredInfo>();
+    const started = deferred<void>();
     const info = vi.spyOn(realm.sdk.dataManager, 'info').mockImplementation(() => {
       expect(window.appReady).toBe(true);
+      started.resolve();
       return pending.promise;
     });
     await Promise.all([realm.main.initSdk(), realm.main.initSdk()]);
     expect(window.appReady).toBe(true);
+    expect(info).not.toHaveBeenCalled();
+    const lazy = realm.main.asyncSdkInit();
+    expect(realm.main.asyncSdkInit()).toBe(lazy);
+    await started.promise;
     expect(info).toHaveBeenCalledTimes(1);
     expect(realm.sdk.dataContext.snifferReady).toBe(false);
     pending.resolve({ sniffer_installed: false, sniffer_hook: null });
-    await pending.promise;
+    await lazy;
     expect(realm.sdk.dataContext.snifferReady).toBe(true);
   });
 
   it('contains a rejected info request without changing SDK readiness', async () => {
     const pending = deferred<DeferredInfo>();
-    vi.spyOn(realm.sdk.dataManager, 'info').mockReturnValue(pending.promise);
+    const started = deferred<void>();
+    vi.spyOn(realm.sdk.dataManager, 'info').mockImplementation(() => {
+      started.resolve();
+      return pending.promise;
+    });
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await realm.main.initSdk();
+    const lazy = realm.main.asyncSdkInit();
+    await started.promise;
     pending.reject(new Error('info offline'));
-    await pending.promise.catch(() => undefined);
+    await lazy;
     expect(window.appReady).toBe(true);
     expect(realm.sdk.dataContext.bootstrapError).toBeNull();
     expect(realm.sdk.dataContext.snifferReady).toBe(false);
@@ -60,7 +74,7 @@ describe('SDK discovery after readiness', () => {
   });
 
   it('preserves early identity and paths and publishes deferred status and notice', async () => {
-    const cloudBootstrap = vi.spyOn(realm.sdk.cloudManager, 'bootstrap');
+    const cloudBootstrap = vi.spyOn(realm.sdk.cloudManager, 'seedBootstrap');
     const early = { paths: { home: 'Users/test', workspace: 'Users/test/work' }, login: { user_id: 'local-login' } };
     bootstrap.desktop_info = early as BootstrapInfo['desktop_info'];
     const notice = { id: 'recovery', level: 'warning' as const, title: 'Recovered', message: 'Sign in again' };
@@ -73,6 +87,7 @@ describe('SDK discovery after readiness', () => {
       observed.push(realm.sdk.dataContext.bootstrapInfo?.notice?.id);
     });
     await realm.main.initSdk();
+    await realm.main.asyncSdkInit();
     expect(realm.sdk.dataContext.desktopInfo).toMatchObject({ ...early, installed_agents: ['claude'] });
     expect(observed).toContain('recovery');
     expect(cloudBootstrap).toHaveBeenCalledTimes(1);
@@ -82,6 +97,7 @@ describe('SDK discovery after readiness', () => {
     bootstrap = { types: [], supported_pages: [page], sniffer_installed: false };
     const info = vi.spyOn(realm.sdk.dataManager, 'info');
     await realm.main.initSdk();
+    await realm.main.asyncSdkInit();
     expect(info).not.toHaveBeenCalled();
     expect(window.appReady).toBe(true);
     expect(realm.sdk.dataContext.snifferReady).toBe(true);
@@ -91,13 +107,91 @@ describe('SDK discovery after readiness', () => {
     bootstrap = { types: [], supported_pages: ['hub'] };
     const cloud = deferred<void>();
     const started = deferred<void>();
-    vi.spyOn(realm.sdk.cloudManager, 'bootstrap').mockImplementation(() => { started.resolve(); return cloud.promise; });
+    vi.spyOn(realm.sdk.cloudManager, 'seedBootstrap').mockImplementation(() => { started.resolve(); return cloud.promise; });
     const ready = realm.main.initSdk();
     await started.promise;
     expect(window.appReady).toBe(false);
     cloud.resolve();
     await ready;
     expect(window.appReady).toBe(true);
+  });
+
+  it('waits for required init when lazy init is requested early', async () => {
+    const core = deferred<BootstrapInfo>();
+    vi.spyOn(realm.sdk.dataManager, 'bootstrap').mockReturnValue(core.promise);
+    const info = vi.spyOn(realm.sdk.dataManager, 'info').mockResolvedValue({ sniffer_installed: false });
+    const lazy = realm.main.asyncSdkInit();
+    expect(info).not.toHaveBeenCalled();
+    core.resolve(bootstrap);
+    await lazy;
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(window.appReady).toBe(true);
+  });
+
+  it('starts no optional jobs if required initialization fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(realm.sdk.dataManager, 'bootstrap').mockRejectedValue(new Error('offline'));
+    const info = vi.spyOn(realm.sdk.dataManager, 'info');
+    const refreshStatus = vi.spyOn(realm.sdk.cloudManager, 'refreshStatus');
+    await realm.main.asyncSdkInit();
+    expect(info).not.toHaveBeenCalled();
+    expect(refreshStatus).not.toHaveBeenCalled();
+    expect(window.appReady).toBe(false);
+  });
+
+  it('starts independent services while cloud refresh is pending and keeps the snapshot shallow', async () => {
+    const cloud = deferred<null>();
+    const subscribed = deferred<void>();
+    const startSubscriptions = vi.spyOn(realm.sdk.cloudManager, 'startSubscriptions').mockImplementation(() => {
+      subscribed.resolve();
+      return Promise.resolve();
+    });
+    vi.spyOn(realm.sdk.cloudManager, 'refreshStatus').mockReturnValue(cloud.promise);
+    vi.spyOn(realm.sdk.dataManager, 'info').mockResolvedValue({ sniffer_installed: false });
+    await realm.main.initSdk();
+    expect(realm.sdk.dataContext.bootstrapInfo).toBe(bootstrap);
+    const lazy = realm.main.asyncSdkInit();
+    await subscribed.promise;
+    expect(startSubscriptions).toHaveBeenCalledTimes(1);
+    expect(window.appReady).toBe(true);
+    cloud.resolve(null);
+    await lazy;
+  });
+
+  it('registers live listeners before proactively connecting, independently of info', async () => {
+    bootstrap.user = { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', type: 'user' } as unknown as NonNullable<BootstrapInfo['user']>;
+    const info = deferred<DeferredInfo>();
+    vi.spyOn(realm.sdk.dataManager, 'info').mockReturnValue(info.promise);
+    const listeners = deferred<void>();
+    const started = deferred<void>();
+    vi.spyOn(realm.sdk.cloudManager, 'startSubscriptions').mockImplementation(() => {
+      started.resolve();
+      return listeners.promise;
+    });
+    const connect = vi.spyOn(realm.sdk.connectionManager, 'connect').mockResolvedValue(undefined);
+    await realm.main.initSdk();
+    const lazy = realm.main.asyncSdkInit();
+    await started.promise;
+    expect(connect).not.toHaveBeenCalled();
+    listeners.resolve();
+    info.resolve({ sniffer_installed: false });
+    await lazy;
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches bootstrap entities without fetching the project collection or compute node', async () => {
+    const computeNode = { id: 'bd3fb15c-958d-46e8-9c6b-a6e34d7e6a45', type: 'compute_node', uname: 'local' } as unknown as NonNullable<BootstrapInfo['default_compute_node']>;
+    const project = { id: '647908c3-55dc-4597-b3b6-1c1dd4b00886', type: 'project' } as unknown as NonNullable<BootstrapInfo['default_project']>;
+    bootstrap.default_compute_node = computeNode;
+    bootstrap.default_project = project;
+    const fetch = vi.spyOn(realm.sdk.dataManager, 'fetchByTypeId');
+    const query = vi.spyOn(realm.sdk.Project, 'query');
+    await realm.main.initSdk();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(realm.sdk.dataContext.computeNode?.id).toBe(computeNode.id);
+    expect(realm.sdk.dataContext.project).toBeNull();
+    expect(realm.sdk.Project.getByIdFromCache(project.id)).toBeTruthy();
   });
 
   it('does not wait for a legacy sniffer watch', async () => {
@@ -108,8 +202,9 @@ describe('SDK discovery after readiness', () => {
     await realm.main.initSdk();
     expect(window.appReady).toBe(true);
     expect(realm.sdk.dataContext.snifferReady).toBe(false);
+    const lazy = realm.main.asyncSdkInit();
     watch.resolve(() => Promise.resolve());
-    await watch.promise;
+    await lazy;
   });
 });
 

@@ -139,16 +139,41 @@ server-declared page set:
   desktop `/cloud/*` bridge endpoints.
 - **Desktop**: `bootstrap.user` remains the local desktop identity while
   `CloudManager` seeds cloud identity and connection state from
-  `desktop_info`. That bootstrap remains fire-and-forget so it does not add a
-  new render gate; subsequent cloud state continues through the desktop
-  `/cloud/status` and cloud-status WebSocket channels.
+  `desktop_info`. The SDK awaits this local seed before rendering; the later
+  `/cloud/status` refresh and cloud-status WebSocket subscriptions belong to
+  `asyncSdkInit()` and never gate the router.
+
+The required `initSdk()` promise only seeds the registry, icons, known cloud
+identity/privacy, local authentication, compute node, user and workspace. It
+caches the default project without selecting it. Bootstrap is an immutable
+snapshot (`observable.ref`); deferred info replaces the snapshot to notify
+observers without recursively wrapping the entire schema payload.
+
+Route loaders select the project from the URL or owning entity. An unscoped
+context-neutral route can restore browser memory by ID, falling back to the
+cached server default for a missing/inaccessible row. It never queries the
+whole project collection. Explicit global scopes skip that restoration.
+Project-context notifications continue to drive the project locale.
+
+`asyncSdkInit()` owns optional info/sniffer work, desktop cloud refresh, live
+cloud/privacy listeners and proactive socket connection. It registers the
+listeners before connecting and isolates each job's failure. Requested
+workspace discovery also runs here, discarding a result if workspace selection
+changed while discovery was pending. It never selects an active project.
+Standalone SDK consumers call `asyncSdkInit()` after mounting their UI; an
+early call waits for successful core initialization. Browser Performance marks
+`sdk:init:start`, `sdk:init:ready`, `sdk:async:start` and
+`sdk:async:settled` distinguish core duration, navigation-to-ready and optional
+completion. Optional jobs also publish their own start/settled marks.
 
 ## 6. Deferred runtime information (`bootstrap.py:info`)
 
-Bootstrap advertises `info_available: true`. After the shared SDK init promise
-resolves, the SDK starts one detached `GET /api/v1/graph/info` through
-`dataManager`. This request and its sniffer WebSocket watch never join SDK,
-router, or editor readiness. Older servers without the flag retain their
+Bootstrap advertises `info_available: true`. After the app mounts and yields
+a paint opportunity (two animation frames), it calls the shared
+`asyncSdkInit()` promise. One of its independent jobs fetches
+`GET /api/v1/graph/info` through `dataManager`. This request and its sniffer
+WebSocket watch never join SDK, router, or editor readiness. Older servers
+without the flag retain their
 bootstrap-provided status and do not receive an unsupported request.
 
 `info` owns installed-agent/provider detection, cloud credential validation,
@@ -181,3 +206,22 @@ Chromium validation held info unresolved while opening, selecting, scrolling,
 and editing the document, then confirmed the edit and editor instance survived
 info completion. An info 503 also left the document usable. Other SDK/project
 and document loads still contribute to total page-open time.
+
+The subsequent SDK split was validated on the same copied document with Chrome
+152 and Python 3.13. Five warm loads (one with bootstrap/info cache expiry)
+measured required SDK initialization at **20.6–52.4ms**, including bootstrap at
+**13.0–36.1ms**. Navigation-to-SDK-ready was **56.0–84.2ms**. Median first
+contentful paint was **128ms** and document text appeared at **1,843.9ms**.
+A fresh browser profile reached SDK readiness at **366.3ms** (40.5ms inside
+SDK init), first contentful paint at **532ms**, and document text at **2,799.9ms**.
+Fresh browser profile does not imply cold backend or OS caches.
+
+Holding both optional info and cloud status requests still allowed editing;
+releasing them preserved the editor DOM and typed text. Failing both requests
+also left the document usable, with no unhandled browser errors. The remaining
+warm document delay is dominated by the mounted UI's project collection,
+asset catalog and index-status request burst: the document's record-reference
+request spent about 1.51 seconds queued before send. A diagnostic replay of
+those three responses brought document readiness to 565.5ms versus 1,836.3ms
+in its repeated control. This is a controlled diagnostic, not shipped timing;
+those mounted-view requests remain a separate optimization target.

@@ -41,10 +41,10 @@ load_actions()
 # Entities self-register via their metaclass on import; this import's side
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
-
 from flow_sdk.server import FlowServer
 
 from .routes import (
+    activity_router,
     agent_records_router,
     asset_share_router,
     assets_router,
@@ -57,7 +57,6 @@ from .routes import (
     detection_router,
     directory_router,
     display_router,
-    activity_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -82,8 +81,8 @@ from .routes import (
     version_router,
     watch_router,
     webhook_api_router,
-    whatsapp_router,
     websocket_router,
+    whatsapp_router,
     worldview_router,
 )
 

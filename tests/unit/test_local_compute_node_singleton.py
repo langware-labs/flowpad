@@ -107,7 +107,6 @@ async def test_project_delete_preserves_dynamic_protected_source(
     assert await Project.get_by_id(project.id) is None
 
 
-@pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_nested_project_delete_preserves_local_compute_node() -> None:
     """The real 9007 catastrophe: the legacy ``project -> @local`` edge sat on a

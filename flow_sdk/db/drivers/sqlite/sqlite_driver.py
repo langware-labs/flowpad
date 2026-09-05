@@ -19,7 +19,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild, EntityLocation
+from flow_sdk.db.drivers.db_base_record import (
+    BuiltinEntityType,
+    DBBaseRecord,
+    DBBaseRelationship,
+    EntityChild,
+    EntityLocation,
+)
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
     DBConfig,

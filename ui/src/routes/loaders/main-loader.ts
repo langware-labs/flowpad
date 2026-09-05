@@ -78,7 +78,7 @@ async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string):
 
 /**
  * Ensure compute node is loaded for the current project.
- * Project setup is handled by initSdk -> initContext -> setupProject.
+ * The route loader owns project selection; initSdk only caches the default.
  */
 async function ensureComputeNodeLoaded(): Promise<void> {
   if (dataContext.project && !dataContext.computeNode) {
@@ -275,7 +275,7 @@ export async function loadAgentApp(args: LoaderArgs) {
   }
 
   if (!processId) {
-    // Project is already loaded by initSdk -> setupProject, just ensure compute node.
+    // The SDK seeds the compute node; the dock loader resolves its project.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
     if (dockForSetup) {
