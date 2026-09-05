@@ -312,13 +312,8 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        # AWAIT the stop, don't just signal it. ``request_stop()`` cancels the
-        # ``hub-ws-client`` task and returns; if the caller's event loop is torn
-        # down before that task finishes its own cleanup (the SDK test tier
-        # does exactly this: login → logout → loop closed), the singleton keeps
-        # a never-done Task bound to a dead loop, and the next ``stop()`` from
-        # any later loop dies with ``await wasn't used with future``.
-        await hub_ws_manager.stop()
+        # Signal only — this can run inside the WS task tree; see request_stop.
+        hub_ws_manager.request_stop()
     except Exception:
         pass
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 import flow_sdk
@@ -10,6 +12,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
+from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 
@@ -104,16 +107,11 @@ async def test_agent_enables_email_once():
             try:
                 if logged_in and agent.remote:
                     try:
-                        # `agent.inbox`, never the local `inbox`: when the test
-                        # fails before that name is bound, referencing it raises
-                        # UnboundLocalError from the finally block and MASKS the
-                        # real failure.
-                        # Re-resolve from the Hub rather than trusting the
-                        # cached projection: if the cache is the thing that
-                        # broke, trusting it strands a billable address.
-                        current = agent.inbox or await EmailInbox.for_agent(agent)
-                        if current is not None:
-                            await current.release()
+                        # Release by id, not through the projection under test:
+                        # a broken cache must not strand a billable address.
+                        # A second DELETE answers 404, so tolerate it.
+                        with contextlib.suppress(Exception):
+                            await get_email_inbox_driver().delete_inbox(agent.id)
                     finally:
                         await agent.unshare()
             finally:
