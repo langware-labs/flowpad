@@ -1,3 +1,5 @@
+import { prefetchStartupAssets } from './lazy/startup';
+import { lazyAssets, LazyAsset } from './lazy';
 import axios from 'axios';
 import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
@@ -20,7 +22,6 @@ import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
 import type { BootstrapInfo } from './models/BootstrapInfo';
-import { loadDeferredInfo } from './services/deferredInfo';
 
 declare global {
   interface Window {
@@ -73,9 +74,6 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       await cloudManager.seedBootstrap(bootstrapInfo);
       privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
 
-      // Seed the capabilities summary so the Capabilities view paints without a
-      // second round-trip (it can still refresh via getSummary(true)).
-      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
 
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)
@@ -150,6 +148,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId, workspace.typeId);
       }
       await authManager.init(user);
+      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
       await dataContext.initContext();
       //await acceptInvitation(url); // TODO Handle this
       // Expose introspection hooks for manual_regression specs (and for
@@ -209,7 +208,6 @@ export function asyncSdkInit(): Promise<void> {
       asyncInitPromise = null;
       return;
     }
-    const bootstrap = initialized;
     performance.mark?.('sdk:async:start');
     const run = async (name: string, job: () => Promise<unknown>) => {
       performance.mark?.(`sdk:async:${name}:start`);
@@ -222,8 +220,13 @@ export function asyncSdkInit(): Promise<void> {
       }
     };
     await Promise.all([
-      run('info', () => loadDeferredInfo(bootstrap)),
-      run('cloud-status', () => cloudManager.refreshStatus()),
+      run('info', () => lazyAssets.load(LazyAsset.RuntimeInfo)),
+      run('cloud-status', () => lazyAssets.load(LazyAsset.CloudStatus)),
+      run('assets', prefetchStartupAssets),
+      run('index-activity', async () => {
+        const { systemTools } = await import('./services/system-tools-service');
+        await systemTools.refreshActivityStatus(false);
+      }),
       run('live', async () => {
         await Promise.all([
           run('cloud-listeners', () => cloudManager.startSubscriptions()),

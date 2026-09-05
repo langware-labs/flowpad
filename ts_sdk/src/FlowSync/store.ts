@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -227,6 +228,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  private readScope: string | undefined;
+  private queryEpoch = 0;
+
+  /** Do not let a previous identity's pending query populate the new identity's entity store. */
+  public adoptReadScope(scope: string): void {
+    if (scope === this.readScope) return;
+    this.queryEpoch++;
+    this.watchedQueries = new WatchQueryMap<T>();
+    if (this.readScope !== undefined) void this.clearCache();
+    this.readScope = scope;
+  }
+
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
   private editMarker: EntityEditMarker;
@@ -358,7 +371,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       return;
     }
     try {
-      const raw = await apiClient.get<any>('/graph/compute_node/@local/fs-records/index-status');
+      const raw = await lazyAssets.refresh(LazyAsset.IndexStatus);
       this.setScanInfo({
         total_indexed: raw?.per_type?.reduce((s: number, t: any) => s + (t.entity_count ?? 0), 0) ?? 0,
         last_indexed_at: raw?.last_indexed_at ?? null,
@@ -1581,6 +1594,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private async _query<U extends T>(request: QueryRequest): Promise<U[]> {
     const { type, query, scope } = request;
+    const epoch = this.queryEpoch;
 
     // Check if WatchedQuery with pending promise already exists (another call beat us to it)
     const existingWatchedQuery = this.watchedQueries.getWatchedQuery(request);
@@ -1634,6 +1648,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const entitiesJson: IEntity[] = (await apiClient.get<IEntity[]>(endpoint, {
         params: apiQuery,
       })) as unknown as IEntity[];
+      if (epoch !== this.queryEpoch) throw new Error('SDK scope changed');
       const queryResult: U[] = [];
       for (const entityJson of entitiesJson) {
         if (!entityJson['type'] || !entityJson['id']) {
@@ -1672,7 +1687,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // Update the WatchedQuery with final results and clear pending promise
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
-      if (watchedQuery) {
+      if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.results = results;
         watchedQuery.pendingPromise = undefined;
       }
@@ -1680,7 +1695,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     } catch (error) {
       // Clear pending promise on error
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
-      if (watchedQuery) {
+      if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.pendingPromise = undefined;
       }
       throw error;

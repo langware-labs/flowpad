@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { dataContext, dataManager, systemTools } from '@sdk';
+import { dataContext, dataManager } from '@sdk';
 import {
   SearchCalibration,
   SearchFilters,
@@ -117,9 +117,6 @@ export function SearchView() {
   // Re-seed progress state from backend after page refresh so the footer
   // indicator reappears mid-job. The modal stays closed until the user opens
   // it explicitly via the footer indicator.
-  useEffect(() => {
-    void systemTools.refreshActivityStatus();
-  }, []);
 
   const handleRebuildIndex = useCallback(() => {
     void resetAndRescan();

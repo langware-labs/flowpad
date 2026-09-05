@@ -1,3 +1,4 @@
+import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
 import {
   AgentHook,
   dataContext,
@@ -98,6 +99,7 @@ function extractSessionId(item: FlowData): string | null {
 }
 
 export function useHooksSniffer() {
+  useRuntimeInfo();
   const [hookId, setHookId] = useState<string | null>(() => dataContext.snifferHook?.entity.id ?? null);
   const [isToggling, setIsToggling] = useState(false);
   const [isPaused, setIsPaused] = useState(false);

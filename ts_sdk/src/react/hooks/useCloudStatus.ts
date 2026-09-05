@@ -1,3 +1,5 @@
+import { LazyAsset } from '../../lazy';
+import { useLazyAsset } from './useLazyAsset';
 import { useEffect, useState } from 'react';
 import { cloudManager } from '../../services/cloud_login';
 import { ConnectionSlot, HubConnectionStatus, HubLoginStatus, LoginSlot } from '../../services/cloud_status';
@@ -14,6 +16,7 @@ export interface UseCloudStatusResult {
  * Re-renders on either login_status_changed or connection_status_changed.
  */
 export function useCloudStatus(): UseCloudStatusResult {
+  useLazyAsset(LazyAsset.CloudStatus, undefined, { priority: 'background' });
   const [, setVersion] = useState(0);
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);

@@ -23,8 +23,10 @@
  */
 
 import { connectionManager } from '@sdk/websocket';
-import { isTerminal, listActivities, type ActivityProgressSpec } from '@sdk/activity';
-import { useSyncExternalStore } from 'react';
+import { isTerminal, type ActivityProgressSpec } from '@sdk/activity';
+import { useEffect, useSyncExternalStore } from 'react';
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 
 /** The FlowData element activity snapshots ride, shared with older progress payloads. */
 const PROGRESS_ELEMENT = 'progress_report';
@@ -140,14 +142,13 @@ function attachOnce(): void {
   // dropped connection leaves the chip frozen on whatever it last heard, which looks
   // exactly like a stalled job.
   connectionManager.on('on_open', () => {
-    void replay();
+    void replay().catch(() => {});
   });
-  void replay();
 }
 
 /** Seed from the backend. Covers first paint and any reconnect gap. */
 export async function replay(): Promise<void> {
-  const rows = await listActivities(null, true);
+  const rows = await lazyAssets.refresh(LazyAsset.Activities);
   for (const row of rows) handleActivitySnapshot(row);
 }
 
@@ -176,13 +177,21 @@ export function getActivity(path: string, scope?: string | null): ActivityProgre
   return specs.get(`${scope ?? ''}::${path}`) ?? null;
 }
 
+/** Snapshot hydration is lazy; live events continue through the existing sequence guard. */
+function useActivityHydration(): void {
+  const { data } = useLazyAsset(LazyAsset.Activities, undefined, { priority: 'background' });
+  useEffect(() => { for (const row of data ?? []) handleActivitySnapshot(row); }, [data]);
+}
+
 /** Every live root, most recently updated first. */
 export function useActivities(): ReadonlyArray<ActivityProgressSpec> {
+  useActivityHydration();
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /** One activity by address, or `null` when nothing is live there. */
 export function useActivitySpec(path: string, scope?: string | null): ActivityProgressSpec | null {
+  useActivityHydration();
   // Subscribe for re-renders, then read the map directly — a linear scan of the snapshot
   // is not needed when the store is already keyed by address.
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -191,5 +200,6 @@ export function useActivitySpec(path: string, scope?: string | null): ActivityPr
 
 /** How many activities are live — for a caller that needs the count and not the rows. */
 export function useActivityCount(): number {
+  useActivityHydration();
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot).length;
 }

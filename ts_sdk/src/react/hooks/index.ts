@@ -27,3 +27,6 @@ export * from './entity-hooks';
 export { useDataStreamText } from './useDataStreamText';
 export { useEntityData, type UseEntityDataResult } from './useEntityData';
 export * from './useIconPacks';
+
+export * from './useLazyAsset';
+export * from './useRuntimeInfo';

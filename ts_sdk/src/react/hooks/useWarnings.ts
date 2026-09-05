@@ -1,3 +1,4 @@
+import { useRuntimeInfo } from './useRuntimeInfo';
 import {
   cloudManager,
   createCloudConnectionAuthRejectedWarning,
@@ -63,6 +64,7 @@ function readHarnessLoginRequired(): boolean {
  * - Cloud disconnected (in desktop mode when cloud login is not available)
  */
 export function useWarnings() {
+  useRuntimeInfo();
   const context = useContext();
   const { isDesktop, cloudLoginAvailable, computeNode, snifferEnabled, snifferInstalled, cloudConnectionStatus } =
     context;

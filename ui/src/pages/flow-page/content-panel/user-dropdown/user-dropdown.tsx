@@ -322,9 +322,6 @@ export function UserDropdown() {
     return () => window.removeEventListener('close-account-dialog', handler);
   }, []);
 
-  useEffect(() => {
-    void cloudManager.refreshStatus();
-  }, []);
 
   const handleSaveRules = useCallback(
     (newRules: string) => {

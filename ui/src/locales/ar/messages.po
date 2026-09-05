@@ -20398,3 +20398,15 @@ msgstr "تصغير"
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "تنزيل مجددًا"
+
+#: src/components/assets/AssetsNavigator.tsx
+msgid "Assets unavailable. Retry"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Capabilities unavailable. Retry"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "No capabilities available"
+msgstr ""

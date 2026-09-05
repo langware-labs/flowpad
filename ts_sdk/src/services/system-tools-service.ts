@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import apiClient from '../client';
 import { ScanInfo } from '../models';
 import { dataManager } from '../APIEntity';
@@ -9,7 +10,7 @@ import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
-import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
+import { projectScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
@@ -180,7 +181,7 @@ export class SystemToolsService extends EventEmitter {
     this.base = `/graph/${userTypeId.type}/${userTypeId.id}/${ACTION}`;
     // Restore any in-flight scan/index state across page loads (fire-and-forget).
     // Lets the footer indexing indicator and progress modal reappear after refresh.
-    void this.refreshActivityStatus().catch(() => {/* ignore — offline/boot race */});
+    // Initial hydration belongs to asyncSdkInit after primary content is ready.
     // Keep scanInfo in sync with dataManager
     dataManager.onScanInfoChange((info) => {
       this.scanInfo = info;
@@ -374,37 +375,25 @@ export class SystemToolsService extends EventEmitter {
    * mid-job. Backend returns the latest IndexProgressTable plus
    * ``started_at``, or null when idle.
    */
-  async refreshActivityStatus(): Promise<SystemActivity | null> {
-    // Wait until the hub-mode signal is known before deciding — this can fire
-    // from the constructor at boot, before bootstrap seeds `supported_pages`.
-    await hubModeReady();
-    // Hub mode: the hub backend has no local fs-records `/activity-status`
-    // (404). There's no local indexer here, so activity is always idle.
-    if (isHubOnly()) {
-      if (this.currentActivity !== null) this._setActivity(null);
-      return null;
-    }
+  async refreshActivityStatus(refresh = true): Promise<SystemActivity | null> {
     try {
-      const data = await apiClient.get<
-        (IndexProgressTable & { started_at: string }) | null
-      >(`${FS_RECORDS_BASE}/activity-status`);
+      await (refresh ? lazyAssets.refresh(LazyAsset.IndexActivity) : lazyAssets.load(LazyAsset.IndexActivity));
+      return this.currentActivity;
+    } catch { return null; }
+  }
 
-      if (!data) {
-        if (this.currentActivity !== null) this._setActivity(null);
-        return null;
-      }
-
-      // Set progressTable directly, then route the phase through _setActivity
-      // so the idle-watchdog arms. Without that arming, if the backend has
-      // advanced past data.job_name by the time we get here, the drop-late-
-      // events guard would silently swallow every incoming event with no
-      // self-heal — the indicator would stay stuck on a stale snapshot.
-      this.progressTable = data;
-      this._setActivity(data.job_name);
-      return data.job_name;
-    } catch {
-      return null;
+  /** Registry snapshot loader; a WS update received during HTTP hydration wins. */
+  async fetchActivityStatus(isCurrent: () => boolean): Promise<(IndexProgressTable & { started_at: string }) | null> {
+    await hubModeReady();
+    if (isHubOnly()) return null;
+    const previous = this.progressTable;
+    const data = await apiClient.get<(IndexProgressTable & { started_at: string }) | null>(`${FS_RECORDS_BASE}/activity-status`);
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    if (this.progressTable === previous) {
+      if (data) { this.progressTable = data; this._setActivity(data.job_name); }
+      else if (this.currentActivity !== null) this._setActivity(null);
     }
+    return data;
   }
 
   // ---- scan index (fs-records) ---------------------------------------------
@@ -603,9 +592,7 @@ export class SystemToolsService extends EventEmitter {
   async projectNeverIndexed(projectId: string): Promise<boolean> {
     if (isHubOnly()) return false;
     try {
-      const res = await apiClient.get<{ never_indexed?: boolean }>(
-        `${FS_RECORDS_BASE}/index-status?${projectScopeQs(projectId)}`,
-      );
+      const res = await lazyAssets.refresh(LazyAsset.IndexStatus, { scope: projectScope(projectId) });
       return res?.never_indexed !== false;
     } catch {
       return true;

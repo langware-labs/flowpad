@@ -20398,3 +20398,15 @@ msgstr "Zoom out"
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "Download again"
+
+#: src/components/assets/AssetsNavigator.tsx
+msgid "Assets unavailable. Retry"
+msgstr "Assets unavailable. Retry"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Capabilities unavailable. Retry"
+msgstr "Capabilities unavailable. Retry"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "No capabilities available"
+msgstr "No capabilities available"
