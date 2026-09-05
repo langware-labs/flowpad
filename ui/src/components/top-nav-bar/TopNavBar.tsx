@@ -6,9 +6,6 @@ import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
-import { Project } from '@sdk';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
@@ -23,8 +20,10 @@ import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
  * column, mounted once in `FlowPage`.
  *
  * It is a browser navigation bar in the literal sense: history controls, then a
- * chip saying which machine is serving this UI, then an address (a breadcrumb
- * of where the current entity lives), then the actions for it.
+ * chip saying which machine is serving this UI and which project you are in
+ * (its name opens the project's home, its chevron the project list), then an
+ * address (a breadcrumb of where the current entity lives), then the actions
+ * for it.
  *
  * The root is a `div`, not a button: it holds many independent controls, and a
  * button inside a button is invalid HTML that React warns about and screen
@@ -85,21 +84,7 @@ export function TopNavBar() {
         onClick={() => navigation.openTab(ViewType.EXPLORER)}
         testId="top-nav-files"
       />
-      {/* The project itself — the destination the old rail briefcase and the
-          footer's project name both led to. Its glyph comes from the type
-          registry, never a literal, so a TypeInfo change reaches it too. Hidden
-          with no project: it addresses one by id, and without it the project
-          page renders "not found". */}
-      {project && (
-        <NavIconButton
-          icon={iconForType(Project.type)}
-          label={t`Project home`}
-          onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-          testId="top-nav-project"
-        />
-      )}
-
-      <RuntimeChip kind={runtimeKind} />
+      <RuntimeChip kind={runtimeKind} project={project} />
       {/* One slot, two modes — the address is where you are, and search is
           where you'd rather be. Same pill, same width, so the row doesn't
           reflow when it flips; the magnifier that flips it sits on the pill's
