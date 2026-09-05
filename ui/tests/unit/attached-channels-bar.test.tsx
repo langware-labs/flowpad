@@ -8,11 +8,11 @@ import { TypeId } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const LOCAL = 'user-11111111-1111-4111-8111-111111111111';
-function fake(name: string, status = 'active') {
+function fake(name: string, status = 'active', provider = 'slack') {
   return {
     id: name,
     name,
-    provider: 'slack',
+    provider,
     channel: 'slack',
     owner: LOCAL,
     config: {},
@@ -46,7 +46,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => (
 vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDialog: () => null }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
 
-import { AttachedChannelsBar } from '@src/components/inbox-view/AttachedChannelsBar';
+import { AttachedChannelsBar, groupByProvider } from '@src/components/inbox-view/AttachedChannelsBar';
 
 function mount(selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
@@ -61,13 +61,13 @@ function mount(selected = new Set<string>()) {
 describe('AttachedChannelsBar', () => {
   afterEach(cleanup);
 
-  it('shows every channel with its state, and the two controls at rest', () => {
-    sources = [fake('a'), fake('b', 'disabled'), fake('c', 'setup')];
+  it('shows one mark per provider with its state, and the two controls at rest', () => {
+    sources = [fake('a'), fake('b', 'disabled', 'gmail'), fake('c', 'setup', 'telegram')];
     mount();
     const marks = screen.getAllByTestId('attached-channel');
     expect(marks.map((e) => [e.getAttribute('aria-label'), e.dataset.state])).toEqual([
-      ['a · listening', 'on'],
       ['b · paused', 'off'],
+      ['a · listening', 'on'],
       ['c · needs attention', 'parked'],
     ]);
     expect(screen.getByTestId('attached-channels-add')).toBeTruthy();
@@ -75,16 +75,29 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
   });
 
-  it('a mark filters rather than toggles: nothing is saved, the selection changes', () => {
-    sources = [fake('a'), fake('b')];
+  it('several sources of one provider share a mark with a count; clicking it filters to all of them', () => {
+    sources = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const onSelectedChange = mount();
-    fireEvent.click(screen.getAllByTestId('attached-channel')[1]);
-    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['b']));
-    expect(sources[1].save).not.toHaveBeenCalled();
+    const marks = screen.getAllByTestId('attached-channel');
+    expect(marks.map((e) => [e.dataset.provider, e.dataset.count, e.dataset.state])).toEqual([
+      ['gmail', '1', 'on'],
+      ['slack', '3', 'on'],
+    ]);
+    expect(screen.getByTestId('attached-channel-count').textContent).toBe('3');
+    fireEvent.click(marks[1]);
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['a', 'b', 'c']));
+    expect(sources[0].save).not.toHaveBeenCalled();
+  });
+
+  it('a group is parked only when nothing in it listens, and off only when everything is', () => {
+    const state = (list: ReturnType<typeof fake>[]) => groupByProvider(list as never)[0].state;
+    expect(state([fake('a', 'setup'), fake('b')])).toBe('on');
+    expect(state([fake('a', 'setup'), fake('b', 'disabled')])).toBe('parked');
+    expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
 
   it('while filtering, the controls give way to ×, which shows everything again', () => {
-    sources = [fake('a'), fake('b')];
+    sources = [fake('a', 'active', 'gmail'), fake('b')];
     const onSelectedChange = mount(new Set(['a']));
     expect(screen.queryByTestId('attached-channels-add')).toBeNull();
     expect(screen.queryByTestId('attached-channels-details')).toBeNull();
