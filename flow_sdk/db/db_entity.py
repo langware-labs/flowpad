@@ -1099,6 +1099,33 @@ class DBEntity(DBBaseRecord):
             await self.emit_child_op(child, OperationType.CHILD_DELETED)
         return removed
 
+    async def detach_from_all_parents(self) -> int:
+        """Remove this entity's incoming ``is_child`` edges from EVERY parent.
+
+        Defensive severing for a shared singleton that must never be reachable
+        as a descendant of a delete cascade — the @local compute node above all.
+        A ``parent.detach_child(self)`` only cuts ONE edge, so it cannot protect
+        the singleton when the offending edge sits on a nested/descendant parent
+        (the 9007 incident: a nested project carried the legacy
+        ``project -> @local`` edge, and the self-only detach missed it, so the
+        recursive delete walked into @local and destroyed every PTY/agentic
+        session on the instance).
+
+        Returns the number of edges removed. Idempotent: a singleton with no
+        parents removes nothing.
+        """
+        rel_filter = QueryFilter.parse({"is_child": True}, RoleRelationship.get_type())
+        incoming = await self.get_incoming_relationships(rel_filter)
+        removed = 0
+        for rel in incoming:
+            await self._db.delete_relationship(rel)
+            removed += 1
+        if removed:
+            from flow_sdk.core.auth.auth_cache import get_auth_cache
+
+            get_auth_cache().clear()
+        return removed
+
     async def remove_role(self, removed_entity_typeid: TypeId, roles_filter: QueryFilter | None = None) -> int:
         relationships = await self.get_incoming_relationships(roles_filter)
         deleted = 0
