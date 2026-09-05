@@ -2,8 +2,11 @@
  * The attached channels of ONE owner — the local user's inbox or an agent's —
  * on the inbox's header line, as a row of round marks with a status dot
  * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
- * parked. Clicking a mark FILTERS the list to that channel; while a filter is
- * on, the two controls give way to one × that shows everything again.
+ * parked. ONE mark per provider: several sources of one kind share a mark
+ * that carries their count, and hovering it lists just those sources with
+ * their switches. Clicking a mark FILTERS the list to that provider's
+ * sources; while a filter is on, the two controls give way to one × that
+ * shows everything again.
  *
  * At rest the line carries two controls: + adds a source owned by this owner,
  * and the details button opens every channel with its on/off switch and a
@@ -29,9 +32,9 @@ import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Switch } from '@src/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { isMessageSourceSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
@@ -67,6 +70,25 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 type ChannelState = 'on' | 'off' | 'parked';
 const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
 
+/** Sources of one provider, sharing a mark. Its state is the best of its
+ *  members' — one listening source lights the mark; parked beats paused. */
+interface ChannelGroup {
+  provider: string;
+  sources: DataSource[];
+  state: ChannelState;
+}
+export function groupByProvider(rows: DataSource[]): ChannelGroup[] {
+  const groups = new Map<string, DataSource[]>();
+  for (const s of rows) groups.set(s.provider, [...(groups.get(s.provider) ?? []), s]);
+  return [...groups.entries()]
+    .map(([provider, sources]) => {
+      const states = sources.map(stateOf);
+      const state: ChannelState = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
+      return { provider, sources, state };
+    })
+    .sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
 interface Props {
   owner: TypeId;
   /** Source ids the list is filtered to; empty = everything. Owned by the
@@ -83,11 +105,14 @@ export function AttachedChannelsBar({ owner, selected, onSelectedChange, classNa
   const [addOpen, setAddOpen] = useState(false);
   const [deleting, setDeleting] = useState<DataSource | null>(null);
   const filtering = selected.size > 0;
+  const groups = useMemo(() => groupByProvider(rows), [rows]);
 
-  const pick = (id: string) => {
+  /** A mark toggles ALL of its provider's sources in the filter. */
+  const pick = (group: ChannelGroup) => {
     const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    const ids = group.sources.map((s) => s.id);
+    if (ids.every((id) => next.has(id))) ids.forEach((id) => next.delete(id));
+    else ids.forEach((id) => next.add(id));
     onSelectedChange(next);
   };
   const remove = async (source: DataSource) => {
@@ -115,14 +140,15 @@ export function AttachedChannelsBar({ owner, selected, onSelectedChange, classNa
       role="toolbar"
       aria-label={t`Attached channels`}
     >
-      {rows.map((source) => (
+      {groups.map((group) => (
         <ChannelMark
-          key={source.id}
-          source={source}
-          spec={specFor(source.provider)}
-          dimmed={filtering && !selected.has(source.id)}
-          pressed={filtering && selected.has(source.id)}
-          onClick={() => pick(source.id)}
+          key={group.provider}
+          group={group}
+          spec={specFor(group.provider)}
+          dimmed={filtering && !group.sources.some((s) => selected.has(s.id))}
+          pressed={filtering && group.sources.every((s) => selected.has(s.id))}
+          onClick={() => pick(group)}
+          onDelete={setDeleting}
         />
       ))}
       {filtering ? (
@@ -160,8 +186,9 @@ export function AttachedChannelsBar({ owner, selected, onSelectedChange, classNa
                 type="button"
                 className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
                 onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
+                data-testid="attached-channels-see-all"
               >
-                {t`Manage in Data Sources…`}
+                {t`See all sources`}
               </button>
             </PopoverContent>
           </Popover>
@@ -183,29 +210,34 @@ export function AttachedChannelsBar({ owner, selected, onSelectedChange, classNa
 
 const CONTROL = 'size-7 shrink-0 rounded-full text-muted-foreground';
 
-/** One round mark: the brand glyph, a status dot, and — while filtering — a ring
- *  on the ones the list is narrowed to. */
+/** One round mark per provider: the brand glyph, a status dot, a count when
+ *  several sources share it, and — while filtering — a ring on the ones the
+ *  list is narrowed to. Hovering lists just this provider's sources with
+ *  their switches, the same rows the details popover shows for all. */
 function ChannelMark({
-  source,
+  group,
   spec,
   dimmed,
   pressed,
   onClick,
+  onDelete,
 }: {
-  source: DataSource;
+  group: ChannelGroup;
   spec: DataSourceSpec | undefined;
   dimmed: boolean;
   pressed: boolean;
   onClick: () => void;
+  onDelete: (source: DataSource) => void;
 }) {
   const { t } = useLingui();
-  const Icon = sourceIcon(spec, source.channel);
-  const state = stateOf(source);
-  const name = source.name || source.provider;
+  const Icon = sourceIcon(spec, group.sources[0].channel);
+  const { state } = group;
+  const count = group.sources.length;
+  const name = count === 1 ? group.sources[0].name || group.provider : `${spec?.title || group.provider} × ${count}`;
   const stateLabel = state === 'parked' ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <HoverCard openDelay={150} closeDelay={120}>
+      <HoverCardTrigger asChild>
         <button
           type="button"
           onClick={onClick}
@@ -218,8 +250,8 @@ function ChannelMark({
             (dimmed || state === 'off') && '[&>svg]:opacity-45 [&>svg]:grayscale',
           )}
           data-testid="attached-channel"
-          data-provider={source.provider}
-          data-status={source.status}
+          data-provider={group.provider}
+          data-count={count}
           data-state={state}
         >
           <Icon className="size-[17px]" />
@@ -229,10 +261,25 @@ function ChannelMark({
               !
             </span>
           )}
+          {count > 1 && (
+            <span
+              className="absolute -start-1 -top-1 min-w-4 rounded-full border-2 border-background bg-muted px-1 text-[9px] font-semibold leading-3 text-foreground tabular-nums"
+              data-testid="attached-channel-count"
+            >
+              {count}
+            </span>
+          )}
         </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{name} · {stateLabel}</TooltipContent>
-    </Tooltip>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-72 p-0">
+        <div className="px-3 pb-1 pt-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {spec?.title || group.provider} · {stateLabel}
+        </div>
+        {group.sources.map((source) => (
+          <ChannelRow key={source.id} source={source} spec={spec} onDelete={() => onDelete(source)} />
+        ))}
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
