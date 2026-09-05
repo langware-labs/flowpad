@@ -87,10 +87,7 @@ def _normalize(d: dict, simple: str, full: str) -> dict:
     return d
 
 
-async def _project_nodes(
-    nodes, entity_type: EntityType, simple: str, full: str,
-    stored=None,
-) -> list[dict]:
+async def _project_nodes(nodes, entity_type: EntityType, simple: str, full: str) -> list[dict]:
     """Project the terminal FSRefs of one type into deduped, normalized dicts."""
     info = SchemaRegistry.get(str(entity_type))
     from_disk = info.from_disk_fn if info else None
@@ -117,14 +114,11 @@ async def _project_nodes(
         except Exception:
             continue
 
-    if stored is None:
-        stored = preload.occurrences
-
     def _live_identity(candidate):
         _node, rid, path = candidate
         return et, rid, path
 
-    decisions = await asyncio.to_thread(resolve_collisions, resolved, stored, _live_identity)
+    decisions = await asyncio.to_thread(resolve_collisions, resolved, preload.occurrences, _live_identity)
     decision_by_id = {item.entity_id: item for item in decisions}
     duplicates = {
         (item.entity_id, path)

@@ -216,7 +216,7 @@ def register_default_functions(idx: FSIndexer) -> None:
     # walk, secret_origin, dynamic_workflow, spreadsheet, …)
     for type_name in SchemaRegistry.get_all_types():
         info = SchemaRegistry.get(type_name)
-        if info is None or info.walk is None:
+        if info is None or not info.walk:
             continue
         walker = layout_walker(info)
         for root in walk_roots(info):

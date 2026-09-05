@@ -231,33 +231,37 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
-def ref_typeid(ref, owners: "PathOwnerIndex | None" = None) -> str | None:
+def ref_typeid(
+    ref, owners: "PathOwnerIndex | None" = None, memo: "dict[tuple[str, str], str | None] | None" = None
+) -> str | None:
     """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
-    identity API. None when the ref is absent, isn't a repo asset, or has no id
-    resolver. The single ref→typeid primitive shared by the enclosure-parent
-    derivation (below) and the bundle's descendant collector.
+    identity API. None when the ref is absent, isn't a repo asset, the type
+    refuses the path, or has no id resolver. The single ref→typeid primitive
+    shared by the enclosure-parent derivation (below) and the bundle's
+    descendant collector.
 
     ``owners`` matters here: this resolves the PARENT folder asset, so minting
     would stamp a fresh capsule into a skill/task folder and fork it on the
-    next walk. Callers with a preloaded owner map should pass it."""
+    next walk. ``memo`` (per run) answers the same parent once."""
     if ref is None or ref.record_type is None:
         return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     rtype = str(ref.record_type)
+    key = (rtype, str(ref._path))
+    if memo is not None and key in memo:
+        return memo[key]
     if rtype not in SchemaRegistry.get_repo_types():
         return None
     info = SchemaRegistry.get(rtype)
-    if info is None or info.claims(Path(ref._path)) is not None:
-        return None   # the stamped type is not what the path is shaped as: never mint into it
     try:
-        rid = info.mint_entity_id(
-            ref,
-            owner_id=owners.owner_for(rtype, str(ref._path)) if owners is not None else None,
-        )
+        rid = info.mint_entity_id(ref, owner_id=owners.owner_for(rtype, key[1]) if owners is not None else None)
     except Exception:
-        return None
-    return f"{rtype}-{rid}" if rid else None
+        rid = None
+    out = f"{rtype}-{rid}" if rid else None
+    if memo is not None:
+        memo[key] = out
+    return out
 
 
 def _is_async_walker(fn: Any) -> bool:
@@ -367,8 +371,6 @@ class OwnerPreload:
     occurrences: StoredOccurrenceMap = field(default_factory=StoredOccurrenceMap)
     owners: PathOwnerIndex = field(default_factory=lambda: PathOwnerIndex({}))
 
-    def live_ids(self, type_name: str) -> "set[str] | None":
-        return self.ids.get(str(type_name))
 
 
 async def preload_owners(driver: Any, type_names: "Collection[Any]") -> OwnerPreload:
@@ -413,19 +415,14 @@ def resolve_ref_identity(info: Any, ref: FSRef, preload: OwnerPreload) -> tuple[
     the same-path sweep then reaps the row every reference points at. Raises
     when the type refuses the path (``UnclaimedPath``) or the carrier fails;
     no fallback id may bypass ``TypeInfo``."""
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     rtype = str(ref.record_type)
     canon_path = canonical_posix_path(str(ref._path))
-    ref_id = reconcile(
-        info,
-        info.layout_for(ref),
-        preload.owners.owner_for(rtype, str(ref._path), canon_path),
-        preload.live_ids(rtype),
-        write=not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed(),
-        ref=ref,
+    ref_id = info.mint_entity_id(
+        ref,
+        owner_id=preload.owners.owner_for(rtype, str(ref._path), canon_path),
+        live_ids=preload.ids.get(rtype),
     )
     return ref_id, canon_path
 
@@ -434,8 +431,6 @@ def resolve_collisions(
     candidates: "list[Any]",
     stored: "StoredOccurrenceMap | dict",
     live_identity: "Callable[[Any], tuple[str, str, str] | None]",
-    *,
-    now: "datetime | None" = None,
 ):
     """One primary path per ``(type, id)`` across the live ``candidates`` and
     the ``stored`` occurrences — ``resolve_asset_collisions`` with the stored
@@ -468,9 +463,7 @@ def resolve_collisions(
             return stored_identities.get(canonical_posix_path(candidate))
         return live_identity(candidate)
 
-    return resolve_asset_collisions(
-        candidates, stored, identity, git_asset_introduction, now or datetime.now(timezone.utc)
-    )
+    return resolve_asset_collisions(candidates, stored, identity, git_asset_introduction, datetime.now(timezone.utc))
 
 
 def _same_path_dupe_groups(
@@ -842,6 +835,7 @@ class FSIndexer:
         existing_db_paths = preload.paths
         stored_occurrences = preload.occurrences
         path_owners = preload.owners
+        parent_typeids: dict[tuple[str, str], str | None] = {}   # ref_typeid memo for this run
 
         # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
         # one id at two paths): paths already claimed by MORE THAN ONE row.
@@ -909,7 +903,6 @@ class FSIndexer:
             """
             out: list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]] = []
             for ref, info in items:
-                canon_path = canonical_posix_path(str(ref._path))
                 try:
                     ref_id, canon_path = resolve_ref_identity(info, ref, preload)
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
@@ -933,6 +926,7 @@ class FSIndexer:
                     ref_id = None
                     probe = None
                     fresh = False
+                    canon_path = canonical_posix_path(str(ref._path))
                 out.append((ref, info, ref_id, probe, fresh, canon_path))
             return out
 
@@ -1087,7 +1081,7 @@ class FSIndexer:
                     # parented. Loop-invariant — derive once from the FSRef
                     # parent chain. Only when the enclosing ref is itself a
                     # repo asset (not the walk root).
-                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners)
+                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners, parent_typeids)
                     for rec in records:
                         if ref_scope is not None:
                             object.__setattr__(rec, "scope", ref_scope)

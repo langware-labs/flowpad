@@ -1,5 +1,5 @@
-"""Every declared type states its shape once, and the legacy layout fields
-are projections of it — never an independent second declaration."""
+"""Every declared type states its shape once; the layout fields are
+read-only projections of it."""
 from __future__ import annotations
 
 import pytest
@@ -49,11 +49,10 @@ def test_a_declared_folder_type_names_its_main_document() -> None:
             assert info.shape.main, f"{info.type_name}: a walked folder type must name its main document"
 
 
-def test_a_probe_lifts_legacy_fields_into_a_shape() -> None:
-    probe = TypeInfo(type_name="probe_shape", main_layout="folder", main_file="X.json", main_file_is_asset_ref=True)
-    assert probe.shape == Folder(main="X.json", ref_is_main=True)
-    assert probe.main_ext == ".json"
-    assert TypeInfo(type_name="probe_file", main_ext=".csv").shape == File(ext=".csv")
+def test_the_layout_fields_project_the_shape() -> None:
+    probe = TypeInfo(type_name="probe_shape", shape=Folder(main="X.json", ref_is_main=True))
+    assert (probe.main_layout, probe.main_file, probe.main_file_is_asset_ref, probe.main_ext) == ("folder", "X.json", True, ".json")
+    assert TypeInfo(type_name="probe_file").shape == File(ext=".md")
 
 
 def test_declared_editors_survive_the_registry_merge() -> None:

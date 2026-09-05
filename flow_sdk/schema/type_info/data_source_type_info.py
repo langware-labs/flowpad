@@ -37,15 +37,10 @@ DATA_SOURCE = TypeInfo(
     api_visible=True,
     creatable=True,
     # Deliberately NOT browseable: the dedicated `/dock/data-sources` screen is
-    # the surface now. This used to say the opposite — that the Assets browser
-    # was enough, since the row already carries health/next_poll_at/error_detail
-    # — but operating a source needs verbs (poll, replay, enable, delete) that a
-    # generic type browser has nowhere to put. Leaving `browseable_by` set would
-    # give the type two doors, which is the drift the old note was guarding
-    # against, just in the other direction. `creatable` stays — it is the "offer
-    # a New button" affordance hint, not an authorization flag (see
-    # `_uncreatable_reason`), and the dialog creates through the ordinary
-    # generic create route either way.
+    # the one surface — operating a source needs verbs (poll, replay, enable,
+    # delete) a generic type browser has nowhere to put. `creatable` stays: it
+    # is the "offer a New button" hint, not an authorization flag (see
+    # `_uncreatable_reason`).
     index_fields=["name", "provider", "kind", "status", "health"],
     meta_model=DataSourceMeta,
 )

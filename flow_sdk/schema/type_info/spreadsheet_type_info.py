@@ -38,7 +38,7 @@ SPREADSHEET = TypeInfo(
     # writes, ``.xlsx`` is also this type. Found as a direct child of any
     # walked project folder (the FOLDER scaffold, gitignore-pruned).
     shape=File(ext=".csv", also=(".xlsx",)),
-    walk=Walk(roots=("folder",), mounts=(".",)),
+    walk=Walk(roots=("folder",), anywhere=True),
     editor="spreadsheet",
     from_disk_fn=extract_spreadsheet,
     identity_carrier=derived_identity(),

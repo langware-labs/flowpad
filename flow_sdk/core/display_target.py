@@ -219,23 +219,15 @@ def _asset_lookup_paths(resolved: str) -> list[str]:
 
 
 def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
-    """``(record_type, discovery_path)`` for a path, or ``(None, path)``.
-
-    ONE classifier: ``SchemaRegistry.type_for`` decides the type from the
-    declarations (main document, fixed name, family dir, extension); the type's
-    own ``layout_of`` then spells the asset root the targeted discovery wants
-    (a skill's FOLDER for its ``SKILL.md``). Nothing here knows a path table.
-    """
-    from pathlib import Path  # noqa: PLC0415
-
+    """``(record_type, discovery_path)`` for a path, or ``(None, path)``:
+    ``SchemaRegistry.type_for`` names the type, ``ref_for`` spells the asset
+    root the targeted discovery wants (a skill's FOLDER for its ``SKILL.md``)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    p = Path(resolved)
-    rec_type = SchemaRegistry.type_for(p)
+    rec_type = SchemaRegistry.type_for(resolved)
     if rec_type is None:
         return None, resolved
-    ref = SchemaRegistry.get(rec_type).layout_of(p).ref
-    return rec_type, str(ref) if ref is not None else resolved
+    return rec_type, SchemaRegistry.ref_for(rec_type, resolved)
 
 
 def entity_target(type_name: str, entity_id: str, *, name: str | None = None) -> dict:

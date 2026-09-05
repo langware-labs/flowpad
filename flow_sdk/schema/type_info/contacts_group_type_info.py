@@ -1,5 +1,5 @@
 """Type metadata for CONTACTS_GROUP — a named local address-book group of
-contacts (participant-shaped entries) used to add several conversation
+contacts (participant-shaped entries) for adding several conversation
 members at once. DB-first entity; the record persists name + contacts so
 groups survive an index rebuild."""
 

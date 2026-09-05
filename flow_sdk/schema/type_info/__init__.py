@@ -3,8 +3,7 @@
 Each ``schema/type_info/<type>_info.py`` module declares one (or more)
 ``TypeInfo`` instance at module scope — the SAME object the registry serves.
 ``register_all()`` imports every sibling module and registers every ``TypeInfo``
-it finds into ``SchemaRegistry``, stamping ``declared=True`` and the default
-``locations`` on the way in. There is no separate authoring mirror: a type
+it finds into ``SchemaRegistry`` as ``declared``, with the default ``locations``. There is no separate authoring mirror: a type
 declares itself ONCE, with its on-disk shape as ``shape=File(...) | Folder(...)``
 and its editor as ``editor=``.
 
@@ -48,14 +47,9 @@ def declared_type_infos(module: Any) -> list[TypeInfo]:
 def register_all() -> None:
     """Import every ``*_info`` sibling module and register its ``TypeInfo``s.
 
-    Each module is registered independently: a broken one (e.g. a stale
-    ``*_type_info.py`` left behind by a partial upgrade that references an
-    ``EntityType`` member a newer ``types.py`` has since removed) is logged and
-    SKIPPED rather than aborting the whole registry. Degrading to "that one type
-    is missing" keeps the server bootable — a wholesale failure here poisons
-    every entity lookup (SchemaRegistry can't finish loading) and the process
-    won't start. See the ``AttributeError: FLOW`` incident from a mismatched
-    site-packages install.
+    Each module is registered independently: a broken one (a stale
+    ``*_type_info.py`` from a partial upgrade) is logged and SKIPPED, so one
+    missing type never keeps the server from booting.
     """
     import flow_sdk.schema.type_info as pkg
 
@@ -67,8 +61,7 @@ def register_all() -> None:
             for info in declared_type_infos(module):
                 if not info.locations:
                     info.locations = ["index"]
-                info.declared = True
-                SchemaRegistry.register(info)
+                SchemaRegistry.register(info, declared=True)
         except Exception:  # noqa: BLE001 — one bad module must not wedge the registry
             logger.warning(
                 "register_all: skipping type_info module %r (failed to load/register) — "

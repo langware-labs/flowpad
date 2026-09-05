@@ -70,8 +70,7 @@ def test_the_undeclared_set_is_exactly_the_walked_types_type_for_cannot_place(tm
     one with a ``from_disk_fn``; a declared location is its main document,
     fixed name, family dir (with the document declaring its own ``type:``,
     the way two types sharing a mount are told apart) or unique extension."""
-    from flow_sdk.fs_store.placement import scan_mounts
-    from flow_sdk.schema.layout import File, Folder, Walk
+    from flow_sdk.schema.layout import File, Folder
 
     def classified_at(candidate: Path, type_name: str) -> bool:
         candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -86,9 +85,7 @@ def test_the_undeclared_set_is_exactly_the_walked_types_type_for_cannot_place(tm
             continue
         shape = info.shape
         candidates: list[Path] = []
-        walks = (info.walk,) if isinstance(info.walk, Walk) else tuple(info.walk or ())
-        mounts = {m for w in walks for m in w.mounts} | set(scan_mounts(info.asset_class, info.harness, info.family))
-        mounts = mounts or {""}
+        mounts = set(info.scan_mounts) or {""}
         if isinstance(shape, Folder) and shape.main:
             candidates.extend(tmp_path / mount / "one" / shape.main for mount in mounts)
         elif isinstance(shape, File):

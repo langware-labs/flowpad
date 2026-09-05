@@ -1,9 +1,6 @@
-"""The generic ``layout_walker`` reproduces every bespoke walker it replaced.
-
-One fixture tree per converted type, shaped like the old walkers' own tests;
-each case runs the declared walk over the same root nodes and compares the
-``(record_type, resolved path)`` set against the snapshot the retired
-hand-written function produced on that tree (recorded while both were alive).
+"""The generic ``layout_walker`` over each declared type: one fixture tree per
+type, the declared walk run over its root nodes, and the
+``(record_type, resolved path)`` set compared against a pinned snapshot.
 """
 
 from __future__ import annotations
@@ -46,7 +43,7 @@ def _expect(record_type: RecordType, paths: list[Path]) -> set[tuple[str, str]]:
 
 
 def _flat_md_tree(root: Path, family: str) -> list[Path]:
-    """``<root>/.claude/<family>/{a,b}.md`` plus the noise the old walkers ignored."""
+    """``<root>/.claude/<family>/{a,b}.md`` plus noise a walk must ignore."""
     hits = [_touch(root / ".claude" / family / "a.md"), _touch(root / ".claude" / family / "b.md")]
     _touch(root / ".claude" / family / "notes.txt")
     (root / ".claude" / family / "nested").mkdir()

@@ -12,6 +12,7 @@ from flow_sdk.fs_store.identity_carrier import Derived, Frontmatter, MalformedCa
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_json_id, frontmatter_identity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.layout import Folder
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing"))
@@ -45,7 +46,7 @@ def test_frontmatter_id_is_adopted_over_a_proposal(tmp_path: Path, existing: str
 def test_folder_json_carrier_adopts_and_mints(tmp_path: Path) -> None:
     folder = tmp_path / "asset"
     folder.mkdir()
-    info = TypeInfo(type_name="probe", main_layout="folder", capsules=(IDENTITY,), identity_carrier=Sidecar())
+    info = TypeInfo(type_name="probe", shape=Folder(), capsules=(IDENTITY,), identity_carrier=Sidecar())
     first = info.mint_entity_id(FSRef(folder))
     assert uuid.UUID(first).version == 4
     assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": first})
@@ -152,8 +153,7 @@ def test_folder_with_markdown_main_carries_its_id_in_that_document(tmp_path: Pat
     main.write_text("---\nname: s\n---\nbody\n", encoding="utf-8")
     info = TypeInfo(
         type_name="probe",
-        main_layout="folder",
-        main_file="PROBE.md",
+        shape=Folder(main="PROBE.md"),
         capsules=(IDENTITY,),
         identity_carrier=frontmatter_identity(folder_capsule_json_id),
     )
@@ -178,7 +178,7 @@ def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> 
     folder.mkdir()
     main = folder / "SKILL.md"
     main.write_text("body\n", encoding="utf-8")
-    info = TypeInfo(type_name="probe", main_layout="folder", main_file="SKILL.md")
+    info = TypeInfo(type_name="probe", shape=Folder(main="SKILL.md"))
 
     assert info.storage_root_for(folder) == folder
     assert info.body_path_for(folder) == main

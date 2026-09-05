@@ -26,12 +26,13 @@ from flow_sdk.fs_store.indexer.functions.skill import (
     skill_id_from_name,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.layout import Folder
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V7 = "018f0000-0000-7000-8000-000000000000"
 
 _CAPSULE_INFO = TypeInfo(
-    type_name="capsule_probe", main_layout="folder",
+    type_name="capsule_probe", shape=Folder(),
     capsules=(CapsuleSpec("identity", 1),),
     identity_carrier=Sidecar(legacy=(folder_capsule_id,)),
 )

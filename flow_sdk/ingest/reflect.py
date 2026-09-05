@@ -496,9 +496,9 @@ async def reflect_refs(
             # would read the asset's own root as a stale placement and delete
             # it, and `discover_record_by_path` given the inner main_file
             # resolves nothing and silently drops the re-parse.
-            from flow_sdk.fs_store.reindex import asset_target_for  # noqa: PLC0415
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-            target = asset_target_for(known.type, placed)
+            target = SchemaRegistry.ref_for(known.type, placed)
             _retire_stale_placement(source, known, target)
             await discover_record_by_path(
                 known.type,

@@ -1,12 +1,7 @@
 """The on-disk SHAPE of an asset type — declared once, asked everywhere.
 
 A type is either a ``File`` (one file, told apart by its extension) or a
-``Folder`` (a directory, told apart by the main document it holds). The shape
-is the ONE declaration behind what used to be four fields (``main_layout``,
-``main_file``, ``main_ext``, ``main_file_is_asset_ref``); those survive on
-``TypeInfo`` as values derived from the shape so their many readers keep
-working while they are retired.
-
+``Folder`` (a directory, told apart by the main document it holds).
 ``locate`` is the per-type half of the SCAN step: given a path, is it this
 shape, and if so what is its root, body and asset_ref? The registry-wide half
 (``SchemaRegistry.type_for``) asks every declared shape in precedence order.
@@ -82,16 +77,16 @@ class File:
     def ref_for(self, root: Path) -> Path:
         return root
 
+    def to_dict(self) -> dict:
+        return {"kind": "file", "ext": self.ext}
+
 
 @dataclass(frozen=True, slots=True)
 class Folder:
     """A directory asset told apart by the main document it holds
     (``SKILL.md``, ``mcp.json``). ``main=None`` is a bare folder asset.
-
-    ``ref_is_main`` keeps the legacy ``asset_ref`` convention of the five
-    types whose rows point at ``<folder>/<main>`` instead of the folder
-    (agent, spec, the reports) until their rows are migrated; it changes
-    nothing about how the shape is located.
+    ``ref_is_main`` ⇒ ``asset_ref`` points at ``<folder>/<main>`` instead of
+    the folder (agent, spec, the reports); it changes nothing about locating.
     """
 
     main: str | None = None
@@ -120,6 +115,20 @@ class Folder:
         """Where ``asset_ref`` points for the asset rooted at ``root``."""
         return root / self.main if self.main and self.ref_is_main else root
 
+    def to_dict(self) -> dict:
+        return {"kind": "folder", "main": self.main, "ref_is_main": self.ref_is_main}
+
+
+Shape = File | Folder
+
+
+def shape_from_dict(data: dict | None) -> Shape | None:
+    """Inverse of ``File.to_dict`` / ``Folder.to_dict``; None for no data."""
+    if not data:
+        return None
+    if data.get("kind") == "folder":
+        return Folder(main=data.get("main"), ref_is_main=bool(data.get("ref_is_main")))
+    return File(ext=data.get("ext") or ".md")
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,15 +140,20 @@ class Walk:
     ``roots`` names the root node kinds the walk hangs on (the indexer's root
     graph: ``user_home_folder``, ``real_project_cwd``, ``cwd_root``,
     ``system_root``, ``project``, ``folder``). ``mounts`` are root-relative
-    directories to look in; ``()`` means "derive from placement": every
-    harness prefix + family for a harness-scoped class (``.claude/skills``,
-    ``.agents/skills``), ``docs`` for the docs family. ``recursive`` walks
-    the mount's whole tree (docs) instead of its direct children.
+    directories to look in (a ``*`` segment is a glob); ``()`` means "derive
+    from placement": every harness prefix + family for a harness-scoped class
+    (``.claude/skills``, ``.agents/skills``), ``docs`` for the docs family.
+    ``recursive`` walks the mount's whole tree instead of its direct children.
+    ``anywhere`` (no mounts) is the walk over FOLDER scaffold nodes: a Folder
+    shape asks whether the node ITSELF is the asset, a File shape looks at
+    the node's direct children.
     """
 
     roots: tuple[str, ...]
     mounts: tuple[str, ...] = ()
     recursive: bool = False
+    anywhere: bool = False
 
-
-Shape = File | Folder
+    def __post_init__(self) -> None:
+        if self.anywhere and self.mounts:
+            raise ValueError("an anywhere walk names no mounts")
