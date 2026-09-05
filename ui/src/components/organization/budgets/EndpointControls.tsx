@@ -7,14 +7,15 @@
  * (`useLlmEndpoint`, `TestEndpointButton`, `dataManager.save`) — nothing new on the hub, and no
  * second implementation to drift from the first.
  */
-import { TypeId, dataManager, type LLMEndpointFilters } from '@sdk';
-import { Loader2 } from 'lucide-react';
+import { TypeId, dataManager, type LLMEndpointFilters, type LLMEndpointTestResult } from '@sdk';
+import { Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { TestEndpointButton } from '@src/components/llm-endpoints/TestEndpointButton';
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmEndpoint, useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { TONE } from '@src/components/llm-endpoints/tone';
+import { useLlmEndpoint, useLlmEndpointModels, useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Switch } from '@src/components/ui/switch';
 import { notify } from '@src/notifications';
 
@@ -162,6 +163,11 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   // re-read, an admin narrows a team and every member below it goes on showing the old models.
   const { refetch: refetchEndpoints } = useLlmEndpoints();
   const invalidate = useInvalidateBudgets();
+  // The probe's own answer, mirrored out of the button so it can be drawn OVER the model list
+  // instead of beside the icon. Rendered inline, the verdict wrapped the row's flex container onto
+  // a second line and every row grew taller the moment somebody pressed test — on a table, that
+  // shifts every row below it. An overlay is out of flow, so the row never moves.
+  const [verdict, setVerdict] = useState<LLMEndpointTestResult | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -171,6 +177,17 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   const seeding = useRef(false);
 
   const models = endpoint?.filters.models_allow ?? [];
+  // An empty list INHERITS, and the row used to say so in words. What a reader wants to know is
+  // which models that leaves them, and the answer is one action away (`models` -- the roots'
+  // catalogs already narrowed by this chain's effective allow/deny), so the row shows it.
+  //
+  // Fetched ONLY for a row that actually inherits. Every row on this page mounts one of these, so
+  // an unconditional read would be a per-row fan-out across every team and person -- the same cost
+  // `BudgetSection` opens its people lists lazily to avoid. The hub seeds a list on every creation
+  // path (`_seed_models`), so an inheriting row is the exception, not the rule.
+  const inherits = !!endpoint && models.length === 0;
+  const inherited = useLlmEndpointModels(inherits ? id : undefined);
+  const shown = models.length > 0 ? models : (inherited.data ?? []).map((m) => m.id);
   // A pinned row whose redirect is missing or stale. Every row pinned BEFORE aliasing existed is in
   // exactly this state: the right `models_allow`, no `aliases`, and no way for anyone to fix it by
   // hand — re-typing the same model is a no-op at `commit`, and the empty-list seed below never
@@ -292,26 +309,65 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
           className="min-w-40 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px]"
         />
       ) : (
-        <button
-          type="button"
-          disabled={!manage}
-          className="max-w-64 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground enabled:hover:bg-muted"
-          data-testid={`${testIdPrefix}-models`}
-          title={manage ? t`Click to edit which models this budget may call` : t`Which models this budget may call`}
-          onClick={startEdit}
-        >
-          {saving ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            // An empty list is not "the default": it INHERITS, and printing a model here said the
-            // opposite of what the row would actually allow. Say what is true and let the reader
-            // click to set one.
-            models.join(', ') || t`inherits the budget above`
+        <span className="relative min-w-0">
+          {/* Out of flow, anchored over the model list: a verdict must not resize the row. Sits
+              ABOVE the text rather than on top of it, so the models stay readable while it shows —
+              the two answer different questions and a reader usually wants both at once. */}
+          {verdict && (
+            <span
+              className={`absolute bottom-full left-0 z-10 mb-0.5 flex max-w-64 items-baseline gap-1 truncate rounded border px-1.5 py-0.5 font-mono text-[11px] shadow-md ${
+                verdict.ok ? TONE.emerald : TONE.destructive
+              } bg-popover`}
+              data-testid={`${testIdPrefix}-test-overlay`}
+              title={
+                verdict.ok
+                  ? `${verdict.status} · ${verdict.model} · ${verdict.latency_ms}ms`
+                  : `${verdict.status || ''} ${verdict.message}`.trim()
+              }
+            >
+              {verdict.ok ? (
+                <>
+                  <Check className="h-3 w-3 shrink-0" />
+                  {verdict.model && <span className="truncate">{verdict.model}</span>}
+                  <span className="opacity-70">{verdict.latency_ms}ms</span>
+                </>
+              ) : (
+                <>
+                  <X className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{verdict.status || t`failed`}</span>
+                </>
+              )}
+            </span>
           )}
-        </button>
+          <button
+            type="button"
+            disabled={!manage}
+            // Narrow enough that the test button stays on the row with it. The container wraps, so a
+            // wide list did not overflow -- it pushed the probe onto a second line, where a control
+            // people press constantly reads as belonging to the row below.
+            className="min-w-0 max-w-48 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground enabled:hover:bg-muted"
+            data-testid={`${testIdPrefix}-models`}
+            // Trimmed text always carries the whole of itself in the tooltip; the hint follows it.
+            title={[shown.join(', '), manage ? t`Click to edit which models this budget may call` : '']
+              .filter(Boolean)
+              .join('\n')}
+            onClick={startEdit}
+          >
+            {saving || inherited.isLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              // An inherited list is shown as the models it actually leaves this row. The old wording
+              // is the honest fallback for the one case that has no list to print -- the read failed,
+              // or the chain above allows nothing this row can name.
+              shown.join(', ') || t`inherits the budget above`
+            )}
+          </button>
+        </span>
       )}
 
-      <TestEndpointButton endpointId={id} />
+      <span className="shrink-0">
+        <TestEndpointButton endpointId={id} onVerdict={setVerdict} inlineVerdict={false} />
+      </span>
     </div>
   );
 }

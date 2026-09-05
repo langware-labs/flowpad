@@ -7269,6 +7269,7 @@ msgid "extra rows fetched (limit + overfetch)"
 msgstr "صفوف إضافية تم جلبها (الحد الأقصى + الجلب الإضافي)"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
 msgstr ""
 
@@ -20483,8 +20484,8 @@ msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or 
 msgstr "المحرّك الذي ينفّذ فهرسة نظام الملفات: FSIndexer المدمج بلغة Python، أو مُفهرِس Rust الخارجي (يتطلب FLOWPAD_RS_INDEXER_BIN على الخادم؛ ويعود بصمت إلى Python عند عدم توفره). يسري مفعوله في عملية الفهرسة التالية."
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "Which models this budget may call"
-msgstr ""
+#~ msgid "Which models this budget may call"
+#~ msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts

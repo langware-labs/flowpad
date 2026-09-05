@@ -9,7 +9,7 @@
  * covered by its own suite; here it only needs to render.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const UUID = '550e8400-e29b-41d4-a716-446655440099';
 const TYPE_ID = `llm_endpoint-${UUID}`;
@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   save: vi.fn(),
   invalidate: vi.fn(),
   refetchEndpoints: vi.fn(),
+  models: vi.fn(),
+  verdict: vi.fn(),
 }));
 
 vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => ({
@@ -27,6 +29,29 @@ vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal
   // The row re-reads the endpoints after a save, because a TEAM edit moves the members' lists on
   // the hub and nothing tells this client about writes it did not make.
   useLlmEndpoints: () => ({ endpoints: [], isLoading: false, refetch: h.refetchEndpoints, error: null }),
+  // Only an INHERITING row reaches this — every row on the budgets page mounts one of these, so it
+  // is deliberately not an unconditional read. `h.models` therefore doubles as the assertion that
+  // the fan-out is bounded: a row with its own list must never call it.
+  useLlmEndpointModels: (...args: unknown[]) => h.models(...args),
+}));
+// The probe itself has its own suite; here it only needs to hand this row a verdict on demand, so
+// the row's own rendering of it is what is under test.
+vi.mock('@src/components/llm-endpoints/TestEndpointButton', () => ({
+  TestEndpointButton: ({
+    endpointId,
+    onVerdict,
+    inlineVerdict,
+  }: {
+    endpointId: string;
+    onVerdict?: (v: unknown) => void;
+    inlineVerdict?: boolean;
+  }) => (
+    <button
+      data-testid={`stub-test-${endpointId}`}
+      data-inline-verdict={String(inlineVerdict)}
+      onClick={() => onVerdict?.(h.verdict())}
+    />
+  ),
 }));
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useInvalidateBudgets: () => h.invalidate,
@@ -40,10 +65,6 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 // Its own dedicated suite covers the call/verdict cycle; here it only needs to exist so the row
 // renders — asserting on its testid is enough to know it is actually wired in.
-vi.mock('@src/components/llm-endpoints/TestEndpointButton', () => ({
-  TestEndpointButton: ({ endpointId }: { endpointId: string }) => <div data-testid={`stub-test-${endpointId}`} />,
-}));
-
 import {
   DEFAULT_MODELS,
   EndpointControls,
@@ -202,6 +223,13 @@ describe('EndpointControls', () => {
     h.invalidate.mockResolvedValue(undefined);
   });
 
+  // Before, not after: the FIRST test needs the default too, and the hook this stands in for always
+  // returns a query object.
+  beforeEach(() => {
+    // The quiet default: nothing inherited to show. Tests about the inherited list say so.
+    h.models.mockReturnValue({ data: undefined, isLoading: false });
+  });
+
   it('shows a spinner until the endpoint itself has loaded', () => {
     h.endpoint.mockReturnValue(null);
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
@@ -220,9 +248,81 @@ describe('EndpointControls', () => {
     expect(h.save).not.toHaveBeenCalled();
   });
 
-  it('says an empty row INHERITS rather than naming a model it does not have', () => {
+  it('names the models an empty row INHERITS, instead of saying that it inherits', () => {
+    // An empty list is not "no models" — it is every model the chain above allows, and that list is
+    // one action away. Saying "inherits the budget above" told the reader where to look instead of
+    // answering the question they had.
     h.endpoint.mockReturnValue(endpoint());
+    h.models.mockReturnValue({
+      data: [
+        { id: 'claude-haiku-4-5', root_id: 'r1' },
+        { id: 'claude-sonnet-4-5', root_id: 'r1' },
+      ],
+      isLoading: false,
+    });
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
+    expect(screen.getByTestId('org-models').textContent).toBe('claude-haiku-4-5, claude-sonnet-4-5');
+    expect(screen.getByTestId('org-models').textContent).not.toContain('inherits');
+    // Trimmed to keep the probe on the same row, so the whole list rides in the tooltip.
+    expect(screen.getByTestId('org-models').getAttribute('title')).toContain('claude-haiku-4-5, claude-sonnet-4-5');
+  });
+
+  it('draws the verdict OVER the model list, out of flow, so the row cannot grow', async () => {
+    // Rendered inline it wrapped this row's flex container onto a second line, and on a table every
+    // row below shifted the moment somebody pressed test. The overlay is absolutely positioned, so
+    // the row's height is the same before and after.
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['claude-haiku-4-5'], aliases: {} } }));
+    h.verdict.mockReturnValue({ ok: true, status: 200, model: 'claude-haiku-4-5', latency_ms: 798, message: '' });
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
+    // The button renders no verdict of its own here — this row draws it somewhere the button cannot
+    // reach, and two copies of one answer is the bug that would replace the old one.
+    expect(screen.getByTestId(`stub-test-${UUID}`).getAttribute('data-inline-verdict')).toBe('false');
+    expect(screen.queryByTestId('org-test-overlay')).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`stub-test-${UUID}`));
+
+    const overlay = await screen.findByTestId('org-test-overlay');
+    expect(overlay.className).toContain('absolute');
+    expect(overlay.textContent).toContain('claude-haiku-4-5');
+    expect(overlay.textContent).toContain('798ms');
+    // Anchored to the model list, which is what "above the allowed models" means.
+    expect(overlay.parentElement?.className).toContain('relative');
+    expect(overlay.parentElement?.querySelector('[data-testid="org-models"]')).toBeTruthy();
+  });
+
+  it('shows a failed probe in the same overlay, in the failure tone', async () => {
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['claude-haiku-4-5'], aliases: {} } }));
+    h.verdict.mockReturnValue({ ok: false, status: 429, model: '', latency_ms: 0, message: 'limit exceeded' });
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId(`stub-test-${UUID}`));
+
+    const overlay = await screen.findByTestId('org-test-overlay');
+    expect(overlay.textContent).toContain('429');
+    expect(overlay.getAttribute('title')).toContain('limit exceeded');
+  });
+
+  it('reads the inherited list ONLY for a row that actually inherits', () => {
+    // Every row on the budgets page mounts one of these. An unconditional read would be a per-row
+    // fan-out across every team and every person — the cost `BudgetSection` opens its people lists
+    // lazily to avoid.
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['claude-haiku-4-5'], aliases: {} } }));
+    h.models.mockReturnValue({ data: undefined, isLoading: false });
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
+    // The hook still RUNS (it is a hook), but it is passed no id, which is what disables the query.
+    expect(h.models).toHaveBeenCalledWith(undefined);
+  });
+
+  it('falls back to the old wording when there is no list to print at all', () => {
+    // The read failed, or the chain above allows nothing this row can name. Printing an empty
+    // string there would read as "no models", which is the opposite of what an empty list means.
+    h.endpoint.mockReturnValue(endpoint());
+    h.models.mockReturnValue({ data: [], isLoading: false });
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+
     expect(screen.getByTestId('org-models').textContent).toContain('inherits');
   });
 

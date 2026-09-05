@@ -55,7 +55,9 @@ export function EditableTitle({
   if (!manage) {
     return (
       <div className="flex min-w-0 items-center gap-2">
-        <span className={`truncate px-1 py-0.5 ${headingClassName}`} data-testid={`${testIdPrefix}-name`}>
+        {/* Truncated, so it carries the whole name in a tooltip -- the same rule every trimmed
+            thing on this page follows. */}
+        <span className={`truncate px-1 py-0.5 ${headingClassName}`} title={name} data-testid={`${testIdPrefix}-name`}>
           {name}
         </span>
       </div>
@@ -75,6 +77,7 @@ export function EditableTitle({
         <button
           type="button"
           className={`truncate rounded px-1 py-0.5 text-left hover:bg-muted ${headingClassName}`}
+          title={name}
           data-testid={`${testIdPrefix}-name`}
           onClick={rename.startEditing}
         >
