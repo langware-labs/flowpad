@@ -24,6 +24,7 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_iden
 from flow_sdk.fs_store.indexer.index_log import read_scan_issues
 from flow_sdk.fs_store.indexer.reconcile import reconcile
 from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 
 CARRIER = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 OWNER = "11111111-2222-4333-8444-555555555555"
@@ -143,7 +144,7 @@ def test_derived_type_is_never_restamped_from_a_stale_row(tmp_path: Path) -> Non
 
 def test_json_root_restamp_preserves_sibling_keys(tmp_path: Path) -> None:
     path = _md(tmp_path, json.dumps({"kept": [1, 2], "nested": {"a": 1}}), name="probe.json")
-    info = TypeInfo(type_name="probe_json", main_ext=".json", identity_carrier=JsonRoot())
+    info = TypeInfo(type_name="probe_json", shape=File(ext=".json"), identity_carrier=JsonRoot())
     assert _run(info, path, OWNER, {OWNER}) == OWNER
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["id"] == OWNER and data["kept"] == [1, 2] and data["nested"] == {"a": 1}

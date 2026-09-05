@@ -1,5 +1,5 @@
 """The mint seam REFUSES a path the type does not claim — it never answers
-with a phantom id and never reads or writes a carrier there. FLOWPAD-2083."""
+with a phantom id and never reads or writes a carrier there."""
 from __future__ import annotations
 
 import uuid

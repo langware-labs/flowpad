@@ -17,9 +17,8 @@ Discovery has two halves:
       walked folder. Register on FOLDER. Gitignore is the only filter —
       every ``.md`` in a project (or system project) is indexed.
 
-Replaces the deleted ``MarkdownRecord`` subclass. ``parse_markdown_text``
-is exported so other consumers (e.g. ``extract_markdown_index``) can share the
-frontmatter+body parse without inheriting from a Record subclass.
+``parse_markdown_text`` is exported so other consumers (e.g.
+``extract_markdown_index``) can share the frontmatter+body parse.
 """
 
 from __future__ import annotations
@@ -35,15 +34,9 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.indexer.walkers.generic import first_seen, is_appledouble
 from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def _is_appledouble(name: str) -> bool:
-    """True for macOS AppleDouble sidecars (``._foo.md``) — binary
-    resource-fork files that share a ``.md`` extension but never hold real
-    markdown. Indexing them only raises a UnicodeDecodeError downstream."""
-    return name.startswith("._")
 
 
 def _typed_record_dirs() -> frozenset[str]:
@@ -113,7 +106,7 @@ def markdown_in_folder_fn(
         except OSError:
             continue
         for md in entries:
-            if _is_appledouble(md.name):
+            if is_appledouble(md.name):
                 continue
             # SKILL.md / skill.md is a skill's doc (claimed by the skill walk),
             # never a standalone MARKDOWN asset — skip so it isn't double-indexed.
@@ -124,11 +117,8 @@ def markdown_in_folder_fn(
                     continue
             except OSError:
                 continue
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=node))
+            if first_seen(seen, md, resolve=True):
+                out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=node))
     return out
 
 

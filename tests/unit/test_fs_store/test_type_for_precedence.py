@@ -1,5 +1,5 @@
 """``SchemaRegistry.type_for`` — the one registry-wide path → type classifier
-(name + placement + stat in this phase; no walk roots). One case per tier."""
+(name + placement + stat; no walk roots). One case per tier."""
 from __future__ import annotations
 
 from pathlib import Path

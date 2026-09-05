@@ -1,25 +1,8 @@
-"""FLOWPAD-2083: discovering a path a type does not own must not EDIT that path.
-
-A bundled MCP server's ``server.py`` was found with YAML frontmatter prepended::
-
-    ---
-    id: aec9b4d5-b2c9-41b1-8c03-fcec087c24c8
-    ---
-
-    \"\"\"MCP server for CRM-mcp.\"\"\"
-
-``compile()`` → ``SyntaxError: invalid decimal literal``. The (type, path) pair
-arrived UNVERIFIED: the editor fallback labels any editor-less file
-``markdown`` and discovery trusted that label all the way to a disk write.
-Every indexer walk classifies a path with ``layout_of(verify=True)`` before
-it builds a ref; the point lookup skipped that step.
-
-Now discovery classifies BEFORE minting and the seam REFUSES an unclaimed
-path (``UnclaimedPath``) rather than gating the write and answering with a
-phantom path-derived id.
-
-Entry point is the real one: ``discover_record_by_path``, the helper behind
-``POST /fs-records/<type>/discover``. Real filesystem, no mocks.
+"""Discovering a path a type does not own must not EDIT that path: the seam
+REFUSES an unclaimed (type, path) pair (``UnclaimedPath``) before any carrier
+is read or written, so a ``server.py`` labelled ``markdown`` never grows a
+frontmatter header. Entry point is the real ``discover_record_by_path``
+(behind ``POST /fs-records/<type>/discover``); real filesystem, no mocks.
 """
 from __future__ import annotations
 

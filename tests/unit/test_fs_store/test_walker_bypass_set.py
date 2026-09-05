@@ -63,7 +63,7 @@ def emitted() -> set[str]:
 
 
 def test_declared_walks_are_exactly_the_converted_types() -> None:
-    declared = {t for t in SchemaRegistry.get_all_types() if SchemaRegistry.get(t).walk is not None}
+    declared = {t for t in SchemaRegistry.get_all_types() if SchemaRegistry.get(t).walk}
     assert declared == DECLARED
 
 

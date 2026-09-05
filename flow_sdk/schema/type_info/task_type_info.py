@@ -51,9 +51,7 @@ TASK = TypeInfo(
     # are the only fields their hub-reflected update carries, which is what makes
     # ONE shared task row safe to hand to someone (see ``assignee_owned_fields``).
     assignee_owned_fields=("status", "completed_at"),
-    # The plan stays home. ``spec.md`` is authored beside ``task.md`` in the same
-    # folder, and the bundle packer copies folders verbatim — so sharing or
-    # assigning a task used to ship the owner's plan with it, contradicting the
-    # decoupling this type documents.
+    # The plan stays home: ``spec.md`` is authored beside ``task.md`` and the
+    # bundle packer copies folders verbatim, so it is excluded here.
     pack_exclude=("spec.md",),
 )

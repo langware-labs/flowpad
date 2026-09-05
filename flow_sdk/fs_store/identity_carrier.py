@@ -9,10 +9,9 @@ carrier's own kind. Validation (v4/v5), stable-key policy and minting belong
 to ``TypeInfo``; owner/fossil reconciliation to the indexer
 (``flow_sdk.fs_store.indexer.reconcile``); a carrier never decides an id.
 
-    Frontmatter   a markdown document — ``id:`` in its YAML frontmatter.
-                  Legacy readers: the HTML-comment ``identity`` capsule
-                  markdown used to carry, ``asset_id:``, a folder's
-                  ``.flow/capsules`` json under a markdown main document.
+    Frontmatter   a markdown document — ``id:`` in its YAML frontmatter,
+                  with read-only legacy readers (the HTML-comment ``identity``
+                  capsule, ``asset_id:``, a folder's ``.flow/capsules`` json).
     Sidecar       a folder — ``<folder>/.flow/capsules/identity.json``.
     JsonRoot      a report — the ``"id"`` key of its own JSON root.
     Derived       nothing is written: the id is a pure function of the
@@ -94,13 +93,8 @@ class Unstamped(ValueError):
 
 class UnclaimedPath(ValueError):
     """A type was asked to identify a path that does not have its shape.
-
     Raised BEFORE the carrier is read, so a ``.py`` reached under ``markdown``
-    is never parsed as a document, never stamped (FLOWPAD-2083), and never
-    answered with a path-derived id that no row and no carrier would agree
-    with. The caller mis-classified the path; "not an asset of this type" is
-    the only honest answer.
-    """
+    is never parsed, stamped, or answered with a path-derived id."""
 
     def __init__(self, type_name: str, path: Path, reason: str = "") -> None:
         self.type_name = type_name

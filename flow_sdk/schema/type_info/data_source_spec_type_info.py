@@ -43,7 +43,7 @@ DATA_SOURCE_SPEC = TypeInfo(
     # `uuid5(resolved path)`, and a spec's path is the INSTALL's
     # (`…/site-packages/flow_sdk/system_projects/…`), not the asset's — several
     # coexist on one machine and every upgrade moves it, so one shipped source
-    # forked into a row per install location (FLOWPAD-2070).
+    # forked into a row per install location.
     identity_carrier=derived_identity(),
     identity_key_fn=data_source_spec_identity_key,
     index_fields=["name", "title", "runtime"],

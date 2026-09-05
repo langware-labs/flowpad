@@ -37,7 +37,7 @@ SKILL = TypeInfo(
     # former owns, so a skill is emitted once.
     walk=(
         Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
-        Walk(roots=("folder",), mounts=(".",)),
+        Walk(roots=("folder",), anywhere=True),
     ),
     editor="skill",
     hub_main_file="SKILL.md",
@@ -47,10 +47,9 @@ SKILL = TypeInfo(
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,
     derive_fields_fn=derive_skill,
-    # On receive, a skill is set up by running ITSELF in a Vibe session — the
-    # SELF sentinel (setup_skill == type) tells ``Entity.setup_on_receive`` to
-    # seed "Use the <this skill's name> skill …". Replaces the FE
-    # useRunReceivedSkill/TESTABLE_TYPES special-case.
+    # On receive, a skill is set up by running ITSELF in a Vibe session
+    # (setup_skill == type tells ``Entity.setup_on_receive`` to seed "Use the
+    # <this skill's name> skill …").
     setup_skill=EntityType.SKILL.value,
     reception_verb="Run",
 )

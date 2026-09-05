@@ -1,24 +1,16 @@
 """Single seam for on-disk asset placement.
 
-Historically *where an asset lands* was decided in two unrelated engines (create
-vs receive) around a per-type ``main_subdir`` string that fused three orthogonal
-decisions into one hardcoded literal: the harness prefix (``.claude/``), the
-family (``skills``), and — implicitly — the layout. Because the prefix was a
-welded-on constant, there was no harness axis at all.
+``family_subdir`` turns ``(asset_class, harness, family)`` (declared on the
+type) plus ``default_worker`` into a scope-relative subdir; ``root_for_scope``
+is the single scope→root seam. Every placement path composes those two:
+``resolve_destination`` (root+subdir), ``FSRecord.compute_asset_ref`` (a
+caller-supplied root + subdir + file/folder tail), and ``TypeInfo.main_subdir``
+(the claude-canonical subdir view). The receive path replays the sender-staged
+relpath and so is not harness-aware — it shares ``root_for_scope`` and the
+``user_scope_allowed`` policy, not ``family_subdir``.
 
-This module factors those apart. ``family_subdir`` is the single seam that turns
-``(asset_class, harness, family)`` (declared on the type) plus ``default_worker``
-into a scope-relative subdir; ``root_for_scope`` is the single scope→root seam.
-Every placement path composes those two: ``resolve_destination`` (root+subdir),
-``FSRecord.compute_asset_ref`` (a caller-supplied root + subdir + file/folder
-tail), and ``TypeInfo.main_subdir`` (the claude-canonical subdir view). The
-receive path replays the sender-staged relpath and so is not yet harness-aware
-(a fan-out concern) — it shares ``root_for_scope`` and the ``user_scope_allowed``
-policy, not ``family_subdir``.
-
-The module is deliberately dependency-light: only stdlib + ``_compat``, with
-``SchemaRegistry`` and ``instance_settings`` lazy-imported inside the functions
-that need them (avoids an import cycle at load time).
+Dependency-light on purpose: stdlib + ``_compat``, with ``SchemaRegistry`` and
+``instance_settings`` lazy-imported inside the functions that need them.
 """
 
 from __future__ import annotations
@@ -145,9 +137,8 @@ class LayoutClass:
     """The placement policy for one ``AssetClass`` — declared data, not code.
 
     ``harness_scoped`` decides whether the mount is prefixed by a harness
-    dot-dir (everything except INTERNAL). ``fan_out`` marks the classes syncmd
-    mirrors across harnesses (SHARED). ``user_scope`` / ``project_scope`` are the
-    installability predicate that replaces the old ``.claude``-prefix hack.
+    dot-dir. ``fan_out`` marks the classes syncmd mirrors across harnesses
+    (SHARED). ``user_scope`` / ``project_scope`` are the installability predicate.
     """
 
     harness_scoped: bool
@@ -186,12 +177,8 @@ AGENTIC_ASSETS_DIR = "agentic-assets"
 DOCS_FAMILY = "docs"
 PROJECT_ROOT_FAMILY = ""
 
-# ONLY ``harness_scoped`` classes may write inside a harness dot-dir, and that set
-# is asserted to be exactly {HARNESS, SHARED} by
-# ``test_placement_matrix.test_only_harness_classes_mount_a_dot_dir``. That guard
-# is the one this table needed: the retired ``NONE`` class was harness_scoped and
-# quietly mounted ``.claude/docs`` / ``.claude/files``, and because it had no
-# TypeInfo the registry-iterating guard could not see it.
+# ONLY ``harness_scoped`` classes may write inside a harness dot-dir; the set is
+# asserted to be exactly {HARNESS, SHARED} by ``test_placement_matrix``.
 LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
     AssetClass.INTERNAL: LayoutClass(harness_scoped=False, fan_out=False, user_scope=False),
     AssetClass.HARNESS: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
@@ -204,24 +191,15 @@ LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
 }
 
 
-def placed_under(asset_class: "AssetClass | None", family: "str | None", parent_dir: "Path | str") -> bool:
-    """Is ``parent_dir`` where an asset of this class/family is MOUNTED?
-
-    A class with a fixed ``root_prefix`` (REPO: ``agentic-assets/<family>``)
-    lives only there, so its main document elsewhere is not it — a workspace
-    ``SPEC.md`` is a document, ``agentic-assets/spec/x/spec.md`` is a spec. A
-    harness-scoped class has no fixed mount (a skill is a skill under any
-    dot-dir, which is what its walker does), so the answer is True. ONE owner
-    of the mount rule; ``main_file_owners`` and the walkers ask this, never a
-    string-split of ``main_subdir``.
-    """
-    layout = LAYOUT_REGISTRY.get(asset_class) if asset_class is not None else None
-    if layout is None or layout.root_prefix is None:
-        return True
-    if not family:
+def mount_matches(parent_parts: "tuple[str, ...]", mount_parts: "tuple[str, ...]") -> bool:
+    """Do ``parent_parts`` END with ``mount_parts``? A ``*`` mount segment
+    matches any one directory; names compare case-insensitively. The ONE
+    "is this directory a type's mount" rule — the classifier, the walkers and
+    ``main_file_owners`` all ask it."""
+    n = len(mount_parts)
+    if not n or len(parent_parts) < n:
         return False
-    parts = [part.lower() for part in Path(parent_dir).parts[-2:]]
-    return parts == [layout.root_prefix.lower(), family.lower()]
+    return all(m == "*" or m.lower() == p.lower() for m, p in zip(mount_parts, parent_parts[-n:]))
 
 
 def scan_mounts(
@@ -250,7 +228,7 @@ def scan_mounts(
 
 def user_scope_allowed(asset_class: "AssetClass | None", *, is_git: bool = False) -> bool:
     """Whether "Install global" (user scope) is offered for a received asset —
-    the single owner of that policy, replacing the old ``.claude``-prefix hack.
+    the single owner of that policy.
 
     Git transfers resolve their own checkout location, so they are always
     user-installable; otherwise the asset class's declared ``user_scope`` decides

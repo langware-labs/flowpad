@@ -1,6 +1,6 @@
 """A type's declared document format must be true: ``main_ext`` is the suffix
-of the file it actually reads. The unconditional ``.md`` default let json-
-document folder types claim any sibling ``.md`` (FLOWPAD-2083's silent twin)."""
+of the file it actually reads, so a json-document folder type never claims a
+sibling ``.md``."""
 from __future__ import annotations
 
 import pytest

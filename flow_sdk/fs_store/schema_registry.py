@@ -13,7 +13,7 @@ import os
 import stat
 import uuid
 from collections.abc import Container
-from dataclasses import dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from functools import cache
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
@@ -32,7 +32,14 @@ from flow_sdk.fs_store.identity_carrier import (
     Unstamped,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.schema.layout import File, Folder, Layout, LayoutKind  # noqa: F401 — Layout/LayoutKind re-exported
+from flow_sdk.schema.layout import (  # noqa: F401 — Layout/LayoutKind re-exported
+    File,
+    Folder,
+    Layout,
+    LayoutKind,
+    Walk,
+    shape_from_dict,
+)
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
 
 # ---------------------------------------------------------------------------
@@ -74,6 +81,19 @@ def humanize_type(type_name: str) -> str:
     return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
 
 
+#: A field tagged ``merge`` is carried onto an existing registration by
+#: "non-default wins"; the untagged fields have bespoke rules in ``register``.
+_MERGE = {"merge": True}
+_DEFAULT_SHAPE = File(ext=".md")
+
+
+def _may_write(ref: Any) -> bool:
+    """Carrier writes are allowed for ``ref``: it is not read-only and no
+    suppression context (a git working tree) is active."""
+    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+
+    return not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed()
+
 
 @dataclass
 class TypeInfo:
@@ -82,22 +102,22 @@ class TypeInfo:
     # --- Structural fields (included in hash, persisted) ---
     type_name: str
     uid_field: str = "id"
-    index_fields: list[str] = field(default_factory=list)
+    index_fields: list[str] = field(default_factory=list, metadata=_MERGE)
     defaults: dict[str, Any] = field(default_factory=dict)
-    indexed_by_default: bool = False
+    indexed_by_default: bool = field(default=False, metadata=_MERGE)
     # Minimum view mode at which this type is browseable (None ⇒ never). See
     # flow_sdk/schema/view_mode.py — visibility is cumulative.
     browseable_by: ViewMode | None = None
-    creatable: bool = False
-    api_visible: bool = False
-    icon: str | None = None
+    creatable: bool = field(default=False, metadata=_MERGE)
+    api_visible: bool = field(default=False, metadata=_MERGE)
+    icon: str | None = field(default=None, metadata=_MERGE)
     parent_type: str | None = None
     locations: list[str] = field(default_factory=list)
     # UX-friendly label for the type (e.g. "Skills"). Presentational, surfaced to
     # the FE via ``to_dict``; deliberately NOT in ``schema_hash`` so relabeling a
     # type never forces a reindex. Read through ``get_display_name`` (falls back to
     # ``humanize_type``).
-    display_name: str | None = None
+    display_name: str | None = field(default=None, metadata=_MERGE)
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = field(default=None, compare=False, repr=False)
@@ -105,7 +125,7 @@ class TypeInfo:
     # what the medium persists: frontmatter scalars, a ``Body``, a
     # ``FreeSection``, ``FileRef``s, rows, sub-assets. None ⇒ the legacy path
     # (``default_body_fn`` / ``from_disk_fn``). Runtime-only, not in the hash.
-    asset_spec: type | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    asset_spec: type | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Optional post-sync hook: async Callable[[FSRecord], None] — runs after
     # FSRecord.sync_to_db completes its entity/FTS/wiki writes. Used by
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
@@ -114,36 +134,7 @@ class TypeInfo:
 
     def __post_init__(self) -> None:
         self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
-        # ONE declaration. ``shape`` is it; the four legacy layout fields are
-        # projections of it kept for their readers. A declaration that still
-        # spells the legacy fields (a test probe, ``from_dict``) is lifted into
-        # a shape so every reader — ``layout_of``, ``type_for``, the carriers —
-        # asks the same object.
-        self.shape_declared = self.shape is not None
-        if self.shape is None:
-            if self.main_layout == "folder":
-                self.shape = Folder(main=self.main_file, ref_is_main=bool(self.main_file and self.main_file_is_asset_ref))
-            else:
-                self.shape = File(ext=self.main_ext or ".md")
-        self._project_shape()
-
-    def _project_shape(self) -> None:
-        """Re-derive the legacy layout fields from ``shape``."""
-        if isinstance(self.shape, Folder):
-            self.main_layout = "folder"
-            self.main_file = self.shape.main
-            self.main_file_is_asset_ref = self.shape.ref_is_main
-            # A folder type's document format IS its main file's suffix. The
-            # ".md" default was written for file types; on a json-document
-            # folder type (mcp.json, deck.json, trace.json) it let ``layout_of``
-            # and the write gate treat any sibling ``.md`` as this type's own.
-            if self.shape.main:
-                self.main_ext = Path(self.shape.main).suffix.lower() or self.main_ext
-        else:
-            self.main_layout = "file"
-            self.main_file = None
-            self.main_file_is_asset_ref = False
-            self.main_ext = self.shape.ext
+        self.walk = (self.walk,) if isinstance(self.walk, Walk) else tuple(self.walk or ())
 
     @property
     def default_origin_kind(self) -> str:
@@ -171,170 +162,174 @@ class TypeInfo:
     #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
     #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
-    from_disk_fn: Any = field(default=None, compare=False, repr=False)
+    from_disk_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
     identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
-    id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
+    id_stable_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     #   identity_key_fn:   Callable[[FSRef | Path], str] — the type's natural key.
     #     The v5 key is derived as f"{type_name}:{identity_key_fn(ref)}"; set this
     #     instead of id_stable_key_fn unless the type needs a different shape.
-    identity_key_fn: Any = field(default=None, compare=False, repr=False)
-    id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
-    asset_hash_fn: Any = field(default=None, compare=False, repr=False)
+    identity_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False, metadata=_MERGE)
+    asset_hash_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Per-type default-body writer: Callable[[entity], str]. Read by
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
     # create. None ⇒ no auto-created body.
-    default_body_fn: Any = field(default=None, compare=False, repr=False)
+    default_body_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ entity saves re-render the backing file from default_body_fn on
     # EVERY store() (entity is the file's sole editor), not just on create.
-    owns_main_ref: bool = field(default=False, compare=False, repr=False)
+    owns_main_ref: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ sharing an entity of this type also shares its parent
     # (``parent_type_id``); the receive path materializes the parent first via
     # ``Entity.materialize_share_parent``. Runtime-only; not part of the
     # schema hash. Only safe when the parent type is deterministic/field-frozen.
-    parent_share_on_default: bool = field(default=False, compare=False, repr=False)
+    parent_share_on_default: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ this hub-hosted ``is_child`` type is pulled during the shared-context
     # catch-up sync (``_sync_shared_context_subtree``). The live bridge already
     # materializes any child type generically, so this flag only declares the
     # pull-side type list — sourced from the registry, not a hardcoded tuple.
     # Runtime-only; not part of the schema hash.
-    shared_child: bool = field(default=False, compare=False, repr=False)
-    # True for a type declared by a ``schema/type_info`` module (set by
-    # ``register_all``); False for an ad-hoc ``TypeInfo`` (a test probe, a
-    # ``from_dict`` mirror). Registry-wide checks over "the declared types"
-    # filter on this, never on a side effect of how the object was built.
-    declared: bool = field(default=False, compare=False, repr=False)
+    shared_child: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # True for a type declared by a ``schema/type_info`` module (stamped by
+    # ``register(declared=True)``); False for an ad-hoc ``TypeInfo`` (a test
+    # probe, a ``from_dict`` mirror). Registry-wide checks over "the declared
+    # types" filter on this.
+    declared: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ Entity.save persists the row in the DB only and never creates an
     # FSRecord shadow. Such types have no disk→DB adopt path. Runtime-only; not
     # part of the schema hash.
-    db_only: bool = field(default=False, compare=False, repr=False)
+    db_only: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # Cloud delivery capability for file-backed assets. Serialized to the UI
     # bootstrap but deliberately excluded from the local indexing schema hash.
     cloud_file_transport: Literal["embedded", "git"] = field(
-        default="embedded", compare=False, repr=False
+        default="embedded", compare=False, repr=False, metadata=_MERGE
     )
     # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
     # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
     # Runtime-only; not part of the schema hash.
-    meta_model: Any = field(default=None, compare=False, repr=False)
+    meta_model: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # --- Serialization (HOW/WHERE) — runtime-only, not part of the schema hash ---
-    # The origin kind a store/load defaults to when the caller passes none:
-    # "local" (disk) for asset types, "db" for db_only types.
     # The DECLARED origin kind ("db" | "local"); None = not declared, which
-    # resolves through ``default_origin_kind`` below. Kept None so an
+    # resolves through ``default_origin_kind`` above. Kept None so an
     # entity-class registration (which never knows ``db_only``) cannot
     # overwrite a module's declaration through the registry merge.
-    origin_kind: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    origin_kind: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The path names the entity when the header carries no name: the folder
     # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
     # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
-    name_from_path: bool = field(default=False, compare=False, repr=False, metadata={"serialization": True})
+    name_from_path: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
     # ``"flat"`` = the header's keys merged into the payload's own document (a
     # trace/report whose file predates us). None ⇒ flat when the class has no
     # ``data_field``, sections otherwise.
-    manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Facts the DISK carries that the header cannot say: counts over rows,
     # links scraped from a body, a name from the path. ``(data, root, header_raw)``
     # mutates the entity kwargs after the main doc and fields are read, before
     # the class is constructed.
-    derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
     # dataset). Tells the disk serializer this type has layout-written rows,
     # without the serializer ever naming the type.
-    rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The canonical filename the asset's main doc is published under on the hub
     # (``document.md`` for a markdown doc, ``SKILL.md`` for a skill folder).
     # Also the opt-in: ``None`` keeps the generic embedded-VFS push.
-    hub_main_file: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    hub_main_file: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Row identity for row-only types: the fields whose tuple resolves an
     # existing row (``SourceItem``: data_source · segment · external id). None ⇒
     # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
-    natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The no-op gate: the fields whose canonical digest decides "unchanged" on
     # re-delivery. None ⇒ no gate (every save writes).
-    digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The row field that HOLDS the digest the gate compares against.
-    digest_field: str = field(default="content_digest", compare=False, repr=False, metadata={"serialization": True})
+    digest_field: str = field(default="content_digest", compare=False, repr=False, metadata=_MERGE)
     # A row-only (``db_only``) type that is nonetheless searchable: the row field
     # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
-    fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata={"serialization": True})
-    # --- Placement axis (the harness-aware replacement for ``main_subdir``) ---
-    # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / NONE);
+    fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # --- Placement axis ---
+    # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / REPO / …);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
-    # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Placement is
-    # resolved through ``flow_sdk.fs_store.placement``. ``main_subdir`` survives as
-    # a DERIVED, read-only property (below) — the canonical claude-default family
-    # subdir (``.claude/skills``, ``docs``) — so the many legacy consumers keep
-    # working unchanged. Not hashed.
-    asset_class: Any = None  # placement.AssetClass | None
-    harness: Any = None  # placement.HarnessType | None
-    family: str | None = None
-    main_layout: str = "file"
-    # For ``main_layout == "folder"`` owned types: the fixed inner filename of
-    # the primary asset (e.g. ``spec.md`` under ``specs/<name>/``). When set,
-    # ``compute_asset_ref`` targets ``<subdir>/<name>/<main_file>`` instead of
-    # the bare folder, so ``owns_main_ref`` folder types can write/round-trip
-    # the body file. Runtime-only; not part of the schema hash.
-    main_file: str | None = None
-    # Folder-layout types: True ⇒ asset_ref IS ``<subdir>/<name>/<main_file>``
-    # (spec); False ⇒ asset_ref is the bare folder and the default body is
-    # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
-    main_file_is_asset_ref: bool = False
-    # File extension for ``main_layout == "file"`` types — the suffix
-    # ``compute_asset_ref`` appends to ``<subdir>/<name>``. Defaults to ``.md``
-    # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
-    # backing file matches the indexer's glob. Runtime-only.
-    main_ext: str = ".md"
+    # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Resolved
+    # through ``flow_sdk.fs_store.placement``; ``main_subdir`` below is the
+    # claude-default view. Not hashed.
+    asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
+    harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
+    family: str | None = field(default=None, metadata=_MERGE)
     # --- THE shape declaration: ``File(ext)`` | ``Folder(main, ref_is_main)`` ---
-    # The four fields above are DERIVED from it in ``__post_init__`` (and, until
-    # every declaration has moved, a legacy declaration of those four builds
-    # the shape). New code declares ``shape=`` and nothing else. Not hashed.
-    shape: Any = None  # flow_sdk.schema.layout.Shape | None
-    # True when the declaration passed ``shape=`` (vs. a legacy lift or the
-    # default); the registry merge carries a declared shape onto an existing
-    # entry and never a defaulted one. Set in ``__post_init__``.
-    shape_declared: bool = field(default=False, compare=False, repr=False)
+    # ``main_layout`` / ``main_file`` / ``main_ext`` / ``main_file_is_asset_ref``
+    # are read-only projections of it (below). Not hashed.
+    shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.schema.layout.Shape
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
     # shipped in the bootstrap so the frontend derives its editor tables from
     # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
-    editor: str | None = None
-    # The declarative SCAN for this type (``flow_sdk.schema.layout.Walk``):
-    # which root nodes it hangs on and which mounts it looks in. None ⇒ the
-    # type is walked by a bespoke function (or not walked at all).
-    walk: Any = None  # flow_sdk.schema.layout.Walk | None
+    editor: str | None = field(default=None, metadata=_MERGE)
+    # The declarative SCAN(s) for this type (``flow_sdk.schema.layout.Walk``):
+    # which root nodes each hangs on and which mounts it looks in. A single
+    # ``Walk`` is accepted and stored as a 1-tuple; ``()`` ⇒ the type is walked
+    # by a bespoke function (or not walked at all).
+    walk: tuple[Walk, ...] = field(default=(), metadata=_MERGE)
     # Fields the ASSIGNEE of a shared entity owns. When the local user is the
     # entity's assignee (and not its reporter), a hub-reflected update carries
     # ONLY these — everything else on the row belongs to whoever handed the work
     # over. Without it, one shared row means whole-row LWW
     # (``Entity.is_stale``): the assignee's UI PUTs its entire snapshot, so a
-    # status click reverts the owner's title/body (measured, 2026-07-28). Empty
-    # ⇒ no scoping, the historical behavior for every other type. Runtime-only;
-    # not part of the schema hash.
-    assignee_owned_fields: tuple = field(default_factory=tuple, compare=False, repr=False)
+    # status click reverts the owner's title/body. Empty ⇒ no scoping.
+    # Runtime-only; not part of the schema hash.
+    assignee_owned_fields: tuple = field(default_factory=tuple, compare=False, repr=False, metadata=_MERGE)
     # Filenames/globs inside a folder-backed asset that must NOT ride a share
     # bundle. The packer copies the folder verbatim, so this is the only place a
     # type can keep a private file at home (a task's inner ``spec.md`` — the
     # plan). Consumed by ``flow_message_bundle._pack_ignore``. Runtime-only; not
     # part of the schema hash.
-    pack_exclude: tuple = field(default_factory=tuple, compare=False, repr=False)
+    pack_exclude: tuple = field(default_factory=tuple, compare=False, repr=False, metadata=_MERGE)
     # Reception seam (runtime-only; not in the schema hash). ``setup_skill`` is the
     # built-in skill that sets a received attachment of this type up in a Vibe
     # session (``None`` ⇒ just open it; a value equal to ``type_name`` ⇒ run the
     # received entity as its own skill). ``reception_verb`` is the receive CTA verb
     # (label = ``"<reception_verb> the <typeLabel>"``). Read by
     # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
-    setup_skill: str | None = None
-    reception_verb: str = "Open"
+    setup_skill: str | None = field(default=None, metadata=_MERGE)
+    reception_verb: str = field(default="Open", metadata=_MERGE)
     # ``receive_policy``: reception gate for a bundled entry of this type.
     # ``None`` ⇒ staged → review → explicit install; ``"auto"`` ⇒ row-only
     # payload installed immediately at unpack through the one install action
     # (no review dialog; its chip navigates). ``receive_row_overrides`` are the
     # local-state fields merged over the packed header when the row
     # materializes (backend-only; never serialized).
-    receive_policy: str | None = None
-    receive_row_overrides: dict | None = None
+    receive_policy: str | None = field(default=None, metadata=_MERGE)
+    receive_row_overrides: dict | None = field(default=None, metadata=_MERGE)
+
+    # --- Projections of ``shape`` (read-only) ---
+
+    @property
+    def main_layout(self) -> str:
+        return "folder" if isinstance(self.shape, Folder) else "file"
+
+    @property
+    def main_file(self) -> str | None:
+        """A folder type's inner main document (``SKILL.md``); None for a file type."""
+        return self.shape.main if isinstance(self.shape, Folder) else None
+
+    @property
+    def main_file_is_asset_ref(self) -> bool:
+        """Folder types: ``asset_ref`` IS ``<folder>/<main_file>`` (spec) rather than the folder (skill)."""
+        return isinstance(self.shape, Folder) and self.shape.ref_is_main
+
+    @property
+    def main_ext(self) -> str:
+        """The document suffix a create writes: the file's, or the folder's main document's."""
+        if isinstance(self.shape, File):
+            return self.shape.ext
+        return (Path(self.shape.main).suffix.lower() if self.shape.main else "") or ".md"
+
+    @property
+    def folder_backed(self) -> bool:
+        """``asset_ref`` points at a browsable folder (skill-style), not the
+        inner main file (spec-style). The Assets sidebar expands these rows."""
+        return isinstance(self.shape, Folder) and not self.shape.ref_is_main
 
     @property
     def git_publishable(self) -> bool:
@@ -346,19 +341,13 @@ class TypeInfo:
         )
 
     def asset_ref_for(self, folder: Path) -> Path:
-        """Where ``asset_ref`` points for the asset rooted at ``folder`` — the
-        shape's convention (``ref_is_main`` ⇒ ``<folder>/<main>``, else the
-        folder), stated once on the shape."""
+        """Where ``asset_ref`` points for the asset rooted at ``folder``."""
         return self.shape.ref_for(folder)
 
     def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
-        """THE path→layout classifier. A folder type names its folder (``FOLDER``)
-        or the inner main file (``MAIN_FILE`` → root is the parent); a file type
-        names the file (``FILE``). ``NONE`` when the path is not this type's shape.
-        ``verify`` additionally requires the main file / the file to exist —
-        the indexer's gate; every other mapper is a total, stat-light projection.
-        Names compare case-insensitively (the default filesystem does).
-        The answer is ``shape.locate``'s; this is its classic projection."""
+        """THE path→layout classifier: ``shape.locate``. ``NONE`` when the path
+        is not this type's shape; ``verify`` additionally requires the main
+        file / the file to exist (the indexer's gate)."""
         return self.shape.locate(path, verify=verify)
 
     def body_path_for(self, asset_path: Path) -> Path:
@@ -403,68 +392,60 @@ class TypeInfo:
         kind = getattr(origin, "kind", None) or self.default_origin_kind
         return get_serializer(kind, self)
 
-    @property
-    def folder_backed(self) -> bool:
-        """True when ``asset_ref`` points at a browsable folder — a folder-layout
-        type whose asset_ref is the bare folder (skill-style,
-        ``main_file_is_asset_ref=False``), not the inner ``main_file``
-        (spec-style). The Assets sidebar expands these rows into their on-disk
-        file tree. Derived from the existing folder-layout fields so no type
-        carries a redundant flag."""
-        return self.main_layout == "folder" and not self.main_file_is_asset_ref
-
     def stable_key_for(self, ref) -> str | None:
         """The v5 key text for *ref*, or None when this type has no stable key.
-
-        Types that only need "``<type>:<natural key>``" declare
-        ``identity_key_fn``; ``id_stable_key_fn`` stays the escape hatch for a
-        different shape. The derived text is byte-identical to the per-type
-        ``*_stable_key`` helpers it replaced — v5 ids depend on it.
-        """
+        ``identity_key_fn`` yields ``<type>:<natural key>``; ``id_stable_key_fn``
+        is the escape hatch for a different shape. v5 ids depend on the text."""
         if self.id_stable_key_fn is not None:
             return self.id_stable_key_fn(ref)
         if self.identity_key_fn is not None:
             return f"{self.type_name}:{self.identity_key_fn(ref)}"
         return None
 
-    def layout_for(self, ref: Any) -> "Layout":
-        """Classify one ref for the id seam: refuse (``UnclaimedPath``) a path a
-        WRITABLE carrier does not claim, then ``layout_of``. A derived type is
-        exempt because its declared shape is not yet the truth about its
-        sources (mcp_server says ``.json`` but its walker also yields
-        ``.toml`` and hooks inside settings.json): its id is a keyed function
-        of the source, never a write, so an unshaped path is the file itself."""
-        path = Path(getattr(ref, "_path", ref))
-        if self.identity_carrier is not None and self.identity_carrier.writable:
-            if (reason := self.claims(path)) is not None:
-                raise UnclaimedPath(self.type_name, path, reason)
-        layout = self.layout_of(path)
-        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path, path)
+    # --- SCAN declarations ---
+
+    @property
+    def walks_anywhere(self) -> bool:
+        """One of the type's walks is the folder-wide one (a skill is a skill anywhere)."""
+        return any(walk.anywhere for walk in self.walk)
+
+    @property
+    def scan_mounts(self) -> tuple[str, ...]:
+        """Every root-relative directory a copy of this type may BE in: the
+        declared walk mounts plus placement's (``placement.scan_mounts``)."""
+        from flow_sdk.fs_store.placement import scan_mounts  # noqa: PLC0415
+
+        declared = (m for walk in self.walk if not walk.anywhere for m in walk.mounts)
+        return tuple(dict.fromkeys((*declared, *scan_mounts(*self._resolved_layout))))
+
+    # --- The id seam ---
 
     @property
     def carrier(self) -> IdentityCarrier:
         """The declared carrier; a type without one derives (never writes)."""
         return self.identity_carrier if self.identity_carrier is not None else Derived()
 
+    def layout_for(self, ref: Any) -> "Layout":
+        """Classify one ref for the id seam. A writable carrier refuses
+        (``UnclaimedPath``) a path the type does not claim; a derived type's
+        id is a keyed function of the source, never a write, so an unshaped
+        path is the file itself (mcp_server declares ``.json`` but also
+        derives from ``.toml`` and settings entries)."""
+        path = Path(getattr(ref, "_path", ref))
+        layout = self.layout_of(path)
+        if self.carrier.writable and (reason := self._refusal(path, layout)) is not None:
+            raise UnclaimedPath(self.type_name, path, reason)
+        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path, path)
+
     def claims(self, path: Path) -> "str | None":
-        """Why this type does NOT claim ``path`` — or ``None`` when it does.
+        """Why this type does NOT claim ``path`` — or ``None`` when it does."""
+        return self._refusal(path, self.layout_of(path))
 
-        The same shape question every indexer walk asks through
-        ``layout_of(verify=True)`` before it builds a ref; a point lookup that
-        names the wrong type for a path (a ``.py`` reached under ``markdown``)
-        is refused here, before any carrier is read or written. Two checks:
-
-        * the path has this type's shape, and
-        * no OTHER type owns the path by its declared main-file name AND
-          placement (``SKILL.md`` is a skill, never a ``markdown``) — the
-          registry-wide precedence that a per-type ``layout_of`` cannot express.
-
-        A path not on disk yet is a save target whose body lands moments later;
-        a directory is a folder asset receiving its capsule BESIDE its contents.
-        Both are claimed by a folder-layout type, so create flows keep minting
-        ahead of the write. One stat: existence and kind come from it, and the
-        shape check runs with ``verify=False`` since both are already known.
-        """
+    def _refusal(self, path: Path, layout: "Layout") -> "str | None":
+        """A path not on disk yet is a save target (claimed); a directory is a
+        folder asset receiving its capsule; a file is this type's unless
+        another walked folder type owns it as its main document (``SKILL.md``
+        is a skill, never a ``markdown``) or it is not the shape."""
         try:
             st = path.stat()
         except (FileNotFoundError, NotADirectoryError):
@@ -474,16 +455,12 @@ class TypeInfo:
         owners = SchemaRegistry.main_file_owners(path)
         if owners and self.type_name not in owners:
             return f"{path.name} is the main document of {', '.join(sorted(owners))}"
-        # A regular file: a File shape claims it by extension; a Folder shape
-        # claims it only as its MAIN document (``kind`` FOLDER here would mean
-        # "a file that is not the main", which the unverified locate names).
-        if self.shape.locate(path).kind not in (LayoutKind.FILE, LayoutKind.MAIN_FILE):
+        if layout.kind not in (LayoutKind.FILE, LayoutKind.MAIN_FILE):
             return f"not shaped as a {self.type_name} ({self.shape})"
         return None
 
     def read_id(self, ref: Any) -> str | None:
-        """The valid id the source already carries, else None. Never writes —
-        the probe collision ranking and create guards rely on."""
+        """The valid id the source already carries, else None. Never writes."""
         layout = self.layout_for(ref)
         found = self.carrier.read(self.carrier.locate(layout))
         return found.id if isinstance(found, Found) else None
@@ -493,20 +470,21 @@ class TypeInfo:
         document: a folder without it (a yaml-only skill) is not the shape,
         so nothing is ever written into it — a scan issue, not an asset."""
         if isinstance(self.shape, Folder) and where == layout.body and not where.exists():
-            return False   # the carrier lives in the main document, and there is none
+            return False
         return self.carrier.accepts(where)
 
-    def mint(self, layout: "Layout", *, write: bool = True, ref: Any = None) -> str:
-        """MINT: read the carrier; ``Found`` is the answer; ``Foreign`` raises
-        ``ForeignId``; absent ⇒ mint (v5 when the type has a stable key, else
-        v4) and, with ``write``, stamp it through the carrier — which refuses
+    def mint(self, layout: "Layout", *, write: bool = True, ref: Any = None, found: Any = None) -> str:
+        """MINT: ``Found`` is the answer; ``Foreign`` raises ``ForeignId``;
+        absent ⇒ mint (v5 when the type has a stable key, else v4) and, with
+        ``write``, stamp it through the carrier — which refuses
         (``NotWritable``) a path that is not its own format. Without a write a
-        keyless id is not an answer (``Unstamped``). ``ref`` is handed to the
-        stable-key function when it carries more than the path (scope,
-        json_path); the layout's ref otherwise."""
+        keyless id is not an answer (``Unstamped``). ``ref`` reaches the
+        stable-key function when it carries more than the path; ``found`` is
+        the carrier's read when the caller already has it."""
         carrier = self.carrier
         where = carrier.locate(layout)
-        found = carrier.read(where)
+        if found is None:
+            found = carrier.read(where)
         if isinstance(found, Found):
             return found.id
         if not isinstance(found, Absent):
@@ -536,26 +514,25 @@ class TypeInfo:
     def stamp_id(self, ref: Any, entity_id: str) -> str:
         """The create-flow seam: persist ``entity_id`` into the source through
         the carrier. A ``Found`` id wins and is returned; ``Foreign`` raises.
-        A ``read_only`` ref, suppressed carrier writes (a git working tree) or
-        a derived type answer the carrier or ``entity_id`` without writing."""
-        from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+        A ``read_only`` ref, suppressed carrier writes or a derived type answer
+        the carrier or ``entity_id`` without writing."""
+        return self._stamp(self.layout_for(ref), ref, entity_id)
 
+    def _stamp(self, layout: "Layout", ref: Any, entity_id: str) -> str:
         if not is_valid_entity_id(entity_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
         carrier = self.carrier
-        layout = self.layout_for(ref)
         where = carrier.locate(layout)
-        if not carrier.writable or bool(getattr(ref, "read_only", False)) or carrier_writes_are_suppressed():
-            found = carrier.read(where)
-            return found.id if isinstance(found, Found) else entity_id
-        if not self._stampable(layout, where):
+        write = carrier.writable and _may_write(ref)
+        if write and not self._stampable(layout, where):
             raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
         found = carrier.read(where)
-        if isinstance(found, Found) and found.source in LEGACY_CONVERTIBLE and hasattr(carrier, "convert"):
-            # A create over a legacy source: the same rewrite moves the id
-            # into the header (the indexer's reconcile does the same later).
-            carrier.convert(where, found.id)
+        if isinstance(found, Found):
+            if write and found.source in LEGACY_CONVERTIBLE and hasattr(carrier, "convert"):
+                carrier.convert(where, found.id)   # a create over a legacy source moves the id into the header
             return found.id
+        if not write:
+            return entity_id
         return carrier.stamp(where, entity_id)
 
     def mint_entity_id(
@@ -566,23 +543,19 @@ class TypeInfo:
         owner_id: str | None = None,
         live_ids: "Container[str] | None" = None,
     ) -> str:
-        """Compatibility adapter over the seam: ``proposed_id`` ⇒ ``stamp_id``;
-        everything else ⇒ the indexer's ``reconcile`` (carrier vs owning row,
-        legacy conversion, the foreign-id fallback), with writes gated by the
-        ref's ``read_only`` and the carrier-write suppression context."""
-        from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+        """Adapter over the seam: ``proposed_id`` ⇒ stamp it; everything else
+        ⇒ the indexer's ``reconcile`` (carrier vs owning row, legacy
+        conversion, the foreign-id fallback). Writes are gated by the ref's
+        ``read_only`` and the carrier-write suppression context."""
         from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
 
-        if proposed_id is not None and not is_valid_entity_id(proposed_id):
-            raise ValueError("proposed entity id must be a UUID v4 or v5")
         layout = self.layout_for(ref)
-        write = not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed()
         if proposed_id is not None and not owner_id:
             try:
-                return self.stamp_id(ref, proposed_id)
+                return self._stamp(layout, ref, proposed_id)
             except ForeignId:
                 pass   # reconcile records the foreign id and answers with the keyed/path v5
-        return reconcile(self, layout, owner_id or None, live_ids, write=write, ref=ref)
+        return reconcile(self, layout, owner_id or None, live_ids, write=_may_write(ref), ref=ref)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -592,11 +565,8 @@ class TypeInfo:
 
     @property
     def main_subdir(self) -> str | None:
-        """Derived, read-only: the canonical claude-default family subdir
-        (``.claude/skills``, ``docs``, ``assets/datasets``). The compatibility
-        view for the many consumers that still think in ``<scope>/<subdir>``; the
-        harness-aware source of truth is the placement axis. ``None`` for
-        non-file-backed types."""
+        """The claude-default family subdir (``.claude/skills``, ``docs``,
+        ``assets/datasets``); ``None`` for non-file-backed types."""
         from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
 
         return family_subdir(self.asset_class, self.harness, self.family, default_worker="claude")
@@ -675,11 +645,7 @@ class TypeInfo:
             "folder_backed": self.folder_backed,
             # THE shape declaration the four fields above project; the client
             # reads this one and derives, never a hand-written per-type table.
-            "shape": (
-                {"kind": "folder", "main": self.shape.main, "ref_is_main": self.shape.ref_is_main}
-                if isinstance(self.shape, Folder)
-                else {"kind": "file", "ext": self.shape.ext}
-            ),
+            "shape": self.shape.to_dict(),
             "editor": self.editor,
             # The entity owns its backing file (re-rendered from default_body on
             # every save) → a resolved-but-file-missing row can self-heal with a
@@ -711,17 +677,9 @@ class TypeInfo:
             display_name=data.get("display_name"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
-            shape=_shape_from_dict(data.get("shape")),
+            shape=shape_from_dict(data.get("shape")) or _DEFAULT_SHAPE,
             editor=data.get("editor"),
         )
-
-
-def _shape_from_dict(data: "dict | None") -> "File | Folder | None":
-    if not data:
-        return None
-    if data.get("kind") == "folder":
-        return Folder(main=data.get("main"), ref_is_main=bool(data.get("ref_is_main")))
-    return File(ext=data.get("ext") or ".md")
 
 
 # ---------------------------------------------------------------------------
@@ -812,8 +770,66 @@ def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
                 raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
 
 
-#: The TypeInfo slots the serializers read (``metadata={"serialization": True}``); merged by "non-default wins".
-_SERIALIZATION_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("serialization"))
+#: The ``merge``-tagged TypeInfo fields: a later registration's non-default value wins.
+_MERGE_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("merge"))
+
+
+def _slot_default(slot: Any) -> Any:
+    return slot.default if slot.default is not MISSING else slot.default_factory()
+
+
+@dataclass(frozen=True)
+class _ShapeTables:
+    """The SCAN lookup tables, one dict lookup per classification:
+    main name → walked folder types (``SKILL.md`` → skill); fixed filename →
+    walked file types (``CLAUDE.md`` → claude_md); ``(ext, mount)`` → placed
+    file types (``.md`` under ``.claude/commands``), glob mounts bucketed by
+    ``(ext, depth)``; ext → walked file types (``.csv`` → spreadsheet)."""
+
+    by_main: dict[str, tuple[TypeInfo, ...]]
+    by_name: dict[str, tuple[TypeInfo, ...]]
+    by_ext: dict[str, tuple[TypeInfo, ...]]
+    by_mount: dict[tuple[str, tuple[str, ...]], tuple[TypeInfo, ...]]
+    wild: dict[tuple[str, int], tuple[tuple[tuple[str, ...], TypeInfo], ...]]
+    depths: tuple[int, ...]   # every mount depth, deepest first
+
+    @classmethod
+    def build(cls, infos: "Any") -> "_ShapeTables":
+        by_main: dict[str, list[TypeInfo]] = {}
+        by_name: dict[str, list[TypeInfo]] = {}
+        by_ext: dict[str, list[TypeInfo]] = {}
+        by_mount: dict[tuple[str, tuple[str, ...]], list[TypeInfo]] = {}
+        wild: dict[tuple[str, int], list[tuple[tuple[str, ...], TypeInfo]]] = {}
+        for info in infos:
+            if info.from_disk_fn is None:
+                continue   # a type with no walker never claims a path (test probes register too)
+            if isinstance(info.shape, Folder):
+                if info.shape.main:
+                    by_main.setdefault(info.shape.main.lower(), []).append(info)
+                continue
+            if not isinstance(info.shape, File):
+                continue
+            if info.shape.names:
+                for name in info.shape.names:
+                    by_name.setdefault(name.lower(), []).append(info)
+                continue   # a fixed-name file is never "any file of that extension"
+            for ext in info.shape.exts:
+                by_ext.setdefault(ext, []).append(info)
+                for mount in info.scan_mounts:
+                    parts = tuple(part.lower() for part in Path(mount).parts)
+                    if "*" in parts:
+                        wild.setdefault((ext, len(parts)), []).append((parts, info))
+                    else:
+                        by_mount.setdefault((ext, parts), []).append(info)
+        depths = {len(parts) for _ext, parts in by_mount} | {depth for _ext, depth in wild}
+        return cls(
+            by_main={k: tuple(v) for k, v in by_main.items()},
+            by_name={k: tuple(v) for k, v in by_name.items()},
+            by_ext={k: tuple(v) for k, v in by_ext.items()},
+            by_mount={k: tuple(v) for k, v in by_mount.items()},
+            wild={k: tuple(v) for k, v in wild.items()},
+            depths=tuple(sorted(depths, reverse=True)),
+        )
 
 
 class SchemaRegistry:
@@ -931,8 +947,11 @@ class SchemaRegistry:
             cls._entity_bound_hooks.append(hook)
 
     @classmethod
-    def register(cls, info: TypeInfo) -> None:
-        """Register or enrich a TypeInfo. O(1). Idempotent — merges on re-register."""
+    def register(cls, info: TypeInfo, *, declared: bool = False) -> None:
+        """Register or enrich a TypeInfo. O(1). Idempotent — merges on
+        re-register. ``declared`` marks a ``schema/type_info`` declaration."""
+        if declared:
+            info.declared = True
         existing = cls._types.get(info.type_name)
         cls._registry_generation += 1
         # An entity class binding to a type AFTER the per-type schema payloads
@@ -946,41 +965,13 @@ class SchemaRegistry:
             for loc in info.locations:
                 if loc not in existing.locations:
                     existing.locations.append(loc)
-            # Placement axis — enrich from whichever registration declares it
-            # (schema/type_info is the authoring home; entity/indexer modules
-            # register the same type first without these fields).
-            if info.asset_class is not None:
-                existing.asset_class = info.asset_class
-            if info.harness is not None:
-                existing.harness = info.harness
-            if info.family is not None:
-                existing.family = info.family
-            if info.shape_declared:
-                # The incoming declaration names a shape; carry the SHAPE (the
-                # one declaration) and re-project the legacy layout fields.
-                existing.shape = info.shape
-                existing.shape_declared = True
-                existing._project_shape()
-            if info.editor is not None:
-                existing.editor = info.editor
-            if info.walk is not None:
-                existing.walk = info.walk
-            if info.cloud_file_transport == "git":
-                existing.cloud_file_transport = "git"
-            if info.assignee_owned_fields:
-                existing.assignee_owned_fields = tuple(info.assignee_owned_fields)
-            if info.pack_exclude:
-                existing.pack_exclude = tuple(info.pack_exclude)
             if info.post_sync_fn is not None:
-                # Appended, not replaced: two modules may each register an observer for one
-                # type, and whichever registered second used to silently win.
+                # Appended, not replaced: two modules may each register an observer for one type.
                 already = existing.post_sync_callbacks
                 existing.post_sync_fn = (
                     *already,
                     *(fn for fn in info.post_sync_callbacks if fn not in already),
                 )
-            if info.from_disk_fn is not None:
-                existing.from_disk_fn = info.from_disk_fn
             if info.capsules:
                 merged_capsules = {spec.name: spec for spec in existing.capsules}
                 for spec in info.capsules:
@@ -995,36 +986,6 @@ class SchemaRegistry:
                 if existing.identity_carrier is not None and existing.identity_carrier != info.identity_carrier:
                     raise ValueError(f"Conflicting identity carrier registration for type {info.type_name!r}")
                 existing.identity_carrier = info.identity_carrier
-            if info.id_stable_key_fn is not None:
-                existing.id_stable_key_fn = info.id_stable_key_fn
-            # Both key spellings must survive a re-registration. Dropping this
-            # one silently reverts the type to the `uuid5(resolved path)`
-            # fallback — an id that moves with the install (FLOWPAD-2070).
-            if info.identity_key_fn is not None:
-                existing.identity_key_fn = info.identity_key_fn
-            if info.id_namespace != uuid.NAMESPACE_URL:
-                existing.id_namespace = info.id_namespace
-            if info.asset_hash_fn is not None:
-                existing.asset_hash_fn = info.asset_hash_fn
-            if info.default_body_fn is not None:
-                existing.default_body_fn = info.default_body_fn
-            if info.owns_main_ref:
-                existing.owns_main_ref = True
-            if info.parent_share_on_default:
-                existing.parent_share_on_default = True
-            if info.shared_child:
-                existing.shared_child = True
-            if info.db_only:
-                existing.db_only = True
-            if info.declared:
-                existing.declared = True
-            if info.meta_model is not None:
-                existing.meta_model = info.meta_model
-            # Serialization slots: a declared (non-default) value wins the merge.
-            for slot in _SERIALIZATION_SLOTS:
-                value = getattr(info, slot.name)
-                if value != slot.default:
-                    setattr(existing, slot.name, value)
             if info.entity_cls is not None:
                 if existing.entity_cls is None:
                     existing.entity_cls = info.entity_cls
@@ -1037,34 +998,18 @@ class SchemaRegistry:
                             f"'{existing_fqn}' vs '{new_fqn}'. "
                             f"Each entity type name must map to exactly one class."
                         )
-            if info.icon is not None:
-                existing.icon = info.icon
-            if info.display_name is not None:
-                existing.display_name = info.display_name
-            if info.setup_skill is not None:
-                existing.setup_skill = info.setup_skill
-            if info.reception_verb != "Open":
-                existing.reception_verb = info.reception_verb
-            if info.receive_policy is not None:
-                existing.receive_policy = info.receive_policy
-            if info.receive_row_overrides is not None:
-                existing.receive_row_overrides = info.receive_row_overrides
-            if info.creatable and not existing.creatable:
-                existing.creatable = True
             if info.browseable_by is not None and (
                 existing.browseable_by is None
                 or view_mode_rank(info.browseable_by) < view_mode_rank(existing.browseable_by)
             ):
                 # Keep the more permissive (lower-ordered) non-null level.
                 existing.browseable_by = info.browseable_by
-            if info.indexed_by_default and not existing.indexed_by_default:
-                existing.indexed_by_default = True
-            if info.api_visible and not existing.api_visible:
-                existing.api_visible = True
-            if info.index_fields:
-                existing.index_fields = list(info.index_fields)
             if info.defaults:
                 existing.defaults = {**existing.defaults, **info.defaults}
+            for slot in _MERGE_SLOTS:
+                value = getattr(info, slot.name)
+                if value != _slot_default(slot):
+                    setattr(existing, slot.name, value)
             info = existing
         else:
             cls._types[info.type_name] = info
@@ -1107,120 +1052,59 @@ class SchemaRegistry:
 
     # --- SCAN tables, built lazily from the declarations and keyed on the
     # registry generation so a (re)registration or a test clearing ``_types``
-    # rebuilds them. One dict lookup per classification instead of a scan of
-    # every type:
-    #   main name → walked folder types      (``SKILL.md`` → skill)
-    #   fixed filename → walked file types   (``CLAUDE.md`` → claude_md)
-    #   (ext, mount) → placed file types     (``.md`` under ``.claude/commands``)
-    #   ext → walked file types              (``.csv`` → spreadsheet)
-    # A "mount" is a scope-relative dir a file type lives in: its declared
-    # ``Walk.mounts`` plus ``placement.scan_mounts`` (every harness prefix for a
-    # SHARED type — ``.claude/agents`` and ``.agents/agents`` alike).
+    # rebuilds them.
     _registry_generation: int = 0
     _shape_tables_key: Any = None
-    _by_main_file: "dict[str, tuple[TypeInfo, ...]]" = {}
-    _by_ext: "dict[str, tuple[TypeInfo, ...]]" = {}
-    _by_name: "dict[str, tuple[TypeInfo, ...]]" = {}
-    _by_mount: "dict[tuple[str, tuple[str, ...]], tuple[TypeInfo, ...]]" = {}
-    _wild_mounts: "tuple[tuple[str, tuple[str, ...], TypeInfo], ...]" = ()   # a ``*`` segment
-    _mount_depths: tuple[int, ...] = ()
+    _tables: "_ShapeTables | None" = None
 
     @classmethod
-    def _shape_tables(cls) -> "tuple[dict[str, tuple[TypeInfo, ...]], dict[str, tuple[TypeInfo, ...]]]":
+    def _shape_tables(cls) -> "_ShapeTables":
         cls._ensure_loaded()
         key = (len(cls._types), cls._registry_generation)
         if cls._shape_tables_key != key:
-            from flow_sdk.fs_store.placement import scan_mounts  # noqa: PLC0415
-            from flow_sdk.schema.layout import Walk  # noqa: PLC0415
-
-            by_main: dict[str, list[TypeInfo]] = {}
-            by_ext: dict[str, list[TypeInfo]] = {}
-            by_name: dict[str, list[TypeInfo]] = {}
-            by_mount: dict[tuple[str, tuple[str, ...]], list[TypeInfo]] = {}
-            wild_mounts: list[tuple[str, tuple[str, ...], TypeInfo]] = []
-            for info in cls._types.values():
-                if info.from_disk_fn is None:
-                    continue   # a type with no walker never claims a path (test probes register too)
-                if isinstance(info.shape, Folder):
-                    if info.shape.main:
-                        by_main.setdefault(info.shape.main.lower(), []).append(info)
-                    continue
-                if not isinstance(info.shape, File):
-                    continue
-                if info.shape.names:
-                    for name in info.shape.names:
-                        by_name.setdefault(name.lower(), []).append(info)
-                    continue   # a fixed-name file is never "any file of that extension"
-                for ext in info.shape.exts:
-                    by_ext.setdefault(ext, []).append(info)
-                # A declared ``Walk`` names the dirs its scan looks in
-                # (``.claude/plans``); placement names where a canonical or
-                # received copy lands (``agentic-assets/plan``). Both are
-                # declarations; a path under either is the type.
-                walks = (info.walk,) if isinstance(info.walk, Walk) else tuple(info.walk or ())
-                mounts = {mount for walk in walks for mount in walk.mounts}
-                mounts.update(scan_mounts(info.asset_class, info.harness, info.family))
-                for mount in mounts:
-                    parts = tuple(part.lower() for part in Path(mount or ".").parts)
-                    if not parts:
-                        continue   # ``"."`` is the anywhere-walk, not a placed dir
-                    for ext in info.shape.exts:
-                        if "*" in parts:
-                            wild_mounts.append((ext, parts, info))
-                        else:
-                            by_mount.setdefault((ext, parts), []).append(info)
-            cls._by_main_file = {k: tuple(v) for k, v in by_main.items()}
-            cls._by_ext = {k: tuple(v) for k, v in by_ext.items()}
-            cls._by_name = {k: tuple(v) for k, v in by_name.items()}
-            cls._by_mount = {k: tuple(v) for k, v in by_mount.items()}
-            cls._wild_mounts = tuple(wild_mounts)
-            depths = {len(parts) for _ext, parts in by_mount} | {len(parts) for _ext, parts, _i in wild_mounts}
-            cls._mount_depths = tuple(sorted(depths, reverse=True))
+            cls._tables = _ShapeTables.build(cls._types.values())
             cls._shape_tables_key = key
-        return cls._by_main_file, cls._by_ext
+        return cls._tables
 
     @classmethod
     def main_file_owners(cls, path: "Path | str") -> frozenset[str]:
         """The walked folder-layout types whose declared main document IS
-        ``path``: by name (case-insensitive) AND by placement
-        (``placement.placed_under``): ``agentic-assets/spec/<x>/spec.md`` is a
-        spec, a loose workspace ``SPEC.md`` is a markdown document; a
-        harness-scoped type (``skill``) owns its name anywhere, which is what its
-        walker does too. Two types may still share a name at one placement; the
-        set carries that, and a caller refusing a path refuses only when it is
-        NOT a member."""
-        from flow_sdk.fs_store.placement import placed_under  # noqa: PLC0415
+        ``path``: by name (case-insensitive) AND by placement — under one of
+        the type's ``scan_mounts``, or anywhere for a type that walks anywhere
+        (``agentic-assets/spec/<x>/spec.md`` is a spec, a loose ``SPEC.md`` is
+        a document; a ``SKILL.md`` is a skill wherever it sits). Two types may
+        share a name at one placement; the set carries that."""
+        from flow_sdk.fs_store.placement import mount_matches  # noqa: PLC0415
 
         p = Path(path)
-        by_main, _ = cls._shape_tables()
-        candidates = by_main.get(p.name.lower())
+        candidates = cls._shape_tables().by_main.get(p.name.lower())
         if not candidates:
             return frozenset()
+        parent_parts = p.parent.parent.parts
         return frozenset(
-            info.type_name for info in candidates if placed_under(info.asset_class, info.family, p.parent.parent)
+            info.type_name
+            for info in candidates
+            if info.walks_anywhere or any(mount_matches(parent_parts, Path(m).parts) for m in info.scan_mounts)
         )
 
     @classmethod
     def _placed_owners(cls, p: Path, suffix: str) -> "tuple[TypeInfo, ...]":
         """The file types whose declared mount is the NEAREST ancestor of ``p``
         that is any type's mount, for ``p``'s extension. ``.claude/commands/x.md``
-        → command; ``docs/guide/index.md`` → the docs family; a loose ``x.md`` → ().
-        A mount segment of ``*`` (``.claude/skills/*``) matches any one dir."""
-        cls._shape_tables()
+        → command; ``docs/guide/index.md`` → the docs family; a loose ``x.md`` → ()."""
+        from flow_sdk.fs_store.placement import mount_matches  # noqa: PLC0415
+
+        tables = cls._shape_tables()
         parts = tuple(part.lower() for part in p.parent.parts)
         for cut in range(len(parts), 0, -1):
-            for depth in cls._mount_depths:
+            for depth in tables.depths:
                 if depth > cut:
                     continue
                 tail = parts[cut - depth:cut]
-                hit = cls._by_mount.get((suffix, tail))
+                hit = tables.by_mount.get((suffix, tail))
                 if hit:
                     return hit
-                wild = tuple(
-                    info
-                    for ext, mount, info in cls._wild_mounts
-                    if ext == suffix and len(mount) == depth and all(m in ("*", seg) for m, seg in zip(mount, tail))
-                )
+                wild = tuple(info for mount, info in tables.wild.get((suffix, depth), ()) if mount_matches(tail, mount))
                 if wild:
                     return wild
         return ()
@@ -1268,13 +1152,13 @@ class SchemaRegistry:
         / ``harness`` / ``family``); there is no hand-written path table.
         """
         p = Path(path)
-        by_main, by_ext = cls._shape_tables()
+        tables = cls._shape_tables()
         if p.is_dir():
             try:
                 names = {entry.lower() for entry in os.listdir(p)}
             except OSError:
                 return None
-            for name in names & by_main.keys():
+            for name in names & tables.by_main.keys():
                 owners = cls.main_file_owners(p / name)
                 if len(owners) == 1:
                     return next(iter(owners))
@@ -1284,7 +1168,7 @@ class SchemaRegistry:
             return next(iter(owners))
         if owners:
             return None
-        named = cls._by_name.get(p.name.lower(), ())
+        named = tables.by_name.get(p.name.lower(), ())
         if named:
             return named[0].type_name if len(named) == 1 else None
         suffix = p.suffix.lower()
@@ -1298,9 +1182,18 @@ class SchemaRegistry:
             if declared in {info.type_name for info in placed}:
                 return declared
         if suffix != ".md":
-            by = by_ext.get(suffix, ())
+            by = tables.by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
         return "markdown" if "markdown" in cls._types else None
+
+    @classmethod
+    def ref_for(cls, type_name: str, path: "Path | str") -> str:
+        """The ``asset_ref`` spelling of the asset at ``path`` for ``type_name``
+        — a folder asset's DIRECTORY when handed its inner main file; ``path``
+        itself when the type is unknown or does not shape it."""
+        info = cls.get(type_name)
+        ref = info.layout_of(Path(path)).ref if info is not None else None
+        return str(ref) if ref is not None else str(path)
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:

@@ -410,10 +410,10 @@ def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
     # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a
     # transiently-registered fixture type so PR-1 doesn't depend on a migrated type.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+    from flow_sdk.schema.layout import Folder
 
     SchemaRegistry.register(
-        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture",
-                 main_layout="folder")
+        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture", shape=Folder())
     )
     try:
         dest = resolve_destination(

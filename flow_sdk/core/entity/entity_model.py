@@ -1191,28 +1191,19 @@ class Entity(DBEntity):
 
     @classmethod
     def _resolve_fs_ref_type(cls, ref: "FSRef", record_type) -> "str | None":
-        """Resolve the record-type string for an ``FSRef``.
-
-        Precedence: explicit ``record_type`` arg → ``ref.record_type`` → the
-        registry's own classifier (``SchemaRegistry.type_for`` on the ref's
-        path) → the concrete subclass's declared ``type`` default (so
-        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` for a
-        bare folder the registry cannot place). Base ``Entity`` with no hint
-        and an unclassifiable path yields ``None``.
-        """
+        """The record-type string for an ``FSRef``: the explicit
+        ``record_type`` → ``ref.record_type`` → a concrete subclass's own
+        ``type`` default (``Dataset.from_fs_ref(ref)`` IS a dataset) → for
+        bare ``Entity``, the registry classifier on the path, else None."""
         if record_type is not None:
             return str(record_type)
         if ref.record_type is not None:
             return str(ref.record_type)
-        classified = SchemaRegistry.type_for(getattr(ref, "_path", ref))
-        if classified is not None:
-            return classified
         if cls is not Entity:
             type_field = cls.model_fields.get("type")
             default = getattr(type_field, "default", None) if type_field else None
-            if isinstance(default, str) and default:
-                return default
-        return None
+            return default if isinstance(default, str) and default else None
+        return SchemaRegistry.type_for(getattr(ref, "_path", ref))
 
     @staticmethod
     def _build_from_fs_record(record: "FSRecord", fallback_cls: "type | None" = None) -> "Entity":

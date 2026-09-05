@@ -66,23 +66,6 @@ async def owning_asset_for_removed_path(path: str):
     return row, (not alive and not source_unreachable(root))
 
 
-def asset_target_for(record_type: str, path: str) -> str:
-    """The path ``discover_record_by_path`` must be handed for ``record_type``.
-
-    A folder-layout asset's root is its DIRECTORY; handed the inner ``main_file``
-    it resolves nothing and returns None, and the caller silently loses the
-    re-parse. The registry already answers this (``TypeInfo.layout_of().ref``),
-    so ask it instead of passing the raw touched path through.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(record_type)
-    if info is None:
-        return path
-    ref = info.layout_of(Path(path)).ref
-    return str(ref) if ref is not None else path
-
-
 @dataclass
 class ReindexResult:
     reindexed: list[str] = field(default_factory=list)
@@ -101,24 +84,17 @@ def _norm(p: str) -> str:
 
 
 def _mint_candidate(path: str) -> tuple[str, str] | None:
-    """``(type, target path)`` for a brand-new file with no owning entity, or
-    None when the registry cannot name its type.
-
-    ONE classifier decides: ``SchemaRegistry.type_for`` (a folder type's main
-    document, a fixed filename, a declared family dir, a unique extension,
-    else markdown for ``.md``). The target is the layout's ``ref``: a folder
-    asset's root is its DIRECTORY, and ``discover_record_by_path`` cannot mint
-    one from the inner file path — without this the incremental path minted
-    ``SKILL.md`` as a plain markdown whose asset_ref was the FILE, and every
-    sibling written into that folder then fragmented into its own entity.
-    An ambiguous path (``.json``) is never guessed at.
+    """``(type, asset_ref)`` for a brand-new file with no owning entity, or
+    None when ``SchemaRegistry.type_for`` cannot name its type (an ambiguous
+    ``.json`` is never guessed at). The target is the type's ``ref`` spelling:
+    a folder asset's DIRECTORY, which is what ``discover_record_by_path`` needs.
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     type_name = SchemaRegistry.type_for(path)
     if type_name is None:
         return None
-    return type_name, asset_target_for(type_name, path)
+    return type_name, SchemaRegistry.ref_for(type_name, path)
 
 
 async def reindex_paths(

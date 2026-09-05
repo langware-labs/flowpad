@@ -15,6 +15,7 @@ import pytest
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR, AssetClass
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.layout import Folder
 
 REPO_TYPE = "repo_node"
 
@@ -27,8 +28,7 @@ def repo_type():
             type_name=REPO_TYPE,
             asset_class=AssetClass.REPO,
             family=REPO_TYPE,
-            main_layout="folder",
-            main_file="node.json",
+            shape=Folder(main="node.json"),
         )
     )
     try:

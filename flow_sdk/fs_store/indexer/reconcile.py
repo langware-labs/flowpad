@@ -1,10 +1,8 @@
 """RECONCILE — the carrier against the store, for one walked asset.
 
-An asset's id lives in its source, but a full-content rewrite — what an agent
-does on every revision — can wipe that carrier. A carrier-less source is
-therefore not a new asset when a row already owns the path: it is that row,
-and its id is stamped back. The axis is CARRIER LIVENESS, not "file vs
-database":
+A full-content rewrite can wipe an asset's carrier, so a carrier-less source
+is not a new asset when a row already owns the path: it is that row, and its
+id is stamped back. The axis is CARRIER LIVENESS:
 
     1. the carrier   IF no row owns this path
                      OR the carrier IS that row
@@ -45,9 +43,8 @@ def reconcile(
 ) -> str:
     """The id for the asset at ``layout`` given what the store knows: the row
     owning its path (``owner_row``) and the live ids of its type. ``write``
-    gates every byte touched (the ref is not read-only, carrier writes are
-    not suppressed). ``ref`` reaches the stable-key function when it carries
-    more than the path. Sync; never touches the DB."""
+    gates every byte touched. ``ref`` reaches the stable-key function when it
+    carries more than the path. Sync; never touches the DB."""
     carrier = info.carrier
     where = carrier.locate(layout)
     found = carrier.read(where)
@@ -90,7 +87,7 @@ def reconcile(
         return owner_row
 
     try:
-        return info.mint(layout, write=write, ref=ref)
+        return info.mint(layout, write=write, ref=ref, found=found)
     except Unstamped:
         # Not written and keyless: the stable path-derived v5 is the one
         # deterministic answer (a read-only portable asset, a failed write).

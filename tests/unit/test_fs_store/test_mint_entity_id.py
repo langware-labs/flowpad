@@ -18,6 +18,7 @@ from flow_sdk.fs_store.identity_carrier import Frontmatter, MalformedCarrier, Si
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File, Folder
 
 CARRIER = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 OWNER = "11111111-2222-4333-8444-555555555555"
@@ -30,9 +31,7 @@ def _info(*, stable: bool = False, folder: bool = False, legacy=()) -> TypeInfo:
     return TypeInfo(
         type_name="probe",
         capsules=(IDENTITY,),
-        # A type declares the shape it claims; the seam refuses a path outside
-        # it (FLOWPAD-2083). A folder-json probe therefore says it is a folder.
-        main_layout="folder" if folder else "file",
+        shape=Folder() if folder else File(ext=".md"),   # the seam refuses a path outside the declared shape
         identity_carrier=carrier,
         id_stable_key_fn=(lambda ref: "stable-key") if stable else None,
     )
