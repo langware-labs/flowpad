@@ -103,14 +103,57 @@ describe('addPeopleToTeam', () => {
     expect(h.allocate).not.toHaveBeenCalled();
   });
 
-  it('reports a wallet whose invitation failed as a failure', async () => {
+  it('reports a wallet whose invitation failed as a failure, and takes the wallet back', async () => {
     h.allocate.mockResolvedValue({ id: UUID(3), type: 'llm_endpoint', name: 'Ghost' });
-    h.share.mockResolvedValue({ granted: [], failed: [{ email: 'ghost@example.com', reason: 'Sign in to share' }] });
+    h.share.mockResolvedValue({
+      granted: [],
+      failed: [{ email: 'ghost@example.com', reason: 'Sign in to share', accessLanded: false }],
+    });
 
     const outcome = await addPeopleToTeam(POOL, [{ name: 'Ghost', email: 'ghost@example.com', budget: 1 }], []);
 
     expect(outcome.added).toEqual([]);
     expect(outcome.failed).toEqual([{ email: 'ghost@example.com', reason: 'Sign in to share' }]);
+    // The half-written wallet must not survive the failure. Left behind it shows in the roster
+    // with an amount against it, and pressing Add again mints a SECOND one -- an allowance nobody
+    // was granted carries no email for `indexByEmail` to match.
+    expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(3), type: 'llm_endpoint' }));
+  });
+
+  it('keeps the wallet when the share landed and only the email bounced', async () => {
+    // THE 5xx CASE. Auto-accept writes the role edge before the mail step, so the recipient can
+    // already reach this budget -- rolling it back would take away a share that worked.
+    h.allocate.mockResolvedValue({ id: UUID(5), type: 'llm_endpoint', name: 'Mailless' });
+    h.share.mockResolvedValue({
+      granted: [],
+      failed: [
+        {
+          email: 'mailless@example.com',
+          reason: 'Access granted, but the invitation email failed to send',
+          accessLanded: true,
+        },
+      ],
+    });
+
+    const outcome = await addPeopleToTeam(POOL, [{ name: 'M', email: 'mailless@example.com', budget: 1 }], []);
+
+    expect(outcome.failed[0].email).toEqual('mailless@example.com');
+    expect(h.del).not.toHaveBeenCalled();
+  });
+
+  it('still reports the share failure when the roll-back itself fails', async () => {
+    // The owner needs the reason the SHARE bounced, not the reason the cleanup did. A rollback
+    // that does not land leaves exactly the orphan we had before -- no worse.
+    h.allocate.mockResolvedValue({ id: UUID(6), type: 'llm_endpoint', name: 'Stuck' });
+    h.share.mockResolvedValue({
+      granted: [],
+      failed: [{ email: 'stuck@example.com', reason: 'Only the budget’s owner can share it', accessLanded: false }],
+    });
+    h.del.mockRejectedValueOnce(new Error('delete blew up'));
+
+    const outcome = await addPeopleToTeam(POOL, [{ name: 'S', email: 'stuck@example.com', budget: 1 }], []);
+
+    expect(outcome.failed).toEqual([{ email: 'stuck@example.com', reason: 'Only the budget’s owner can share it' }]);
   });
 
   it('does not let one bad row cost the others', async () => {
