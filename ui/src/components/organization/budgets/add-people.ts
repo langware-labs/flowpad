@@ -80,9 +80,34 @@ async function addOne(poolId: string, draft: PersonDraft): Promise<void> {
   const allocation = new LLMEndpoint(created as never);
   const { failed } = await shareEndpointByEmail(allocation, [draft.email]);
   if (failed.length > 0) {
-    // The wallet exists but nobody can reach it. Say so plainly instead of reporting a success the
-    // owner would only discover was hollow when the person said "I can't see any budget".
+    // The wallet exists but nobody can reach it. UNDO IT, then say so plainly instead of reporting
+    // a success the owner would only discover was hollow when the person said "I can't see any
+    // budget". Leaving it behind is worse than not writing it: the row shows up in the roster with
+    // a name and an amount against it, so the money reads as spoken for and the owner's obvious
+    // next move -- press Add again -- mints a SECOND wallet rather than repairing the first, since
+    // an allowance nobody was granted carries no email for `indexByEmail` to match on.
+    //
+    // `accessLanded` is the one case that must NOT be undone: a 5xx means the role edge was written
+    // and only the mail failed, so the recipient can already reach this budget and deleting it
+    // would take back a share that worked.
+    if (!failed[0].accessLanded) await rollBack(allocation);
     throw new Error(failed[0].reason);
+  }
+}
+
+/**
+ * Take back an allocation whose hand-over failed.
+ *
+ * Deliberately swallows its own failure: the caller is already throwing the reason the SHARE
+ * bounced, and that is the sentence the owner needs. Replacing it with "could not delete" would
+ * report the cleanup's problem instead of the actual one. A rollback that does not land leaves
+ * exactly the orphan we had before -- no worse -- so it is logged and not raised.
+ */
+async function rollBack(allocation: LLMEndpoint): Promise<void> {
+  try {
+    await removeAllowance(allocation.typeId.toString());
+  } catch (e) {
+    console.error(`add-people: could not roll back allocation ${allocation.id}`, e);
   }
 }
 
