@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   save: vi.fn(),
   del: vi.fn(),
   getByTypeId: vi.fn(),
+  invite: vi.fn(),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
@@ -68,6 +69,11 @@ vi.mock('@sdk', async (importOriginal) => {
 // (endpoint-controls.test.tsx) — here it only needs to exist so a row can render at all.
 vi.mock('@src/components/organization/budgets/EndpointControls', () => ({
   EndpointControls: () => null,
+}));
+// The invite WRITE has its own suite (invite-to-team.test.ts), which pins the target, the role and
+// the three recipient kinds. What this file owns is which addresses the two buttons hand it.
+vi.mock('@src/components/organization/budgets/invite-to-team', () => ({
+  inviteToTeamByEmail: (...args: unknown[]) => h.invite(...args),
 }));
 
 import { OrgUnit } from '@src/components/organization/budgets/BudgetSection';
@@ -438,5 +444,64 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     h.team.mockReturnValue(idle);
     draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
     expect(screen.getByTestId(`team-over-allocated-${UUID(4)}`)).toBeTruthy();
+  });
+});
+
+describe('inviting a team\u2019s people', () => {
+  /** Open Platform's people list with `members` on it. */
+  function openPeople(members: Record<string, unknown>[], team = teamScope()) {
+    h.org.mockReturnValue({ data: { org: orgScope(), teams: [team] }, isLoading: false, error: null });
+    h.team.mockReturnValue({ data: { team, members }, isLoading: false, error: null });
+    h.invite.mockResolvedValue({ invited: [], already: [], failed: [] });
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
+  }
+
+  it('emails one person about the TEAM from their own row', async () => {
+    // Being given money sends nothing on purpose, so this button is the only thing that tells
+    // them. It hands over the team id and that one address — never the endpoint, which the hub
+    // would refuse for anyone who already holds it.
+    openPeople([person()]);
+
+    fireEvent.click(screen.getByTestId(`member-invite-${EP(2)}`));
+
+    await waitFor(() => expect(h.invite).toHaveBeenCalledWith(UUID(4), ['ada@example.com']));
+  });
+
+  it('emails the whole roster from one button ABOVE the list', async () => {
+    openPeople([person(), person({ endpoint_id: EP(6), name: 'Alan', email: 'alan@example.com' })]);
+
+    const all = screen.getByTestId(`team-invite-all-${UUID(4)}`);
+    const table = screen.getByTestId(`member-budget-${EP(2)}`).closest('table');
+    // Above the list, not buried under it: it acts on everything the list shows.
+    expect(all.compareDocumentPosition(table!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(all);
+
+    await waitFor(() => expect(h.invite).toHaveBeenCalledWith(UUID(4), ['ada@example.com', 'alan@example.com']));
+  });
+
+  it('offers nothing to send to an allowance with no address', () => {
+    // The hub mints its per-user defaults from an account, so this is only ever a wallet whose
+    // invitation never resolved — and a button that cannot do anything is worse than no button.
+    openPeople([person({ email: null })]);
+
+    expect(screen.queryByTestId(`member-invite-${EP(2)}`)).toBeNull();
+    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
+  });
+
+  it('leaves out the whole-roster button when nobody on the list has an address', () => {
+    openPeople([person({ email: null }), person({ endpoint_id: EP(6), email: null })]);
+
+    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
+  });
+
+  it('shows neither button to someone who may not bring people into this team', () => {
+    // Same gate as "Add people" and "Share a project" — whoever runs the team is who shares it.
+    openPeople([person()], teamScope({ can_allocate: false }));
+
+    expect(screen.queryByTestId(`member-invite-${EP(2)}`)).toBeNull();
+    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
+    expect(screen.queryByTestId(`team-add-people-${UUID(4)}`)).toBeNull();
   });
 });

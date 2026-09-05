@@ -37,7 +37,7 @@
  * scope it hangs under, which the browser cannot see at all.
  */
 import { TypeId, dataManager, type MemberBudget, type ScopeBudget } from '@sdk';
-import { ChevronDown, ChevronRight, Hash, Loader2, Pencil, Trash2, UserPlus, Wallet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Hash, Loader2, Mail, Pencil, Send, Trash2, UserPlus, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -55,6 +55,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 import { AddPeopleDialog } from './AddPeopleDialog';
+import { inviteToTeamByEmail, type TeamInviteOutcome } from './invite-to-team';
 import { availableToAllocate, type PoolFunds } from './available-to-allocate';
 import { AdvancedButton } from './AdvancedEndpointDialog';
 import { EditableTitle } from './EditableTitle';
@@ -322,12 +323,20 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
  * name — what the owner typed when adding them — falling back to the account name only when that
  * is empty. So this writes the same `name` field `renameEntity` writes for an org or a team, and
  * never touches the user's account.
+ *
+ * **Send invite emails them about the TEAM, not this budget.** Being given money here sends nothing
+ * (`share-endpoint.ts` withholds the mail on purpose), so this is the only way an admin tells
+ * someone they have one — and it has to hang off the team, because the hub refuses to re-invite
+ * anyone to a budget they already hold. See `invite-to-team.ts`.
  */
 function MemberRow({
   member,
   teamFunds,
   teamName,
   capPending,
+  canInvite,
+  inviting,
+  onInvite,
   onSetCap,
   onRemove,
 }: {
@@ -336,6 +345,10 @@ function MemberRow({
   teamFunds: PoolFunds;
   teamName: string;
   capPending: boolean;
+  /** Same gate as "Add people" — whoever runs this team is who brings people into it. */
+  canInvite: boolean;
+  inviting: boolean;
+  onInvite: () => void;
   onSetCap: (usd: number | null) => void;
   onRemove: () => void;
 }) {
@@ -388,6 +401,22 @@ function MemberRow({
       </TableCell>
       <TableCell className="text-end">
         <div className="flex items-center justify-end gap-1">
+          {/* No address, nothing to send to. The hub mints its per-user default rows from an
+              account, so this is only ever empty for a wallet whose invitation never resolved. */}
+          {canInvite && member.email && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 shrink-0 text-muted-foreground"
+              aria-label={t`Send invite`}
+              title={t`Email ${member.email} an invitation to ${teamName}`}
+              data-testid={`member-invite-${member.endpoint_id}`}
+              disabled={inviting}
+              onClick={onInvite}
+            >
+              {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            </Button>
+          )}
           <AdvancedButton
             endpointId={member.endpoint_id}
             scopeLabel={member.name}
@@ -448,6 +477,10 @@ function TeamUnit({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [removingMember, setRemovingMember] = useState<MemberBudget | null>(null);
+  // The addresses an invite is in flight for — one row's, or the whole roster's. A list rather
+  // than a boolean so a row spins on its own button and the "invite everyone" pass spins on all of
+  // them, without a second piece of state that could disagree with this one.
+  const [invitingEmails, setInvitingEmails] = useState<readonly string[]>([]);
   // Fetched only once the people list is actually looked at or "Add people" is opened — the
   // per-person spend read this call carries must not fire for every team on page load.
   const detail = useTeamBudgets(peopleOpen || adding ? team.id : null);
@@ -459,6 +492,48 @@ function TeamUnit({
   // What the ORG still has free for this team — its own current cap added back, because raising a
   // team from $20 to $80 inside a $100 org is a replacement, not another $80 on top.
   const freeInOrg = availableToAllocate(orgFunds, team.limit_usd);
+
+  // Everyone on this team who could actually be emailed. Read straight off the roster so "invite
+  // everyone" and the per-row button always mean the same list.
+  const invitableEmails = (detail.data?.members ?? []).map((m) => m.email).filter((e): e is string => !!e);
+
+  /**
+   * Invite `emails` to the TEAM and say plainly what happened to each.
+   *
+   * Three outcomes, three sentences — never merged. "Already on the team" is not a success (no
+   * email left the building) and not a failure (nothing is wrong), and an admin who is told
+   * "invitations sent" when nothing was sent will not chase it.
+   */
+  const sendInvites = async (emails: string[]) => {
+    if (emails.length === 0 || invitingEmails.length > 0) return;
+    setInvitingEmails(emails);
+    try {
+      const outcome: TeamInviteOutcome = await inviteToTeamByEmail(team.id, emails);
+      if (outcome.invited.length > 0) {
+        notify.success({
+          title: t`Invitation sent`,
+          message: t`Emailed ${outcome.invited.length} of ${emails.length} about ${team.name}.`,
+          id: 'team-invite',
+        });
+      }
+      if (outcome.already.length > 0) {
+        notify.info({
+          title: t`Already on ${team.name}`,
+          message: t`${outcome.already.join(', ')} — no email sent.`,
+          id: 'team-invite-already',
+        });
+      }
+      if (outcome.failed.length > 0) {
+        notify.error({
+          title: t`Could not invite everyone`,
+          message: outcome.failed.map((f) => `${f.email} — ${f.reason}`).join('; '),
+          id: 'team-invite-failed',
+        });
+      }
+    } finally {
+      setInvitingEmails([]);
+    }
+  };
 
   const removeTeam = async () => {
     setDeleting(true);
@@ -575,51 +650,76 @@ function TeamUnit({
               {detail.isLoading || !detail.data ? (
                 <Loading />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        <Trans>Name</Trans>
-                      </TableHead>
-                      <TableHead>
-                        <Trans>Email</Trans>
-                      </TableHead>
-                      <TableHead className="text-end">
-                        <Trans>Budget</Trans>
-                      </TableHead>
-                      <TableHead className="text-end">
-                        <Trans>Spent</Trans>
-                      </TableHead>
-                      <TableHead className="text-end" title={t`Tokens spent`}>
-                        <Hash className="ml-auto h-3.5 w-3.5 text-purple-500" aria-hidden="true" />
-                      </TableHead>
-                      <TableHead>
-                        <Trans>Model / status</Trans>
-                      </TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.data.members.length === 0 && (
+                <>
+                  {/* Above the list, because it acts on the whole list. Hidden when there is
+                      nobody with an address to email rather than sitting there doing nothing. */}
+                  {team.can_allocate && invitableEmails.length > 0 && (
+                    <div className="flex justify-end pb-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-testid={`team-invite-all-${team.id}`}
+                        disabled={invitingEmails.length > 0}
+                        onClick={() => void sendInvites(invitableEmails)}
+                      >
+                        {invitingEmails.length > 1 ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                        <Trans>Send invites to everyone</Trans>
+                      </Button>
+                    </div>
+                  )}
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={7} className="py-4 text-center text-sm text-muted-foreground">
-                          <Trans>Nobody has a budget in this team yet.</Trans>
-                        </TableCell>
+                        <TableHead>
+                          <Trans>Name</Trans>
+                        </TableHead>
+                        <TableHead>
+                          <Trans>Email</Trans>
+                        </TableHead>
+                        <TableHead className="text-end">
+                          <Trans>Budget</Trans>
+                        </TableHead>
+                        <TableHead className="text-end">
+                          <Trans>Spent</Trans>
+                        </TableHead>
+                        <TableHead className="text-end" title={t`Tokens spent`}>
+                          <Hash className="ml-auto h-3.5 w-3.5 text-purple-500" aria-hidden="true" />
+                        </TableHead>
+                        <TableHead>
+                          <Trans>Model / status</Trans>
+                        </TableHead>
+                        <TableHead />
                       </TableRow>
-                    )}
-                    {detail.data.members.map((member) => (
-                      <MemberRow
-                        key={member.endpoint_id}
-                        member={member}
-                        teamFunds={detail.data.team}
-                        teamName={team.name}
-                        capPending={setCap.isPending}
-                        onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}
-                        onRemove={() => setRemovingMember(member)}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {detail.data.members.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="py-4 text-center text-sm text-muted-foreground">
+                            <Trans>Nobody has a budget in this team yet.</Trans>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {detail.data.members.map((member) => (
+                        <MemberRow
+                          key={member.endpoint_id}
+                          member={member}
+                          teamFunds={detail.data.team}
+                          teamName={team.name}
+                          capPending={setCap.isPending}
+                          canInvite={team.can_allocate}
+                          inviting={!!member.email && invitingEmails.includes(member.email)}
+                          onInvite={() => void sendInvites(member.email ? [member.email] : [])}
+                          onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}
+                          onRemove={() => setRemovingMember(member)}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
               )}
             </CollapsibleContent>
           </Collapsible>
