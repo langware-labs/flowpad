@@ -330,21 +330,35 @@ checks for a materialized record folder
   NOT count as downloaded, or the bundle carrying the real body is never re-pulled
   and the entity renders blank.
 
-### Per-message: `_compute_body_downloaded`
+### Per-message: download completion and missing assets
 
-`_compute_body_downloaded(atts)` (`flow_sdk/builtin/flow_message.py:408`) is the
-message-level flag the serializer emits as `body_downloaded`
-(`flow_sdk/builtin/flow_message.py:405`). It returns False if there is no body,
-else True iff **every** renderable body attachment is on disk: FILE and
-PROMPT-file attachments need a resolved `local_path`; TYPE_ID attachments must
-pass `_type_id_record_materialized`. The UI switches the **whole message** between
-Download and chips off this one flag, so the transcript and the context panel
-share state.
+`FlowMessage._body_download_state()` owns the local availability checks for
+both API serialization and `is_body_downloaded()` (used by catch-up).
+Its transient fields are never persisted or accepted from the hub:
 
-`is_body_downloaded()` (`flow_sdk/builtin/flow_message.py:426`) is the disk-probe
-twin for backend callers (e.g. the catch-up loop deciding whether to re-pull a
-bundle) that need the same signal without paying for a full `model_dump` — keep
-the two in sync.
+- `body_downloaded`: the message has a body and either its bundle is unpacked
+  locally or all renderable attachments are already available locally.
+- `body_unpacked`: the extracted staging tree contains `flow_message.json` or
+  the legacy `header.json` envelope. A raw ZIP alone is insufficient.
+- `body_missing_attachments`: references (`attachment_type`, `data`) whose
+  content is unavailable locally. FILE and PROMPT-file attachments need actual
+  bytes; TYPE_ID attachments use `_type_id_attachment_present` to check staged
+  or materialized content. Structural references do not count as missing.
+
+A downloaded bundle with missing assets is a **partial download**. The transcript
+shows “Downloaded” with a warning icon whose tooltip lists the missing references
+and offers **Download again**. Download errors also offer that action. It calls
+the existing `download_body` action, fetching and unpacking a fresh hub bundle
+even when the message is already downloaded. The warning stays if the new bundle
+still lacks assets; a successful retry clears the previous download error.
+Available assets remain usable; missing assets have no Open action. The context
+panel uses the same state. Catch-up does not repeatedly fetch an already unpacked
+bundle just because its sender omitted assets. Before download, unavailable
+references are pending and do not show a missing-assets warning.
+
+Unpacking a body into an existing message in the same conversation is idempotent,
+including header-only bundles. Standalone imports and mismatched parents retain
+the existing overwrite conflict protection.
 
 ## 6. Reception phase model
 

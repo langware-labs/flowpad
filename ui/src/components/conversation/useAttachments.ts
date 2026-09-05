@@ -1,6 +1,13 @@
 import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
-import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import {
+  AttachmentType,
+  BodyStatus,
+  attachmentDataString,
+  isAttachmentMissing,
+  type Attachment,
+  type AttachmentReference,
+} from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
@@ -55,11 +62,9 @@ export interface UseAttachments {
    *  spec — as TypeIds. Rendered as entity chips once the body is
    *  downloaded; until then they ride inside the single Download button. */
   entities: TypeId[];
-  /** Message-level download state, straight from the backend-derived
-   *  `fm.body_downloaded`: true once the body bundle has been pulled + unpacked
-   *  so every renderable attachment is local. The UI switches the whole message
-   *  between the Download button and rendered chips off this one flag. */
+  /** Bundle download completion, independent of missing assets. */
   downloaded: boolean;
+  missingAttachments: AttachmentReference[];
   /** True when the message carries a PROMPT attachment (the prompt row
    *  renders it). */
   hasPrompt: boolean;
@@ -122,7 +127,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
     .filter((a) => isDownloadableFileAttachment(a) || isImagePromptFileAttachment(a))
     .map((a) => {
       const d = attachmentDataString(a);
-      const state = stateFor(a, bodyStatus);
+      const state = isAttachmentMissing(fm, a) ? AttachmentChipState.Unavailable : stateFor(a, bodyStatus);
       return {
         key: d,
         filename: d.split('/').pop() || d,
@@ -189,17 +194,19 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
       // entity UPDATE fans out and the chips re-render as Downloaded; on failure
       // the error surfaces via useFlowMessageDownloadError, so swallow here.
       await fm.downloadAttachments();
+      dismiss();
     } catch {
       /* surfaced inline via the download-error hook */
     } finally {
       setDownloading(false);
     }
-  }, [fm, downloading]);
+  }, [fm, downloading, dismiss]);
 
   return {
     items,
     entities,
     downloaded,
+    missingAttachments: downloaded ? (fm?.body_missing_attachments ?? []) : [],
     hasPrompt,
     assetCount,
     assetLabels,

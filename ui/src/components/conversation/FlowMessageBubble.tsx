@@ -1,13 +1,40 @@
 import { t } from '@lingui/core/macro';
-import { Agent, APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, SourceItem, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
+import {
+  Agent,
+  APIEntity,
+  Artifact,
+  createConversationForShare,
+  dataContext,
+  dataManager,
+  FlowMessage,
+  gitOriginCloneUrl,
+  isImagePath,
+  launchWizard,
+  MessageAttachment,
+  Prompt,
+  SourceItem,
+  Task,
+  TypeId,
+  User,
+  type AgenticProcess,
+  type GitOrigin,
+  type WorkerStatus,
+  type AnyEntity,
+} from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, Loader2, Play, X } from 'lucide-react';
+import {
+  AttachmentType,
+  BodyStatus,
+  FlowMessageKind,
+  forwardMessage,
+  isAttachmentMissing,
+} from '@sdk/entities/flow-message';
+import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
@@ -23,6 +50,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
+import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { messageForwardShareSource } from '@src/hooks/share-sources';
@@ -263,6 +291,7 @@ export function FlowMessageBubble({
     items: attachmentItems,
     entities,
     downloaded,
+    missingAttachments,
     assetCount,
     assetLabels,
     assetTypeChips,
@@ -424,7 +453,10 @@ export function FlowMessageBubble({
   // Prompt entities render in the attachment-actions row; a group parent whose
   // member task is attached here renders not at all (`parentTaskIds`, above).
   const otherEntities = entities.filter(
-    (t) => t.type !== Prompt.type && !(t.type === Task.type && parentTaskIds.has(String(t.id))),
+    (t) =>
+      t.type !== Prompt.type &&
+      !(t.type === Task.type && parentTaskIds.has(String(t.id))) &&
+      !isAttachmentMissing(fm, { attachment_type: AttachmentType.TYPE_ID, data: t.toString() }),
   );
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
@@ -477,31 +509,6 @@ export function FlowMessageBubble({
   const attachmentFooter =
     hasAttachments || downloadError ? (
       <div className="mt-2 space-y-1.5">
-        {downloadError && (
-          <div
-            className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"
-            role="alert"
-          >
-            <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="font-medium">
-                <Trans>Could not download</Trans>
-              </div>
-              <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
-                {downloadError.method} {downloadError.path} {downloadError.statusCode}: {downloadError.message}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={dismissDownloadError}
-              className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
-              title={t`Dismiss`}
-              aria-label={t`Dismiss download error`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
         {progress && (
           <div className="flex items-center gap-2">
             <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
@@ -601,6 +608,25 @@ export function FlowMessageBubble({
             <Download className="h-3 w-3" />
             <Trans>Download all attachments</Trans>
           </a>
+        )}
+        {(missingAttachments.length > 0 || downloadError) && (
+          <div
+            data-testid={downloaded ? 'partial-attachments-status' : 'attachment-download-error'}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            {downloaded ? <Trans>Downloaded</Trans> : <Trans>Could not download</Trans>}
+            <AttachmentDownloadWarning
+              attachments={missingAttachments}
+              error={downloadError?.message}
+              downloading={downloading}
+              onDownload={triggerDownload}
+            />
+            {downloadError && (
+              <button type="button" onClick={dismissDownloadError} aria-label={t`Dismiss download error`}>
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         )}
         {/* Download button ONLY while bytes are still remote. Once downloaded,
             files render as staged chips above and entities as chips — nothing

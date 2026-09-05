@@ -10700,8 +10700,8 @@ msgstr "مفتاح API مفقود — يرجى إعادة محاولة الرا�
 msgid "Missing asset"
 msgstr "الأصل مفقود"
 
-#: src/components/conversation/MissingAttachmentsWarning.tsx
-#: src/components/conversation/MissingAttachmentsWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "مرفقات مفقودة"
 
@@ -20394,3 +20394,7 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Download again"
+msgstr "تنزيل مجددًا"

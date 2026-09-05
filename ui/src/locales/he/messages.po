@@ -10700,8 +10700,8 @@ msgstr "חסר מפתח API — אנא נסה שוב את הקישור העמו�
 msgid "Missing asset"
 msgstr "נכס חסר"
 
-#: src/components/conversation/MissingAttachmentsWarning.tsx
-#: src/components/conversation/MissingAttachmentsWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "קבצים מצורפים חסרים"
 
@@ -20394,3 +20394,7 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Download again"
+msgstr "הורדה מחדש"
