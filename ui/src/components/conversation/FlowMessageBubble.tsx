@@ -146,7 +146,6 @@ interface FlowMessageBubbleProps {
   showEmailHeaders?: boolean;
   timestamp: string;
   task?: ITask | null;
-  onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
   /** The conversation's headless run + its live status, resolved once by the
    *  parent and shared across bubbles. Drive the per-message run-status
    *  one-liner that replaces "Execute" once the prompt is executed. */
@@ -154,15 +153,6 @@ interface FlowMessageBubbleProps {
   runStatus?: WorkerStatus | null;
   /** Open this message's executed run in the conversation drawer's Runs tab. */
   onOpenRun?: (processId: string) => void;
-  /** Whether the conversation already has a worker session — flips the Execute
-   *  chip from "Run" to "<Host>'s session · new run", resolved once by the parent. */
-  workerSessionExists?: boolean;
-  workerSessionLabel?: string | null;
-  workerSessionInFlight?: boolean;
-  /** Additive: open the conversation's worker session in the collaboration room
-   *  view. Rendered as an icon on the run-status line; leaves the Runs drawer
-   *  path untouched. */
-  onOpenWorkerSession?: () => void;
   /** Per-message Implement Plan handler. The bubble itself decides whether to
    *  render the chip (spec present + recipient role) — pass the raw messageId
    *  callback and the bubble binds it. */
@@ -215,14 +205,9 @@ export function FlowMessageBubble({
   fm: fmProp,
   timestamp,
   task,
-  onApproveAndExecute,
   run,
   runStatus,
   onOpenRun,
-  workerSessionExists = false,
-  workerSessionLabel = null,
-  workerSessionInFlight = false,
-  onOpenWorkerSession,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -655,8 +640,6 @@ export function FlowMessageBubble({
         run={run ?? null}
         runStatus={runStatus}
         onOpenRun={onOpenRun}
-        onOpenWorkerSession={onOpenWorkerSession}
-        workerSessionInFlight={workerSessionInFlight}
       />
       <MessageContextButton fm={fm} projectId={attachmentProjectId} />
     </>
@@ -703,13 +686,9 @@ export function FlowMessageBubble({
           onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
-        onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
         onViewPlan={onViewPlan}
-        workerSessionExists={workerSessionExists}
-        workerSessionLabel={workerSessionLabel}
-        workerSessionInFlight={workerSessionInFlight}
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}

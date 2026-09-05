@@ -202,6 +202,43 @@ _BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan", "claude_session"
 # unknown-field drop): ``{"live_session_event": "approved"}`` flags the
 # message as a lifecycle system line (kind=SESSION_EVENT).
 LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
+# Marker key on the carrier of the prompt that OPENS a session:
+# ``{"session_start": {"reply_policy": "auto"}}`` — the guest's proposed
+# session settings (``SessionStartSettings``), adopted fill-only by the host.
+SESSION_START_MARKER_KEY = "session_start"
+
+
+def _carrier_marker(fm: "FlowMessage") -> "dict | None":
+    """The JSON object in the session carrier's ``prompt_preview``, if any."""
+    import json as _json  # noqa: PLC0415
+
+    for a in fm.attachment or []:
+        if a.attachment_type != AttachmentType.TYPE_ID:
+            continue
+        if not (a.data or "").startswith("remote_worker_session-"):
+            continue
+        if not a.prompt_preview:
+            return None
+        try:
+            marker = _json.loads(a.prompt_preview)
+        except (ValueError, TypeError):
+            return None
+        return marker if isinstance(marker, dict) else None
+    return None
+
+
+def session_start_settings(fm: "FlowMessage"):
+    """``SessionStartSettings`` from the starting prompt's carrier, else None."""
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
+
+    marker = _carrier_marker(fm)
+    raw = (marker or {}).get(SESSION_START_MARKER_KEY)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SessionStartSettings(**{k: v for k, v in raw.items() if k in SessionStartSettings.model_fields})
+    except Exception:  # noqa: BLE001 — a malformed proposal is no proposal
+        return None
 
 
 def derive_session_fields(fm: "FlowMessage") -> None:
@@ -299,27 +336,23 @@ class Attachment(BaseModel):
     only — never stored in DB). For FILE attachments it holds the absolute filesystem
     path resolved via the entity's embedded storage.
 
-    proposer_id / approved_by apply to prompt attachments (legacy PROMPT and
-    prompt-entity TYPE_ID alike) — proposer_id is the user who suggested the
-    prompt; approved_by is set when the other party approves it.
-
     prompt_preview applies to prompt-entity TYPE_ID attachments: an inline
     copy of the prompt text that rides the message header so receivers can
-    preview (and execute) the prompt BEFORE pulling the body bundle — the
-    same no-download property legacy inline PROMPT attachments had.
+    preview the prompt BEFORE pulling the body bundle. On a
+    ``remote_worker_session-<id>`` carrier it holds the session marker JSON
+    instead (``session_start`` / ``live_session_event``).
 
-    HUB SCHEMA MIRROR: ``proposer_id`` / ``approved_by`` / ``prompt_preview``
-    must also exist on the hub's Attachment model
-    (FlowPad: ``flowpad/hub/core/network/flow_message.py``) — the hub
-    validates attachments through its own pydantic model and silently DROPS
-    unknown fields on the round-trip, which strips the receiver's preview.
+    HUB SCHEMA MIRROR: ``prompt_preview`` must also exist on the hub's
+    Attachment model (FlowPad: ``flowpad/hub/core/network/flow_message.py``) —
+    the hub validates attachments through its own pydantic model and silently
+    DROPS unknown fields on the round-trip. The hub still mirrors the retired
+    ``proposer_id`` / ``approved_by``; they arrive as nulls and are ignored.
+    Consent is a property of the session, never stamped per attachment.
     """
 
     attachment_type: AttachmentType
     data: str
     local_path: Optional[str] = None
-    proposer_id: Optional[str] = None
-    approved_by: Optional[str] = None
     prompt_preview: Optional[str] = None
 
 
@@ -462,37 +495,13 @@ class FlowMessage(Entity):
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
     body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
-    # Local-only: set once the receiver has auto-run this message's prompt (see
-    # process_inbound_message). Sync-proof idempotency guard.
+    # Local-only: set once the host has CONSUMED this message as a session
+    # turn (run, or bounced while paused) — see ``process_inbound_prompt``.
+    # Set before the run so a re-delivered op can't double-run; survives every
+    # hub refresh. A parked prompt (session PENDING) stays False until approve
+    # re-drives it.
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     _api_visible: ClassVar[bool] = True
-
-    @classmethod
-    def merge_hub_payload(cls, local: "Entity", hub_payload: dict[str, Any]) -> dict[str, Any]:
-        """Preserve the receiver's local prompt-approval across a hub refresh.
-
-        ``attachment[].approved_by`` is set locally when the receiver approves /
-        auto-runs a PROMPT — the hub never learns of it (the sender's copy stays
-        ``None``), so a plain hub→local refresh would revert it and the prompt
-        would re-run on every sync. We can't mark it ``LOCAL_ONLY`` (it's nested
-        in ``attachment``), so re-apply each locally-approved attachment's
-        ``approved_by`` onto the matching incoming attachment (keyed by ``data``)
-        when the hub copy hasn't got one.
-        """
-        merged = super().merge_hub_payload(local, hub_payload)
-        local_approved = {
-            a.data: a.approved_by
-            for a in (getattr(local, "attachment", None) or [])
-            if getattr(a, "data", None) and getattr(a, "approved_by", None)
-        }
-        atts = merged.get("attachment")
-        if local_approved and isinstance(atts, list):
-            for att in atts:
-                if isinstance(att, dict):
-                    data = att.get("data")
-                    if data in local_approved and not att.get("approved_by"):
-                        att["approved_by"] = local_approved[data]
-        return merged
 
     @classmethod
     def is_stale(cls, local, hub_payload):  # type: ignore[override]

@@ -3,7 +3,6 @@ export { PromptAttachmentPreview } from './PromptAttachmentPreview';
 export { useAttachmentActions } from './useAttachmentActions';
 export { ATTACHMENT_ACTION_DESCRIPTORS } from './registry';
 export {
-  firstUnapprovedPromptIdx,
   flowMessagePromptEntityTypeId,
   isPromptAttachment,
   isPromptEntityAttachment,

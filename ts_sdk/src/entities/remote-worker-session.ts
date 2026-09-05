@@ -36,6 +36,19 @@ export function isSessionTerminal(status: string | null | undefined): boolean {
   return status === RemoteWorkerSessionStatus.ENDED || status === RemoteWorkerSessionStatus.DECLINED;
 }
 
+/** What happens to a captured reply. Proposed by the guest on the opening
+ *  prompt, host-authoritative afterwards, editable in the session view.
+ *  Mirrors flow_sdk.builtin.remote_worker_session.ReplyPolicy. */
+export enum SessionReplyPolicy {
+  /** Send as soon as captured. */
+  AUTO = 'auto',
+  /** Save as a host draft inside the session. */
+  REVIEW = 'review',
+}
+
+/** Standing-grant scope accepted by the `approve` action's `remember` body. */
+export type SessionRememberScope = 'project' | 'everywhere';
+
 export interface IRemoteWorkerSession extends IEntity {
   conversation_id?: string | null;
   collaboration_room_id?: string | null;
@@ -49,6 +62,13 @@ export interface IRemoteWorkerSession extends IEntity {
   status?: string;
   last_activity_at?: string | null;
   started_at?: string | null;
+  /** The main-thread prompt that opened this session — the card's anchor. */
+  starting_message_id?: string | null;
+  /** `SessionReplyPolicy`; null = auto. */
+  reply_policy?: string | null;
+  approved_at?: string | null;
+  /** 'manual' | 'standing_grant'. */
+  approved_via?: string | null;
 }
 
 @registerEntity
@@ -69,6 +89,10 @@ export class RemoteWorkerSession
   status: string = 'idle';
   last_activity_at: string | null = null;
   started_at: string | null = null;
+  starting_message_id: string | null = null;
+  reply_policy: string | null = null;
+  approved_at: string | null = null;
+  approved_via: string | null = null;
 
   constructor(entity: Partial<IRemoteWorkerSession> = {}) {
     super(entity as IEntity);
@@ -78,6 +102,11 @@ export class RemoteWorkerSession
   /** True when `userId` is this session's host (the executor). */
   isHost(userId: string | null | undefined): boolean {
     return !!this.host_user_id && userId === this.host_user_id;
+  }
+
+  /** Effective reply policy — null/garbage reads as auto. */
+  get effectiveReplyPolicy(): SessionReplyPolicy {
+    return this.reply_policy === SessionReplyPolicy.REVIEW ? SessionReplyPolicy.REVIEW : SessionReplyPolicy.AUTO;
   }
 
   /** Tab / chip label. A RemoteWorkerSession has no name/uname/title, so the
@@ -104,9 +133,21 @@ export class RemoteWorkerSession
     this.status = optimistic;
   }
 
-  /** Host approves a PENDING session; queued prompts re-drive server-side. */
-  public approve(): Promise<void> {
-    return this.lifecycleAction('approve', RemoteWorkerSessionStatus.IDLE);
+  /** Host approves a PENDING session; queued prompts re-drive server-side.
+   *  `remember` also writes the standing grant for this guest. */
+  public async approve(remember?: SessionRememberScope): Promise<void> {
+    const info = new ActionInfo('approve', this.typeId.type, this.typeId.id, 'POST');
+    if (remember) info.bodyParameters = { remember };
+    await dataManager.callAction(info);
+    this.status = RemoteWorkerSessionStatus.IDLE;
+  }
+
+  /** Edit the session's reply policy (host-authoritative `settings` action). */
+  public async setReplyPolicy(policy: SessionReplyPolicy): Promise<void> {
+    const info = new ActionInfo('settings', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { reply_policy: policy };
+    await dataManager.callAction(info);
+    this.reply_policy = policy;
   }
 
   /** Host declines a PENDING session (terminal). */

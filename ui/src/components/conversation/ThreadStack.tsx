@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
  * offset cards — the count you can see rather than a number you have to read.
  * Clicking opens the thread, which is a NAVIGATION (`?thread=<id>`), so this
  * component takes a callback and never touches the URL itself: the caller
- * owns the dock, exactly as `LiveSessionGroup` does.
+ * owns the dock, exactly as `SessionCard` does.
  *
  * A one-message thread renders bare — a "1 message" affordance is noise, and
  * an email that never got a reply should look like any other message.

@@ -18,7 +18,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import { Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -42,17 +42,34 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
 
+  // Reset the draft ONLY on the closed→open transition. Depending on the
+  // ``projects`` array here wiped the form mid-typing: every project-row
+  // update (the auto-indexer bumps it repeatedly on a fresh instance) yields a
+  // new array identity, re-ran the reset, and dropped the participant the
+  // user had just added — so Create stayed disabled with nothing to show why.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setParticipants([]);
-    setInitialMessage('');
-    setTitle('');
-    setFiles([]);
-    setAssetRefs([]);
-    setEditingName(false);
-    setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
-    resetDraft();
-  }, [open, ctx.project?.id, projects, resetDraft]);
+    if (open && !wasOpenRef.current) {
+      setParticipants([]);
+      setInitialMessage('');
+      setTitle('');
+      setFiles([]);
+      setAssetRefs([]);
+      setEditingName(false);
+      setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
+      resetDraft();
+    }
+    wasOpenRef.current = open;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transition-gated; see above
+  }, [open]);
+
+  // The default project can arrive after the dialog opened; adopt it once,
+  // without touching anything the user typed.
+  useEffect(() => {
+    if (!open || projectId) return;
+    const fallback = ctx.project?.id ?? projects[0]?.id ?? '';
+    if (fallback) setProjectId(fallback);
+  }, [open, projectId, ctx.project?.id, projects]);
 
   useEffect(() => {
     const name = cloudUser?.name || cloudUser?.email || localUser?.name || '';

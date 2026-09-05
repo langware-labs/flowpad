@@ -593,10 +593,10 @@ class HubWsBridge:
                                 _notify_err,
                             )
 
-                    # Auto-run a permitted contact's prompt (the receiver's local
-                    # ContactPermission policy decides). Cheap pre-check on the raw
-                    # payload so a plain text message never spawns the task (and its
-                    # DB fetch). Detached so a slow/failed run never blocks persist
+                    # Route a contact's prompt through the session gate (the
+                    # session's state — and a standing grant — decide). Cheap
+                    # pre-check on the raw payload so a plain text message never
+                    # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
                     #
                     # But a body-bearing prompt (image/file attached) must NOT run
@@ -615,9 +615,9 @@ class HubWsBridge:
                                 fm_id,
                             )
                         else:
-                            from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                            from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
-                            asyncio.create_task(process_inbound_message(fm_id, conversation_id))
+                            asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
                         "[bridge] inbound persist failed fm=%s (non-fatal): %s",
@@ -736,14 +736,14 @@ class HubWsBridge:
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
                 # attachment to an absolute path. Idempotent via prompt_auto_handled
-                # (and re-checked inside the hook: drafts, our own sends, missing
-                # permission all no-op), so this is safe for prompts already run or
-                # never ours to run.
+                # (and re-checked inside the gate: drafts, our own sends, a parked
+                # or terminal session all no-op), so this is safe for prompts
+                # already run or never ours to run.
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
                 if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
-                    from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                    from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
-                    asyncio.create_task(process_inbound_message(fm_id, conv_id))
+                    asyncio.create_task(process_inbound_prompt(fm_id, conv_id))
             return
 
         if op == "delete":

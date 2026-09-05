@@ -2574,7 +2574,15 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     # pointer is appended, and the user can retry. This prevents the
     # phantom "local says sent, hub doesn't know" state and avoids
     # orphaning a pointer to a still-draft row.
-    if getattr(conv, "remote", False) and is_logged_in():
+    is_remote_send = bool(getattr(conv, "remote", False)) and is_logged_in()
+    if is_remote_send and fm.has_body():
+        # A body-bearing draft (a session reply carries its prompt_completion
+        # attachment + the session carrier) must announce UPLOADING so the hub
+        # gates receivers until the bundle lands — exactly as a fresh send does.
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        fm.body_status = BodyStatus.UPLOADING
+    if is_remote_send:
         if not await _send_conversation_message_header(conv, fm):
             return ApiFailResponse(
                 message="Hub send failed; draft preserved for retry",
@@ -2596,6 +2604,25 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     )
 
     _notify_ui_conversation_updated(conv.id, "", fm.id)
+
+    if is_remote_send and getattr(fm, "body_status", None) == "uploading":
+        from flow_sdk.app.actions.notification_action import _upload_body_and_finalize  # noqa: PLC0415
+
+        asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+
+    # A drafted STARTING prompt sat at DRAFT on the sender's session row;
+    # sending it is the request for access.
+    sid = getattr(fm, "remote_worker_session_id", None)
+    if sid:
+        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+
+        session = await RemoteWorkerSession.resolve_state(sid)
+        if session is not None and session.status == RemoteWorkerSessionStatus.DRAFT:
+            session.mark_activity(RemoteWorkerSessionStatus.PENDING)
+            await session.save(someone_typeid)
 
     return ApiSuccessResponse(
         data={
@@ -4861,62 +4888,3 @@ async def invitation_accept() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
-# ---------------------------------------------------------------------------
-# Approve & Execute draft persistence
-#
-# After the headless run completes, the new ``useApproveAndExecute`` hook calls
-# this action to persist the assistant reply as a draft ``FlowMessage`` on the
-# scoped conversation. Doing the construction server-side avoids the gap where
-# ``new FlowMessage().save()`` on the frontend drops the ``text`` field during
-# its first serialization, which the server then rejects.
-#
-# The wrap pattern ``Prompt response: "<text>"`` is the contract ``MessageBubble``
-# uses to italicise the quoted middle — the user edits the draft and the
-# pattern naturally breaks, falling through to plain rendering.
-# ---------------------------------------------------------------------------
-
-_PROMPT_RESPONSE_PREFIX = 'Prompt response: "'
-_PROMPT_RESPONSE_SUFFIX = '"'
-
-
-def _wrap_as_claude_quote(text: str) -> str:
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f"{_PROMPT_RESPONSE_PREFIX}{escaped}{_PROMPT_RESPONSE_SUFFIX}"
-
-
-@action.post(action_name="save-prompt-response-draft", types=[BuiltinEntityType.CONVERSATION.value])
-async def save_prompt_response_draft() -> ApiResponse:
-    """Persist ``text`` as a draft FlowMessage on this conversation.
-
-    Body: ``{text: str}``. Returns ``{flow_message_id}`` of the saved draft.
-    Used by the Approve & Execute frontend hook.
-    """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        conv_id = str(request_info.target_entity_typeid.id)
-        body = await request_info.get_post_data() or {}
-        text = (body.get("text") or "").strip()
-        if not text:
-            return ApiFailResponse(message="text is required")
-
-        sender_id, sender_name = await User.local_sender_identity()
-        fm = FlowMessage.model_validate(
-            {
-                "text": _wrap_as_claude_quote(text),
-                "attachment": [],
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conv_id,
-                "is_draft": True,
-            }
-        )
-        fm.id = FlowMessage.allocate_id(fm.model_dump())
-        await fm.save(request_info.someone_typeid)
-        return ApiSuccessResponse(data={"flow_message_id": fm.id})
-    except Exception as e:
-        logger.error("[flow_message_action] save-prompt-response-draft error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed: {e}")

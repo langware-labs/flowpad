@@ -4,10 +4,8 @@ import { IEntity } from '../IEntity';
 /** Capability strings stored in `ContactPermission.allowed_actions`. Mirrors
  *  `flow_sdk.builtin.contact_permission.PermissionAction`. */
 export enum PermissionAction {
-  /** Auto-run a received prompt. */
-  EXECUTE_PROMPT = 'execute_prompt',
-  /** Send the captured reply instead of saving it as a draft. */
-  AUTO_REPLY = 'auto_reply',
+  /** New live sessions from this contact start approved (no Approve click). */
+  AUTO_APPROVE_SESSION = 'auto_approve_session',
 }
 
 export interface IContactPermission extends IEntity {
@@ -22,9 +20,9 @@ export interface IContactPermission extends IEntity {
 }
 
 /**
- * The receiver's LOCAL policy for what a remote contact may do with prompts
- * they send: auto-run them and/or auto-send the reply. Keyed by (contact,
- * project); a `project_id` of null means global. Never synced to the hub.
+ * The host's LOCAL standing grant: a remote contact's new live sessions start
+ * approved. Keyed by (contact, project); a `project_id` of null means
+ * everywhere. Never synced to the hub.
  */
 @registerEntity
 export class ContactPermission

@@ -1,13 +1,15 @@
-"""Phase 2 traffic: the RemoteWorkerSession binding + PromptCompletion emission that
-``execute_prompt_from_message`` performs around the worker run. Drives the real
-helpers against the real DB (no worker, no mocks) — the worker orchestration
-itself is covered by ``test_execute_prompt_capture``.
+"""Session resolution + PromptCompletion emission that ``run_session_turn``
+performs around the worker run. Drives the real helpers against the real DB
+(no worker, no mocks) — the worker orchestration itself is covered by
+``test_execute_prompt_capture`` / ``test_run_session_turn``.
 """
 from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.execute_prompt import _emit_prompt_completion, _reuse_or_bind_session
+from flow_sdk.app.actions.execute_prompt import _emit_prompt_completion, resolve_or_mint_session
+from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.prompt_completion import PromptCompletion
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus
 
@@ -15,24 +17,27 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_reuse_or_bind_session(bootstrapped_client, user):
-    conv = "conv-rws-1"
-    a = await _reuse_or_bind_session(
-        conversation_id=conv, host_user_id="host1", guest_user_id="guest1",
-        host_process_id="ap1", project_id="proj1", status=RemoteWorkerSessionStatus.RUNNING,
-    )
-    assert a.type == "remote_worker_session"
-    assert (a.host_user_id, a.guest_user_id, a.host_process_id) == ("host1", "guest1", "ap1")
-    assert a.status == RemoteWorkerSessionStatus.RUNNING
+async def test_resolve_or_mint_session_adopts_guest_id_and_reuses_row(bootstrapped_client, user):
+    conv = Conversation(title="rws-resolve", project_id="proj1")
+    conv.members = [{"user_id": "guest1", "name": "Bob"}]
+    await conv.save(notify=False)
+    sid = "c3c3c3c3-0000-4000-8000-0000000000a1"
+    fm = FlowMessage(text="x", sender_id="guest1", sender_name="Bob", conversation_id=conv.id,
+                     remote_worker_session_id=sid,
+                     attachment=[Attachment(attachment_type=AttachmentType.PROMPT, data="go"),
+                                 Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"remote_worker_session-{sid}")])
+    fm.id = "c3c3c3c3-0000-4000-8000-0000000000a2"
+    await fm.save(notify=False)
 
-    # Same (conversation, host) → reuse the SAME session, refresh process id + status.
-    b = await _reuse_or_bind_session(
-        conversation_id=conv, host_user_id="host1", guest_user_id="guest1",
-        host_process_id="ap2", project_id="proj1", status=RemoteWorkerSessionStatus.IDLE,
-    )
-    assert b.id == a.id
-    assert b.host_process_id == "ap2"
-    assert b.status == RemoteWorkerSessionStatus.IDLE
+    a = await resolve_or_mint_session(fm, conv, host_user_id="host1", host_name="Alice")
+    assert a.id == sid
+    assert (a.status, a.starting_message_id, a.guest_user_id, a.host_user_id) == (RemoteWorkerSessionStatus.PENDING, fm.id, "guest1", "host1")
+    assert a.project_id == "proj1"
+
+    a.mark_activity(RemoteWorkerSessionStatus.IDLE)
+    await a.save()
+    b = await resolve_or_mint_session(fm, conv, host_user_id="host1", host_name="Alice")
+    assert b.id == a.id and b.status == RemoteWorkerSessionStatus.IDLE  # reused, status untouched
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

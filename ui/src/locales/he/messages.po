@@ -76,8 +76,7 @@ msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr "\"{0}\" חורג מ-{MAX_FILE_SIZE_LABEL} ולא צורף."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
-#: src/components/data-sources/DataSourcesView.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/data-sources/use-source-delete.ts
 msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 msgstr "\"{0}\" יוסר יחד עם הזרמים שלו וכל רשומה שנקלטה בו. לא ניתן לבטל פעולה זו."
 
@@ -197,7 +196,7 @@ msgid "{0, plural, one {# person} other {# people}}"
 msgstr ""
 
 #. placeholder {0}: source.segment_count
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr "{0, plural, one {# זרם} other {# זרמים}}"
 
@@ -223,10 +222,9 @@ msgstr "{0} — נפתח \"{fallbackName}\" במקומו."
 msgid "{0} · {1} · {2}ms"
 msgstr ""
 
-#. placeholder {0}: truncateLabel(sessionLabel)
 #: src/components/conversation/attachment-actions/registry.ts
-msgid "{0} · new run"
-msgstr "{0} · הרצה חדשה"
+#~ msgid "{0} · new run"
+#~ msgstr "{0} · הרצה חדשה"
 
 #. placeholder {0}: outcome.added.length
 #. placeholder {1}: outcome.updated.length
@@ -543,9 +541,17 @@ msgstr "{failed} מתוך {0} נכשלו במחיקה."
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשרת המרוחק. המקבל יוכל למשוך רק את מה שכבר נמצא שם."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "{guest} wants to run prompts here"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "{host} paused the session"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
@@ -554,6 +560,14 @@ msgstr "{hostName} דחה את הסשן החי."
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} paused the live session."
 msgstr "{hostName} השהה את הסשן החי."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName} reviews"
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "{hostName} reviews before sending"
+msgstr ""
 
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -620,7 +634,7 @@ msgstr ""
 msgid "{pct}% of your token budget used {windowText}"
 msgstr ""
 
-#: src/components/conversation/LiveSessionGroup.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr "{promptCount} פרומפטים · {replyCount} תגובות"
 
@@ -920,8 +934,8 @@ msgstr "יש להקצות מעטפת חדשה. (פעולת שרת בדרך — �
 #~ msgstr "תיבת דואר מתארחת דרך ה-API של HTTP שלה."
 
 #: src/components/conversation/ConversationView.tsx
-msgid "A live session is already running in this conversation"
-msgstr "כבר פועל סשן חי בשיחה זו"
+#~ msgid "A live session is already running in this conversation"
+#~ msgstr "כבר פועל סשן חי בשיחה זו"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
@@ -1031,6 +1045,7 @@ msgstr "פעולה:"
 #: src/components/account/system-diagnoses.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1118,7 +1133,6 @@ msgid "Add a comment…"
 msgstr "הוסף תגובה…"
 
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/DataSourcesView.tsx
 msgid "Add a data source"
 msgstr "הוספת מקור נתונים"
 
@@ -1148,8 +1162,8 @@ msgid "Add a personal note…"
 msgstr "הוסף הערה אישית…"
 
 #: src/components/conversation/PromptComposerDialog.tsx
-msgid "Add a prompt to your reply"
-msgstr "הוסף פרומפט לתשובתך"
+#~ msgid "Add a prompt to your reply"
+#~ msgstr "הוסף פרומפט לתשובתך"
 
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
@@ -1394,7 +1408,6 @@ msgid "Adopt a support desk published as a git repository"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/i18n/pref-labels.ts
 msgid "Advanced"
@@ -1636,14 +1649,13 @@ msgstr "כל הסוגים"
 msgid "Allocated {0}"
 msgstr ""
 
-#: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "אפשרו"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Allow {who} to run prompt on this computer"
-msgstr "יש להרשות ל-{who} להריץ פרומפט במחשב זה"
+#~ msgid "Allow {who} to run prompt on this computer"
+#~ msgstr "יש להרשות ל-{who} להריץ פרומפט במחשב זה"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -1727,17 +1739,21 @@ msgstr "כבר פעיל"
 msgid "Also open sidecar OS Terminal"
 msgstr "פתח גם חלון Terminal נלווה של מערכת ההפעלה"
 
-#: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Always auto-reply to {who} (all projects)"
-msgstr "תמיד הגב באופן אוטומטי ל{who} (כל הפרויקטים)"
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Always allow sessions from {guestName}"
+msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Always auto-reply to {who} for this project"
-msgstr "תמיד הגב באופן אוטומטי ל{who} עבור פרויקט זה"
+#~ msgid "Always auto-reply to {who} (all projects)"
+#~ msgstr "תמיד הגב באופן אוטומטי ל{who} (כל הפרויקטים)"
+
+#: src/components/conversation/ExecutePromptDialog.tsx
+#~ msgid "Always auto-reply to {who} for this project"
+#~ msgstr "תמיד הגב באופן אוטומטי ל{who} עבור פרויקט זה"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Always auto-run {guestName}'s sessions here"
-msgstr "תמיד להריץ אוטומטית סשנים של {guestName} כאן"
+#~ msgid "Always auto-run {guestName}'s sessions here"
+#~ msgstr "תמיד להריץ אוטומטית סשנים של {guestName} כאן"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -2001,17 +2017,18 @@ msgid "Approval failed"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "אישור"
 
 #: src/components/conversation/attachment-actions/registry.ts
-msgid "Approve and run this prompt in {sessionLabel}"
-msgstr "אישור והרצה של הפרומפט הזה ב־{sessionLabel}"
+#~ msgid "Approve and run this prompt in {sessionLabel}"
+#~ msgstr "אישור והרצה של הפרומפט הזה ב־{sessionLabel}"
 
 #: src/components/conversation/attachment-actions/registry.ts
-msgid "Approve this prompt and run it"
-msgstr "אישור הפרומפט והרצתו"
+#~ msgid "Approve this prompt and run it"
+#~ msgstr "אישור הפרומפט והרצתו"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -2179,6 +2196,10 @@ msgstr "נכסים"
 msgid "Assets"
 msgstr "נכסים"
 
+#: src/components/assets/AssetsNavigator.tsx
+msgid "Assets unavailable. Retry"
+msgstr ""
+
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Assign"
 msgstr "הקצו"
@@ -2248,8 +2269,8 @@ msgid "Attach this session's transcript"
 msgstr "צרפו את תמליל הסשן הזה"
 
 #: src/components/conversation/PromptComposerDialog.tsx
-msgid "Attach to reply"
-msgstr "צרף לתשובה"
+#~ msgid "Attach to reply"
+#~ msgstr "צרף לתשובה"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
@@ -2341,20 +2362,25 @@ msgid "auto-login off"
 msgstr "כניסה אוטומטית כבויה"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Auto-reply"
-msgstr "תשובה אוטומטית"
+#~ msgid "Auto-reply"
+#~ msgstr "תשובה אוטומטית"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Auto-run future prompts"
-msgstr "הרצה אוטומטית של פרומפטים עתידיים"
+#~ msgid "Auto-run future prompts"
+#~ msgstr "הרצה אוטומטית של פרומפטים עתידיים"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Auto-run prompts from {who} (all projects)"
-msgstr "הרץ פרומפטים מ{who} באופן אוטומטי (כל הפרויקטים)"
+#~ msgid "Auto-run prompts from {who} (all projects)"
+#~ msgstr "הרץ פרומפטים מ{who} באופן אוטומטי (כל הפרויקטים)"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Auto-run prompts from {who} for this project"
-msgstr "הרץ פרומפטים מ{who} באופן אוטומטי עבור פרויקט זה"
+#~ msgid "Auto-run prompts from {who} for this project"
+#~ msgstr "הרץ פרומפטים מ{who} באופן אוטומטי עבור פרויקט זה"
+
+#: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "Auto-send"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Auto-updates check hourly."
@@ -2376,6 +2402,10 @@ msgstr "מודלים זמינים"
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "Available on cloud"
 msgstr "זמין בענן"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Awaiting {host}"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "AWS Auth Refresh"
@@ -2819,8 +2849,6 @@ msgstr ""
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/connections-manager/credential-value-form.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
-#: src/components/conversation/ExecutePromptDialog.tsx
-#: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/credentials-view/ProvideValueInline.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -2938,6 +2966,10 @@ msgstr "לא ניתן לתרגם"
 #: src/types/ViewType.ts
 msgid "Capabilities"
 msgstr "יכולות"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Capabilities unavailable. Retry"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Capability"
@@ -3715,6 +3747,7 @@ msgstr "חדר שיתוף פעולה"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Collapse"
 msgstr "כיווץ"
@@ -4467,7 +4500,7 @@ msgstr "לא היה ניתן למחוק"
 #. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
-#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/data-sources/use-source-delete.ts
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Could not delete {0}"
 msgstr "לא ניתן למחוק את {0}"
@@ -4502,6 +4535,7 @@ msgstr "לא ניתן היה להשליך"
 msgid "Could not disconnect from {0}."
 msgstr "לא ניתן להתנתק מ-{0}."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
 msgstr "לא היה ניתן להוריד"
@@ -4603,7 +4637,7 @@ msgid "Could not pause"
 msgstr "לא ניתן להשהות"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Could not pull {0}"
 msgstr "לא ניתן לשלוף את {0}"
 
@@ -4627,9 +4661,7 @@ msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות 
 msgid "Could not remove"
 msgstr "לא ניתן להסיר"
 
-#. placeholder {0}: source.name || source.provider
 #. placeholder {0}: target.name
-#: src/components/inbox-view/AttachedChannelsBar.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not remove {0}"
 msgstr ""
@@ -4840,7 +4872,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Could not verify {0}"
 msgstr "לא ניתן לאמת את {0}"
 
@@ -5326,6 +5358,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Decline"
 msgstr "דחה"
@@ -5341,6 +5374,10 @@ msgstr "דחה (מודיע למזמין)"
 #: src/components/inbox-view/MembershipInvitations.tsx
 msgid "Decline failed"
 msgstr "הדחייה נכשלה"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Declined"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Deduplicate errors"
@@ -5422,8 +5459,8 @@ msgstr "מאציל אל"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/data-sources/use-source-delete.ts
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -5649,7 +5686,7 @@ msgstr "למחוק שיחה זו?"
 msgid "Delete this conversation"
 msgstr "מחק שיחה זו"
 
-#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/data-sources/use-source-delete.ts
 msgid "Delete this data source?"
 msgstr "למחוק את מקור הנתונים הזה?"
 
@@ -5789,8 +5826,8 @@ msgid "Describe what you need — what happened, what you expected, and anything
 msgstr "יש לתאר מה צריך — מה קרה, מה ציפית, וכל דבר שכבר ניסית."
 
 #: src/components/conversation/PromptComposerDialog.tsx
-msgid "Describe what you'd like Claude to do…"
-msgstr "תאר מה היית רוצה ש-Claude יעשה…"
+#~ msgid "Describe what you'd like Claude to do…"
+#~ msgstr "תאר מה היית רוצה ש-Claude יעשה…"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Describe who this agent is, what it does, and what it must never do…"
@@ -6108,7 +6145,6 @@ msgstr "דיון"
 msgid "Discuss analysis"
 msgstr "דיון בניתוח"
 
-#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -6186,8 +6222,8 @@ msgid "Domains accessible from sandbox"
 msgstr "דומיינים נגישים מהסביבה המבודדת"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Don't ask again"
-msgstr "לא לשאול שוב"
+#~ msgid "Don't ask again"
+#~ msgstr "לא לשאול שוב"
 
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
@@ -6230,6 +6266,10 @@ msgstr "הורד .flowmsg"
 msgid "Download {count} {0}"
 msgstr "הורד {count} {0}"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Download again"
+msgstr "הורדה מחדש"
+
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "הורד את כל הקבצים המצורפים"
@@ -6271,6 +6311,7 @@ msgstr "הורדה הושלמה"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "הורדה..."
@@ -6369,6 +6410,10 @@ msgstr "לדוגמה, /path/to/script.sh או if [[ \"$tool_input\" == *.md ]]; 
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr ""
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Each reply lands in the session as soon as it is ready."
+msgstr ""
+
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
@@ -6391,7 +6436,6 @@ msgstr "קצוות לפי סוג"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/conversation/attachment-actions/registry.ts
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -6409,8 +6453,8 @@ msgid "Edit anyway"
 msgstr "ערוך בכל זאת"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Edit attached prompt"
-msgstr "ערוך פרומפט מצורף"
+#~ msgid "Edit attached prompt"
+#~ msgstr "ערוך פרומפט מצורף"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
@@ -6445,7 +6489,6 @@ msgstr "עריכת קישור"
 msgid "Edit name"
 msgstr "ערוך שם"
 
-#: src/components/conversation/MessageComposer.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
@@ -6464,8 +6507,8 @@ msgid "Edit system trigger"
 msgstr "ערוך Trigger של מערכת"
 
 #: src/components/conversation/attachment-actions/registry.ts
-msgid "Edit the queued prompt"
-msgstr "עריכת הפרומפט שבתור"
+#~ msgid "Edit the queued prompt"
+#~ msgstr "עריכת הפרומפט שבתור"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Edit Trigger"
@@ -6655,6 +6698,10 @@ msgstr "סיים את החדר"
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "End time"
 msgstr "זמן סיום"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Ended"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Ensure the claude CLI is installed and authenticated."
@@ -6908,6 +6955,10 @@ msgstr "הכול כבר מעודכן."
 msgid "Everything you can reach, as a live graph."
 msgstr "כל מה שניתן להגיע אליו, כגרף חי."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "everywhere"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Excluded Commands"
 msgstr "פקודות חסומות"
@@ -6962,6 +7013,7 @@ msgstr "יציאה מהמצב המקומי"
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Expand"
 msgstr "הרחבה"
@@ -7669,8 +7721,7 @@ msgstr ""
 msgid "Find machine"
 msgstr ""
 
-#: src/components/data-sources/DataSourceCard.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "יש להשלים את ההגדרה, ולאחר מכן ללחוץ על אימות."
 
@@ -8709,7 +8760,7 @@ msgstr "כמה שורות פלט טרמינל לשמור במאגר הגלילה
 msgid "How privacy modes work"
 msgstr "כיצד מצבי הפרטיות פועלים"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "How to finish setup"
 msgstr "כיצד להשלים את ההגדרה"
 
@@ -8943,6 +8994,10 @@ msgstr "בתהליך"
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "In progress..."
 msgstr "בתהליך..."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "in this project"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "in this window"
@@ -9553,7 +9608,7 @@ msgstr "ההתחברות האחרונה:"
 msgid "Last message"
 msgstr "הודעה אחרונה"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
 msgstr "הסנכרון האחרון שהצליח"
 
@@ -9564,6 +9619,10 @@ msgstr ""
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last triggered"
 msgstr "הפעלה אחרונה"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Last turn failed"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last_seen_mtime"
@@ -9621,7 +9680,6 @@ msgstr "מידע על כפילויות"
 msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
 
-#: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
@@ -9811,9 +9869,17 @@ msgstr ""
 msgid "live"
 msgstr "חי"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Live · {guest}'s session"
+msgstr ""
+
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
 msgstr "חי · לא עדכני"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Live on {host}'s machine"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -9823,8 +9889,8 @@ msgstr "שורה חיה"
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/LiveSessionGroup.tsx
-msgid "Live session"
-msgstr "סשן חי"
+#~ msgid "Live session"
+#~ msgstr "סשן חי"
 
 #: src/types/ViewType.ts
 msgid "Live Session"
@@ -9839,12 +9905,12 @@ msgid "Live session with {guestName} on your machine · {status}"
 msgstr "סשן חי עם {guestName} במחשב שלך · {status}"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Live sessions are 1:1 — available in two-person conversations"
-msgstr "סשנים חיים הם אחד-על-אחד — זמינים רק בשיחות בין שני משתמשים"
+#~ msgid "Live sessions are 1:1 — available in two-person conversations"
+#~ msgstr "סשנים חיים הם אחד-על-אחד — זמינים רק בשיחות בין שני משתמשים"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Live sessions need a shared conversation"
-msgstr "סשנים חיים דורשים שיחה משותפת"
+#~ msgid "Live sessions need a shared conversation"
+#~ msgstr "סשנים חיים דורשים שיחה משותפת"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "LLM API keys"
@@ -10330,8 +10396,8 @@ msgid "Manage assets"
 msgstr "ניהול נכסים"
 
 #: src/components/inbox-view/AttachedChannelsBar.tsx
-msgid "Manage in Data Sources…"
-msgstr ""
+#~ msgid "Manage in Data Sources…"
+#~ msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage LLM providers and CLI integrations"
@@ -10701,7 +10767,6 @@ msgid "Missing asset"
 msgstr "נכס חסר"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "קבצים מצורפים חסרים"
 
@@ -10938,8 +11003,8 @@ msgid "never run"
 msgstr "לא הופעל עדיין"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Never run prompts from untrusted sources."
-msgstr "לעולם אין להריץ פרומפטים ממקורות לא מהימנים."
+#~ msgid "Never run prompts from untrusted sources."
+#~ msgstr "לעולם אין להריץ פרומפטים ממקורות לא מהימנים."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -10949,7 +11014,6 @@ msgstr "מעולם לא סונכרן לענן"
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
-#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -11135,6 +11199,11 @@ msgstr "סשן חדש"
 msgid "New skill"
 msgstr ""
 
+#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "New source"
+msgstr ""
+
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "New sub-team"
@@ -11157,20 +11226,23 @@ msgstr "טרמינל חדש"
 msgid "Next"
 msgstr "הבא"
 
-#. placeholder {0}: timeUntil(source.next_poll_at)
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "next {0}"
-msgstr "בעוד {0}"
+#~ msgid "next {0}"
+#~ msgstr "בעוד {0}"
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Next poll"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "הפרומפט הבא — יוזרק כשהסוכן יהיה פנוי. לחץ Enter כדי להוסיף."
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Next scheduled poll"
 msgstr "הבדיקה המתוזמנת הבאה"
 
@@ -11264,6 +11336,10 @@ msgstr ""
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "No capabilities available"
 msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
@@ -11521,6 +11597,10 @@ msgstr "אין index.md להצגה"
 
 #: src/components/rag/RagView.tsx
 msgid "No indexes yet."
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "No installed provider can carry a channel."
 msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -11989,6 +12069,10 @@ msgstr "אין קובץ מקור זמין לחוק זה"
 msgid "No source for backlinks (this doc has no entity)."
 msgstr "אין מקור לקישורים חוזרים (למסמך זה אין תיבה)."
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "No sources yet. Connect a feed, a mailbox or a channel and the poller takes it from there."
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "No spec specified."
 msgstr "לא צוין spec."
@@ -12204,7 +12288,7 @@ msgstr "לא מחוברים · הריצו /login"
 msgid "not reachable"
 msgstr "לא נגיש"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Not ready yet"
 msgstr "עדיין לא מוכן"
 
@@ -12237,8 +12321,8 @@ msgid "Not started"
 msgstr "טרם התחיל"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Not started — your first prompt will request access to {hostName}'s machine."
-msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם הפרומפט הראשון שלך."
+#~ msgid "Not started — your first prompt will request access to {hostName}'s machine."
+#~ msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם הפרומפט הראשון שלך."
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Not used yet"
@@ -12514,6 +12598,7 @@ msgstr "כאן מוצגים רק ערכי רתמה — יש להפעיל את \"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -12773,8 +12858,8 @@ msgid "Open link"
 msgstr "פתח קישור"
 
 #: src/components/conversation/LiveSessionGroup.tsx
-msgid "Open live session"
-msgstr "פתחו את הסשן החי"
+#~ msgid "Open live session"
+#~ msgstr "פתחו את הסשן החי"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Open LLM Indexers"
@@ -12901,7 +12986,7 @@ msgstr "פתחו את ה-artifact האחרון"
 msgid "Open the latest plan"
 msgstr "פתח את התוכנית האחרונה"
 
-#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "Open the live session"
 msgstr "פתיחת הסשן החי"
 
@@ -12972,8 +13057,8 @@ msgstr "פתח תמליל"
 
 #: src/components/conversation/MessageRunStatus.tsx
 #: src/components/conversation/MessageRunStatus.tsx
-msgid "Open worker session"
-msgstr "פתיחת סשן עובד"
+#~ msgid "Open worker session"
+#~ msgstr "פתיחת סשן עובד"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenAI"
@@ -13226,8 +13311,12 @@ msgid "Parent folder to clone into…"
 msgstr "תיקייה הורה לשחזור לתוכה…"
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
-msgstr "חנוי — המתזמן מדלג על מקור עם <0>config_error</0>, ולכן הוא לא יבצע בדיקה נוספת באופן עצמאי. <1>משכו שינויים</1> מנקה את הנעילה."
+#~ msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
+#~ msgstr "חנוי — המתזמן מדלג על מקור עם <0>config_error</0>, ולכן הוא לא יבצע בדיקה נוספת באופן עצמאי. <1>משכו שינויים</1> מנקה את הנעילה."
+
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+msgstr ""
 
 #: src/components/webapp-display/messages.tsx
 msgid "Part of your app didn't load."
@@ -13331,6 +13420,7 @@ msgstr "השהו את המכונה הזו"
 msgid "paused"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "מושהה"
@@ -13982,6 +14072,10 @@ msgstr "ספריית פרומפטים"
 msgid "Prompt Library — click a prompt to add it to the queue"
 msgstr "ספריית הפרומפטים — לחץ על פרומפט כדי להוסיף אותו לתור"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
+msgstr ""
+
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "Prompt name"
@@ -14006,6 +14100,10 @@ msgstr "טקסט הפרומפט"
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run"
 msgstr "פרומפט להרצה"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Prompt to run on {hostName}'s machine…"
+msgstr ""
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -14114,6 +14212,10 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 msgid "Published"
 msgstr "פורסם"
 
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Pull"
+msgstr ""
+
 #. placeholder {0}: a.label
 #. placeholder {0}: attachment?.name ?? 'git folder'
 #: src/components/assets/editor/task/TaskAttachments.tsx
@@ -14130,8 +14232,12 @@ msgid "Pull and open task"
 msgstr "משוך ופתח משימה"
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "Pull changes"
-msgstr "משכו שינויים"
+#~ msgid "Pull changes"
+#~ msgstr "משכו שינויים"
+
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Pull changes now"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
@@ -14583,7 +14689,6 @@ msgid "Remote Worker Session"
 msgstr "סשן עובד מרוחק"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
@@ -14669,8 +14774,8 @@ msgid "Remove option"
 msgstr "הסרת אפשרות"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Remove queued prompt"
-msgstr "הסר פרומפט מהתור"
+#~ msgid "Remove queued prompt"
+#~ msgstr "הסר פרומפט מהתור"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
@@ -14690,8 +14795,8 @@ msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "הסרת הקובץ הזה מה-commit הבא (git restore --staged)"
 
 #: src/components/inbox-view/AttachedChannelsBar.tsx
-msgid "Remove this source?"
-msgstr ""
+#~ msgid "Remove this source?"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -14794,6 +14899,22 @@ msgstr "הפעילו מחדש החל מ-{since}"
 msgid "Replay…"
 msgstr "הפעלה חוזרת…"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replies"
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replies wait as drafts until {hostName} sends them."
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Replies:"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Reply awaiting your review"
+msgstr ""
+
 #. placeholder {0}: channelLabel(channelOrigin.kind)
 #: src/components/conversation/ConversationView.tsx
 msgid "Reply in {0}"
@@ -14870,6 +14991,14 @@ msgstr "בקש עדכון"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
+msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Requesting access to {host}'s machine"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Requesting access to {hostName}'s machine…"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -15246,7 +15375,6 @@ msgid "Rules"
 msgstr "חוקים"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
-#: src/components/conversation/attachment-actions/registry.ts
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -15315,6 +15443,10 @@ msgstr "הפעל כעת"
 msgid "Run now (spawns a process)"
 msgstr "הרץ עכשיו (יוצר תהליך)"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Run on {hostName}'s machine"
+msgstr ""
+
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
 msgstr "הרץ סקריפט"
@@ -15338,6 +15470,10 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 #: src/i18n/pref-labels.ts
 msgid "Run the walk in"
 msgstr "היכן להריץ את סריקת הקבצים"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Run this as a prompt on {hostName}'s machine"
+msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -15365,7 +15501,6 @@ msgstr "פועל ברקע."
 msgid "Running on the host's machine · status: {0}"
 msgstr "פועל על מחשב המארח · מצב: {0}"
 
-#: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "הפעלה..."
@@ -15891,6 +16026,10 @@ msgstr "סודות מופעלים"
 msgid "See all {0} results →"
 msgstr "ראה את כל {0} התוצאות →"
 
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "See all sources"
+msgstr ""
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
 msgstr "נראה שאתם מנסים לשכפל מאגר git פרטי. עליכם להתחבר ל-GitHub כדי להשלים את הפעולה."
@@ -16052,7 +16191,6 @@ msgstr "סיכום עצמי"
 
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
-#: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -16097,8 +16235,8 @@ msgid "Send one minimal call through this endpoint"
 msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Send the reply for just this message"
-msgstr "שלח את התשובה עבור הודעה זו בלבד"
+#~ msgid "Send the reply for just this message"
+#~ msgstr "שלח את התשובה עבור הודעה זו בלבד"
 
 #. placeholder {0}: channelLabel(channelOrigin?.kind)
 #: src/components/conversation/ConversationView.tsx
@@ -16229,6 +16367,14 @@ msgstr "הסשן אינו פעיל"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "הסשן לא נמצא"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Session requested"
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Session settings"
+msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -17065,6 +17211,7 @@ msgid "Sound"
 msgstr "צליל"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Source"
 msgstr "מקור"
 
@@ -17182,6 +17329,10 @@ msgstr "ברירת מחדל"
 msgid "Standard mode"
 msgstr "מצב סטנדרטי"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Standing grant scope"
+msgstr ""
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Star"
 msgstr "כוכב"
@@ -17250,8 +17401,8 @@ msgid "Start journey"
 msgstr "התחילו את המסע"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Start live session"
-msgstr "התחלת סשן חי"
+#~ msgid "Start live session"
+#~ msgstr "התחלת סשן חי"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Start new"
@@ -17335,7 +17486,6 @@ msgstr "מפעילים את האפליקציה שלך…"
 msgid "Starting your sandbox…"
 msgstr "ה-Sandbox שלך מופעל…"
 
-#: src/components/conversation/ConversationView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -17348,6 +17498,7 @@ msgstr "סטטיסטיקות"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -17475,9 +17626,9 @@ msgstr ""
 msgid "Streaming must be allow, require or deny."
 msgstr ""
 
-#: src/components/data-sources/provider-catalog.ts
-#~ msgid "Streams"
-#~ msgstr "זרמים"
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Streams"
+msgstr "זרמים"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/organization/organization-page.tsx
@@ -17565,12 +17716,12 @@ msgid "Subprocess runs the file walk in a separate process, so a large or slow t
 msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך נפרד, כך שעץ גדול או איטי לא יכול לתקוע את השרת (הכתיבות למסד הנתונים נשארות בשרת בכל מקרה). \"תהליכון\" מריץ אותה בתוך התהליך — עלות התחלה נמוכה יותר, מתאים יותר לפרויקטים קטנים. אין לכך השפעה כאשר נבחר מנוע האינדוקס Rust."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Suggest a prompt for the other user to approve"
-msgstr "הצע פרומפט למשתמש השני לאישור"
+#~ msgid "Suggest a prompt for the other user to approve"
+#~ msgstr "הצע פרומפט למשתמש השני לאישור"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Suggest prompt"
-msgstr "הצע פרומפט"
+#~ msgid "Suggest prompt"
+#~ msgstr "הצע פרומפט"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
@@ -17682,10 +17833,13 @@ msgstr "סנכרן {0} שינויים"
 msgid "Sync {0} changes and refresh stats"
 msgstr ""
 
-#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Synced"
+msgstr ""
+
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "synced {0}"
-msgstr "סונכרן {0}"
+#~ msgid "synced {0}"
+#~ msgstr "סונכרן {0}"
 
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -17989,7 +18143,7 @@ msgstr "ייתכן שהשרת הופעל מחדש. לחצו כדי להתחבר 
 msgid "The change was not saved."
 msgstr "השינוי לא נשמר."
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "The check did not run."
 msgstr "הבדיקה לא בוצעה."
 
@@ -18057,6 +18211,10 @@ msgstr ""
 msgid "The GitHub connection didn't complete."
 msgstr "החיבור ל-GitHub לא הושלם."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "the guest"
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "The help desk files are missing. Open the help desk again to download them."
 msgstr "קבצי שירות העזרה חסרים. יש לפתוח את שירות העזרה שוב כדי להורידם."
@@ -18068,6 +18226,10 @@ msgstr "מרכז העזרה עדיין לא הוגדר במחשב זה."
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "The help desk is unavailable right now. Please try again."
 msgstr "שירות התמיכה אינו זמין כרגע. יש לנסות שוב."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "the host"
+msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
@@ -18109,6 +18271,10 @@ msgstr ""
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "משימות החברים נוצרו; {messageFailures} הודעות התראה לא נשלחו."
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "the other participant"
+msgstr ""
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "The project was not linked to the cloud."
 msgstr "הפרויקט לא קושר לענן."
@@ -18122,8 +18288,8 @@ msgid "The prompt text…"
 msgstr "טקסט הפרומפט…"
 
 #: src/components/conversation/PromptComposerDialog.tsx
-msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
-msgstr "הפרומפט יצורף להודעה הבאה שלך. המשתמש השני יראה צ'יפ \"אישור והפעלה\"; ברגע שאושר, הפרומפט ירוץ בסשן Claude Code שלהם."
+#~ msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
+#~ msgstr "הפרומפט יצורף להודעה הבאה שלך. המשתמש השני יראה צ'יפ \"אישור והפעלה\"; ברגע שאושר, הפרומפט ירוץ בסשן Claude Code שלהם."
 
 #: src/components/connections-manager.tsx
 msgid "The provider accepted the token."
@@ -18173,12 +18339,11 @@ msgstr "לא ניתן לקרוא את תמליל הסשן."
 msgid "The skill matches HEAD."
 msgstr "המיומנות תואמת ל-HEAD."
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "The source was not queued."
 msgstr "המקור לא התווסף לתור."
 
-#: src/components/data-sources/DataSourcesView.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/data-sources/use-source-delete.ts
 msgid "The source was not removed."
 msgstr "המקור לא הוסר."
 
@@ -19656,11 +19821,11 @@ msgid "Verified"
 msgstr "מאומת"
 
 #: src/components/account/user-info.tsx
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Verify"
 msgstr "אימות"
 
-#: src/components/data-sources/DataSourceCard.tsx
+#: src/components/data-sources/DataSourceRow.tsx
 msgid "Verify the setup first."
 msgstr "יש לאמת את ההגדרה תחילה."
 
@@ -19824,8 +19989,8 @@ msgid "Waiting for keychain approval…"
 msgstr "ממתין לאישור מפתחות…"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Waiting for the other participant's identity to sync…"
-msgstr "בהמתנה לסנכרון זהות המשתתף השני…"
+#~ msgid "Waiting for the other participant's identity to sync…"
+#~ msgstr "בהמתנה לסנכרון זהות המשתתף השני…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Waiting for you to approve…"
@@ -20092,8 +20257,8 @@ msgid "Wizard close failed"
 msgstr "סגירת האשף נכשלה"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Work on the other participant's machine"
-msgstr "לעבוד על המחשב של המשתתף השני"
+#~ msgid "Work on the other participant's machine"
+#~ msgstr "לעבוד על המחשב של המשתתף השני"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -20211,6 +20376,10 @@ msgstr ""
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "אתה הופך למנחה - אתה מחליט מה משותף לחדר."
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "You can change this later inside the session."
+msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "You can close this window."
@@ -20394,19 +20563,3 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
-
-#: src/components/conversation/AttachmentDownloadWarning.tsx
-msgid "Download again"
-msgstr "הורדה מחדש"
-
-#: src/components/assets/AssetsNavigator.tsx
-msgid "Assets unavailable. Retry"
-msgstr ""
-
-#: src/components/capabilities-view/CapabilitiesView.tsx
-msgid "Capabilities unavailable. Retry"
-msgstr ""
-
-#: src/components/capabilities-view/CapabilitiesView.tsx
-msgid "No capabilities available"
-msgstr ""
