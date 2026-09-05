@@ -26,3 +26,4 @@ export * from './entity-hooks';
 // Flow hooks
 export { useDataStreamText } from './useDataStreamText';
 export { useEntityData, type UseEntityDataResult } from './useEntityData';
+export * from './useIconPacks';
