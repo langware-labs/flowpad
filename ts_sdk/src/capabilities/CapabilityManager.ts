@@ -59,6 +59,8 @@ export interface CapabilityAccess {
   installable: boolean;
   worker_type: string | null;
   homepage_url: string | null;
+  /** Install one-liner for this machine, or null. See `Capability.install_command`. */
+  install_command: string | null;
   reference_kind: string | null;
   dependencies: CapabilityDependency[];
   value: unknown | null;
