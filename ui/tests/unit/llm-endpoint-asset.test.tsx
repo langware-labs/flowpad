@@ -24,9 +24,13 @@ import type { ReactElement } from 'react';
 const h = vi.hoisted(() => ({
   test: vi.fn(),
   chain: vi.fn(),
+  probeHarnesses: vi.fn(),
   endpoint: null as unknown,
   isLoading: false,
   status: null as unknown,
+  // Per-worker capability warning: a string means the check ran and the harness is NOT on
+  // this machine. All null = nothing known = nothing hidden (the shared fail-open rule).
+  warnings: {} as Record<string, string | null>,
 }));
 
 vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
@@ -37,6 +41,9 @@ vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   isHubOnly: () => false,
   llmSourcesService: { test: h.test, chain: h.chain, status: vi.fn() },
+}));
+vi.mock('@src/components/workers/harness-availability', () => ({
+  useHarnessAvailability: () => ({ warnings: h.warnings, probeHarnesses: h.probeHarnesses }),
 }));
 
 import { LlmEndpointAssetView } from '@src/components/assets/editor/llm-endpoint/LlmEndpointAssetView';
@@ -137,6 +144,7 @@ describe('LlmEndpointAssetView', () => {
     h.isLoading = false;
     h.endpoint = offer();
     h.status = null;
+    h.warnings = { claude_code: null, codex: null, copilot: null, opencode: null };
     h.chain.mockResolvedValue({
       entry: { id: 'llm_endpoint-ep-1', name: 'My budget' },
       hops: [
@@ -186,6 +194,7 @@ describe('FundingProvenance — what the tick actually proves', () => {
     h.isLoading = false;
     h.endpoint = offer();
     h.status = null;
+    h.warnings = { claude_code: null, codex: null, copilot: null, opencode: null };
     h.chain.mockResolvedValue({
       entry: { id: 'llm_endpoint-ep-1', name: 'My budget' },
       hops: [
@@ -228,6 +237,46 @@ describe('FundingProvenance — what the tick actually proves', () => {
     expect(line).toContain('anthropic/claude-haiku-4.5');
     expect(line).toContain('200');
     expect(line).toContain('408ms');
+  });
+
+  it('lists only the assistants that are actually on this machine', async () => {
+    // The resolver answers for every harness it knows, installed or not — and when a harness
+    // has no usable device login the ladder falls to this budget, so an absent Copilot would
+    // otherwise be reported as running on the wallet you are looking at.
+    const picked = (id: string) => ({ endpoint_typeid: `llm_endpoint-${id}`, name: id });
+    h.warnings = { claude_code: null, codex: null, copilot: 'not installed', opencode: 'not installed' };
+    h.status = {
+      available: [],
+      endpoint_typeid: null,
+      invoke_url: null,
+      name: null,
+      provider: null,
+      hub_logged_in: true,
+      hub_user_typeid: 'user-abc',
+      sources: {
+        'harness.claude.cli': [],
+        'harness.codex.cli': [],
+        'harness.copilot.cli': [],
+        'harness.opencode.cli': [],
+      },
+      resolved: {
+        'harness.claude.cli': picked('ep-1'),
+        'harness.codex.cli': picked('ep-1'),
+        'harness.copilot.cli': picked('ep-1'),
+        'harness.opencode.cli': picked('ep-1'),
+      },
+      endpoints: { 'llm_endpoint-ep-1': offer() },
+      active_for: [],
+    };
+    renderView(<LlmEndpointAssetView value="llm_endpoint-ep-1" />);
+
+    expect(await screen.findByTestId('llm-funding-harness.claude.cli')).toBeTruthy();
+    expect(screen.getByTestId('llm-funding-harness.codex.cli')).toBeTruthy();
+    expect(screen.queryByTestId('llm-funding-harness.copilot.cli')).toBeNull();
+    expect(screen.queryByTestId('llm-funding-harness.opencode.cli')).toBeNull();
+    // Asking is the point: the app subscribes with autoCheck:false, so an unprobed harness
+    // would read "unknown" forever and nothing would ever be filtered.
+    expect(h.probeHarnesses).toHaveBeenCalled();
   });
 
   it('separately says what the local harnesses are on — the thing a passing test does NOT prove', async () => {

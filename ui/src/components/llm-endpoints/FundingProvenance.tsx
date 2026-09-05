@@ -32,11 +32,14 @@ import {
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, KeyRound, ShieldAlert, X } from 'lucide-react';
 
 import { WORKER_LABELS, type WorkerType } from '@src/hooks/useWorkerHistory';
 import { harnessKinds, useLlmSources, workerOf } from '@src/components/llm-sources/use-llm-sources';
+import { useHarnessAvailability } from '@src/components/workers/harness-availability';
+import { HARNESS_CAPABILITY_BY_WORKER, LAUNCHABLE_WORKERS } from '@src/components/workers/worker-types';
 
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { TONE } from './tone';
@@ -156,14 +159,33 @@ function HarnessFunding({
   status: ReturnType<typeof useLlmSources>['status'];
 }) {
   const { t } = useLingui();
-  const kinds = harnessKinds(status);
-  if (!status || kinds.length === 0) return null;
+  // "Installed on this machine" is not the box's funding question and must not be re-derived
+  // from it: the resolver answers for EVERY harness it knows, installed or not, so a person
+  // with no Copilot still gets a verdict about Copilot — and when its presumed device login
+  // is ineligible the ladder falls to this budget, printing "this budget" for an assistant
+  // that does not exist here. The capability check is the one authority on presence, and
+  // `probeHarnesses` is why it is worth asking now: the app subscribes with `autoCheck:
+  // false`, so without a nudge every harness reads `checked: false` and nothing is filtered.
+  const { warnings, probeHarnesses } = useHarnessAvailability();
+  useEffect(() => probeHarnesses(), [probeHarnesses]);
+  // A harness whose check RAN and FAILED is absent; unchecked is not absent (the shared rule
+  // in `harnessWarning`), so this fails open exactly like the worker picker does.
+  const present = harnessKinds(status).filter((kind) => {
+    const worker = LAUNCHABLE_WORKERS.find((w) => HARNESS_CAPABILITY_BY_WORKER[w] === kind);
+    return !worker || !warnings[worker];
+  });
+  if (!status || harnessKinds(status).length === 0) return null;
   return (
     <div className="space-y-0.5 border-t pt-2" data-testid="llm-funding-harnesses">
       <div className="text-xs text-muted-foreground">
         <Trans>What this machine's assistants are funded by right now</Trans>
       </div>
-      {kinds.map((kind) => {
+      {present.length === 0 && (
+        <div className="text-xs text-muted-foreground" data-testid="llm-funding-none-installed">
+          <Trans>No assistant is installed on this machine.</Trans>
+        </div>
+      )}
+      {present.map((kind) => {
         const picked = status.resolved?.[kind] ?? null;
         const offer = picked ? status.endpoints?.[picked.endpoint_typeid] : undefined;
         const mine = !!offer && offer.id === endpointId;
