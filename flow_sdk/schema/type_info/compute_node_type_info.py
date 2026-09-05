@@ -7,15 +7,15 @@ those watchers. Without an ``api_visible=True`` registration the registry
 defaults to False and the broadcast gate in
 ``resource_tracker._sync_handle_entity_op`` drops compute_node updates for
 non-watcher connections. The class-level ``ComputeNode._api_visible = True``
-attribute is NOT read by the registry; this declarative TypeMetadata is the
+attribute is NOT read by the registry; this declarative TypeInfo is the
 single authoring home. (Mirror of the agentic_process fix — same root cause:
 an entity-backed type whose class intends api_visible=True but had no
 type_info module to register it.)
 """
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-COMPUTE_NODE = TypeMetadata(
-    type=EntityType.COMPUTE_NODE,
+COMPUTE_NODE = TypeInfo(
+    type_name=EntityType.COMPUTE_NODE,
     api_visible=True,
 )

@@ -9,14 +9,15 @@ from flow_sdk.fs_store.indexer.functions.graph_workflow import (
     graph_workflow_asset_hash,
     graph_workflow_id_from_folder,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-GRAPH_WORKFLOW = TypeMetadata(
-    type=EntityType.GRAPH_WORKFLOW,
+GRAPH_WORKFLOW = TypeInfo(
+    type_name=EntityType.GRAPH_WORKFLOW,
     icon="Workflow",
-    displayName="Graph Workflows",
+    display_name="Graph Workflows",
     browseable_by=ViewMode.ADVANCED,
     creatable=True,
     indexed_by_default=True,
@@ -27,8 +28,7 @@ GRAPH_WORKFLOW = TypeMetadata(
     # ``repo_assets_fn`` walker via ``main_file`` — no bespoke walker.
     asset_class="repo",
     family="graph_workflow",
-    main_layout="folder",
-    main_file="graph.json",
+    shape=Folder(main="graph.json"),
     from_disk_fn=extract_graph_workflow,
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, graph_workflow_id_from_folder),

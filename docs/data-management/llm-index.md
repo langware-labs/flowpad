@@ -84,7 +84,7 @@ Each indexed folder gets two files written into the folder itself:
 
 An `index.md` file **is** a `MarkdownIndex` entity (a subclass of `Markdown`). Its YAML frontmatter holds the entity metadata — `inputs_hash`, `template_version`, `prompt_version`, `parent_ref`, `file_count`, `subfolder_count`, `latest_process_ref`. The Merkle property means a leaf-file change invalidates exactly the chain from that leaf to the root and nothing else.
 
-This is the one place the ordinary scan walk touches the pipeline. `MARKDOWN_INDEX` registers a `TypeMetadata` with:
+This is the one place the ordinary scan walk touches the pipeline. `MARKDOWN_INDEX` declares a `TypeInfo` with:
 
 - `from_disk_fn = extract_markdown_index` — reads an `index.md` and parses it into a `MARKDOWN_INDEX` record via `flow_sdk.fs_store.operations.markdown_index.from_markdown`. This lets `FSIndexer` re-parse an already-existing `index.md` (e.g. after a restart).
 - a derived identity carrier (`derived_identity()`) plus `id_stable_key_fn = markdown_index_identity_key` (the resolved path) — `TypeInfo.mint_entity_id()` mints `uuid5(NAMESPACE_URL, resolved_path)` through `mint_uuid`, the same formula `llm_index.typeid_for` computes with a hand-rolled `uuid.uuid5` (the library stays DB-free, so the two are kept in step by convention, not by a shared call). `extract_markdown_index(ref, resolved_id)` receives that authoritative id; payload/frontmatter values cannot override it.

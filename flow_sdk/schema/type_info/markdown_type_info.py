@@ -3,16 +3,19 @@ from flow_sdk.builtin.claude_memory_entities import MarkdownSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
 from flow_sdk.fs_store.indexer.functions.markdown import derive_markdown
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.rag.observer import mark_rag_stale
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-MARKDOWN = TypeMetadata(
+MARKDOWN = TypeInfo(
     hub_main_file="document.md",
-    type=EntityType.MARKDOWN,
+    type_name=EntityType.MARKDOWN,
+    shape=File(ext=".md"),
+    editor="markdown",
     icon="FileText",
-    displayName="Documents",
+    display_name="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,

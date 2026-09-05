@@ -10,7 +10,7 @@ per minute forever, for state no human reads and no search should return.
 """
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -30,10 +30,10 @@ class DataSourceMeta(BaseMeta):
     health: Optional[str] = None
 
 
-DATA_SOURCE = TypeMetadata(
-    type=EntityType.DATA_SOURCE,
+DATA_SOURCE = TypeInfo(
+    type_name=EntityType.DATA_SOURCE,
     icon="Antenna",
-    displayName="Data sources",
+    display_name="Data sources",
     api_visible=True,
     creatable=True,
     # Deliberately NOT browseable: the dedicated `/dock/data-sources` screen is
@@ -50,24 +50,24 @@ DATA_SOURCE = TypeMetadata(
     meta_model=DataSourceMeta,
 )
 
-DATA_SOURCE_CURSOR = TypeMetadata(
-    type=EntityType.DATA_SOURCE_CURSOR,
+DATA_SOURCE_CURSOR = TypeInfo(
+    type_name=EntityType.DATA_SOURCE_CURSOR,
     icon="Bookmark",
     api_visible=True,
     db_only=True,
 )
 
 # The consumer-side cursor: same shape, same reasons, one level up.
-CONSUMER_POSITION = TypeMetadata(
-    type=EntityType.CONSUMER_POSITION,
+CONSUMER_POSITION = TypeInfo(
+    type_name=EntityType.CONSUMER_POSITION,
     icon="Bookmark",
     api_visible=True,
     db_only=True,
 )
 
 # The change log an object-shaped source leaves behind each reflected page.
-SOURCE_CHANGE = TypeMetadata(
-    type=EntityType.SOURCE_CHANGE,
+SOURCE_CHANGE = TypeInfo(
+    type_name=EntityType.SOURCE_CHANGE,
     icon="FileDiff",
     api_visible=True,
     db_only=True,

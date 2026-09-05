@@ -1,7 +1,7 @@
 """Type metadata for SHELL."""
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -24,8 +24,8 @@ class ShellMeta(BaseMeta):
     auto_rename: Optional[bool] = None
 
 
-SHELL = TypeMetadata(
-    type=EntityType.SHELL,
+SHELL = TypeInfo(
+    type_name=EntityType.SHELL,
     icon="Terminal",
     api_visible=True,
     meta_model=ShellMeta,

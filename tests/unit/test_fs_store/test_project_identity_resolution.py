@@ -40,7 +40,7 @@ async def test_existing_project_record_id_is_preserved(tmp_path: Path, existing_
     cwd = "/flowpad-tests/project-identity-existing"
     FSRecord(RecordType.PROJECT, existing_id, cwd=cwd, name=cwd).save()
     ref = _project_ref(tmp_path, cwd, encoded)
-    info = PROJECT.to_type_info()
+    info = PROJECT
 
     assert info.mint_entity_id(ref) == existing_id
     parsed = await extract_claude_project(ref, existing_id)
@@ -52,7 +52,7 @@ async def test_existing_project_record_id_is_preserved(tmp_path: Path, existing_
 async def test_missing_project_record_mints_and_persists_dns_v5() -> None:
     cwd = "/flowpad-tests/project-identity-new"
     ref = FSRef(cwd)
-    info = PROJECT.to_type_info()
+    info = PROJECT
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{Path(cwd).resolve().as_posix()}"))
 
     assert info.read_id(ref) is None

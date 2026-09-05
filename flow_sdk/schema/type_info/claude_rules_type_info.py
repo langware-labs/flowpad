@@ -7,12 +7,15 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import (
 from flow_sdk.fs_store.indexer.functions.claude_rules import (
     extract_claude_rules,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-CLAUDE_RULES = TypeMetadata(
-    type=EntityType.CLAUDE_RULES,
+CLAUDE_RULES = TypeInfo(
+    type_name=EntityType.CLAUDE_RULES,
+    shape=File(ext=".md"),
+    editor="markdown",
     icon="Shield",
     browseable_by=ViewMode.ADVANCED,
     indexed_by_default=True,

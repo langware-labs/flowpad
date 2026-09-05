@@ -6,16 +6,17 @@ from flow_sdk.fs_store.indexer.functions.todo import (
     extract_todo,
     todo_identity_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-TODO_FILE = TypeMetadata(
-    type=EntityType.TODO_FILE,
+TODO_FILE = TypeInfo(
+    type_name=EntityType.TODO_FILE,
     icon="ListChecks",
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_todo,
-    main_ext=".json",  # a derived file type states the format it reads; the ".md" default was a lie here
+    shape=File(ext=".json"),
     identity_carrier=derived_identity(),
     id_stable_key_fn=todo_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,

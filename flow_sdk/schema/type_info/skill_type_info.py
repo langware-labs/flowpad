@@ -6,14 +6,15 @@ from flow_sdk.fs_store.indexer.functions.skill import (
     skill_asset_hash,
     skill_id_from_folder,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-SKILL = TypeMetadata(
-    type=EntityType.SKILL,
+SKILL = TypeInfo(
+    type_name=EntityType.SKILL,
     icon="FileBadge",
-    displayName="Skills",
+    display_name="Skills",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
@@ -22,8 +23,8 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     asset_class="shared",
     family="skills",
-    main_layout="folder",
-    main_file="SKILL.md",
+    shape=Folder(main="SKILL.md"),
+    editor="skill",
     hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
     capsules=(IDENTITY_CAPSULE,),

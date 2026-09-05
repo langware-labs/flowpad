@@ -217,7 +217,7 @@ class TestTheFence:
         """The check that pays for all of this.
 
         Until now nothing in Python could tell a real icon name from a typo —
-        `TypeMetadata.icon` says so outright: *"the set of valid lucide names
+        `TypeInfo.icon` says so outright: *"the set of valid lucide names
         lives in the frontend's bundle, not here."*
 
         EXACTLY, not merely resolvably: best-match means a misspelled leaf on a

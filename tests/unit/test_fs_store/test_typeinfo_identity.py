@@ -12,7 +12,6 @@ from flow_sdk.fs_store.identity_carrier import DerivedCarrier, FolderJsonCarrier
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._asset_identity import folder_md_identity, frontmatter_identity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-from flow_sdk.schema.type_info import TypeMetadata
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing"))
@@ -192,16 +191,16 @@ def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> 
     assert info.body_path_for(same_named_folder) == same_named_folder / "SKILL.md"
 
 
-def test_metadata_carries_identity_traits_and_capsules_affect_hash() -> None:
+def test_declaration_carries_identity_traits_and_capsules_affect_hash() -> None:
     carrier = DerivedCarrier()
     key = lambda ref: "key"  # noqa: E731
-    info = TypeMetadata(
-        type="probe",
+    info = TypeInfo(
+        type_name="probe",
         capsules=(IDENTITY,),
         identity_carrier=carrier,
         id_stable_key_fn=key,
         id_namespace=uuid.NAMESPACE_DNS,
-    ).to_type_info()
+    )
     assert (info.capsules, info.identity_carrier, info.id_stable_key_fn, info.id_namespace) == (
         (IDENTITY,), carrier, key, uuid.NAMESPACE_DNS,
     )

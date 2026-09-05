@@ -7,13 +7,16 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import (
 from flow_sdk.fs_store.indexer.functions.claude_memory import (
     extract_claude_memory,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-CLAUDE_MEMORY = TypeMetadata(
+CLAUDE_MEMORY = TypeInfo(
     hub_main_file="document.md",
-    type=EntityType.CLAUDE_MEMORY,
+    type_name=EntityType.CLAUDE_MEMORY,
+    shape=File(ext=".md"),
+    editor="markdown",
     icon="Brain",
     browseable_by=ViewMode.ADVANCED,
     indexed_by_default=True,

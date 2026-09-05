@@ -5,12 +5,15 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import (
     frontmatter_identity,
     resolved_path_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-PROMPT = TypeMetadata(
-    type=EntityType.PROMPT,
+PROMPT = TypeInfo(
+    type_name=EntityType.PROMPT,
+    shape=File(ext=".md"),
+    editor="markdown",
     fts_content=("text",),
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),

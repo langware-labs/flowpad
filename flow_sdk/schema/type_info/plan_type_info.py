@@ -5,12 +5,15 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import (
     resolved_path_key,
 )
 from flow_sdk.fs_store.indexer.functions.claude_plan import extract_claude_plan
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-PLAN = TypeMetadata(
-    type=EntityType.PLAN,
+PLAN = TypeInfo(
+    type_name=EntityType.PLAN,
+    shape=File(ext=".md"),
+    editor="markdown",
     icon="FileText",
     browseable_by=ViewMode.ADVANCED,
     indexed_by_default=True,

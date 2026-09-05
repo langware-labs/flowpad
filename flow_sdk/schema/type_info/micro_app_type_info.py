@@ -17,26 +17,26 @@ somewhere in the user's checkout, which has no ``webapp.json`` and no
 from flow_sdk.builtin.faas.webapp_spec import WebappManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.webapp import derive_webapp
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
-# MicroApp is an Entity but had no TypeMetadata, so the registry could not see
+# MicroApp is an Entity but had no TypeInfo, so the registry could not see
 # it: no icon, no display name, absent from the bootstrap schema the frontend
 # queries through. Registering it is what lets an app's delivery row be read
 # from the UI at all — the same treatment its sibling companion Deployment and
 # its subject Artifact already have.
-MICRO_APP = TypeMetadata(
-    type=EntityType.MICRO_APP,
+MICRO_APP = TypeInfo(
+    type_name=EntityType.MICRO_APP,
     api_visible=True,
     icon="AppWindow",
-    displayName="Apps",
+    display_name="Apps",
     # Authored in a folder next to the thing it serves, not from a New button.
     creatable=False,
     indexed_by_default=True,
     asset_class="repo",
     family="webapp",
-    main_layout="folder",
-    main_file="webapp.json",
+    shape=Folder(main="webapp.json"),
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
     fts_content=("name", "title", "description"),
