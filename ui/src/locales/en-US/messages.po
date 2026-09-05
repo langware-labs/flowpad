@@ -54,6 +54,10 @@ msgstr "— show time/index gutter"
 msgid "— show trace event gutter"
 msgstr "— show trace event gutter"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "…"
+msgstr "…"
+
 #: src/components/connections-manager/credential-value-form.tsx
 msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 msgstr ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
@@ -209,6 +213,11 @@ msgstr "{0, plural, one {# team} other {# teams}}"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: outcome.already.join(', ')
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} — no email sent."
+msgstr "{0} — no email sent."
 
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -578,6 +587,10 @@ msgstr "{ignored} issue{0} auto-resolved"
 msgid "{indexedCount} indexed"
 msgstr "{indexedCount} indexed"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "{label}"
+msgstr "{label}"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "{label} docs"
 msgstr "{label} docs"
@@ -917,6 +930,18 @@ msgstr "60"
 msgid "80% Alert Threshold"
 msgstr "80% Alert Threshold"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a {label} key stored on this machine"
+msgstr "a {label} key stored on this machine"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a {label} OAuth login on this machine"
+msgstr "a {label} OAuth login on this machine"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "A call here spends"
+msgstr "A call here spends"
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A chain draws on another endpoint and can only narrow what passes."
 msgstr "A chain draws on another endpoint and can only narrow what passes."
@@ -936,6 +961,10 @@ msgstr "A fresh shell needs to be allocated. (Backend action coming — for now 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "A hosted mailbox over its HTTP API."
 #~ msgstr "A hosted mailbox over its HTTP API."
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a key the hub holds (the chain could not be read from here)"
+msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "A live session is already running in this conversation"
@@ -1751,6 +1780,11 @@ msgstr "Already installed globally — uninstall first"
 msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
 
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Already on {0}"
+msgstr "Already on {0}"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already present"
 msgstr "already present"
@@ -1909,6 +1943,10 @@ msgstr "Announcements shown at startup"
 #: src/components/assets/context-folder-sources.tsx
 msgid "Another Flowpad project — its folder becomes context for this one"
 msgstr "Another Flowpad project — its folder becomes context for this one"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "another hub budget — {label}"
+msgstr "another hub budget — {label}"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -4612,6 +4650,10 @@ msgstr "Could not give access"
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not invite everyone"
+msgstr "Could not invite everyone"
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "Could not link asset to cloud"
 msgstr "Could not link asset to cloud"
@@ -6603,6 +6645,11 @@ msgstr "Effort"
 msgid "Email"
 msgstr "Email"
 
+#. placeholder {0}: member.email
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Email {0} an invitation to {teamName}"
+msgstr "Email {0} an invitation to {teamName}"
+
 #: src/components/inbox-view/AgentInboxView.tsx
 #~ msgid "Email disabled"
 #~ msgstr "Email disabled"
@@ -6623,6 +6670,13 @@ msgstr "Email settings could not be saved."
 #: src/components/account/user-info.tsx
 msgid "Email:"
 msgstr "Email:"
+
+#. placeholder {0}: outcome.invited.length
+#. placeholder {1}: emails.length
+#. placeholder {2}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Emailed {0} of {1} about {2}."
+msgstr "Emailed {0} of {1} about {2}."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Embedded in message"
@@ -9440,6 +9494,7 @@ msgid "Invitation no longer valid"
 msgstr "Invitation no longer valid"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invitation sent"
 msgstr "Invitation sent"
@@ -9720,6 +9775,14 @@ msgstr "Last successful sync"
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Last sync:"
 msgstr "Last sync:"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "Last test failed"
+msgstr "Last test failed"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "Last test paid with that key"
+msgstr "Last test paid with that key"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last triggered"
@@ -11742,6 +11805,10 @@ msgstr "no key"
 msgid "No key has been set yet. Its owner sets one."
 msgstr "No key has been set yet. Its owner sets one."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "no key on that root"
+msgstr "no key on that root"
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr "No key stored — this root cannot serve requests until one is saved."
@@ -12482,6 +12549,7 @@ msgstr "Nothing caps this scope yet. Set a daily, weekly or monthly budget in do
 #~ msgid "Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone provides the value."
 #~ msgstr "Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone provides the value."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
 msgstr "nothing eligible"
@@ -16348,6 +16416,14 @@ msgstr "Send a question to the help desk. A new conversation will open with your
 msgid "Send failed."
 msgstr "Send failed."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Send invite"
+msgstr "Send invite"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Send invites to everyone"
+msgstr "Send invites to everyone"
+
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
 msgstr "Send message"
@@ -18358,6 +18434,10 @@ msgstr "The help desk is not set up on this machine yet."
 msgid "The help desk is unavailable right now. Please try again."
 msgstr "The help desk is unavailable right now. Please try again."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+msgstr "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "The hub refused this client."
@@ -18608,6 +18688,10 @@ msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "this budget"
+msgstr "this budget"
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "This budget is not available to you"
 msgstr "This budget is not available to you"
@@ -18663,6 +18747,10 @@ msgstr "This document"
 #: src/components/vfs-markdown-pane.tsx
 msgid "This document no longer exists."
 msgstr "This document no longer exists."
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "this endpoint's own key"
+msgstr "this endpoint's own key"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "This entry was removed since the last stamp — it exists only in the baseline."
@@ -20313,6 +20401,10 @@ msgstr "What it worked on"
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "What this machine's assistants are funded by right now"
+msgstr "What this machine's assistants are funded by right now"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "What this project needs, where each value comes from, and whether it is met here."
