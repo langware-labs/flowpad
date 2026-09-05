@@ -7,9 +7,10 @@
  * function rather than editing 81 files. If either quietly stops holding, the
  * migration breaks at ~1,600 call sites instead of here.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FlowIcon, FLOW_ICON_SIZES, flowIconComponent } from '@sdk/react/FlowIcon';
+import { useIcon } from '@sdk/react/hooks/useIcon';
 import { loadIconPacks, registerBundleRenderer, setIconFallback, type IconPackSpec } from '@sdk/icons';
 import { lucideByName } from '@src/lib/lucide-by-name';
 
@@ -181,6 +182,36 @@ describe('a broken asset', () => {
     const img = container.querySelector('img')!;
     fireEvent.error(img);
     expect(glyph(container).getAttribute('style')).toContain('file-text.svg');
+  });
+});
+
+describe('packs that arrive after mount', () => {
+  // The app boots with packs before anything renders, which is why nobody
+  // saw this: a component mounted against an EMPTY registry subscribed to the
+  // load, re-rendered on it, and then handed back the memoized `none` because
+  // the memo keyed on the tag alone. Every icon on the page stayed blank until
+  // its subtree remounted.
+  afterEach(() => loadIconPacks(PACKS));
+
+  it('repaint a FlowIcon that mounted before they loaded', () => {
+    loadIconPacks([]);
+    const { container } = render(<FlowIcon icon="brands.slack" />);
+    expect(container.querySelector('img')).toBeNull();
+    act(() => loadIconPacks(PACKS));
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('slack.svg');
+  });
+
+  it('re-resolve a useIcon caller that mounted before they loaded', () => {
+    loadIconPacks([]);
+    const seen: boolean[] = [];
+    function Probe() {
+      seen.push(useIcon('brands.slack').missing);
+      return null;
+    }
+    render(<Probe />);
+    expect(seen.at(-1)).toBe(true);
+    act(() => loadIconPacks(PACKS));
+    expect(seen.at(-1)).toBe(false);
   });
 });
 
