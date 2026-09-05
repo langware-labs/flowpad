@@ -5080,7 +5080,9 @@ class AgenticProcess(Entity):
             # (adopted frontmatter id, else the stable uuid5(path)) — the plan
             # file is a transient Claude transcript artifact we must not mutate
             # with an identity-capsule write.
-            rec = SchemaRegistry.get("markdown").record_for(_FSRef(Path(plan_file_path), read_only=True))
+            info = SchemaRegistry.get("markdown")
+            ref = _FSRef(Path(plan_file_path), read_only=True)
+            rec = info.record_for(ref, info.mint_entity_id(ref))
             if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
             await rec.sync_to_db()

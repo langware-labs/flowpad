@@ -20,7 +20,17 @@ from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_ori
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier, UnclaimedPath
+from flow_sdk.fs_store.identity_carrier import (
+    LEGACY_CONVERTIBLE,
+    Absent,
+    Derived,
+    ForeignId,
+    Found,
+    IdentityCarrier,
+    NotWritable,
+    UnclaimedPath,
+    Unstamped,
+)
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.schema.layout import File, Folder, Layout, LayoutKind  # noqa: F401 — Layout/LayoutKind re-exported
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -356,14 +366,12 @@ class TypeInfo:
         file type; ``<folder>/<main_file>`` for a folder type)."""
         return self.layout_of(asset_path).body or asset_path
 
-    def record_for(self, ref: Any) -> Any:
-        """Parse ONE asset: resolve its id through the one id seam (a
-        ``read_only`` ref derives without stamping) and run ``from_disk_fn``;
-        the first record or None."""
+    def record_for(self, ref: Any, resolved_id: str) -> Any:
+        """Parse ONE asset whose id the caller already resolved through the
+        id seam; run ``from_disk_fn`` and answer the first record or None."""
         if self.from_disk_fn is None:
             return None
-        resolved = self.mint_entity_id(ref)
-        records = self.from_disk_fn(ref, resolved)
+        records = self.from_disk_fn(ref, resolved_id)
         return records[0] if records else None
 
     def storage_root_for(self, path: Path) -> Path:
@@ -419,21 +427,24 @@ class TypeInfo:
             return f"{self.type_name}:{self.identity_key_fn(ref)}"
         return None
 
-    @staticmethod
-    def _identity_path(ref: Any) -> Path:
-        """Return the concrete asset path accepted by identity callbacks."""
-        return Path(getattr(ref, "_path", ref))
+    def layout_for(self, ref: Any) -> "Layout":
+        """Classify one ref for the id seam: refuse (``UnclaimedPath``) a path a
+        WRITABLE carrier does not claim, then ``layout_of``. A derived type is
+        exempt because its declared shape is not yet the truth about its
+        sources (mcp_server says ``.json`` but its walker also yields
+        ``.toml`` and hooks inside settings.json): its id is a keyed function
+        of the source, never a write, so an unshaped path is the file itself."""
+        path = Path(getattr(ref, "_path", ref))
+        if self.identity_carrier is not None and self.identity_carrier.writable:
+            if (reason := self.claims(path)) is not None:
+                raise UnclaimedPath(self.type_name, path, reason)
+        layout = self.layout_of(path)
+        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path, path)
 
-    def carrier_path_for(self, ref: Any) -> Path:
-        """The file or folder this type's identity carrier lives in: the main
-        markdown document for a frontmatter carrier (``<folder>/<main_file>`` on
-        a folder type), the folder for a folder-json carrier, the file otherwise."""
-        path = self._identity_path(ref)
-        if isinstance(self.identity_carrier, FrontmatterCarrier) and self.folder_backed and self.main_file:
-            root = self.storage_root_for(path)
-            main = root / self.main_file
-            return main if main.is_file() else root   # no main doc (a yaml-only skill): the folder carries
-        return self.storage_root_for(path) if self.folder_backed else path
+    @property
+    def carrier(self) -> IdentityCarrier:
+        """The declared carrier; a type without one derives (never writes)."""
+        return self.identity_carrier if self.identity_carrier is not None else Derived()
 
     def claims(self, path: Path) -> "str | None":
         """Why this type does NOT claim ``path`` — or ``None`` when it does.
@@ -470,18 +481,82 @@ class TypeInfo:
             return f"not shaped as a {self.type_name} ({self.shape})"
         return None
 
-    def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
-        """The carrier path and what it holds; raises ``MalformedCarrier`` — a
-        corrupt source must never be silently re-identified."""
-        if self.identity_carrier is None:
-            return None, CarrierId()
-        path = self.carrier_path_for(ref)
-        return path, self.identity_carrier.read(path)
-
     def read_id(self, ref: Any) -> str | None:
         """The valid id the source already carries, else None. Never writes —
         the probe collision ranking and create guards rely on."""
-        return self._read_carrier(ref)[1].id
+        layout = self.layout_for(ref)
+        found = self.carrier.read(self.carrier.locate(layout))
+        return found.id if isinstance(found, Found) else None
+
+    def _stampable(self, layout: "Layout", where: Path) -> bool:
+        """The carrier accepts ``where`` AND a folder asset has its main
+        document: a folder without it (a yaml-only skill) is not the shape,
+        so nothing is ever written into it — a scan issue, not an asset."""
+        if isinstance(self.shape, Folder) and where == layout.body and not where.exists():
+            return False   # the carrier lives in the main document, and there is none
+        return self.carrier.accepts(where)
+
+    def mint(self, layout: "Layout", *, write: bool = True, ref: Any = None) -> str:
+        """MINT: read the carrier; ``Found`` is the answer; ``Foreign`` raises
+        ``ForeignId``; absent ⇒ mint (v5 when the type has a stable key, else
+        v4) and, with ``write``, stamp it through the carrier — which refuses
+        (``NotWritable``) a path that is not its own format. Without a write a
+        keyless id is not an answer (``Unstamped``). ``ref`` is handed to the
+        stable-key function when it carries more than the path (scope,
+        json_path); the layout's ref otherwise."""
+        carrier = self.carrier
+        where = carrier.locate(layout)
+        found = carrier.read(where)
+        if isinstance(found, Found):
+            return found.id
+        if not isinstance(found, Absent):
+            raise ForeignId(where, found.raw)
+        key = self.stable_key_for(ref if ref is not None else layout.ref)
+        new_id = mint_uuid(key or None, namespace=self.id_namespace)
+        if not write:
+            if key:
+                return new_id
+            raise Unstamped(f"{self.type_name} at {where}: a keyless id must be written to be an answer")
+        if not self._stampable(layout, where):
+            # A keyed id is deterministic, so a carrier that cannot take the
+            # write (derived; a path not of its format) still has an answer.
+            if key:
+                return new_id
+            if not carrier.writable:
+                raise Unstamped(f"{self.type_name} at {where}: a derived identity has no key and is never written")
+            raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
+        try:
+            return carrier.stamp(where, new_id)
+        except OSError:
+            logging.debug("[asset-id] mint write failed for %s", where, exc_info=True)
+        if key:
+            return new_id
+        raise Unstamped(f"{self.type_name} at {where}: mint write failed")
+
+    def stamp_id(self, ref: Any, entity_id: str) -> str:
+        """The create-flow seam: persist ``entity_id`` into the source through
+        the carrier. A ``Found`` id wins and is returned; ``Foreign`` raises.
+        A ``read_only`` ref, suppressed carrier writes (a git working tree) or
+        a derived type answer the carrier or ``entity_id`` without writing."""
+        from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+
+        if not is_valid_entity_id(entity_id):
+            raise ValueError("proposed entity id must be a UUID v4 or v5")
+        carrier = self.carrier
+        layout = self.layout_for(ref)
+        where = carrier.locate(layout)
+        if not carrier.writable or bool(getattr(ref, "read_only", False)) or carrier_writes_are_suppressed():
+            found = carrier.read(where)
+            return found.id if isinstance(found, Found) else entity_id
+        if not self._stampable(layout, where):
+            raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
+        found = carrier.read(where)
+        if isinstance(found, Found) and found.source in LEGACY_CONVERTIBLE and hasattr(carrier, "convert"):
+            # A create over a legacy source: the same rewrite moves the id
+            # into the header (the indexer's reconcile does the same later).
+            carrier.convert(where, found.id)
+            return found.id
+        return carrier.stamp(where, entity_id)
 
     def mint_entity_id(
         self,
@@ -491,94 +566,23 @@ class TypeInfo:
         owner_id: str | None = None,
         live_ids: "Container[str] | None" = None,
     ) -> str:
-        """**The** entity-id seam for a filesystem asset: read the carrier; if
-        it names a live id that is the answer; else the owning row; else mint
-        and write. Nothing else may mint.
-
-        An asset's id lives in its source, but a full-content rewrite — what an
-        agent does on every revision — can wipe that carrier. A carrier-less
-        source is therefore not a new asset when a row already owns the path:
-        it is that row, and its id is stamped back (``owner_id``). ``live_ids``
-        is the liveness oracle for a carrier that names a DIFFERENT id: ``None``
-        means "cannot prove dead", so the carrier wins; only the index walk,
-        holding the complete per-type id set, may conclude a carrier is a fossil.
-
-        Writes happen only when the carrier is writable, the ref is not
-        ``read_only``, and carrier writes are not suppressed (a git-tracked
-        source) — the same gates for every caller. A carrier that holds a
-        present-but-invalid value (a hand-written v7) keeps its bytes and gets
-        a stable path-derived v5. A legacy markdown capsule is converted into
-        the frontmatter in place, id unchanged. Sync; never touches the DB.
-        """
+        """Compatibility adapter over the seam: ``proposed_id`` ⇒ ``stamp_id``;
+        everything else ⇒ the indexer's ``reconcile`` (carrier vs owning row,
+        legacy conversion, the foreign-id fallback), with writes gated by the
+        ref's ``read_only`` and the carrier-write suppression context."""
         from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
-        from flow_sdk.fs_store.identity_carrier import LEGACY_CONVERTIBLE  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
 
         if proposed_id is not None and not is_valid_entity_id(proposed_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
-
-        # Refuse, don't gate: a writable carrier is only ever read or stamped at
-        # a path this type claims. A derived type is exempt because its declared
-        # shape is not yet the truth about its sources (mcp_server says ``.json``
-        # but its walker also yields ``.toml`` and hooks inside settings.json):
-        # its id is a keyed function of the source, never a write, and the check
-        # goes total for it once ``File`` carries the real extension set.
-        if self.identity_carrier is not None and self.identity_carrier.writable:
-            target = self._identity_path(ref)
-            if (reason := self.claims(target)) is not None:
-                raise UnclaimedPath(self.type_name, target, reason)
-
-        path, carrier = self._read_carrier(ref)
-        can_write = (
-            path is not None
-            and self.identity_carrier.writable
-            and not bool(getattr(ref, "read_only", False))
-            and not carrier_writes_are_suppressed()
-        )
-
-        if carrier.id is not None and (
-            owner_id is None or carrier.id == owner_id or live_ids is None or carrier.id in live_ids
-        ):
-            if carrier.source in LEGACY_CONVERTIBLE and can_write and hasattr(self.identity_carrier, "convert") and path.is_file():
-                try:
-                    self.identity_carrier.convert(path, carrier.id)  # type: ignore[union-attr]
-                except OSError:
-                    logging.debug("[asset-id] capsule→frontmatter conversion skipped for %s", path, exc_info=True)
-            return carrier.id
-
-        # An owning row wins over an absent or dead carrier — but never for a
-        # derived identity, which is a pure function of the source (a stale row
-        # on a rotated session path must not swallow a different session).
-        if owner_id and self.identity_carrier is not None and self.identity_carrier.writable:
-            if carrier.id is not None:
-                logging.warning(
-                    "[asset-id] %s carrier %r names no live entity; path is owned by %s (%s)",
-                    self.type_name, carrier.id, owner_id, self._identity_path(ref),
-                )
-            elif carrier.raw is None and can_write:
-                try:
-                    self.identity_carrier.write_if_absent(path, owner_id)
-                except OSError:
-                    logging.debug("[asset-id] re-stamp skipped for %s", path, exc_info=True)
-            return owner_id
-
-        stable_key = self.stable_key_for(ref)
-        fallback_key = str(self._identity_path(ref).resolve())
-        if carrier.raw is not None:
-            # Present but not a UUID we accept: keep the bytes, derive a stable
-            # v5 until the source is repaired.
-            return mint_uuid(stable_key or fallback_key, namespace=self.id_namespace)
-
-        new_id = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-        if can_write:
+        layout = self.layout_for(ref)
+        write = not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed()
+        if proposed_id is not None and not owner_id:
             try:
-                return self.identity_carrier.write_if_absent(path, new_id)  # type: ignore[union-attr]
-            except OSError:
-                logging.debug("[asset-id] mint write failed for %s", path, exc_info=True)
-        # Not written: only a keyed id is deterministic enough to be an answer;
-        # a random v4 that lands nowhere would differ on every call.
-        if proposed_id or stable_key:
-            return new_id
-        return mint_uuid(fallback_key, namespace=self.id_namespace)
+                return self.stamp_id(ref, proposed_id)
+            except ForeignId:
+                pass   # reconcile records the foreign id and answers with the keyed/path v5
+        return reconcile(self, layout, owner_id or None, live_ids, write=write, ref=ref)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":

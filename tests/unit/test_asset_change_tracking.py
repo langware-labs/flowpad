@@ -300,10 +300,10 @@ def test_versioning_never_selects_a_non_frontmatter_type():
     ONE type through the real hook; this catches the next one the day it is
     registered, without needing a fixture per family. A type is eligible for
     asset-scoped versioning only if its main file can hold the ``version:`` header
-    the stamper writes — which is exactly what a ``FrontmatterCarrier`` declares.
+    the stamper writes — which is exactly what a ``Frontmatter`` declares.
     """
     from flow_sdk.actions.fs.asset_versioning import _versionable_folder_types
-    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier
+    from flow_sdk.fs_store.identity_carrier import Frontmatter
 
     selected = _versionable_folder_types()
     assert selected, "registry unavailable — the predicate returned nothing"
@@ -311,7 +311,7 @@ def test_versioning_never_selects_a_non_frontmatter_type():
     offenders = [
         (t.type_name, t.main_file, type(t.identity_carrier).__name__)
         for t in selected
-        if not isinstance(t.identity_carrier, FrontmatterCarrier)
+        if not isinstance(t.identity_carrier, Frontmatter)
     ]
     assert not offenders, (
         "these types would get a YAML `version:` header stamped into a main file "

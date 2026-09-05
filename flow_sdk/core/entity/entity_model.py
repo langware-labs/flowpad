@@ -53,6 +53,7 @@ from pydantic import (
 
 import flow_sdk.service_log as service_log
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
+from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.config import StorageProvider
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
@@ -62,7 +63,6 @@ from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, Qu
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
-from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -1184,7 +1184,7 @@ class Entity(DBEntity):
         from flow_sdk.fs_store.identity_carrier import UnclaimedPath  # noqa: PLC0415
 
         try:
-            record = info.record_for(ref) if info is not None else None
+            record = info.record_for(ref, info.mint_entity_id(ref)) if info is not None else None
         except UnclaimedPath:
             return None   # the caller named a type this path is not shaped as
         return Entity._build_from_fs_record(record, fallback_cls=cls) if record is not None else None

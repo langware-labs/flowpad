@@ -19,14 +19,14 @@ def test_folder_types_classify_folder_and_inner_main_file(tmp_path: Path):
     assert (spec.kind, spec.root, spec.ref) == (LayoutKind.MAIN_FILE, folder, folder / "spec.md")
 
 
-def test_names_compare_case_insensitively_and_the_capsule_lands_on_the_folder(tmp_path: Path):
+def test_names_compare_case_insensitively_and_the_id_lands_in_the_main_document(tmp_path: Path):
     folder = tmp_path / "agent"
     folder.mkdir()
     (folder / "AGENT.MD").write_text("x")
     info = TypeInfo(type_name="t_agent", main_layout="folder", main_file="agent.md", main_file_is_asset_ref=True)
     assert info.layout_of(folder / "AGENT.MD").kind is LayoutKind.MAIN_FILE
     assert info.storage_root_for(folder / "AGENT.MD") == folder
-    assert SKILL.carrier_path_for(folder / "SKILL.MD") == folder
+    assert SKILL.layout_of(folder / "SKILL.MD").body == folder / "SKILL.md"
 
 
 def test_verify_requires_the_bytes_and_projections_stay_total(tmp_path: Path):

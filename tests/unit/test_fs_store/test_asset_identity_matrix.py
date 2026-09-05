@@ -10,10 +10,11 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identity_carrier import (
-    DerivedCarrier,
-    FolderJsonCarrier,
-    FrontmatterCarrier,
-    NativeJsonCarrier,
+    Derived,
+    Frontmatter,
+    JsonRoot,
+    NotWritable,
+    Sidecar,
 )
 from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -47,6 +48,9 @@ FOLDER_PORTABLE = (
 #: mint + persist + adopt like the rest — only the ``.flow/id`` fallback is
 #: absent — so they join the capsule partition but skip the legacy cases.
 FOLDER_NO_LEGACY = ("mcp",)
+#: Folder types whose main document is markdown: the id lives in that
+#: document's frontmatter (``Frontmatter``), the folder json is legacy.
+FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 
@@ -114,9 +118,10 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
         # A markdown main document carries its id in its frontmatter; a folder
         # whose main is JSON keeps the json capsule.
         expected_backend = (
-            (FrontmatterCarrier, FolderJsonCarrier) if name in capsule_types
-            else NativeJsonCarrier if name in native_types
-            else DerivedCarrier
+            Frontmatter if name in FRONTMATTER_ALL or name in FOLDER_MARKDOWN
+            else Sidecar if name in capsule_types
+            else JsonRoot if name in native_types
+            else Derived
         )
         assert isinstance(info.identity_carrier, expected_backend), name
         assert tuple((spec.name, spec.version) for spec in info.capsules) == (
@@ -209,6 +214,12 @@ def test_missing_folder_id_mints_persists_and_is_idempotent(
     folder = tmp_path / type_name
     folder.mkdir()
     info = _info(type_name)
+    if type_name in FOLDER_MARKDOWN:
+        # The id lives in the main document's header; a folder without its
+        # main document is not the shape and nothing may be written into it.
+        with pytest.raises(NotWritable):
+            info.mint_entity_id(folder)
+        (folder / info.main_file).write_text("---\nname: m\n---\nbody\n", encoding="utf-8")
     first = info.mint_entity_id(folder)
     assert uuid.UUID(first).version == 4
     assert info.read_id(folder) == first, "persisted in the folder's carrier (json capsule; a main doc's header when one exists)"

@@ -27,7 +27,9 @@ def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    return SchemaRegistry.get(str(RecordType.SUBAGENT)).record_for(FSRef(Path(path), record_type=RecordType.SUBAGENT))
+    info = SchemaRegistry.get(str(RecordType.SUBAGENT))
+    ref = FSRef(Path(path), record_type=RecordType.SUBAGENT)
+    return info.record_for(ref, info.mint_entity_id(ref))
 
 
 def _md(candidate: Path) -> Path | None:

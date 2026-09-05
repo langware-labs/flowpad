@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.fs_store import FSRecord, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import DerivedCarrier
+from flow_sdk.fs_store.identity_carrier import Derived
 from flow_sdk.fs_store.indexer.functions import claude_projects
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     claude_project_identity_key,
@@ -74,5 +74,5 @@ def test_project_parser_and_identity_registration_contract() -> None:
     assert "mint_uuid" not in source
     assert claude_project_identity_key(FSRef("/repo")) == "project-fsref:/repo"
     backend = PROJECT.identity_carrier
-    assert isinstance(backend, DerivedCarrier)
+    assert isinstance(backend, Derived)
     assert backend.reader is existing_project_record_id

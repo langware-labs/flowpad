@@ -413,14 +413,19 @@ def resolve_ref_identity(info: Any, ref: FSRef, preload: OwnerPreload) -> tuple[
     the same-path sweep then reaps the row every reference points at. Raises
     when the type refuses the path (``UnclaimedPath``) or the carrier fails;
     no fallback id may bypass ``TypeInfo``."""
+    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     rtype = str(ref.record_type)
     canon_path = canonical_posix_path(str(ref._path))
-    ref_id = info.mint_entity_id(
-        ref,
-        owner_id=preload.owners.owner_for(rtype, str(ref._path), canon_path),
-        live_ids=preload.live_ids(rtype),
+    ref_id = reconcile(
+        info,
+        info.layout_for(ref),
+        preload.owners.owner_for(rtype, str(ref._path), canon_path),
+        preload.live_ids(rtype),
+        write=not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed(),
+        ref=ref,
     )
     return ref_id, canon_path
 

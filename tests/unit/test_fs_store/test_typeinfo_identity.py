@@ -8,9 +8,9 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule, CapsuleData, CapsuleSpec
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import DerivedCarrier, FolderJsonCarrier, FrontmatterCarrier, MalformedCarrier
+from flow_sdk.fs_store.identity_carrier import Derived, Frontmatter, MalformedCarrier, Sidecar
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-from flow_sdk.fs_store.indexer.functions._asset_identity import folder_md_identity, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_json_id, frontmatter_identity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -23,7 +23,7 @@ def _md_info(*, stable: bool = False, legacy=()) -> TypeInfo:
     return TypeInfo(
         type_name="probe",
         capsules=(IDENTITY,),
-        identity_carrier=FrontmatterCarrier(legacy=tuple(legacy)),
+        identity_carrier=Frontmatter(legacy=tuple(legacy)),
         id_stable_key_fn=(lambda ref: "stable-key") if stable else None,
     )
 
@@ -45,7 +45,7 @@ def test_frontmatter_id_is_adopted_over_a_proposal(tmp_path: Path, existing: str
 def test_folder_json_carrier_adopts_and_mints(tmp_path: Path) -> None:
     folder = tmp_path / "asset"
     folder.mkdir()
-    info = TypeInfo(type_name="probe", main_layout="folder", capsules=(IDENTITY,), identity_carrier=FolderJsonCarrier())
+    info = TypeInfo(type_name="probe", main_layout="folder", capsules=(IDENTITY,), identity_carrier=Sidecar())
     first = info.mint_entity_id(FSRef(folder))
     assert uuid.UUID(first).version == 4
     assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": first})
@@ -155,10 +155,10 @@ def test_folder_with_markdown_main_carries_its_id_in_that_document(tmp_path: Pat
         main_layout="folder",
         main_file="PROBE.md",
         capsules=(IDENTITY,),
-        identity_carrier=folder_md_identity(),
+        identity_carrier=frontmatter_identity(folder_capsule_json_id),
     )
-    assert info.carrier_path_for(FSRef(folder)) == main
-    assert info.carrier_path_for(FSRef(main)) == main
+    assert info.identity_carrier.locate(info.layout_of(folder)) == main
+    assert info.identity_carrier.locate(info.layout_of(main)) == main
 
     AssetCapsule.from_path(folder).write("identity", CapsuleData(1, {"id": V4}))
     assert info.read_id(FSRef(folder)) == V4, "the legacy folder json is read"
@@ -192,7 +192,7 @@ def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> 
 
 
 def test_declaration_carries_identity_traits_and_capsules_affect_hash() -> None:
-    carrier = DerivedCarrier()
+    carrier = Derived()
     key = lambda ref: "key"  # noqa: E731
     info = TypeInfo(
         type_name="probe",
@@ -209,7 +209,7 @@ def test_declaration_carries_identity_traits_and_capsules_affect_hash() -> None:
 
 def test_registry_merges_capsules_and_rejects_same_name_conflict() -> None:
     type_name = "_capsule_merge_probe"
-    carrier = FrontmatterCarrier()
+    carrier = Frontmatter()
     SchemaRegistry.register(TypeInfo(type_name=type_name, capsules=(IDENTITY,), identity_carrier=carrier))
     SchemaRegistry.register(TypeInfo(type_name=type_name, capsules=(IDENTITY, CapsuleSpec("review", 1))))
     assert SchemaRegistry.get(type_name).capsules == (IDENTITY, CapsuleSpec("review", 1))
@@ -218,4 +218,4 @@ def test_registry_merges_capsules_and_rejects_same_name_conflict() -> None:
         SchemaRegistry.register(TypeInfo(type_name=type_name, capsules=(CapsuleSpec("identity", 2),)))
 
     with pytest.raises(ValueError, match="Conflicting identity carrier"):
-        SchemaRegistry.register(TypeInfo(type_name=type_name, identity_carrier=DerivedCarrier()))
+        SchemaRegistry.register(TypeInfo(type_name=type_name, identity_carrier=Derived()))
