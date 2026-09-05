@@ -10700,8 +10700,8 @@ msgstr "Missing API key — please retry the deep link from the source page."
 msgid "Missing asset"
 msgstr "Missing asset"
 
-#: src/components/conversation/MissingAttachmentsWarning.tsx
-#: src/components/conversation/MissingAttachmentsWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "Missing attachments"
 
@@ -20394,3 +20394,7 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Download again"
+msgstr "Download again"

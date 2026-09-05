@@ -2802,7 +2802,7 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        target_conv_id = conversation_id or next(
+        target_conv_id = conversation_id or msg_data.get("conversation_id") or next(
             (
                 TypeId(c).id
                 for c in msg_data.get("shared_context_entities", [])
@@ -2831,7 +2831,12 @@ async def unpack_bundle(
                         msg_data["conversation_id"] = target_conv_id
                     break
         if top_fm_already_exists and not overwrite and not conversation_id:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+            # A body pull fills an already-received header. Header-only bundles
+            # need not include a Conversation payload to identify that same row.
+            # Keep the conflict for standalone imports or a different parent.
+            existing_top = await FlowMessage.get_one({"id": top_fm_id_check}) if target_conv_id else None
+            if existing_top is None or existing_top.conversation_id != target_conv_id:
+                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)

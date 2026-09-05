@@ -534,60 +534,46 @@ class FlowMessage(Entity):
         # Skip local_path resolution when serializing for DB storage
         if info.context and info.context.get("skip_api_serializer"):
             return data
-        if data.get("attachment") and self.id:
-            from flow_sdk.storage import get_entity_embedded_storage
-
-            typeid = TypeId(type="flow_message", id=self.id)
-            storage = get_entity_embedded_storage(typeid)
-            for att in data["attachment"]:
-                vfs_subpath: Optional[str] = None
-                if att.get("attachment_type") == AttachmentType.FILE.value:
-                    vfs_subpath = att.get("data", "")
-                elif att.get("attachment_type") == AttachmentType.PROMPT.value:
-                    raw = att.get("data", "")
-                    if raw and raw.startswith(PROMPT_FILE_VFS_PREFIX):
-                        vfs_subpath = raw
-                if not vfs_subpath:
-                    continue
-                # Expose ``local_path`` only when the bytes are actually on
-                # local disk. The UI reads a non-null local_path as "the file
-                # is downloaded": a receiver sees null until it pulls the body
-                # bundle; the sender sees it set the moment the file is staged.
-                resolved = storage.get_storage_path(vfs_subpath)
-                att["local_path"] = resolved if resolved and Path(resolved).exists() else None
-        # Message-level download signal (transient, API-only — computed after
-        # the per-file local_path resolution above so it can read it). True once
-        # the body bundle has been pulled + unpacked locally: every renderable
-        # body attachment is on disk (files have a resolved local_path, entity
-        # assets have a materialized record folder). The UI switches the whole
-        # message between a single Download button and rendered chips off this
-        # one flag, so the transcript and the context panel share state.
-        data["body_downloaded"] = self._compute_body_downloaded(data.get("attachment") or [])
-        # Unpack signal (transient, API-only): the bundle's extracted tree
-        # persists under the message's staging dir. Distinct from
-        # ``body_downloaded`` (which also covers pre-staging record folders):
-        # this one specifically says "staged content exists for review".
-        # Gated on has_body() — this serializer runs for EVERY message dump
-        # (conversation lists, WS fanout), so bodyless messages must not pay a
-        # disk stat.
-        data["body_unpacked"] = self.has_body() and self.is_body_unpacked()
+        data.update(self._body_download_state(data.get("attachment") or []))
         return data
 
-    def _compute_body_downloaded(self, atts: list[dict[str, Any]]) -> bool:
-        if not self.has_body():
-            return False
+    def _body_download_state(self, atts: list[dict[str, Any]]) -> dict[str, Any]:
+        """One local availability probe for API serialization and catch-up.
+
+        An unpacked bundle is downloaded even when its sender omitted assets.
+        Report those separately so callers do not keep fetching the same ZIP.
+        Files expose local_path only when their bytes actually exist.
+        """
+        has_body = self.has_body()
+        unpacked = has_body and self.is_body_unpacked()
+        missing: list[dict[str, str]] = []
+        storage = None
         for att in atts:
             atype = att.get("attachment_type")
-            if atype == AttachmentType.FILE.value:
-                if not att.get("local_path"):
-                    return False
-            elif atype == AttachmentType.PROMPT.value:
-                if (att.get("data") or "").startswith(PROMPT_FILE_VFS_PREFIX) and not att.get("local_path"):
-                    return False
-            elif atype == AttachmentType.TYPE_ID.value:
-                if not _type_id_attachment_present(self.id, att.get("data") or ""):
-                    return False
-        return True
+            raw = att.get("data") or ""
+            if atype == AttachmentType.TYPE_ID.value:
+                present = _type_id_attachment_present(self.id, raw)
+            elif atype == AttachmentType.FILE.value or (
+                atype == AttachmentType.PROMPT.value and raw.startswith(PROMPT_FILE_VFS_PREFIX)
+            ):
+                if storage is None:
+                    from flow_sdk.storage import get_entity_embedded_storage
+
+                    storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+                resolved = storage.get_storage_path(raw) if raw else None
+                att["local_path"] = resolved if resolved and Path(resolved).is_file() else None
+                present = bool(att["local_path"])
+            else:
+                continue
+            if not present:
+                ref = {"attachment_type": atype, "data": raw}
+                if ref not in missing:
+                    missing.append(ref)
+        return {
+            "body_downloaded": has_body and (unpacked or not missing),
+            "body_unpacked": unpacked,
+            "body_missing_attachments": missing,
+        }
 
     def is_body_unpacked(self) -> bool:
         """True when the bundle's extracted tree persists under this message's
@@ -619,36 +605,8 @@ class FlowMessage(Entity):
         await self._purge_local_data()
 
     def is_body_downloaded(self) -> bool:
-        """Disk-probe twin of the serializer's ``body_downloaded`` flag for
-        backend callers that need the signal without paying for a full
-        ``model_dump`` — e.g. the per-message catch-up loop deciding whether
-        to (re-)pull the body bundle. Same semantics as
-        ``_compute_body_downloaded`` (keep the two in sync): True once every
-        body attachment is materialized locally."""
-        if not self.has_body():
-            return False
-        storage = None
-        for att in self.attachment or []:
-            t = att.attachment_type
-            if t == AttachmentType.TYPE_ID:
-                if not _type_id_attachment_present(self.id, att.data or ""):
-                    return False
-                continue
-            vfs_subpath: Optional[str] = None
-            if t == AttachmentType.FILE:
-                vfs_subpath = att.data or ""
-            elif t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
-                vfs_subpath = att.data
-            if not vfs_subpath:
-                continue
-            if storage is None:
-                from flow_sdk.storage import get_entity_embedded_storage
-
-                storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
-            resolved = storage.get_storage_path(vfs_subpath)
-            if not (resolved and Path(resolved).exists()):
-                return False
-        return True
+        """Same download state as the API, without serializing the full entity."""
+        return self._body_download_state([att.model_dump() for att in self.attachment or []])["body_downloaded"]
 
     async def to_file(
         self,
