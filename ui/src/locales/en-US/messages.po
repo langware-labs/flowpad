@@ -7269,6 +7269,7 @@ msgid "extra rows fetched (limit + overfetch)"
 msgstr "extra rows fetched (limit + overfetch)"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
 msgstr "failed"
 
@@ -20483,8 +20484,8 @@ msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or 
 msgstr "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "Which models this budget may call"
-msgstr "Which models this budget may call"
+#~ msgid "Which models this budget may call"
+#~ msgstr "Which models this budget may call"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
