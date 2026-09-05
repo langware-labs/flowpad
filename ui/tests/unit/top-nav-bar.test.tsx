@@ -6,7 +6,7 @@
  * URL-first — `openDock` and nothing else. The second is the rule that keeps
  * quietly eroding, so it gets an explicit assertion.
  */
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileText } from 'lucide-react';
@@ -94,12 +94,17 @@ vi.mock('@sdk', async (importOriginal) => {
 import { RuntimeKind, TypeId } from '@sdk';
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
+import { RUNTIME_HOVER_OPEN_DELAY_MS } from '@src/components/top-nav-bar/RuntimeChip';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { makeBucket } from '../utils/terminal-tab-fixtures';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_PROJECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const TWO_PROJECTS = {
+  buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+  globalTabCount: 0,
+};
 
 /** The app mounts the bar inside App.tsx's global TooltipProvider; mirror that
  *  here so the tooltips have the context they expect. */
@@ -129,7 +134,19 @@ beforeEach(() => {
   buckets.current = { buckets: [], globalTabCount: 0 };
   vi.clearAllMocks();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+/** A user whose clock is the fake one, so the hover card's rest delay can be
+ *  stepped past instead of waited out. */
+function fakeClockUser() {
+  // shouldAdvanceTime: user-event's own awaits and RTL's findBy/waitFor poll on
+  // the (now faked) timers, and vitest's clock isn't auto-advanced for them.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+}
 
 describe('the navigation bar', () => {
   it('wears the runtime color and names the runtime', () => {
@@ -184,12 +201,17 @@ describe('the navigation bar', () => {
     expect(setContext).not.toHaveBeenCalled();
   });
 
-  it('shows the active project name on the runtime-colored chip', () => {
+  it('shows the active project name and the open-project count on the runtime-colored chip', () => {
     activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = {
+      buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+      globalTabCount: 0,
+    };
     renderBar();
 
     const chip = screen.getByTestId('top-nav-runtime-chip');
     expect(chip.textContent).toContain('Acme');
+    expect(within(chip).getByTestId('project-count-badge').textContent).toBe('2');
     expect(chip.textContent).not.toContain('Cloud Sandbox');
     expect(chip.getAttribute('data-runtime')).toBe(RuntimeKind.SANDBOX);
     // The color stays: the project name replaces the runtime's word, never its signal.
@@ -200,7 +222,10 @@ describe('the navigation bar', () => {
 
   it('opens the project list from the chevron and switches project by URL alone', async () => {
     activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
-    buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)], globalTabCount: 0 };
+    buckets.current = {
+      buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+      globalTabCount: 0,
+    };
     const user = userEvent.setup();
     renderBar();
 
@@ -225,21 +250,28 @@ describe('the navigation bar', () => {
 
     expect(screen.getByTestId('top-nav-runtime-chip')).toBeTruthy();
     // No home segment either: it addresses a project by id, and without one
-    // the project page renders "not found".
+    // the project page renders "not found". And no "0" count.
     expect(screen.queryByTestId('top-nav-project')).toBeNull();
+    expect(screen.queryByTestId('project-count-badge')).toBeNull();
     await user.click(screen.getByTestId('top-nav-project-list'));
 
     const popover = await screen.findByTestId('top-nav-project-popover');
     expect(popover.textContent).toContain('No project has open tabs yet.');
   });
 
-  it('explains the runtime on hover and peeks the wiki page from Learn more', async () => {
+  it('explains the runtime once the pointer has RESTED, and peeks the wiki page from Learn more', async () => {
     activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
     buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2)], globalTabCount: 0 };
-    const user = userEvent.setup();
+    const user = fakeClockUser();
     renderBar();
 
     await user.hover(screen.getByTestId('top-nav-project-list'));
+
+    // A pass-through must not flash the card: nothing halfway through the rest
+    // delay (half, not delay-1: the fake clock also ticks with real time).
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS / 2));
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS / 2));
 
     const card = await screen.findByTestId('top-nav-runtime-hover');
     // Two header chips: the project, and the runtime as a link into its own
@@ -283,10 +315,11 @@ describe('the navigation bar', () => {
 
   it('closes the hover card when the list opens', async () => {
     activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
-    const user = userEvent.setup();
+    const user = fakeClockUser();
     renderBar();
 
     await user.hover(screen.getByTestId('top-nav-project-list'));
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
     await screen.findByTestId('top-nav-runtime-hover');
     await user.click(screen.getByTestId('top-nav-project-list'));
 
