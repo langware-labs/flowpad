@@ -54,6 +54,10 @@ msgstr "— إظهار عمود الوقت والفهرس"
 msgid "— show trace event gutter"
 msgstr "— إظهار عمود أحداث التتبع"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "…"
+msgstr ""
+
 #: src/components/connections-manager/credential-value-form.tsx
 msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 msgstr ""
@@ -209,6 +213,11 @@ msgstr ""
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: outcome.already.join(', ')
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} — no email sent."
+msgstr ""
 
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -578,6 +587,10 @@ msgstr "{ignored} مشكلة{0} تم حلها تلقائياً"
 msgid "{indexedCount} indexed"
 msgstr "{indexedCount} مفهرسة"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "{label}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "{label} docs"
 msgstr "توثيق {label}"
@@ -917,6 +930,18 @@ msgstr "60"
 msgid "80% Alert Threshold"
 msgstr "عتبة التنبيه 80%"
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a {label} key stored on this machine"
+msgstr ""
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a {label} OAuth login on this machine"
+msgstr ""
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "A call here spends"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A chain draws on another endpoint and can only narrow what passes."
 msgstr ""
@@ -936,6 +961,10 @@ msgstr "يلزم تخصيص صدفة جديدة. (إجراء من الخادم �
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "A hosted mailbox over its HTTP API."
 #~ msgstr "صندوق بريد مستضاف متاح عبر واجهة برمجية HTTP."
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "a key the hub holds (the chain could not be read from here)"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "A live session is already running in this conversation"
@@ -1751,6 +1780,11 @@ msgstr "مثبّت بالفعل عالمياً — يجب إلغاء التثب�
 msgid "Already installed in a project — uninstall first"
 msgstr "مثبّت بالفعل في المشروع — يجب إلغاء التثبيت أولاً"
 
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Already on {0}"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already present"
 msgstr "موجود بالفعل"
@@ -1909,6 +1943,10 @@ msgstr "عرض الإعلانات عند بدء التشغيل"
 #: src/components/assets/context-folder-sources.tsx
 msgid "Another Flowpad project — its folder becomes context for this one"
 msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "another hub budget — {label}"
+msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -4612,6 +4650,10 @@ msgstr "تعذر منح الوصول"
 msgid "Could not give this project access to {0}."
 msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {0}."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Could not invite everyone"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "Could not link asset to cloud"
 msgstr "تعذّر ربط الأصل بالسحابة"
@@ -6603,6 +6645,11 @@ msgstr "مستوى الجهد"
 msgid "Email"
 msgstr ""
 
+#. placeholder {0}: member.email
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Email {0} an invitation to {teamName}"
+msgstr ""
+
 #: src/components/inbox-view/AgentInboxView.tsx
 #~ msgid "Email disabled"
 #~ msgstr ""
@@ -6623,6 +6670,13 @@ msgstr ""
 #: src/components/account/user-info.tsx
 msgid "Email:"
 msgstr "البريد الإلكتروني:"
+
+#. placeholder {0}: outcome.invited.length
+#. placeholder {1}: emails.length
+#. placeholder {2}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Emailed {0} of {1} about {2}."
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Embedded in message"
@@ -9440,6 +9494,7 @@ msgid "Invitation no longer valid"
 msgstr "لم تعد الدعوة صالحة"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invitation sent"
 msgstr "تم إرسال الدعوة"
@@ -9719,6 +9774,14 @@ msgstr "آخر مزامنة ناجحة"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Last sync:"
+msgstr ""
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "Last test failed"
+msgstr ""
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "Last test paid with that key"
 msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -11742,6 +11805,10 @@ msgstr ""
 msgid "No key has been set yet. Its owner sets one."
 msgstr ""
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "no key on that root"
+msgstr ""
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr ""
@@ -12482,6 +12549,7 @@ msgstr ""
 #~ msgid "Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone provides the value."
 #~ msgstr "لم يُصرَّح عن أي شيء بعد. يمكن التصريح بما يحتاجه هذا المشروع — فقد يبقى التصريح دون تلبية حتى تُوفَّر القيمة."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
 msgstr ""
@@ -16348,6 +16416,14 @@ msgstr "إرسال سؤال إلى الدعم الفني. ستبدأ محادث�
 msgid "Send failed."
 msgstr "فشل الإرسال."
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Send invite"
+msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Send invites to everyone"
+msgstr ""
+
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
 msgstr "إرسال الرسالة"
@@ -18358,6 +18434,10 @@ msgstr "لم يتم إعداد مركز المساعدة على هذا الجه�
 msgid "The help desk is unavailable right now. Please try again."
 msgstr "الدعم الفني غير متاح حالياً. يُرجى المحاولة مرة أخرى."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "رفض Hub هذا العميل."
@@ -18608,6 +18688,10 @@ msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إ
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
 
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "this budget"
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "This budget is not available to you"
 msgstr ""
@@ -18662,6 +18746,10 @@ msgstr "هذا المستند"
 
 #: src/components/vfs-markdown-pane.tsx
 msgid "This document no longer exists."
+msgstr ""
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "this endpoint's own key"
 msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -20313,6 +20401,10 @@ msgstr "ما الذي تم العمل عليه"
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "What this machine's assistants are funded by right now"
+msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #~ msgid "What this project needs, where each value comes from, and whether it is met here."
