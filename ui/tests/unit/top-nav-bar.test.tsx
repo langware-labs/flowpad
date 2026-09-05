@@ -171,7 +171,7 @@ describe('the navigation bar', () => {
   // Inherited from the rail's project item when that icon moved up here
   // (8d4d03dc4), and since folded into the runtime chip as its name segment.
   // Same rule it always had: URL-first. Was tests/react/assets-sidebar-scope-open.test.tsx.
-  it('opens the project by URL alone from the chip name', async () => {
+  it('opens the project by URL alone from the chip home segment', async () => {
     activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
     const user = userEvent.setup();
     renderBar();
@@ -182,19 +182,6 @@ describe('the navigation bar', () => {
     expect(openDock).toHaveBeenCalledWith(DockPointer.forProject(PROJECT_ID));
     // URL-first: the loader is the single writer of context, never the click.
     expect(setContext).not.toHaveBeenCalled();
-  });
-
-  it('opens the project list from the chip name when no project is active', async () => {
-    // Without a project there is no home to address, so the name segment is
-    // a second way into the list rather than a dead control.
-    activeProject.current = null;
-    const user = userEvent.setup();
-    renderBar();
-
-    await user.click(screen.getByTestId('top-nav-project'));
-
-    expect(await screen.findByTestId('top-nav-project-popover')).toBeTruthy();
-    expect(openDock).not.toHaveBeenCalled();
   });
 
   it('shows the active project name on the runtime-colored chip', () => {
@@ -237,6 +224,9 @@ describe('the navigation bar', () => {
     renderBar();
 
     expect(screen.getByTestId('top-nav-runtime-chip')).toBeTruthy();
+    // No home segment either: it addresses a project by id, and without one
+    // the project page renders "not found".
+    expect(screen.queryByTestId('top-nav-project')).toBeNull();
     await user.click(screen.getByTestId('top-nav-project-list'));
 
     const popover = await screen.findByTestId('top-nav-project-popover');
@@ -249,10 +239,13 @@ describe('the navigation bar', () => {
     const user = userEvent.setup();
     renderBar();
 
-    await user.hover(screen.getByTestId('top-nav-runtime-chip'));
+    await user.hover(screen.getByTestId('top-nav-project-list'));
 
     const card = await screen.findByTestId('top-nav-runtime-hover');
-    expect(card.textContent).toContain('Acme');
+    // Two header chips: the project, and the runtime as a link into its own
+    // section of the page.
+    expect(screen.getByTestId('top-nav-hover-project').textContent).toContain('Acme');
+    expect(screen.getByTestId('top-nav-hover-env').textContent).toContain('Cloud Sandbox');
     expect(card.textContent).toContain('1 open project');
     expect(card.textContent).toContain('2 open tabs');
     expect(card.textContent).toContain('This UI is served by a cloud sandbox you opened.');
@@ -262,7 +255,30 @@ describe('the navigation bar', () => {
     // A peek, not a navigation. No space named: the modal looks a shipped page
     // up in the assistant's wiki itself (`@local` would resolve against Acme).
     expect(openWikiModal).toHaveBeenCalledWith('Runtime environments', undefined, undefined);
+
+    await user.click(screen.getByTestId('top-nav-hover-env'));
+    expect(openWikiModal).toHaveBeenLastCalledWith('Runtime environments', undefined, 'cloud-sandbox-blue-banner');
     expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it('tips the home segment with its own action, not the runtime card', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.hover(screen.getByTestId('top-nav-project'));
+
+    expect(await screen.findAllByText('Open project home')).not.toHaveLength(0);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+  });
+
+  it('draws a local browser as the desktop badged with a browser, not a globe', () => {
+    runtimeKind.current = RuntimeKind.BROWSER;
+    renderBar();
+
+    const chip = screen.getByTestId('top-nav-runtime-chip');
+    expect(chip.querySelector('.lucide-monitor')).toBeTruthy();
+    expect(chip.querySelector('.lucide-globe')).toBeTruthy();
   });
 
   it('closes the hover card when the list opens', async () => {
@@ -270,7 +286,7 @@ describe('the navigation bar', () => {
     const user = userEvent.setup();
     renderBar();
 
-    await user.hover(screen.getByTestId('top-nav-runtime-chip'));
+    await user.hover(screen.getByTestId('top-nav-project-list'));
     await screen.findByTestId('top-nav-runtime-hover');
     await user.click(screen.getByTestId('top-nav-project-list'));
 

@@ -6265,6 +6265,7 @@ msgid "Download sample CSV"
 msgstr "Download sample CSV"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
 
@@ -6758,6 +6759,10 @@ msgstr "Env"
 #: src/components/project-home/SecretsCard.tsx
 #~ msgid "ENV_VAR"
 #~ msgstr "ENV_VAR"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Env:"
+msgstr "Env:"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
@@ -10695,6 +10700,11 @@ msgstr "Missing API key — please retry the deep link from the source page."
 msgid "Missing asset"
 msgstr "Missing asset"
 
+#: src/components/conversation/MissingAttachmentsWarning.tsx
+#: src/components/conversation/MissingAttachmentsWarning.tsx
+msgid "Missing attachments"
+msgstr "Missing attachments"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
 msgstr "model"
@@ -12814,6 +12824,10 @@ msgstr "Open project"
 msgid "Open Project"
 msgstr "Open Project"
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Open project home"
+msgstr "Open project home"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Open project in cloud"
 msgstr "Open project in cloud"
@@ -13850,7 +13864,6 @@ msgid "Project folder…"
 msgstr "Project folder…"
 
 #: src/components/assets/useAssetsModel.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Project home"
 msgstr "Project home"
 
@@ -13919,6 +13932,10 @@ msgstr "Project to load"
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "Project unavailable"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Project:"
+msgstr "Project:"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
@@ -19937,6 +19954,10 @@ msgstr "What is Git sharing?"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "What is this agent for?"
 msgstr "What is this agent for?"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+#~ msgid "What is this environment?"
+#~ msgstr "What is this environment?"
 
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"

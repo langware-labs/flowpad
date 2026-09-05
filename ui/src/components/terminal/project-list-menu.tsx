@@ -330,12 +330,12 @@ export function useProjectListMenu({ currentProjectId = null, currentProjectName
   };
 }
 
-/** The scope and its two counts, one line each — the body of both chips'
- *  hover surfaces, so which number is which is unmistakable. */
-export function ProjectScopeSummary({ menu }: { menu: ProjectListMenu }) {
+/** The two counts, one line each — the body of both chips' hover surfaces, so
+ *  which number is which is unmistakable. Each caller names the scope above
+ *  it in its own way. */
+export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
   return (
     <>
-      {menu.scopeLabel ? <span className="font-medium">{menu.scopeLabel}</span> : null}
       <span className="text-muted-foreground">{menu.projectsLabel}</span>
       <span className="text-muted-foreground">{menu.tabsLabel}</span>
     </>

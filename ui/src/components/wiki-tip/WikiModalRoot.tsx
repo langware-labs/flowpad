@@ -48,7 +48,7 @@ export function WikiModalRoot() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>[[{wikiword}]]</DialogTitle>
+          <DialogTitle>{wikiword}</DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Preview of the wiki page, shown without leaving the current view.</Trans>
           </DialogDescription>
