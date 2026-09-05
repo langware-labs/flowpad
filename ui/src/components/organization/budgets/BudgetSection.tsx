@@ -20,12 +20,12 @@
  * for the twenty-odd knobs that do not (per-window ceilings, rate caps, path and beta lists, alias
  * maps). Putting those on the row would bury the four that matter.
  *
- * **Over-promising is shown where it already exists, and refused where it would be created.** The
- * hub still permits it — the excess is caught when the money is SPENT, along the whole chain — so
- * rows that already exceed their pool keep rendering the plain warning line rather than becoming
- * uneditable. What changed is the point of entry: an amount TYPED here that would exceed what the
- * pool above still has free is refused in the box (`available-to-allocate.ts`), because telling
- * someone at the keyboard beats letting them discover it as a stalled worker weeks later.
+ * **Over-promising is SHOWN, never refused.** Handing out more than a pool holds is a state the hub
+ * supports: the excess is caught when the money is SPENT, by walking every hop of the chain, so a
+ * team's own ceiling still bounds its whole roster however the shares inside it are written. Ten
+ * people may each hold $10 of a $10 pot and the pot still only pays out $10. The warning line below
+ * says exactly that, and it is the only surface this state gets — an input that refused to CREATE
+ * the state contradicted the banner explaining that the state is fine.
  *
  * **Every control is gated on what the hub says the caller may press**, never on a role read here.
  * `can_configure` / `can_allocate` / `can_manage` / `can_add_child` / `can_set_credential` come off the budgets
@@ -56,7 +56,6 @@ import { notify } from '@src/notifications';
 
 import { AddPeopleDialog } from './AddPeopleDialog';
 import { inviteToTeamByEmail, type TeamInviteOutcome } from './invite-to-team';
-import { availableToAllocate, type PoolFunds } from './available-to-allocate';
 import { AdvancedButton } from './AdvancedEndpointDialog';
 import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
@@ -248,13 +247,7 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
         ) : (
           <div className="flex flex-col gap-3">
             {data.teams.map((team) => (
-              <TeamUnit
-                key={team.id}
-                team={team}
-                orgFunds={org}
-                orgName={org.name}
-                onChanged={() => void invalidate()}
-              />
+              <TeamUnit key={team.id} team={team} onChanged={() => void invalidate()} />
             ))}
           </div>
         )}
@@ -331,7 +324,6 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
  */
 function MemberRow({
   member,
-  teamFunds,
   teamName,
   capPending,
   canInvite,
@@ -342,7 +334,6 @@ function MemberRow({
 }: {
   member: MemberBudget;
   /** The team's pool, for "how much is left to give this person". */
-  teamFunds: PoolFunds;
   teamName: string;
   capPending: boolean;
   /** Same gate as "Add people" — whoever runs this team is who brings people into it. */
@@ -382,8 +373,6 @@ function MemberRow({
           ariaLabel={t`Budget for ${member.name}`}
           data-testid={`member-cap-${member.endpoint_id}`}
           disabled={capPending || !member.can_configure}
-          available={availableToAllocate(teamFunds, member.limit_usd)}
-          availableFrom={teamName}
           onCommit={onSetCap}
         />
       </TableCell>
@@ -461,14 +450,10 @@ function MemberRow({
  *  renders fully before anything about its PEOPLE is ever fetched. */
 function TeamUnit({
   team,
-  orgFunds,
-  orgName,
   onChanged,
 }: {
   team: ScopeBudget;
   /** The organization's pool, for "how much is left to give this team". */
-  orgFunds: PoolFunds;
-  orgName: string;
   onChanged: () => void;
 }) {
   const { t } = useLingui();
@@ -489,9 +474,6 @@ function TeamUnit({
 
   const poolId = team.endpoint_id;
   const over = team.limit_usd !== null && team.allocated_usd !== null && team.allocated_usd > team.limit_usd;
-  // What the ORG still has free for this team — its own current cap added back, because raising a
-  // team from $20 to $80 inside a $100 org is a replacement, not another $80 on top.
-  const freeInOrg = availableToAllocate(orgFunds, team.limit_usd);
 
   // Everyone on this team who could actually be emailed. Read straight off the roster so "invite
   // everyone" and the per-row button always mean the same list.
@@ -581,8 +563,6 @@ function TeamUnit({
                   ariaLabel={t`Budget for ${team.name}`}
                   data-testid={`team-cap-${team.id}`}
                   disabled={setCap.isPending || !team.can_configure}
-                  available={freeInOrg}
-                  availableFrom={orgName}
                   onCommit={(usd) => setCap.mutate({ endpointId: poolId, usd }, { onSuccess: onChanged })}
                 />
               </label>
@@ -707,7 +687,6 @@ function TeamUnit({
                         <MemberRow
                           key={member.endpoint_id}
                           member={member}
-                          teamFunds={detail.data.team}
                           teamName={team.name}
                           capPending={setCap.isPending}
                           canInvite={team.can_allocate}
@@ -733,7 +712,6 @@ function TeamUnit({
           poolId={poolId}
           teamName={team.name}
           existing={detail.data.members}
-          poolFunds={detail.data.team}
         />
       )}
 
