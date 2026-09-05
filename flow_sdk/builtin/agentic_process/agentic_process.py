@@ -641,6 +641,18 @@ async def scan_path_asset_descriptors(
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
+_PROMPT_TASKS: dict[str, asyncio.Task] = {}
+
+
+def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
+    """Retain the turn until its final writes finish, so exit can join it."""
+    _PROMPT_TASKS[process_id] = task
+
+    def finished(done: asyncio.Task) -> None:
+        if _PROMPT_TASKS.get(process_id) is done:
+            _PROMPT_TASKS.pop(process_id)
+
+    task.add_done_callback(finished)
 
 
 def prompt_lock_locked(process_id: str) -> bool:
@@ -1978,6 +1990,23 @@ class AgenticProcess(Entity):
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
+        worker = _PROMPT_WORKERS.get(self.id)
+        turn = _PROMPT_TASKS.get(self.id)
+        if worker is not None or turn is not None:
+            # A completion must not launch another queued turn during teardown.
+            if self.queue.exists():
+                self.queue.clear(source="exit")
+            if worker is not None:
+                await worker.close_session()
+            if turn is not None and turn is not asyncio.current_task():
+                turn.cancel()
+                await asyncio.gather(turn, return_exceptions=True)
+            if worker is not None:
+                unregister_prompt_worker(self.id, worker)
+            if not self.shell_id:
+                self.status = ProcessStatus.STOPPED.value
+                await self.save()
+                return ApiSuccessResponse(data={"status": "stopped"})
         if not self.shell_id:
             return ApiFailResponse(message="No active shell session")
 
@@ -3915,6 +3944,7 @@ class AgenticProcess(Entity):
 
         try:
             turn_task = asyncio.create_task(_run_turn())
+            register_prompt_task(self.id, turn_task)
         except BaseException:
             unregister_prompt_worker(self.id, worker)
             raise
@@ -6981,8 +7011,11 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
-    async def delete(self):  # noqa: D401
+    async def delete(self, *, delete_chats: bool = True):  # noqa: D401
         """Tombstone the on-disk session transcript, then delete the entity.
+
+        Project deletion can pass ``delete_chats=False`` to discard only the
+        index row while keeping the native chat available for rediscovery.
 
         The AgenticProcess DB row is only an index. Both on-disk read paths —
         ``worker_history``'s Claude/Codex/Copilot collectors (the Chats
@@ -7001,7 +7034,8 @@ class AgenticProcess(Entity):
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
-        self._tombstone_session_transcript()
+        if delete_chats:
+            self._tombstone_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by

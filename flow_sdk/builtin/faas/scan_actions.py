@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from flow_sdk.builtin.faas import scan_indexer
@@ -350,7 +351,6 @@ class ScanActionsMixin:
         from flow_sdk.fs_store.operations.project_cleanup import (  # noqa: PLC0415
             CleanupRefused,
             HarnessIndex,
-            clear_harness_state,
             guard_deletable,
             remove_from_harness,
         )
@@ -368,7 +368,7 @@ class ScanActionsMixin:
         if not isinstance(wanted, list) or not wanted:
             return ApiFailResponse(message="'project_ids' must be a non-empty list", status_code=400)
 
-        index = HarnessIndex.build()
+        index = await asyncio.to_thread(HarnessIndex.build)
         results: list[dict] = []
         for project_id in wanted:
             try:
@@ -384,17 +384,17 @@ class ScanActionsMixin:
                     # guard, and removing the row IS the whole job.
                     if row["cwd"]:
                         guard_deletable(row["cwd"])
-                    outcome = clear_harness_state(row, index)
                     # Deleting the ROW is `_delete_with_children`'s job: it also
                     # purges child records and their bundles, and detaches the
                     # shared @local compute node before the cascade. Re-deriving
                     # that here is how the global compute node gets deleted.
-                    deletion = await project._delete_with_children(folder="trash")
+                    deletion = await project._delete_with_children(folder="trash", delete_chats=True, harness_index=index)
+                    outcome = deletion.get("chat_cleanup") or {"cwd": row["cwd"], "removed_paths": []}
                     outcome["trashed"] = deletion.get("folder_mechanism") is not None
                     outcome["mechanism"] = deletion.get("folder_mechanism")
                     outcome["deleted_children"] = deletion.get("deleted_children", 0)
                 else:
-                    outcome = remove_from_harness(row, index)
+                    outcome = await asyncio.to_thread(remove_from_harness, row, index)
                 results.append({"project_id": project_id, "ok": True, **outcome})
             except CleanupRefused as refused:
                 results.append({"project_id": project_id, "ok": False, "error": str(refused)})

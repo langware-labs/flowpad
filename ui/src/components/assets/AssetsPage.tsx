@@ -304,8 +304,13 @@ export function AssetsPage() {
         'records and their children, and the project folder on disk' +
         (path ? ` (${path})` : '') +
         '. This cannot be undone.',
-      onConfirm: async () => {
-        await proj.deleteWithChildren();
+      checkbox: {
+        label: t`Delete chats`,
+        description: t`Keeping chat history can make this project reappear when projects are scanned.`,
+        defaultChecked: true,
+      },
+      onConfirm: async (deleteChats) => {
+        await proj.deleteWithChildren(deleteChats);
       },
       onAfterDelete: () => {
         notify.success({ title: t`Project deleted`, message: name });

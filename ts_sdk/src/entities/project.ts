@@ -1019,9 +1019,12 @@ export class Project extends APIEntity<Project> {
    * every indexed record whose ``project_id`` is this project (DB row + FTS +
    * wiki edges + on-disk record shadow + records_data bundle), the project's
    * own record, and the project source folder on disk. Irreversible.
+   * Native worker chat history is also deleted by default. Pass false to keep it.
    */
-  async deleteWithChildren(): Promise<{ project_id: string; deleted_children: number } | null> {
-    return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children');
+  async deleteWithChildren(deleteChats = true): Promise<{ project_id: string; deleted_children: number } | null> {
+    return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children', {
+      delete_chats: deleteChats,
+    });
   }
 
   /**
