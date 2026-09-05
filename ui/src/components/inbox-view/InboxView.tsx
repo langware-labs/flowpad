@@ -25,7 +25,6 @@ import {
   Invitation,
   QueryRequest,
   TypeId,
-  User,
   acceptInvitation,
   archiveAllConversations,
   archiveConversation,
@@ -55,9 +54,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
-import { SourceChip } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
-import { sourceForOrigin } from '@src/components/conversation/channel-attribution';
+import { type ChannelAttribution, SourceChip, sourceForOrigin, useChannelAttribution } from '@src/components/conversation/channel-attribution';
+import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
+import { channelsOwnerFor } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -138,9 +137,10 @@ interface ConversationListRowProps {
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
-  /** Source ids the list is narrowed to (empty = all) and how a message names its source. */
-  channelFilter?: ReadonlySet<string>;
-  sourceIdOf?: (message: FlowMessage) => string | undefined;
+  /** Set while the list is narrowed to some channels: does this message's source pass? */
+  channelMatch?: (message: FlowMessage) => boolean;
+  /** The list resolves attribution once and hands each row its answer. */
+  attributionFor: (origin: FlowMessage['origin']) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
   allowedMessageIds?: ReadonlySet<string>;
@@ -160,8 +160,8 @@ export function ConversationListRow({
   onRequestDelete,
   cloudUserId,
   onVisibilityChange,
-  channelFilter,
-  sourceIdOf,
+  channelMatch,
+  attributionFor,
   refSetter,
   agentId,
   allowedMessageIds,
@@ -249,10 +249,7 @@ export function ConversationListRow({
   }
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
-  if (!isHidden && channelFilter && channelFilter.size > 0) {
-    const sid = latestMessage && sourceIdOf ? sourceIdOf(latestMessage) : undefined;
-    isHidden = !sid || !channelFilter.has(sid);
-  }
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
 
   const convId = conv.id ?? '';
   // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
@@ -401,7 +398,7 @@ export function ConversationListRow({
         <CategoryChips facets={facets} className="me-1" />
         {/* Channel conversations carry exactly one compact source chip; hub
             rows have no origin and render none — absence means "ours". */}
-        <SourceChip origin={latestMessage?.origin} className="me-1" />
+        <SourceChip attribution={attributionFor(latestMessage?.origin)} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -446,12 +443,6 @@ export function ConversationListRow({
 
 // ── InboxView ───────────────────────────────────────────────────────────────
 
-/** Whose channels an inbox shows: the agent's on an agent inbox, else the local user's. */
-function channelsOwnerFor(agentId: string | undefined, localUserId: string | undefined): TypeId | null {
-  if (agentId) return new TypeId(Agent.type, agentId);
-  return localUserId ? new TypeId(User.type, localUserId) : null;
-}
-
 export function InboxView({ agentId }: { agentId?: string } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -479,13 +470,21 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   const localUserId = localUser?.id;
   // The channel filter: source ids the list is narrowed to. Local like the text
   // search, and empty means everything.
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
-  const { rows: ownerChannels } = useAttachedChannels(channelsOwnerFor(agentId, localUserId));
-  const sourceIdOf = useCallback(
-    (m: FlowMessage) => sourceForOrigin(ownerChannels, m.origin, m.origin_local)?.id,
-    [ownerChannels],
-  );
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
+  const { rows: ownerChannels, specFor } = useAttachedChannels(channelsOwner);
+  const { attributionFor: attributionForOrigin } = useChannelAttribution();
+  const attributionFor = useCallback((origin: FlowMessage['origin']) => attributionForOrigin(origin), [attributionForOrigin]);
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  const channelMatch = useMemo(
+    () =>
+      channelFilter.size
+        ? (m: FlowMessage) => {
+            const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
+            return !!source && channelFilter.has(channelKeyOf(source));
+          }
+        : undefined,
+    [channelFilter, ownerChannels],
+  );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
   const hubReachable = connection.status === 'connected' || connection.status === 'verified';
@@ -1268,6 +1267,8 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {channelsOwner && (
               <AttachedChannelsBar
                 owner={channelsOwner}
+                rows={ownerChannels}
+                specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}
                 className="ms-auto"
@@ -1324,8 +1325,8 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
-              channelFilter={channelFilter}
-              sourceIdOf={sourceIdOf}
+              channelMatch={channelMatch}
+              attributionFor={attributionFor}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}
