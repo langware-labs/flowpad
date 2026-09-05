@@ -225,3 +225,13 @@ request spent about 1.51 seconds queued before send. A diagnostic replay of
 those three responses brought document readiness to 565.5ms versus 1,836.3ms
 in its repeated control. This is a controlled diagnostic, not shipped timing;
 those mounted-view requests remain a separate optimization target.
+
+
+A final build repeat overlapped another session's Hub test suite and other
+shared-checkout work: warm bootstrap stayed at **14.0–43.2ms** and required
+SDK init at **21.9–62.2ms**, while document readiness ranged **2.12–2.78s**.
+These captures are separate observations, not an isolated causal comparison.
+The final backend restart's first complete HTTP bootstrap took **19.0ms**;
+warmed and expired-cache samples stayed under **23ms**. A prior startup
+sample while local tests were running took **163.6ms**, so the 100ms budget
+is not an unconditional guarantee under resource contention.
