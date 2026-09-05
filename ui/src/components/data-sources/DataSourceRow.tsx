@@ -48,9 +48,10 @@ interface Props {
 
 export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
-  // Expanded by default when the row has something to say: a setup step or a
-  // parked latch. Streams stay behind the chevron.
-  const [open, setOpen] = useState(() => source.needsSetup || source.isParked);
+  // Collapsed by default, whatever the state: the pill already says "needs
+  // setup" / "needs attention", and a screen of parked sources must still fit
+  // on one screen. The detail is one click away.
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // The spec's glyph when one is installed, else the type's — and for a
   // multi-channel transport (agent), the CHANNEL's own glyph. A screen of
@@ -172,16 +173,16 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </button>
           <Icon className="size-5 shrink-0" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium leading-tight" title={source.name}>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="truncate text-sm font-medium leading-tight" title={source.name}>
               {source.name || source.provider || source.id.slice(0, 8)}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-              <span>{source.provider}</span>
+            </span>
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {source.provider}
               {/* The agent transport's channel is `gmail` while its provider is
                   `agent` — showing only the provider is actively misleading. */}
-              {source.channel && source.channel !== source.provider && <span>· {source.channel}</span>}
-            </div>
+              {source.channel && source.channel !== source.provider && ` · ${source.channel}`}
+            </span>
           </div>
         </div>
 
@@ -238,7 +239,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           )}
 
           {parked && (
-            <p className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
+            <p className="rounded bg-red-500/10 px-2 py-1.5 text-[11px] leading-snug text-red-700 dark:text-red-300">
               <Trans>
                 Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
                 <strong>Pull</strong> clears the latch.
@@ -256,4 +257,4 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
 
 /** The one column template the header and every row share. */
 export const ROW_GRID =
-  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_6rem_auto] items-center gap-3 px-4 py-2.5';
+  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';
