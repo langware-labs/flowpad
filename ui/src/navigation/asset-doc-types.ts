@@ -10,7 +10,7 @@
 // AssetEditor + the editor↔type mapping live in the SDK (single source of truth,
 // reused by the SDK entity pointer getters); re-exported here for UI imports.
 import { TypeId } from '@sdk';
-export { AssetEditor, EDITOR_TYPES, TYPE_TO_EDITOR, editorForPath, editorForType, isAssetEditor, isFileOnlyEditor } from '@sdk';
+export { AssetEditor, EDITOR_TYPES, TYPE_TO_EDITOR, editorForPath, editorForType, isAssetEditor, isFileOnlyEditor, primaryTypeForEditor } from '@sdk';
 
 /** How `<value>` identifies the asset — the `<method>` URL segment (editor mode only). */
 export enum AssetRoutingMethod {

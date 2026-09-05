@@ -1,3 +1,4 @@
+import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -323,6 +324,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         throw error;
       }
     }
+    // The registry is the authority for type → editor and per-type extensions
+    // (`editorForType`, `editorForPath`, `mainFileForType`); bind it once the
+    // payload is in hand so the model layer reads live TypeInfos, not a copy.
+    bindAssetEditorRegistry({
+      get: (type) => this.getTypeInfo(type),
+      all: () => this.getAllTypeInfos(),
+    });
     for (const typeInfo of types) {
       if (!typeInfo?.type_name) {
         console.warn('TypeInfo has no type_name', typeInfo);
