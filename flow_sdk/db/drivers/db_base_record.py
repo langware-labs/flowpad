@@ -30,13 +30,13 @@ from flow_sdk.api.api_types.api_field import (
     is_db_excluded,
     sharing_policy,
 )
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.serialization import iso_to_datetime
 
 from .query import QueryFilter
-from flow_sdk.api.api_types.identifier import mint_uuid
 
 RecordType = TypeVar("RecordType", bound="DBBaseRecord")
 RecordRelationshipType = TypeVar("RecordRelationshipType", bound="DBBaseRelationship")

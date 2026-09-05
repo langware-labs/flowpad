@@ -1,4 +1,5 @@
 import '@src/styles/highlightjs.css';
+import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
@@ -58,6 +59,7 @@ const queryClient = new QueryClient({
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
+  useAsyncSdkInit();
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 

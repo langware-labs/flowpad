@@ -16,13 +16,13 @@ import zipfile
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.flow_message import (
     Attachment,
     AttachmentType,
     FlowMessage,
 )
 from flow_sdk.fs_store import record_paths
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
 

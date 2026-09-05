@@ -80,7 +80,7 @@ describe('AssetVibeWorkspace panel layout', () => {
         </React.StrictMode>,
       );
     }).not.toThrow();
-    expect(screen.getByTestId('vibe-chat-pane')).toBeTruthy();
+    expect(screen.getByTestId('vibe-start-new-chat')).toBeTruthy();
     expectPanelSizes(view!.container, '36.0', '64.0');
 
     expect(() => {

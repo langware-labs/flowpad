@@ -2,7 +2,6 @@
 
 import logging
 import time
-from contextvars import copy_context
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -10,10 +9,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from flow_sdk.request_context.execution_context import (
     ExecutionContext,
-    get_execution_context,
     set_execution_context,
 )
-
 
 # Per-process cache for the @local user. The local user is created once at
 # server startup (get_or_create_local_user) and never mutated by app code,
@@ -49,8 +46,8 @@ class RequestTransactionMiddleware:
 
     async def _setup_local_auth(self, req_info) -> Response | None:
         """Set up auth for local minihub - allow all requests for the @local user."""
-        from flow_sdk.request_context.auth_info import AuthResult
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.request_context.auth_info import AuthResult
         from flow_sdk.responses.response import ApiFailResponse
 
         # Get or set the local user from the per-process cache (see

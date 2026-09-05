@@ -108,8 +108,12 @@ async def test_agent_enables_email_once():
                         # fails before that name is bound, referencing it raises
                         # UnboundLocalError from the finally block and MASKS the
                         # real failure.
-                        if agent.inbox is not None:
-                            await agent.inbox.release()
+                        # Re-resolve from the Hub rather than trusting the
+                        # cached projection: if the cache is the thing that
+                        # broke, trusting it strands a billable address.
+                        current = agent.inbox or await EmailInbox.for_agent(agent)
+                        if current is not None:
+                            await current.release()
                     finally:
                         await agent.unshare()
             finally:

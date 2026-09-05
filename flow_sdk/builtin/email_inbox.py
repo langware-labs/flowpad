@@ -279,8 +279,7 @@ class EmailInbox(Entity):
         if not descriptor:
             agent._inbox = None
             return None
-        agent._inbox = cls._adopt_onto(agent, descriptor)
-        return agent._inbox
+        return cls._adopt_onto(agent, descriptor)
 
     @classmethod
     def _adopt_onto(cls, agent, descriptor: Mapping[str, Any]) -> "EmailInbox":
@@ -294,6 +293,12 @@ class EmailInbox(Entity):
         current = getattr(agent, "_inbox", None)
         adopted = fresh if (current is None or current.id != fresh.id) else current._adopt(descriptor)
         adopted._owner = agent
+        # Cache HERE, for every caller. ``allocate()`` used to return the
+        # projection without caching it, so ``agent.inbox`` stayed None after a
+        # successful allocation — and anything keyed on that cache (the SDK
+        # test's release-on-cleanup, for one) silently skipped, stranding a
+        # billable address per run.
+        agent._inbox = adopted
         return adopted
 
     # ── lifecycle ─────────────────────────────────────────────────────────

@@ -492,6 +492,14 @@ class HubWebSocketManager:
         if not task or task.done() or asyncio.current_task() is task:
             await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
             return self.status_payload()
+        if task.get_loop() is not asyncio.get_running_loop():
+            # A task from another (typically already-closed) loop can never
+            # complete here — awaiting it raises. Drop the stale handle so the
+            # manager can be restarted on THIS loop.
+            self._task = None
+            self._outbound = None
+            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
+            return self.status_payload()
         try:
             await task
         except asyncio.CancelledError:

@@ -72,8 +72,8 @@ from flow_sdk.fs_store.indexer.auto_index import (
 )
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiResponseStatus, ApiSuccessResponse
-from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
 from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
+from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
 
 router = APIRouter()
 
@@ -1932,8 +1932,8 @@ async def initialize_bootstrap() -> BootstrapInfo:
             _local_entities = None
             await _ensure_local_entities()
         user, project, workspace, compute_node = _local_entities
-        from flow_sdk.icons import icons as icon_registry
         from flow_sdk.i18n import get_supported_locales, get_translation_targets
+        from flow_sdk.icons import icons as icon_registry
         from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
 
@@ -1972,10 +1972,7 @@ async def _recover_secrets() -> dict | None:
     from flow_sdk.cli.auth.secrets import clear_app_secret_metadata, recover_orphaned_sodot
 
     try:
-        notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
-    except asyncio.TimeoutError:
-        logging.warning("[info] sodot recovery probe timed out; skipping for this boot")
-        return None
+        notice = await asyncio.to_thread(recover_orphaned_sodot)
     except Exception as e:
         logging.warning("[info] sodot recovery probe failed (non-fatal): %s", e)
         return None
@@ -2024,7 +2021,9 @@ async def _sandbox_status(user: User, project: Project) -> tuple[bool, ComputeNo
 
 async def _sniffer_status(user: User) -> tuple[Entity | None, bool]:
     from flow_sdk.app.actions.hooks_sniffer import (
-        _create_or_update_sniffer_hook, _get_sniffer_hook, sniffer_installed,
+        _create_or_update_sniffer_hook,
+        _get_sniffer_hook,
+        sniffer_installed,
     )
     from flow_sdk.builtin.agent_hook import HookScope
     from flow_sdk.builtin.claude_settings_sync import purge_sniffer_entries_from_settings
@@ -2046,13 +2045,13 @@ async def _sniffer_status(user: User) -> tuple[Entity | None, bool]:
 async def _build_info() -> DeferredInfo:
     global _info_cache, _info_cache_ts
     user, project, _, _ = await _ensure_local_entities()
-    notice = await ensure_secret_recovery()
     from flow_sdk.core.capabilities.harness_state import compute_harness_state
     from flow_sdk.core.capabilities.summary import compute_capabilities_summary
     from flow_sdk.inbox import recompute_unread
     from flow_sdk.system_tools import get_scan_info
 
-    desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
+    notice, desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
+        _optional_info("secret recovery", ensure_secret_recovery()),
         _optional_info("desktop status", _desktop_status()),
         _optional_info("index status", get_scan_info()),
         _optional_info("harness state", compute_harness_state(wait_for_discovery=False)),
