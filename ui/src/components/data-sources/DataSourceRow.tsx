@@ -1,19 +1,19 @@
 /**
- * One configured source, and whether it is actually alive.
+ * One configured source as a row of the sources list, and whether it is
+ * actually alive.
  *
- * "Alive" is not one field, and the card's job is to show the disagreements.
+ * "Alive" is not one field, and the row's job is to show the disagreements.
  * Two axes: `status` (should this be running) and `health` (does it work). A
  * source can be `active` and still never poll — `config_error` makes `is_due`
  * refuse it permanently — and it can be perfectly healthy and still ingest
  * nothing, because it is in `setup` waiting on the user to invite a bot to a
- * Slack channel. Both of those read as healthy-and-idle if the card shows one
- * field, so it shows the lifecycle chip, the health, the countdown, an explicit
- * "parked" state, and a setup panel with the verb that ends it.
+ * Slack channel. Both of those read as healthy-and-idle if the row shows one
+ * field, so it shows the lifecycle chip, the countdown, and — expanded — an
+ * explicit "parked" state and a setup panel with the verb that ends it.
  *
- * Status plus ONE verb. Everything else is delegated: the rest of the actions to
- * `SourceMenu`, the stream rows to `SourceStreams`, and every dialog to the view
- * (so N cards don't mount 2N of them). `Pull changes` stays a real button
- * because it is the thing an operator came here to press.
+ * Status plus ONE verb on the row. Everything else is delegated: the rest of
+ * the actions to `SourceMenu`, the stream rows to `SourceStreams`, and every
+ * dialog to the view (so N rows don't mount 2N of them).
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from '@sdk';
@@ -22,7 +22,6 @@ import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
-import { Card, CardContent, CardHeader } from '@src/components/ui/card';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -47,9 +46,11 @@ interface Props {
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Props) {
+export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
+  // Expanded by default when the row has something to say: a setup step or a
+  // parked latch. Streams stay behind the chevron.
+  const [open, setOpen] = useState(() => source.needsSetup || source.isParked);
   const [busy, setBusy] = useState(false);
   // The spec's glyph when one is installed, else the type's — and for a
   // multi-channel transport (agent), the CHANNEL's own glyph. A screen of
@@ -135,63 +136,75 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
   // brings its own help rather than needing an entry in a frontend map.
   const wiki = spec?.setup_wiki || undefined;
 
+  const Pull = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-7 gap-1.5 px-2"
+      // Pulling an unverified source would fail in a way that says
+      // nothing useful — the driver refuses before it reaches the network.
+      disabled={busy || source.needsSetup}
+      title={source.needsSetup ? t`Verify the setup first.` : t`Pull changes now`}
+      onClick={() => void pull()}
+    >
+      <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
+      <span className="sr-only md:not-sr-only">{t`Pull`}</span>
+    </Button>
+  );
+
   return (
-    <Card
+    <div
       data-testid="source-card"
       data-provider={source.provider}
       data-status={source.status}
-      className={cn('flex flex-col border-s-[3px]', chip.border)}
+      className={cn('border-b border-border/60 border-s-[3px]', chip.border, open && 'bg-muted/10')}
     >
-      <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-3 pb-1.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium leading-tight" title={source.name}>
-            {source.name || source.provider || source.id.slice(0, 8)}
-          </div>
-          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-            <span>{source.provider}</span>
-            {/* The agent transport's channel is `gmail` while its provider is
-                `agent` — showing only the provider is actively misleading. */}
-            {source.channel && source.channel !== source.provider && <span>· {source.channel}</span>}
-          </div>
-        </div>
-
-        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>{chip.label}</span>
-
-        <SourceMenu
-          source={source}
-          spec={spec}
-          onToggleEnabled={() => void toggleEnabled()}
-          onEdit={onEdit}
-          onReplay={onReplay}
-          onDelete={onDelete}
-        />
-      </CardHeader>
-
-      <CardContent className="flex flex-1 flex-col gap-2 p-3 pt-0">
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span title={t`Last successful sync`}>
-            <Trans>synced {timeSince(source.last_synced_at)}</Trans>
-          </span>
-          <span title={t`Next scheduled poll`}>
-            {source.isActive ? <Trans>next {timeUntil(source.next_poll_at)}</Trans> : '—'}
-          </span>
-        </div>
-
-        {source.needsSetup && (
-          <div className="rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
-            <div className="flex items-start gap-1.5">
-              <p className="flex-1">{source.setup_detail || t`Finish setup, then press Verify.`}</p>
-              {/* The info affordance is a wiki page, not a tooltip: "invite the
-                  bot" is a multi-step task performed in ANOTHER application, and
-                  a hover card cannot be read while doing it. */}
-              {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
+      <div className={ROW_GRID}>
+        {/* Identity: the brand mark, the name, and provider · channel under it. */}
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-expanded={open}
+            aria-label={open ? t`Collapse` : t`Expand`}
+          >
+            {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
+          <Icon className="size-5 shrink-0" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium leading-tight" title={source.name}>
+              {source.name || source.provider || source.id.slice(0, 8)}
             </div>
+            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              <span>{source.provider}</span>
+              {/* The agent transport's channel is `gmail` while its provider is
+                  `agent` — showing only the provider is actively misleading. */}
+              {source.channel && source.channel !== source.provider && <span>· {source.channel}</span>}
+            </div>
+          </div>
+        </div>
+
+        <span className={cn('w-fit rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>{chip.label}</span>
+
+        <span className="text-xs text-muted-foreground tabular-nums">
+          <Plural value={source.segment_count} one="# stream" other="# streams" />
+        </span>
+
+        <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
+          {timeSince(source.last_synced_at)}
+        </span>
+
+        <span className="text-xs text-muted-foreground" title={t`Next scheduled poll`}>
+          {source.isActive ? timeUntil(source.next_poll_at) : '—'}
+        </span>
+
+        <div className="flex items-center justify-end gap-1">
+          {source.needsSetup && (
             <Button
               size="sm"
               variant="secondary"
-              className="mt-1.5 h-7 gap-1.5"
+              className="h-7 gap-1.5"
               disabled={busy}
               data-testid={`source-verify-${source.id}`}
               onClick={() => void verify()}
@@ -199,46 +212,48 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
               <CheckCircle2 className="size-3.5" />
               {t`Verify`}
             </Button>
-          </div>
-        )}
-
-        {parked && (
-          <p className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
-            <Trans>
-              Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
-              <strong>Pull changes</strong> clears the latch.
-            </Trans>
-            {source.error_detail ? ` (${source.error_detail})` : ''}
-          </p>
-        )}
-
-        <div className="mt-auto flex items-center gap-2 pt-1">
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 gap-1.5"
-            // Pulling an unverified source would fail in a way that says
-            // nothing useful — the driver refuses before it reaches the network.
-            disabled={busy || source.needsSetup}
-            title={source.needsSetup ? t`Verify the setup first.` : undefined}
-            onClick={() => void pull()}
-          >
-            <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
-            {t`Pull changes`}
-          </Button>
-
-          <button
-            type="button"
-            className="ms-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setOpen((o) => !o)}
-          >
-            {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            <Plural value={source.segment_count} one="# stream" other="# streams" />
-          </button>
+          )}
+          {Pull}
+          <SourceMenu
+            source={source}
+            spec={spec}
+            onToggleEnabled={() => void toggleEnabled()}
+            onEdit={onEdit}
+            onReplay={onReplay}
+            onDelete={onDelete}
+          />
         </div>
+      </div>
 
-        {open && <SourceStreams cursors={cursors} />}
-      </CardContent>
-    </Card>
+      {open && (
+        <div className="flex flex-col gap-2 px-4 pb-3 ps-[3.75rem]">
+          {source.needsSetup && (
+            <div className="flex items-start gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+              <p className="flex-1">{source.setup_detail || t`Finish setup, then press Verify.`}</p>
+              {/* The info affordance is a wiki page, not a tooltip: "invite the
+                  bot" is a multi-step task performed in ANOTHER application, and
+                  a hover card cannot be read while doing it. */}
+              {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
+            </div>
+          )}
+
+          {parked && (
+            <p className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
+              <Trans>
+                Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
+                <strong>Pull</strong> clears the latch.
+              </Trans>
+              {source.error_detail ? ` (${source.error_detail})` : ''}
+            </p>
+          )}
+
+          <SourceStreams cursors={cursors} />
+        </div>
+      )}
+    </div>
   );
 }
+
+/** The one column template the header and every row share. */
+export const ROW_GRID =
+  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_6rem_auto] items-center gap-3 px-4 py-2.5';
