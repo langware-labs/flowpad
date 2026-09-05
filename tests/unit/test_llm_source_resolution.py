@@ -567,6 +567,110 @@ async def test_the_picker_marks_in_use_from_the_resolver_not_from_an_offer(env, 
     _bind(monkeypatch)
 
     view = await llm_picker_view("claude")
-    assert sum(1 for c in view.offers if c.source.auto) >= 1
+    # The point of the assertion: more than one offer says ``auto``, so a screen that badged
+    # from ``auto`` would claim two sources are in use at once.
+    assert sum(1 for c in view.offers if c.source.auto) > 1
     assert view.chosen is not None
-    assert view.chosen.source.endpoint_typeid, "one row, and the screen badges that one"
+    assert str(view.chosen.endpoint.kind) == "api_key", "rung 4 spends the key before the budget"
+
+
+# ── assigning a wallet to a box that already has something ───────────────────────
+
+
+async def test_a_wallet_assigned_to_a_signed_in_box_does_not_take_over(env, monkeypatch) -> None:
+    """**Assigning a budget to a machine with a working Claude login changes nothing.**
+
+    Rung 4 is ``device -> api_key -> endpoint`` and a PROVEN device login sits at
+    ``_RANK_DEVICE`` with ``auto``, bound box or not -- the demotion to
+    ``_RANK_DEVICE_UNPROVEN`` is in the *unprobed* branch only. So the OAuth session keeps
+    winning and the new wallet is an offer nobody took.
+
+    Asserted end-to-end rather than on ``_device_source`` alone (which the table at the top of
+    this file already covers), because "I gave them a wallet and nothing happened" is what a
+    person actually experiences, and the two can only be told apart through the resolver.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    await cap.save(notify=False)
+    _bind(monkeypatch)
+
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "device", "a proven login outranks a budget it was never asked to yield to"
+    assert chosen.auto and chosen.rank == 0
+
+
+async def test_a_wallet_assigned_to_a_signed_out_box_takes_over(env, monkeypatch) -> None:
+    """The other half, and the one that makes the wallet worth assigning: a device login the
+    probe positively called signed out is ineligible, so the endpoint wins.
+
+    Distinct from ``test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint``, which is
+    the NEVER-probed box. There the device rung yields on rank; here it is ruled out on a
+    verdict, and only this version proves a box that signed out in a terminal recovers onto
+    the budget rather than failing.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.IDLE
+    await cap.save(notify=False)
+    _bind(monkeypatch)
+
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
+    device = _by_kind(await list_llm_candidates("claude"), "device")[0]
+    assert not device.eligible and "signed out" in device.reason
+
+
+async def test_a_key_on_the_machine_is_spent_before_an_assigned_wallet(env, monkeypatch) -> None:
+    """A provider key the user stored themselves outranks a hub budget: rung 4 is
+    ``device -> api_key -> endpoint``, in ascending marginal cost.
+
+    Worth pinning because it is the case where assigning a wallet looks like it did nothing
+    for a REASON nobody guesses -- the box is not signed in and the budget is real, but a
+    stray OpenRouter key from some earlier experiment is still cheaper by this ordering and
+    quietly keeps the spend. Nothing here is broken; it is simply the one precedence a person
+    cannot see from the outside.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    _bind(monkeypatch)
+
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "api_key" and endpoint.provider == "openrouter"
+    # The wallet is still listed and still spendable -- it lost on rank, it was not ruled out.
+    hub = _by_kind(await list_llm_candidates("claude"), "hub")[0]
+    assert hub.eligible and not hub.reason
+
+
+async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monkeypatch) -> None:
+    """Delete the budget out from under a box that has no other source and the spawn fails
+    naming both refusals -- it does not quietly find something else.
+
+    The listing is what makes the deletion visible (``listing_supersedes_binding``), and the
+    failure has to be a rendering of the list, so both sentences appear.
+    """
+    import time
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError, resolve_llm_source
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.instance_settings import llm_endpoint as settings
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.IDLE
+    await cap.save(notify=False)
+    _bind(monkeypatch)
+    # A listing that SUCCEEDED and does not contain the bound endpoint: the budget is gone.
+    settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
+
+    with pytest.raises(LLMSourceError) as excinfo:
+        await resolve_llm_source(_process())
+    assert "signed out" in str(excinfo.value)
