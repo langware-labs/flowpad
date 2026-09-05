@@ -4774,6 +4774,10 @@ msgstr "Could not remove the key"
 msgid "Could not rename context"
 msgstr "Could not rename context"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Could not repair the model redirect"
+msgstr "Could not repair the model redirect"
+
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Could not replay {0}."
@@ -4845,8 +4849,8 @@ msgid "Could not send report to the Flowpad team"
 msgstr "Could not send report to the Flowpad team"
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "Could not set a default model"
-msgstr "Could not set a default model"
+#~ msgid "Could not set a default model"
+#~ msgstr "Could not set a default model"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -9269,6 +9273,10 @@ msgstr "Indexing…"
 msgid "Info"
 msgstr "Info"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "inherits the budget above"
+msgstr "inherits the budget above"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Initial message"
 msgstr "Initial message"
@@ -11505,6 +11513,10 @@ msgstr "No assets match those filters."
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "No assistance requests yet"
 msgstr "No assistance requests yet"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "No assistant is installed on this machine."
+msgstr "No assistant is installed on this machine."
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."

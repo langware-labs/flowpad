@@ -14,7 +14,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 import { TestEndpointButton } from '@src/components/llm-endpoints/TestEndpointButton';
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmEndpoint } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { useLlmEndpoint, useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Switch } from '@src/components/ui/switch';
 import { notify } from '@src/notifications';
 
@@ -35,7 +35,16 @@ import { useInvalidateBudgets } from './use-budgets';
  * pinned slug, so a narrow wallet serves every caller instead of refusing most of them. Cheap and
  * working, rather than cheap and broken.
  */
-export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5'];
+/** The hub's own initial lists, restated here for the placeholder and the empty-row hint ONLY.
+ *
+ *  They are no longer written from this screen. `ensure_default_llm_endpoint` (hub) chooses what a
+ *  new wallet allows, because it is also what mints a person's default on their first bootstrap --
+ *  a path no UI is on, and the reason a person could previously be restricted only if an admin had
+ *  happened to open this page. Keep these in step with `MEMBER_DEFAULT_MODELS` / `ORG_DEFAULT_MODELS`
+ *  in `flowpad/hub/builtin/llm_endpoint.py`; they are a hint, so drift shows as a stale placeholder
+ *  rather than as a wrong value on a row. */
+export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini'];
+export const ORG_DEFAULT_MODELS = ['anthropic/claude-*', 'openai/*'];
 
 /** What each level of the hierarchy starts with when its list is empty. */
 export type BudgetScope = 'org' | 'team' | 'person';
@@ -54,8 +63,8 @@ export type BudgetScope = 'org' | 'team' | 'person';
  * — visible, and overridable one at a time without touching anyone else.
  */
 export const SEED_BY_SCOPE: Record<BudgetScope, string[]> = {
-  org: ['anthropic/claude-*', 'openai/gpt-*'],
-  team: [],
+  org: ORG_DEFAULT_MODELS,
+  team: DEFAULT_MODELS,
   person: DEFAULT_MODELS,
 };
 
@@ -112,6 +121,15 @@ export function aliasesForPinnedModel(models_allow: string[]): Record<string, st
     if (models_allow.includes(family)) continue; // the family is open by glob already
     out[family] = slugs[0];
     for (const also of slugs.slice(1)) out[also] = also;
+    // The same family as the VENDOR writes it, un-prefixed. An OpenRouter slug is
+    // `anthropic/claude-haiku-4.5`; a client speaking Anthropic's own API asks for
+    // `claude-haiku-4-5`. Both name the model this wallet is pinned to, and a list holding only the
+    // routed spelling refuses the native one — a refusal the caller cannot act on, because their SDK
+    // chose the name. `*` crosses `/` in the hub's matcher, so a bare key can only ever match a bare
+    // request. The Python twin is `aliases_for_pinned` (`flowpad/hub/core/llm/filters.py`); the two
+    // must agree or this screen's repair effect would rewrite what the hub seeded.
+    const bare = family.includes('/') ? family.slice(family.indexOf('/') + 1) : null;
+    if (bare && !(bare in out) && !models_allow.includes(bare)) out[bare] = slugs[0];
   }
   return out;
 }
@@ -138,6 +156,11 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   const { t } = useLingui();
   const id = endpointIdFromTypeId(endpointId);
   const endpoint = useLlmEndpoint(id);
+  // The rows on this screen are ENTITIES, not budget rows, so the budgets invalidation alone does
+  // not refresh them — and a team edit now moves the members' lists too (`_cascade_models`, hub).
+  // Those writes are made BY THE HUB, so nothing tells this client about them: without an explicit
+  // re-read, an admin narrows a team and every member below it goes on showing the old models.
+  const { refetch: refetchEndpoints } = useLlmEndpoints();
   const invalidate = useInvalidateBudgets();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -157,31 +180,34 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   const wantedAliases = aliasesForPinnedModel(models);
   const aliasesStale = !!endpoint && JSON.stringify(endpoint.filters.aliases ?? {}) !== JSON.stringify(wantedAliases);
 
-  // "It should not remain empty": a wallet created before this control existed, or one whose
-  // field was cleared and left, is put back onto the cheap default on its own — the same "a new
-  // endpoint starts with the defaults as a real value" rule the expert dialog already applies at
-  // CREATE time, just enforced here for every row instead of once at creation.
+  // Repairs a STALE REDIRECT, and nothing else. It used to also seed an empty list, and that was
+  // the bug: a wallet was restricted because somebody opened this screen, so a person nobody had
+  // looked at inherited the org's whole ceiling — and the wallets the hub mints on first bootstrap
+  // were never seen by this page at all. Choosing the initial list is now the hub's job
+  // (`_seed_models`), which is on every creation path rather than on this one.
+  //
+  // What remains is not policy: a row with models but no aliases refuses every `md`-tier caller,
+  // and nobody can fix it by hand (re-typing the same model is a no-op at `commit`). Deriving the
+  // redirect from the list already on the row invents nothing and can never widen it.
   useEffect(() => {
     // A reader never repairs the row. Somebody who may configure it will, the next time they open
     // the page, and until then a stale alias map is a wrong model — not a broken screen.
     if (!endpoint || seeding.current || !manage) return;
-    const seed = SEED_BY_SCOPE[scope];
-    // A level seeded with nothing (the team) is left blank on purpose — blank INHERITS, and that is
-    // what keeps it from becoming a ceiling over the people beneath it.
-    if (models.length === 0 && seed.length === 0) return;
-    if (models.length > 0 && !aliasesStale) return;
+    if (models.length === 0 || !aliasesStale) return;
     seeding.current = true;
-    void saveModels(endpoint.typeId.toString(), endpoint.filters, models.length > 0 ? models : seed)
+    void saveModels(endpoint.typeId.toString(), endpoint.filters, models)
       .then(() => invalidate())
-      .catch((e) => notify.error({ title: t`Could not set a default model`, message: String(e), id: 'models-allow' }))
+      .catch((e) =>
+        notify.error({ title: t`Could not repair the model redirect`, message: String(e), id: 'models-allow' }),
+      )
       .finally(() => {
         seeding.current = false;
       });
     // `endpoint`/`invalidate`/`t` are stable enough for this effect's purpose; re-running on every
-    // identity change would refire the seed check every render, which the `seeding` guard already
+    // identity change would refire the check every render, which the `seeding` guard already
     // exists to prevent regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint?.id, models.length, aliasesStale, scope, manage]);
+  }, [endpoint?.id, models.length, aliasesStale, manage]);
 
   if (!endpoint) {
     return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
@@ -206,6 +232,7 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
     try {
       await saveModels(endpoint.typeId.toString(), endpoint.filters, next);
       await invalidate();
+      await refetchEndpoints();
       // Say what the pin actually DOES. An admin pinning a wallet to one model has no way to know
       // that the other tiers are being redirected onto it rather than refused, and the difference
       // is the whole question of whether the person can still send anything.
@@ -259,7 +286,7 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
               setEditing(false);
             }
           }}
-          placeholder={DEFAULT_MODELS.join(', ')}
+          placeholder={SEED_BY_SCOPE[scope].join(', ')}
           aria-label={t`Models allowed`}
           data-testid={`${testIdPrefix}-models-input`}
           className="min-w-40 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px]"
@@ -273,7 +300,14 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
           title={manage ? t`Click to edit which models this budget may call` : t`Which models this budget may call`}
           onClick={startEdit}
         >
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : models.join(', ') || DEFAULT_MODELS.join(', ')}
+          {saving ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            // An empty list is not "the default": it INHERITS, and printing a model here said the
+            // opposite of what the row would actually allow. Say what is true and let the reader
+            // click to set one.
+            models.join(', ') || t`inherits the budget above`
+          )}
         </button>
       )}
 

@@ -90,13 +90,15 @@ export function useAddPeople() {
   return useMutation({
     mutationFn: ({
       poolId,
+      teamId,
       drafts,
       existing,
     }: {
       poolId: string;
+      teamId: string;
       drafts: readonly PersonDraft[];
       existing: readonly MemberBudget[];
-    }) => addPeopleToTeam(poolId, drafts, existing),
+    }) => addPeopleToTeam(poolId, teamId, drafts, existing),
     onSuccess: () => invalidate(),
   });
 }
