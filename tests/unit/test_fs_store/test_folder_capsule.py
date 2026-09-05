@@ -15,8 +15,8 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule, CapsuleSpec
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identity_carrier import NotWritable, Sidecar
 from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
-from flow_sdk.fs_store.identity_carrier import FolderJsonCarrier
 from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_id
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
@@ -33,7 +33,7 @@ V7 = "018f0000-0000-7000-8000-000000000000"
 _CAPSULE_INFO = TypeInfo(
     type_name="capsule_probe", main_layout="folder",
     capsules=(CapsuleSpec("identity", 1),),
-    identity_carrier=FolderJsonCarrier(legacy=(folder_capsule_id,)),
+    identity_carrier=Sidecar(legacy=(folder_capsule_id,)),
 )
 
 
@@ -155,13 +155,12 @@ def test_indexing_skill_md_file_paths_dont_collide(tmp_path: Path) -> None:
     assert len(ids) == 2, f"distinct skill folders collided on one id: {ids}"
 
 
-def test_yaml_only_skill_persists_capsule_id(tmp_path: Path) -> None:
-    """The old code SKIPPED write-back for yaml-based skills — they re-derived
-    every index. Now they persist a v4 into the capsule."""
+def test_yaml_only_skill_is_not_a_skill_and_gets_nothing_written(tmp_path: Path) -> None:
+    """A skill's id lives in SKILL.md's header. A folder without one is not
+    the shape: the seam refuses to write and the folder stays untouched."""
     sk = tmp_path / "skills" / "y"
     sk.mkdir(parents=True)
     (sk / "skill.yaml").write_text("name: y\n", encoding="utf-8")
-    sid = _skill_mint(sk)
-    assert _ver(sid) == 4
-    assert AssetCapsule.from_path(sk).read("identity").data["id"] == sid, "no SKILL.md: the folder json carries"
-    assert _skill_mint(sk) == sid, "idempotent for yaml skills too"
+    with pytest.raises(NotWritable):
+        _skill_mint(sk)
+    assert not (sk / ".flow").exists() and not (sk / "SKILL.md").exists()

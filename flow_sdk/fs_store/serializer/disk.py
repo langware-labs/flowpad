@@ -7,7 +7,7 @@ field TYPES say what the document holds (frontmatter scalars, a ``Body``, a
 through the substrate that already exists — ``FrontMatterFsRef`` (atomic,
 capsule-preserving), ``load_doc``/``write_doc`` for JSON manifests, a
 ``DatasetLayout`` for rows — and identity goes through the type's
-``IdentityBackend`` via ``TypeInfo.mint_entity_id``. Nothing here names a
+``IdentityBackend`` via ``TypeInfo.stamp_id``. Nothing here names a
 concrete asset class; dispatch is by ``FieldKind``.
 
 A type that declares no ``asset_spec`` still goes through here: it renders via
@@ -128,9 +128,9 @@ def _frontmatter(obj: Any, info: Any) -> dict[str, Any]:
     )
     if info.name_from_path and getattr(obj, "name", None):
         out = {"name": obj.name, **out}
-    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier  # noqa: PLC0415
+    from flow_sdk.fs_store.identity_carrier import Frontmatter  # noqa: PLC0415
 
-    if isinstance(info.identity_carrier, FrontmatterCarrier) and getattr(obj, "id", None):
+    if isinstance(info.identity_carrier, Frontmatter) and getattr(obj, "id", None):
         # The header IS this type's identity carrier: an owned re-render must
         # keep the id (it rewrites the header wholesale), so it is written first.
         out = {"id": str(obj.id), **out}
@@ -151,7 +151,7 @@ def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     authoritative, so the COMMITTED id may differ from the one proposed (the
     seam owns the read-only / suppression gates).
 
-    The ref handed to ``mint_entity_id`` is the ASSET_REF the type's carrier
+    The ref handed to ``stamp_id`` is the ASSET_REF the type's carrier
     was registered for — the inner ``agent.md`` for a ``main_file_is_asset_ref``
     type, the folder for a bare-folder type, the file for a file type."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
@@ -159,7 +159,7 @@ def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     entity_id = getattr(obj, "id", None)
     if info is None or info.identity_carrier is None or not entity_id:
         return str(entity_id or "")
-    return str(info.mint_entity_id(FSRef(_asset_ref(info, root)), proposed_id=str(entity_id)))
+    return str(info.stamp_id(FSRef(_asset_ref(info, root)), str(entity_id)))
 
 
 # ── the serializer ────────────────────────────────────────────────────────────

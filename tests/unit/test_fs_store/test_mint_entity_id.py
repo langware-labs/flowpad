@@ -1,24 +1,12 @@
-"""The ordering matrix for ``TypeInfo.mint_entity_id`` — pure, no DB, no indexer.
+"""The compat adapter ``TypeInfo.mint_entity_id`` — pure, no DB, no indexer.
 
-An asset's id lives in the source, but a full-content rewrite wipes that
-carrier. Resolving from the source alone then invents a new id for a path a row
-already owns. The seam decides between the carrier and the owning row, and the
-axis is CARRIER LIVENESS, not "file vs database":
-
-    1. the carrier   IF no row owns this path
-                     OR the carrier IS that row
-                     OR the carrier is a live id of this type
-    2. else the owning row
-    3. else mint (and write, when the carrier is writable and the ref is not read-only)
-
-``live_ids=None`` means "cannot prove dead", so a valid carrier still wins —
-only a caller holding the complete per-type id set (the index walk) may conclude
-that a carrier names no entity. ``read_id`` is the pure read the probes use.
+With no owner in play it is "the carrier, else mint (and write, when the
+carrier is writable and the ref is not read-only)". The owner/live-ids
+ordering matrix lives in ``test_reconcile_identity.py``; ``read_id`` is the
+pure read the probes use.
 """
 from __future__ import annotations
 
-import json
-import os
 import uuid
 from pathlib import Path
 
@@ -26,13 +14,7 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule, CapsuleData, CapsuleSpec
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import (
-    DerivedCarrier,
-    FolderJsonCarrier,
-    FrontmatterCarrier,
-    MalformedCarrier,
-    NativeJsonCarrier,
-)
+from flow_sdk.fs_store.identity_carrier import Frontmatter, MalformedCarrier, Sidecar
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -44,7 +26,7 @@ IDENTITY = CapsuleSpec("identity", 1)
 
 
 def _info(*, stable: bool = False, folder: bool = False, legacy=()) -> TypeInfo:
-    carrier = FolderJsonCarrier(legacy=tuple(legacy)) if folder else FrontmatterCarrier(legacy=tuple(legacy))
+    carrier = Sidecar(legacy=tuple(legacy)) if folder else Frontmatter(legacy=tuple(legacy))
     return TypeInfo(
         type_name="probe",
         capsules=(IDENTITY,),
@@ -75,10 +57,6 @@ def _stored_id(path: Path) -> str | None:
     return (_yaml_load(fm) or {}).get("id") if fm else None
 
 
-# --------------------------------------------------------------------------
-# Rule 1 — the carrier wins
-# --------------------------------------------------------------------------
-
 @pytest.mark.parametrize("folder", [False, True])
 def test_carrier_wins_when_no_row_owns_the_path(tmp_path: Path, folder: bool) -> None:
     """A clone/copy lands at an unowned path — identity travels with the file."""
@@ -86,70 +64,6 @@ def test_carrier_wins_when_no_row_owns_the_path(tmp_path: Path, folder: bool) ->
     assert _info(folder=folder).mint_entity_id(FSRef(path)) == CARRIER
     assert _info(folder=folder).read_id(FSRef(path)) == CARRIER
 
-
-def test_carrier_wins_when_it_is_the_owning_row(tmp_path: Path) -> None:
-    path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().mint_entity_id(FSRef(path), owner_id=CARRIER, live_ids={CARRIER}) == CARRIER
-
-
-def test_live_carrier_wins_over_a_different_owner(tmp_path: Path) -> None:
-    """Both ids are real entities — this is the adopt case, not a fork."""
-    path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={CARRIER, OWNER}) == CARRIER
-
-
-def test_unprovable_carrier_wins_when_liveness_is_unknown(tmp_path: Path) -> None:
-    """Without a liveness oracle a caller may not declare a carrier dead."""
-    path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids=None) == CARRIER
-
-
-# --------------------------------------------------------------------------
-# Rule 2 — the owning row wins
-# --------------------------------------------------------------------------
-
-def test_absent_carrier_loses_to_owner_and_restamps(tmp_path: Path) -> None:
-    """THE BUG: an agent rewrote the doc, wiping the carrier."""
-    path = _asset(tmp_path)
-    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    assert _stored_id(path) == OWNER, "an absent carrier is healed in place"
-
-
-def test_read_only_ref_takes_the_owner_without_writing(tmp_path: Path) -> None:
-    path = _asset(tmp_path)
-    before = path.read_bytes()
-    assert _info().mint_entity_id(FSRef(path, read_only=True), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    assert path.read_bytes() == before
-
-
-def test_dead_carrier_loses_to_owner(tmp_path: Path) -> None:
-    """A syntactically valid id that names no entity is a fossil, not identity."""
-    path = _asset(tmp_path, carrier=OTHER)
-    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    assert _stored_id(path) == OTHER, "a present carrier is never rewritten"
-
-
-def test_invalid_carrier_loses_to_owner_without_rewriting_bytes(tmp_path: Path) -> None:
-    """INVALID is not ABSENT — user bytes are never clobbered."""
-    path = tmp_path / "asset.md"
-    path.write_text("---\nid: not-a-uuid\n---\nbody\n", encoding="utf-8")
-    before = path.read_bytes()
-    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    assert path.read_bytes() == before
-
-
-def test_stable_key_type_prefers_owner_after_a_move(tmp_path: Path) -> None:
-    """A path/natural-key v5 changes when the file moves — that would fork it."""
-    moved = tmp_path / "renamed.md"
-    moved.write_text("body\n", encoding="utf-8")
-    info = _info(stable=True)
-    assert info.mint_entity_id(FSRef(moved, read_only=True)) != OWNER, "precondition: the derived key disagrees"
-    assert info.mint_entity_id(FSRef(moved), owner_id=OWNER, live_ids={OWNER}) == OWNER
-
-
-# --------------------------------------------------------------------------
-# Rule 3 — mint, and the degenerate (DB-free) contract
-# --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("folder", [False, True])
 def test_no_carrier_and_no_owner_mints_and_persists(tmp_path: Path, folder: bool) -> None:
@@ -180,13 +94,11 @@ def test_minted_frontmatter_id_is_the_first_key(tmp_path: Path) -> None:
     assert text.rstrip().endswith("body")
 
 
-def test_proposed_id_only_reaches_the_mint_branch(tmp_path: Path) -> None:
-    """owner_id is a fact in the store; proposed_id is only a mint hint."""
-    owned = _asset(tmp_path)
-    assert _info().mint_entity_id(FSRef(owned), owner_id=OWNER, live_ids={OWNER}, proposed_id=OTHER) == OWNER
+def test_proposed_id_is_stamped_when_the_source_is_blank(tmp_path: Path) -> None:
     fresh = tmp_path / "fresh.md"
     fresh.write_text("body\n", encoding="utf-8")
     assert _info().mint_entity_id(FSRef(fresh), proposed_id=OTHER) == OTHER
+    assert _stored_id(fresh) == OTHER
     with pytest.raises(ValueError, match="UUID v4 or v5"):
         _info().mint_entity_id(FSRef(fresh), proposed_id="018f0000-0000-7000-8000-000000000000")
 
@@ -244,59 +156,9 @@ def frontmatter_identity_info() -> TypeInfo:
     return TypeInfo(type_name="probe", capsules=(IDENTITY,), identity_carrier=frontmatter_identity())
 
 
-# --------------------------------------------------------------------------
-# Type flavors that must NOT take an owner id
-# --------------------------------------------------------------------------
-
-def test_derived_type_ignores_owner_id(tmp_path: Path) -> None:
-    """Provider identity is a pure function of the source: a stale row owning a
-    rotated session path must not swallow a genuinely different session."""
-    path = tmp_path / "session.jsonl"
-    path.write_text("{}\n", encoding="utf-8")
-    info = TypeInfo(
-        type_name="probe_derived",
-        identity_carrier=DerivedCarrier(reader=lambda p: None),
-        id_stable_key_fn=lambda ref: "provider-key",
-    )
-    resolved = info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER})
-    assert resolved != OWNER
-    assert resolved == str(uuid.uuid5(uuid.NAMESPACE_URL, "provider-key"))
-
-
-def test_native_json_restamp_preserves_sibling_keys(tmp_path: Path) -> None:
-    path = tmp_path / "probe.json"   # not a name any real folder type owns (report.json is)
-    path.write_text(json.dumps({"kept": [1, 2], "nested": {"a": 1}}), encoding="utf-8")
-    # A type declares the shape it claims; the seam writes only into a path of
-    # that shape (FLOWPAD-2083). Every real native-json type names its ``.json``.
-    info = TypeInfo(type_name="probe_json", main_ext=".json", identity_carrier=NativeJsonCarrier())
-
-    assert info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["id"] == OWNER
-    assert data["kept"] == [1, 2] and data["nested"] == {"a": 1}
-
-
-# --------------------------------------------------------------------------
-# Fail-closed
-# --------------------------------------------------------------------------
-
-def test_malformed_carrier_raises_even_with_an_owner(tmp_path: Path) -> None:
-    """A corrupt source must not be silently re-identified onto a live row."""
+def test_malformed_carrier_raises(tmp_path: Path) -> None:
+    """A corrupt source must not be silently re-identified."""
     path = tmp_path / "asset.md"
     path.write_text("<!-- flowpad:capsule identity\nversion: [\nflowpad:endcapsule identity -->\n", encoding="utf-8")
     with pytest.raises(MalformedCarrier):
-        frontmatter_identity_info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER})
-
-
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the read-only bit")
-def test_restamp_write_failure_still_returns_the_owner(tmp_path: Path) -> None:
-    """A failed heal degrades to DB-correct, never back to minting a fork."""
-    d = tmp_path / "ro"
-    d.mkdir()
-    path = d / "asset.md"
-    path.write_text("body\n", encoding="utf-8")
-    os.chmod(d, 0o555)
-    try:
-        assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    finally:
-        os.chmod(d, 0o755)
+        frontmatter_identity_info().mint_entity_id(FSRef(path))

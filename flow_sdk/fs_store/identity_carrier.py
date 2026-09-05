@@ -1,17 +1,27 @@
 """Identity carriers — WHERE a filesystem asset's id is stored, per type.
 
-A carrier does two things: ``read`` the id already in the source, and
-``write_if_absent`` a new one. Validation (v4/v5), stable-key policy and minting
-belong to ``TypeInfo.mint_entity_id``; a carrier never decides an id.
+The TYPE names one carrier (its strategy). MINT (``TypeInfo.mint``) reads the
+carrier and, when it is absent, mints an id and stamps it back through the
+same carrier. A carrier enforces its own format — ``Frontmatter`` only ever
+writes a markdown document, ``Sidecar`` only a folder, ``JsonRoot`` only a
+json file, ``Derived`` never — so a write can only land in a source of the
+carrier's own kind. Validation (v4/v5), stable-key policy and minting belong
+to ``TypeInfo``; owner/fossil reconciliation to the indexer
+(``flow_sdk.fs_store.indexer.reconcile``); a carrier never decides an id.
 
-    FrontmatterCarrier   a markdown document — ``id:`` in its YAML frontmatter.
-                         Legacy readers: the HTML-comment ``identity`` capsule
-                         markdown used to carry (converted in place on the next
-                         index), ``asset_id:``, a folder's ``.flow/capsules`` json.
-    FolderJsonCarrier    a folder whose main document is JSON — ``.flow/capsules/identity.json``.
-    NativeJsonCarrier    a report — the ``"id"`` key of its own JSON root.
-    DerivedCarrier       nothing is written: the id is a pure function of the
-                         source (sessions, projects, provider files).
+    Frontmatter   a markdown document — ``id:`` in its YAML frontmatter.
+                  Legacy readers: the HTML-comment ``identity`` capsule
+                  markdown used to carry, ``asset_id:``, a folder's
+                  ``.flow/capsules`` json under a markdown main document.
+    Sidecar       a folder — ``<folder>/.flow/capsules/identity.json``.
+    JsonRoot      a report — the ``"id"`` key of its own JSON root.
+    Derived       nothing is written: the id is a pure function of the
+                  source (sessions, projects, provider files).
+
+What ``read`` answers is one of three outcomes: ``Found`` (a valid v4/v5),
+``Foreign`` (something is there but it is not an id we accept — a
+hand-written v7, a slug; present-but-unusable is distinct from absent) or
+``ABSENT``.
 """
 from __future__ import annotations
 
@@ -20,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Protocol, runtime_checkable
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.capsules import (
     AssetCapsule,
     CapsuleData,
@@ -29,19 +40,20 @@ from flow_sdk.capsules import (
     UnsupportedCapsuleVersionError,
     strip_capsule_blocks,
 )
-from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.indexer._frontmatter import (
     _atomic_write_text,
     _extract_frontmatter,
     _yaml_load,
     merge_frontmatter,
 )
+from flow_sdk.schema.layout import Layout
 
 #: A legacy reader returns the raw value it found (validated here) or a
-#: ``CarrierId`` of its own when it knows the source.
+#: ``Found``/``Foreign``/``ABSENT`` of its own when it knows the source.
 IdentityReader = Callable[[Any], object | None]
 
-#: Source names for the two legacy carriers the seam converts in place: the
+#: Source names for the two legacy forms ``reconcile`` converts in place: the
 #: markdown HTML-comment capsule (stripped) and a folder's json capsule under a
 #: markdown main document (left in place; the id is copied into the header).
 CAPSULE_SOURCE = "capsule"
@@ -49,9 +61,35 @@ FOLDER_JSON_SOURCE = "folder-json"
 LEGACY_CONVERTIBLE = frozenset({CAPSULE_SOURCE, FOLDER_JSON_SOURCE})
 
 
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
 class MalformedCarrier(ValueError):
     """The carrier is present but unreadable (corrupt capsule, non-object JSON).
     A corrupt source must never be silently re-identified, so this fails closed."""
+
+
+class NotWritable(ValueError):
+    """The carrier refuses to write at this path: it is not the carrier's own
+    format (a ``.py`` under ``Frontmatter``), or the carrier never writes."""
+
+
+class ForeignId(ValueError):
+    """The carrier holds a value that is not an entity id (a v7, a slug). The
+    bytes are the user's; the seam neither adopts nor overwrites them."""
+
+    def __init__(self, where: Path, raw: object) -> None:
+        self.where = where
+        self.raw = raw
+        super().__init__(f"{where} carries a foreign id {raw!r}")
+
+
+class Unstamped(ValueError):
+    """A keyless mint could not be persisted (``write=False``, or the write
+    failed): a random id that lands nowhere would differ on every call, so
+    there is no honest answer."""
 
 
 class UnclaimedPath(ValueError):
@@ -70,31 +108,54 @@ class UnclaimedPath(ValueError):
         super().__init__(f"{type_name} does not claim {path}" + (f": {reason}" if reason else ""))
 
 
+# ---------------------------------------------------------------------------
+# Read outcomes
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True, slots=True)
-class CarrierId:
-    """What ``read`` found: ``id`` when the source names a valid v4/v5 UUID;
-    ``raw`` when it names something that is NOT one (a hand-written v7, a
-    slug) — present-but-unusable is distinct from absent; ``source`` says which
-    carrier answered."""
+class Found:
+    """The source names a valid v4/v5 id; ``source`` says which reader answered."""
 
-    id: str | None = None
-    raw: object | None = None
-    source: str | None = None
-
-    @property
-    def present(self) -> bool:
-        return self.id is not None or self.raw is not None
+    id: str
+    source: str = ""
 
 
-ABSENT = CarrierId()
+@dataclass(frozen=True, slots=True)
+class Foreign:
+    """The source names something that is NOT an id we accept."""
+
+    raw: object
+    source: str = ""
 
 
-def _carrier_id(value: object | None, source: str) -> CarrierId:
+class Absent:
+    """Nothing is there. A singleton: compare with ``is ABSENT``."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "ABSENT"
+
+
+ABSENT = Absent()
+
+CarrierRead = Found | Foreign | Absent
+
+
+def _outcome(value: object | None, source: str) -> CarrierRead:
     if value is None:
         return ABSENT
+    if isinstance(value, (Found, Foreign, Absent)):
+        return value
     if is_valid_entity_id(value):
-        return CarrierId(id=str(value), source=source)
-    return CarrierId(raw=value, source=source)
+        return Found(str(value), source)
+    return Foreign(value, source)
+
+
+# ---------------------------------------------------------------------------
+# The protocol
+# ---------------------------------------------------------------------------
 
 
 @runtime_checkable
@@ -104,183 +165,246 @@ class IdentityCarrier(Protocol):
     #: row on a rotated session path would otherwise swallow a different asset.
     writable: bool
 
-    def read(self, path: Path) -> CarrierId: ...
+    def locate(self, layout: Layout) -> Path:
+        """WHERE in this layout the id lives (the body for a document carrier,
+        the root for a folder carrier)."""
+        ...
 
-    def write_if_absent(self, path: Path, entity_id: str) -> str: ...
+    def accepts(self, where: Path) -> bool:
+        """True when ``where`` is this carrier's own format, so a write may land."""
+        ...
+
+    def read(self, where: Path) -> CarrierRead: ...
+
+    def stamp(self, where: Path, entity_id: str) -> str:
+        """Write-if-absent: a ``Found`` id wins and is returned; ``Foreign``
+        raises ``ForeignId``; a path the carrier does not ``accept`` raises
+        ``NotWritable``."""
+        ...
 
 
-def _read_legacy(readers: tuple[IdentityReader, ...], path: Path) -> CarrierId:
+def _read_legacy(readers: tuple[IdentityReader, ...], path: Path) -> CarrierRead:
     """First legacy reader naming a valid id wins; a reader that raises is a
-    broken carrier (fail closed); else the first present-but-invalid value."""
-    first_invalid: CarrierId | None = None
+    broken carrier (fail closed); else the first present-but-foreign value."""
+    first_foreign: Foreign | None = None
     for index, reader in enumerate(readers):
         source = getattr(reader, "__name__", f"legacy:{index}")
         try:
-            value = reader(path)
-            found = value if isinstance(value, CarrierId) else _carrier_id(value, source)
+            found = _outcome(reader(path), source)
         except Exception as exc:  # noqa: BLE001 — a broken legacy carrier is not absence
             raise MalformedCarrier(f"{source}: {exc}") from exc
-        if found.id is not None:
+        if isinstance(found, Found):
             return found
-        if found.raw is not None and first_invalid is None:
-            first_invalid = found
-    return first_invalid or ABSENT
+        if isinstance(found, Foreign) and first_foreign is None:
+            first_foreign = found
+    return first_foreign or ABSENT
 
 
-def _read_identity_capsule(path: Path) -> CarrierId:
-    """The named ``identity`` capsule at ``path`` (markdown comment block or
-    folder json), raising ``MalformedCarrier`` on a corrupt one."""
+def _resolve(primary: CarrierRead, legacy: CarrierRead) -> CarrierRead:
+    """A valid id from either wins (primary first); else the primary's foreign
+    value, else the legacy's, else absent."""
+    if isinstance(primary, Found):
+        return primary
+    if isinstance(legacy, Found):
+        return legacy
+    return primary if isinstance(primary, Foreign) else legacy
+
+
+def _read_identity_capsule(capsule: AssetCapsule, where: Path, source: str) -> CarrierRead:
+    """The named ``identity`` capsule, raising ``MalformedCarrier`` on a corrupt one."""
     try:
-        data = AssetCapsule.from_path(path).read("identity")
+        data = capsule.read("identity")
     except (MalformedCapsuleError, DuplicateCapsuleError, UnsupportedCapsuleVersionError, CapsuleError, OSError) as exc:
-        raise MalformedCarrier(f"identity capsule at {path}: {exc}") from exc
+        raise MalformedCarrier(f"identity capsule at {where}: {exc}") from exc
     if data is None:
         return ABSENT
     if data.version != 1:
-        raise MalformedCarrier(f"identity capsule at {path} has version {data.version}; expected 1")
+        raise MalformedCarrier(f"identity capsule at {where} has version {data.version}; expected 1")
     if set(data.data) != {"id"}:
-        raise MalformedCarrier(f"identity capsule at {path} must contain exactly the 'id' key")
-    # The markdown comment block is the one legacy form the seam converts; a
-    # folder's json capsule is a live carrier and must not be mistaken for it.
-    return _carrier_id(data.data.get("id"), CAPSULE_SOURCE if path.is_file() else FOLDER_JSON_SOURCE)
+        raise MalformedCarrier(f"identity capsule at {where} must contain exactly the 'id' key")
+    return _outcome(data.data.get("id"), source)
 
 
-def capsule_id(path: Path) -> CarrierId:
-    """Legacy reader: the id in a markdown ``identity`` capsule block."""
-    return _read_identity_capsule(path) if path.is_file() else ABSENT
+def capsule_id(path: Path) -> CarrierRead:
+    """Legacy reader: the id in a markdown ``identity`` comment-capsule block."""
+    if not path.is_file():
+        return ABSENT
+    try:
+        capsule = AssetCapsule.from_path(path)
+    except (CapsuleError, OSError) as exc:
+        raise MalformedCarrier(f"identity capsule at {path}: {exc}") from exc
+    return _read_identity_capsule(capsule, path, CAPSULE_SOURCE)
 
 
-def folder_capsule_json_id(path: Path) -> CarrierId:
+def folder_capsule_json_id(path: Path) -> CarrierRead:
     """Legacy reader for a folder type whose main doc is markdown: the id its
     ``.flow/capsules/identity.json`` carried before the doc's frontmatter did."""
-    folder = path.parent if path.is_file() else path
-    return _read_identity_capsule(folder) if (folder / ".flow" / "capsules" / "identity.json").exists() else ABSENT
+    folder = path if path.is_dir() else path.parent
+    if not (folder / ".flow" / "capsules" / "identity.json").exists():
+        return ABSENT
+    return _read_identity_capsule(FolderCapsule(folder), folder, FOLDER_JSON_SOURCE)
+
+
+# ---------------------------------------------------------------------------
+# The carriers
+# ---------------------------------------------------------------------------
+
+_MARKDOWN_SUFFIXES = frozenset({".md", ".mdx", ".markdown"})
 
 
 @dataclass(frozen=True, slots=True)
-class FrontmatterCarrier:
+class Frontmatter:
     """A markdown document: ``id:`` in its YAML frontmatter. ``legacy`` readers
-    are read-only fallbacks; the markdown capsule among them is CONVERTED in
-    place by ``convert`` (id written to the header, block stripped)."""
+    are read-only fallbacks; the two convertible ones among them are moved
+    into the header by ``convert`` (invoked only from ``reconcile``)."""
 
     legacy: tuple[IdentityReader, ...] = ()
 
     writable: ClassVar[bool] = True
 
-    def read(self, path: Path) -> CarrierId:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            return ABSENT
-        header = _extract_frontmatter(text)
-        fields = (_yaml_load(header) or {}) if header else {}
-        found = _carrier_id(fields.get("id"), "frontmatter")
-        if found.id is not None:
-            return found
-        legacy = _read_legacy(self.legacy, path)
-        return legacy if legacy.id is not None else (found if found.raw is not None else legacy)
+    def locate(self, layout: Layout) -> Path:
+        return layout.body if layout.body is not None else layout.root
 
-    def write_if_absent(self, path: Path, entity_id: str) -> str:
-        current = self.read(path)
-        if current.id is not None:
-            return current.id
+    def accepts(self, where: Path) -> bool:
+        """A markdown file, or a markdown save target whose bytes land moments
+        later (a serializer mints against the asset_ref before it writes)."""
+        return where.suffix.lower() in _MARKDOWN_SUFFIXES and (where.is_file() or not where.exists())
+
+    def read(self, where: Path) -> CarrierRead:
         try:
-            text = path.read_text(encoding="utf-8")
+            text = where.read_text(encoding="utf-8")
         except OSError:
+            header = None
+        else:
+            header = _extract_frontmatter(text)
+        fields = (_yaml_load(header) or {}) if header else {}
+        primary = _outcome(fields.get("id"), "frontmatter")
+        if isinstance(primary, Found):
+            return primary
+        return _resolve(primary, _read_legacy(self.legacy, where))
+
+    def stamp(self, where: Path, entity_id: str) -> str:
+        if not self.accepts(where):
+            raise NotWritable(f"frontmatter carrier cannot write into {where}")
+        current = self.read(where)
+        if isinstance(current, Found):
+            return current.id
+        if isinstance(current, Foreign):
+            raise ForeignId(where, current.raw)
+        try:
+            text = where.read_text(encoding="utf-8")
+        except FileNotFoundError:
             text = ""
-        _atomic_write_text(path, merge_frontmatter(text, {"id": entity_id}, prepend=True))
+        _atomic_write_text(where, merge_frontmatter(text, {"id": entity_id}, prepend=True))
         return entity_id
 
-    def convert(self, path: Path, entity_id: str) -> None:
-        """Move a legacy markdown capsule into the header: one rewrite, same id."""
-        text = path.read_text(encoding="utf-8")
-        _atomic_write_text(path, merge_frontmatter(strip_capsule_blocks(text), {"id": entity_id}, prepend=True))
+    def convert(self, where: Path, entity_id: str) -> None:
+        """Move a legacy carrier into the header: one rewrite, same id. A
+        markdown comment capsule is stripped; a folder json is left in place."""
+        if not self.accepts(where):
+            raise NotWritable(f"frontmatter carrier cannot write into {where}")
+        text = where.read_text(encoding="utf-8")
+        _atomic_write_text(where, merge_frontmatter(strip_capsule_blocks(text), {"id": entity_id}, prepend=True))
 
 
 @dataclass(frozen=True, slots=True)
-class FolderMdCarrier(FrontmatterCarrier):
-    """A folder type whose main document is markdown (``SKILL.md``, ``task.md``):
-    the id lives in that document's frontmatter. When the folder has no main
-    document at all (a yaml-only skill) the folder's ``.flow/capsules/identity.json``
-    stays the carrier — ``carrier_path_for`` hands over the folder in that case."""
-
-    def read(self, path: Path) -> CarrierId:
-        if path.is_dir():
-            return FolderJsonCarrier(legacy=self.legacy).read(path)
-        return FrontmatterCarrier.read(self, path)  # explicit base call: zero-arg super is unavailable under slots=True
-
-    def write_if_absent(self, path: Path, entity_id: str) -> str:
-        if path.is_dir():
-            return FolderJsonCarrier(legacy=self.legacy).write_if_absent(path, entity_id)
-        return FrontmatterCarrier.write_if_absent(self, path, entity_id)
-
-
-@dataclass(frozen=True, slots=True)
-class FolderJsonCarrier:
+class Sidecar:
     """A folder asset: ``<folder>/.flow/capsules/identity.json``; ``legacy``
-    readers (``.flow/id``, a name-derived id) are read-only fallbacks."""
+    readers (``.flow/id``, a name-derived id) are read-only fallbacks. Goes
+    through ``FolderCapsule`` directly — never ``AssetCapsule.from_path``,
+    which sniffs suffixes and would write a comment capsule into a file."""
 
     legacy: tuple[IdentityReader, ...] = ()
 
     writable: ClassVar[bool] = True
 
-    def read(self, path: Path) -> CarrierId:
-        found = _read_identity_capsule(path)
-        if found.id is not None:
-            return found
-        legacy = _read_legacy(self.legacy, path)
-        return legacy if legacy.id is not None else (found if found.raw is not None else legacy)
+    def locate(self, layout: Layout) -> Path:
+        return layout.root
 
-    def write_if_absent(self, path: Path, entity_id: str) -> str:
+    def accepts(self, where: Path) -> bool:
+        return where.is_dir()
+
+    def read(self, where: Path) -> CarrierRead:
+        primary = _read_identity_capsule(FolderCapsule(where), where, FOLDER_JSON_SOURCE) if where.is_dir() else ABSENT
+        if isinstance(primary, Found):
+            return primary
+        return _resolve(primary, _read_legacy(self.legacy, where))
+
+    def stamp(self, where: Path, entity_id: str) -> str:
+        if not self.accepts(where):
+            raise NotWritable(f"sidecar carrier cannot write into {where}")
+        current = self.read(where)
+        if isinstance(current, Found):
+            return current.id
+        if isinstance(current, Foreign):
+            raise ForeignId(where, current.raw)
         try:
-            committed = AssetCapsule.from_path(path).write_if_absent("identity", CapsuleData(version=1, data={"id": entity_id}))
-        except (CapsuleError, OSError) as exc:
-            raise MalformedCarrier(f"identity capsule at {path}: {exc}") from exc
+            committed = FolderCapsule(where).write_if_absent("identity", CapsuleData(version=1, data={"id": entity_id}))
+        except CapsuleError as exc:
+            raise MalformedCarrier(f"identity capsule at {where}: {exc}") from exc
         return str(committed.data.get("id") or entity_id)
 
 
 @dataclass(frozen=True, slots=True)
-class NativeJsonCarrier:
+class JsonRoot:
     """A report: the ``"id"`` key of its own JSON root."""
 
     writable: ClassVar[bool] = True
 
-    def _load(self, path: Path) -> dict:
+    def locate(self, layout: Layout) -> Path:
+        return layout.body if layout.body is not None else layout.root
+
+    def accepts(self, where: Path) -> bool:
+        return where.suffix.lower() == ".json" and where.is_file()
+
+    def _load(self, where: Path) -> dict:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(where.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            raise MalformedCarrier(f"{path}: {exc}") from exc
+            raise MalformedCarrier(f"{where}: {exc}") from exc
         if not isinstance(data, dict):
-            raise MalformedCarrier(f"{path}: root must be an object")
+            raise MalformedCarrier(f"{where}: root must be an object")
         return data
 
-    def read(self, path: Path) -> CarrierId:
-        return _carrier_id(self._load(path).get("id"), "native-json")
+    def read(self, where: Path) -> CarrierRead:
+        return _outcome(self._load(where).get("id"), "native-json")
 
-    def write_if_absent(self, path: Path, entity_id: str) -> str:
-        data = self._load(path)
-        if data.get("id") is not None:
-            return str(data["id"])
+    def stamp(self, where: Path, entity_id: str) -> str:
+        if not self.accepts(where):
+            raise NotWritable(f"json-root carrier cannot write into {where}")
+        data = self._load(where)
+        current = _outcome(data.get("id"), "native-json")
+        if isinstance(current, Found):
+            return current.id
+        if isinstance(current, Foreign):
+            raise ForeignId(where, current.raw)
         data["id"] = entity_id
-        _atomic_write_text(path, json.dumps(data, indent=2) + "\n")
+        _atomic_write_text(where, json.dumps(data, indent=2) + "\n")
         return entity_id
 
 
 @dataclass(frozen=True, slots=True)
-class DerivedCarrier:
+class Derived:
     """Nothing is written; ``reader`` (if any) computes the id from the source."""
 
     reader: IdentityReader | None = None
 
     writable: ClassVar[bool] = False
 
-    def read(self, path: Path) -> CarrierId:
+    def locate(self, layout: Layout) -> Path:
+        return layout.root
+
+    def accepts(self, where: Path) -> bool:
+        return False
+
+    def read(self, where: Path) -> CarrierRead:
         if self.reader is None:
             return ABSENT
         try:
-            return _carrier_id(self.reader(path), "derived")
+            value = self.reader(where)
         except Exception as exc:  # noqa: BLE001
-            raise MalformedCarrier(f"derived identity for {path}: {exc}") from exc
+            raise MalformedCarrier(f"derived identity for {where}: {exc}") from exc
+        return Found(str(value), "derived") if is_valid_entity_id(value) else ABSENT
 
-    def write_if_absent(self, path: Path, entity_id: str) -> str:
-        return self.read(path).id or entity_id
+    def stamp(self, where: Path, entity_id: str) -> str:
+        raise NotWritable(f"a derived identity is never written ({where})")
