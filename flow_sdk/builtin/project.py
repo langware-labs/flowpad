@@ -2991,6 +2991,31 @@ class Project(Entity):
                         continue  # skip malformed + the project's own record
                     targets.append(data)
 
+        # 1b. Terminate live workers BEFORE destroying their rows. ``_destroy``
+        #     only removes the DB row + shadow; it never touches the OS child.
+        #     A deleted agentic_process whose codex/claude worker is still
+        #     running leaks that process — and the orphan keeps holding its
+        #     session's writer lock, so a later ``resume`` of the same session
+        #     collides ("thread already has an active writer") and stalls. Reap
+        #     the worker through the normal teardown (SIGTERM -> SIGKILL + PTY
+        #     kill) first. Each ``exit()`` blocks on its own worker's reap
+        #     (up to a few seconds), so run them concurrently — the reaps target
+        #     distinct pids and don't share a lock. Best-effort: a teardown
+        #     failure never blocks delete.
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        ap_type = AgenticProcess.get_type()
+
+        async def _reap_worker(meta: dict) -> None:
+            try:
+                proc = await AgenticProcess.get_by_id(meta["id"])
+                if proc is not None:
+                    await proc.exit()  # shell.stop(): terminate_worker + kill PTY
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-delete] worker teardown failed for %s: %s", meta.get("id"), exc)
+
+        await asyncio.gather(*(_reap_worker(m) for m in targets if m.get("type") == ap_type))
+
         # 2. Destroy each child record.
         for meta in targets:
             await _destroy(meta)
@@ -3020,18 +3045,23 @@ class Project(Entity):
         elif mount:
             log.warning("[project-delete] preserved protected source path %s", mount)
 
-        # 4. Sever the shared @local compute node before deleting the project
-        #    record. Destroying the project record cascades down `is_child` edges
-        #    (sqlite delete walks get_children_sub_tree), and older projects were
-        #    set up with the @local compute node mistakenly attached as a child
-        #    (see setup_for_desktop). Detaching it here keeps the cascade from
-        #    deleting the global compute node and breaking every PTY/agentic
-        #    session. Idempotent: detach_child is a no-op when no edge exists.
+        # 4. Sever the shared @local compute node from EVERY parent before
+        #    deleting the project record. Destroying the project record cascades
+        #    down `is_child` edges (sqlite delete walks get_children_sub_tree),
+        #    and older projects were set up with the @local compute node
+        #    mistakenly attached as a child (see setup_for_desktop). A
+        #    ``self.detach_child`` only cut the edge on THIS project — so when a
+        #    nested/descendant project in the subtree carried the legacy edge,
+        #    the cascade still walked into @local and destroyed the global
+        #    compute node, breaking every PTY/agentic session (the 9007
+        #    incident). Detach @local from all its parents so no delete subtree
+        #    can reach it, regardless of which project holds the edge.
+        #    Idempotent: a no-op when @local has no parents.
         try:
             # Read-only resolve: do NOT mint a node just to detach it.
             local_compute_node = await ComputeNode.get_local(create=False)
             if local_compute_node:
-                await self.detach_child(local_compute_node.typeid)
+                await local_compute_node.detach_from_all_parents()
         except Exception as exc:  # noqa: BLE001
             log.warning("[project-delete] detach @local compute node failed: %s", exc)
 
