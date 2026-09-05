@@ -6,6 +6,7 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
+import { cn } from '@src/lib/utils';
 import { Globe, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -226,7 +227,10 @@ export interface ProjectListMenu {
 }
 
 /** The project list's state and actions, trigger-agnostic. */
-export function useProjectListMenu({ currentProjectId = null, currentProjectName }: ProjectListMenuOptions): ProjectListMenu {
+export function useProjectListMenu({
+  currentProjectId = null,
+  currentProjectName,
+}: ProjectListMenuOptions): ProjectListMenu {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
@@ -343,13 +347,44 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
 }
 
 /**
+ * The open-projects count as both chips wear it on their trigger: hairline,
+ * project glyph, number. Renders nothing at zero — a "0" advertises nothing.
+ * `hairlineClassName` / `iconClassName` carry the surface's tone (the strip's
+ * chip sits on the page, the nav bar's on a runtime tint).
+ */
+export function ProjectCountBadge({
+  menu,
+  hairlineClassName = 'bg-border',
+  iconClassName = 'text-muted-foreground',
+}: {
+  menu: ProjectListMenu;
+  hairlineClassName?: string;
+  iconClassName?: string;
+}) {
+  if (menu.projectTotal === 0) return null;
+  const ProjectIcon = iconForType(Project.type);
+  return (
+    <span
+      className="inline-flex items-center gap-1 tabular-nums"
+      data-testid="project-count-badge"
+      aria-label={menu.projectsLabel}
+    >
+      <span aria-hidden className={cn('mx-0.5 h-3 w-px shrink-0', hairlineClassName)} />
+      <ProjectIcon className={cn('h-3 w-3 shrink-0', iconClassName)} />
+      {menu.projectTotal}
+    </span>
+  );
+}
+
+/**
  * The list itself — the `<ul>` that goes inside a `PopoverContent`. The caller
  * owns the Popover and its content so each chip keeps its own testid, width
  * and alignment; this renders the rows the same way for both. With nothing to
  * list it says so, rather than opening onto an empty box.
  */
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
-  const { buckets, currentProjectId, isGlobalScope, globalTabCount, recoveringId, handleSelect, handleSelectGlobal } = menu;
+  const { buckets, currentProjectId, isGlobalScope, globalTabCount, recoveringId, handleSelect, handleSelectGlobal } =
+    menu;
 
   // Buckets in parent → subproject render order (a subproject is a project
   // whose folder lives inside another open project's folder). Display-only

@@ -10,6 +10,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@src/com
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import {
+  ProjectCountBadge,
   ProjectCountsSummary,
   ProjectListPopoverContent,
   useProjectListMenu,
@@ -42,6 +43,12 @@ import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
 const WIKI_PAGE = 'Runtime environments';
 
+/** How long the pointer must REST on the name segment before the runtime card
+ *  opens. The chip sits on the path to the tab strip and the crumbs, so a
+ *  pass-through must not flash the card; the click (the list) is the primary
+ *  affordance, the hover is the explanation for someone who lingers. */
+export const RUNTIME_HOVER_OPEN_DELAY_MS = 1500;
+
 /** The runtime's glyph at the chip's size. `bg-inherit` on the wrapper and the
  *  badge cut-out so it wears whatever surface it sits on (the pill, or the
  *  hover card's Env chip). */
@@ -59,6 +66,11 @@ function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string
 
 /** One pill segment: tinted on hover so it reads as pressable. */
 const SEGMENT = 'inline-flex cursor-pointer items-center bg-inherit transition-colors hover:bg-black/20';
+/** The raised segment — the project home button — on its own darker surface so
+ *  it separates from the runtime tint around it. A black overlay, not a fixed
+ *  color, so it stays legible on every tint, light or dark. */
+const RAISED_SEGMENT =
+  'inline-flex cursor-pointer items-center rounded-full border border-white/30 bg-black/25 transition-colors hover:bg-black/40';
 /** One header chip in the hover card. */
 const HEADER_CHIP = 'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px]';
 
@@ -104,7 +116,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   return (
     // The hover card is left uncontrolled: Radix closes it when the trigger
     // blurs, which opening the list (focus moves into the popover) does.
-    <HoverCard openDelay={200} closeDelay={100}>
+    <HoverCard openDelay={RUNTIME_HOVER_OPEN_DELAY_MS} closeDelay={100}>
       <Popover open={menu.open} onOpenChange={menu.setOpen}>
         <PopoverAnchor asChild>
           {/* A div, not a button: it holds two controls, and a button inside
@@ -131,9 +143,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                     onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
                     data-testid="top-nav-project"
                     aria-label={homeLabel}
-                    // A button in its own right: outlined, so it reads as
-                    // pressable rather than as the pill's ornament.
-                    className={cn(SEGMENT, 'my-0.5 ml-0.5 rounded-full border border-white/50 px-2')}
+                    className={cn(RAISED_SEGMENT, 'my-0.5 ml-0.5 px-2')}
                   >
                     <ProjectIcon className="h-4 w-4 shrink-0" />
                   </button>
@@ -158,6 +168,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <span className="hidden max-w-[10rem] truncate sm:inline">
                     {menu.projectName ?? <RuntimeLabel kind={kind} />}
                   </span>
+                  <ProjectCountBadge menu={menu} hairlineClassName="bg-white/40" iconClassName="opacity-80" />
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>
               </PopoverTrigger>
