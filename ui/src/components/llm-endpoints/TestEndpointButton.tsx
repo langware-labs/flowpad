@@ -27,24 +27,33 @@ import { errorMessage } from '@src/lib/error-message';
 
 export interface TestEndpointButtonProps {
   endpointId: string;
+  /** Told the verdict as it lands (null while a run is in flight), so a surface can say what
+   *  the call actually spent underneath the tick — see `FundingProvenance`. The button keeps
+   *  owning its own state; this only mirrors it outward. */
+  onVerdict?: (verdict: LLMEndpointTestResult | null) => void;
 }
 
-export function TestEndpointButton({ endpointId }: TestEndpointButtonProps) {
+export function TestEndpointButton({ endpointId, onVerdict }: TestEndpointButtonProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<LLMEndpointTestResult | null>(null);
 
+  const announce = (next: LLMEndpointTestResult | null) => {
+    setVerdict(next);
+    onVerdict?.(next);
+  };
+
   const run = async () => {
     setBusy(true);
-    setVerdict(null);
+    announce(null);
     try {
-      setVerdict(
+      announce(
         isHubOnly() ? await llmEndpointsService.testEndpoint(endpointId) : await llmSourcesService.test(endpointId),
       );
     } catch (e) {
       // Only a transport/permission failure lands here — the hub answers a
       // refused call inside a success envelope.
-      setVerdict({ ok: false, status: 0, model: '', latency_ms: 0, message: errorMessage(e, t`Test failed`) });
+      announce({ ok: false, status: 0, model: '', latency_ms: 0, message: errorMessage(e, t`Test failed`) });
     } finally {
       setBusy(false);
     }

@@ -79,6 +79,23 @@ export function isFileOnlyEditor(editor: AssetEditor): boolean {
   return EDITOR_TYPES[editor].length === 0;
 }
 
+/**
+ * The other direction: editors whose asset has a record type but NO FILE — and, for the one
+ * member so far, no local row either. `llm_endpoint` is a read-only projection of hub state
+ * (`flow_sdk/builtin/llm_endpoint.py`), so there is nothing on disk for an agent to open,
+ * diff or edit.
+ *
+ * The distinction earns its keep in `isContentAssetDock`: an asset-editor dock normally means
+ * "a single file is the subject", which is what puts a work-context chat beside it. For a
+ * fileless one that chat would be offering to work on a path that does not exist, so these
+ * docks stay ordinary browser surfaces — tab strip, navigator tree, no chat.
+ */
+export const FILELESS_EDITORS: ReadonlySet<AssetEditor> = new Set([AssetEditor.LLM_ENDPOINT]);
+
+export function isFilelessEditor(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && FILELESS_EDITORS.has(editor);
+}
+
 /** Derived inverse: record type → the editor that edits it. */
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
   Object.entries(EDITOR_TYPES).flatMap(([editor, types]) => types.map((t) => [t as string, editor as AssetEditor])),
