@@ -512,8 +512,8 @@ msgid "{amount} left {windowText}"
 msgstr "{amount} left {windowText}"
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "{availableFrom} has a limit, so this cannot be unlimited."
-msgstr "{availableFrom} has a limit, so this cannot be unlimited."
+#~ msgid "{availableFrom} has a limit, so this cannot be unlimited."
+#~ msgstr "{availableFrom} has a limit, so this cannot be unlimited."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -687,8 +687,8 @@ msgid "{targetLabel} is now available in your workspace."
 msgstr "{targetLabel} is now available in your workspace."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-msgid "{teamName} has a limit, so every person needs an amount."
-msgstr "{teamName} has a limit, so every person needs an amount."
+#~ msgid "{teamName} has a limit, so every person needs an amount."
+#~ msgstr "{teamName} has a limit, so every person needs an amount."
 
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -12772,12 +12772,12 @@ msgid "one@example.com"
 msgstr "one@example.com"
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "Only ${available} left in {availableFrom}."
-msgstr "Only ${available} left in {availableFrom}."
+#~ msgid "Only ${available} left in {availableFrom}."
+#~ msgstr "Only ${available} left in {availableFrom}."
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "Only ${available} left to give out."
-msgstr "Only ${available} left to give out."
+#~ msgid "Only ${available} left to give out."
+#~ msgstr "Only ${available} left to give out."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
@@ -18278,11 +18278,9 @@ msgstr "Test trigger"
 msgid "That agent is no longer in your workspace."
 msgstr "That agent is no longer in your workspace."
 
-#. placeholder {0}: check.total
-#. placeholder {1}: check.available
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-msgid "That comes to ${0}, but only ${1} is left in {teamName}."
-msgstr "That comes to ${0}, but only ${1} is left in {teamName}."
+#~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
+#~ msgstr "That comes to ${0}, but only ${1} is left in {teamName}."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -18701,8 +18699,8 @@ msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "This cannot be unlimited — the budget it draws on has a limit."
-msgstr "This cannot be unlimited — the budget it draws on has a limit."
+#~ msgid "This cannot be unlimited — the budget it draws on has a limit."
+#~ msgstr "This cannot be unlimited — the budget it draws on has a limit."
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."

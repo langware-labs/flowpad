@@ -512,8 +512,8 @@ msgid "{amount} left {windowText}"
 msgstr ""
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "{availableFrom} has a limit, so this cannot be unlimited."
-msgstr ""
+#~ msgid "{availableFrom} has a limit, so this cannot be unlimited."
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -687,8 +687,8 @@ msgid "{targetLabel} is now available in your workspace."
 msgstr "أصبح {targetLabel} متاحاً الآن في مساحة عملك."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-msgid "{teamName} has a limit, so every person needs an amount."
-msgstr ""
+#~ msgid "{teamName} has a limit, so every person needs an amount."
+#~ msgstr ""
 
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -12772,12 +12772,12 @@ msgid "one@example.com"
 msgstr ""
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "Only ${available} left in {availableFrom}."
-msgstr ""
+#~ msgid "Only ${available} left in {availableFrom}."
+#~ msgstr ""
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "Only ${available} left to give out."
-msgstr ""
+#~ msgid "Only ${available} left to give out."
+#~ msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
@@ -18278,11 +18278,9 @@ msgstr "اختبار المحفز"
 msgid "That agent is no longer in your workspace."
 msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك."
 
-#. placeholder {0}: check.total
-#. placeholder {1}: check.available
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-msgid "That comes to ${0}, but only ${1} is left in {teamName}."
-msgstr ""
+#~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
+#~ msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -18701,8 +18699,8 @@ msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
 
 #: src/components/organization/budgets/MoneyBox.tsx
-msgid "This cannot be unlimited — the budget it draws on has a limit."
-msgstr ""
+#~ msgid "This cannot be unlimited — the budget it draws on has a limit."
+#~ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."

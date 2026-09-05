@@ -111,102 +111,33 @@ describe('MoneyBox', () => {
 });
 
 /**
- * The ceiling. `available` is what the pool above this box still has free; an amount larger than
- * that is refused in the box rather than sent to the hub and refused there — or, worse, accepted
- * there and discovered weeks later as a worker that stopped.
+ * NO ceiling. Handing out more than the pool above still holds is a state the hub supports, not a
+ * mistake: every hop's cap is checked when the money is SPENT (`core/llm/limits.check_path` walks
+ * entry -> root and refuses at the first used-up hop), so a $10 team pot pays out $10 however the
+ * shares inside it are written. Ten members may each hold $10 of it. The budgets page says exactly
+ * this in its over-allocation banner -- so a box that refused to CREATE the state was contradicting
+ * the banner that explains the state is fine.
  */
-describe('MoneyBox — more than is left', () => {
-  function capped(value: number | null, onCommit: (usd: number | null) => void, available: number | null = 60) {
-    return render(
-      <MoneyBox
-        value={value}
-        onCommit={onCommit}
-        ariaLabel="Budget"
-        data-testid="money"
-        available={available}
-        availableFrom="Langware"
-      />,
-    );
-  }
-
-  it('refuses an amount larger than what is left, and does not commit it', () => {
+describe('MoneyBox — more than the pool holds', () => {
+  it('commits an amount larger than the pool above it has left', () => {
     const onCommit = vi.fn();
-    capped(10, onCommit);
+    render(<MoneyBox value={10} onCommit={onCommit} ariaLabel="Budget" data-testid="money" />);
     const input = screen.getByTestId<HTMLInputElement>('money');
 
     fireEvent.change(input, { target: { value: '90' } });
     fireEvent.blur(input);
 
-    expect(onCommit).not.toHaveBeenCalled();
-    expect(screen.getByTestId('money-box-over')).toBeTruthy();
+    expect(onCommit).toHaveBeenCalledWith(90);
   });
 
-  it('keeps what was typed so it can be corrected rather than retyped', () => {
-    capped(10, vi.fn());
-    const input = screen.getByTestId<HTMLInputElement>('money');
-
-    fireEvent.change(input, { target: { value: '90' } });
-    fireEvent.blur(input);
-
-    expect(input.value).toBe('90');
-  });
-
-  it('commits the exact remainder — the ceiling is inclusive', () => {
+  it('commits blank — an uncapped member is still bounded by the pool when the money is spent', () => {
     const onCommit = vi.fn();
-    capped(10, onCommit);
-    const input = screen.getByTestId<HTMLInputElement>('money');
-
-    fireEvent.change(input, { target: { value: '60' } });
-    fireEvent.blur(input);
-
-    expect(onCommit).toHaveBeenCalledWith(60);
-    expect(screen.queryByTestId('money-box-over')).toBeNull();
-  });
-
-  it('refuses blank — under a real ceiling, "unlimited" is more than whatever is left', () => {
-    const onCommit = vi.fn();
-    capped(10, onCommit);
+    render(<MoneyBox value={10} onCommit={onCommit} ariaLabel="Budget" data-testid="money" />);
     const input = screen.getByTestId<HTMLInputElement>('money');
 
     fireEvent.change(input, { target: { value: '' } });
     fireEvent.blur(input);
 
-    expect(onCommit).not.toHaveBeenCalled();
-    expect(screen.getByTestId('money-box-over')).toBeTruthy();
-  });
-
-  it('clears the refusal as soon as the next character is typed', () => {
-    capped(10, vi.fn());
-    const input = screen.getByTestId<HTMLInputElement>('money');
-
-    fireEvent.change(input, { target: { value: '90' } });
-    fireEvent.blur(input);
-    expect(screen.getByTestId('money-box-over')).toBeTruthy();
-
-    fireEvent.change(input, { target: { value: '9' } });
-    expect(screen.queryByTestId('money-box-over')).toBeNull();
-  });
-
-  it('never refuses a row that ALREADY exceeds its pool, so it stays editable', () => {
-    // The hub permits an over-promise and older data has it. If merely focusing and leaving such a
-    // row reported an error, the person could not even lower it back into range.
-    const onCommit = vi.fn();
-    capped(500, onCommit);
-    const input = screen.getByTestId<HTMLInputElement>('money');
-
-    fireEvent.blur(input);
-    expect(screen.queryByTestId('money-box-over')).toBeNull();
-    expect(onCommit).not.toHaveBeenCalled();
-  });
-
-  it('applies no ceiling at all when the pool above is uncapped', () => {
-    const onCommit = vi.fn();
-    capped(10, onCommit, null);
-    const input = screen.getByTestId<HTMLInputElement>('money');
-
-    fireEvent.change(input, { target: { value: '99999' } });
-    fireEvent.blur(input);
-
-    expect(onCommit).toHaveBeenCalledWith(99999);
+    expect(onCommit).toHaveBeenCalledWith(null);
   });
 });

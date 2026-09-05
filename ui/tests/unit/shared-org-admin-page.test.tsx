@@ -155,16 +155,17 @@ describe('a shared organization, seen by its admin', () => {
     expect(h.setCap).toHaveBeenCalledWith(expect.objectContaining({ usd: 55 }), expect.anything());
   });
 
-  it('refuses a team budget larger than the organization has left', () => {
-    // $100 org, $40 already given out of which this team holds $40 -> $100 free for this team.
+  it('sets a team budget larger than the organization holds — the org still bounds the spend', () => {
+    // $100 org, and this team is given $101. Not a mistake to refuse: limits are enforced when the
+    // money is SPENT, hop by hop up to the org root, so the org's $100 is still all the team can
+    // draw. The page says so in its own over-allocation banner rather than blocking the entry.
     draw();
     const teamCap = screen.getByTestId<HTMLInputElement>(`team-cap-${UUID(4)}`);
 
     fireEvent.change(teamCap, { target: { value: '101' } });
     fireEvent.blur(teamCap);
 
-    expect(h.setCap).not.toHaveBeenCalled();
-    expect(screen.getByTestId('money-box-over')).toBeTruthy();
+    expect(h.setCap).toHaveBeenCalled();
   });
 
   it('offers no Share button when the hub says the caller may not manage members', () => {
