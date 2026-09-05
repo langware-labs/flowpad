@@ -1,4 +1,4 @@
-import { dataManager, Skill, systemTools } from '@sdk';
+import { dataManager, Skill, systemTools, TypeId } from '@sdk';
 import { useDockNavigation } from '@src/navigation';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications/notify';
@@ -27,14 +27,17 @@ export function useOpenSkill() {
       inFlight.current = true;
       setOpening(true);
       try {
-        const row = await systemTools.discoverByPath(Skill.type, skillDir);
-        if (!row) {
+        // The backend classifies the path; the chat only knows the folder.
+        // A path that resolves to something other than a skill is "not found"
+        // for this affordance, not a different asset to open.
+        const resolved = await systemTools.resolveByPath(skillDir);
+        if (!resolved || resolved.type !== Skill.type) {
           notify.error({ title: t`Skill not found`, message: skillName });
           return false;
         }
-        const rowT = row as Record<string, unknown> & { type?: string };
-        if (!rowT.type) rowT.type = Skill.type;
-        const skill = dataManager.updateEntityFromJson<Skill>(rowT as never);
+        const skill = resolved.entity
+          ? dataManager.updateEntityFromJson<Skill>({ ...resolved.entity, type: resolved.type, id: resolved.id } as never)
+          : await dataManager.getByTypeId<Skill>(new TypeId(resolved.type, resolved.id));
         if (!skill) return false;
         navigation.openDock(skill.editorDockPointer);
         return true;

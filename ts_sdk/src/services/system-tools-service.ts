@@ -13,6 +13,12 @@ import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/s
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
+
+/** HTTP status of a thrown apiClient (axios) error, if it carries one. */
+function httpStatusOf(err: unknown): number | undefined {
+  const e = err as { response?: { status?: number }; status?: number } | null;
+  return e?.response?.status ?? e?.status;
+}
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
 /** The canonical ScopeFilter encoding for a single project. One spelling, so
@@ -28,6 +34,26 @@ export interface IndexTypeOptions {
   /** Bypass skip-fresh so rows are re-parsed even when source mtime did not change. */
   force?: boolean;
   orphanAction?: 'index' | 'ignore' | 'delete';
+}
+
+/**
+ * Returned by `systemTools.resolveByPath()` — the backend's classification of
+ * one on-disk path (`GET /api/v1/assets/resolve?path=…`). The CLIENT sends a
+ * path and gets the record type back; it never derives the type from the path.
+ */
+export interface ResolvedAsset {
+  /** Record type the path classifies to (`'skill'`, `'markdown'`, …). */
+  type: string;
+  /** Entity id (minted or recovered by the backend). */
+  id: string;
+  /** The asset root — the folder for a folder-shaped type, the file otherwise. */
+  root: string;
+  /** The main body file when the shape has one (`<root>/SKILL.md`), else null. */
+  body: string | null;
+  /** The editor that opens this type, as the registry declares it. */
+  editor: string | null;
+  /** The entity row when the backend hydrated it; null when only classified. */
+  entity: Record<string, unknown> | null;
 }
 
 /** Returned by `systemTools.discoverByPath()`. */
@@ -435,20 +461,52 @@ export class SystemToolsService extends EventEmitter {
   }
 
   /**
-   * Discover-or-recover a single record by absolute path.
+   * Classify one absolute machine path: `GET /api/v1/assets/resolve?path=…`.
    *
-   * POSTs to `/fs-records/{type}/discover?path=...`. The backend scans
-   * just this one file (not the whole type), syncs it to the entity DB
-   * if missing, and returns the entity metadata.
+   * The backend walks the path up to its asset root, names the record type,
+   * mints/recovers the id, and returns the row when it has one. This is the
+   * ONLY path→type seam the client uses: `useEntityByPath` keys the entity by
+   * the RETURNED type/id, and `AssetEditorRouter`'s vfs branch takes its record
+   * type from here instead of the editor segment.
    *
-   * Used by `useEntityByPath` to recover when the bulk list query misses
-   * (file just created, or backend hasn't auto-scanned yet).
+   * Resolves to null when the backend answers 404 (the path is not an asset —
+   * a `.py`, a folder with no shape, a path outside every scope). Any other
+   * failure throws so the caller can treat it as transient.
+   */
+  async resolveByPath(path: string): Promise<ResolvedAsset | null> {
+    try {
+      const res = await apiClient.get<ResolvedAsset>('/api/v1/assets/resolve', { params: { path } });
+      return res ?? null;
+    } catch (err: unknown) {
+      if (httpStatusOf(err) === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * @deprecated Use `resolveByPath(path)` — the client no longer names the
+   * type. Kept for the callers that still pass one: when the backend's
+   * resolution agrees with `typeName`, the resolved row is returned and the
+   * legacy per-type discover is never hit; otherwise (registry disagreement,
+   * or the resolve route not deployed yet) it falls back to
+   * `POST /fs-records/{type}/discover?path=…`.
    *
    * Throws if the path doesn't exist on disk or doesn't match the type's
    * discovery rules — caller should treat that as a terminal "not found"
    * state, not a transient error.
    */
   async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
+    const resolved = await this.resolveByPath(path).catch(() => null);
+    if (resolved && resolved.type === typeName) {
+      void dataManager.refreshScanInfo();
+      const row = resolved.entity ?? {};
+      return {
+        ...row,
+        type: resolved.type,
+        id: resolved.id,
+        asset_ref: (row.asset_ref as string | undefined) ?? resolved.root,
+      } as DiscoverByPathResult;
+    }
     const url =
       `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
       `/discover?path=${encodeURIComponent(path)}`;

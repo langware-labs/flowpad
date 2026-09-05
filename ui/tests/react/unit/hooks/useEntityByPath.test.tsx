@@ -131,7 +131,7 @@ describe('useEntityByPath — stage-1 exact path lookup (no corpus list, no disc
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
-    const discoverSpy = vi.spyOn(systemTools, 'discoverByPath');
+    const discoverSpy = vi.spyOn(systemTools, 'resolveByPath');
     try {
       const fsRef = new FSRef(pathOf(), COMPUTE_NODE_TYPEID);
       const opened = renderHook(() => useEntityByPath('markdown', fsRef), { wrapper });
@@ -143,7 +143,7 @@ describe('useEntityByPath — stage-1 exact path lookup (no corpus list, no disc
         delete?: () => Promise<boolean>;
       } | null;
       expect(entity?.asset_ref).toContain('EXACT-RESOLVE.md');
-      // Stage-1 must be sufficient — the heavy discover recovery stays cold.
+      // Stage-1 must be sufficient — the path-resolve recovery stays cold.
       expect(discoverSpy).not.toHaveBeenCalled();
       createdEntity = entity;
       opened.unmount();

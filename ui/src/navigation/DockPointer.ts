@@ -999,13 +999,14 @@ export class DockPointer implements IDockPointer {
   ): DockPointer {
     // Delegates to the canonical AssetDocPointer grammar:
     //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
-    // The editor is derived from the record type (one editor serves many types).
+    // The editor is the registry's declaration for the record type
+    // (`TypeInfo.editor`; the static table only when the registry is unbound).
     // A type with no editor falls back to the editor the PATH names, never to
-    // markdown: the VFS branch of AssetEditorRouter labels the file with the
-    // editor's primary record type, so a markdown fallback would send a `.py`
-    // to `/fs-records/markdown/discover` as if it were a document (FLOWPAD-2083).
-    // `editorForPath` routes unknown extensions to the file-only CODE editor,
-    // which has no backing entity and never discovers.
+    // markdown: the VFS branch of AssetEditorRouter asks the backend to resolve
+    // the path's type, and a markdown fallback would send a `.py` there as if
+    // it were a document (FLOWPAD-2083). `editorForPath` routes unknown
+    // extensions to the file-only CODE editor, which has no backing entity and
+    // never resolves.
     const editor = editorForType(assetType) ?? editorForPath(vfsPath);
     const path = normalizeAssetVfsPath(vfsPath);
     return new DockPointer(
