@@ -84,6 +84,12 @@ export interface OrgScopeBudget extends ScopeBudget {
   /** May the caller set or replace the provider key the organization pays with? Owner-only today. */
   can_set_credential: boolean;
   /**
+   * May the caller give this organization a budget at all? Separate from `can_set_credential`,
+   * which is asked of the POOL and therefore answers `false` for everyone — the owner included —
+   * while the organization still has none. This one is asked of the organization.
+   */
+  can_set_up_budget: boolean;
+  /**
    * May the caller share this organization — invite people, re-role them, remove them? Admin and
    * above, and so deliberately WIDER than everything else on this row: running the people is what
    * an organization is shared for.

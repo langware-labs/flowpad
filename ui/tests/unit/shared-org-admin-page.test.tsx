@@ -70,6 +70,7 @@ const sharedOrg = (over: Record<string, unknown> = {}) => ({
   can_manage: false, // rename / delete the organization
   can_add_child: true, // adding a team is the delegated job
   can_set_credential: false, // whose key pays
+  can_set_up_budget: false, // funding the org at all
   can_invite: true, // running the people is what it was shared FOR
   ...over,
 });
@@ -182,5 +183,39 @@ describe('a shared organization, seen by its admin', () => {
   it('still offers "New team", which is the admin\'s actual job', () => {
     draw();
     expect(screen.getByTestId('org-create-team')).toBeTruthy();
+  });
+});
+
+/**
+ * A brand new organization, before anyone has funded it — the state every org starts in, and the
+ * one a `can_set_credential` gate got wrong for the OWNER: that flag is the `credential` question
+ * asked of the pool, so with no pool it is false for everyone, and the owner was shown "its owner
+ * sets one up" with no way to be that owner.
+ */
+describe('an organization with no budget yet', () => {
+  const unfunded = (over: Record<string, unknown> = {}) =>
+    sharedOrg({
+      endpoint_id: null,
+      is_root: false,
+      provider: null,
+      credential_hint: '',
+      limit_usd: null,
+      allocated_usd: null,
+      can_set_credential: false, // no pool exists to hold a key — true for the owner too
+      ...over,
+    });
+
+  it('offers its owner the setup form', () => {
+    // No click: the section opens on its own while there is no pool — a fresh org needs the form
+    // in front of it, which is exactly the state this regression made unusable.
+    draw(unfunded({ can_set_up_budget: true, can_manage: true, can_configure: true }));
+    expect(screen.getByTestId('org-root-provider')).toBeTruthy();
+    expect(screen.queryByTestId('org-root-owner-only')).toBeNull();
+  });
+
+  it('tells an admin that its owner sets one up, and offers no form', () => {
+    draw(unfunded({ can_set_up_budget: false }));
+    expect(screen.getByTestId('org-root-owner-only')).toBeTruthy();
+    expect(screen.queryByTestId('org-root-provider')).toBeNull();
   });
 });

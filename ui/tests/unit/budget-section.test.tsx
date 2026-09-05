@@ -89,6 +89,7 @@ const orgScope = (over: Record<string, unknown> = {}) => ({
   can_manage: true,
   can_add_child: true,
   can_set_credential: true,
+  can_set_up_budget: true,
   can_invite: true,
   ...over,
 });
@@ -134,16 +135,36 @@ afterEach(() => {
 });
 
 describe('OrgUnit', () => {
-  it('waits rather than white-screening when the payload arrives without an org', () => {
+  it('says so, rather than white-screening or spinning, when the payload arrives without an org', () => {
     // `OrgBudgets.org` is declared non-optional, so nothing in the types stops a hub that answers
-    // otherwise -- an older deployment, a partial error envelope. It used to crash the whole page
-    // with "Cannot read properties of undefined (reading 'name')" from the parentLabel argument,
-    // which is evaluated BEFORE the loading guard it sits above.
-    h.org.mockReturnValue({ data: { teams: [] }, isLoading: false, error: null });
+    // otherwise -- an older deployment, or a refusal riding an HTTP 200, which `apiClient` unwraps
+    // to a plain null with no error. It used to crash the whole page with "Cannot read properties
+    // of undefined (reading 'name')" from the parentLabel argument, which is evaluated BEFORE the
+    // loading guard it sits above; then it waited forever, on a query that had already settled.
+    h.org.mockReturnValue({ data: { teams: [] }, isLoading: false, error: null, refetch: vi.fn() });
     h.team.mockReturnValue(idle);
 
     expect(() => draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />)).not.toThrow();
     expect(screen.queryByTestId('org-unit')).toBeNull();
+    expect(screen.getByTestId('org-unit-unreadable')).toBeTruthy();
+  });
+
+  it('a null payload is a dead end too, not a wait', () => {
+    // The exact shape a 200-with-FAIL envelope produces: `apiClient` returns `response.data.data`,
+    // so the refusal arrives as `null` in the position the budgets would have occupied.
+    h.org.mockReturnValue({ data: null, isLoading: false, error: null, refetch: vi.fn() });
+    h.team.mockReturnValue(idle);
+
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    expect(screen.getByTestId('org-unit-unreadable')).toBeTruthy();
+  });
+
+  it('still waits while the read is actually in flight', () => {
+    h.org.mockReturnValue({ data: undefined, isLoading: true, error: null, refetch: vi.fn() });
+    h.team.mockReturnValue(idle);
+
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    expect(screen.queryByTestId('org-unit-unreadable')).toBeNull();
   });
 
   it('shows the org total, spent and given-out, and no team fetch until a team is opened', () => {

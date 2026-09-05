@@ -55,7 +55,14 @@ afterEach(() => {
 });
 
 describe('PayingProviderSetup — no budget yet', () => {
-  const org = { endpoint_id: null, is_root: false, provider: null, credential_hint: '', can_set_credential: true };
+  const org = {
+    endpoint_id: null,
+    is_root: false,
+    provider: null,
+    credential_hint: '',
+    can_set_credential: true,
+    can_set_up_budget: true,
+  };
 
   it('defaults to the first provider and lets another be picked from the dropdown', async () => {
     const user = userEvent.setup();
@@ -75,7 +82,12 @@ describe('PayingProviderSetup — no budget yet', () => {
 
   it('creates the root then stores the key, in that order, with the chosen provider', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
-    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd', can_set_credential: true });
+    h.setCredential.mockResolvedValue({
+      ok: true,
+      credential_hint: '****abcd',
+      can_set_credential: true,
+      can_set_up_budget: true,
+    });
     const user = userEvent.setup();
     render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
@@ -99,7 +111,12 @@ describe('PayingProviderSetup — no budget yet', () => {
 
   it('trims the key before sending it', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
-    h.setCredential.mockResolvedValue({ ok: true, credential_hint: '****abcd', can_set_credential: true });
+    h.setCredential.mockResolvedValue({
+      ok: true,
+      credential_hint: '****abcd',
+      can_set_credential: true,
+      can_set_up_budget: true,
+    });
     render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
 
     fireEvent.change(screen.getByTestId('credential-input'), { target: { value: `  ${OPENROUTER_KEY}  ` } });
@@ -151,6 +168,7 @@ describe('PayingProviderSetup — the hub sends a prefixed typeid, the credentia
           provider: 'openai',
           credential_hint: '',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -179,6 +197,7 @@ describe('PayingProviderSetup — already a root', () => {
           provider: 'openai',
           credential_hint: '****z9z9',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -201,6 +220,7 @@ describe('PayingProviderSetup — already a root', () => {
           provider: 'openai',
           credential_hint: '****z9z9',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -219,6 +239,7 @@ describe('PayingProviderSetup — already a root', () => {
           provider: null,
           credential_hint: '',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -244,6 +265,7 @@ describe('PayingProviderSetup — moving to a different provider', () => {
           provider: 'openrouter',
           credential_hint: '',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -268,6 +290,7 @@ describe('PayingProviderSetup — moving to a different provider', () => {
           provider: 'openrouter',
           credential_hint: '****wxyz',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );
@@ -286,6 +309,7 @@ describe('PayingProviderSetup — an existing shared-pool chain', () => {
           provider: null,
           credential_hint: '',
           can_set_credential: true,
+          can_set_up_budget: true,
         }}
       />,
     );

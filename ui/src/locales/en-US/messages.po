@@ -18757,8 +18757,8 @@ msgid "This month"
 msgstr "This month"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "This organization draws its budget from Flowpad's shared pool."
-msgstr "This organization draws its budget from Flowpad's shared pool."
+#~ msgid "This organization draws its budget from Flowpad's shared pool."
+#~ msgstr "This organization draws its budget from Flowpad's shared pool."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
@@ -18783,6 +18783,10 @@ msgstr "This organization pays on its own provider key."
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 msgstr "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "This organization's budgets could not be read. The server answered with nothing to show."
+msgstr "This organization's budgets could not be read. The server answered with nothing to show."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -19391,6 +19395,7 @@ msgid "Triggers"
 msgstr "Triggers"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"

@@ -80,6 +80,7 @@ function orgBudgetsOf(name: string, teams: unknown[] = []) {
         can_manage: true,
         can_add_child: true,
         can_set_credential: true,
+        can_set_up_budget: true,
         can_invite: true,
       },
       teams,

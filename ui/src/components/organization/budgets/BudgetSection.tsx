@@ -97,7 +97,7 @@ function TokenCount({ tokens, testIdPrefix }: { tokens: number; testIdPrefix?: s
 
 export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => void }) {
   const { t } = useLingui();
-  const { data, isLoading, error } = useOrgBudgets(orgId);
+  const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
   const setCap = useSetLifetimeCap();
   const invalidate = useInvalidateBudgets();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -112,10 +112,13 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
   });
 
   if (error) return <Denied />;
-  // `!data.org`, not just `!data`: the declared shape promises `org`, and a hub that answers with
-  // a payload lacking it (an older deployment, a partial error envelope) used to white-screen the
-  // whole page on `org.limit_usd` below. A shape we cannot render is a shape we have not got yet.
-  if (isLoading || !data?.org) return <Loading />;
+  if (isLoading) return <Loading />;
+  // Settled, and still no `org`. The declared shape promises one, so this is a hub answering
+  // something we cannot render -- an older deployment without the action, or a refusal riding an
+  // HTTP 200 (the envelope convention), which `apiClient` unwraps to a plain `null` with no error
+  // for `error` to catch. Treating that as "not yet" is what leaves the spinner turning forever:
+  // the query has already resolved, so nothing will ever arrive to end it. Say so instead.
+  if (!data?.org) return <Unreadable onRetry={() => void refetch()} />;
 
   const org = data.org;
   const over = org.limit_usd !== null && org.allocated_usd !== null && org.allocated_usd > org.limit_usd;
@@ -722,6 +725,29 @@ function Loading() {
     <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
       <Loader2 className="h-4 w-4 animate-spin" />
       <Trans>Loading budgets…</Trans>
+    </div>
+  );
+}
+
+/**
+ * The read came back, and what came back is not a budget.
+ *
+ * A dead end, not a wait: react-query has settled, so no amount of turning will change it. The
+ * retry is the only thing that can, and it is here because the usual cause is a hub deploy that
+ * has not caught up with this UI -- which fixes itself the moment it does.
+ */
+function Unreadable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      data-testid="org-unit-unreadable"
+      className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground"
+    >
+      <span>
+        <Trans>This organization's budgets could not be read. The server answered with nothing to show.</Trans>
+      </span>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        <Trans>Try again</Trans>
+      </Button>
     </div>
   );
 }
