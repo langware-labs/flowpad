@@ -39,6 +39,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { Cloud, History, SquareTerminal } from 'lucide-react';
 import { FlowIcon } from '@sdk/react/FlowIcon';
+import { useContext } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -102,6 +103,7 @@ export function useTerminalStripController({
 }: TerminalStripControllerOptions = {}): TerminalStripController {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const { sandboxComputeNode } = useContext();
   const isAdvanced = useIsAdvanced();
   // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
   // Memoized so it stays referentially stable and doesn't churn the openers /
@@ -256,7 +258,7 @@ export function useTerminalStripController({
   const isCopilotCreationPending = pendingTabCreation === 'copilot';
   const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
-  const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
+  const sandboxAvailable = !!sandboxComputeNode;
   const claudeWarning = harnessWarning(claudeCapability);
   const codexWarning = harnessWarning(codexCapability);
   const copilotWarning = harnessWarning(copilotCapability);

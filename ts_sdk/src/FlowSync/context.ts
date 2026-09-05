@@ -39,6 +39,7 @@ import {
 } from './context-local-storage';
 import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
+import type { DeferredInfo } from '../models/BootstrapInfo';
 
 export enum ContextEventType {
   CONTEXT_CHANGED = 'context_changed',
@@ -142,6 +143,24 @@ class DataContext extends EventEmitter {
   bootstrapError: AuthError | null = null;
   isBootstrapping: boolean = true;
   bootstrapInfo: any = null; // Store the full bootstrap response including desktop_info
+
+  /** Merge only discovery slices; identity, paths, and live manager state stay authoritative. */
+  applyInfo(info: DeferredInfo): void {
+    runInAction(() => {
+      const next = { ...this.bootstrapInfo };
+      for (const key of ['harness_state', 'sandbox_available', 'sandbox_compute_node', 'notice'] as const) {
+        if (info[key] != null) next[key] = info[key];
+      }
+      if (info.desktop_info) {
+        next.desktop_info = { ...next.desktop_info };
+        for (const key of ['llm_providers', 'installed_agents', 'cloud_login_available'] as const) {
+          if (info.desktop_info[key] != null) next.desktop_info[key] = info.desktop_info[key];
+        }
+      }
+      this.bootstrapInfo = next;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
 
   // User warnings - displayed in the footer status line
   _warnings: UserWarning[] = [];
@@ -335,6 +354,13 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  setSnifferReady(value: boolean): void {
+    runInAction(() => {
+      this.snifferReady = value;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   /** Whether the harness settings file actually carries sniffer hooks. This —
    *  not `snifferEnabled` — is what "the sniffer is on" means to the user, so
    *  it stays true for a sniffer another instance installed. */
@@ -467,6 +493,7 @@ class DataContext extends EventEmitter {
   snifferHook: SnifferHook | null = null;
   snifferEnabled: boolean = false;
   snifferInstalled: boolean = false;
+  snifferReady: boolean = false;
 
   constructor() {
     super();
@@ -527,6 +554,7 @@ class DataContext extends EventEmitter {
       snifferHook: observable,
       snifferEnabled: observable,
       snifferInstalled: observable,
+      snifferReady: observable,
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();

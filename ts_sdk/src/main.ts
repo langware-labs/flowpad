@@ -4,7 +4,6 @@ import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
 import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
-import { AgentHook } from './entities/agent-hook';
 import { loadIconPacks } from './icons/registry';
 import type { IconPackSpec } from './icons/types';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
@@ -20,6 +19,8 @@ import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
+import type { BootstrapInfo } from './models/BootstrapInfo';
+import { loadDeferredInfo } from './services/deferredInfo';
 
 declare global {
   interface Window {
@@ -36,6 +37,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
   if (initPromise) {
     return initPromise;
   }
+  let initialized: BootstrapInfo | undefined;
   initPromise = (async () => {
     try {
       // Check if API port is properly configured
@@ -163,17 +165,6 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         workspace.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId, workspace.typeId);
       }
-      // Register sniffer hook in cache so flow-data messages find it by UUID
-      if (bootstrapInfo.sniffer_hook) {
-        const snifferHook = new AgentHook(bootstrapInfo.sniffer_hook);
-        snifferHook.markAsExpanded();
-        await snifferManager.attach(snifferHook);
-      }
-      dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
-      // The settings file is the truth about whether hooks actually fire —
-      // another instance may have installed them without an entity here.
-      dataContext.setSnifferInstalled(!!bootstrapInfo.sniffer_installed);
-
       await authManager.init(user);
       await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
       //await acceptInvitation(url); // TODO Handle this
@@ -191,6 +182,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         // ignore — non-browser env
       }
       window['appReady'] = true;
+      initialized = bootstrapInfo;
     } catch (error: any) {
       console.error('initSdk error:', error);
 
@@ -220,6 +212,12 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       markHubModeReady();
     }
   })();
+
+  // One reaction on the shared readiness promise, independent of every caller.
+  // Neither discovery nor sniffer's WebSocket watch joins the returned promise.
+  void initPromise.then(() => {
+    if (initialized) void loadDeferredInfo(initialized);
+  });
 
   return initPromise;
 }

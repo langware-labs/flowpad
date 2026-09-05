@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, RecordType
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, EntityLocation, RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.entity_factory import type_registry as _entity_registry
 from flow_sdk.db.drivers.path_model import NodesPath
@@ -202,6 +202,26 @@ class DBDriver(Generic[RecordType]):
         if schema validation is needed.
         """
         pass
+
+    async def get_entity_locations(self, entity_type: str, *, active_only: bool = False) -> list[EntityLocation]:
+        """Location projection; drivers may avoid constructing complete entities."""
+        rows = await self.get_all(QueryFilter(type=entity_type))
+        if active_only:
+            rows = sorted(
+                (row for row in rows if getattr(row, "last_active_at", None)),
+                key=lambda row: row.last_active_at,
+                reverse=True,
+            )
+        return [
+            EntityLocation(
+                id=row.id,
+                name=getattr(row, "name", None),
+                uname=row.uname,
+                fs_storage_mount_path=getattr(row, "fs_storage_mount_path", None),
+                system=bool(getattr(row, "system", False)),
+            )
+            for row in rows
+        ]
 
     async def create_entity_fulltext_index(self, entity_type: str, fulltext_field: str):
         raise NotImplementedError("create_entity_fulltext_index is not implemented")

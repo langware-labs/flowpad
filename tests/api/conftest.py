@@ -63,7 +63,7 @@ def _invalidate_caches():
         pass
     try:
         from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
-        invalidate_bootstrap_cache()
+        invalidate_bootstrap_cache(reset_local_entities=True)
     except Exception:
         pass
 

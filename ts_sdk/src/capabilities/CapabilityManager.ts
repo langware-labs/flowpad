@@ -174,6 +174,12 @@ export class CapabilityManager extends EventEmitter {
     this.emit('change');
   }
 
+  /** Discovery is only an initial seed; a live or requested refresh takes precedence. */
+  seedSummary(summary: CapabilitiesSummary | null | undefined): void {
+    if (this.summary || this.summaryPromise) return;
+    this.setSummary(summary);
+  }
+
   /**
    * The "all capabilities + how to access each" summary, grouped by intent.
    * Cached after first fetch; pass `invalidate` to force a refresh (e.g. after

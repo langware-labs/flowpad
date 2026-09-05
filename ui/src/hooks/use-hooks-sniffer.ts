@@ -106,7 +106,7 @@ export function useHooksSniffer() {
   const globalIndexOffsetRef = useRef(0);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
-  const { computeNode, snifferEnabled, isBootstrapping } = useContext();
+  const { computeNode, snifferEnabled, snifferReady, isBootstrapping } = useContext();
   // Project discovery scans provider history and can be expensive on a large
   // machine. The global SnifferProvider is mounted on every page, but project
   // mapping is only needed once a live event actually carries a cwd.
@@ -135,15 +135,16 @@ export function useHooksSniffer() {
   // backend (bootstrap auto-enables on desktop init).
   const reconciledRef = useRef(false);
   useEffect(() => {
-    if (isBootstrapping || reconciledRef.current) return;
+    if (isBootstrapping || !snifferReady || reconciledRef.current) return;
     reconciledRef.current = true;
     const desired = loadSnifferPreference();
     if (desired === null || desired === snifferEnabled) return;
     setIsToggling(true);
     void (desired ? snifferManager.enable() : snifferManager.disable())
       .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))
+      .catch((error) => console.warn('[sniffer] Preference reconciliation failed', error))
       .finally(() => setIsToggling(false));
-  }, [isBootstrapping, snifferEnabled]);
+  }, [isBootstrapping, snifferEnabled, snifferReady]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {

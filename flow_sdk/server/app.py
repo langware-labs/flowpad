@@ -42,17 +42,6 @@ load_actions()
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
 
-# Warm the per-type payload list now that every TypeInfo is registered. The
-# ~225ms assembly is static after registration, so building it here — at import,
-# before the server listens — keeps it off the first (cold) bootstrap request.
-# Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
-try:
-    from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
-
-    _warm_type_payloads()
-except Exception:
-    logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
-
 from flow_sdk.server import FlowServer
 
 from .routes import (
@@ -108,6 +97,12 @@ async def _on_server_startup():
 
     settings = get_instance_settings()
     clear_backend_restart_request()
+
+    # Establish local identities before background services use them. Assemble
+    # the type payload after those services have registered their entity types.
+    from flow_sdk.server.routes.bootstrap import _ensure_local_entities, initialize_bootstrap
+
+    await _ensure_local_entities()
 
     # Start putting activity progress on the socket. Installed HERE rather than at import
     # time because the emitter captures the running loop to defer its coalesced flushes
@@ -180,7 +175,13 @@ async def _on_server_startup():
         from flow_sdk.core.capabilities.discovery import run_discovery
         from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
-        _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        async def _discover_after_recovery():
+            from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+
+            await ensure_secret_recovery()
+            await run_discovery()
+
+        _asyncio_disc.create_task(_discover_after_recovery(), name="capability-discovery")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
         # indexed records so they exist after boot.
         _asyncio_disc.create_task(reconcile_mcp_capabilities(), name="mcp-capability-reconcile")
@@ -239,13 +240,6 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
-    # Warm schema cache in background so first bootstrap call is fast
-    import asyncio as _asyncio
-
-    from flow_sdk.core.schema import get_public_schema as _warm_schema
-
-    _asyncio.create_task(_asyncio.to_thread(_warm_schema))
-
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
@@ -254,6 +248,10 @@ async def _on_server_startup():
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
+    # Startup imports (notably the trigger callbacks) bind additional entity
+    # types and invalidate schema memos. Warming earlier made the first cache
+    # expiry rebuild every schema on the HTTP path (~500 ms).
+    await initialize_bootstrap()
 
 
 async def _start_system_content_index() -> None:
@@ -448,9 +446,16 @@ async def _start_inbox_catchup() -> None:
     (this one bails on ``hub_auth_available()`` when the app boots logged out).
     See ``flow_sdk.inbox.catchup`` for why the sweep exists at all.
     """
-    from flow_sdk.inbox.catchup import start_hub_catchup
+    import asyncio
 
-    start_hub_catchup("startup")
+    async def _run():
+        from flow_sdk.inbox.catchup import start_hub_catchup
+        from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+
+        await ensure_secret_recovery()
+        start_hub_catchup("startup")
+
+    asyncio.create_task(_run(), name="inbox-catchup-startup")
 
 
 async def _start_cloud_ws_listener() -> None:
@@ -461,6 +466,9 @@ async def _start_cloud_ws_listener() -> None:
         try:
             from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
             from flow_sdk.cloud_client.ws_client import hub_ws_manager
+            from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+
+            await ensure_secret_recovery()
 
             # Install the bridge before starting the manager so the inbound
             # dispatcher is ready to consume frames the moment the WS connects.
