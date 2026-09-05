@@ -293,12 +293,7 @@ class EmailInbox(Entity):
         current = getattr(agent, "_inbox", None)
         adopted = fresh if (current is None or current.id != fresh.id) else current._adopt(descriptor)
         adopted._owner = agent
-        # Cache HERE, for every caller. ``allocate()`` used to return the
-        # projection without caching it, so ``agent.inbox`` stayed None after a
-        # successful allocation — and anything keyed on that cache (the SDK
-        # test's release-on-cleanup, for one) silently skipped, stranding a
-        # billable address per run.
-        agent._inbox = adopted
+        agent._inbox = adopted  # every adopt path caches, so allocate() does too
         return adopted
 
     # ── lifecycle ─────────────────────────────────────────────────────────
