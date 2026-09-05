@@ -46,7 +46,7 @@ def test_frontmatter_id_is_adopted_over_a_proposal(tmp_path: Path, existing: str
 def test_folder_json_carrier_adopts_and_mints(tmp_path: Path) -> None:
     folder = tmp_path / "asset"
     folder.mkdir()
-    info = TypeInfo(type_name="probe", capsules=(IDENTITY,), identity_carrier=FolderJsonCarrier())
+    info = TypeInfo(type_name="probe", main_layout="folder", capsules=(IDENTITY,), identity_carrier=FolderJsonCarrier())
     first = info.mint_entity_id(FSRef(folder))
     assert uuid.UUID(first).version == 4
     assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": first})
@@ -119,7 +119,7 @@ def test_proposed_id_is_persisted_but_filesystem_winner_wins(tmp_path: Path) -> 
 
 
 def test_proposed_id_preserves_source_less_stable_type_identity(tmp_path: Path) -> None:
-    path = tmp_path / "spec.md"
+    path = tmp_path / "note.md"   # not "spec.md": that name is the spec type's main document
     path.write_text("body\n", encoding="utf-8")
     info = _md_info(stable=True)
     assert info.mint_entity_id(path, proposed_id=V4) == V4
@@ -149,12 +149,12 @@ def test_folder_with_markdown_main_carries_its_id_in_that_document(tmp_path: Pat
     the folder's legacy ``.flow/capsules/identity.json`` is still read."""
     folder = tmp_path / "skill"
     folder.mkdir()
-    main = folder / "SKILL.md"
+    main = folder / "PROBE.md"   # a probe must not borrow a real type's main-document name
     main.write_text("---\nname: s\n---\nbody\n", encoding="utf-8")
     info = TypeInfo(
         type_name="probe",
         main_layout="folder",
-        main_file="SKILL.md",
+        main_file="PROBE.md",
         capsules=(IDENTITY,),
         identity_carrier=folder_md_identity(),
     )
@@ -168,9 +168,9 @@ def test_folder_with_markdown_main_carries_its_id_in_that_document(tmp_path: Pat
 
     fresh = tmp_path / "fresh"
     fresh.mkdir()
-    (fresh / "SKILL.md").write_text("body\n", encoding="utf-8")
+    (fresh / "PROBE.md").write_text("body\n", encoding="utf-8")
     minted = info.mint_entity_id(FSRef(fresh))
-    assert _fm_id(fresh / "SKILL.md") == minted
+    assert _fm_id(fresh / "PROBE.md") == minted
     assert not (fresh / ".flow").exists(), "no folder json is written any more"
 
 

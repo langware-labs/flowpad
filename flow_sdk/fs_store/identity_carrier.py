@@ -54,6 +54,22 @@ class MalformedCarrier(ValueError):
     A corrupt source must never be silently re-identified, so this fails closed."""
 
 
+class UnclaimedPath(ValueError):
+    """A type was asked to identify a path that does not have its shape.
+
+    Raised BEFORE the carrier is read, so a ``.py`` reached under ``markdown``
+    is never parsed as a document, never stamped (FLOWPAD-2083), and never
+    answered with a path-derived id that no row and no carrier would agree
+    with. The caller mis-classified the path; "not an asset of this type" is
+    the only honest answer.
+    """
+
+    def __init__(self, type_name: str, path: Path, reason: str = "") -> None:
+        self.type_name = type_name
+        self.path = path
+        super().__init__(f"{type_name} does not claim {path}" + (f": {reason}" if reason else ""))
+
+
 @dataclass(frozen=True, slots=True)
 class CarrierId:
     """What ``read`` found: ``id`` when the source names a valid v4/v5 UUID;

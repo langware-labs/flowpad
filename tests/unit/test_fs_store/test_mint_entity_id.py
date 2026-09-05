@@ -48,6 +48,9 @@ def _info(*, stable: bool = False, folder: bool = False, legacy=()) -> TypeInfo:
     return TypeInfo(
         type_name="probe",
         capsules=(IDENTITY,),
+        # A type declares the shape it claims; the seam refuses a path outside
+        # it (FLOWPAD-2083). A folder-json probe therefore says it is a folder.
+        main_layout="folder" if folder else "file",
         identity_carrier=carrier,
         id_stable_key_fn=(lambda ref: "stable-key") if stable else None,
     )
@@ -261,9 +264,11 @@ def test_derived_type_ignores_owner_id(tmp_path: Path) -> None:
 
 
 def test_native_json_restamp_preserves_sibling_keys(tmp_path: Path) -> None:
-    path = tmp_path / "report.json"
+    path = tmp_path / "probe.json"   # not a name any real folder type owns (report.json is)
     path.write_text(json.dumps({"kept": [1, 2], "nested": {"a": 1}}), encoding="utf-8")
-    info = TypeInfo(type_name="probe_json", identity_carrier=NativeJsonCarrier())
+    # A type declares the shape it claims; the seam writes only into a path of
+    # that shape (FLOWPAD-2083). Every real native-json type names its ``.json``.
+    info = TypeInfo(type_name="probe_json", main_ext=".json", identity_carrier=NativeJsonCarrier())
 
     assert info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
     data = json.loads(path.read_text(encoding="utf-8"))

@@ -29,6 +29,7 @@ class WorkflowRunMeta(BaseMeta):
 WORKFLOW_RUN = TypeMetadata(
     type=EntityType.WORKFLOW_RUN,
     from_disk_fn=extract_workflow_run,
+    main_ext=".json",  # a derived file type states the format it reads; the ".md" default was a lie here
     identity_carrier=derived_identity(),
     id_stable_key_fn=workflow_run_identity_key,
     indexed_by_default=True,

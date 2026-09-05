@@ -59,6 +59,14 @@ def _info(type_name: str):
     return info
 
 
+def _own_document(tmp_path: Path, type_name: str, default: str) -> Path:
+    """A file the type CLAIMS: its declared main document for a folder type
+    (``agent.md``, ``trace.json``), else ``default``. The seam writes an id
+    only into a path of the type's own shape (FLOWPAD-2083) — the same gate
+    every walker applies — so a mint-and-persist case must present one."""
+    return tmp_path / (_info(type_name).main_file or default)
+
+
 def _frontmatter(path: Path, *, canonical: str | None = None, legacy: str | None = None) -> None:
     rows = ["---"]
     if canonical is not None:
@@ -120,7 +128,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
 def test_file_canonical_id_is_adopted_unchanged_without_write(
     tmp_path: Path, type_name: str, existing: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     _frontmatter(path, canonical=existing)
     before = path.read_bytes()
     info = _info(type_name)
@@ -133,7 +141,7 @@ def test_file_canonical_id_is_adopted_unchanged_without_write(
 def test_file_invalid_canonical_does_not_mask_valid_legacy(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     _frontmatter(path, canonical=V7, legacy=V5)
     before = path.read_bytes()
     assert _info(type_name).mint_entity_id(path) == V5
@@ -144,7 +152,7 @@ def test_file_invalid_canonical_does_not_mask_valid_legacy(
 def test_missing_portable_file_mints_persists_and_is_idempotent(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     path.write_text("body", encoding="utf-8")
     info = _info(type_name)
     first = info.mint_entity_id(path)
@@ -157,7 +165,7 @@ def test_missing_portable_file_mints_persists_and_is_idempotent(
 def test_missing_stable_file_mints_exact_path_v5_and_persists(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     path.write_text("body", encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
@@ -251,7 +259,7 @@ def test_markdown_render_puts_identity_first_in_frontmatter() -> None:
 def test_json_canonical_id_is_adopted_unchanged(
     tmp_path: Path, type_name: str, existing: str,
 ) -> None:
-    path = tmp_path / "report.json"
+    path = _own_document(tmp_path, type_name, "report.json")
     path.write_text(json.dumps({"id": existing, "name": "R"}) + "\n", encoding="utf-8")
     before = path.read_bytes()
     info = _info(type_name)
@@ -264,7 +272,7 @@ def test_json_canonical_id_is_adopted_unchanged(
 def test_missing_json_id_mints_exact_path_v5_and_persists(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "report.json"
+    path = _own_document(tmp_path, type_name, "report.json")
     path.write_text('{"name": "R"}\n', encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)

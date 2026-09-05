@@ -25,7 +25,7 @@ from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_ori
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
+from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier, UnclaimedPath
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -230,6 +230,14 @@ class TypeInfo:
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
     # parent/child edges) that the base sync doesn't know about.
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        # A folder type's document format IS its main file's suffix. The ".md"
+        # default was written for file types; on a json-document folder type
+        # (mcp.json, deck.json, trace.json) it let ``layout_of`` and the write
+        # gate treat any sibling ``.md`` as this type's own document.
+        if self.main_layout == "folder" and self.main_file:
+            self.main_ext = Path(self.main_file).suffix.lower() or self.main_ext
 
     @property
     def post_sync_callbacks(self) -> tuple:
@@ -522,6 +530,35 @@ class TypeInfo:
             return main if main.is_file() else root   # no main doc (a yaml-only skill): the folder carries
         return self.storage_root_for(path) if self.folder_backed else path
 
+    def claims(self, path: Path) -> "str | None":
+        """Why this type does NOT claim ``path`` — or ``None`` when it does.
+
+        The same shape question every indexer walk asks through
+        ``layout_of(verify=True)`` before it builds a ref; a point lookup that
+        names the wrong type for a path (a ``.py`` reached under ``markdown``)
+        is refused here, before any carrier is read or written. Two checks:
+
+        * the path has this type's shape (``layout_of``), and
+        * no OTHER type owns the path by its declared main-file name
+          (``SKILL.md`` is a skill, never a ``markdown``) — the registry-wide
+          precedence that a per-type ``layout_of`` cannot express.
+
+        A path not on disk yet is a save target whose body lands moments later;
+        a directory is a folder asset receiving its capsule BESIDE its contents.
+        Both are claimed by a folder-layout type, so create flows keep minting
+        ahead of the write.
+        """
+        if not path.exists():
+            return None
+        if path.is_dir():
+            return None if self.main_layout == "folder" else "a directory is not a file asset"
+        owners = SchemaRegistry.main_file_owners(path)
+        if owners and self.type_name not in owners:
+            return f"{path.name} is the main document of {', '.join(sorted(owners))}"
+        if self.layout_of(path, verify=True).kind is LayoutKind.NONE:
+            return f"not shaped as a {self.type_name} ({self.main_layout}, {self.main_file or self.main_ext})"
+        return None
+
     def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
         """The carrier path and what it holds; raises ``MalformedCarrier`` — a
         corrupt source must never be silently re-identified."""
@@ -567,6 +604,15 @@ class TypeInfo:
 
         if proposed_id is not None and not is_valid_entity_id(proposed_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
+
+        # Refuse, don't gate: a writable carrier is only ever read or stamped at
+        # a path this type claims. A derived identity is a pure function of the
+        # source and is never written, so its bespoke walkers keep their own
+        # notion of shape (a ``.toml`` mcp source, a hook inside settings.json).
+        if self.identity_carrier is not None and self.identity_carrier.writable:
+            target = self._identity_path(ref)
+            if (reason := self.claims(target)) is not None:
+                raise UnclaimedPath(self.type_name, target, reason)
 
         path, carrier = self._read_carrier(ref)
         can_write = (
@@ -1120,6 +1166,76 @@ class SchemaRegistry:
         if not isinstance(type_name, str):
             type_name = type_name.type  # TypeId duck-type: .type is the type string
         return cls._types.get(type_name)
+
+    @classmethod
+    def main_file_owners(cls, path: "Path | str") -> frozenset[str]:
+        """The walked folder-layout types whose declared main document IS
+        ``path``: by name (case-insensitive) AND, for a repo-family type, by
+        placement — ``agentic-assets/<family>/<name>/spec.md`` is a spec, a
+        loose ``SPEC.md`` in a workspace is a markdown document. A shared type
+        (``skill``) owns its name anywhere, which is what its walker does too.
+        A type with no walker never claims a path (test probes register too).
+        Two types may still share a name at the same placement; the set
+        carries that, and a caller refusing a path refuses only when it is NOT
+        a member."""
+        cls._ensure_loaded()
+        p = Path(path)
+        wanted = p.name.lower()
+        owners = set()
+        for info in cls._types.values():
+            if info.main_layout != "folder" or not info.main_file or info.from_disk_fn is None:
+                continue
+            if info.main_file.lower() != wanted:
+                continue
+            if info.asset_class == "repo":
+                family = (info.main_subdir or "").rsplit("/", 1)[-1]
+                parts = [x.lower() for x in p.parent.parent.parts[-2:]]
+                if not family or parts != ["agentic-assets", family.lower()]:
+                    continue
+            owners.add(info.type_name)
+        return frozenset(owners)
+
+    @classmethod
+    def type_for(cls, path: "Path | str") -> str | None:
+        """THE registry-wide path → type classifier (name + stat only; no
+        roots). Precedence:
+
+        1. a folder type's declared main document, by name (``SKILL.md`` →
+           ``skill``; ``mcp.json`` → ``mcp``; a folder holding one → that type);
+        2. a file type whose declared extension is unique among file types
+           (``.js`` → dynamic_workflow, ``.csv`` → spreadsheet);
+        3. ``markdown`` for any remaining ``.md``;
+        4. ``None`` — not an asset, or ambiguous (``.json``, ``.jsonl`` are
+           claimed by several bespoke-walked types and need their roots).
+
+        A name shared by two folder types is reported as ``None`` rather than
+        picked by registration order.
+        """
+        cls._ensure_loaded()
+        p = Path(path)
+        if p.is_dir():
+            for info in cls._types.values():
+                if info.main_layout != "folder" or not info.main_file or not (p / info.main_file).is_file():
+                    continue
+                if info.type_name in cls.main_file_owners(p / info.main_file):
+                    return info.type_name
+            return None
+        owners = cls.main_file_owners(p)
+        if len(owners) == 1:
+            return next(iter(owners))
+        if owners:
+            return None
+        suffix = p.suffix.lower()
+        if suffix and suffix != ".md":
+            by_ext = [
+                info.type_name
+                for info in cls._types.values()
+                if info.main_layout == "file" and info.from_disk_fn is not None and (info.main_ext or "").lower() == suffix
+            ]
+            return by_ext[0] if len(by_ext) == 1 else None
+        if suffix == ".md" and "markdown" in cls._types:
+            return "markdown"
+        return None
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:
