@@ -499,3 +499,74 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
 
     with pytest.raises(LLMSourceError):
         await resolve_llm_source(_process())
+
+
+# ── the picker chooses from the inventory, not from the choice ───────────────────
+
+
+async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env) -> None:
+    """The escape hatch. A pin makes every other source ineligible TO SPAWN, and that is
+    right — but the LLM Sources screen is where a pin gets changed, so filtering its rows by
+    the pin is circular: the row that would undo the choice is the one greyed out.
+
+    This is the state that stranded a real box. Pinned to a hub endpoint the hub had stopped
+    listing, the resolver correctly refused; the screen then showed a working device login as
+    ineligible, and ``needsSignIn`` read that as "signed out" and offered a Sign in button
+    that could not help. Nothing on the box could clear the pin.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
+        LLMSourceError,
+        llm_picker_view,
+        resolve_llm_source,
+    )
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    cap.auth_mode, cap.api_provider = "api", "flowpad"  # a hub pin with no hub endpoint behind it
+    await cap.save(notify=False)
+
+    # The spawn still fails loudly: a preference is a constraint, and substituting the
+    # personal subscription for the budget the user chose is the thing we must never do.
+    with pytest.raises(LLMSourceError):
+        await resolve_llm_source(_process())
+
+    view = await llm_picker_view("claude")
+    device = _by_kind(view.offers, "device")[0]
+    assert device.eligible, "the login works; only the preference ruled it out, and that is the choice"
+    assert not device.reason, "an offer explains its own credential, never someone else's choice"
+    assert view.chosen is None, "nothing funds the harness -- the resolver's answer is unchanged"
+    assert "set to use" in view.blocked, "and the screen can still say why"
+
+
+async def test_an_offer_is_judged_on_its_own_credential(env) -> None:
+    """The other half: dropping the overlay must not make an unusable source pickable."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.IDLE
+    await cap.save(notify=False)
+
+    view = await llm_picker_view("claude")
+    device = _by_kind(view.offers, "device")[0]
+    assert not device.eligible and "signed out" in device.reason
+    assert view.blocked == device.reason, "the top-ranked refusal is what the screen shows"
+
+
+async def test_the_picker_marks_in_use_from_the_resolver_not_from_an_offer(env, monkeypatch) -> None:
+    """``auto`` on an offer means "would win if nothing were chosen" -- true of more than one
+    row at a time. Only ``chosen`` says what actually funds the harness, which is why the view
+    hands the screen both and the screen badges from the second."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    _bind(monkeypatch)
+
+    view = await llm_picker_view("claude")
+    assert sum(1 for c in view.offers if c.source.auto) >= 1
+    assert view.chosen is not None
+    assert view.chosen.source.endpoint_typeid, "one row, and the screen badges that one"
