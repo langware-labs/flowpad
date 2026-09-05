@@ -38,6 +38,6 @@ subfolder_count: 0
 - [Record Model](record-model.md) — FSRecord, the single record class: shadow-folder storage, identity and fingerprint minting, on-disk layout, save/load/discover, FSRefs, index sentinels, and serializer-written assets.
 - [Record Search (FTS5/SQLite)](record-search.md) — Full-text record search on SQLite FTS5: the virtual table, what gets indexed via index_fields, sync and delete operations, the HTTP API, and performance.
 - [Scan and Discovery](scan-and-discovery.md) — FSIndexer's depth-first walk over FSRef roots: walker registration graph, type-gated dispatch, chunked and subprocess scanning, per-type parsing/identity/freshness slots, and when indexing runs.
-- [Schema Registry](schema-registry.md) — SchemaRegistry and TypeInfo as the single type-metadata source: declarative TypeMetadata authoring, entity registration, merge semantics, serialization slots, kinds, and scan orchestration.
+- [Schema Registry](schema-registry.md) — SchemaRegistry and TypeInfo as the single type-metadata source: declarative TypeInfo authoring, entity registration, merge semantics, serialization slots, kinds, and scan orchestration.
 - [System Tools Service (Frontend)](system-tools.md) — The frontend system-tools service: the activity model, progress_report WebSocket events, conflict detection, the useSystemTools hook, and shared UI components.
 - [Transcript Indexing](transcript-indexing.md) — The opt-in side-effect pass over parsed transcript entries: freshness versus hash sentinels, the handler contract, shipped handlers, and the 404 self-heal path.

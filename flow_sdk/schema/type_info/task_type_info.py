@@ -16,12 +16,13 @@ from flow_sdk.fs_store.indexer.functions.task import (
     task_asset_hash,
     task_id_from_folder,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-TASK = TypeMetadata(
-    type=EntityType.TASK,
+TASK = TypeInfo(
+    type_name=EntityType.TASK,
     icon="CheckSquare",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
@@ -30,8 +31,8 @@ TASK = TypeMetadata(
     index_fields=["description", "objective"],
     asset_class="repo",
     family="task",
-    main_layout="folder",
-    main_file="task.md",
+    shape=Folder(main="task.md"),
+    editor="task",
     fts_content=("title", "description"),
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_md_identity(task_id_from_folder),

@@ -341,7 +341,7 @@ async def test_index_status_reports_a_type_with_pending_changes_as_stale(
 ):
     """`stale` must mean "changes pending next index" — the endpoint's own contract.
 
-    Regression: `SchemaRegistry.get_index_status` hardcodes `stale=False` on
+    Regression: `index_log.get_index_status` hardcodes `stale=False` on
     every per-type row (schema_registry.py:1279) and on the unscoped rollup
     (:1301), so the freshness signal is a constant. Only the single-project
     branch (:1292) computes it, from the project record's `index_required`.

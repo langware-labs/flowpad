@@ -6,12 +6,13 @@ from flow_sdk.fs_store.indexer.functions._asset_identity import (
     resolved_path_key,
 )
 from flow_sdk.fs_store.indexer.functions.spec import derive_spec
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-SPEC = TypeMetadata(
-    type=EntityType.SPEC,
+SPEC = TypeInfo(
+    type_name=EntityType.SPEC,
     fts_content=("content",),
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
@@ -23,11 +24,9 @@ SPEC = TypeMetadata(
     index_fields=["name", "spec_type"],
     asset_class="repo",
     family="spec",
-    main_layout="folder",
-    main_file="spec.md",
     # asset_ref IS specs/<name>/spec.md (the indexer emits the inner file), so
     # both create and rescan agree on the inner-file path.
-    main_file_is_asset_ref=True,
+    shape=Folder(main="spec.md", ref_is_main=True),
     asset_spec=SpecDocSpec,
     derive_fields_fn=derive_spec,
     # WRITE-ONCE (owns_main_ref stays False): a DB-only spec materializes its

@@ -22,7 +22,7 @@ def _registry() -> None:
 
 def test_folder_types_take_their_format_from_the_main_file() -> None:
     for info in map(SchemaRegistry.get, SchemaRegistry.get_all_types()):
-        if info.metadata is not None and info.main_layout == "folder" and info.main_file:
+        if info.declared and info.main_layout == "folder" and info.main_file:
             assert info.main_ext == info.main_file.rsplit(".", 1)[-1].join([".", ""]), (
                 f"{info.type_name}: main_file={info.main_file} but main_ext={info.main_ext}"
             )
@@ -32,7 +32,7 @@ def test_no_walked_file_type_outside_the_markdown_set_claims_md() -> None:
     offenders = [
         info.type_name
         for info in map(SchemaRegistry.get, SchemaRegistry.get_all_types())
-        if info.metadata is not None   # a declared type, not a probe another test registered
+        if info.declared   # a declared type, not a probe another test registered
         and info.main_layout == "file"
         and info.from_disk_fn is not None
         and info.identity_carrier is not None

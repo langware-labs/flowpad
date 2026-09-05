@@ -178,8 +178,8 @@ class DatasetManifestSpec(FrontMatter):     # dataset.json
     data_layout: str | None = None
     data: Optional[FreeSection] = None      # ⇒ {"metadata": …, "data": …}
 
-SUBAGENT = TypeMetadata(..., asset_spec=SubAgentSpec)
-DATASET  = TypeMetadata(..., main_layout="folder", main_file="dataset.json", asset_spec=DatasetManifestSpec)
+SUBAGENT = TypeInfo(..., asset_spec=SubAgentSpec)
+DATASET  = TypeInfo(..., shape=Folder(main="dataset.json"), asset_spec=DatasetManifestSpec)
 ```
 
 What `TypeInfo` still declares is **naming and placement**, not structure:

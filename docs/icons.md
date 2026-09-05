@@ -9,7 +9,7 @@ glyph, the frontend resolves the name.** A type, a provider or a data source
 publishes a string; nothing in the UI decides which picture a thing gets.
 
 That principle held long before this system existed — what was missing was
-anywhere that said which names are legal. `TypeMetadata.icon` stated the old
+anywhere that said which names are legal. `TypeInfo.icon` stated the old
 position outright: *"Free string by design: the set of valid lucide names lives
 in the frontend's bundle, not here."* A misspelling was therefore invisible
 until someone looked at a screen and saw the generic document glyph. The icon

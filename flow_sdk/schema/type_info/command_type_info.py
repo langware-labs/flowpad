@@ -6,11 +6,14 @@ from flow_sdk.fs_store.indexer.functions.claude_command import (
     command_identity_key,
     extract_claude_command,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-COMMAND = TypeMetadata(
-    type=EntityType.COMMAND,
+COMMAND = TypeInfo(
+    type_name=EntityType.COMMAND,
+    shape=File(ext=".md"),
+    editor="markdown",
     icon="Terminal",
     indexed_by_default=True,
     api_visible=True,

@@ -693,9 +693,11 @@ class FsRecordsActionsMixin:
         bracket only ``indexer.scan``, so a 34s request advertised 0.5s.
         """
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer import indexable_types  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (
+            index_log,  # noqa: PLC0415
+            indexable_types,  # noqa: PLC0415
+        )
         from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         terminal_names = {str(record_type) for record_type in types_filter} if types_filter is not None else None
         all_indexable_names = {str(record_type) for record_type in indexable_types()}
@@ -841,7 +843,7 @@ class FsRecordsActionsMixin:
         grand_orphan = sum(bucket.get("orphan", 0) for bucket in per_type) if do_diff else 0
         types_for_log = [{key: value for key, value in bucket.items() if key != "_records"} for bucket in per_type]
 
-        last_scan_at = SchemaRegistry.append_scan(
+        last_scan_at = index_log.append_scan(
             trigger=trigger,
             duration_ms=timing["scan_ms"],
             total_records=grand_total,
@@ -1044,10 +1046,10 @@ class FsRecordsActionsMixin:
         """
         from dataclasses import asdict  # noqa: PLC0415
 
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
         scope_filter = await self._scope_filter_from_query(request_info)
-        status = await SchemaRegistry.get_index_status(scope=scope_filter)
+        status = await index_log.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
                 "never_indexed": status.never_indexed,
@@ -1070,10 +1072,10 @@ class FsRecordsActionsMixin:
         """
         from dataclasses import asdict  # noqa: PLC0415
 
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
         scope_filter = await self._scope_filter_from_query(request_info)
-        stats = await SchemaRegistry.get_asset_stats(scope=scope_filter)
+        stats = await index_log.get_asset_stats(scope=scope_filter)
         return ApiSuccessResponse(data=asdict(stats))
 
     async def _handle_fs_records_index_clear(self, request_info) -> ApiResponse:
@@ -1304,8 +1306,8 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             IndexerOptions,
             get_shared_indexer,
+            index_log,  # noqa: PLC0415
         )
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         async with self._index_activity(queue=queue) as (_activity, emit):
             # Only now is the run definitely going ahead. Callers that must record
@@ -1343,7 +1345,7 @@ class FsRecordsActionsMixin:
             for rt, pt in result.per_type.items()
         ]
 
-        SchemaRegistry.append_index(
+        index_log.append_index(
             trigger=trigger,
             duration_ms=result.duration_ms,
             total_indexed=result.total_indexed,
@@ -1477,10 +1479,10 @@ class FsRecordsActionsMixin:
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             OrphanAction,
+            index_log,  # noqa: PLC0415
             indexable_types,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -1567,7 +1569,7 @@ class FsRecordsActionsMixin:
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
             }
-            SchemaRegistry.append_index(
+            index_log.append_index(
                 trigger=trigger,
                 duration_ms=_direct_ms,
                 total_indexed=1 if indexed_typeid else 0,
@@ -1718,14 +1720,17 @@ class FsRecordsActionsMixin:
         indexed_typeids: list[str] = []
         indexed_typeid: str | None = None
         if index_path and _p.is_file():
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
             from flow_sdk.fs_store.type_id import type_id_str  # noqa: PLC0415
 
             _rtypes = types_filter or [RecordType(str(rt)) for rt in result.per_type]
             for _rt in _rtypes:
-                try:
-                    _id = self._ref_id(FSRef(_p, record_type=_rt))
-                except Exception:
-                    _id = None
+                # Only a type that CLAIMS the path may name it: the refusal is
+                # asked up front rather than tried and swallowed per type.
+                _rinfo = _SR.get(str(_rt))
+                if _rinfo is None or _rinfo.claims(_p) is not None:
+                    continue
+                _id = self._ref_id(FSRef(_p, record_type=_rt))
                 if _id:
                     indexed_typeids.append(type_id_str(str(_rt), _id))
             indexed_typeid = indexed_typeids[0] if indexed_typeids else None
@@ -2766,18 +2771,14 @@ async def discover_record_by_path(
 
     if Path(expanded).exists():
         _info = _SR.get(record_type)
-        from flow_sdk.fs_store.schema_registry import LayoutKind as _LayoutKind  # noqa: PLC0415
-
-        if _info.layout_of(Path(expanded), verify=True).kind is _LayoutKind.NONE:
+        if _info.claims(Path(expanded)) is not None:
             # The caller named a type this path is not shaped as (the editor
-            # fallback labels any editor-less file ``markdown``). Classify
-            # BEFORE minting, the way every walker does: never hand the seam an
-            # unverified (type, path) pair, and answer with the asset that
-            # CONTAINS the path — an inner ``server.py`` is its ``mcp`` folder —
-            # or nothing. Only an owner OF THE TYPE ASKED FOR is an answer: the
-            # callers label the result with ``record_type`` (``display_target``
-            # builds ``<record_type>-<id>`` from it), so an ``mcp`` folder must
-            # not come back as a ``markdown`` hit. FLOWPAD-2083.
+            # fallback labels any editor-less file ``markdown``). The SAME
+            # predicate the mint seam refuses on, asked before anything is
+            # read: never hand the seam an unverified (type, path) pair, and
+            # answer with the asset that CONTAINS the path only when it is of
+            # the type asked for (callers build ``<record_type>-<id>`` from the
+            # result). FLOWPAD-2083.
             from flow_sdk.core.entity.entity_model import Entity as _Entity  # noqa: PLC0415
 
             owner = await _Entity.get_by_asset_ref(expanded, resolve_containing=True, strict=strict_owner)

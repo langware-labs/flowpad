@@ -18,21 +18,21 @@ from flow_sdk.fs_store.indexer.functions.data_source_spec import (
     data_source_spec_identity_key,
     derive_data_source_spec,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
-DATA_SOURCE_SPEC = TypeMetadata(
-    type=EntityType.DATA_SOURCE_SPEC,
+DATA_SOURCE_SPEC = TypeInfo(
+    type_name=EntityType.DATA_SOURCE_SPEC,
     icon="Antenna",
-    displayName="Source definitions",
+    display_name="Source definitions",
     api_visible=True,
     # Authored in a folder, not from a New button: the wizard writes the file.
     creatable=False,
     asset_class="repo",
     family="data_source",
-    main_layout="folder",
+    shape=Folder(main="data_source.json"),
     asset_spec=ManifestSpec,
-    main_file="data_source.json",
     fts_content=("name", "description"),
     derive_fields_fn=derive_data_source_spec,
     # DERIVED, not a capsule: `data_source.json` deliberately carries no id —

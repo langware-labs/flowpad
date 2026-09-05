@@ -11,7 +11,8 @@ from flow_sdk.fs_store.indexer.functions.deck import (
     deck_id_from_folder,
     extract_deck,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -23,10 +24,10 @@ class DeckMeta(BaseMeta):
     html_file: Optional[str] = None
 
 
-DECK = TypeMetadata(
-    type=EntityType.DECK,
+DECK = TypeInfo(
+    type_name=EntityType.DECK,
     icon="Play",
-    displayName="Decks",
+    display_name="Decks",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
@@ -34,12 +35,12 @@ DECK = TypeMetadata(
     index_fields=["description"],
     asset_class="repo",
     family="deck",
-    main_layout="folder",
     # deck.json is the marker + shape claim: `flow show file <deck folder>`
     # resolves through discover_record_by_path → extract_deck → the deck entity
     # in one call (no project-root walk). asset_ref stays the FOLDER
-    # (main_file_is_asset_ref default False) so the viewer reads <folder>/*.html.
-    main_file="deck.json",
+    # (``ref_is_main`` default False) so the viewer reads <folder>/*.html.
+    shape=Folder(main="deck.json"),
+    editor="deck",
     from_disk_fn=extract_deck,
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, deck_id_from_folder),

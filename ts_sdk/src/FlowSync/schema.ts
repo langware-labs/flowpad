@@ -92,6 +92,13 @@ export interface TypeInfo {
   /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
    *  expands the row into its on-disk file tree. Derived from the folder layout. */
   folder_backed: boolean;
+  /** THE on-disk shape declaration this type makes (the fields above are its
+   *  projections): `{kind:'folder', main:'SKILL.md', ref_is_main:false}` or
+   *  `{kind:'file', ext:'.md'}`. */
+  shape?: { kind: 'folder'; main: string | null; ref_is_main: boolean } | { kind: 'file'; ext: string } | null;
+  /** The asset editor that opens this type (`'markdown'`, `'skill'`, …), declared
+   *  once on the backend so the client never keeps a hand-maintained type→editor map. */
+  editor?: string | null;
   /** The entity owns its backing file (re-rendered from the default body on every
    *  save, e.g. task/spec), so an orphaned row (file missing / no asset_ref) can
    *  self-heal with a single save. Defaults false for hand-edited files (markdown/skill). */

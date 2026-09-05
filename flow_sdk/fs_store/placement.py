@@ -204,6 +204,26 @@ LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
 }
 
 
+def placed_under(asset_class: "AssetClass | None", family: "str | None", parent_dir: "Path | str") -> bool:
+    """Is ``parent_dir`` where an asset of this class/family is MOUNTED?
+
+    A class with a fixed ``root_prefix`` (REPO: ``agentic-assets/<family>``)
+    lives only there, so its main document elsewhere is not it — a workspace
+    ``SPEC.md`` is a document, ``agentic-assets/spec/x/spec.md`` is a spec. A
+    harness-scoped class has no fixed mount (a skill is a skill under any
+    dot-dir, which is what its walker does), so the answer is True. ONE owner
+    of the mount rule; ``main_file_owners`` and the walkers ask this, never a
+    string-split of ``main_subdir``.
+    """
+    layout = LAYOUT_REGISTRY.get(asset_class) if asset_class is not None else None
+    if layout is None or layout.root_prefix is None:
+        return True
+    if not family:
+        return False
+    parts = [part.lower() for part in Path(parent_dir).parts[-2:]]
+    return parts == [layout.root_prefix.lower(), family.lower()]
+
+
 def user_scope_allowed(asset_class: "AssetClass | None", *, is_git: bool = False) -> bool:
     """Whether "Install global" (user scope) is offered for a received asset —
     the single owner of that policy, replacing the old ``.claude``-prefix hack.

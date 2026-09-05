@@ -110,7 +110,7 @@ An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `
 | `discover(type)` | `classmethod -> list[FSRecord]` | Walks `<root>/<type>/`, loading each child shadow via `load_record`; skips malformed entries. |
 | `count(type)` | `classmethod -> int` | Counts shadow folders for `type` without reading/parsing any `metadata.json`. |
 | `iter_discovered(type)` | `classmethod -> Iterator[FSRecord]` | Lazy form of `discover` (`fs_record.py:667`); used by `type_has_pending_changes`. |
-| `type_has_pending_changes(type)` | `classmethod -> bool` | True if ANY record of the type has `index_required` (short-circuits on the first). Backs `SchemaRegistry.get_index_status().stale`. |
+| `type_has_pending_changes(type)` | `classmethod -> bool` | True if ANY record of the type has `index_required` (short-circuits on the first). Backs `index_log.get_index_status().stale`. |
 
 There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_record`, `save_record_json`, `write_record`, `persist`, or `open()` on `FSRecord`.
 

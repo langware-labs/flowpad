@@ -1,12 +1,7 @@
 """SchemaRegistry — unified type system for Record + Entity layers.
 
-Files:
-  ~/.flow/schema/scan_log.jsonl                          — global scan log
-  ~/.flow/schema/index_log.jsonl                         — global index log
-  ~/.flow/schema/types/<sanitized_type>/scan_log.jsonl   — per-type scan log
-  ~/.flow/schema/types/<sanitized_type>/index_log.jsonl  — per-type index log
-
-Each log file keeps at most _MAX_LOG_ENTRIES entries (oldest trimmed on append).
+Index-run bookkeeping (scan/index logs, index status, scan issues) lives in
+``flow_sdk.fs_store.indexer.index_log``, not here.
 """
 
 from __future__ import annotations
@@ -14,127 +9,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import stat
 import uuid
 from collections.abc import Container
 from dataclasses import dataclass, field, fields
-from datetime import datetime, timezone
 from functools import cache
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier, UnclaimedPath
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.schema.layout import File, Folder, Layout, LayoutKind  # noqa: F401 — Layout/LayoutKind re-exported
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
-
-_MAX_LOG_ENTRIES: int = 100
-
-
-def _schema_dir() -> Path:
-    """Resolve the per-instance schema dir at call time.
-
-    Lives on InstanceSettings — never cache the result, never construct
-    `~/.flow/<...>/schema` directly. This getter is the single chokepoint.
-    """
-    return get_instance_settings().schema_dir
-
-
-def _sanitize_type_name(type_name: str) -> str:
-    """Make a type name safe for use as a directory/file name component."""
-    return type_name.replace(":", "__").replace(" ", "_")
-
-
-def _schema_dir_for(type_name: str) -> Path:
-    return _schema_dir() / "types" / _sanitize_type_name(type_name)
-
-
-# ---------------------------------------------------------------------------
-# JSONL helpers
-# ---------------------------------------------------------------------------
-
-
-def _append_jsonl(path: Path, entry: dict[str, Any]) -> None:
-    """Append one JSON line to *path*, then trim to _MAX_LOG_ENTRIES lines."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(entry, default=str) + "\n"
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(line)
-    _trim_jsonl(path)
-
-
-def _trim_jsonl(path: Path) -> None:
-    """If the file exceeds _MAX_LOG_ENTRIES lines, keep only the last N."""
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = fh.readlines()
-        if len(lines) <= _MAX_LOG_ENTRIES:
-            return
-        keep = lines[-_MAX_LOG_ENTRIES:]
-        tmp = path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.writelines(keep)
-        tmp.replace(path)
-    except Exception:
-        pass
-
-
-def _read_last_entry(path: Path) -> dict[str, Any] | None:
-    """Return the last JSON object from a JSONL file, or None."""
-    try:
-        if not path.exists():
-            return None
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = [ln for ln in fh if ln.strip()]
-        if not lines:
-            return None
-        return json.loads(lines[-1])
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# SDK result types
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class ClearResult:
-    fts_cleared: int
-    entities_cleared: int
-    types_cleared: list[str]
-
-
-@dataclass
-class TypeIndexStatus:
-    type_name: str
-    last_indexed_at: str | None
-    entity_count: int
-    stale: bool
-    orphan_count: int = 0
-
-
-@dataclass
-class IndexStatus:
-    never_indexed: bool
-    last_indexed_at: str | None
-    stale: bool
-    default_types: list[str]
-    per_type: list[TypeIndexStatus]
-    total_orphans: int = 0
-
-
-@dataclass
-class AssetStats:
-    """Live per-type asset counts for a ScopeFilter — counts only. Freshness
-    and orphans deliberately live in ``IndexStatus`` / ``get_index_status``;
-    this is the single source the UI counter surfaces render from."""
-
-    per_type: dict[str, int]
-    total: int
-
 
 # ---------------------------------------------------------------------------
 # Hardcoded fallback list so get_default_index_types() works before any
@@ -173,24 +62,6 @@ def humanize_type(type_name: str) -> str:
     as the fallback label when a type has no curated ``display_name`` — the Python
     mirror of the frontend ``humanizeType`` (``ui/src/tabs/provider-meta.tsx``)."""
     return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
-
-
-class LayoutKind(StrEnum):
-    FOLDER = "folder"        # the path IS the asset folder
-    MAIN_FILE = "main_file"  # the inner main file of a folder asset
-    FILE = "file"            # a file-layout asset
-    NONE = "none"            # not this type's shape
-
-
-@dataclass(frozen=True)
-class Layout:
-    kind: LayoutKind
-    root: "Path | None"   # the folder (folder types) / the file; None iff NONE
-    body: "Path | None"   # the writable main document
-    ref: "Path | None"    # where asset_ref points (``asset_ref_for(root)``)
-
-
-_NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
 
 
 
@@ -232,12 +103,43 @@ class TypeInfo:
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
-        # A folder type's document format IS its main file's suffix. The ".md"
-        # default was written for file types; on a json-document folder type
-        # (mcp.json, deck.json, trace.json) it let ``layout_of`` and the write
-        # gate treat any sibling ``.md`` as this type's own document.
-        if self.main_layout == "folder" and self.main_file:
-            self.main_ext = Path(self.main_file).suffix.lower() or self.main_ext
+        self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
+        # ONE declaration. ``shape`` is it; the four legacy layout fields are
+        # projections of it kept for their readers. A declaration that still
+        # spells the legacy fields (a test probe, ``from_dict``) is lifted into
+        # a shape so every reader — ``layout_of``, ``type_for``, the carriers —
+        # asks the same object.
+        self.shape_declared = self.shape is not None
+        if self.shape is None:
+            if self.main_layout == "folder":
+                self.shape = Folder(main=self.main_file, ref_is_main=bool(self.main_file and self.main_file_is_asset_ref))
+            else:
+                self.shape = File(ext=self.main_ext or ".md")
+        self._project_shape()
+
+    def _project_shape(self) -> None:
+        """Re-derive the legacy layout fields from ``shape``."""
+        if isinstance(self.shape, Folder):
+            self.main_layout = "folder"
+            self.main_file = self.shape.main
+            self.main_file_is_asset_ref = self.shape.ref_is_main
+            # A folder type's document format IS its main file's suffix. The
+            # ".md" default was written for file types; on a json-document
+            # folder type (mcp.json, deck.json, trace.json) it let ``layout_of``
+            # and the write gate treat any sibling ``.md`` as this type's own.
+            if self.shape.main:
+                self.main_ext = Path(self.shape.main).suffix.lower() or self.main_ext
+        else:
+            self.main_layout = "file"
+            self.main_file = None
+            self.main_file_is_asset_ref = False
+            self.main_ext = self.shape.ext
+
+    @property
+    def default_origin_kind(self) -> str:
+        """The origin kind a store/load defaults to: the declared ``origin_kind``,
+        else "db" for a row-only type and "local" for an asset type."""
+        return self.origin_kind or ("db" if self.db_only else "local")
 
     @property
     def post_sync_callbacks(self) -> tuple:
@@ -287,10 +189,11 @@ class TypeInfo:
     # pull-side type list — sourced from the registry, not a hardcoded tuple.
     # Runtime-only; not part of the schema hash.
     shared_child: bool = field(default=False, compare=False, repr=False)
-    # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
-    # was built from — home for type-specific extras beyond the flat fields.
-    # Runtime-only; the flat fields above remain the serialized surface.
-    metadata: Any = field(default=None, compare=False, repr=False)
+    # True for a type declared by a ``schema/type_info`` module (set by
+    # ``register_all``); False for an ad-hoc ``TypeInfo`` (a test probe, a
+    # ``from_dict`` mirror). Registry-wide checks over "the declared types"
+    # filter on this, never on a side effect of how the object was built.
+    declared: bool = field(default=False, compare=False, repr=False)
     # True ⇒ Entity.save persists the row in the DB only and never creates an
     # FSRecord shadow. Such types have no disk→DB adopt path. Runtime-only; not
     # part of the schema hash.
@@ -308,7 +211,11 @@ class TypeInfo:
     # --- Serialization (HOW/WHERE) — runtime-only, not part of the schema hash ---
     # The origin kind a store/load defaults to when the caller passes none:
     # "local" (disk) for asset types, "db" for db_only types.
-    default_origin_kind: str = field(default="local", compare=False, repr=False, metadata={"serialization": True})
+    # The DECLARED origin kind ("db" | "local"); None = not declared, which
+    # resolves through ``default_origin_kind`` below. Kept None so an
+    # entity-class registration (which never knows ``db_only``) cannot
+    # overwrite a module's declaration through the registry merge.
+    origin_kind: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
     # The path names the entity when the header carries no name: the folder
     # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
     # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
@@ -370,6 +277,19 @@ class TypeInfo:
     # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
     # backing file matches the indexer's glob. Runtime-only.
     main_ext: str = ".md"
+    # --- THE shape declaration: ``File(ext)`` | ``Folder(main, ref_is_main)`` ---
+    # The four fields above are DERIVED from it in ``__post_init__`` (and, until
+    # every declaration has moved, a legacy declaration of those four builds
+    # the shape). New code declares ``shape=`` and nothing else. Not hashed.
+    shape: Any = None  # flow_sdk.schema.layout.Shape | None
+    # True when the declaration passed ``shape=`` (vs. a legacy lift or the
+    # default); the registry merge carries a declared shape onto an existing
+    # entry and never a defaulted one. Set in ``__post_init__``.
+    shape_declared: bool = field(default=False, compare=False, repr=False)
+    # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
+    # shipped in the bootstrap so the frontend derives its editor tables from
+    # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
+    editor: str | None = None
     # Fields the ASSIGNEE of a shared entity owns. When the local user is the
     # entity's assignee (and not its reporter), a hub-reflected update carries
     # ONLY these — everything else on the row belongs to whoever handed the work
@@ -412,16 +332,10 @@ class TypeInfo:
         )
 
     def asset_ref_for(self, folder: Path) -> Path:
-        """Where a folder-layout type's asset_ref points, given its folder.
-
-        Spec-style (``main_file_is_asset_ref``) anchors asset_ref on the inner
-        ``<folder>/<main_file>``; skill-style keeps it on the bare folder. The
-        inverse of ``body_path_for`` — both live here so the folder↔body
-        convention is stated once. Callers gate on ``main_layout == "folder"``.
-        """
-        if self.main_file and self.main_file_is_asset_ref:
-            return folder / self.main_file
-        return folder
+        """Where ``asset_ref`` points for the asset rooted at ``folder`` — the
+        shape's convention (``ref_is_main`` ⇒ ``<folder>/<main>``, else the
+        folder), stated once on the shape."""
+        return self.shape.ref_for(folder)
 
     def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
         """THE path→layout classifier. A folder type names its folder (``FOLDER``)
@@ -429,22 +343,9 @@ class TypeInfo:
         names the file (``FILE``). ``NONE`` when the path is not this type's shape.
         ``verify`` additionally requires the main file / the file to exist —
         the indexer's gate; every other mapper is a total, stat-light projection.
-        Names compare case-insensitively (the default filesystem does)."""
-        if self.main_layout == "folder":
-            # Decide by NAME; the one stat keeps a real directory named like the
-            # main file a directory. ``verify`` is where existence is required.
-            names_main = bool(self.main_file) and path.name.lower() == self.main_file.lower()
-            if names_main and not path.is_dir():
-                root, kind = path.parent, LayoutKind.MAIN_FILE
-            else:
-                root, kind = path, LayoutKind.FOLDER
-                if verify and not (path.is_dir() and self.main_file and (path / self.main_file).is_file()):
-                    return _NO_LAYOUT
-            body = root / self.main_file if self.main_file else None
-            return Layout(kind, root, body, self.asset_ref_for(root))
-        if (verify and not path.is_file()) or path.suffix.lower() != (self.main_ext or "").lower():
-            return _NO_LAYOUT
-        return Layout(LayoutKind.FILE, path, path, path)
+        Names compare case-insensitively (the default filesystem does).
+        The answer is ``shape.locate``'s; this is its classic projection."""
+        return self.shape.locate(path, verify=verify)
 
     def body_path_for(self, asset_path: Path) -> Path:
         """The writable main-body file for an asset_ref (the file itself for a
@@ -464,8 +365,8 @@ class TypeInfo:
     def storage_root_for(self, path: Path) -> Path:
         """The asset ROOT a serializer stores at — the folder for a folder-layout
         type even when ``asset_ref`` names the inner main file; the file
-        otherwise. Inverse of ``asset_ref_for``."""
-        return self.layout_of(path).root or path
+        otherwise. Inverse of ``asset_ref_for``; the shape's ``root_of``."""
+        return self.shape.root_of(path)
 
     @property
     def effective_meta_model(self) -> Any:
@@ -538,25 +439,31 @@ class TypeInfo:
         names the wrong type for a path (a ``.py`` reached under ``markdown``)
         is refused here, before any carrier is read or written. Two checks:
 
-        * the path has this type's shape (``layout_of``), and
-        * no OTHER type owns the path by its declared main-file name
-          (``SKILL.md`` is a skill, never a ``markdown``) — the registry-wide
-          precedence that a per-type ``layout_of`` cannot express.
+        * the path has this type's shape, and
+        * no OTHER type owns the path by its declared main-file name AND
+          placement (``SKILL.md`` is a skill, never a ``markdown``) — the
+          registry-wide precedence that a per-type ``layout_of`` cannot express.
 
         A path not on disk yet is a save target whose body lands moments later;
         a directory is a folder asset receiving its capsule BESIDE its contents.
         Both are claimed by a folder-layout type, so create flows keep minting
-        ahead of the write.
+        ahead of the write. One stat: existence and kind come from it, and the
+        shape check runs with ``verify=False`` since both are already known.
         """
-        if not path.exists():
+        try:
+            st = path.stat()
+        except (FileNotFoundError, NotADirectoryError):
             return None
-        if path.is_dir():
-            return None if self.main_layout == "folder" else "a directory is not a file asset"
+        if stat.S_ISDIR(st.st_mode):
+            return None if isinstance(self.shape, Folder) else "a directory is not a file asset"
         owners = SchemaRegistry.main_file_owners(path)
         if owners and self.type_name not in owners:
             return f"{path.name} is the main document of {', '.join(sorted(owners))}"
-        if self.layout_of(path, verify=True).kind is LayoutKind.NONE:
-            return f"not shaped as a {self.type_name} ({self.main_layout}, {self.main_file or self.main_ext})"
+        # A regular file: a File shape claims it by extension; a Folder shape
+        # claims it only as its MAIN document (``kind`` FOLDER here would mean
+        # "a file that is not the main", which the unverified locate names).
+        if self.shape.locate(path).kind not in (LayoutKind.FILE, LayoutKind.MAIN_FILE):
+            return f"not shaped as a {self.type_name} ({self.shape})"
         return None
 
     def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
@@ -606,9 +513,11 @@ class TypeInfo:
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
         # Refuse, don't gate: a writable carrier is only ever read or stamped at
-        # a path this type claims. A derived identity is a pure function of the
-        # source and is never written, so its bespoke walkers keep their own
-        # notion of shape (a ``.toml`` mcp source, a hook inside settings.json).
+        # a path this type claims. A derived type is exempt because its declared
+        # shape is not yet the truth about its sources (mcp_server says ``.json``
+        # but its walker also yields ``.toml`` and hooks inside settings.json):
+        # its id is a keyed function of the source, never a write, and the check
+        # goes total for it once ``File`` carries the real extension set.
         if self.identity_carrier is not None and self.identity_carrier.writable:
             target = self._identity_path(ref)
             if (reason := self.claims(target)) is not None:
@@ -756,6 +665,14 @@ class TypeInfo:
             "main_file": self.main_file,
             "main_file_is_asset_ref": self.main_file_is_asset_ref,
             "folder_backed": self.folder_backed,
+            # THE shape declaration the four fields above project; the client
+            # reads this one and derives, never a hand-written per-type table.
+            "shape": (
+                {"kind": "folder", "main": self.shape.main, "ref_is_main": self.shape.ref_is_main}
+                if isinstance(self.shape, Folder)
+                else {"kind": "file", "ext": self.shape.ext}
+            ),
+            "editor": self.editor,
             # The entity owns its backing file (re-rendered from default_body on
             # every save) → a resolved-but-file-missing row can self-heal with a
             # single save. The editor uses this to rebuild an orphaned asset.
@@ -786,7 +703,17 @@ class TypeInfo:
             display_name=data.get("display_name"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
+            shape=_shape_from_dict(data.get("shape")),
+            editor=data.get("editor"),
         )
+
+
+def _shape_from_dict(data: "dict | None") -> "File | Folder | None":
+    if not data:
+        return None
+    if data.get("kind") == "folder":
+        return Folder(main=data.get("main"), ref_is_main=bool(data.get("ref_is_main")))
+    return File(ext=data.get("ext") or ".md")
 
 
 # ---------------------------------------------------------------------------
@@ -999,6 +926,7 @@ class SchemaRegistry:
     def register(cls, info: TypeInfo) -> None:
         """Register or enrich a TypeInfo. O(1). Idempotent — merges on re-register."""
         existing = cls._types.get(info.type_name)
+        cls._registry_generation += 1
         # An entity class binding to a type AFTER the per-type schema payloads
         # were memoized (``core.schema``) leaves that type's bootstrap ``schema``
         # frozen at ``None``: entities self-register on import, and some are
@@ -1019,14 +947,14 @@ class SchemaRegistry:
                 existing.harness = info.harness
             if info.family is not None:
                 existing.family = info.family
-            if info.main_layout != "file":
-                existing.main_layout = info.main_layout
-            if info.main_file is not None:
-                existing.main_file = info.main_file
-            if info.main_file_is_asset_ref:
-                existing.main_file_is_asset_ref = True
-            if info.main_ext != ".md":
-                existing.main_ext = info.main_ext
+            if info.shape_declared:
+                # The incoming declaration names a shape; carry the SHAPE (the
+                # one declaration) and re-project the legacy layout fields.
+                existing.shape = info.shape
+                existing.shape_declared = True
+                existing._project_shape()
+            if info.editor is not None:
+                existing.editor = info.editor
             if info.cloud_file_transport == "git":
                 existing.cloud_file_transport = "git"
             if info.assignee_owned_fields:
@@ -1078,8 +1006,8 @@ class SchemaRegistry:
                 existing.shared_child = True
             if info.db_only:
                 existing.db_only = True
-            if info.metadata is not None:
-                existing.metadata = info.metadata
+            if info.declared:
+                existing.declared = True
             if info.meta_model is not None:
                 existing.meta_model = info.meta_model
             # Serialization slots: a declared (non-default) value wins the merge.
@@ -1167,58 +1095,83 @@ class SchemaRegistry:
             type_name = type_name.type  # TypeId duck-type: .type is the type string
         return cls._types.get(type_name)
 
+    # --- SCAN tables: name → walked folder types; ext → walked file types.
+    # Built lazily from the declarations, keyed on the registry generation so a
+    # (re)registration or a test clearing ``_types`` rebuilds them. One dict
+    # lookup per classification instead of a scan of every type.
+    _registry_generation: int = 0
+    _shape_tables_key: Any = None
+    _by_main_file: "dict[str, tuple[TypeInfo, ...]]" = {}
+    _by_ext: "dict[str, tuple[TypeInfo, ...]]" = {}
+
+    @classmethod
+    def _shape_tables(cls) -> "tuple[dict[str, tuple[TypeInfo, ...]], dict[str, tuple[TypeInfo, ...]]]":
+        cls._ensure_loaded()
+        key = (len(cls._types), cls._registry_generation)
+        if cls._shape_tables_key != key:
+            by_main: dict[str, list[TypeInfo]] = {}
+            by_ext: dict[str, list[TypeInfo]] = {}
+            for info in cls._types.values():
+                if info.from_disk_fn is None:
+                    continue   # a type with no walker never claims a path (test probes register too)
+                if isinstance(info.shape, Folder) and info.shape.main:
+                    by_main.setdefault(info.shape.main.lower(), []).append(info)
+                elif isinstance(info.shape, File):
+                    by_ext.setdefault(info.shape.ext, []).append(info)
+            cls._by_main_file = {k: tuple(v) for k, v in by_main.items()}
+            cls._by_ext = {k: tuple(v) for k, v in by_ext.items()}
+            cls._shape_tables_key = key
+        return cls._by_main_file, cls._by_ext
+
     @classmethod
     def main_file_owners(cls, path: "Path | str") -> frozenset[str]:
         """The walked folder-layout types whose declared main document IS
-        ``path``: by name (case-insensitive) AND, for a repo-family type, by
-        placement — ``agentic-assets/<family>/<name>/spec.md`` is a spec, a
-        loose ``SPEC.md`` in a workspace is a markdown document. A shared type
-        (``skill``) owns its name anywhere, which is what its walker does too.
-        A type with no walker never claims a path (test probes register too).
-        Two types may still share a name at the same placement; the set
-        carries that, and a caller refusing a path refuses only when it is NOT
-        a member."""
-        cls._ensure_loaded()
+        ``path``: by name (case-insensitive) AND by placement
+        (``placement.placed_under``): ``agentic-assets/spec/<x>/spec.md`` is a
+        spec, a loose workspace ``SPEC.md`` is a markdown document; a
+        harness-scoped type (``skill``) owns its name anywhere, which is what its
+        walker does too. Two types may still share a name at one placement; the
+        set carries that, and a caller refusing a path refuses only when it is
+        NOT a member."""
+        from flow_sdk.fs_store.placement import placed_under  # noqa: PLC0415
+
         p = Path(path)
-        wanted = p.name.lower()
-        owners = set()
-        for info in cls._types.values():
-            if info.main_layout != "folder" or not info.main_file or info.from_disk_fn is None:
-                continue
-            if info.main_file.lower() != wanted:
-                continue
-            if info.asset_class == "repo":
-                family = (info.main_subdir or "").rsplit("/", 1)[-1]
-                parts = [x.lower() for x in p.parent.parent.parts[-2:]]
-                if not family or parts != ["agentic-assets", family.lower()]:
-                    continue
-            owners.add(info.type_name)
-        return frozenset(owners)
+        by_main, _ = cls._shape_tables()
+        candidates = by_main.get(p.name.lower())
+        if not candidates:
+            return frozenset()
+        return frozenset(
+            info.type_name for info in candidates if placed_under(info.asset_class, info.family, p.parent.parent)
+        )
 
     @classmethod
     def type_for(cls, path: "Path | str") -> str | None:
-        """THE registry-wide path → type classifier (name + stat only; no
-        roots). Precedence:
+        """THE registry-wide path → type classifier (name + placement + stat;
+        no walk roots). Precedence:
 
-        1. a folder type's declared main document, by name (``SKILL.md`` →
-           ``skill``; ``mcp.json`` → ``mcp``; a folder holding one → that type);
-        2. a file type whose declared extension is unique among file types
-           (``.js`` → dynamic_workflow, ``.csv`` → spreadsheet);
+        1. a folder type's declared main document, by name and placement
+           (``SKILL.md`` → ``skill``; ``agentic-assets/mcp/x/mcp.json`` → ``mcp``;
+           a folder holding one → that type);
+        2. a file type whose declared extension is unique among walked file
+           types (``.js`` → dynamic_workflow, ``.csv`` → spreadsheet);
         3. ``markdown`` for any remaining ``.md``;
-        4. ``None`` — not an asset, or ambiguous (``.json``, ``.jsonl`` are
+        4. ``None`` — not an asset, or ambiguous (``.json``/``.jsonl`` are
            claimed by several bespoke-walked types and need their roots).
 
-        A name shared by two folder types is reported as ``None`` rather than
-        picked by registration order.
+        A name shared by two folder types at one placement is ``None``, never
+        registration order.
         """
-        cls._ensure_loaded()
         p = Path(path)
+        by_main, by_ext = cls._shape_tables()
         if p.is_dir():
-            for info in cls._types.values():
-                if info.main_layout != "folder" or not info.main_file or not (p / info.main_file).is_file():
-                    continue
-                if info.type_name in cls.main_file_owners(p / info.main_file):
-                    return info.type_name
+            try:
+                names = {entry.lower() for entry in os.listdir(p)}
+            except OSError:
+                return None
+            for name in names & by_main.keys():
+                owners = cls.main_file_owners(p / name)
+                if len(owners) == 1:
+                    return next(iter(owners))
             return None
         owners = cls.main_file_owners(p)
         if len(owners) == 1:
@@ -1227,12 +1180,8 @@ class SchemaRegistry:
             return None
         suffix = p.suffix.lower()
         if suffix and suffix != ".md":
-            by_ext = [
-                info.type_name
-                for info in cls._types.values()
-                if info.main_layout == "file" and info.from_disk_fn is not None and (info.main_ext or "").lower() == suffix
-            ]
-            return by_ext[0] if len(by_ext) == 1 else None
+            by = by_ext.get(suffix, ())
+            return by[0].type_name if len(by) == 1 else None
         if suffix == ".md" and "markdown" in cls._types:
             return "markdown"
         return None
@@ -1297,7 +1246,7 @@ class SchemaRegistry:
         Registry-driven companion to the live bridge (which materializes any child
         generically): the catch-up sync iterates this list instead of a hardcoded
         tuple, so a new shareable child type enrolls by setting ``shared_child=True``
-        on its ``TypeMetadata`` — no edit to the sync code.
+        in its ``TypeInfo`` declaration — no edit to the sync code.
         """
         cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
@@ -1406,362 +1355,3 @@ class SchemaRegistry:
         if cls._default_index_types:
             return list(cls._default_index_types)
         return list(_BUILTIN_DEFAULT_TYPES)
-
-    # ---------------------------------------------------------------------------
-    # Logging methods
-    # ---------------------------------------------------------------------------
-
-    @staticmethod
-    def append_scan(
-        trigger: str,
-        duration_ms: float,
-        total_records: int,
-        total_bytes: int,
-        types: list[dict[str, Any]],
-        type_name: str | None = None,
-    ) -> str:
-        """Log a scan operation. Returns the ISO timestamp written."""
-        now = datetime.now(timezone.utc).isoformat()
-
-        if type_name:
-            entry = {
-                "id": mint_uuid(),
-                "type": "scan_log",
-                "scan_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_records": total_records,
-                "total_bytes": total_bytes,
-                "type_name": type_name,
-                "created_at": now,
-            }
-            sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", entry)
-        else:
-            global_entry = {
-                "id": mint_uuid(),
-                "type": "scan_log",
-                "scan_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_records": total_records,
-                "total_bytes": total_bytes,
-                "types": types,
-                "created_at": now,
-            }
-            _append_jsonl(_schema_dir() / "scan_log.jsonl", global_entry)
-            for t in types:
-                t_name = t.get("type", "")
-                if not t_name:
-                    continue
-                t_entry = {
-                    "id": mint_uuid(),
-                    "type": "scan_log",
-                    "scan_trigger": trigger,
-                    "duration_ms": t.get("scan_ms", 0.0),
-                    "total_records": t.get("count", 0),
-                    "total_bytes": t.get("total_bytes", 0),
-                    "type_name": t_name,
-                    "created_at": now,
-                }
-                sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", t_entry)
-
-        return now
-
-    @staticmethod
-    def append_index(
-        trigger: str,
-        duration_ms: float,
-        total_indexed: int,
-        types: list[dict[str, Any]],
-        type_name: str | None = None,
-    ) -> str:
-        """Log an index operation. Returns the ISO timestamp written.
-
-        Per-type log only — the "global" timestamp is derived in
-        ``get_index_status`` as ``max(per_type[i].last_indexed_at)``. This
-        means per-type indexing (e.g. UI's "Index Now" loop) automatically
-        flips ``never_indexed`` to false without needing a separate global
-        write call.
-        """
-        now = datetime.now(timezone.utc).isoformat()
-
-        if type_name:
-            entry = {
-                "id": mint_uuid(),
-                "type": "index_log",
-                "index_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_indexed": total_indexed,
-                "type_name": type_name,
-                "created_at": now,
-            }
-            sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", entry)
-        else:
-            for t in types:
-                t_name = t.get("type", "")
-                if not t_name:
-                    continue
-                t_entry = {
-                    "id": mint_uuid(),
-                    "type": "index_log",
-                    "index_trigger": trigger,
-                    # The caller's per-type dict already carries a measured
-                    # duration (``types_out`` in fs_records_actions); reading
-                    # ``indexed`` from it while writing a literal 0.0 here left
-                    # every aggregate run's audit trail timeless.
-                    "duration_ms": t.get("duration_ms", 0.0),
-                    "total_indexed": t.get("indexed", 0),
-                    "type_name": t_name,
-                    "created_at": now,
-                }
-                sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", t_entry)
-
-        return now
-
-    @staticmethod
-    def get_last_scan_at(type_name: str) -> str | None:
-        sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "scan_log.jsonl")
-        return (entry or {}).get("created_at")
-
-    @staticmethod
-    def get_last_index_at(type_name: str) -> str | None:
-        sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "index_log.jsonl")
-        return (entry or {}).get("created_at")
-
-    # ---------------------------------------------------------------------------
-    # Internal helpers
-    # ---------------------------------------------------------------------------
-
-    @classmethod
-    async def clear_index(cls, types: list[str] | None = None) -> ClearResult:
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.record_error import clear_all, clear_for_type  # noqa: PLC0415
-
-        driver = get_db_driver()
-        if types is None:
-            fts_cleared = await driver.fts_clear() if hasattr(driver, "fts_clear") else 0
-            entities_cleared = (
-                await driver.delete_entities_by_type(None) if hasattr(driver, "delete_entities_by_type") else 0
-            )
-            global_log = _schema_dir() / "index_log.jsonl"
-            if global_log.exists():
-                global_log.unlink()
-            types_dir = _schema_dir() / "types"
-            if types_dir.is_dir():
-                for per_type_log in types_dir.glob("*/index_log.jsonl"):
-                    per_type_log.unlink()
-            types_cleared = cls.get_all_record_types()
-            await clear_all()
-        else:
-            fts_cleared = 0
-            entities_cleared = 0
-            types_cleared = []
-            for type_name in types:
-                if hasattr(driver, "delete_entities_by_type"):
-                    entities_cleared += await driver.delete_entities_by_type(type_name)
-                sanitized = _sanitize_type_name(type_name)
-                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
-                if log_file.exists():
-                    log_file.unlink()
-                types_cleared.append(type_name)
-                await clear_for_type(type_name)
-        return ClearResult(
-            fts_cleared=fts_cleared,
-            entities_cleared=entities_cleared,
-            types_cleared=types_cleared,
-        )
-
-    # New name alias
-    clear = clear_index
-
-    @classmethod
-    async def get_index_status(
-        cls,
-        types: list[str] | None = None,
-        scope: "object | None" = None,
-    ) -> IndexStatus:
-        """Snapshot of index state. DB-free for freshness.
-
-        * **Project scope** (``scope.projects == [one id]``) — the project IS a
-          record, so its three states come from the project record's own
-          on-disk ``.hash`` sentinel: ``never_indexed`` = no sentinel,
-          ``last_indexed_at`` = the sentinel time, ``stale`` = ``index_required``
-          ("changes pending"). No child aggregation.
-        * **Unscoped / type list** — footer/scanner view. ``last_indexed_at``
-          per type from the JSONL run-history (audit); ``entity_count`` from
-          ``count_entities_by_type`` (the live searchable count).
-
-        ``stale`` now means "changes pending next index", not a 24h timer.
-        Orphan counts come from a scan, not from here.
-        """
-        import asyncio  # noqa: PLC0415
-
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-
-        driver = get_db_driver()
-        per_type: list[TypeIndexStatus] = []
-        latest_iso: str | None = None
-        target_types = list(types or cls.get_default_index_types())
-
-        # `stale` is the endpoint's documented contract — "changes pending next
-        # index" — and it used to be the literal False on every row, so the
-        # freshness signal could never be true outside the single-project
-        # branch below. It is now the same question that branch asks
-        # (`index_required`), asked per type. `orphan_count` stays 0 by design:
-        # orphans come from a scan, not from here.
-        # One thread hop for the whole sweep, not one per type: the walk never
-        # yields to the loop between types, so 30+ dispatches bought nothing.
-        def _stale_by_type() -> dict[str, bool]:
-            return {t: FSRecord.type_has_pending_changes(t) for t in target_types}
-
-        stale_by_type = await asyncio.to_thread(_stale_by_type)
-        nested = await cls._nested_counts(driver, scope)
-
-        for type_name in target_types:
-            type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
-            if type_last and (latest_iso is None or type_last > latest_iso):
-                latest_iso = type_last
-            count = await cls._safe_count(driver, type_name, scope, nested)
-            per_type.append(
-                TypeIndexStatus(
-                    type_name=type_name,
-                    last_indexed_at=type_last,
-                    entity_count=count,
-                    stale=stale_by_type.get(type_name, False),
-                    orphan_count=0,
-                )
-            )
-
-        # Project-scoped freshness from the project record's own sentinel.
-        project_id = cls._single_project_id(scope)
-        if project_id is not None:
-            prec = cls._project_record_for_status(project_id)
-            indexed_at = prec.indexed_at if prec is not None else None
-            return IndexStatus(
-                never_indexed=indexed_at is None,
-                last_indexed_at=indexed_at,
-                stale=bool(prec.index_required) if prec is not None else False,
-                default_types=cls.get_default_index_types(),
-                per_type=per_type,
-                total_orphans=0,
-            )
-
-        return IndexStatus(
-            never_indexed=all(t.last_indexed_at is None for t in per_type),
-            last_indexed_at=latest_iso,
-            # Rolled up from the per-type answers rather than hardcoded.
-            stale=any(t.stale for t in per_type),
-            default_types=cls.get_default_index_types(),
-            per_type=per_type,
-            total_orphans=0,
-        )
-
-    @staticmethod
-    async def _safe_count(
-        driver,
-        type_name: str,
-        scope: "object | None",
-        nested: "dict[str, int] | None" = None,
-    ) -> int:
-        """Per-type live count, tolerant of a driver whose
-        ``count_entities_by_type`` predates the ``scope`` kwarg. Shared by
-        ``get_index_status`` and ``get_asset_stats`` so there is one counting
-        path, not two.
-
-        ``nested`` (from ``_nested_counts``) is subtracted so the badge agrees
-        with the list the user actually sees: ``/search?top_level=true`` drops
-        assets nested inside another browseable asset, and a count that still
-        included them would read 8 over a 4-row list. Clamped at 0 — the two
-        queries are separate reads, so a concurrent write must not go negative.
-        """
-        try:
-            total = await driver.count_entities_by_type(type_name, scope=scope)
-        except TypeError:
-            total = await driver.count_entities_by_type(type_name)
-        except Exception:
-            return 0
-        return max(0, total - (nested or {}).get(type_name, 0))
-
-    @classmethod
-    async def _nested_counts(cls, driver, scope: "object | None") -> dict[str, int]:
-        """Per-type count of rows nested inside a browseable asset, or ``{}``.
-
-        Fetched ONCE per status/stats call (one grouped query), not per type.
-        Fails soft to ``{}`` — a driver without the method, or a query error,
-        degrades to today's raw counts rather than blanking the sidebar.
-        """
-        try:
-            return await driver.count_nested_entities_by_type(
-                tuple(cls.browseable_type_names()), scope=scope
-            )
-        except Exception:
-            return {}
-
-    @classmethod
-    async def get_asset_stats(cls, scope: "object | None" = None) -> AssetStats:
-        """Live per-type asset counts for a ScopeFilter, over the registry's
-        default index types (P5 — derived, not hardcoded). Counts only; reuses
-        the same per-type count path as ``get_index_status``."""
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-
-        driver = get_db_driver()
-        nested = await cls._nested_counts(driver, scope)
-        per_type = {
-            str(type_name): await cls._safe_count(driver, type_name, scope, nested)
-            for type_name in cls.get_default_index_types()
-        }
-        return AssetStats(per_type=per_type, total=sum(per_type.values()))
-
-    @staticmethod
-    def _single_project_id(scope: "object | None") -> str | None:
-        """The lone project id when ``scope`` targets exactly one project, else None."""
-        projects = list(getattr(scope, "projects", None) or []) if scope is not None else []
-        return projects[0] if len(projects) == 1 else None
-
-    @classmethod
-    def project_never_indexed(cls, project_id: str) -> bool:
-        """True when this project has no index sentinel on disk.
-
-        The per-project form of ``get_index_status``'s project branch, which
-        cannot serve a caller holding SEVERAL projects: ``_single_project_id``
-        returns None the moment a scope names more than one, so a multi-project
-        view (e.g. a project plus its context folders) has to ask per project.
-
-        Pure filesystem read (``FSRecord.indexed_at``) — no DB, no write, no walk.
-        """
-        prec = cls._project_record_for_status(project_id)
-        return prec is None or getattr(prec, "indexed_at", None) is None
-
-    @staticmethod
-    def _project_record_for_status(project_id: str) -> "object | None":
-        """Load the project record with its asset_ref bound to the project
-        folder, so ``indexed_at`` / ``index_required`` resolve. None if the
-        record (or its mount path) is unknown."""
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-
-        prec = FSRecord.load_or_none("project", project_id)
-        return prec.ensure_asset_ref() if prec is not None else None
-
-    # New name alias
-    get_status = get_index_status
-
-    @classmethod
-    def get_errors(cls, type_name: "str | TypeId | None" = None) -> list:
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        results = FSRecord.discover(RecordType.RECORD_ERROR)
-        if type_name is not None:
-            if not isinstance(type_name, str):
-                type_name = type_name.type
-            results = [
-                e
-                for e in results
-                if e.__dict__.get("source_record_type") == type_name or getattr(e, "type", None) == type_name
-            ]
-        return results
