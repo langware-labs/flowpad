@@ -1,7 +1,8 @@
 """
-Bootstrap route - initializes local entities and returns BootstrapInfo.
+Bootstrap prerequisites and deferred runtime information.
 
-This endpoint is called by the UI SDK on startup to get initialization data.
+Startup establishes local entities. The SDK awaits bootstrap for rendering
+prerequisites, then fetches optional discovery through info after initialization.
 
 Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
 Key functions brought over:
@@ -17,7 +18,7 @@ Key functions brought over:
   - File system setup: .flow/logs, .flow/system_skills, settings.json
   - Cloud token stubs (flow-cli has no cloud auth)
   - detect_available_llm_providers() using LLMProvider enum
-  - get_desktop_info() assembling full LmInfo
+  - get_desktop_bootstrap_info() assembling paths and stored identity
 """
 
 import asyncio
@@ -52,7 +53,6 @@ from flow_sdk.config import (
     StorageProvider,
     flowpad_assistant_project_root,
     get_os_root_path,
-    is_hidden_project,
     system_projects_root,
 )
 from flow_sdk.core.entity.entity_model import Entity
@@ -71,7 +71,8 @@ from flow_sdk.fs_store.indexer.auto_index import (
     PREF_AUTO_INDEX_TYPE,
 )
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
-from flow_sdk.models.responses import ApiSuccessResponse
+from flow_sdk.models.responses import ApiResponseStatus, ApiSuccessResponse
+from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
 from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
 
 router = APIRouter()
@@ -1119,67 +1120,70 @@ async def _reap_protected_path_projects() -> None:
 
     settings = get_instance_settings()
     project_shadows = settings.records_root / "project"
-    projects = await Project.get_all()
-    rows_by_id = {str(project.id): project for project in projects}
+    projects = await Project._db.get_entity_locations(Project.get_type())
+    # Legacy rows can carry a location only in their name. Resolve those through
+    # the existing Project validator, rather than duplicating its path rules.
+    for index, row in enumerate(projects):
+        if row.fs_storage_mount_path is None and row.name:
+            entity = await Project.get_by_id(row.id)
+            if entity is not None:
+                projects[index] = row.model_copy(update={"fs_storage_mount_path": entity.fs_storage_mount_path})
+    rows_by_id = {project.id: project for project in projects}
 
-    # A system project is never stale: ``_ensure_system_projects`` runs immediately
-    # before this reaper and re-creates it every time. Its root lives INSIDE the
-    # install (``<checkout>/flow_sdk/system_projects/<name>``), which
-    # ``is_protected_path`` reports as protected — so without an exemption the
-    # reaper deleted the Flowpad Assistant project microseconds after it was
-    # created, on EVERY startup and every ``desktop-db/clear``. The symptom was
-    # silent: the row vanished, ``project/@flowpad_assistant`` answered "Invalid
-    # request", and the assistant docs surface had nothing to resolve.
-    #
-    # Rows carry the answer already — ``_ensure_system_projects`` stamps
-    # ``system=True`` — so ask the row rather than re-deriving it from the path.
-    protected_row_ids = {
-        str(project.id)
-        for project in projects
-        if project.fs_storage_mount_path and project.protected_path and not project.system
-    }
+    def inspect_locations():
+        # Shipped projects live inside the protected install directory. Their
+        # explicit system flag keeps the reaper from deleting the rows that
+        # _ensure_system_projects just created.
+        protected_row_ids = {
+            str(project.id)
+            for project in projects
+            if project.fs_storage_mount_path and is_protected_path(project.fs_storage_mount_path) and not project.system
+        }
 
-    # Shadows are the exception: their ``metadata.json`` carries no ``system``
-    # key, so the flag above is unavailable and the shape of the path is the only
-    # evidence. Resolved once here, outside the per-shadow loop below.
-    shipped_system_root = system_projects_root().resolve()
+        # Shadows are the exception: their ``metadata.json`` carries no ``system``
+        # key, so the flag above is unavailable and the shape of the path is the only
+        # evidence. Resolved once here, outside the per-shadow loop below.
+        shipped_system_root = system_projects_root().resolve()
 
-    def _is_shipped_system_project(mount: str | None) -> bool:
-        """True for ``<running-install>/flow_sdk/system_projects/<name>``.
+        def _is_shipped_system_project(mount: str | None) -> bool:
+            """True for ``<running-install>/flow_sdk/system_projects/<name>``.
 
-        Deliberately the RUNNING install only: a copy under some OTHER install is
-        genuinely stale and must still be reaped. (``config.is_system_project_path``
-        answers the any-install question and is the wrong one here.)
-        """
-        if not mount:
-            return False
-        try:
-            return Path(mount).resolve().parent == shipped_system_root
-        except OSError:
-            return False
-
-    # Orphan shadows are independent evidence: their DB row may already be
-    # gone, but protected-path metadata must not survive to be re-adopted.
-    shadow_by_id: dict[str, Path] = {}
-    protected_shadow_ids: set[str] = set()
-    if project_shadows.is_dir():
-        for shadow in project_shadows.iterdir():
-            metadata = shadow / "metadata.json"
-            if not shadow.is_dir() or not metadata.is_file():
-                continue
+            Deliberately the RUNNING install only: a copy under some OTHER install is
+            genuinely stale and must still be reaped. (``config.is_system_project_path``
+            answers the any-install question and is the wrong one here.)
+            """
+            if not mount:
+                return False
             try:
-                data = json.loads(metadata.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            project_id = str(data.get("id") or shadow.name)
-            mount = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
-            name = data.get("name")
-            if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
-                mount = name
-            if mount and is_protected_path(mount) and not _is_shipped_system_project(mount):
-                protected_shadow_ids.add(project_id)
-                shadow_by_id[project_id] = shadow
+                return Path(mount).resolve().parent == shipped_system_root
+            except OSError:
+                return False
 
+        # Orphan shadows are independent evidence: their DB row may already be
+        # gone, but protected-path metadata must not survive to be re-adopted.
+        shadow_by_id: dict[str, Path] = {}
+        protected_shadow_ids: set[str] = set()
+        if project_shadows.is_dir():
+            for shadow in project_shadows.iterdir():
+                metadata = shadow / "metadata.json"
+                if not shadow.is_dir() or not metadata.is_file():
+                    continue
+                try:
+                    data = json.loads(metadata.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                project_id = str(data.get("id") or shadow.name)
+                mount = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
+                name = data.get("name")
+                if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
+                    mount = name
+                if mount and is_protected_path(mount) and not _is_shipped_system_project(mount):
+                    protected_shadow_ids.add(project_id)
+                    shadow_by_id[project_id] = shadow
+
+        return protected_row_ids, protected_shadow_ids, shadow_by_id
+
+    protected_row_ids, protected_shadow_ids, shadow_by_id = await asyncio.to_thread(inspect_locations)
     protected_ids = protected_row_ids | protected_shadow_ids
     if not protected_ids:
         return
@@ -1676,48 +1680,21 @@ def setup_desktop_filesystem() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Desktop info assembly (migrated from desktop_loader.py:get_desktop_info)
+# Desktop rendering prerequisites
 # ---------------------------------------------------------------------------
 
 
-async def get_desktop_info() -> LmInfo:
-    """Get desktop environment information including available LLM providers,
-    installed agents, and cloud login status.
-
-    Returns:
-        LmInfo object with detected LLM providers, installed agents, and cloud login availability
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
-    """
+def get_desktop_bootstrap_info() -> LmInfo:
+    """Cheap paths and stored identity needed before the first render."""
     from flow_sdk.cloud_client import ApiConfig
-
-    llm_providers = detect_available_llm_providers()
-    # The agent-dir scan (blocking, off-thread) and the cloud-login probe
-    # (network + keychain, capped) are independent — overlap them so this
-    # startup-path call costs max(), not sum(), of the two.
-    installed_agents, cloud_login_available = await asyncio.gather(
-        asyncio.to_thread(get_installed_agents),
-        is_cloud_login_available(),
-    )
-
-    # Build fully resolved paths
-    app_paths = build_app_paths()
-
-    cloud_config = ApiConfig.from_env()
-    # Who this instance is signed in as, from the same builder `/cloud/status`
-    # uses. Both of its inputs are file reads (and keychain-safe by design), so it
-    # adds nothing measurable to the cold-start path it now sits on.
     from flow_sdk.cloud_client.auth_state import login_block
 
+    cloud_config = ApiConfig.from_env()
     return LmInfo(
-        llm_providers=llm_providers,
-        installed_agents=installed_agents,
-        cloud_login_available=cloud_login_available,
         login=login_block(),
         cloud_url=cloud_config.api_base_url,
         cloud_app_url=cloud_config.app_base_url,
-        paths=app_paths,
-        # Legacy fields for backward compatibility (deprecated)
+        paths=build_app_paths(),
         home=get_vfs_home_path(),
         workspace="Flowpad workspace",
         skills=".claude/skills",
@@ -1794,16 +1771,26 @@ _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
 first_bootstrap_served: asyncio.Event = asyncio.Event()
 
 
-def invalidate_bootstrap_cache() -> None:
-    """Reset the bootstrap cache so the next call runs a full bootstrap.
-
-    Call this after wiping the database so the @local entities are recreated
-    on the very next bootstrap request rather than returning stale entity IDs
-    from the pre-wipe cache.
-    """
-    global _bootstrap_cache, _bootstrap_cache_ts
+def invalidate_bootstrap_cache(*, reset_local_entities: bool = False) -> None:
+    """Refresh responses; only a database replacement resets lifecycle identity."""
+    global _bootstrap_cache, _bootstrap_cache_ts, _local_entities
+    global _info_cache, _info_cache_ts, _info_task, _secret_recovery_task
     _bootstrap_cache = None
     _bootstrap_cache_ts = 0.0
+    _info_cache = None
+    _info_cache_ts = 0.0
+    if _info_task is not None and not _info_task.done():
+        _info_task.cancel()
+    _info_task = None
+    if reset_local_entities:
+        _local_entities = None
+        if _secret_recovery_task is not None and not _secret_recovery_task.done():
+            _secret_recovery_task.cancel()
+        _secret_recovery_task = None
+        first_bootstrap_served.clear()
+        from flow_sdk.server.middleware import request_transaction_middleware
+
+        request_transaction_middleware._LOCAL_USER_CACHE = None
 
 
 async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[BootstrapInfo]:
@@ -1844,7 +1831,7 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     opening_project = await _take_opening_project() or await _last_active_project()
     if opening_project is not None:
         update["default_project"] = opening_project
-    return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update=update))
+    return ApiSuccessResponse[BootstrapInfo](status=ApiResponseStatus.SUCCESS, data=info.model_copy(update=update))
 
 
 async def _take_opening_project() -> Optional[dict]:
@@ -1895,260 +1882,209 @@ async def _last_active_project() -> Optional[dict]:
     it can afford the fresh read.
     """
     try:
-        projects = await Project.get_all() or []
+        project = await Project.get_last_active()
+        return project_to_dict(project) if project is not None else None
     except Exception as e:  # noqa: BLE001
         logging.warning(f"[bootstrap] could not resolve the last active project: {e}")
         return None
-    # Anything HIDDEN is excluded, via the repo's own predicate rather than a
-    # local rule: `is_hidden_project` is already the answer to "should this
-    # project be offered", and it ORs four cases — the ``system`` flag, an
-    # SDK-shipped system project path, the agent mount ROOT, and a helpdesk
-    # portal checkout.
-    #
-    # Reading ``p.system`` alone was not enough, and a live box proved it: the
-    # shipped Flowpad Assistant carries the flag, but a HELPDESK project does
-    # not. A user who asked the help desk a question was left with it as her
-    # most recently active project, so this would have opened her into a support
-    # scratch checkout instead of her own work. These projects are all browsable,
-    # so merely visiting one stamps ``last_active_at`` on it — which is exactly
-    # how a single support question becomes a permanent landing place.
-    #
-    # Deliberately the shared predicate and not a second spelling of it: a local
-    # copy would drift from whatever the next hidden kind turns out to be.
-    active = [
-        p for p in projects if p.last_active_at and not is_hidden_project(p.fs_storage_mount_path or "", bool(p.system))
-    ]
-    if not active:
-        return None
-    return project_to_dict(max(active, key=lambda p: p.last_active_at))
 
 
-@router.get("/api/v1/graph/bootstrap")
-async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]:
-    """
-    Bootstrap endpoint - creates local entities and returns BootstrapInfo.
+_local_entities: tuple[User, Project, Workspace, ComputeNode] | None = None
+_local_entities_lock = asyncio.Lock()
+_info_cache: DeferredInfo | None = None
+_info_cache_ts = 0.0
+_info_task: asyncio.Task[DeferredInfo] | None = None
+_secret_recovery_task: asyncio.Task[dict | None] | None = None
 
-    This is called by the UI SDK (initSdk) on application startup.
-    It initializes the local database, creates the desktop filesystem structure,
-    and creates default @local entities.
 
-    Concurrent calls are serialized: the first call runs the full bootstrap,
-    subsequent concurrent calls wait and return the cached result. Cache TTL
-    is 30 seconds.
+async def _ensure_local_entities() -> tuple[User, Project, Workspace, ComputeNode]:
+    """Mandatory instance setup, once per server lifecycle (or factory reset)."""
+    global _local_entities
+    if _local_entities is not None:
+        return _local_entities
+    async with _local_entities_lock:
+        if _local_entities is None:
+            await init_db()
+            await asyncio.to_thread(setup_desktop_filesystem)
+            user = await get_or_create_local_user()
+            project = await get_or_create_local_project(desktop_user=user)
+            workspace = await get_or_create_local_workspace(desktop_user=user)
+            compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
+            _local_entities = user, project, workspace, compute_node
+            from flow_sdk.server.middleware import request_transaction_middleware
 
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_entities)
-    and flowpad/hub/app/actions/bootstrap_actions.py (bootstrap action).
+            request_transaction_middleware._LOCAL_USER_CACHE = user
+    return _local_entities
 
-    Args:
-        electron: Set by the client when it is running inside the Electron
-            shell (``ts_sdk`` ``isElectronShell()``). The preload bridge is the
-            only thing that can know this, so the client reports it and the
-            server decides — see ``instance_settings/runtime.py``. It selects
-            ``desktop`` vs ``browser`` and is never stored.
 
-    Returns:
-        ApiSuccessResponse containing BootstrapInfo with env, runtime, desktop_info, user, project, workspace, agent
-    """
-    global _bootstrap_cache, _bootstrap_cache_ts
-
-    # Fast path: return cached result without acquiring the lock
-    if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-        return await _with_runtime(_bootstrap_cache, electron)
-
+async def initialize_bootstrap() -> BootstrapInfo:
+    """Prepare rendering prerequisites before the server accepts requests."""
+    global _bootstrap_cache, _bootstrap_cache_ts, _local_entities
+    entities = await _ensure_local_entities()
     async with _bootstrap_lock:
-        # Re-check inside the lock (another coroutine may have just finished)
         if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-            return await _with_runtime(_bootstrap_cache, electron)
+            return _bootstrap_cache
+        # Creation/normalization is lifecycle-only; names/locales remain live.
+        refreshed = await asyncio.gather(*(type(entity).get_by_id(entity.id) for entity in entities))
+        if all(entity is not None for entity in refreshed):
+            _local_entities = tuple(refreshed)
+        else:
+            _local_entities = None
+            await _ensure_local_entities()
+        user, project, workspace, compute_node = _local_entities
+        from flow_sdk.icons import icons as icon_registry
+        from flow_sdk.i18n import get_supported_locales, get_translation_targets
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
 
-        from flow_sdk.utils import TimeIt  # noqa: PLC0415
-
-        _t = TimeIt("Bootstrap")
-
-        # Initialize database (creates tables if needed)
-        await init_db()
-        _t.time("init_db")
-
-        # Set up desktop filesystem (.flow/logs, .flow/system_skills, settings.json)
-        await asyncio.to_thread(setup_desktop_filesystem)
-        _t.time("setup_desktop_filesystem")
-
-        # Recover from an undecryptable secrets file (lost/changed keychain key)
-        # before anything tries to read secrets. Returns a UI notice on reset.
-        from flow_sdk.cli.auth.secrets import (  # noqa: PLC0415
-            clear_app_secret_metadata,
-            recover_orphaned_sodot,
-        )
-
-        notice: Optional[dict] = None
-        try:
-            notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
-        except asyncio.TimeoutError:
-            logging.warning("[bootstrap] sodot recovery probe timed out; skipping for this boot")
-        except Exception as e:
-            logging.warning(f"[bootstrap] sodot recovery probe failed (non-fatal): {e}")
-        _t.time("recover_orphaned_sodot")
-        if notice is not None:
-            # Secrets were reset — drop the now-orphaned metadata records so the
-            # secrets list doesn't show entries whose values are gone.
-            try:
-                await clear_app_secret_metadata()
-            except Exception as e:
-                logging.warning(f"[bootstrap] Failed to clear app-secret metadata (non-fatal): {e}")
-            _t.time("clear_app_secret_metadata")
-
-        # Get or create local entities using Entity API
-        # Order matters: user first (owner), then project, workspace, compute node
-        user = await get_or_create_local_user()
-        _t.time("get_or_create_local_user")
-        project = await get_or_create_local_project(desktop_user=user)
-        _t.time("get_or_create_local_project")
-        # System indexing + the one-shot Welcome-favorite seed run in the
-        # detached ``index_system_content`` startup task — kept off the request
-        # path (the seed used to poll the not-yet-ready index here for ~2.5s).
-        workspace = await get_or_create_local_workspace(desktop_user=user)
-        _t.time("get_or_create_local_workspace")
-        compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
-        _t.time("get_or_create_local_compute_node")
-
-        # Ensure + repair the @local inbox unread projection. The mutable
-        # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
-        # — the FE hydrates it via the normal entity GET/watch channel.
-        try:
-            from flow_sdk.inbox import recompute_unread as _recompute_unread
-
-            await _recompute_unread("bootstrap", user.typeid if user else None)
-        except Exception as e:
-            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
-        _t.time("inbox_recompute")
-
-        sandbox_available = is_sandbox_available()
-        sandbox_compute_node: Optional[ComputeNode] = None
-        if sandbox_available:
-            try:
-                sandbox_compute_node = await get_or_create_sandbox_compute_node(
-                    local_project=project, desktop_user=user
-                )
-            except Exception as e:
-                logging.warning(f"[bootstrap] Failed to create @sandbox compute node: {e}")
-                sandbox_available = False
-        _t.time("get_or_create_sandbox_compute_node")
-
-        # Desktop info (LLM providers, installed agents, cloud-login, paths),
-        # scan info (DB index-status), and harness state are independent —
-        # fetch them concurrently.
-        from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
-        from flow_sdk.core.capabilities.summary import compute_capabilities_summary  # noqa: PLC0415
-        from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
-
-        # Harness state + capabilities summary are computed WITHOUT awaiting the
-        # full capability-discovery sweep (~860ms env probe). That sweep already
-        # runs as a detached startup task; the frontend reads harness/capability
-        # state from its own live capabilityManager subscription (REST check +
-        # data_op updates) and self-heals within ~1s. Blocking the cold
-        # bootstrap request on the sweep is what pushed it past the 500ms budget.
-        desktop_info, scan_info, harness_state, capabilities_summary = await asyncio.gather(
-            get_desktop_info(),
-            get_scan_info(),
-            compute_harness_state(wait_for_discovery=False),
-            compute_capabilities_summary(wait_for_discovery=False),
-        )
-        _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
-
-        # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
-        # (default off). "Disabled" has ONE meaning everywhere — no sniffer
-        # commands in ~/.claude/settings.json — and it is enforced from both
-        # ends: the hooks-sniffer DELETE action purges on an explicit toggle
-        # off, and this boot path purges when nothing here backs the sniffer
-        # (default-off, or entries left behind by an uninstalled/other
-        # instance). Enabled state is the DB entity, so a user who toggled the
-        # sniffer on keeps it across restarts even with the instance gate off.
-        from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
-            _create_or_update_sniffer_hook,
-            _get_sniffer_hook,
-            sniffer_installed,
-        )
-        from flow_sdk.builtin.agent_hook import HookScope  # noqa: PLC0415
-        from flow_sdk.builtin.claude_settings_sync import (  # noqa: PLC0415
-            purge_sniffer_entries_from_settings,
-        )
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
-        sniffer_hook = None
-        sniffer_is_installed = False
-        try:
-            sniffer_hook = await _get_sniffer_hook()
-            _t.time("get_sniffer_hook")
-            sniffer_active = bool(sniffer_hook and sniffer_hook.enabled)
-            # What settings.json actually carries — the UI warns on this, not on
-            # the DB entity, so a sniffer installed by another instance shows
-            # up. Read once here; each branch below knows what it changed it to.
-            sniffer_is_installed = sniffer_installed()
-            _t.time("sniffer_installed")
-            if get_instance_settings().sniffer_enabled and not sniffer_active:
-                sniffer_hook = await _create_or_update_sniffer_hook(user)
-                _t.time("create_or_update_sniffer_hook")
-                await sniffer_hook.apply()
-                sniffer_is_installed = sniffer_installed()
-                _t.time("sniffer_hook.apply")
-            elif not sniffer_active and sniffer_is_installed:
-                # Disabled, yet the settings file still carries sniffer
-                # commands — stale. Same purge the DELETE action runs, so both
-                # roads to "off" leave the harness in the same state.
-                purge_sniffer_entries_from_settings(HookScope.USER)
-                sniffer_is_installed = False
-                _t.time("purge_stale_sniffer_entries")
-        except Exception as e:
-            logging.warning(f"Failed to reconcile sniffer hook: {e}")
-
-        # Build BootstrapInfo using Pydantic model
-        types = build_all_type_payloads()
-        _t.time("build_all_type_payloads")
-        from flow_sdk.icons import icons as icon_registry  # noqa: PLC0415
-
-        icon_packs = icon_registry.payload()
-        _t.time("icon_packs")
-        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-        from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
-
-        bootstrap_info = BootstrapInfo(
-            types=types,
-            icon_packs=icon_packs,
-            user=entity_to_dict(user),
-            domain=None,
-            visitor=None,
+        settings = get_instance_settings()
+        _bootstrap_cache = BootstrapInfo(
+            info_available=True,
+            types=build_all_type_payloads(),
+            icon_packs=icon_registry.payload(),
+            user=entity_to_dict(user), domain=None, visitor=None,
             default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
-            sandbox_available=sandbox_available,
-            sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
-            env=EnvInfo(
-                env_name="desktop",
-                cloud_api_url=get_instance_settings().cloud_api_url,
-                version=__version__,
-                instance_name=get_instance_settings().instance_name,
-            ),
-            desktop_info=desktop_info,
-            harness_state=harness_state,
-            capabilities_summary=capabilities_summary.model_dump(mode="json"),
-            scan_info=scan_info,
-            sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
-            sniffer_installed=sniffer_is_installed,
-            records_root=str(get_instance_settings().records_root),
+            env=EnvInfo(env_name="desktop", cloud_api_url=settings.cloud_api_url,
+                        version=__version__, instance_name=settings.instance_name),
+            desktop_info=get_desktop_bootstrap_info(),
+            records_root=str(settings.records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),
-            # Both pages; see _resolve_supported_pages. A hub backend reports
-            # its own set here (and its own `runtime`).
             supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
-            notice=notice,
         )
-
-        _t.done(0.5)
-
-        _bootstrap_cache = bootstrap_info
         _bootstrap_cache_ts = time.monotonic()
-        # Release any background backfills that deferred to the first bootstrap.
-        first_bootstrap_served.set()
+        return _bootstrap_cache
 
-    return await _with_runtime(_bootstrap_cache, electron)
+
+@router.get("/api/v1/graph/bootstrap", response_model_exclude_unset=True)
+async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]:
+    """Return rendering prerequisites; optional work is owned by ``info``."""
+    cached = _bootstrap_cache
+    if cached is None or time.monotonic() - _bootstrap_cache_ts >= _BOOTSTRAP_CACHE_TTL:
+        cached = await initialize_bootstrap()
+    return await _with_runtime(cached, electron)
+
+
+async def _recover_secrets() -> dict | None:
+    from flow_sdk.cli.auth.secrets import clear_app_secret_metadata, recover_orphaned_sodot
+
+    try:
+        notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
+    except asyncio.TimeoutError:
+        logging.warning("[info] sodot recovery probe timed out; skipping for this boot")
+        return None
+    except Exception as e:
+        logging.warning("[info] sodot recovery probe failed (non-fatal): %s", e)
+        return None
+    if notice is not None:
+        try:
+            await clear_app_secret_metadata()
+        except Exception as e:
+            logging.warning("[info] Failed to clear app-secret metadata (non-fatal): %s", e)
+    return notice
+
+
+async def ensure_secret_recovery() -> dict | None:
+    """Share recovery across optional startup tasks and the later info request."""
+    global _secret_recovery_task
+    if _secret_recovery_task is None:
+        _secret_recovery_task = asyncio.create_task(_recover_secrets(), name="secret-recovery")
+    return await asyncio.shield(_secret_recovery_task)
+
+
+async def _optional_info(label: str, operation):
+    try:
+        return await operation
+    except Exception as e:
+        logging.warning("[info] %s failed (non-fatal): %s", label, e)
+        return None
+
+
+async def _desktop_status() -> DeferredDesktopInfo:
+    installed, cloud_available = await asyncio.gather(
+        _optional_info("installed agents", asyncio.to_thread(get_installed_agents)),
+        _optional_info("cloud validation", is_cloud_login_available()),
+    )
+    fields = {"llm_providers": detect_available_llm_providers()}
+    if installed is not None:
+        fields["installed_agents"] = installed
+    if cloud_available is not None:
+        fields["cloud_login_available"] = cloud_available
+    return DeferredDesktopInfo(**fields)
+
+
+async def _sandbox_status(user: User, project: Project) -> tuple[bool, ComputeNode | None]:
+    available = await asyncio.to_thread(is_sandbox_available)
+    node = await get_or_create_sandbox_compute_node(local_project=project, desktop_user=user) if available else None
+    return available, node
+
+
+async def _sniffer_status(user: User) -> tuple[Entity | None, bool]:
+    from flow_sdk.app.actions.hooks_sniffer import (
+        _create_or_update_sniffer_hook, _get_sniffer_hook, sniffer_installed,
+    )
+    from flow_sdk.builtin.agent_hook import HookScope
+    from flow_sdk.builtin.claude_settings_sync import purge_sniffer_entries_from_settings
+    from flow_sdk.instance_settings import get_instance_settings
+
+    hook = await _get_sniffer_hook()
+    active = bool(hook and hook.enabled)
+    installed = await asyncio.to_thread(sniffer_installed)
+    if get_instance_settings().sniffer_enabled and not active:
+        hook = await _create_or_update_sniffer_hook(user)
+        await hook.apply()
+        installed = await asyncio.to_thread(sniffer_installed)
+    elif not active and installed:
+        await asyncio.to_thread(purge_sniffer_entries_from_settings, HookScope.USER)
+        installed = False
+    return hook, installed
+
+
+async def _build_info() -> DeferredInfo:
+    global _info_cache, _info_cache_ts
+    user, project, _, _ = await _ensure_local_entities()
+    notice = await ensure_secret_recovery()
+    from flow_sdk.core.capabilities.harness_state import compute_harness_state
+    from flow_sdk.core.capabilities.summary import compute_capabilities_summary
+    from flow_sdk.inbox import recompute_unread
+    from flow_sdk.system_tools import get_scan_info
+
+    desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
+        _optional_info("desktop status", _desktop_status()),
+        _optional_info("index status", get_scan_info()),
+        _optional_info("harness state", compute_harness_state(wait_for_discovery=False)),
+        _optional_info("capability summary", compute_capabilities_summary(wait_for_discovery=False)),
+        _optional_info("sandbox", _sandbox_status(user, project)),
+        _optional_info("sniffer", _sniffer_status(user)),
+        _optional_info("inbox repair", recompute_unread("info", user.typeid)),
+    )
+    fields = dict(desktop_info=desktop, scan_info=scan, harness_state=harness,
+                  capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
+                  notice=notice)
+    if sandbox is not None:
+        available, node = sandbox
+        fields.update(sandbox_available=available, sandbox_compute_node=entity_to_dict(node) if node else None)
+    if sniffer is not None:
+        hook, installed = sniffer
+        fields.update(sniffer_hook=entity_to_dict(hook) if hook else None, sniffer_installed=installed)
+    result = DeferredInfo(**fields)
+    _info_cache = result
+    _info_cache_ts = time.monotonic()
+    return result
+
+
+@router.get("/api/v1/graph/info", response_model_exclude_unset=True)
+async def info() -> ApiSuccessResponse[DeferredInfo]:
+    """Optional status, independently cached and shared by concurrent callers."""
+    global _info_task
+    if _info_cache is not None and time.monotonic() - _info_cache_ts < _BOOTSTRAP_CACHE_TTL:
+        return ApiSuccessResponse[DeferredInfo](status=ApiResponseStatus.SUCCESS, data=_info_cache)
+    # Task creation has no await: concurrent callers share this single computation.
+    # Shield it so closing one browser cannot cancel another caller's request.
+    if _info_task is None or _info_task.done():
+        _info_task = asyncio.create_task(_build_info(), name="runtime-info")
+        _info_task.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+    return ApiSuccessResponse[DeferredInfo](status=ApiResponseStatus.SUCCESS, data=await asyncio.shield(_info_task))

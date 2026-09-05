@@ -5,7 +5,7 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
-import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
+import { ActionInfo, BootstrapInfo, DeferredInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
@@ -403,6 +403,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // Re-throw all errors so they can be handled by initSdk and displayed to the user
       throw error;
     }
+  }
+
+  /** Seed optional index status only if no newer status arrived during discovery. */
+  public async info(): Promise<DeferredInfo> {
+    const scanBeforeRequest = this.scanInfo;
+    const info = await this.callAction<null, DeferredInfo>(new ActionInfo('info'));
+    if (info.scan_info && this.scanInfo === scanBeforeRequest) this.setScanInfo(info.scan_info);
+    return info;
   }
 
   get schemaLoaded() {

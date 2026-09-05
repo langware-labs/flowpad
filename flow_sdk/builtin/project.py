@@ -189,6 +189,18 @@ class HelpdeskConfig(BaseModel):
 
 
 class Project(Entity):
+    @classmethod
+    async def get_last_active(cls) -> Optional["Project"]:
+        """The most recently opened visible project; hydrate only the winner."""
+        from flow_sdk.config import is_hidden_project
+
+        for row in await cls._db.get_entity_locations(cls.get_type(), active_only=True):
+            if not is_hidden_project(row.fs_storage_mount_path or "", row.system):
+                project = await cls.get_by_id(row.id)
+                if project is not None:
+                    return project
+        return None
+
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
     artifacts: List[str] = APIField(

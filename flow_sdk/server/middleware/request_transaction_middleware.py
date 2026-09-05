@@ -1,6 +1,7 @@
 """Middleware for setting up request context in minihub."""
 
 import logging
+import time
 from contextvars import copy_context
 
 from starlette.requests import Request
@@ -146,6 +147,25 @@ class RequestTransactionMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+
+        if scope.get("path") == "/api/v1/graph/bootstrap":
+            started = time.perf_counter()
+            original_send = send
+
+            async def timed_send(message: Message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    elapsed = (time.perf_counter() - started) * 1000
+                    headers.append((b"server-timing", f"bootstrap_headers;dur={elapsed:.2f}".encode()))
+                    message = {**message, "headers": headers}
+                await original_send(message)
+                if message["type"] == "http.response.body" and not message.get("more_body", False):
+                    logging.info("[bootstrap] complete response %.2f ms", (time.perf_counter() - started) * 1000)
+                    from flow_sdk.server.routes.bootstrap import first_bootstrap_served
+
+                    first_bootstrap_served.set()
+
+            send = timed_send
 
         # Create a proper Request object for parsing
         request = Request(scope, receive, send)
