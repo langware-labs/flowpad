@@ -50,6 +50,9 @@ export interface AddPeopleDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The team pool the new allowances draw on. */
   poolId: string;
+  /** The team itself. Adding somebody to its budget also puts them ON it -- a wallet share is a
+   *  role on the endpoint, and only a role on the TEAM makes the hub treat them as a member. */
+  teamId: string;
   teamName: string;
   /** The team's current roster — a repeated address re-budgets that person instead of duplicating. */
   existing: readonly MemberBudget[];
@@ -76,7 +79,7 @@ function useProblemText() {
   };
 }
 
-export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing }: AddPeopleDialogProps) {
+export function AddPeopleDialog({ open, onOpenChange, poolId, teamId, teamName, existing }: AddPeopleDialogProps) {
   const { t } = useLingui();
   const problemText = useProblemText();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -135,7 +138,7 @@ export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing
     // hub supports and the page already explains ("Nothing is blocked -- whoever spends last will be
     // refused once the money runs out"): every hop's cap is checked when the money is spent, so the
     // team's own ceiling still bounds the whole team however the shares are written.
-    const outcome = await addPeople.mutateAsync({ poolId, drafts: people, existing });
+    const outcome = await addPeople.mutateAsync({ poolId, teamId, drafts: people, existing });
     setProblems(outcome.failed.map((f) => `${f.email} — ${f.reason}`));
     const landed = outcome.added.length + outcome.updated.length;
     if (landed > 0) {

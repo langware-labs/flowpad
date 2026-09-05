@@ -4774,6 +4774,10 @@ msgstr ""
 msgid "Could not rename context"
 msgstr "تعذر إعادة تسمية السياق"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Could not repair the model redirect"
+msgstr ""
+
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Could not replay {0}."
@@ -4845,8 +4849,8 @@ msgid "Could not send report to the Flowpad team"
 msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "Could not set a default model"
-msgstr ""
+#~ msgid "Could not set a default model"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -9269,6 +9273,10 @@ msgstr "جارٍ الفهرسة…"
 msgid "Info"
 msgstr "معلومات"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "inherits the budget above"
+msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Initial message"
 msgstr "الرسالة الأولى"
@@ -11505,6 +11513,10 @@ msgstr "لا توجد موارد تطابق هذه المرشحات."
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "No assistance requests yet"
 msgstr "لا توجد طلبات مساعدة حتى الآن"
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+msgid "No assistant is installed on this machine."
+msgstr ""
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."

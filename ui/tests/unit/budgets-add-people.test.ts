@@ -7,17 +7,24 @@
  *   corrected sheet is how a whole team gets re-budgeted;
  * * a wallet whose invitation failed must be reported as a failure, not as a success — otherwise
  *   the owner learns about it when the person says "I can't see any budget".
+ *
+ * And the third, added after two people were found spending models their team had never allowed:
+ * everyone who lands must be invited to the TEAM as well. Sharing a wallet is a role on the
+ * ENDPOINT; only a role on the TEAM makes `get_user_teams` see them, and without it the hub mints
+ * their default off the ORGANISATION and hands them its whole model list instead of the team's.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const UUID = (n: number) => `550e8400-e29b-41d4-a716-4466554400${String(n).padStart(2, '0')}`;
 const POOL = `llm_endpoint-${UUID(1)}`;
+const TEAM = UUID(2);
 
 const h = vi.hoisted(() => ({
   save: vi.fn(),
   del: vi.fn(),
   allocate: vi.fn(),
   share: vi.fn(),
+  inviteToTeam: vi.fn(),
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -30,6 +37,9 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 vi.mock('@src/components/llm-endpoints/share-endpoint', () => ({
   shareEndpointByEmail: h.share,
+}));
+vi.mock('@src/components/organization/budgets/invite-to-team', () => ({
+  inviteToTeamByEmail: h.inviteToTeam,
 }));
 
 import {
@@ -50,6 +60,12 @@ const member = (over: Partial<Record<string, unknown>> = {}) => ({
   ...over,
 });
 
+beforeEach(() => {
+  // The team invite is part of every add now; the cases below are about the WALLET, so it lands
+  // by default and the two cases that care about it say so themselves.
+  h.inviteToTeam.mockResolvedValue({ invited: [], already: [], failed: [] });
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -59,7 +75,7 @@ describe('addPeopleToTeam', () => {
     h.allocate.mockResolvedValue({ id: UUID(2), type: 'llm_endpoint', name: 'Alan' });
     h.share.mockResolvedValue({ granted: ['alan@example.com'], failed: [] });
 
-    const outcome = await addPeopleToTeam(POOL, [{ name: 'Alan', email: 'alan@example.com', budget: 25 }], []);
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'Alan', email: 'alan@example.com', budget: 25 }], []);
 
     expect(outcome).toEqual({ added: ['alan@example.com'], updated: [], failed: [] });
     // The pool reaches `allocate` as a BARE uuid — a typeid in an action path answers 422.
@@ -71,7 +87,12 @@ describe('addPeopleToTeam', () => {
   it('re-budgets someone already on the pool instead of allocating a second wallet', async () => {
     const existing = member({ limit_usd: 10 });
 
-    const outcome = await addPeopleToTeam(POOL, [{ name: 'Ada', email: 'ada@example.com', budget: 80 }], [existing]);
+    const outcome = await addPeopleToTeam(
+      POOL,
+      TEAM,
+      [{ name: 'Ada', email: 'ada@example.com', budget: 80 }],
+      [existing],
+    );
 
     expect(outcome).toEqual({ added: [], updated: ['ada@example.com'], failed: [] });
     expect(h.allocate).not.toHaveBeenCalled();
@@ -86,6 +107,7 @@ describe('addPeopleToTeam', () => {
   it('matches an existing person however the sheet cased their address', async () => {
     const outcome = await addPeopleToTeam(
       POOL,
+      TEAM,
       [{ name: 'A', email: 'ada@example.com', budget: 1 }],
       [member({ email: 'Ada@Example.com' })],
     );
@@ -96,6 +118,7 @@ describe('addPeopleToTeam', () => {
   it('also updates the hub-made per-user default rather than shadowing it', async () => {
     const outcome = await addPeopleToTeam(
       POOL,
+      TEAM,
       [{ name: 'Ada', email: 'ada@example.com', budget: 5 }],
       [member({ system_default: true })],
     );
@@ -110,7 +133,7 @@ describe('addPeopleToTeam', () => {
       failed: [{ email: 'ghost@example.com', reason: 'Sign in to share', accessLanded: false }],
     });
 
-    const outcome = await addPeopleToTeam(POOL, [{ name: 'Ghost', email: 'ghost@example.com', budget: 1 }], []);
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'Ghost', email: 'ghost@example.com', budget: 1 }], []);
 
     expect(outcome.added).toEqual([]);
     expect(outcome.failed).toEqual([{ email: 'ghost@example.com', reason: 'Sign in to share' }]);
@@ -135,7 +158,7 @@ describe('addPeopleToTeam', () => {
       ],
     });
 
-    const outcome = await addPeopleToTeam(POOL, [{ name: 'M', email: 'mailless@example.com', budget: 1 }], []);
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'M', email: 'mailless@example.com', budget: 1 }], []);
 
     expect(outcome.failed[0].email).toEqual('mailless@example.com');
     expect(h.del).not.toHaveBeenCalled();
@@ -151,7 +174,7 @@ describe('addPeopleToTeam', () => {
     });
     h.del.mockRejectedValueOnce(new Error('delete blew up'));
 
-    const outcome = await addPeopleToTeam(POOL, [{ name: 'S', email: 'stuck@example.com', budget: 1 }], []);
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'S', email: 'stuck@example.com', budget: 1 }], []);
 
     expect(outcome.failed).toEqual([{ email: 'stuck@example.com', reason: 'Only the budget’s owner can share it' }]);
   });
@@ -164,6 +187,7 @@ describe('addPeopleToTeam', () => {
 
     const outcome = await addPeopleToTeam(
       POOL,
+      TEAM,
       [
         { name: 'A', email: 'a@example.com', budget: 1 },
         { name: 'B', email: 'b@example.com', budget: 2 },
@@ -179,9 +203,63 @@ describe('addPeopleToTeam', () => {
     h.allocate.mockResolvedValue({ id: UUID(5), type: 'llm_endpoint', name: 'C' });
     h.share.mockResolvedValue({ granted: ['c@example.com'], failed: [] });
 
-    await addPeopleToTeam(POOL, [{ name: 'C', email: 'c@example.com', budget: null }], []);
+    await addPeopleToTeam(POOL, TEAM, [{ name: 'C', email: 'c@example.com', budget: null }], []);
 
     expect(h.allocate).toHaveBeenCalledWith(UUID(1), { name: 'C', limits: { cost_usd_total: null } });
+  });
+});
+
+describe('addPeopleToTeam — joining the team', () => {
+  it('puts everyone who landed on the team, updated people included', async () => {
+    // The updated ones matter most: they are the rows added BEFORE this flow joined the team, and
+    // re-adding them is what repairs a person the hub currently sees as having no team at all.
+    h.allocate.mockResolvedValue({ id: UUID(3), type: 'llm_endpoint', name: 'Alan' });
+    h.share.mockResolvedValue({ granted: ['alan@example.com'], failed: [] });
+    const existing = member({ email: 'ada@example.com' });
+
+    const outcome = await addPeopleToTeam(
+      POOL,
+      TEAM,
+      [
+        { name: 'Alan', email: 'alan@example.com', budget: 25 },
+        { name: 'Ada', email: 'ada@example.com', budget: 80 },
+      ],
+      [existing] as never,
+    );
+
+    expect(outcome.failed).toEqual([]);
+    expect(h.inviteToTeam).toHaveBeenCalledTimes(1);
+    const [teamId, emails] = h.inviteToTeam.mock.calls[0];
+    expect(teamId).toBe(TEAM);
+    expect([...(emails as string[])].sort()).toEqual(['ada@example.com', 'alan@example.com']);
+  });
+
+  it('never invites somebody whose wallet failed', async () => {
+    // They have nothing to spend; putting them on the team would say the opposite.
+    h.allocate.mockRejectedValue(new Error('no budget left'));
+
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'X', email: 'x@example.com', budget: 1 }], []);
+
+    expect(outcome.failed).toHaveLength(1);
+    expect(h.inviteToTeam).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed team invite and keeps the wallet', async () => {
+    // Undoing a working budget to report a membership problem is the worse outcome — and pressing
+    // Add again retries exactly this row, because the invite is idempotent.
+    h.allocate.mockResolvedValue({ id: UUID(4), type: 'llm_endpoint', name: 'Bea' });
+    h.share.mockResolvedValue({ granted: ['bea@example.com'], failed: [] });
+    h.inviteToTeam.mockResolvedValue({
+      invited: [],
+      already: [],
+      failed: [{ email: 'bea@example.com', reason: 'not allowed to invite' }],
+    });
+
+    const outcome = await addPeopleToTeam(POOL, TEAM, [{ name: 'Bea', email: 'bea@example.com', budget: 5 }], []);
+
+    expect(outcome.added).toEqual(['bea@example.com']);
+    expect(outcome.failed[0].reason).toContain('not added to the team');
+    expect(h.del).not.toHaveBeenCalled();
   });
 });
 

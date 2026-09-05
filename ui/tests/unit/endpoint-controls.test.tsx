@@ -18,11 +18,15 @@ const h = vi.hoisted(() => ({
   endpoint: vi.fn(),
   save: vi.fn(),
   invalidate: vi.fn(),
+  refetchEndpoints: vi.fn(),
 }));
 
 vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useLlmEndpoint: (...args: unknown[]) => h.endpoint(...args),
+  // The row re-reads the endpoints after a save, because a TEAM edit moves the members' lists on
+  // the hub and nothing tells this client about writes it did not make.
+  useLlmEndpoints: () => ({ endpoints: [], isLoading: false, refetch: h.refetchEndpoints, error: null }),
 }));
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useInvalidateBudgets: () => h.invalidate,
@@ -66,40 +70,68 @@ import {
  * and pinning the TEAM would make "move this one person to sonnet" an illegal write.
  */
 describe('SEED_BY_SCOPE', () => {
-  it('states a ceiling on the org and the cheap default on a person', () => {
-    expect(SEED_BY_SCOPE.org).toEqual(['anthropic/claude-*', 'openai/gpt-*']);
-    expect(SEED_BY_SCOPE.person).toEqual(['anthropic/claude-haiku-4.5']);
+  /** These are a HINT now, not a write: the hub chooses what a new wallet allows
+   *  (`_seed_models` / `MEMBER_DEFAULT_MODELS` in `flowpad/hub/builtin/llm_endpoint.py`), because it
+   *  is also what mints a person's default on their first bootstrap — a path this screen is not on,
+   *  and the reason a person used to be restricted only if an admin had opened the page. Kept in
+   *  step by hand, like the asset-editor contract: drift shows up as a stale placeholder, never as
+   *  a wrong value on a row. */
+  it('mirrors the hub: a ceiling on the org, the cheap tier below it', () => {
+    expect(SEED_BY_SCOPE.org).toEqual(['anthropic/claude-*', 'openai/*']);
+    expect(SEED_BY_SCOPE.person).toEqual(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']);
   });
 
-  it('leaves the team blank, so it can never be what blocks a per-person override', () => {
-    expect(SEED_BY_SCOPE.team).toEqual([]);
+  it('gives the team the same cheap tier as a person', () => {
+    // It used to be blank so it could never block a per-person override. It no longer has to be:
+    // a person is minted with WHAT THE TEAM HAS, so the team stating a value is what the person
+    // starts from rather than something they have to be exempted from.
+    expect(SEED_BY_SCOPE.team).toEqual(SEED_BY_SCOPE.person);
   });
 
-  it("keeps every person's default inside the org's ceiling", () => {
+  it("keeps every lower default inside the org's ceiling", () => {
+    // The regression that would otherwise ship silently: a seed the org does not cover is legal at
+    // creation (a fresh row has no sources yet) and then fails `is_subset` on every later edit.
     const covered = (slug: string) =>
       SEED_BY_SCOPE.org.some((p) => new RegExp(`^${p.replace(/[.]/g, '\\.').replace(/\*/g, '.*')}$`).test(slug));
-    for (const slug of SEED_BY_SCOPE.person) expect(covered(slug)).toBe(true);
+    for (const slug of [...SEED_BY_SCOPE.person, ...SEED_BY_SCOPE.team]) expect(covered(slug)).toBe(true);
+  });
+
+  it('pins models a harness actually asks for', () => {
+    // `CLAUDE_API_AUTH_SPEC` asks for anthropic/claude-*, `CODEX_API_AUTH_SPEC` for openai/gpt-5*.
+    // A pin nothing requests is a wallet that refuses every call it was created to serve — which is
+    // exactly what `openai/codex-mini-latest` would have been: no slug in this repo names it.
+    expect(SEED_BY_SCOPE.person).toContain('anthropic/claude-haiku-4.5');
+    expect(SEED_BY_SCOPE.person).toContain('openai/gpt-5-mini');
   });
 });
 
 describe('aliasesForPinnedModel', () => {
-  it('redirects a family onto the one model allowed in it', () => {
+  it('redirects a family onto the one model allowed in it — in both spellings of that family', () => {
+    // Two keys, one target. The prefixed key catches a router slug (`anthropic/claude-sonnet-4.5`);
+    // the bare one catches a client speaking the vendor's own API (`claude-sonnet-4-5`). `*` crosses
+    // `/` in the hub's matcher, so the bare key can only ever match a bare request.
     expect(aliasesForPinnedModel(['anthropic/claude-haiku-4.5'])).toEqual({
       'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
     });
   });
 
   it('handles one list spanning both harnesses — Claude Code and codex each get their own', () => {
     expect(aliasesForPinnedModel(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini'])).toEqual({
       'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
       'openai/gpt-*': 'openai/gpt-5-mini',
+      'gpt-*': 'openai/gpt-5-mini',
     });
   });
 
   it('never answers a request for one vendor with another vendor s model', () => {
     const aliases = aliasesForPinnedModel(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']);
     for (const [pattern, target] of Object.entries(aliases)) {
-      expect(target.split('/')[0]).toBe(pattern.split('/')[0]);
+      // A bare key carries no vendor of its own; it is the same family, so compare on the family
+      // word rather than the prefix.
+      const family = pattern.includes('/') ? pattern.split('/')[1] : pattern;
+      expect(target.split('/')[1]).toContain(family.replace('-*', ''));
     }
   });
 
@@ -114,6 +146,7 @@ describe('aliasesForPinnedModel', () => {
     // admin did NOT list — falls through to haiku.
     expect(aliasesForPinnedModel(['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-4.5'])).toEqual({
       'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
       'anthropic/claude-sonnet-4.5': 'anthropic/claude-sonnet-4.5',
     });
   });
@@ -121,12 +154,14 @@ describe('aliasesForPinnedModel', () => {
   it('mixes a pinned family with a wide-open one', () => {
     expect(aliasesForPinnedModel(['anthropic/claude-haiku-4.5', 'openai/gpt-*'])).toEqual({
       'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
     });
   });
 
   it('covers a model that did not exist when this was written', () => {
     expect(aliasesForPinnedModel(['anthropic/claude-something-new-9'])).toEqual({
       'anthropic/claude-*': 'anthropic/claude-something-new-9',
+      'claude-*': 'anthropic/claude-something-new-9',
     });
   });
 
@@ -136,10 +171,16 @@ describe('aliasesForPinnedModel', () => {
 });
 
 describe('DEFAULT_MODELS', () => {
-  it('is the cheap tier, and carries a redirect so it still serves every caller', () => {
-    expect(DEFAULT_MODELS).toEqual(['anthropic/claude-haiku-4.5']);
-    // The narrowness is only safe BECAUSE the other tiers redirect onto it.
-    expect(aliasesForPinnedModel(DEFAULT_MODELS)).toEqual({ 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' });
+  it('is the cheap tier of BOTH families, and redirects each onto its own', () => {
+    expect(DEFAULT_MODELS).toEqual(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']);
+    // The narrowness is only safe BECAUSE the other tiers redirect onto it — and a redirect never
+    // crosses vendors, so Claude Code and codex each land on the model of their own family.
+    expect(aliasesForPinnedModel(DEFAULT_MODELS)).toEqual({
+      'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
+      'openai/gpt-*': 'openai/gpt-5-mini',
+      'gpt-*': 'openai/gpt-5-mini',
+    });
   });
 });
 
@@ -167,22 +208,22 @@ describe('EndpointControls', () => {
     expect(screen.queryByTestId('org-enabled')).toBeNull();
   });
 
-  it('seeds the cheapest model onto a wallet that has none, exactly once', async () => {
+  it('writes NOTHING when it renders a wallet with no models', async () => {
+    // The bug this file used to pin as a feature. Seeding here made a restriction exist because
+    // somebody opened the screen: a person nobody had looked at inherited the org's whole ceiling,
+    // and the wallets the hub mints on first bootstrap were never seen by this page at all. The
+    // initial list is chosen on the hub now (`_seed_models`), on every creation path.
     h.endpoint.mockReturnValue(endpoint());
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
-    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
-    expect(h.save.mock.calls[0][0].toString()).toBe(TYPE_ID);
-    expect(h.save.mock.calls[0][2]).toEqual({
-      // The cheap default is pinned AND redirected, so it serves every tier instead of
-      // refusing the ones a machine is actually configured for.
-      filters: {
-        ...endpoint().filters,
-        models_allow: ['anthropic/claude-haiku-4.5'],
-        aliases: { 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' },
-      },
-    });
-    await waitFor(() => expect(h.invalidate).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('says an empty row INHERITS rather than naming a model it does not have', () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
+    expect(screen.getByTestId('org-models').textContent).toContain('inherits');
   });
 
   it('repairs a row that is pinned but has no redirect, without anyone touching it', async () => {
@@ -195,7 +236,7 @@ describe('EndpointControls', () => {
     await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
     const filters = (h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters;
     expect(filters.models_allow).toEqual(['anthropic/claude-haiku-4.5'], 'the pin itself is left alone');
-    expect(filters.aliases).toEqual({ 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' });
+    expect(filters.aliases).toEqual(aliasesForPinnedModel(['anthropic/claude-haiku-4.5']));
   });
 
   it('leaves a row alone once its redirect already matches its pin', () => {
@@ -203,7 +244,7 @@ describe('EndpointControls', () => {
       endpoint({
         filters: {
           models_allow: ['anthropic/claude-haiku-4.5'],
-          aliases: { 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' },
+          aliases: aliasesForPinnedModel(['anthropic/claude-haiku-4.5']),
         },
       }),
     );
@@ -211,20 +252,14 @@ describe('EndpointControls', () => {
     expect(h.save).not.toHaveBeenCalled();
   });
 
-  it('never seeds a team row, leaving it blank to inherit', async () => {
-    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: [] } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="team" testIdPrefix="team-1" />);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(h.save).not.toHaveBeenCalled();
-  });
-
-  it('seeds an org row with the ceiling, not the cheap default', async () => {
-    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: [] } }));
-    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
-    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
-    const filters = (h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters;
-    expect(filters.models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-*']);
-    expect(filters.aliases).toEqual({}, 'globs pin nothing, so no redirect');
+  it('writes nothing on a team or an org row either — no scope seeds from here any more', async () => {
+    for (const scope of ['team', 'org'] as const) {
+      h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: [] } }));
+      render(<EndpointControls endpointId={TYPE_ID} scope={scope} testIdPrefix={scope} manage />);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(h.save, `${scope} row wrote on render`).not.toHaveBeenCalled();
+      cleanup();
+    }
   });
 
   it('does not seed a wallet that already has models', () => {
@@ -233,7 +268,7 @@ describe('EndpointControls', () => {
       endpoint({
         filters: {
           models_allow: ['anthropic/claude-opus-4'],
-          aliases: { 'anthropic/claude-*': 'anthropic/claude-opus-4' },
+          aliases: aliasesForPinnedModel(['anthropic/claude-opus-4']),
         },
       }),
     );
@@ -252,7 +287,9 @@ describe('EndpointControls', () => {
       endpoint({
         filters: {
           models_allow: DEFAULT_MODELS,
-          aliases: { 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' },
+          // Derived, never spelled: a hand-written map goes stale the moment the default gains a
+          // family, and a stale map makes the repair effect fire a save this test does not expect.
+          aliases: aliasesForPinnedModel(DEFAULT_MODELS),
           streaming: 'require',
           max_tokens_ceiling: 4096,
         },
@@ -291,8 +328,46 @@ describe('EndpointControls', () => {
     await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
     const filters = (h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters;
     expect(filters.models_allow).toEqual(['anthropic/claude-haiku-4.5']);
-    // A machine configured for sonnet now transparently receives haiku.
-    expect(filters.aliases).toEqual({ 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' });
+    // A machine configured for sonnet now transparently receives haiku — whichever spelling of the
+    // family it asks in, since a client on Anthropic's own API names no vendor prefix at all.
+    expect(filters.aliases).toEqual({
+      'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
+      'claude-*': 'anthropic/claude-haiku-4.5',
+    });
+  });
+
+  it.each([
+    ['a team', 'team' as const, 'team-1'],
+    ['a member', 'person' as const, 'member-1'],
+  ])('writes the models it shows when %s row is edited', async (_label, scope, prefix) => {
+    // The bug this pins: the page used to DISPLAY a model list for a level it never saved — an
+    // empty team row printed the constant, so the screen said haiku while the hub held nothing and
+    // everyone under that team inherited the organisation's whole list instead. What is typed here
+    // must reach the hub, for a team exactly as for a person.
+    h.endpoint.mockReturnValue(
+      endpoint({ filters: { models_allow: [], aliases: {}, streaming: 'allow', max_tokens_ceiling: null } }),
+    );
+    render(<EndpointControls endpointId={TYPE_ID} scope={scope} testIdPrefix={prefix} manage />);
+
+    fireEvent.click(screen.getByTestId(`${prefix}-models`));
+    fireEvent.change(screen.getByTestId(`${prefix}-models-input`), {
+      target: { value: 'anthropic/claude-haiku-4.5, openai/gpt-5-mini' },
+    });
+    fireEvent.blur(screen.getByTestId(`${prefix}-models-input`));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save.mock.calls[0][0].toString()).toBe(TYPE_ID);
+    expect((h.save.mock.calls[0][2] as { filters: Record<string, unknown> }).filters).toEqual({
+      models_allow: ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini'],
+      // The redirects go with it, or a machine set to sonnet is refused by the very row that was
+      // just pinned for it.
+      aliases: aliasesForPinnedModel(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']),
+      streaming: 'allow',
+      max_tokens_ceiling: null,
+    });
+    // And the screen re-reads, so a team edit that moved anything shows without a manual refresh.
+    await waitFor(() => expect(h.invalidate).toHaveBeenCalled());
+    expect(h.refetchEndpoints).toHaveBeenCalled();
   });
 
   it('refuses to save an edit that would leave the field empty', async () => {
@@ -300,7 +375,7 @@ describe('EndpointControls', () => {
       endpoint({
         filters: {
           models_allow: DEFAULT_MODELS,
-          aliases: { 'anthropic/claude-*': 'anthropic/claude-haiku-4.5' },
+          aliases: aliasesForPinnedModel(DEFAULT_MODELS),
         },
       }),
     );
@@ -359,7 +434,9 @@ describe('EndpointControls — read-only', () => {
   });
 
   it('still repairs it for someone who may configure it — the guard is the flag, not the row', async () => {
-    h.endpoint.mockReturnValue(endpoint());
+    // Stated on a PINNED row with no redirect, because that is the only thing this screen repairs
+    // now: an empty row is left to inherit, and its initial list is the hub's to choose.
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
 
     await waitFor(() => expect(h.save).toHaveBeenCalled());

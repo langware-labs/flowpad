@@ -710,6 +710,7 @@ function TeamUnit({
           open
           onOpenChange={setAdding}
           poolId={poolId}
+          teamId={team.id}
           teamName={team.name}
           existing={detail.data.members}
         />
