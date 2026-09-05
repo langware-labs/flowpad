@@ -1,26 +1,31 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Bot, ChevronDown, CloudUpload, Globe, Monitor, type LucideIcon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Project, RuntimeKind } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import {
+  ProjectCountsSummary,
   ProjectListPopoverContent,
-  ProjectScopeSummary,
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
-import { RUNTIME_CLASS } from './runtime-appearance';
+import { cn } from '@src/lib/utils';
+import { gfmSlug } from '@src/lib/heading-slug';
+import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
 /**
  * The navigation bar's project chip, wearing the runtime's color.
  *
  * Two facts on one pill: WHICH MACHINE serves this UI (the color and the
  * glyph — the safety signal) and WHICH PROJECT you are in (the name). It is a
- * split chip: the name segment opens the project's home, the chevron opens the
- * shared project list (`project-list-menu`, the same list the advanced tab
- * strip's chip shows). Hovering explains the runtime in a sentence and links
+ * split chip: the project-glyph segment opens the project's home, the name
+ * segment opens the shared project list (`project-list-menu`, the same list
+ * the advanced tab strip's chip shows). Hovering explains the runtime in a sentence and links
  * to the "Runtime environments" wiki page, peeked in the wiki modal.
  *
  * It DETECTS NOTHING. The kind is resolved by the backend and arrives on
@@ -31,22 +36,26 @@ import { RUNTIME_CLASS } from './runtime-appearance';
  * The color is a safety signal — on a cloud sandbox or an agent's box it is
  * how you know whose machine you are looking at — which is why it lives in
  * permanent chrome, has no dismiss affordance, and stays on even when the
- * project name replaces the runtime's word. With no project the name segment
- * falls back to that word, so the pill never goes blank.
+ * project name replaces the runtime's word. With no project the home segment
+ * is gone and the name segment shows that word, so the pill never goes blank.
  */
 
 const WIKI_PAGE = 'Runtime environments';
 
-/** Per-runtime glyphs. These describe RUNTIMES, not entity types — there is no
- *  TypeInfo for "a cloud sandbox", so `iconForType` has nothing to resolve.
- *  The cloud kinds wear the same glyph as the "Link to cloud" buttons. */
-const RUNTIME_ICON: Record<RuntimeKind, LucideIcon> = {
-  [RuntimeKind.HUB]: CloudUpload,
-  [RuntimeKind.SANDBOX]: CloudUpload,
-  [RuntimeKind.AGENT]: Bot,
-  [RuntimeKind.DESKTOP]: Monitor,
-  [RuntimeKind.BROWSER]: Globe,
-};
+/** The runtime's glyph at the chip's size. `bg-inherit` on the wrapper and the
+ *  badge cut-out so it wears whatever surface it sits on (the pill, or the
+ *  hover card's Env chip). */
+function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string }) {
+  const { base, badge } = RUNTIME_APPEARANCE[kind];
+  return (
+    <IconWithBadge Base={base} Badge={badge} className={cn('bg-inherit', className)} badgeClassName="bg-inherit" />
+  );
+}
+
+/** One pill segment: tinted on hover so it reads as pressable. */
+const SEGMENT = 'inline-flex cursor-pointer items-center bg-inherit transition-colors hover:bg-black/20';
+/** One header chip in the hover card. */
+const HEADER_CHIP = 'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px]';
 
 function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
   // "Cloud", not "Hub": the chip answers "whose machine am I on", and to a user
@@ -80,63 +89,76 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   const { t } = useLingui();
   const menu = useProjectListMenu({ currentProjectId: project?.id, currentProjectName: project?.displayName });
 
-  const listLabel = t`Open project list`;
-  const homeLabel = project ? t`Project home` : listLabel;
+  const homeLabel = t`Open project home`;
+  const { className: runtimeClass, heading } = RUNTIME_APPEARANCE[kind];
 
-  // URL-first (CLAUDE.md): the name segment only navigates. Without a project
-  // there is no home to address, so the segment opens the list instead — a
-  // dead segment would be worse than a second way into the same menu.
-  const openHome = () => {
-    if (project) navigation.openDock(DockPointer.forProject(project.id));
-    else menu.setOpen(true);
-  };
-
-  const Icon = RUNTIME_ICON[kind] ?? Monitor;
+  // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
+  // a glyph for an entity type).
+  const ProjectIcon = iconForType(Project.type);
 
   return (
     // The hover card is left uncontrolled: Radix closes it when the trigger
     // blurs, which opening the list (focus moves into the popover) does.
     <HoverCard openDelay={200} closeDelay={100}>
       <Popover open={menu.open} onOpenChange={menu.setOpen}>
-        <HoverCardTrigger asChild>
-          <PopoverAnchor asChild>
-            {/* A div, not a button: it holds two controls, and a button inside
-                a button is invalid HTML (the nav-bar test pins that). The list
-                anchors to the whole pill so it opens under its start edge. */}
-            <div
-              data-testid="top-nav-runtime-chip"
-              data-runtime={kind}
-              className={`inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-full text-xs font-semibold ${RUNTIME_CLASS[kind]}`}
-            >
-              <button
-                type="button"
-                onClick={openHome}
-                data-testid="top-nav-project"
-                aria-label={homeLabel}
-                className="inline-flex cursor-pointer items-center gap-1.5 pl-3 pr-2 hover:opacity-90"
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" />
-                {/* Narrow windows keep the color and drop the word — the color
-                    is the signal, the label is the explanation. */}
-                <span className="hidden max-w-[10rem] truncate sm:inline">
-                  {menu.projectName ?? <RuntimeLabel kind={kind} />}
-                </span>
-              </button>
-              <span aria-hidden className="my-1.5 w-px bg-current opacity-40" />
+        <PopoverAnchor asChild>
+          {/* A div, not a button: it holds two controls, and a button inside
+              a button is invalid HTML (the nav-bar test pins that). The list
+              anchors to the whole pill so it opens under its start edge; the
+              hover card hangs off the name segment only, so the home button
+              can carry its own plain tooltip. */}
+          <div
+            data-testid="top-nav-runtime-chip"
+            data-runtime={kind}
+            className={cn(
+              'inline-flex h-8 shrink-0 items-stretch overflow-hidden rounded-full text-xs font-semibold',
+              runtimeClass,
+            )}
+          >
+            {/* Project home: the project's own glyph, first. Hidden with no
+                  project — it addresses one by id, and without it the project
+                  page renders "not found". */}
+            {project ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
+                    data-testid="top-nav-project"
+                    aria-label={homeLabel}
+                    // A button in its own right: outlined, so it reads as
+                    // pressable rather than as the pill's ornament.
+                    className={cn(SEGMENT, 'my-0.5 ml-0.5 rounded-full border border-white/50 px-2')}
+                  >
+                    <ProjectIcon className="h-4 w-4 shrink-0" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  {homeLabel}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            <HoverCardTrigger asChild>
               <PopoverTrigger asChild>
                 <button
                   type="button"
                   data-testid="top-nav-project-list"
-                  aria-label={listLabel}
+                  aria-label={t`Open project list`}
                   aria-haspopup="menu"
-                  className="inline-flex cursor-pointer items-center pl-1.5 pr-2 hover:opacity-90"
+                  className={cn(SEGMENT, 'gap-1.5 pr-2', project ? 'pl-2' : 'pl-3')}
                 >
-                  <ChevronDown className="h-3 w-3 shrink-0" />
+                  <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
+                  {/* Narrow windows keep the color and drop the word — the color
+                      is the signal, the label is the explanation. */}
+                  <span className="hidden max-w-[10rem] truncate sm:inline">
+                    {menu.projectName ?? <RuntimeLabel kind={kind} />}
+                  </span>
+                  <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>
               </PopoverTrigger>
-            </div>
-          </PopoverAnchor>
-        </HoverCardTrigger>
+            </HoverCardTrigger>
+          </div>
+        </PopoverAnchor>
         <HoverCardContent
           side="bottom"
           align="start"
@@ -145,13 +167,47 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           className="pointer-events-auto flex w-auto max-w-sm flex-col gap-0.5 px-3 py-2 text-xs"
           data-testid="top-nav-runtime-hover"
         >
-          <ProjectScopeSummary menu={menu} />
+          {/* The header names both facts as chips. The Env chip wears the
+              runtime color and is the link to that runtime's own section of
+              the wiki page; Learn more below opens the page from the top. */}
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {menu.scopeLabel ? (
+              <span className={cn(HEADER_CHIP, 'border')} data-testid="top-nav-hover-project">
+                <span className="text-muted-foreground">
+                  <Trans>Project:</Trans>
+                </span>
+                <ProjectIcon className="h-3 w-3 shrink-0 text-primary" />
+                <span className="max-w-[12rem] truncate font-medium">{menu.scopeLabel}</span>
+              </span>
+            ) : null}
+            <WikiButton
+              wikiword={WIKI_PAGE}
+              fragment={gfmSlug(heading)}
+              className={cn(HEADER_CHIP, 'cursor-pointer hover:opacity-90', runtimeClass)}
+              data-testid="top-nav-hover-env"
+            >
+              <span className="opacity-80">
+                <Trans>Env:</Trans>
+              </span>
+              <RuntimeIcon kind={kind} className="h-3 w-3 shrink-0" />
+              <span className="font-medium underline-offset-2 hover:underline">
+                <RuntimeLabel kind={kind} />
+              </span>
+            </WikiButton>
+          </div>
+          <ProjectCountsSummary menu={menu} />
           <span className="mt-1 border-t pt-1">
             <RuntimeDescription kind={kind} />
           </span>
           <WikiButton wikiword={WIKI_PAGE} linkText={t`Learn more`} className="self-start" />
         </HoverCardContent>
-        <PopoverContent align="start" side="bottom" sideOffset={6} className="w-72 p-1" data-testid="top-nav-project-popover">
+        <PopoverContent
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          className="w-72 p-1"
+          data-testid="top-nav-project-popover"
+        >
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>
       </Popover>

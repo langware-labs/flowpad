@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Globe } from 'lucide-react';
 import React from 'react';
-import { ProjectListPopoverContent, ProjectScopeSummary, useProjectListMenu } from './project-list-menu';
+import { ProjectCountsSummary, ProjectListPopoverContent, useProjectListMenu } from './project-list-menu';
 
 interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
@@ -93,7 +93,8 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <div className="flex flex-col gap-0.5">
-              <ProjectScopeSummary menu={menu} />
+              <span className="font-medium">{scopeLabel}</span>
+              <ProjectCountsSummary menu={menu} />
             </div>
           </TooltipContent>
         </Tooltip>

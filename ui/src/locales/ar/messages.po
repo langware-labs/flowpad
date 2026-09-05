@@ -6265,6 +6265,7 @@ msgid "Download sample CSV"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "تم التحميل"
 
@@ -6758,6 +6759,10 @@ msgstr ""
 #: src/components/project-home/SecretsCard.tsx
 #~ msgid "ENV_VAR"
 #~ msgstr "متغير البيئة"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Env:"
+msgstr "البيئة:"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
@@ -10695,6 +10700,11 @@ msgstr "مفتاح API مفقود — يرجى إعادة محاولة الرا�
 msgid "Missing asset"
 msgstr "الأصل مفقود"
 
+#: src/components/conversation/MissingAttachmentsWarning.tsx
+#: src/components/conversation/MissingAttachmentsWarning.tsx
+msgid "Missing attachments"
+msgstr "مرفقات مفقودة"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
 msgstr "النموذج"
@@ -12814,6 +12824,10 @@ msgstr "فتح المشروع"
 msgid "Open Project"
 msgstr "فتح المشروع"
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Open project home"
+msgstr "فتح الصفحة الرئيسية للمشروع"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Open project in cloud"
 msgstr "فتح المشروع في السحابة"
@@ -13850,7 +13864,6 @@ msgid "Project folder…"
 msgstr "مجلد المشروع…"
 
 #: src/components/assets/useAssetsModel.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Project home"
 msgstr "الصفحة الرئيسية للمشروع"
 
@@ -13919,6 +13932,10 @@ msgstr "المشروع المراد تحميله"
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "المشروع غير متاح"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Project:"
+msgstr "المشروع:"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
@@ -19937,6 +19954,10 @@ msgstr "ما هي مشاركة Git؟"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "What is this agent for?"
 msgstr "ما الغرض من هذا الوكيل؟"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+#~ msgid "What is this environment?"
+#~ msgstr "ما هذه البيئة؟"
 
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"
