@@ -78,7 +78,7 @@ def _project_id_for_cwd(cwd: str) -> str:
     return mint_uuid(f"project:{canonical_posix_path(cwd)}", namespace=uuid.NAMESPACE_DNS)
 
 
-def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
+def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) -> dict[str, Path]:
     """Build {canonical_cwd: claude_dir} by reading each child's JSONL once.
 
     Claude's encoded-dir name is lossy (``/`` / `` `` / ``_`` → ``-``), so going
@@ -95,7 +95,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
         if not child.is_dir():
             continue
         real = decode_claude_project_dir(child)
-        if real is None or not is_valid_project_cwd(real):
+        if real is None or not is_valid_project_cwd(real, include_temp=include_temp):
             continue
         try:
             out[str(real.resolve())] = child

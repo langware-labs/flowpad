@@ -20335,3 +20335,11 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/assets/AssetsPage.tsx
+msgid "Delete chats"
+msgstr "حذف المحادثات"
+
+#: src/components/assets/AssetsPage.tsx
+msgid "Keeping chat history can make this project reappear when projects are scanned."
+msgstr "قد يؤدي الاحتفاظ بسجل المحادثات إلى ظهور هذا المشروع مجددًا عند فحص المشاريع."

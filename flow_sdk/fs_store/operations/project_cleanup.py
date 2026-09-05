@@ -274,7 +274,8 @@ def _claude_map() -> dict[str, list[str]]:
     from flow_sdk.builtin.faas.project_list import _index_claude_dirs_by_cwd  # noqa: PLC0415
 
     root = get_instance_settings().claude_projects_dir
-    return {_canonical(cwd): [str(directory)] for cwd, directory in _index_claude_dirs_by_cwd(root).items()}
+    return {_canonical(cwd): [str(directory)]
+            for cwd, directory in _index_claude_dirs_by_cwd(root, include_temp=True).items()}
 
 
 def _codex_map() -> dict[str, list[str]]:
@@ -326,10 +327,14 @@ class HarnessIndex:
     claude: dict[str, list[str]] = field(default_factory=dict)
     codex: dict[str, list[str]] = field(default_factory=dict)
     copilot: dict[str, list[str]] = field(default_factory=dict)
+    opencode_sessions: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def build(cls) -> "HarnessIndex":
-        return cls(claude=_claude_map(), codex=_codex_map(), copilot=_copilot_map())
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import project_session_ids
+
+        return cls(claude=_claude_map(), codex=_codex_map(), copilot=_copilot_map(),
+                   opencode_sessions=project_session_ids())
 
     def paths_for(self, harness: str, cwd: str) -> list[str]:
         if not cwd:
@@ -529,6 +534,10 @@ def clear_harness_state(row: dict[str, Any], index: HarnessIndex) -> dict[str, A
     also swallow a real guard.
     """
     cwd = row.get("cwd") or ""
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import delete_sessions
+
+    opencode_ids = index.opencode_sessions.get(_canonical(cwd), []) if cwd else []
+    delete_sessions(opencode_ids)
     removed: list[str] = []
     for target in index.any_state(cwd):
         node = Path(target)
@@ -539,14 +548,17 @@ def clear_harness_state(row: dict[str, Any], index: HarnessIndex) -> dict[str, A
                 node.unlink()
             else:
                 continue
-        except OSError as exc:
-            logger.warning("cleanup: could not remove harness state %s: %s", target, exc)
+        except FileNotFoundError:
             continue
         removed.append(target)
+    config_removed = drop_codex_config_entry(cwd)
+    if codex_config_entry(cwd) is not None:
+        raise OSError(f"Could not remove Codex project registration for {cwd}")
     return {
         "cwd": cwd,
         "removed_paths": removed,
-        "codex_config_entry_removed": drop_codex_config_entry(cwd),
+        "removed_opencode_sessions": opencode_ids,
+        "codex_config_entry_removed": config_removed,
     }
 
 
@@ -558,7 +570,8 @@ def has_harness_state(cwd: str, index: HarnessIndex) -> bool:
     counts on its own: Codex prunes transcripts but keeps the registration, and
     without this such a project could never be un-registered.
     """
-    return bool(index.any_state(cwd)) or codex_config_entry(cwd) is not None
+    return (bool(index.any_state(cwd)) or bool(index.opencode_sessions.get(_canonical(cwd)))
+            or codex_config_entry(cwd) is not None)
 
 
 def remove_from_harness(row: dict[str, Any], index: HarnessIndex) -> dict[str, Any]:

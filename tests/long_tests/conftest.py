@@ -185,6 +185,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_prompt_queue_integration",
         "test_process_status_report_stream",
         "test_process_hooks_multi_vendor",
+        "test_project_delete_chats",
         "test_relaunch_kills_session_orphan",
         "test_agent",
         "test_debug_log_records",
