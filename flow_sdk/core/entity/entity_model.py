@@ -1181,7 +1181,12 @@ class Entity(DBEntity):
         info = SchemaRegistry.get(rt)
         # DB-FREE by contract, so no owner lookup: with no owning row to consult
         # this degrades to the historic carrier-or-mint.
-        record = info.record_for(ref) if info is not None else None
+        from flow_sdk.fs_store.identity_carrier import UnclaimedPath  # noqa: PLC0415
+
+        try:
+            record = info.record_for(ref) if info is not None else None
+        except UnclaimedPath:
+            return None   # the caller named a type this path is not shaped as
         return Entity._build_from_fs_record(record, fallback_cls=cls) if record is not None else None
 
     @classmethod

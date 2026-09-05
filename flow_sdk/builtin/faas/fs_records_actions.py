@@ -2766,6 +2766,22 @@ async def discover_record_by_path(
 
     if Path(expanded).exists():
         _info = _SR.get(record_type)
+        from flow_sdk.fs_store.schema_registry import LayoutKind as _LayoutKind  # noqa: PLC0415
+
+        if _info.layout_of(Path(expanded), verify=True).kind is _LayoutKind.NONE:
+            # The caller named a type this path is not shaped as (the editor
+            # fallback labels any editor-less file ``markdown``). Classify
+            # BEFORE minting, the way every walker does: never hand the seam an
+            # unverified (type, path) pair, and answer with the asset that
+            # CONTAINS the path — an inner ``server.py`` is its ``mcp`` folder —
+            # or nothing. Only an owner OF THE TYPE ASKED FOR is an answer: the
+            # callers label the result with ``record_type`` (``display_target``
+            # builds ``<record_type>-<id>`` from it), so an ``mcp`` folder must
+            # not come back as a ``markdown`` hit. FLOWPAD-2083.
+            from flow_sdk.core.entity.entity_model import Entity as _Entity  # noqa: PLC0415
+
+            owner = await _Entity.get_by_asset_ref(expanded, resolve_containing=True, strict=strict_owner)
+            return owner if owner is not None and str(getattr(owner, "type", "")) == str(record_type) else None
         _from_disk = getattr(_info, "from_disk_fn", None)
         if _from_disk is not None:
             try:
