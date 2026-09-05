@@ -1,16 +1,16 @@
-"""Walkers + extractor + helpers for MARKDOWN records.
+"""Walker + extractor + helpers for MARKDOWN records.
 
-Walkers:
-  markdown_flat_fn
-      rglob <root>/docs/**/*.md — the DOCS family mount.
-      Register on USER_HOME_FOLDER only, and note this walker is what makes
-      user-scope markdown discoverable AT ALL: ``markdown_in_folder_fn`` runs off
-      FOLDER refs, which ``project_folder_walker_fn`` emits for project roots
-      only — ``~/`` is deliberately never content-walked (a huge tree full of
-      venvs and npm packages). One bounded directory is the whole point; do not
-      widen this to a tree walk of home.
+Discovery has two halves:
+  the declared ``walk`` (``markdown_type_info.py``)
+      rglob <root>/docs/**/*.md — the DOCS family mount, on USER_HOME_FOLDER
+      only, run by the generic ``layout_walker``. It is what makes user-scope
+      markdown discoverable AT ALL: ``markdown_in_folder_fn`` runs off FOLDER
+      refs, which ``project_folder_walker_fn`` emits for project roots only —
+      ``~/`` is deliberately never content-walked (a huge tree full of venvs
+      and npm packages). One bounded directory is the whole point; do not
+      widen it to a tree walk of home.
 
-  markdown_in_folder_fn
+  markdown_in_folder_fn (bespoke, below)
       Per-FOLDER emitter. Receives FOLDER refs from
       ``project_folder_walker_fn`` (which already pruned via gitignore +
       _WALK_IGNORED) and emits the direct ``*.md`` children of every
@@ -44,44 +44,6 @@ def _is_appledouble(name: str) -> bool:
     resource-fork files that share a ``.md`` extension but never hold real
     markdown. Indexing them only raises a UnicodeDecodeError downstream."""
     return name.startswith("._")
-
-
-def _emit_md_rglob(
-    root: Path,
-    parent: FSRef,
-    out: list[FSRef],
-    seen: set[str],
-) -> None:
-    if not root.is_dir():
-        return
-    for md in sorted(root.rglob("*.md")):
-        if _is_appledouble(md.name):
-            continue
-        key = str(md.resolve())
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=parent))
-
-
-def markdown_flat_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """``<root>/docs/**/*.md`` — the DOCS family mount, one bounded directory.
-
-    Was ``<root>/.claude/docs`` until markdown became ``AssetClass.DOCS``. That
-    directory was flowpad's own invention, not part of Claude Code's vocabulary,
-    and it split markdown across two homes: created docs went to ``docs/`` while
-    received ones went to ``.claude/docs/``.
-    """
-    from flow_sdk.fs_store.placement import DOCS_FAMILY  # noqa: PLC0415
-
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        _emit_md_rglob(Path(node.path) / DOCS_FAMILY, node, out, seen)
-    return out
 
 
 def _typed_record_dirs() -> frozenset[str]:
@@ -132,6 +94,10 @@ def markdown_in_folder_fn(
 
     Folders under a typed-record dir (see ``_typed_record_dirs``) are skipped so
     a SKILL.md / agent .md / rules .md isn't double-indexed as MARKDOWN.
+
+    Kept BESPOKE (not a declared ``Walk``): the typed-ancestor fence and the
+    by-name skill-doc skip are cross-type rules — "every ``.md`` a different
+    type's walk already claims" — that a per-type declaration cannot state.
     """
     out: list[FSRef] = []
     seen: set[str] = set()
@@ -149,7 +115,7 @@ def markdown_in_folder_fn(
         for md in entries:
             if _is_appledouble(md.name):
                 continue
-            # SKILL.md / skill.md is a skill's doc (claimed by skill_in_folder_fn),
+            # SKILL.md / skill.md is a skill's doc (claimed by the skill walk),
             # never a standalone MARKDOWN asset — skip so it isn't double-indexed.
             if md.name.lower() == "skill.md":
                 continue

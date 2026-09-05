@@ -41,3 +41,18 @@ def test_folder_ref_spelling_follows_ref_is_main(tmp_path: Path) -> None:
 def test_file_ext_is_normalized_to_a_lowercase_suffix() -> None:
     assert File(ext="MD").ext == ".md"
     assert File(ext=".Csv").ext == ".csv"
+
+
+def test_file_accepts_its_further_extensions(tmp_path: Path) -> None:
+    shape = File(ext=".csv", also=("XLSX",))
+    assert shape.exts == (".csv", ".xlsx")
+    assert shape.locate(tmp_path / "a.xlsx").kind is LayoutKind.FILE
+    assert shape.locate(tmp_path / "a.csv").kind is LayoutKind.FILE
+    assert shape.locate(tmp_path / "a.tsv").kind is LayoutKind.NONE
+
+
+def test_a_fixed_name_file_is_claimed_by_name_not_extension(tmp_path: Path) -> None:
+    shape = File(ext=".md", names=("CLAUDE.md", "CLAUDE.local.md"))
+    assert shape.locate(tmp_path / "CLAUDE.md").kind is LayoutKind.FILE
+    assert shape.locate(tmp_path / "claude.local.md").kind is LayoutKind.FILE, "names compare case-insensitively"
+    assert shape.locate(tmp_path / "README.md").kind is LayoutKind.NONE, "no other .md is this type"

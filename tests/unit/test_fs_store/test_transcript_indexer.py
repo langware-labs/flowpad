@@ -350,7 +350,7 @@ async def test_plan_handler_triggers_scoped_plan_reindex_when_missing(
 async def test_plan_handler_skips_when_scoped_reindex_yields_no_plan(
     tmp_path: Path, clean_db,
 ) -> None:
-    # File exists but NOT under a `.claude/plans/` ancestor — claude_plan_fn
+    # File exists but NOT under a `.claude/plans/` ancestor — the plan walk
     # won't find it.
     stray = tmp_path / "stray.md"
     stray.write_text("# stray\n", encoding="utf-8")

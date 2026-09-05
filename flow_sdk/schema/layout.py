@@ -37,17 +37,42 @@ class Layout:
 NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
 
 
+def _norm_ext(ext: str) -> str:
+    return "." + ext.lower().lstrip(".")
+
+
 @dataclass(frozen=True, slots=True)
 class File:
-    """A single-file asset told apart by its extension (``.md``, ``.csv``)."""
+    """A single-file asset told apart by its extension (``.md``, ``.csv``).
+
+    ``also`` lists further extensions the same type accepts (a spreadsheet is
+    ``.csv`` or ``.xlsx``); ``ext`` stays the one a create flow writes.
+    ``names`` pins a type to FIXED filenames (``CLAUDE.md``): such a file is
+    claimed by its name, not by its extension, and no other file of that
+    extension is this type.
+    """
 
     ext: str
+    also: tuple[str, ...] = ()
+    names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "ext", "." + self.ext.lower().lstrip("."))
+        object.__setattr__(self, "ext", _norm_ext(self.ext))
+        object.__setattr__(self, "also", tuple(_norm_ext(e) for e in self.also))
+        object.__setattr__(self, "names", tuple(self.names))
+
+    @property
+    def exts(self) -> tuple[str, ...]:
+        """Every extension this shape accepts, ``ext`` first."""
+        return (self.ext, *self.also)
+
+    def names_file(self, path: Path) -> bool:
+        """True when this is a fixed-name shape and ``path`` bears one of its names."""
+        return bool(self.names) and path.name.lower() in {n.lower() for n in self.names}
 
     def locate(self, path: Path, *, verify: bool = False) -> Layout:
-        if path.suffix.lower() != self.ext or (verify and not path.is_file()):
+        shaped = self.names_file(path) if self.names else path.suffix.lower() in self.exts
+        if not shaped or (verify and not path.is_file()):
             return NO_LAYOUT
         return Layout(LayoutKind.FILE, path, path, path)
 
@@ -94,6 +119,27 @@ class Folder:
     def ref_for(self, root: Path) -> Path:
         """Where ``asset_ref`` points for the asset rooted at ``root``."""
         return root / self.main if self.main and self.ref_is_main else root
+
+
+
+@dataclass(frozen=True, slots=True)
+class Walk:
+    """Where the SCAN looks for assets of a type — declared on the type, so
+    the indexer registers one generic walker per declaration instead of a
+    hand-written function per type.
+
+    ``roots`` names the root node kinds the walk hangs on (the indexer's root
+    graph: ``user_home_folder``, ``real_project_cwd``, ``cwd_root``,
+    ``system_root``, ``project``, ``folder``). ``mounts`` are root-relative
+    directories to look in; ``()`` means "derive from placement": every
+    harness prefix + family for a harness-scoped class (``.claude/skills``,
+    ``.agents/skills``), ``docs`` for the docs family. ``recursive`` walks
+    the mount's whole tree (docs) instead of its direct children.
+    """
+
+    roots: tuple[str, ...]
+    mounts: tuple[str, ...] = ()
+    recursive: bool = False
 
 
 Shape = File | Folder

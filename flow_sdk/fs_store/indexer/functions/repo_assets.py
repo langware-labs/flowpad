@@ -9,7 +9,7 @@ rides in each asset's ``metadata.json`` ``parent_type_id`` (the source of truth)
 this walker only discovers folders so their bytes get indexed at all.
 
 Registered on the scope-root input types with the explicit set of repository
-record types it can emit. Mirrors the single-pass shape of ``skill_fn``.
+record types it can emit. Mirrors the single-pass shape of the generic ``layout_walker``.
 """
 
 from __future__ import annotations

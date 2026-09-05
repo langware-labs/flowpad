@@ -5,7 +5,7 @@ from flow_sdk.fs_store.indexer.functions.markdown import derive_markdown
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.rag.observer import mark_rag_stale
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -24,6 +24,11 @@ MARKDOWN = TypeInfo(
     index_fields=["title", "tags", "links"],
     asset_class="docs",
     family="docs",
+    # ``<home>/docs/**/*.md`` — the DOCS family mount, ONE bounded directory,
+    # and the only user-scope markdown discovery: ``~`` is never content-walked
+    # (a huge tree of venvs and npm packages). Project markdown is the bespoke
+    # per-FOLDER emitter ``markdown_in_folder_fn`` (typed-ancestor fence).
+    walk=Walk(roots=("user_home_folder",), recursive=True),
     fts_content=("body", "links"),
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),

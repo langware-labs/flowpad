@@ -459,12 +459,12 @@ def disk_asset_descriptors(
     indexed listed nothing at all despite having real ``.claude/skills``
     folders on disk.
 
-    Discovery is DELEGATED to the indexer's own walkers (``skill_fn`` /
-    ``subagent_fn``) rather than re-deriving where assets live, so this pass
-    cannot drift from the indexer: a new harness dot-dir in ``WORKER_PREFIX``
-    or a new skill marker file is picked up here for free. Both walkers ignore
-    their options argument, so one throwaway ``IndexerOptions`` serves all of
-    them, and they key off ``node.path`` alone.
+    Discovery is DELEGATED to the indexer's own walkers (the declared
+    ``walk`` of skill / subagent, run by ``layout_walker``) rather than
+    re-deriving where assets live, so this pass cannot drift from the indexer:
+    a new harness dot-dir in ``WORKER_PREFIX`` is picked up here for free. The
+    walkers ignore their options argument, so one throwaway ``IndexerOptions``
+    serves all of them; they key off ``node.path`` and ``node.record_type``.
 
     Strictly read-only. Ids come from the peek seams (``skill_id`` /
     ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
@@ -484,15 +484,15 @@ def disk_asset_descriptors(
     from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
         parse_skill_yaml_from_dir,
         resolve_skill_name,
-        skill_fn,
         skill_id,
     )
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.walkers.generic import walker_for  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     opts = IndexerOptions()
+    skill_fn, subagent_fn = walker_for("skill"), walker_for("subagent")
     out: list[AssetDescriptor] = []
 
     def claim(path: Path) -> str | None:
@@ -507,8 +507,8 @@ def disk_asset_descriptors(
         return key
 
     for src_dir, source in ranked:
-        # The walkers read ``node.path`` and nothing else; the record type only
-        # has to be one they are registered under.
+        # The walkers serve the walks declared on this root kind; a project
+        # root is one both types name.
         nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
         if "skill" in types:
             for ref in skill_fn(nodes, opts):

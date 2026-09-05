@@ -7,7 +7,7 @@ from flow_sdk.fs_store.indexer.functions.claude_command import (
     extract_claude_command,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 
 COMMAND = TypeInfo(
@@ -20,6 +20,8 @@ COMMAND = TypeInfo(
     asset_class="harness",
     harness="claude",
     family="commands",
+    # ``.claude/commands/*.md`` (mount derived from placement) at user + both project roots.
+    walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root")),
     from_disk_fn=extract_claude_command,
     capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),

@@ -1194,14 +1194,19 @@ class Entity(DBEntity):
         """Resolve the record-type string for an ``FSRef``.
 
         Precedence: explicit ``record_type`` arg → ``ref.record_type`` → the
-        concrete subclass's own declared ``type`` default (so
-        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` even for a
-        bare folder ref). Base ``Entity`` with no hint yields ``None``.
+        registry's own classifier (``SchemaRegistry.type_for`` on the ref's
+        path) → the concrete subclass's declared ``type`` default (so
+        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` for a
+        bare folder the registry cannot place). Base ``Entity`` with no hint
+        and an unclassifiable path yields ``None``.
         """
         if record_type is not None:
             return str(record_type)
         if ref.record_type is not None:
             return str(ref.record_type)
+        classified = SchemaRegistry.type_for(getattr(ref, "_path", ref))
+        if classified is not None:
+            return classified
         if cls is not Entity:
             type_field = cls.model_fields.get("type")
             default = getattr(type_field, "default", None) if type_field else None

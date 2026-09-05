@@ -20,7 +20,7 @@ import pytest
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions, OrphanAction, index_log
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_paths import get_default_records_root
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -28,7 +28,7 @@ from flow_sdk.fs_store.record_types import RecordType
 def _build_indexer(root: Path) -> FSIndexer:
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     return idx
 
 

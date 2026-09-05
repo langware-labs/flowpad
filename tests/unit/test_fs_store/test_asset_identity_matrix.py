@@ -61,10 +61,13 @@ def _info(type_name: str):
 
 def _own_document(tmp_path: Path, type_name: str, default: str) -> Path:
     """A file the type CLAIMS: its declared main document for a folder type
-    (``agent.md``, ``trace.json``), else ``default``. The seam writes an id
-    only into a path of the type's own shape (FLOWPAD-2083) — the same gate
-    every walker applies — so a mint-and-persist case must present one."""
-    return tmp_path / (_info(type_name).main_file or default)
+    (``agent.md``, ``trace.json``), its fixed filename for a named file type
+    (``CLAUDE.md``), else ``default``. The seam writes an id only into a path
+    of the type's own shape (FLOWPAD-2083) — the same gate every walker
+    applies — so a mint-and-persist case must present one."""
+    info = _info(type_name)
+    names = getattr(info.shape, "names", ())
+    return tmp_path / (info.main_file or (names[0] if names else default))
 
 
 def _frontmatter(path: Path, *, canonical: str | None = None, legacy: str | None = None) -> None:

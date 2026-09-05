@@ -22,7 +22,7 @@ import pytest
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS as _OPTS,
@@ -91,7 +91,7 @@ async def test_cowalked_clones_in_one_scan_are_not_rekeyed(tmp_path: Path) -> No
     idx = FSIndexer()
     idx.add_root(FSRef(tmp_path / "cloneA" / "proj", record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_root(FSRef(tmp_path / "cloneB" / "proj", record_type=RecordType.USER_HOME_FOLDER, scope="user"))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     await idx.index(IndexerOptions(**_OPTS))
 
     assert _fm_id(a) == _COMMITTED_ID and _fm_id(b) == _COMMITTED_ID, (

@@ -27,17 +27,6 @@ from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-# New-file mint inference. A brand-new file with no owning entity is minted only
-# for types whose discovery unambiguously matches by extension — never guessed,
-# to avoid minting the wrong type (e.g. a folder-asset sentinel as a markdown).
-# Editing an EXISTING file never hits this path (it resolves via its entity).
-_EXT_MINT_CANDIDATES: dict[str, tuple[str, ...]] = {
-    ".md": ("markdown",),
-    ".csv": ("spreadsheet",),
-    ".xlsx": ("spreadsheet",),
-}
-
-
 async def owning_asset_for_removed_path(path: str):
     """``(row, root_gone)`` for a path a source reports as gone.
 
@@ -111,33 +100,25 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
-def _mint_candidates(path: str) -> tuple[tuple[str, str], ...]:
-    """``(type, target path)`` pairs to try, most specific first.
+def _mint_candidate(path: str) -> tuple[str, str] | None:
+    """``(type, target path)`` for a brand-new file with no owning entity, or
+    None when the registry cannot name its type.
 
-    A folder-layout type names its carrier with a FIXED ``main_file``
-    (``SKILL.md``), so a name match identifies the type unambiguously — exactly
-    the property the extension map lacks and the reason it stays restricted. Ask
-    the registry's own classifier (``TypeInfo.layout_of``) rather than guessing
-    from the suffix, and hand back the layout's ``ref``: a folder asset's root is
-    its DIRECTORY, and ``discover_record_by_path`` cannot mint one from the inner
-    file path. Without this the incremental path mints ``SKILL.md`` as a plain
-    markdown whose asset_ref is the FILE, and every sibling written into that
-    folder then fails to resolve to an owner and fragments into its own entity.
+    ONE classifier decides: ``SchemaRegistry.type_for`` (a folder type's main
+    document, a fixed filename, a declared family dir, a unique extension,
+    else markdown for ``.md``). The target is the layout's ``ref``: a folder
+    asset's root is its DIRECTORY, and ``discover_record_by_path`` cannot mint
+    one from the inner file path — without this the incremental path minted
+    ``SKILL.md`` as a plain markdown whose asset_ref was the FILE, and every
+    sibling written into that folder then fragmented into its own entity.
+    An ambiguous path (``.json``) is never guessed at.
     """
-    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    p = Path(path)
-    out: list[tuple[str, str]] = []
-    for type_name in SchemaRegistry.get_all_types():
-        info = SchemaRegistry.get(type_name)
-        if info is None or info.main_layout != "folder" or not info.main_file:
-            continue
-        layout = info.layout_of(p, verify=True)
-        if layout.kind is LayoutKind.NONE or layout.ref is None:
-            continue
-        out.append((type_name, str(layout.ref)))
-    out.extend((cand, path) for cand in _EXT_MINT_CANDIDATES.get(p.suffix.lower(), ()))
-    return tuple(out)
+    type_name = SchemaRegistry.type_for(path)
+    if type_name is None:
+        return None
+    return type_name, asset_target_for(type_name, path)
 
 
 async def reindex_paths(
@@ -208,16 +189,13 @@ async def reindex_paths(
                 result.skipped.append(path)
                 continue
             minted = False
-            for cand, target in _mint_candidates(path):
+            if (candidate := _mint_candidate(path)) is not None:
+                cand, target = candidate
                 try:
-                    if await discover_record_by_path(cand, target, notify=True, strict_owner=True) is not None:
-                        result.minted.append(path)
-                        minted = True
-                        break
+                    minted = await discover_record_by_path(cand, target, notify=True, strict_owner=True) is not None
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("reindex mint %s as %s failed: %s", path, cand, exc)
-            if not minted:
-                result.skipped.append(path)
+            (result.minted if minted else result.skipped).append(path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("reindex_paths: %s failed: %s", path, exc)
             result.skipped.append(path)
