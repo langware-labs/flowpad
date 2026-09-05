@@ -173,8 +173,8 @@ msgstr "[[{name}]] غير موجود"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "[[{WIKI_PAGE}]]"
-msgstr "[[{WIKI_PAGE}]]"
+#~ msgid "[[{WIKI_PAGE}]]"
+#~ msgstr "[[{WIKI_PAGE}]]"
 
 #. placeholder {0}: clipboard.items.length
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1081,7 +1081,7 @@ msgid "Active log: {0}"
 msgstr "السجل النشط: {0}"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Active projects"
 msgstr "المشاريع النشطة"
 
@@ -4754,7 +4754,7 @@ msgstr "تعذّر تسجيل الخروج من Sandbox"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr "تعذر البدء"
@@ -5530,6 +5530,10 @@ msgstr "حذف المحادثة"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Delete chat?"
 msgstr "حذف هذه المحادثة؟"
+
+#: src/components/assets/AssetsPage.tsx
+msgid "Delete chats"
+msgstr "حذف المحادثات"
 
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Delete comment"
@@ -7011,8 +7015,8 @@ msgid "Expert details"
 msgstr ""
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "Explanation of Flowpad's runtime environments."
-msgstr "شرح بيئات التشغيل في Flowpad."
+#~ msgid "Explanation of Flowpad's runtime environments."
+#~ msgstr "شرح بيئات التشغيل في Flowpad."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -7403,7 +7407,7 @@ msgstr "تعذر بدء الجلسة"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "فشل بدء جلسة البناء."
@@ -8203,7 +8207,7 @@ msgstr ""
 msgid "glob"
 msgstr "glob"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Global"
@@ -9419,6 +9423,10 @@ msgstr "متابعة التعديل"
 msgid "Keep the default greeting…"
 msgstr "الاحتفاظ بالتحية الافتراضية…"
 
+#: src/components/assets/AssetsPage.tsx
+msgid "Keeping chat history can make this project reappear when projects are scanned."
+msgstr "قد يؤدي الاحتفاظ بسجل المحادثات إلى ظهور هذا المشروع مجددًا عند فحص المشاريع."
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "kept current as a context folder"
 msgstr "تم الاحتفاظ به كمجلد السياق الحالي"
@@ -9609,6 +9617,7 @@ msgid "Learn about your data"
 msgstr "التعرف على بياناتك"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
 msgstr "معرفة المزيد"
@@ -10174,6 +10183,7 @@ msgstr "جاري التحميل..."
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
@@ -11729,6 +11739,10 @@ msgstr "لا يوجد مشروع"
 msgid "No project context available"
 msgstr "سياق المشروع غير متاح"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "No project has open tabs yet."
+msgstr "لا يوجد مشروع لديه علامات تبويب مفتوحة بعد."
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project matches \"{normalizedCode}\"."
 msgstr "لا يوجد مشروع يطابق \"{normalizedCode}\"."
@@ -12804,6 +12818,10 @@ msgstr "فتح المشروع"
 msgid "Open project in cloud"
 msgstr "فتح المشروع في السحابة"
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Open project list"
+msgstr "فتح قائمة المشاريع"
+
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
 msgid "Open project view"
@@ -13210,7 +13228,7 @@ msgid "Past analyses"
 msgstr "التحليلات السابقة"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 msgid "Past builds"
 msgstr "الإصدارات السابقة"
 
@@ -13832,7 +13850,7 @@ msgid "Project folder…"
 msgstr "مجلد المشروع…"
 
 #: src/components/assets/useAssetsModel.tsx
-#: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Project home"
 msgstr "الصفحة الرئيسية للمشروع"
 
@@ -14384,7 +14402,7 @@ msgstr "فحص السجلات"
 msgid "Records Scanner"
 msgstr "ماسح السجلات"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "recover"
 msgstr "استعادة"
 
@@ -14396,7 +14414,7 @@ msgstr "استعده من مجلد العمل، أو اختر مشروعًا ج�
 msgid "Recover project"
 msgstr "استعادة المشروع"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Recovery failed"
 msgstr "فشلت الاستعادة"
 
@@ -17222,7 +17240,7 @@ msgstr "بدء جلسة حية"
 msgid "Start new"
 msgstr "بدء محادثة جديدة"
 
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 msgid "Start new chat"
 msgstr "بدء محادثة جديدة"
 
@@ -18595,6 +18613,26 @@ msgstr "تعذر قراءة هذا النص."
 msgid "This transcript has no messages."
 msgstr "هذا النص لا يحتوي على رسائل."
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by a cloud sandbox you opened."
+msgstr "هذه الواجهة مُقدَّمة من بيئة معزولة سحابية فتحتها."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by a local server on your machine, in a browser tab."
+msgstr "هذه الواجهة مُقدَّمة من خادم محلي على جهازك، في علامة تبويب بالمتصفح."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by an agent's cloud box."
+msgstr "هذه الواجهة مُقدَّمة من جهاز سحابي تابع لوكيل."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by the Flowpad cloud."
+msgstr "هذه الواجهة مُقدَّمة من سحابة Flowpad."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by your own desktop."
+msgstr "هذه الواجهة مُقدَّمة من حاسوبك المكتبي."
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"
 msgstr ""
@@ -19843,8 +19881,8 @@ msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingSt
 msgstr "إشارة الترحيب المرجعية ومدخل الخلاصة، يُنشآن عند التشغيل الأول. الحالة: {onboardingStatus}"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "What are Flowpad's runtime environments?"
-msgstr "ما هي بيئات التشغيل في Flowpad؟"
+#~ msgid "What are Flowpad's runtime environments?"
+#~ msgstr "ما هي بيئات التشغيل في Flowpad؟"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
@@ -20008,7 +20046,7 @@ msgstr "الكمبيوتر بأكمله"
 msgid "Wiki Entries"
 msgstr "مدخلات ويكي"
 
-#: src/components/top-nav-bar/RuntimeChip.tsx
+#: src/components/wiki-tip/HubWikiMarkdown.tsx
 msgid "Wiki page not found on this hub."
 msgstr "لم يتم العثور على صفحة الويكي على هذا المحور."
 
@@ -20335,11 +20373,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/assets/AssetsPage.tsx
-msgid "Delete chats"
-msgstr "حذف المحادثات"
-
-#: src/components/assets/AssetsPage.tsx
-msgid "Keeping chat history can make this project reappear when projects are scanned."
-msgstr "قد يؤدي الاحتفاظ بسجل المحادثات إلى ظهور هذا المشروع مجددًا عند فحص المشاريع."

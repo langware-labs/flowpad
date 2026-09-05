@@ -173,8 +173,8 @@ msgstr "[[{name}]] not found"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "[[{WIKI_PAGE}]]"
-msgstr "[[{WIKI_PAGE}]]"
+#~ msgid "[[{WIKI_PAGE}]]"
+#~ msgstr "[[{WIKI_PAGE}]]"
 
 #. placeholder {0}: clipboard.items.length
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1081,7 +1081,7 @@ msgid "Active log: {0}"
 msgstr "Active log: {0}"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Active projects"
 msgstr "Active projects"
 
@@ -4754,7 +4754,7 @@ msgstr "Could not sign the sandbox out"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
@@ -5530,6 +5530,10 @@ msgstr "Delete chat"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Delete chat?"
 msgstr "Delete chat?"
+
+#: src/components/assets/AssetsPage.tsx
+msgid "Delete chats"
+msgstr "Delete chats"
 
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Delete comment"
@@ -7011,8 +7015,8 @@ msgid "Expert details"
 msgstr "Expert details"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "Explanation of Flowpad's runtime environments."
-msgstr "Explanation of Flowpad's runtime environments."
+#~ msgid "Explanation of Flowpad's runtime environments."
+#~ msgstr "Explanation of Flowpad's runtime environments."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -7403,7 +7407,7 @@ msgstr "Failed to start session"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
@@ -8203,7 +8207,7 @@ msgstr "Given out {allocatedNoun}"
 msgid "glob"
 msgstr "glob"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Global"
@@ -9419,6 +9423,10 @@ msgstr "Keep editing"
 msgid "Keep the default greeting…"
 msgstr "Keep the default greeting…"
 
+#: src/components/assets/AssetsPage.tsx
+msgid "Keeping chat history can make this project reappear when projects are scanned."
+msgstr "Keeping chat history can make this project reappear when projects are scanned."
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "kept current as a context folder"
 msgstr "kept current as a context folder"
@@ -9609,6 +9617,7 @@ msgid "Learn about your data"
 msgstr "Learn about your data"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
 msgstr "Learn more"
@@ -10174,6 +10183,7 @@ msgstr "Loading..."
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
@@ -11729,6 +11739,10 @@ msgstr "No project"
 msgid "No project context available"
 msgstr "No project context available"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "No project has open tabs yet."
+msgstr "No project has open tabs yet."
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project matches \"{normalizedCode}\"."
 msgstr "No project matches \"{normalizedCode}\"."
@@ -12804,6 +12818,10 @@ msgstr "Open Project"
 msgid "Open project in cloud"
 msgstr "Open project in cloud"
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Open project list"
+msgstr "Open project list"
+
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
 msgid "Open project view"
@@ -13210,7 +13228,7 @@ msgid "Past analyses"
 msgstr "Past analyses"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 msgid "Past builds"
 msgstr "Past builds"
 
@@ -13832,7 +13850,7 @@ msgid "Project folder…"
 msgstr "Project folder…"
 
 #: src/components/assets/useAssetsModel.tsx
-#: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Project home"
 msgstr "Project home"
 
@@ -14384,7 +14402,7 @@ msgstr "Records Scan"
 msgid "Records Scanner"
 msgstr "Records Scanner"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "recover"
 msgstr "recover"
 
@@ -14396,7 +14414,7 @@ msgstr "Recover it from the workdir, or pick a new project via the project chip.
 msgid "Recover project"
 msgstr "Recover project"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Recovery failed"
 msgstr "Recovery failed"
 
@@ -17222,7 +17240,7 @@ msgstr "Start live session"
 msgid "Start new"
 msgstr "Start new"
 
-#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-pane.tsx
 msgid "Start new chat"
 msgstr "Start new chat"
 
@@ -18595,6 +18613,26 @@ msgstr "This transcript could not be read."
 msgid "This transcript has no messages."
 msgstr "This transcript has no messages."
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by a cloud sandbox you opened."
+msgstr "This UI is served by a cloud sandbox you opened."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by a local server on your machine, in a browser tab."
+msgstr "This UI is served by a local server on your machine, in a browser tab."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by an agent's cloud box."
+msgstr "This UI is served by an agent's cloud box."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by the Flowpad cloud."
+msgstr "This UI is served by the Flowpad cloud."
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "This UI is served by your own desktop."
+msgstr "This UI is served by your own desktop."
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"
 msgstr "this week"
@@ -19843,8 +19881,8 @@ msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingSt
 msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-msgid "What are Flowpad's runtime environments?"
-msgstr "What are Flowpad's runtime environments?"
+#~ msgid "What are Flowpad's runtime environments?"
+#~ msgstr "What are Flowpad's runtime environments?"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
@@ -20008,7 +20046,7 @@ msgstr "Whole computer"
 msgid "Wiki Entries"
 msgstr "Wiki Entries"
 
-#: src/components/top-nav-bar/RuntimeChip.tsx
+#: src/components/wiki-tip/HubWikiMarkdown.tsx
 msgid "Wiki page not found on this hub."
 msgstr "Wiki page not found on this hub."
 
@@ -20335,11 +20373,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/assets/AssetsPage.tsx
-msgid "Delete chats"
-msgstr "Delete chats"
-
-#: src/components/assets/AssetsPage.tsx
-msgid "Keeping chat history can make this project reappear when projects are scanned."
-msgstr "Keeping chat history can make this project reappear when projects are scanned."
