@@ -1,6 +1,6 @@
 import type { Bookmark } from '@sdk';
-import apiClient from '@sdk/client';
-import { useQuery } from '@tanstack/react-query';
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { useMemo } from 'react';
 
 export interface FavoriteSummary {
@@ -11,15 +11,6 @@ export interface FavoriteSummary {
 interface FavoriteRef {
   type: string;
   id: string;
-}
-
-interface SummaryResponse {
-  summaries: Array<{
-    type: string;
-    id: string;
-    name: string | null;
-    subtitle: string | null;
-  }>;
 }
 
 function refsFromBookmarks(bookmarks: Bookmark[]): FavoriteRef[] {
@@ -34,13 +25,6 @@ function refsFromBookmarks(bookmarks: Bookmark[]): FavoriteRef[] {
   return out;
 }
 
-function refsKey(refs: FavoriteRef[]): string {
-  return refs
-    .map((r) => `${r.type}:${r.id}`)
-    .sort()
-    .join('|');
-}
-
 /**
  * Batch-fetches live tooltip summaries (name + subtitle) for the given
  * favorited entities. One POST per distinct ref-set; shared across all
@@ -48,20 +32,7 @@ function refsKey(refs: FavoriteRef[]): string {
  */
 export function useFavoriteSummaries(bookmarks: Bookmark[]) {
   const refs = useMemo(() => refsFromBookmarks(bookmarks), [bookmarks]);
-  const key = useMemo(() => refsKey(refs), [refs]);
-
-  const { data } = useQuery({
-    queryKey: ['favorite-summaries', key],
-    queryFn: async () => {
-      if (refs.length === 0) return { summaries: [] } as SummaryResponse;
-      // A backend older than the envelope change answers with a bare body the
-      // client unwraps to undefined; react-query treats undefined as an error,
-      // so normalise to "no summaries" rather than log on every Home load.
-      const res = await apiClient.post<SummaryResponse | undefined>('/api/v1/favorites/summary', { refs });
-      return res ?? ({ summaries: [] } as SummaryResponse);
-    },
-    staleTime: 15_000,
-  });
+  const { data } = useLazyAsset(LazyAsset.FavoriteSummaries, { refs }, { priority: 'background' });
 
   return useMemo(() => {
     const map = new Map<string, FavoriteSummary>();

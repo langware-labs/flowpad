@@ -251,7 +251,7 @@ export function HubHome() {
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
-  const { projects } = useProjects();
+  const { projects } = useProjects({ priority: 'demand' });
   const {
     sandboxes,
     createSandbox,

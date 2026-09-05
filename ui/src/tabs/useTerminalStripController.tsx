@@ -1,3 +1,5 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
 /**
  * useTerminalStripController — the terminal-strip CHROME (docs/tab-management.md
  * Part 3 §6). After the Tab-entity cutover the strip itself is the shared
@@ -103,6 +105,7 @@ export function useTerminalStripController({
 }: TerminalStripControllerOptions = {}): TerminalStripController {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  useRuntimeInfo();
   const { sandboxComputeNode } = useContext();
   const isAdvanced = useIsAdvanced();
   // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
@@ -241,7 +244,8 @@ export function useTerminalStripController({
     navigation.openDock(DockPointer.forGraphContext(gc.typeId.id));
   }, [navigation]);
 
-  const handleStartSandbox = useCallback(() => {
+  const handleStartSandbox = useCallback(async () => {
+    await lazyAssets.load(LazyAsset.RuntimeInfo);
     const sandboxNode = dataContext.sandboxComputeNode;
     if (!sandboxNode) return;
     return startTerminalTab(sandboxNode);

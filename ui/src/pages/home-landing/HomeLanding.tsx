@@ -42,7 +42,7 @@ export function HomeLanding() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
-  useProjects();
+  useProjects({ priority: 'demand' });
 
   // Incoming task dialog — driven by URL params (email deep-link) or WS events.
   // Deep link shape:

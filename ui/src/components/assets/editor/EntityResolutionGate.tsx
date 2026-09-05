@@ -1,3 +1,4 @@
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { ReactNode } from 'react';
 import { APIEntity, FSRef } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -51,6 +52,7 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
     resolvedEntity ? null : fsRef,
   );
   const entity = resolvedEntity ?? pathEntity;
+  usePrimaryContentPending(!resolvedEntity && (state === 'querying' || state === 'discovering'));
 
   if (entity && (resolvedEntity || state === 'resolved')) return <>{render(entity)}</>;
 

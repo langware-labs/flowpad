@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * The box's funding picture: which `LLMSource`s could pay for each harness, which one wins,
  * and how to choose a different one.
@@ -67,7 +68,7 @@ export interface LLMFundingStatus {
 export class LlmSourcesService {
   private readonly base: string;
 
-  constructor(nodeTypeId: { type: string; id: string }) {
+  constructor(private readonly nodeTypeId: { type: string; id: string }) {
     this.base = `/graph/${nodeTypeId.type}/${nodeTypeId.id}/${ACTION}`;
   }
 
@@ -78,6 +79,10 @@ export class LlmSourcesService {
    *  desktop-only — and every field added to `LLMFundingStatus` would have to be mirrored into
    *  that constant forever. */
   status(): Promise<LLMFundingStatus | null> {
+    return lazyAssets.load(LazyAsset.LlmFunding, { nodeTypeId: this.nodeTypeId });
+  }
+
+  fetchStatus(): Promise<LLMFundingStatus | null> {
     if (isHubOnly()) return Promise.resolve(null);
     return apiClient.get(this.base);
   }

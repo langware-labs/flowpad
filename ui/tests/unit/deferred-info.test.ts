@@ -22,7 +22,9 @@ beforeEach(async () => {
   vi.spyOn(realm.sdk.dataContext, 'initContext').mockResolvedValue(undefined);
   vi.spyOn(realm.sdk.cloudManager, 'seedBootstrap').mockResolvedValue(undefined);
   vi.spyOn(realm.sdk.cloudManager, 'startSubscriptions').mockResolvedValue(undefined);
-  vi.spyOn(realm.sdk.cloudManager, 'refreshStatus').mockResolvedValue(null);
+  vi.spyOn(realm.sdk.cloudManager, 'fetchStatus').mockResolvedValue(null);
+  vi.spyOn(realm.sdk.lazyAssets, 'prefetch').mockResolvedValue(undefined);
+  vi.spyOn(realm.sdk.systemTools, 'refreshActivityStatus').mockResolvedValue(null);
   const { privacyManager } = await import('@sdk/services/privacy_mode');
   vi.spyOn(privacyManager, 'startSubscriptions').mockResolvedValue(undefined);
 });
@@ -70,7 +72,7 @@ describe('SDK discovery after readiness', () => {
     expect(window.appReady).toBe(true);
     expect(realm.sdk.dataContext.bootstrapError).toBeNull();
     expect(realm.sdk.dataContext.snifferReady).toBe(false);
-    expect(warning).toHaveBeenCalledWith('[info] Optional runtime information unavailable', expect.any(Error));
+    expect(warning).toHaveBeenCalledWith('[asyncSdkInit] info unavailable', expect.any(Error));
   });
 
   it('preserves early identity and paths and publishes deferred status and notice', async () => {
@@ -132,7 +134,7 @@ describe('SDK discovery after readiness', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.spyOn(realm.sdk.dataManager, 'bootstrap').mockRejectedValue(new Error('offline'));
     const info = vi.spyOn(realm.sdk.dataManager, 'info');
-    const refreshStatus = vi.spyOn(realm.sdk.cloudManager, 'refreshStatus');
+    const refreshStatus = vi.spyOn(realm.sdk.cloudManager, 'fetchStatus');
     await realm.main.asyncSdkInit();
     expect(info).not.toHaveBeenCalled();
     expect(refreshStatus).not.toHaveBeenCalled();
@@ -146,7 +148,7 @@ describe('SDK discovery after readiness', () => {
       subscribed.resolve();
       return Promise.resolve();
     });
-    vi.spyOn(realm.sdk.cloudManager, 'refreshStatus').mockReturnValue(cloud.promise);
+    vi.spyOn(realm.sdk.cloudManager, 'fetchStatus').mockReturnValue(cloud.promise);
     vi.spyOn(realm.sdk.dataManager, 'info').mockResolvedValue({ sniffer_installed: false });
     await realm.main.initSdk();
     expect(realm.sdk.dataContext.bootstrapInfo).toBe(bootstrap);

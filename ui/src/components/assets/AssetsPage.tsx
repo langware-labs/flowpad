@@ -20,7 +20,7 @@ import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import { dataContext, RecordType, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import apiClient from '@sdk/client';
@@ -34,7 +34,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@src/components/ui/breadcrumb';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import {
@@ -375,9 +375,6 @@ export function AssetsPage() {
   const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
   const isAdvanced = useIsAdvanced();
 
-  useEffect(() => {
-    void systemTools.refreshActivityStatus();
-  }, []);
 
   const handleRebuildIndex = useCallback(async () => {
     // Project view → Fast index scoped to the project (re-stamps the project's
@@ -533,9 +530,9 @@ export function AssetsPage() {
   const handleProjectFilter = useCallback(
     async (label: string) => {
       try {
-        const data = (await apiClient.get('/search?record_type=project&limit=200')) as {
-          results?: { record_id: string; name: string }[];
-        } | null;
+        const data = await apiClient.get<{ results?: { record_id: string; name: string }[] }>(
+          '/search?record_type=project&limit=200',
+        );
         const projects = data?.results ?? [];
         const match = projects.find((p) => {
           const lastSeg = p.name.replace(/\/$/, '').split('/').filter(Boolean).pop() ?? p.name;

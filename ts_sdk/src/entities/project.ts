@@ -1040,7 +1040,8 @@ export class Project extends APIEntity<Project> {
    */
   static async getProjectByPath(path: string | null | undefined): Promise<Project | null> {
     if (!path) return null;
-    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
+    const { lazyAssets, LazyAsset } = await import('../lazy');
+    const projects = await lazyAssets.load(LazyAsset.Projects);
     const candidates = projects.filter(
       (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
     );

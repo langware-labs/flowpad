@@ -1,3 +1,5 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 /**
  * The box's funding picture, as one cached read.
  *
@@ -16,17 +18,13 @@ import {
   type LLMSource,
   type LLMSourceRef,
 } from '@sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-export const LLM_SOURCES_KEY = ['llm-sources'] as const;
+export const LLM_SOURCES_KEY = ['lazy', LazyAsset.LlmFunding] as const;
 
 export function useLlmSources() {
-  const { data, isLoading } = useQuery({
-    queryKey: LLM_SOURCES_KEY,
-    queryFn: () => llmSourcesService.status(),
-    staleTime: 10_000,
-  });
-  return { status: (data ?? null) as LLMFundingStatus | null, isLoading };
+  const { data, isLoading } = useLazyAsset(LazyAsset.LlmFunding);
+  return { status: data ?? null, isLoading };
 }
 
 /** Choose which source funds a harness. One write, straight through the SDK — the page never
@@ -37,7 +35,7 @@ export function useSelectSource() {
     mutationFn: ({ harness, source }: { harness: string; source: LLMSourceRef }) =>
       llmSourcesService.select(harness, source),
     onSuccess: (status) => {
-      qc.setQueryData(LLM_SOURCES_KEY, status);
+      qc.setQueryData(lazyAssets.key(LazyAsset.LlmFunding), status);
       // `select` writes the same `auth_mode` / `api_provider` that `capabilityManager.setAuthMode`
       // does, but server-side — so it bypasses that manager's own invalidation. Everything else
       // that shows a harness's auth mode (the login modal, the footer warnings, the terminal
