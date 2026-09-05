@@ -124,7 +124,7 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
 
   // Active, but `is_due` will still refuse it. Without calling this out the
   // card reads as healthy-but-idle and the user waits forever.
-  const parked = source.isActive && source.health === 'config_error';
+  const parked = source.isParked;
   const health = healthStyle(source.health);
   const status = statusStyle(source.status);
   // The lifecycle answers first. Health on a source that is not running is

@@ -28,9 +28,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { notify } from '@src/notifications';
-import { errorMessage } from '@src/lib/error-message';
 import { DataSourceCard } from './DataSourceCard';
+import { useSourceDelete } from './use-source-delete';
 import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { Sparkles } from 'lucide-react';
@@ -51,7 +50,6 @@ export function DataSourcesView() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [replaying, setReplaying] = useState<DataSource | null>(null);
-  const [deleting, setDeleting] = useState<DataSource | null>(null);
   const Icon = iconForType(DataSource.type);
 
   const openAdd = useCallback(() => {
@@ -64,24 +62,9 @@ export function DataSourcesView() {
     setEditorOpen(true);
   }, []);
 
-  const confirmDelete = useCallback(
-    async (source: DataSource) => {
-      try {
-        // `delete()`, not `destroy()` — the TS entity has no destroy, and the
-        // backend cascade hangs off `delete_by_id`, which is what this reaches.
-        await source.delete();
-        // A delete removes a row rather than changing one, and the live query
-        // watches for writes — so this is the one mutation needing a re-read.
-        void refetch();
-      } catch (error) {
-        notify.error({
-          title: t`Could not delete ${source.name || source.provider}`,
-          message: errorMessage(error, t`The source was not removed.`),
-        });
-      }
-    },
-    [refetch, t],
-  );
+  // A delete removes a row rather than changing one, and the live query
+  // watches for writes — so this is the one mutation needing a re-read.
+  const { deleting, setDeleting, remove, confirm } = useSourceDelete(() => void refetch());
 
   const sorted = useMemo(
     () => [...sources].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
@@ -171,12 +154,8 @@ export function DataSourcesView() {
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
         variant="destructive"
-        title={t`Delete this data source?`}
-        // Say what else goes: nothing cascades by default, so the backend's
-        // delete override is the only reason these disappear together.
-        description={t`"${deleting?.name || deleting?.provider || ''}" will be removed along with its streams and every record it ingested. This cannot be undone.`}
-        confirmLabel={t`Delete`}
-        onConfirm={() => deleting && void confirmDelete(deleting)}
+        {...confirm}
+        onConfirm={() => deleting && void remove(deleting)}
       />
     </div>
   );
