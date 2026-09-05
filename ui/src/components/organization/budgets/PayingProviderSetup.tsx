@@ -53,20 +53,25 @@ import { useInvalidateBudgets, useSetPayingProvider } from './use-budgets';
 
 export interface PayingProviderSetupProps {
   orgId: string;
-  org: Pick<OrgScopeBudget, 'endpoint_id' | 'is_root' | 'provider' | 'credential_hint' | 'can_set_credential'>;
+  org: Pick<
+    OrgScopeBudget,
+    'endpoint_id' | 'is_root' | 'provider' | 'credential_hint' | 'can_set_credential' | 'can_set_up_budget'
+  >;
 }
 
 export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
-  // Whose key the organization pays with is the OWNER's answer, so an admin gets a statement of
-  // fact instead of a form. Shown rather than hidden on purpose: an admin dividing this money
-  // needs to know which provider it runs on and that a key is actually in place, or a refusal
-  // coming back from the provider is unreadable to them. The last four characters are all a hint
-  // ever contains -- the hub never sends the key itself to anyone.
-  if (!org.can_set_credential) {
-    return <PayingProviderSummary org={org} />;
+  // NO POOL YET -- and this branch must be judged on `can_set_up_budget`, not on
+  // `can_set_credential`. The latter is the `credential` question asked of the POOL, so an
+  // organization that has none answers false for EVERYONE, its owner included: gating here on it
+  // told the owner of a brand new org "its owner sets one up" and gave them no way to be that
+  // owner. The right question is asked of the organization, and it is answerable before setup.
+  if (!org.endpoint_id) {
+    return org.can_set_up_budget ? <OrgKeyCreateForm orgId={orgId} /> : <PayingProviderSummary org={org} />;
   }
 
-  if (org.endpoint_id && !org.is_root) {
+  // Same statement of fact for everyone: bringing a key is not offered on a pool that already
+  // draws from the shared one, whoever is asking.
+  if (!org.is_root) {
     return (
       <p className="text-xs text-muted-foreground" data-testid="org-root-legacy-chain">
         <Trans>
@@ -77,17 +82,19 @@ export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
     );
   }
 
-  if (org.endpoint_id && org.is_root) {
-    return (
-      <OrgKeyField
-        endpointId={endpointIdFromTypeId(org.endpoint_id)}
-        provider={org.provider}
-        credentialHint={org.credential_hint ?? ''}
-      />
-    );
-  }
-
-  return <OrgKeyCreateForm orgId={orgId} />;
+  // A root exists. Whose key it holds is the OWNER's answer, so an admin gets a statement of fact
+  // instead of the field -- shown rather than hidden, because an admin dividing this money needs to
+  // know which provider it runs on and that a key is in place, or a provider refusal is unreadable
+  // to them. The last four characters are all a hint ever contains.
+  return org.can_set_credential ? (
+    <OrgKeyField
+      endpointId={endpointIdFromTypeId(org.endpoint_id)}
+      provider={org.provider}
+      credentialHint={org.credential_hint ?? ''}
+    />
+  ) : (
+    <PayingProviderSummary org={org} />
+  );
 }
 
 /** What an admin sees where the owner sees the key form: the provider, and whether a key is set. */
@@ -99,13 +106,6 @@ function PayingProviderSummary({ org }: Pick<PayingProviderSetupProps, 'org'>) {
     return (
       <p className="text-xs text-muted-foreground" data-testid="org-root-owner-only">
         <Trans>This organization has no budget yet. Its owner sets one up.</Trans>
-      </p>
-    );
-  }
-  if (!org.is_root) {
-    return (
-      <p className="text-xs text-muted-foreground" data-testid="org-root-owner-only">
-        <Trans>This organization draws its budget from Flowpad's shared pool.</Trans>
       </p>
     );
   }
