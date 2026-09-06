@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -335,10 +336,20 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     each row with per-worker session counts read off disk — same shape the UI
     expected from the legacy implementation.
     """
-    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.operations.all_projects import get_all_projects
 
     all_projects = await get_all_projects(create_missing=False)
+    # The enrichment below is a synchronous walk over every worker's on-disk
+    # activity (``~/.claude/projects`` session stats, codex/copilot logs) —
+    # seconds on a machine with hundreds of historical cwds. Off the loop, so a
+    # picker opening this list does not stall every other request behind it.
+    return await asyncio.to_thread(_build_project_rows, all_projects)
+
+
+def _build_project_rows(all_projects: list) -> dict[str, Any]:
+    """Pure, blocking: per-worker activity + session counts per canonical cwd."""
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
+
     codex_activity = _codex_activity_by_cwd()
     copilot_activity = _copilot_activity_by_cwd()
     # One pass over claude_root → cwd lookup; otherwise the per-project search

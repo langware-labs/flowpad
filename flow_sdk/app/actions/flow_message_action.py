@@ -59,9 +59,7 @@ logger = logging.getLogger(__name__)
 # so those callers must not run its rmtree/copytree sequence at the same time.
 # Locks are loop-scoped (asyncio locks cannot cross pytest/server event loops)
 # and weakly held so a long-lived backend does not retain one per message.
-_BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = (
-    WeakValueDictionary()
-)
+_BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = WeakValueDictionary()
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
@@ -1597,9 +1595,7 @@ async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[
             role = message.get("role") or row.get("type") or "?"
             content = message.get("content")
             if isinstance(content, list):
-                text = " ".join(
-                    part.get("text", "") for part in content if isinstance(part, dict)
-                ).strip()
+                text = " ".join(part.get("text", "") for part in content if isinstance(part, dict)).strip()
             else:
                 text = str(content or "").strip()
             if text:
@@ -1675,13 +1671,9 @@ async def helpdesk_start_ticket() -> ApiResponse:
                 {"attachment_type": "type_id", "data": session_typeid}
             ]
         if excerpt:
-            hub_body["text"] = (
-                f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
-            )
+            hub_body["text"] = f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
 
-        resp = await _hub_action(
-            "POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body
-        )
+        resp = await _hub_action("POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body)
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
             # 502, not the default 500: the failure is the UPSTREAM hub rejecting
@@ -2061,7 +2053,9 @@ async def handle_inbox_list(*, scope: AgentInboxScope | None = None) -> ApiRespo
     messages = [
         m
         for m in all_messages
-        if not m.is_archived and m.sender_id not in self_ids and m.conversation_id in known_conv_ids
+        if not m.is_archived
+        and m.sender_id not in self_ids
+        and m.conversation_id in known_conv_ids
         and (scope is None or m.id in scope.flow_message_ids)
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
@@ -2449,9 +2443,7 @@ async def inbox_search() -> ApiResponse:
                 hydrate=False,
             ),
         )
-        conversation_ids: set[str] = {
-            str(m.conversation_id) for m in native if m.conversation_id
-        }
+        conversation_ids: set[str] = {str(m.conversation_id) for m in native if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
                 QueryFilter(
@@ -2574,7 +2566,15 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     # pointer is appended, and the user can retry. This prevents the
     # phantom "local says sent, hub doesn't know" state and avoids
     # orphaning a pointer to a still-draft row.
-    if getattr(conv, "remote", False) and is_logged_in():
+    is_remote_send = bool(getattr(conv, "remote", False)) and is_logged_in()
+    if is_remote_send and fm.has_body():
+        # A body-bearing draft (a session reply carries its prompt_completion
+        # attachment + the session carrier) must announce UPLOADING so the hub
+        # gates receivers until the bundle lands — exactly as a fresh send does.
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        fm.body_status = BodyStatus.UPLOADING
+    if is_remote_send:
         if not await _send_conversation_message_header(conv, fm):
             return ApiFailResponse(
                 message="Hub send failed; draft preserved for retry",
@@ -2596,6 +2596,25 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     )
 
     _notify_ui_conversation_updated(conv.id, "", fm.id)
+
+    if is_remote_send and getattr(fm, "body_status", None) == "uploading":
+        from flow_sdk.app.actions.notification_action import _upload_body_and_finalize  # noqa: PLC0415
+
+        asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+
+    # A drafted STARTING prompt sat at DRAFT on the sender's session row;
+    # sending it is the request for access.
+    sid = getattr(fm, "remote_worker_session_id", None)
+    if sid:
+        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+
+        session = await RemoteWorkerSession.resolve_state(sid)
+        if session is not None and session.status == RemoteWorkerSessionStatus.DRAFT:
+            session.mark_activity(RemoteWorkerSessionStatus.PENDING)
+            await session.save(someone_typeid)
 
     return ApiSuccessResponse(
         data={
@@ -3723,8 +3742,14 @@ async def _upsert_hub_conversation_metadata(
     *,
     notify: bool = True,
     existing=_UNSET,
+    learned_rosters: Optional[set[str]] = None,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
+
+    ``learned_rosters`` is a per-batch memo of rosters already pushed into the
+    address book: a hub account's conversations mostly share one roster, and
+    without the memo a fresh mirror learned the same two contacts once per
+    conversation (two DB reads each). The batch caller owns the set.
 
     ``existing`` lets a caller that already holds the local row (e.g. the
     conversation-list bulk-read cache) pass it in to skip the per-row
@@ -3773,9 +3798,14 @@ async def _upsert_hub_conversation_metadata(
     roster = hub_conv.get("participants")
     if isinstance(roster, list) and roster:
         norm_roster = _normalize_participants(roster)
-        if existing is None or (existing.members or []) != norm_roster:
+        roster_key = _json.dumps(norm_roster, sort_keys=True, default=str)
+        if (existing is None or (existing.members or []) != norm_roster) and (
+            learned_rosters is None or roster_key not in learned_rosters
+        ):
             try:
                 await _learn_normalized_participants(norm_roster)
+                if learned_rosters is not None:
+                    learned_rosters.add(roster_key)
             except Exception as learn_err:  # noqa: BLE001
                 logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s", conv_id[:8], learn_err)
     if existing is None:
@@ -3786,7 +3816,14 @@ async def _upsert_hub_conversation_metadata(
         # said otherwise, and the desk's own queue view could not recognise its
         # own tickets. The requester side had been papering over this by
         # re-stamping HELPDESK after the fact; pickup had no such workaround.
-        for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
+        for k in (
+            "title",
+            "kind",
+            "participants",
+            "remote_project_id",
+            "remote_project_name",
+            "shared_context_entities",
+        ):
             if hub_conv.get(k) is not None:
                 payload[_local_roster_key(k)] = (
                     _normalize_participants(hub_conv[k])
@@ -3904,7 +3941,9 @@ def fetch_order(hub_messages: list[dict]) -> list[dict]:
     return sorted(hub_messages, key=lambda m: m.get("created_date") or "", reverse=True)
 
 
-def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict, *, clock_moved: bool | None = None) -> bool:
+def _should_fetch_messages(
+    local_conv: Optional[Conversation], hub_conv: dict, *, clock_moved: bool | None = None
+) -> bool:
     """Out-of-sync detection for one conversation — the dispatch gate of the
     list pipeline. Two independent signals, OR-ed (the hub is the source of
     truth; either one firing invalidates the local copy via the authoritative
@@ -4054,6 +4093,9 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # conv id -> the hub revision that justified its fetch; the drain stamps it
     # as the new watermark only if the reconcile actually succeeds.
     bg_fetch_pending: dict[str, Optional[datetime]] = {}
+    # A per-batch memo so a hub account's many conversations (mostly one
+    # shared roster) learn their contacts once, not once per conversation.
+    learned_rosters: set[str] = set()
     for hub_conv in hub_convs:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
@@ -4094,6 +4136,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
                     hub_conv,
                     someone_typeid,
                     existing=existing,
+                    learned_rosters=learned_rosters,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-list] upsert conv=%s failed: %s", conv_id[:8], e)
@@ -4858,65 +4901,4 @@ async def invitation_accept() -> ApiResponse:
         return await handle_invitation_accept(body, request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Approve & Execute draft persistence
-#
-# After the headless run completes, the new ``useApproveAndExecute`` hook calls
-# this action to persist the assistant reply as a draft ``FlowMessage`` on the
-# scoped conversation. Doing the construction server-side avoids the gap where
-# ``new FlowMessage().save()`` on the frontend drops the ``text`` field during
-# its first serialization, which the server then rejects.
-#
-# The wrap pattern ``Prompt response: "<text>"`` is the contract ``MessageBubble``
-# uses to italicise the quoted middle — the user edits the draft and the
-# pattern naturally breaks, falling through to plain rendering.
-# ---------------------------------------------------------------------------
-
-_PROMPT_RESPONSE_PREFIX = 'Prompt response: "'
-_PROMPT_RESPONSE_SUFFIX = '"'
-
-
-def _wrap_as_claude_quote(text: str) -> str:
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f"{_PROMPT_RESPONSE_PREFIX}{escaped}{_PROMPT_RESPONSE_SUFFIX}"
-
-
-@action.post(action_name="save-prompt-response-draft", types=[BuiltinEntityType.CONVERSATION.value])
-async def save_prompt_response_draft() -> ApiResponse:
-    """Persist ``text`` as a draft FlowMessage on this conversation.
-
-    Body: ``{text: str}``. Returns ``{flow_message_id}`` of the saved draft.
-    Used by the Approve & Execute frontend hook.
-    """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        conv_id = str(request_info.target_entity_typeid.id)
-        body = await request_info.get_post_data() or {}
-        text = (body.get("text") or "").strip()
-        if not text:
-            return ApiFailResponse(message="text is required")
-
-        sender_id, sender_name = await User.local_sender_identity()
-        fm = FlowMessage.model_validate(
-            {
-                "text": _wrap_as_claude_quote(text),
-                "attachment": [],
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conv_id,
-                "is_draft": True,
-            }
-        )
-        fm.id = FlowMessage.allocate_id(fm.model_dump())
-        await fm.save(request_info.someone_typeid)
-        return ApiSuccessResponse(data={"flow_message_id": fm.id})
-    except Exception as e:
-        logger.error("[flow_message_action] save-prompt-response-draft error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")

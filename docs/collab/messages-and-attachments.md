@@ -48,9 +48,10 @@ A hub metadata refresh must never reset state that only *this* machine owns.
 `body_status`, `is_read`, `is_archived`, `received_at`, `is_draft`, and
 `prompt_auto_handled` as local. `body_status` is local because the
 download/delivery lifecycle is per-device — resetting it would re-trigger an
-already-completed body download. `prompt_auto_handled` is the receiver's
-"I already auto-ran this prompt" idempotency marker; the hub never learns of it,
-so it must survive every refresh.
+already-completed body download. `prompt_auto_handled` is the host's "I already
+consumed this prompt as a session turn" marker (see
+[`./live-sessions.md`](./live-sessions.md)); the hub never learns of it, so it
+must survive every refresh.
 
 `is_stale` (`flow_sdk/builtin/flow_message.py:340`) adds a *touch guard* on top
 of last-writer-wins: the hub re-stamps `updated_date` on bare touches (a body
@@ -105,19 +106,16 @@ storage (`flow_sdk/builtin/flow_message.py:233`):
   storage, and **only when the bytes are actually on local disk**. The UI reads a
   non-null `local_path` as "this file is downloaded": a receiver sees `null`
   until it pulls the bundle; the sender sees it set the moment the file is staged.
-- **`proposer_id` / `approved_by`** — the prompt-approval pair. `proposer_id` is
-  who suggested the prompt; `approved_by` is set when the other party approves it.
-  Because `approved_by` is nested inside `attachment` it can't be marked
-  `LOCAL_ONLY`, so `merge_hub_payload` (`flow_sdk/builtin/flow_message.py:313`)
-  re-applies the receiver's locally-approved value (keyed by `data`) over a hub
-  copy that lacks one — otherwise a refresh would revert approval and the prompt
-  would re-run on every sync.
 - **`prompt_preview`** — an inline copy of a prompt-entity `TYPE_ID`'s text that
-  rides the **header** so receivers can preview (and execute) the prompt *before*
-  pulling the body bundle. NOTE: this field, plus `proposer_id`/`approved_by`,
-  must also exist on the hub's mirrored `Attachment` model — the hub silently
-  **drops unknown fields** on the round-trip, which would strip the receiver's
-  preview.
+  rides the **header** so receivers can preview the prompt *before* pulling the
+  body bundle. On a `remote_worker_session-<id>` carrier it holds the session
+  marker JSON instead (`session_start` on the opening prompt,
+  `live_session_event` on lifecycle lines — see
+  [`./live-sessions.md`](./live-sessions.md)). NOTE: this field must also exist
+  on the hub's mirrored `Attachment` model — the hub silently **drops unknown
+  fields** on the round-trip. There is no per-attachment approval stamp:
+  consent is a property of the session (the hub still mirrors the retired
+  `proposer_id`/`approved_by`; they arrive as nulls and are ignored).
 
 ### Structural self-pointers
 
@@ -421,11 +419,10 @@ the hub: share → accept → download → auto-installed MA + received row).
 ## Invariants (summary)
 
 - **Header is useful before the body.** `prompt_preview` and `local_path=null`
-  let the UI render and even execute a prompt pre-download; `body_downloaded`
-  gates the rest behind one Download button.
-- **Local state survives hub refresh.** `body_status`, read/archive,
-  `prompt_auto_handled`, and (via `merge_hub_payload`) attachment `approved_by`
-  are never reverted by a sync.
+  let the UI render a prompt pre-download; `body_downloaded` gates the rest
+  behind one Download button.
+- **Local state survives hub refresh.** `body_status`, read/archive and
+  `prompt_auto_handled` are never reverted by a sync.
 - **Status is monotonic, both directions.** `delivery_advances` guards the
   inbound bridge; the hub enforces `UPLOADING → READY` and never stores
   `PENDING_SEND`/`CREATED`.

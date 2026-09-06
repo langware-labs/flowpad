@@ -31,8 +31,7 @@ interface ContactPermissionsDialogProps {
 }
 
 const ACTION_LABEL: Record<string, string> = {
-  [PermissionAction.EXECUTE_PROMPT]: 'Auto-run prompts',
-  [PermissionAction.AUTO_REPLY]: 'Auto-reply',
+  [PermissionAction.AUTO_APPROVE_SESSION]: 'Allow live sessions without asking',
 };
 
 /** Details tab (rules 1 & 2): every stored field of the contact. */
@@ -117,7 +116,7 @@ function ContactConversations({ user, active }: { user: User; active: boolean })
   );
 }
 
-/** Permissions tab: the receiver's local prompt policy for this contact. */
+/** Permissions tab: the host's standing grant for this contact's live sessions. */
 function ContactPermissions({ contact }: { contact: ContactKey & { name?: string | null } }) {
   const { permissions, refetch } = useContactPermissions(contact);
   const [busy, setBusy] = useState(false);
@@ -152,7 +151,7 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
     <div className="flex flex-col gap-4 text-sm">
       <fieldset className="flex flex-col gap-2">
         <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">All projects</legend>
-        {([PermissionAction.EXECUTE_PROMPT, PermissionAction.AUTO_REPLY] as const).map((action) => (
+        {([PermissionAction.AUTO_APPROVE_SESSION] as const).map((action) => (
           <label key={action} className="flex items-center gap-2">
             <Checkbox
               checked={hasGlobal(action)}
@@ -201,7 +200,7 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
 
       {permissions.length === 0 && (
         <p className="text-xs text-muted-foreground">
-          No permissions yet. Grant them here, or from the Execute dialog when a prompt arrives.
+          No standing grant yet. Grant one here, or from a session's header when a request arrives.
         </p>
       )}
     </div>
