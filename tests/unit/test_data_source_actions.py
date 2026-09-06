@@ -148,8 +148,7 @@ async def test_reset_cursors_clears_position_including_opaque_state():
     assert after.consecutive_failures == 0
     assert after.error_code is None
     assert after.last_synced_at is not None, (
-        "last_synced_at was cleared, so the next run reads as first_run → BACKFILL, "
-        "which suppresses per-item events and makes a deliberate re-fetch silent"
+        "last_synced_at was cleared: a reset forgets the POSITION, not that the stream has run"
     )
     assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
 

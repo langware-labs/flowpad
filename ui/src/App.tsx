@@ -1,11 +1,12 @@
 import '@src/styles/highlightjs.css';
+import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
@@ -35,15 +36,8 @@ import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
+import { queryClient } from '@sdk/lazy';
+import { PrimaryContentProvider } from '@sdk/react/primary-content';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -58,6 +52,7 @@ const queryClient = new QueryClient({
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
+  useAsyncSdkInit();
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 
@@ -155,7 +150,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = ({ children }: { children: React.ReactNode }) => {
-  return <AppContent>{children}</AppContent>;
+  const location = useLocation();
+  return <PrimaryContentProvider navigationKey={location.key}><AppContent>{children}</AppContent></PrimaryContentProvider>;
 };
 
 export default App;

@@ -1024,8 +1024,31 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     for item in attachments:
         if item.record_type is not None:
             types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
+            # Re-root the walk at the asset's OWN family folder
+            # (``<root>/<main_subdir>``, where ``_restore_file_backed_entry``
+            # just placed it) — the same re-rooting the git-origin nested scope
+            # uses. Walking the whole project root for one received file held
+            # the DB writer session for 16–18 s per message on a 780-file
+            # project, and every live-session turn ships one prompt asset.
+            # A single-file project asset (prompt, markdown — a ``File`` shape,
+            # so no folder of nested children) is re-rooted at its family
+            # folder. Folder assets (task, spec, agent …) and user-scope
+            # placements keep the wide walk: their nested children and
+            # entities.json enclosures live outside one family folder.
+            #
+            # The shape is the test, NOT the legacy ``main_file`` projection:
+            # since the scan → classify → mint refactor that field is None for
+            # every type, folder ones included, so reading it narrowed the walk
+            # for a folder asset too and its nested children were never indexed.
+            walk_root = item.root
+            info = SchemaRegistry.get(item.asset_type)
+            if item.scope == AttachmentScope.PROJECT.value and info is not None and not isinstance(info.shape, Folder):
+                sub = getattr(info, "main_subdir", None)
+                family_root = item.root / PurePosixPath(str(sub).replace("\\", "/")) if sub else None
+                if family_root is not None and family_root.is_dir():
+                    walk_root = family_root
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, types, project_id=project_id)
+                await _reindex_received_assets(walk_root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
         if item.origin:
@@ -2281,21 +2304,10 @@ async def _unpack_remote_worker_session_entry(entry_dir: Path, entry_id: str, ct
     rws_data = _read_entity_header(entry_dir)
     if rws_data is not None:
         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
-        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
 
-        rws_id = rws_data.get("id") or entry_id
-        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
-        cloud_uid = (_get_cloud_user() or {}).get("id")
-        local_is_host = bool(
-            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
-            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
+        await RemoteWorkerSession.adopt_snapshot(
+            {**rws_data, "id": rws_data.get("id") or entry_id}, someone_typeid=ctx.owner_typeid,
         )
-        rws = RemoteWorkerSession.apply_snapshot(
-            existing_rws,
-            {**rws_data, "id": rws_id},
-            local_is_host=local_is_host,
-        )
-        await rws.save(ctx.owner_typeid)
 
 
 async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> str | None:
@@ -2799,7 +2811,7 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        target_conv_id = conversation_id or next(
+        target_conv_id = conversation_id or msg_data.get("conversation_id") or next(
             (
                 TypeId(c).id
                 for c in msg_data.get("shared_context_entities", [])
@@ -2828,7 +2840,12 @@ async def unpack_bundle(
                         msg_data["conversation_id"] = target_conv_id
                     break
         if top_fm_already_exists and not overwrite and not conversation_id:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+            # A body pull fills an already-received header. Header-only bundles
+            # need not include a Conversation payload to identify that same row.
+            # Keep the conflict for standalone imports or a different parent.
+            existing_top = await FlowMessage.get_one({"id": top_fm_id_check}) if target_conv_id else None
+            if existing_top is None or existing_top.conversation_id != target_conv_id:
+                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)

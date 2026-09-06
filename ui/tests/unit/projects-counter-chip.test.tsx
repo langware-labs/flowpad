@@ -1,7 +1,8 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
+import { makeBucket } from '../utils/terminal-tab-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const navMocks = vi.hoisted(() => ({
@@ -30,25 +31,6 @@ vi.mock('@src/tabs/project-entry', () => ({
 }));
 
 const mockUseTabProjectBuckets = vi.mocked(useTabProjectBuckets);
-
-function makeProject(id: string, displayName: string) {
-  return {
-    typeId: { type: 'project', id },
-    name: displayName,
-    fs_storage_mount_path: `/tmp/${displayName}`,
-    getDisplayName: () => displayName,
-  };
-}
-
-function makeBucket(id: string, displayName: string, tabCount: number): TabProjectBucket {
-  return {
-    projectId: id,
-    project: makeProject(id, displayName) as unknown as TabProjectBucket['project'],
-    state: 'live',
-    tabCount,
-    recover: vi.fn(),
-  };
-}
 
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {

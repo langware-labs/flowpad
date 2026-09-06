@@ -149,3 +149,51 @@ class LLMSource(DataSpec):
         constraint is expressed ON the list rather than beside it -- which is what makes
         the list self-explaining and lets a spawn error be a rendering of it."""
         return self.model_copy(update={"eligible": False, "auto": False, "reason": reason})
+
+
+class LLMScope(DataSpec):
+    """What a funding question is being asked ABOUT — the two hard rungs, as a value.
+
+    The ladder's top two rungs are constraints imposed by something that owns the spawn: the
+    process was told to spend an endpoint, or the project it belongs to enforces one. Both are
+    just an endpoint typeid plus who required it, so they collapse into one small value.
+
+    It exists so the SPAWN and the PICKER can ask the same question. They could not before:
+    the resolver's constraint rung read the two fields off an ``AgenticProcess``, so the box
+    status screen — which has no process to hand it — silently skipped rungs 1 and 2 and
+    answered as if no project had ever pinned anything. A screen that cannot express the
+    constraint cannot show it, and the picker and the spawn disagreed by construction.
+
+    A *scope*, not a process: the picker's scope is a project alone, and demanding a process
+    would have meant either inventing a fake one or forking the resolver. Empty means the
+    box-wide question — no constraint, rungs 3 and 4 only — which is exactly what a caller
+    with nothing to say should produce.
+
+    Frozen and ``extra="forbid"`` from :class:`DataSpec`, like every value here.
+    """
+
+    #: ``AgenticProcess.llm_endpoint_typeid`` — rung 1. Beats the project's.
+    process_llm_endpoint_typeid: str = ""
+    #: The project whose ``llm_endpoint_typeid`` is rung 2. The id, not the typeid: it is
+    #: looked up, and ``_constraint`` is the only thing that reads the field off the row.
+    project_id: str = ""
+    #: Whose scope this is, for the ancestor walk a process falls back to when it carries no
+    #: ``project_id`` of its own (embedded and inline processes legitimately do not). Empty
+    #: for a project-only scope, which names its project outright and has nothing to walk
+    #: from — so the fallback simply does not apply there.
+    owner_typeid: str = ""
+
+    @classmethod
+    def of_process(cls, process) -> "LLMScope":
+        """The scope a spawn asks in. Duck-typed on purpose — ``AgenticProcess`` lives in
+        ``builtin`` and importing it here would be the cycle this module exists to avoid."""
+        return cls(
+            process_llm_endpoint_typeid=str(getattr(process, "llm_endpoint_typeid", "") or ""),
+            project_id=str(getattr(process, "project_id", "") or ""),
+            owner_typeid=str(getattr(process, "typeid", "") or ""),
+        )
+
+    @classmethod
+    def of_project(cls, project_id: str | None) -> "LLMScope":
+        """The scope a project-aware picker asks in: rung 2 only."""
+        return cls(project_id=str(project_id or ""))

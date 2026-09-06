@@ -22,7 +22,7 @@
  * A group's pot is excluded by the first rule — its principal names the org or the team, not a
  * person — and the shared catalog root by the second, since nobody holds a role on it.
  */
-import { TypeId, llmSourcesService, type LLMEndpointOffer, type LLMFundingStatus } from '@sdk';
+import { TypeId, dataContext, llmSourcesService, type LLMEndpointOffer, type LLMFundingStatus } from '@sdk';
 
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -70,7 +70,11 @@ export function myEndpoints(status: LLMFundingStatus | null | undefined): LLMEnd
 /** Imperative form for the tree adapter, which lists children outside React. */
 export async function fetchMyEndpoints(): Promise<LLMEndpointOffer[]> {
   try {
-    return myEndpoints(await llmSourcesService.status());
+    // The project is part of this asset's cache key, so omitting it here would open a SECOND
+    // entry and a second backend round-trip for the same `available` list the screen and the
+    // footer chip already hold — undoing the sharing this function's own comment promises.
+    // `available` itself is project-independent; the key just has to match.
+    return myEndpoints(await llmSourcesService.status(dataContext.project?.id));
   } catch {
     // A box that cannot answer has no endpoints to show; the row simply stays empty
     // rather than erroring the whole Assets tree.

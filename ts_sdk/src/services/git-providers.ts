@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import { ActionInfo, dataContext, dataManager } from '../index';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models';
@@ -85,7 +86,11 @@ async function _fetchReposPage(provider: GitProvider, page: number): Promise<Lis
  *    so the caller can render an explicit error state.
  *  - Safety cap at 50 pages (≈5000 repos).
  */
-export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
+export function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
+  return lazyAssets.load(LazyAsset.GitRepos, { provider });
+}
+
+export async function fetchRepos(provider: GitProvider): Promise<RepoSummary[]> {
   const first = await _fetchReposPage(provider, 1);
   const all: RepoSummary[] = [...first.repos];
   let cursor = first.next_page;
@@ -124,7 +129,11 @@ function _isBranchSummary(x: unknown): x is BranchSummary {
   return typeof o.name === 'string';
 }
 
-export async function getBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
+export function getBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
+  return lazyAssets.load(LazyAsset.GitBranches, repo);
+}
+
+export async function fetchBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
   const user = _userInfo();
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'branches';
@@ -145,7 +154,11 @@ export async function getBranches(repo: { git_origin: GitOrigin }): Promise<Bran
   return [];
 }
 
-export async function getInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+export function getInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+  return lazyAssets.load(LazyAsset.GitInvitations, { provider });
+}
+
+export async function fetchInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
   // The hub's `repo` action serves branches/list/create and nothing else, so
   // asking it for invitations earns a 500 on every clone-dialog open. Gated
   // here rather than at the call site so `respondInvitation` and any future

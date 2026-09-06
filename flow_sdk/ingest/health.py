@@ -75,6 +75,15 @@ class SourceError(Exception):
         return cls(SourceHealth.TRANSIENT_ERROR, code, detail)
 
     @classmethod
+    def for_no_status(cls, reason: str, *, not_configured_code: str) -> "SourceError":
+        """A failure with no HTTP status at all: the backend is not configured
+        or the caller is signed out — a person's to fix — else the connection
+        dropped and the next tick is the retry."""
+        if "not configured" in (reason or ""):
+            return cls.config(not_configured_code, reason)
+        return cls.transient("network", reason)
+
+    @classmethod
     def for_status(cls, status: int, hint: str = "") -> "SourceError":
         """THE status→health table. One copy, because a second one diverges:
         a 429 read as permanent parks a source forever over a rate limit."""

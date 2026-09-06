@@ -21,8 +21,9 @@ export const WORKER_ICON_BUTTON_CLASS =
   'inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50 aria-disabled:opacity-50';
 
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
- *  "More…" reveal, and the extra openers so they can't drift apart. */
-const MENU_ITEM_CLASS =
+ *  "More…" reveal, the extra openers, and the footer funding chip's menus, so
+ *  they can't drift apart. */
+export const MENU_ITEM_CLASS =
   'flex w-full items-center gap-2 rounded px-2 py-1.5 text-start transition-colors hover:bg-muted disabled:opacity-50';
 
 interface WorkerToolbarProps {

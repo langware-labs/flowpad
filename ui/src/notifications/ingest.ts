@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { cloudManager, connectionManager, dataContext } from '@sdk';
+import { cloudManager, connectionManager, ContextEventType, dataContext } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { NotificationAction } from './types';
 import { dismiss, notify } from './notify';
@@ -252,6 +252,7 @@ function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): vo
 /** Wire all WS-driven notifications. Call once at app start; returns a cleanup fn. */
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
+  dataContext.on(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
   cloudManager.on('hub_client_error', handleHubClientError);
   cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
   connectionManager.on('on_flow_data', onFlowDataEvent);
@@ -271,6 +272,7 @@ export function initNotificationIngest(): () => void {
   }
 
   return () => {
+    dataContext.off(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
     cloudManager.off('hub_client_error', handleHubClientError);
     cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
     connectionManager.off('on_flow_data', onFlowDataEvent);

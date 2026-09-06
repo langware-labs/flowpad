@@ -54,15 +54,24 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 **"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
 
-Use the checked-in hub-mode env, which is exactly this:
+Use the hub-mode env. It **cannot** be checked in — `.gitignore` ignores both `.*.local` and `*.env*`, so no committed copy or `.example` is possible — write it once per checkout:
 
 ```bash
-cd ui && npx vite --mode hubtest      # .env.hubtest.local → :4098, API http://localhost:8093
+cat > .env.hubtest.local <<'EOF'
+FLOW_INSTANCE=hubtest
+LOCAL_SERVER_PORT=8093
+VITE_API_URL=http://localhost:8093
+VITE_PORT=4098
+VITE_FORCE_HUB=true
+FLOWPAD_HUB_URL=http://localhost:8093
+FLOWPAD_SKIP_DOTENV=true
+EOF
+cd ui && npx vite --mode hubtest      # → :4098, API http://localhost:8093
 ```
 
-`.env.hubtest.local` sets `VITE_API_URL=http://localhost:8093`, `LOCAL_SERVER_PORT=8093`, `VITE_FORCE_HUB=true`, `FLOW_INSTANCE=hubtest`. Open `http://localhost:4098/dock/hub/home`. Confirm the wiring before trusting a screenshot: in the page, `window.__API_URL__` must be the hub, and `GET /api/v1/graph/bootstrap` must return `supported_pages: ["hub"]`. If it returns `["desk","hub"]` you are on the local server and looking at the wrong runtime.
+Open `http://localhost:4098/dock/hub/home`. Confirm the wiring before trusting a screenshot: in the page, `window.__API_URL__` must be the hub, and `GET /api/v1/graph/bootstrap` must return `supported_pages: ["hub"]`. If it returns `["desk","hub"]` you are on the local server and looking at the wrong runtime.
 
-Corollary: the hub's bootstrap ships `schemas` but **no `types`**, so the frontend SchemaRegistry is empty there and every `iconForType()` falls back to one generic glyph. Per-type icons cannot be validated on the hub until the hub publishes `types`.
+The hub's bootstrap now ships `types` alongside `schemas`, so the frontend SchemaRegistry IS populated there and `iconForType()` resolves per-type icons. (It did not until the hub started publishing `types`; a stale note here used to say otherwise.)
 
 ### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
 

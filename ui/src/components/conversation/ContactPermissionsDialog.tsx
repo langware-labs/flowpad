@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { t } from '@lingui/core/macro';
 import { MessagesSquare, ShieldCheck, Trash2, User as UserIcon } from 'lucide-react';
 import { ActionInfo, PermissionAction, type User } from '@sdk';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -30,10 +31,10 @@ interface ContactPermissionsDialogProps {
   user?: User | null;
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  [PermissionAction.EXECUTE_PROMPT]: 'Auto-run prompts',
-  [PermissionAction.AUTO_REPLY]: 'Auto-reply',
-};
+function actionLabel(action: string): string {
+  if (action === (PermissionAction.AUTO_APPROVE_SESSION as string)) return t`Allow live sessions without asking`;
+  return action;
+}
 
 /** Details tab (rules 1 & 2): every stored field of the contact. */
 function ContactDetails({ user }: { user: User }) {
@@ -117,7 +118,7 @@ function ContactConversations({ user, active }: { user: User; active: boolean })
   );
 }
 
-/** Permissions tab: the receiver's local prompt policy for this contact. */
+/** Permissions tab: the host's standing grant for this contact's live sessions. */
 function ContactPermissions({ contact }: { contact: ContactKey & { name?: string | null } }) {
   const { permissions, refetch } = useContactPermissions(contact);
   const [busy, setBusy] = useState(false);
@@ -152,19 +153,17 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
     <div className="flex flex-col gap-4 text-sm">
       <fieldset className="flex flex-col gap-2">
         <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">All projects</legend>
-        {([PermissionAction.EXECUTE_PROMPT, PermissionAction.AUTO_REPLY] as const).map((action) => (
-          <label key={action} className="flex items-center gap-2">
-            <Checkbox
-              checked={hasGlobal(action)}
-              onCheckedChange={(v) => void toggleGlobal(action, !!v)}
-              disabled={busy}
-              data-testid={`contact-perm-global-${action}`}
-            />
-            <span>
-              {ACTION_LABEL[action]} from {who}
-            </span>
-          </label>
-        ))}
+        <label className="flex items-center gap-2">
+          <Checkbox
+            checked={hasGlobal(PermissionAction.AUTO_APPROVE_SESSION)}
+            onCheckedChange={(v) => void toggleGlobal(PermissionAction.AUTO_APPROVE_SESSION, !!v)}
+            disabled={busy}
+            data-testid={`contact-perm-global-${PermissionAction.AUTO_APPROVE_SESSION}`}
+          />
+          <span>
+            {actionLabel(PermissionAction.AUTO_APPROVE_SESSION)} from {who}
+          </span>
+        </label>
       </fieldset>
 
       {projectRows.length > 0 && (
@@ -181,13 +180,13 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
                     key={action}
                     className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
                   >
-                    {ACTION_LABEL[action] ?? action}
+                    {actionLabel(action)}
                     <button
                       type="button"
                       className="rounded-full p-0.5 hover:bg-muted-foreground/20"
                       disabled={busy}
                       onClick={() => void removeProjectRow(row.project_id!, action as PermissionAction)}
-                      aria-label={`Remove ${action}`}
+                      aria-label={`Remove ${PermissionAction.AUTO_APPROVE_SESSION}`}
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -201,7 +200,7 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
 
       {permissions.length === 0 && (
         <p className="text-xs text-muted-foreground">
-          No permissions yet. Grant them here, or from the Execute dialog when a prompt arrives.
+          No standing grant yet. Grant one here, or from a session's header when a request arrives.
         </p>
       )}
     </div>

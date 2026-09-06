@@ -139,7 +139,7 @@ describe('AssetVibeWorkspace', () => {
     expect(screen.getByTestId('vibe-chat-pane')).toBeTruthy();
   });
 
-  it('invents no workspace for a document whose URL names no host', () => {
+  it('offers session creation without inventing a host for a standalone document', () => {
     // A document's home is its asset address. What used to happen here was a
     // project resolve, a query for a Chat discussing this asset, and CREATING a
     // process when none matched — which is why a reload could land on a
@@ -147,8 +147,10 @@ describe('AssetVibeWorkspace', () => {
     // the URL, so its absence simply means "just a document".
     render(<AssetVibeWorkspace isVibe session={null} />);
 
-    // No process is resolved or created, and nothing is adopted as a child.
-    expect(screen.getByTestId('vibe-chat-pane').dataset.process).toBe('');
+    // The existing start action is offered; opening alone does not create a session.
+    expect(screen.getByTestId('vibe-start-new-chat')).toBeTruthy();
+    expect(screen.queryByTestId('vibe-chat-pane')).toBeNull();
+    expect(screen.queryByTestId('workspace-child-strip')).toBeNull();
     expect(setupMocks.setupTabAndAdopt).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,4 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import { useRevalidator } from 'react-router';
 import { useDockNavigation } from './useDockNavigation';
 import { getHistoryPosition, subscribeHistoryPosition } from './history-position-store';
 
@@ -10,36 +9,30 @@ import { getHistoryPosition, subscribeHistoryPosition } from './history-position
  *     router's own `idx`, never a shadow stack),
  *   - the actions go through `NavigationActions`, which stays the single writer
  *     of navigation intent,
- *   - reload goes through the router's revalidator.
+ *   - reload is `window.location.reload()`, in the browser and in Electron
+ *     alike.
  *
- * `reload` is a SOFT reload: it re-runs the route loaders at the same URL. That
- * is the data-freshness action. A hard `window.location.reload()` is the
- * broken-runtime action — it tears down every PTY WebSocket, drops live process
- * attachment and the entity cache, and re-pays the cold bootstrap, which is far
- * too destructive for a button people click reflexively. `hardReload` stays
- * available for the modifier-click gesture, mirroring a browser's own.
+ * That last one was once a router revalidation, on the theory that re-running
+ * the loaders was a cheaper way to freshen data. It is not: they resolve entity
+ * identity and read through the SDK's caches, so a click fetched nothing and
+ * changed nothing on screen.
  */
 export interface HistoryNav {
   canGoBack: boolean;
   canGoForward: boolean;
   goBack: () => void;
   goForward: () => void;
-  /** Re-run the loaders at the current URL. */
+  /** Full window reload, exactly as the browser's own reload button. */
   reload: () => void;
-  /** Full document reload — only for a runtime that is actually broken. */
-  hardReload: () => void;
-  reloading: boolean;
 }
 
 export function useHistoryNav(): HistoryNav {
   const { navigation } = useDockNavigation();
-  const revalidator = useRevalidator();
   const position = useSyncExternalStore(subscribeHistoryPosition, getHistoryPosition, getHistoryPosition);
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
   const goForward = useCallback(() => navigation.goForward(), [navigation]);
-  const reload = useCallback(() => void revalidator.revalidate(), [revalidator]);
-  const hardReload = useCallback(() => window.location.reload(), []);
+  const reload = useCallback(() => window.location.reload(), []);
 
   return {
     canGoBack: position.canGoBack,
@@ -47,7 +40,5 @@ export function useHistoryNav(): HistoryNav {
     goBack,
     goForward,
     reload,
-    hardReload,
-    reloading: revalidator.state === 'loading',
   };
 }

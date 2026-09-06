@@ -524,7 +524,7 @@ async def clear_all_data() -> ClearAllResult:
             bootstrap,
             invalidate_bootstrap_cache,
         )
-        invalidate_bootstrap_cache()
+        invalidate_bootstrap_cache(reset_local_entities=True)
         await bootstrap()
 
         # The process-wide capability cache survives a database replacement,

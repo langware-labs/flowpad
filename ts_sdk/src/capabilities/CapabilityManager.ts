@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import { EventEmitter } from 'events';
 
 import { dataManager } from '../APIEntity';
@@ -95,8 +96,6 @@ export class CapabilityManager extends EventEmitter {
 
   private capabilities: Capability[] = [];
   private summary: CapabilitiesSummary | null = null;
-  private summaryPromise: Promise<CapabilitiesSummary> | null = null;
-  private loadPromise: Promise<Capability[]> | null = null;
   private actionPromises = new Map<string, Promise<CapabilityCheck>>();
   private ensureCheckPromises = new Map<string, Promise<CapabilitySnapshot>>();
   private actionResults = new Map<string, CapabilityCheck>();
@@ -129,35 +128,17 @@ export class CapabilityManager extends EventEmitter {
   }
 
   /** Fetch the capability list once; subsequent calls reuse the cache unless invalidated. */
-  async load(invalidate: boolean = false): Promise<Capability[]> {
-    if (this.loadPromise && !invalidate) {
-      return this.loadPromise;
-    }
-    if (this.capabilities.length && !invalidate) {
-      return this.capabilities;
-    }
+  load(invalidate = false): Promise<Capability[]> {
+    return invalidate ? lazyAssets.refresh(LazyAsset.Capabilities) : lazyAssets.load(LazyAsset.Capabilities);
+  }
 
-    this.loadPromise = (async () => {
-      // Hub mode: the hub backend has no `capability` entity, so this graph
-      // query would 422. Return an empty set — capabilities are local-only.
-      if (isHubOnly()) {
-        this.capabilities = [];
-        this.emit('change');
-        return this.capabilities;
-      }
-      const rows = await apiClient.get<unknown[]>('/graph/capability', {
-        params: { include_system: true },
-      });
-      this.capabilities = (rows ?? []).map((row: unknown) => dataManager.updateEntityFromJson<Capability>(row));
-      this.emit('change');
-      return this.capabilities;
-    })();
-
-    try {
-      return await this.loadPromise;
-    } finally {
-      this.loadPromise = null;
-    }
+  /** Registry loader; the manager remains the canonical live capability projection. */
+  async fetchSnapshot(isCurrent: () => boolean): Promise<Capability[]> {
+    const rows = isHubOnly() ? [] : await apiClient.get<unknown[]>('/graph/capability', { params: { include_system: true } });
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    this.capabilities = (rows ?? []).map(row => dataManager.updateEntityFromJson<Capability>(row));
+    this.emit('change');
+    return this.capabilities;
   }
 
   getAll(): Capability[] {
@@ -173,7 +154,14 @@ export class CapabilityManager extends EventEmitter {
   setSummary(summary: CapabilitiesSummary | null | undefined): void {
     if (!summary) return;
     this.summary = summary;
+    lazyAssets.client.setQueryData(lazyAssets.key(LazyAsset.CapabilitySummary), summary);
     this.emit('change');
+  }
+
+  /** Discovery is only an initial seed; a live or requested refresh takes precedence. */
+  seedSummary(summary: CapabilitiesSummary | null | undefined): void {
+    if (this.summary || lazyAssets.client.isFetching({ queryKey: lazyAssets.prefix(LazyAsset.CapabilitySummary) })) return;
+    this.setSummary(summary);
   }
 
   /**
@@ -181,24 +169,16 @@ export class CapabilityManager extends EventEmitter {
    * Cached after first fetch; pass `invalidate` to force a refresh (e.g. after
    * an install completes).
    */
-  async getSummary(invalidate: boolean = false): Promise<CapabilitiesSummary> {
-    if (this.summary && !invalidate && !this.summaryPromise) {
-      return this.summary;
-    }
-    if (this.summaryPromise && !invalidate) {
-      return this.summaryPromise;
-    }
-    this.summaryPromise = (async () => {
-      const data = await apiClient.get<CapabilitiesSummary>('/graph/capabilities/summary');
-      this.summary = data ?? { intents: [], capabilities: [], generated_at: '' };
-      this.emit('change');
-      return this.summary;
-    })();
-    try {
-      return await this.summaryPromise;
-    } finally {
-      this.summaryPromise = null;
-    }
+  getSummary(invalidate = false): Promise<CapabilitiesSummary> {
+    return invalidate ? lazyAssets.refresh(LazyAsset.CapabilitySummary) : lazyAssets.load(LazyAsset.CapabilitySummary);
+  }
+
+  async fetchSummary(isCurrent: () => boolean): Promise<CapabilitiesSummary> {
+    const data = await apiClient.get<CapabilitiesSummary>('/graph/capabilities/summary');
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    this.summary = data ?? { intents: [], capabilities: [], generated_at: '' };
+    this.emit('change');
+    return this.summary;
   }
 
   /**

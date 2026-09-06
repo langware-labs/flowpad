@@ -1,3 +1,4 @@
+import { lazyAssets } from '../lazy/registry';
 import { AxiosError, AxiosResponse } from 'axios';
 import { EventEmitter } from 'events';
 import { config, dataManager } from '..';
@@ -133,6 +134,9 @@ export class AuthManager extends EventEmitter {
   }
   set currentUser(user: any) {
     this._currentUser = user;
+    const scope = user?.id ?? 'anonymous';
+    lazyAssets.setScope(scope);
+    dataManager.adoptReadScope(scope);
   }
   private async setupClientInterceptor() {
     apiClient.interceptors.response.use(

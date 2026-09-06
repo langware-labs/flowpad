@@ -1,3 +1,4 @@
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import {
   Agent,
   SubAgent,
@@ -89,6 +90,7 @@ function machinePathOf(value: string): string {
 }
 
 function ConnectingFallback() {
+  usePrimaryContentPending(true);
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
       <RefreshCw className="me-2 h-4 w-4 animate-spin" />
@@ -144,6 +146,8 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     queryFn: () => typeIdEntity!.record({ hubReflect }),
     enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID,
   });
+
+  usePrimaryContentPending(!!typeId && (entityLoading || recordLoading));
 
   // Derive the FSRef + the record type for this asset in ONE unconditional memo
   // (must run before the early returns to keep hook order stable). The FSRef is

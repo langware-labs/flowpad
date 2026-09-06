@@ -58,3 +58,5 @@ export { FSEntry } from './fs/FSEntry';
 export { FSRef, type FSRefJson } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
 export { Frontmatter } from './fs/Frontmatter';
+
+export * from './lazy';

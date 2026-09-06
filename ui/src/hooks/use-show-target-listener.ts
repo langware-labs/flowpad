@@ -3,7 +3,8 @@ import { AgenticProcess, dataManager, tabForDockKey, tabManager, TypeId, type IE
 import { useEntityOps } from '@sdk/react/hooks';
 import { useIsVibe } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
-import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import { highlightTab } from '@src/tabs/tab-highlight';
 
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -19,7 +20,8 @@ import { useCallback, useEffect, useRef } from 'react';
  * **It never navigates.** A show is the agent saying "this is ready", not "drop
  * what you are doing" — and unlike vibe's pane repaint, navigating here would
  * yank a user who is mid-task in another tab. The intent is carried instead by
- * the marker `ShownTargetBadge` puts on the process's own chip. Three problems
+ * a brief glow on the destination tab and `ShownTargetBadge` on the process's
+ * own chip. Three problems
  * fall away with the navigation: a background agent cannot interrupt anyone,
  * `on_show`'s broadcast to EVERY client (browser tabs, `/win` popouts, the
  * desktop shell) becomes idempotent — minting one deterministic row N times is
@@ -52,10 +54,9 @@ export function isFreshShow(
 
 export function useShowTargetListener(): void {
   const isVibe = useIsVibe();
-  // Consecutive-duplicate guard, shared by both delivery channels below: the
-  // live event and the durable entity update carry the SAME payload, so without
-  // it every show is handled twice.
-  const handledKeyRef = useRef('');
+  // The first live event confirms the durable update. Later live events are
+  // new shows, even when their target is identical, and must replay the cue.
+  const handledRef = useRef(new Map<string, { key: string; sawLive: boolean }>());
   // Persisted shows older than this are history, not commands (see below).
   const mountedAtRef = useRef(Date.now());
 
@@ -114,10 +115,11 @@ export function useShowTargetListener(): void {
     // adopted globally (it would erase every other project's tabs). Re-read the
     // unscoped list for adoption, exactly as `materializeTab` does.
     tabManager.adoptGlobal(await tabManager.listAll());
+    if (placed.tabHash) highlightTab(placed.tabHash);
   }, [isVibe]);
 
   const handle = useCallback(
-    (processId: string, target: ShowTarget | null | undefined): void => {
+    (processId: string, target: ShowTarget | null | undefined, live = false): void => {
       if (!target || !processId) return;
       // The mode gate lives HERE, not on the subscriptions, because it depends
       // on the target's KIND. Vibe pins a deliverable (file / entity / webapp)
@@ -125,9 +127,16 @@ export function useShowTargetListener(): void {
       // has no place in that pane, so vibe mints it as a workspace child.
       // Every other mode has no pane at all and mints every kind.
       if (isVibe && target.kind !== 'dock') return;
-      const key = `${processId}:${JSON.stringify(target)}`;
-      if (handledKeyRef.current === key) return;
-      handledKeyRef.current = key;
+      const key = JSON.stringify(target);
+      const previous = handledRef.current.get(processId);
+      if (previous?.key === key) {
+        if (!live) return;
+        if (!previous.sawLive) {
+          previous.sawLive = true;
+          return;
+        }
+      }
+      handledRef.current.set(processId, { key, sawLive: live });
       void showTarget(processId, target);
     },
     [showTarget, isVibe],
@@ -144,7 +153,7 @@ export function useShowTargetListener(): void {
     // context yields undefined and silently kills the subscription.
     const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>): void => {
       if (event !== 'on_show' || typeId.type !== AgenticProcess.type) return;
-      handle(typeId.id, payload as ShowTarget);
+      handle(typeId.id, payload as ShowTarget, true);
     };
     dataManager.on('on_entity_event', onEntityEvent);
     return () => {

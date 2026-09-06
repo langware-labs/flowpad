@@ -78,12 +78,28 @@ function entryKey(entry: WorkerHistoryEntry): string {
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
   const { t } = useLingui();
-  const { entries, isLoading, refetch } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
   const { indexProjectSessions } = useSystemTools();
   const [refreshing, setRefreshing] = useState(false);
 
   const [allProjects, setAllProjects] = usePreference<boolean>(PrefKey.HISTORY_ALL_PROJECTS);
+
+  // No active project → nothing to scope to; behave as "all projects".
+  const effectiveAllProjects = allProjects || !currentProject;
+
+  // The scope goes to the BACKEND, exactly as the Chats side-menu does it
+  // (`useChatHistory`). Fetching unscoped and filtering by `project_id` here does
+  // not work: the unscoped walk labels a session with the project derived from its
+  // cwd, while the scoped walk labels it with the id its `AgenticProcess` carries.
+  // When those two disagree — two Project rows over one checkout — the client-side
+  // filter matched nothing and the modal read "No recent sessions" while the Chats
+  // panel, scoped server-side, listed the same sessions. The cap is per-project
+  // there too, so an under-active project is no longer squeezed out of a global top-N.
+  const { entries, isLoading, refetch } = useWorkerHistory(30, {
+    enabled: open,
+    projectIds: !effectiveAllProjects && currentProject ? [currentProject.id] : undefined,
+  });
+
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [peekKey, setPeekKey] = useState<string | null>(null);
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
@@ -92,9 +108,6 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // No active project → nothing to scope to; behave as "all projects".
-  const effectiveAllProjects = allProjects || !currentProject;
 
   // Reset selection + peek + search when modal closes so a new open starts clean.
   useEffect(() => {
@@ -115,16 +128,16 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   }, [searchOpen]);
 
   const visible = useMemo(() => {
-    const currentProjectId = currentProject?.id ?? null;
-    // `entries` arrives with empty chats already filtered out (useWorkerHistory).
-    const projectScoped = effectiveAllProjects ? entries : entries.filter((e) => e.project_id === currentProjectId);
+    // `entries` arrives already scoped to the active project (the request carries
+    // `projectIds`) and with empty chats filtered out (useWorkerHistory). Search
+    // is the only filter left to apply here.
     const q = query.trim().toLowerCase();
     const filtered = q
-      ? projectScoped.filter((e) => {
+      ? entries.filter((e) => {
           const hay = [e.name, e.last_prompt, e.project_name].filter(Boolean).join(' ').toLowerCase();
           return hay.includes(q);
         })
-      : projectScoped;
+      : entries;
     const sorted = [...filtered];
     sorted.sort((a, b) => {
       const ta = a.last_active_time ? Date.parse(a.last_active_time) : 0;
@@ -132,7 +145,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       return sortDir === 'desc' ? tb - ta : ta - tb;
     });
     return sorted;
-  }, [entries, effectiveAllProjects, currentProject?.id, sortDir, query]);
+  }, [entries, sortDir, query]);
 
   // Drop selections that are no longer visible after a filter change.
   useEffect(() => {
