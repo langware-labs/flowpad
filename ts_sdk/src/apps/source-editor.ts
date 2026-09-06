@@ -20,7 +20,7 @@ import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { DATASET_FIELD_KINDS, Dataset, coerceToKind } from '../entities/dataset';
 import { dataContext } from '../FlowSync/context';
-import { asyncSdkInit, initSdk } from '../main';
+import { initSdk } from '../main';
 import { appOption, applyHostTheme, resolveAppHost } from './host';
 
 /** The kind options a person picks from: the SDK's declared kinds plus the
@@ -693,5 +693,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   statusEl.textContent = 'Live';
   statusEl.classList.add('ok');
   ($('main') as HTMLElement).hidden = false;
-  requestAnimationFrame(() => requestAnimationFrame(() => { void asyncSdkInit(); }));
+  // `initSdk` schedules `asyncSdkInit` itself now -- the double-rAF this used to
+  // hand-roll is redundant, and was the same step every other SDK consumer had to
+  // remember (and template-flowpad did not).
 }

@@ -197,7 +197,39 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
     }
   })();
 
+  // ONE init flow. The optional half used to be the caller's job, and a caller
+  // that did not know to run it got no live channel at all: `watchQuery`
+  // registers a watch, nothing ever opens the socket that pushes to it, and the
+  // page looks healthy while never updating. That is what happened to every
+  // served micro-app -- `initSdk()` is the entry point its template documents,
+  // and there is no paint phase or router there to own a second step.
+  //
+  // Scheduled, never awaited: awaiting it here would serialise the optional half
+  // into the critical path and destroy the boot win this split exists for. A
+  // consumer that wants it sooner (the UI, after paint) still calls
+  // `asyncSdkInit()` itself -- `asyncInitPromise ??=` makes that the SAME single
+  // invocation, not a second one.
+  void initPromise.then(scheduleAsyncSdkInit);
+
   return initPromise;
+}
+
+/**
+ * Run `asyncSdkInit` once the caller is idle.
+ *
+ * `requestIdleCallback` yields to rendering by design, so the optional half
+ * lands after first paint without picking an arbitrary delay. `setTimeout` is
+ * the fallback (Safari) rather than `requestAnimationFrame`, which never fires
+ * in a background tab -- a micro-app opened in a hidden tab would otherwise
+ * never initialise.
+ */
+function scheduleAsyncSdkInit(): void {
+  const run = () => {
+    void asyncSdkInit();
+  };
+  const idle = (globalThis as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+  if (typeof idle === 'function') idle(run);
+  else setTimeout(run, 0);
 }
 
 /** Optional services. The mounted UI calls this after paint; never await it in a loader. */
