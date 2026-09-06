@@ -10,7 +10,7 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import { normalizeVibeModelTier, VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
+import { normalizeVibeModelTier, VibeModelSelect, useVibeModelTier, type VibeModelTier } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
@@ -50,6 +50,9 @@ export function VibeChatPane({
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
   const defaultWorkerType = useDefaultWorkerType();
+  // The same stored tier the hero composers start a build with, so picking Fast
+  // there is not silently undone by the next in-workspace build.
+  const [vibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
@@ -240,7 +243,7 @@ export function VibeChatPane({
         noPastSessionsLabel={t`No past builds`}
         defaultProjectId={project?.id ?? null}
         defaultWorkdir={project?.fs_storage_mount_path ?? null}
-        defaultModel={VIBE_MODEL_DEFAULT}
+        defaultModel={vibeModelTier}
         defaultWorkerType={defaultWorkerType}
         modelSelectSlot={({ value, disabled, onChange }) => (
           <VibeModelSelect

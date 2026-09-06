@@ -1,5 +1,6 @@
-import { capabilityManager, PrefKey, WorkerModelTier } from '@sdk';
+import { PrefKey, WorkerModelTier } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { useOptionalHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import {
   Select,
   SelectContent,
@@ -7,7 +8,7 @@ import {
   SelectTrigger,
 } from '@src/components/ui/select';
 import { cn } from '@src/lib/utils';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
 export const VIBE_MODEL_DEFAULT = WorkerModelTier.MD;
@@ -36,11 +37,10 @@ export function normalizeVibeModelTier(value: unknown): VibeModelTier {
   return VIBE_MODEL_DEFAULT;
 }
 
-/** What the picker can emit: one of the three tiers, or a custom model NAME from
- *  the harness's `Capability.model_map`. Typing this as `VibeModelTier` alone was
- *  a lie the component papered over with a cast — a custom name is a legal value
- *  and flows through to `cli_config.model`, which the backend resolves. */
-export type VibeModelChoice = VibeModelTier | (string & {});
+/** What the picker can emit: a tier, or a custom model NAME from the harness's
+ *  `Capability.model_map`. Typing it `VibeModelTier` was a lie the component
+ *  papered over with a cast — a custom name is legal and reaches `cli_config.model`. */
+export type VibeModelChoice = string;
 
 interface VibeModelSelectProps {
   value: unknown;
@@ -52,36 +52,30 @@ interface VibeModelSelectProps {
 }
 
 /** Custom named model options defined for the default harness (its
- *  Capability.model_map, union of non-tier keys across providers).
+ *  `Capability.model_map`, union of non-tier keys across providers).
  *
- *  SUBSCRIBED, not read once: capabilities load asynchronously, and on a cold
- *  surface (the Vibe home hero) the snapshot is still empty at mount, so a
- *  read-once effect with `[]` deps returned `resolvedKind === null` and never
- *  ran again — the custom options were permanently invisible there. Recompute
- *  whenever the manager says something changed. */
+ *  Read from the app-wide `HarnessCapabilitiesProvider` rather than subscribing to
+ *  the manager here: that provider exists precisely so each consumer does not add
+ *  its own listener, and it already loads the capabilities this needs. Outside the
+ *  app tree (isolated tests) there is no provider and the selector degrades to
+ *  tier-only, which is the same "unknown means fail open" rule its consumers use. */
 function useCustomModelOptions(): string[] {
-  const [options, setOptions] = useState<string[]>([]);
-  useEffect(() => {
-    const recompute = () => {
-      const kind = capabilityManager.getSnapshot('harness').resolvedKind;
-      if (!kind) return;
-      const map = capabilityManager.getSnapshot(kind).capability?.model_map ?? {};
-      const tiers = VIBE_MODEL_TIERS as readonly string[];
-      const names = new Set<string>();
-      for (const perProvider of Object.values(map)) {
-        for (const name of Object.keys(perProvider ?? {})) {
-          if (!tiers.includes(name)) names.add(name);
-        }
+  const harnesses = useOptionalHarnessCapabilities();
+  const snapshot = harnesses?.defaultHarness;
+  const kind = snapshot?.resolvedKind;
+  const map = kind ? (snapshot?.capabilities.find((c) => c.kind === kind)?.model_map ?? {}) : {};
+  return useMemo(() => {
+    const tiers = VIBE_MODEL_TIERS as readonly string[];
+    const names = new Set<string>();
+    for (const perProvider of Object.values(map)) {
+      for (const name of Object.keys(perProvider ?? {})) {
+        if (!tiers.includes(name)) names.add(name);
       }
-      // Same contents => same array, so this cannot loop through the subscription.
-      setOptions((prev) =>
-        prev.length === names.size && prev.every((n) => names.has(n)) ? prev : [...names],
-      );
-    };
-    recompute();
-    return capabilityManager.subscribe(recompute);
-  }, []);
-  return options;
+    }
+    return [...names];
+    // Keyed on the map's content, not its identity: `useCapability` hands back a
+    // fresh object every render, so an identity dep would rebuild every time.
+  }, [JSON.stringify(map)]);
 }
 
 export function VibeModelSelect({
@@ -144,19 +138,14 @@ export function VibeModelSelect({
 }
 
 /**
- * The Vibe build tier, persisted.
- *
- * One owner for a value three surfaces need (both hero composers and, in time,
- * the workspace chat pane). It is a `usePreference` rather than `useState`
- * because picking *Fast* is usually a COST decision, and a preference that
- * silently reverts to the expensive default on the next mount is worse than
- * none — a user who chose Fast then got billed for Balanced would be right to
- * call that a bug.
+ * The Vibe build tier — one owner for the value every Vibe surface starts a build
+ * with, persisted so a Fast choice survives a remount rather than silently
+ * reverting to the pricier default.
  */
 export function useVibeModelTier(): [VibeModelChoice, (next: VibeModelChoice) => void] {
+  // `usePreference` already resolves an unset key to the registry default and
+  // returns a `useCallback`-stable setter; only an explicitly-stored empty string
+  // needs a fallback here.
   const [stored, setStored] = usePreference<string>(PrefKey.VIBE_MODEL_TIER);
-  // A custom model name passes through untouched; anything unrecognised (an
-  // absent pref, a tier that no longer exists) normalizes to the default.
-  const value: VibeModelChoice = typeof stored === 'string' && stored ? stored : VIBE_MODEL_DEFAULT;
-  return [value, (next) => setStored(next)];
+  return [stored || VIBE_MODEL_DEFAULT, setStored];
 }
