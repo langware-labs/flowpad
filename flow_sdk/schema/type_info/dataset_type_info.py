@@ -1,12 +1,10 @@
 """Type metadata for DATASET."""
 from flow_sdk.builtin.dataset import DatasetManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    folder_capsule_id,
     folder_json_identity,
 )
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
-    dataset_id_from_folder,
     derive_dataset,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -32,6 +30,6 @@ DATASET = TypeInfo(
     derive_fields_fn=derive_dataset,
     asset_spec=DatasetManifestSpec,
     fts_content=("title", "description"),
-    identity_carrier=folder_json_identity(folder_capsule_id, dataset_id_from_folder),
+    identity_carrier=folder_json_identity(),
     asset_hash_fn=dataset_asset_hash,
 )

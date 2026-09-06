@@ -26,6 +26,7 @@ from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 from tests.unit.test_fs_store._identity_invariants import assert_one_live_row_per_path
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS,
@@ -86,7 +87,7 @@ async def test_capsule_wipe_keeps_the_owner_row_and_restamps(tmp_path: Path) -> 
     assert set(await md_sources()) == {first_id}, "a rewritten doc keeps its entity"
     assert result.total_dupes_removed == 0
     # ABSENT carrier → healed in place, so the next walk agrees without the DB.
-    assert SchemaRegistry.get("markdown").mint_entity_id(FSRef(a)) == first_id
+    assert resolve_id(SchemaRegistry.get("markdown"), FSRef(a)) == first_id
     await assert_one_live_row_per_path("markdown")
 
 

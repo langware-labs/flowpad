@@ -2,12 +2,10 @@
 from typing import Optional
 
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    folder_capsule_id,
     folder_json_identity,
 )
 from flow_sdk.fs_store.indexer.functions.deck_template import (
     deck_template_asset_hash,
-    deck_template_id_from_folder,
     extract_deck_template,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -40,7 +38,7 @@ DECK_TEMPLATE = TypeInfo(
     shape=Folder(main="template.json"),
     editor="deck_template",
     from_disk_fn=extract_deck_template,
-    identity_carrier=folder_json_identity(folder_capsule_id, deck_template_id_from_folder),
+    identity_carrier=folder_json_identity(),
     asset_hash_fn=deck_template_asset_hash,
     meta_model=DeckTemplateMeta,
 )

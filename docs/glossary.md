@@ -56,7 +56,7 @@ directory `agents`: that disagreement is deliberate, and the code says so at bot
 
 **`MCP` is ours; `MCP_SERVER` is theirs.** Two types, one word apart, and the difference is who
 owns the file. `MCP` is a flowpad-native REPO asset at `agentic-assets/mcp/<name>/mcp.json` (an
-`McpSpec`) that we author, index with a v4 id in its own identity capsule, attach to an Agent, and
+`McpSpec`) that we author, index with a v4 id in its `Sidecar` (`.flow/capsules/identity.json`), attach to an Agent, and
 render onto a worker's command line. It may also OWN the server's code: an `entrypoint` (default
 `server.py`) names a file inside the asset folder that `fastmcp run` executes, kept relative
 because the folder travels with its agent. `MCP_SERVER` is the READ-ONLY inventory of servers already
@@ -194,10 +194,10 @@ of which may be absent. Say which one you mean.
 
 | Ours | One place | Notes |
 |---|---|---|
-| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `read` / `stamp` / `convert` — validation and minting stay in `TypeInfo`. |
-| `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write (`indexer/reconcile.py`). `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
-| `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. `discover_record_by_path` composes the first two. |
-| "capsule" | `flow_sdk/capsules/` | The generic named-block carrier. For markdown identity it is **legacy**: read, stripped from bodies, converted in place. Still the live carrier for `tag` blocks in source files and for folder-json identity. |
+| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `accepts` / `read` / `stamp` — validation and minting stay in `TypeInfo`. |
+| `TypeInfo.mint` / `TypeInfo.stamp_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | `mint` answers a `Found` id, raises on `Foreign`, else mints and (with `write`) stamps; `stamp_id` is the create seam; `read_id` never writes. The walk orders carrier → owning row → mint in `indexer/reconcile.py`. No `observe`/`derive`/`overwrite` vocabulary. |
+| `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. |
+| "capsule" | `flow_sdk/capsules/` | The generic named-block carrier: `tag` blocks in source files, and the `identity` folder capsule the `Sidecar` carrier stores. Not an identity form for markdown — a file still carrying the HTML-comment `identity` block reads as `Foreign` (`flow_sdk/migrations/migration_2026_09_identity_live_forms.py`). |
 
 ## Activity (2026-09-03)
 

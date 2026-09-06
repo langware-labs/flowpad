@@ -26,6 +26,7 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
@@ -46,19 +47,9 @@ KEY_TO_JSON = {
 
 
 def _read_frontmatter_id(path: Path) -> str | None:
-    """Return frontmatter `id` (or legacy `asset_id`), or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
+    """The valid frontmatter ``id:``, or None — the carrier's own read."""
+    found = Frontmatter().read(path)
+    return found.id if isinstance(found, Found) else None
 
 
 def _read_frontmatter_name(path: Path) -> str | None:
@@ -76,8 +67,7 @@ def _read_frontmatter_name(path: Path) -> str | None:
 
 
 def agent_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter `id` (or `asset_id`); else frontmatter `name`;
-    else filename stem."""
+    """Cheap id: frontmatter ``id``; else frontmatter ``name``; else filename stem."""
     existing = _read_frontmatter_id(ref._path)
     if existing:
         return existing
@@ -94,7 +84,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
     probe form of the seam (``derive=False, overwrite=False``), which never
     stamps a missing capsule onto a read-only mount.
 
-    Carrier reads go through ``TypeInfo.mint_entity_id``. The miss path does NOT:
+    Carrier reads go through the type's carrier (``read_id``). The miss path does NOT:
     it derives ``uuid5(DNS, "subagent:<name-or-stem>")`` while the seam would
     derive ``uuid5(URL, <resolved path>)``. **These disagree**, and the value is
     kept as-is deliberately — converging it would move the id of every
@@ -117,7 +107,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
         fields = (_yaml_load(fm) if fm else None) or {}
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
-        adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
+        adopted = adopt_entity_id(fields.get("id"))
         if adopted:
             return adopted
         name = fields.get("name")
@@ -142,7 +132,7 @@ def parse_subagent_markdown(text: str, name: str | None = None) -> dict[str, Any
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
 
-    raw_id = fields.pop("id", None) or fields.pop("asset_id", None)
+    raw_id = fields.pop("id", None)
     from flow_sdk.builtin.subagent import SubAgentSpec  # noqa: PLC0415
 
     header = SubAgentSpec.model_validate(fields)

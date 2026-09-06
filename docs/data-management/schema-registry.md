@@ -49,13 +49,12 @@ class TypeInfo:
     entity_cls: type | None            # the Entity subclass (db_base_record)
     asset_spec: type | None            # the DataSpec that IS the type's layout
     post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn / derive_fields_fn: Any
-    capsules: tuple[CapsuleSpec, ...]
-    identity_carrier: IdentityCarrier | None
+    identity_carrier: IdentityCarrier | None   # Frontmatter | Sidecar | JsonRoot | Derived
     identity_key_fn / id_stable_key_fn: Any   # v5 key (preferred / escape hatch)
     id_namespace: UUID = NAMESPACE_URL
     owns_main_ref / parent_share_on_default / shared_child / db_only: bool
     cloud_file_transport: "embedded" | "git"
-    shape: File | Folder               # THE on-disk shape; main_layout/main_file/main_ext are projections
+    shape: File | Folder               # THE on-disk shape (flow_sdk/schema/layout.py)
     editor: str | None                 # asset editor key ("markdown", "skill", …)
     declared: bool                     # True for a schema/type_info declaration
     meta_model: Any                    # per-type pydantic FS↔DB schema model
@@ -74,9 +73,6 @@ class TypeInfo:
     asset_class: AssetClass | None     # "internal" | "harness" | "shared" | "repo" | "docs" | …
     harness: HarnessType | None
     family: str | None                 # bare leaf subdir ("skills", "docs")
-    main_layout: str = "file"          # "file" | "folder"
-    main_file: str | None = None       # inner main file of a folder asset ("SKILL.md")
-    main_ext: str = ".md"
     # main_subdir is a DERIVED read-only property (claude-default family subdir)
 
     # --- Sharing / reception seams (runtime-only) ---
@@ -85,15 +81,15 @@ class TypeInfo:
     receive_policy: str | None; receive_row_overrides: dict | None
 ```
 
-`main_subdir` is no longer a stored field: it is a property derived from the placement axis (`asset_class` / `harness` / `family`), kept so legacy consumers keep working. Serialization-slot fields are tagged `metadata={"serialization": True}` (`_SERIALIZATION_SLOTS`) and merge by "declared non-default value wins".
+`main_subdir` is not a stored field: it is a property derived from the placement axis (`asset_class` / `harness` / `family`). The on-disk shape is read from `shape` and nothing else — the frontend reads `shape.kind` / `shape.main`, the backend reads `info.shape`. Serialization-slot fields are tagged `metadata={"serialization": True}` (`_SERIALIZATION_SLOTS`) and merge by "declared non-default value wins".
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_carrier`, etc.) attached to the `TypeInfo`, not on a subclass.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `identity_carrier`, etc.) attached to the `TypeInfo`, not on a subclass.
 
-`TypeInfo.mint_entity_id(ref, *, proposed_id=None, owner_id=None, live_ids=None)` is the ONE identity seam (read the carrier → owning row → mint and write) for a walked `FSRef`; the single-path interactive entry is `resolve_asset` (`flow_sdk/fs_store/resolve.py`), which runs the same `reconcile` with the owner looked up through `Entity.get_by_asset_ref` and `write` decided by the caller; `TypeInfo.read_id(ref)` is the pure read; `extract_id`/`mint_id`/`resolve_id`/`_observe`/`_derive` are gone. The type's `identity_carrier` says where the id lives (a markdown main document's frontmatter, a folder's json capsule, a report's JSON root, or derived), reads legacy carriers, and TypeInfo applies the UUID v4/v5 adoption policy.
+Identity has three seams on `TypeInfo`: `read_id(ref)` is the pure read (never writes); `mint(layout, *, write, ref=None, found=None)` answers a `Found` id, raises `ForeignId` on a `Foreign` one, and otherwise mints (v5 when the type has a stable key, else v4) and — with `write` — stamps it through the carrier; `stamp_id(ref, entity_id)` is the create-flow seam. The walk settles an id through `reconcile(info, layout, owner_row, live_ids, *, write)` (`flow_sdk/fs_store/indexer/reconcile.py`); the single-path interactive entry is `resolve_asset` (`flow_sdk/fs_store/resolve.py`), which runs the same `reconcile` with the owner looked up through `Entity.get_by_asset_ref` and `write` decided by the caller. The type's `identity_carrier` (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/fs_store/identity_carrier.py`) says where the id lives and only locates, reads and stamps; TypeInfo applies the UUID v4/v5 adoption policy.
 
-Resolution order is **carrier → owning row → mint**, by carrier LIVENESS: the carrier wins unless a row owns this path (`owner_id`) AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk — which holds the complete per-type id set — may conclude a carrier is a fossil). The signature is `mint_entity_id(ref, *, proposed_id=None, owner_id=None, live_ids=None) -> str`; a `proposed_id` that is not a valid v4/v5 raises. There are no `derive`/`overwrite` flags any more — the write decision is made from the ref and the carrier alone: a write happens only when the carrier is writable, the ref is not `read_only`, and carrier writes are not suppressed for a git-tracked source (`carrier_writes_are_suppressed`). Those gates are the same for every caller.
+Resolution order is **carrier → owning row → mint**, by carrier LIVENESS: the carrier wins unless a row owns this path (`owner_row`) AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk — which holds the complete per-type id set — may conclude a carrier is a fossil). There are no `derive`/`overwrite` flags: `write` is the one gate, passed explicitly by every caller (`write=False` for a read-only root or a git-tracked source), and the carrier refuses (`NotWritable`) a path that is not its own format.
 
-An INVALID carrier (a hand-written v7) keeps its bytes and gets a stable path-derived v5; only an ABSENT carrier is stamped. A legacy markdown capsule is converted into the frontmatter in place, id unchanged. Deterministic types supply `identity_key_fn` (key text `f"{type}:{key}"`) or the `id_stable_key_fn` escape hatch, plus `id_namespace`; `TypeInfo.stable_key_for(ref)` is the one place that shape is resolved. The read-only probe is `read_id(ref)`; per-type `*_peek_entity_id` helpers (e.g. `subagent_peek_entity_id`) wrap it for request handlers that must never write. Parsers receive the resolved value and do not mint.
+A carrier id that is not a valid v4/v5 (a hand-written v7, or a retired form such as an `asset_id:` key or a `.flow/id` line — see `flow_sdk/migrations/migration_2026_09_identity_live_forms.py`) reads as `Foreign`: the bytes are kept, a `foreign_id` scan issue is logged and the asset indexes under a stable path-derived v5; only an ABSENT carrier is stamped. Deterministic types supply `identity_key_fn` (key text `f"{type}:{key}"`) or the `id_stable_key_fn` escape hatch, plus `id_namespace`; `TypeInfo.stable_key_for(ref)` is the one place that shape is resolved. Per-type `*_peek_entity_id` helpers (e.g. `subagent_peek_entity_id`) wrap `read_id` for request handlers that must never write. Parsers receive the resolved value and do not mint.
 
 ### Dynamic properties
 
@@ -112,7 +108,7 @@ A type's `TypeInfo` is assembled from up to two sources that merge into one entr
 
 ### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/schema/layout.py`); the legacy `main_layout` / `main_file` / `main_ext` fields are projected from it in `__post_init__`. Example (`skill_type_info.py`):
+Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/schema/layout.py`) — and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
 
 ```python
 SKILL = TypeInfo(
@@ -131,8 +127,7 @@ SKILL = TypeInfo(
     editor="skill",
     hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
-    capsules=(IDENTITY_CAPSULE,),
-    identity_carrier=folder_md_identity(skill_id_from_folder),
+    identity_carrier=Frontmatter(),
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,                 # from_disk_fn defaults to spec_extractor
     derive_fields_fn=derive_skill,
@@ -207,7 +202,7 @@ Scan/index bookkeeping is **not** a registry concern; it lives in `index_log` as
 | `get_index_status(types, scope)` | Return `IndexStatus` freshness snapshot (DB-free for freshness). |
 | `get_asset_stats(scope)` | Live per-type asset counts for a `ScopeFilter` (`AssetStats`; counts only). |
 | `project_never_indexed(project_id)` | Whether a project record has never had its index sentinel stamped. |
-| `append_scan_issue(issue)` / `read_scan_issues(type_name)` | Persist / read `ScanIssue` entries (`path`, `kind`, `detail`, `type_name`, `at`) through the same per-type JSONL channel (`scan_issues.jsonl`). Kinds: `unclassified_in_family_dir`, `shape_mismatch`, `foreign_id`, `legacy_form`, `malformed_carrier`. |
+| `append_scan_issue(issue)` / `read_scan_issues(type_name)` | Persist / read `ScanIssue` entries (`path`, `kind`, `detail`, `type_name`, `at`) through the same per-type JSONL channel (`scan_issues.jsonl`). Kinds: `unclassified_in_family_dir`, `shape_mismatch`, `foreign_id`, `malformed_carrier`. |
 | `get_errors(type_name)` | `RecordError` list (via `FSRecord.discover(RECORD_ERROR)`), optionally filtered by type, followed by the `ScanIssue`s logged for that type. |
 
 ### Log files

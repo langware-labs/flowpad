@@ -155,15 +155,13 @@ class AssetStats:
 ScanIssueKind = Literal[
     "unclassified_in_family_dir",  # a file in a typed family dir no TypeInfo claimed
     "shape_mismatch",  # the path matched a type but its layout/shape did not
-    "foreign_id",  # a carrier id that fails is_valid_entity_id (ignored, v5 minted)
-    "legacy_form",  # an older carrier form that still loads but should be migrated
+    "foreign_id",  # a carrier value that is not an accepted id, or a retired form (ignored, v5 minted)
     "malformed_carrier",  # the carrier (frontmatter / sidecar) could not be parsed
 ]
 
 UNCLASSIFIED_IN_FAMILY_DIR: ScanIssueKind = "unclassified_in_family_dir"
 SHAPE_MISMATCH: ScanIssueKind = "shape_mismatch"
 FOREIGN_ID: ScanIssueKind = "foreign_id"
-LEGACY_FORM: ScanIssueKind = "legacy_form"
 MALFORMED_CARRIER: ScanIssueKind = "malformed_carrier"
 
 
@@ -181,14 +179,6 @@ def append_scan_issue(issue: ScanIssue) -> None:
     _append_jsonl(_log_path(SCAN_ISSUES_LOG, issue.type_name), asdict(issue))
 
 
-_legacy_noted: set[str] = set()   # a walk re-reads a source many times; one line per path
-
-
-def note_legacy_form(path: Path | str, form: str, type_name: str | None) -> None:
-    """Record once per path that ``path`` still carries its id in the retired ``form``."""
-    if str(path) not in _legacy_noted:
-        _legacy_noted.add(str(path))
-        append_scan_issue(ScanIssue(path=str(path), kind=LEGACY_FORM, detail=form, type_name=type_name))
 
 
 def read_scan_issues(type_name: str | None = None) -> list[ScanIssue]:

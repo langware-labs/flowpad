@@ -11,15 +11,11 @@ from __future__ import annotations
 
 from flow_sdk.builtin.task import TaskSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    folder_capsule_id,
-    folder_capsule_json_id,
     frontmatter_identity,
-    in_folder,
 )
 from flow_sdk.fs_store.indexer.functions.task import (
     derive_task,
     task_asset_hash,
-    task_id_from_folder,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import Folder
@@ -39,7 +35,7 @@ TASK = TypeInfo(
     shape=Folder(main="task.md"),
     editor="task",
     fts_content=("title", "description"),
-    identity_carrier=frontmatter_identity(folder_capsule_json_id, in_folder(folder_capsule_id), in_folder(task_id_from_folder)),
+    identity_carrier=frontmatter_identity(),
     asset_hash_fn=task_asset_hash,
     # ``TaskSpec`` IS the share whitelist — see its docstring.
     asset_spec=TaskSpec,

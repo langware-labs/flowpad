@@ -28,9 +28,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
 from flow_sdk.fs_store.record_types import RecordType
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
@@ -49,18 +46,14 @@ def folder_is_skill(folder: Path) -> bool:
 
 
 def read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
-    """Pick a VALID (v4/v5) `id`/`asset_id` from a parsed yaml/frontmatter dict.
+    """The VALID (v4/v5) ``id`` of a parsed yaml/frontmatter dict, else None.
 
-    Routes through ``adopt_entity_id`` (validate-on-adopt) so a non-uuid /
-    foreign frontmatter id (a v7, a hand-typed token) is rejected → ``None`` and
-    the caller mints a fresh v4 into the capsule instead of adopting garbage.
+    Routes through ``adopt_entity_id`` (validate-on-adopt) so a foreign id
+    (a v7, a hand-typed token) is rejected rather than adopted.
     """
     from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-    for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
-        adopted = adopt_entity_id(candidate)
-        if adopted:
-            return adopted
-    return None
+
+    return adopt_entity_id(yaml_fields.get("id"))
 
 
 def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
@@ -91,8 +84,8 @@ def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:
 
 
 def skill_id(ref: FSRef, yaml_fields: dict[str, Any] | None = None) -> str:
-    """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
-    the transitional uuid5(name) read fallback for legacy rows.
+    """Cheap id (no write): the valid frontmatter id, else the transitional
+    uuid5(name) read fallback for rows without one.
 
     ``yaml_fields`` lets a caller that has ALREADY parsed the folder's
     yaml/frontmatter hand it in, so the fallback path doesn't stat and re-parse
@@ -100,9 +93,6 @@ def skill_id(ref: FSRef, yaml_fields: dict[str, Any] | None = None) -> str:
     the id policy itself stays owned here either way."""
     path = ref._path
     if path.is_dir():
-        cap = read_folder_capsule_id(path)
-        if cap:
-            return cap
         if yaml_fields is None:
             yaml_fields = parse_skill_yaml_from_dir(path)
         fm_id = read_frontmatter_id_from_yaml(yaml_fields)
@@ -112,14 +102,6 @@ def skill_id(ref: FSRef, yaml_fields: dict[str, Any] | None = None) -> str:
     return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
 
 
-def skill_id_from_folder(ref: FSRef | Path) -> object | None:
-    """Read the capsule, then legacy SKILL.md/yaml fields, without backfill."""
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    fields = parse_skill_yaml_from_dir(path)
-    return read_frontmatter_id_from_yaml(fields)
 
 
 def skill_asset_hash(ref: FSRef) -> float:

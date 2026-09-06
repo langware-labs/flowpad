@@ -88,6 +88,7 @@ async def reindex_paths(
     deleted_paths: Iterable[str] = (),
     *,
     mint: bool = True,
+    write: bool = True,
 ) -> ReindexResult:
     """Force-reindex ``paths`` (changed/created) and reconcile ``deleted_paths``.
 
@@ -100,17 +101,16 @@ async def reindex_paths(
     INTO the bytes the caller just saved, mutating arbitrary markdown that was
     never an asset. New-file discovery belongs to the indexer, which owns root
     scoping and consent.
+
+    ``write=False`` resolves identity without stamping it into the source (a
+    source that does not own its bytes — a git working tree under ``reflect``).
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
     from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
     result = ReindexResult()
-    # A source that does not own its bytes (a git working tree under ``reflect``)
-    # resolves without stamping.
-    write = not carrier_writes_are_suppressed()
 
     # Force-reparse an entity's OWN asset_ref (folder path for folder types), not
     # the raw touched path — extract_skill et al. would mis-name a raw inner path.

@@ -12,14 +12,12 @@ import logging
 import os
 import stat
 import uuid
-from collections.abc import Container
 from dataclasses import MISSING, dataclass, field, fields
 from functools import cache
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_carrier import (
     Absent,
     Derived,
@@ -87,11 +85,8 @@ _DEFAULT_SHAPE = File(ext=".md")
 
 
 def _may_write(ref: Any) -> bool:
-    """Carrier writes are allowed for ``ref``: it is not read-only and no
-    suppression context (a git working tree) is active."""
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
-
-    return not bool(getattr(ref, "read_only", False)) and not carrier_writes_are_suppressed()
+    """Carrier writes are allowed for ``ref``: it is not read-only."""
+    return not bool(getattr(ref, "read_only", False))
 
 
 @dataclass
@@ -162,7 +157,6 @@ class TypeInfo:
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
     #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
-    capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
     identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     #   identity_key_fn:   Callable[[FSRef | Path], str] — the type's natural key.
@@ -257,9 +251,7 @@ class TypeInfo:
     asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
     harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
     family: str | None = field(default=None, metadata=_MERGE)
-    # --- THE shape declaration: ``File(ext)`` | ``Folder(main)`` ---
-    # ``main_layout`` / ``main_file`` / ``main_ext`` are read-only projections
-    # of it (below). Not hashed.
+    # --- THE shape declaration: ``File(ext)`` | ``Folder(main)``. Not hashed. ---
     shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.schema.layout.Shape
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
     # shipped in the bootstrap so the frontend derives its editor tables from
@@ -301,30 +293,6 @@ class TypeInfo:
     receive_policy: str | None = field(default=None, metadata=_MERGE)
     receive_row_overrides: dict | None = field(default=None, metadata=_MERGE)
 
-    # --- Projections of ``shape`` (read-only) ---
-
-    @property
-    def main_layout(self) -> str:
-        return "folder" if isinstance(self.shape, Folder) else "file"
-
-    @property
-    def main_file(self) -> str | None:
-        """A folder type's inner main document (``SKILL.md``); None for a file type."""
-        return self.shape.main if isinstance(self.shape, Folder) else None
-
-    @property
-    def main_ext(self) -> str:
-        """The document suffix a create writes: the file's, or the folder's main document's."""
-        if isinstance(self.shape, File):
-            return self.shape.ext
-        return (Path(self.shape.main).suffix.lower() if self.shape.main else "") or ".md"
-
-    @property
-    def folder_backed(self) -> bool:
-        """``asset_ref`` is the asset's folder — every folder-layout type. Kept
-        one release for the bootstrap; the shape's kind is the declaration."""
-        return isinstance(self.shape, Folder)
-
     @property
     def git_publishable(self) -> bool:
         """Whether this registered type can be re-parsed for Git publication."""
@@ -355,8 +323,8 @@ class TypeInfo:
 
     def storage_root_for(self, path: Path) -> Path:
         """The asset ROOT a serializer stores at — the folder for a folder-layout
-        type, also when handed a row's retired inner-main-file ``asset_ref``;
-        the file otherwise. The shape's ``root_of``."""
+        type (also when handed its main document); the file otherwise. The
+        shape's ``root_of``."""
         return self.shape.root_of(path)
 
     @property
@@ -504,8 +472,8 @@ class TypeInfo:
     def stamp_id(self, ref: Any, entity_id: str) -> str:
         """The create-flow seam: persist ``entity_id`` into the source through
         the carrier. A ``Found`` id wins and is returned; ``Foreign`` raises.
-        A ``read_only`` ref, suppressed carrier writes or a derived type answer
-        the carrier or ``entity_id`` without writing."""
+        A ``read_only`` ref or a derived type answers the carrier or
+        ``entity_id`` without writing."""
         return self._stamp(self.layout_for(ref), ref, entity_id)
 
     def _stamp(self, layout: "Layout", ref: Any, entity_id: str) -> str:
@@ -518,34 +486,11 @@ class TypeInfo:
             raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
         found = carrier.read(where)
         if isinstance(found, Found):
-            if write and found.legacy and hasattr(carrier, "convert"):
-                carrier.convert(where, found)   # a create over a legacy source moves the id into the live form
             return found.id
         if not write:
             return entity_id
         return carrier.stamp(where, entity_id)
 
-    def mint_entity_id(
-        self,
-        ref: Any,
-        *,
-        proposed_id: str | None = None,
-        owner_id: str | None = None,
-        live_ids: "Container[str] | None" = None,
-    ) -> str:
-        """Adapter over the seam: ``proposed_id`` ⇒ stamp it; everything else
-        ⇒ the indexer's ``reconcile`` (carrier vs owning row, legacy
-        conversion, the foreign-id fallback). Writes are gated by the ref's
-        ``read_only`` and the carrier-write suppression context."""
-        from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
-
-        layout = self.layout_for(ref)
-        if proposed_id is not None and not owner_id:
-            try:
-                return self._stamp(layout, ref, proposed_id)
-            except ForeignId:
-                pass   # reconcile records the foreign id and answers with the keyed/path v5
-        return reconcile(self, layout, owner_id or None, live_ids, write=_may_write(ref), ref=ref)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -625,11 +570,8 @@ class TypeInfo:
             "asset_class": str(self.asset_class) if self.asset_class else None,
             "harness": str(self.harness) if self.harness else None,
             "family": self.family,
-            "main_layout": self.main_layout,
-            "main_file": self.main_file,
-            "folder_backed": self.folder_backed,
-            # THE shape declaration the fields above project; the client reads
-            # this one and derives, never a hand-written per-type table.
+            # THE shape declaration; the client reads this one and derives
+            # (``kind``, ``main``), never a hand-written per-type table.
             "shape": self.shape.to_dict(),
             "editor": self.editor,
             # The entity owns its backing file (re-rendered from default_body on
@@ -751,7 +693,7 @@ def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
             # A list of assets is a directory of FILES, one per element — a
             # class-shape fact, refused here rather than on the first save.
             sub_cls, _ = asset_class(spec_field.annotation)
-            if asset_info(sub_cls).main_layout != "file":
+            if not isinstance(asset_info(sub_cls).shape, File):
                 raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
 
 
@@ -957,16 +899,6 @@ class SchemaRegistry:
                     *already,
                     *(fn for fn in info.post_sync_callbacks if fn not in already),
                 )
-            if info.capsules:
-                merged_capsules = {spec.name: spec for spec in existing.capsules}
-                for spec in info.capsules:
-                    current = merged_capsules.get(spec.name)
-                    if current is not None and current != spec:
-                        raise ValueError(
-                            f"Conflicting capsule declaration for type {info.type_name!r}: {current!r} vs {spec!r}"
-                        )
-                    merged_capsules[spec.name] = spec
-                existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
             if info.identity_carrier is not None:
                 if existing.identity_carrier is not None and existing.identity_carrier != info.identity_carrier:
                     raise ValueError(f"Conflicting identity carrier registration for type {info.type_name!r}")
@@ -1170,19 +1102,6 @@ class SchemaRegistry:
             by = tables.by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
         return "markdown" if "markdown" in cls._types else None
-
-    #: The main documents of the folder types whose ``asset_ref`` was the inner
-    #: file before it was unified to the folder (agent, spec, the reports).
-    _RETIRED_INNER_MAINS: ClassVar[tuple[str, ...]] = ("agent.md", "spec.md", "trace.json", "report.json")
-
-    @classmethod
-    def retired_ref_spellings(cls, path: Path) -> list[Path]:
-        """The other ``asset_ref`` spelling a row may still hold until the
-        identity migration has run: the folder for a retired inner main
-        document, ``<folder>/<main>`` for a folder. Goes with the legacy readers."""
-        if path.name.lower() in cls._RETIRED_INNER_MAINS:
-            return [path.parent]
-        return [path / main for main in cls._RETIRED_INNER_MAINS]
 
     @classmethod
     def ref_for(cls, type_name: str, path: "Path | str") -> str:

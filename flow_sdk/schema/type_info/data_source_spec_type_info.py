@@ -39,7 +39,7 @@ DATA_SOURCE_SPEC = TypeInfo(
     # stamping one in would make a shared source arrive carrying the sender's id.
     # A derived carrier has nowhere to write an id back, so identity must be a
     # pure function of the source, and `identity_key_fn` is what supplies it. It
-    # is NOT optional: without a key `mint_entity_id` falls through to
+    # is NOT optional: without a key `TypeInfo.mint` falls through to
     # `uuid5(resolved path)`, and a spec's path is the INSTALL's
     # (`…/site-packages/flow_sdk/system_projects/…`), not the asset's — several
     # coexist on one machine and every upgrade moves it, so one shipped source

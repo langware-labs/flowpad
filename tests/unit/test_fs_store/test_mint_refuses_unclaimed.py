@@ -12,6 +12,7 @@ from flow_sdk.fs_store.identity_carrier import UnclaimedPath
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
+from tests.fixtures.identity import resolve_id
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -28,7 +29,7 @@ def test_markdown_on_py_raises_and_leaves_bytes(tmp_path: Path) -> None:
     py.write_text("x = 1\n", encoding="utf-8")
 
     with pytest.raises(UnclaimedPath):
-        SchemaRegistry.get("markdown").mint_entity_id(_ref(py, "markdown"))
+        resolve_id(SchemaRegistry.get("markdown"), _ref(py, "markdown"))
 
     assert py.read_text(encoding="utf-8") == "x = 1\n"
 
@@ -41,7 +42,7 @@ def test_markdown_on_skill_md_raises_because_skill_owns_the_name(tmp_path: Path)
 
     assert SchemaRegistry.type_for(doc) == "skill"
     with pytest.raises(UnclaimedPath):
-        SchemaRegistry.get("markdown").mint_entity_id(_ref(doc, "markdown"))
+        resolve_id(SchemaRegistry.get("markdown"), _ref(doc, "markdown"))
 
     assert doc.read_text(encoding="utf-8").startswith("---\nname: s\n---")
 
@@ -52,8 +53,8 @@ def test_skill_folder_and_its_main_file_mint_the_same_id(tmp_path: Path) -> None
     (skill / "SKILL.md").write_text("---\nname: s\n---\n# s\n", encoding="utf-8")
     info = SchemaRegistry.get("skill")
 
-    via_folder = info.mint_entity_id(_ref(skill, "skill"))
-    via_main = info.mint_entity_id(_ref(skill / "SKILL.md", "skill"))
+    via_folder = resolve_id(info, _ref(skill, "skill"))
+    via_main = resolve_id(info, _ref(skill / "SKILL.md", "skill"))
 
     assert via_folder == via_main
     assert uuid.UUID(via_folder).version == 4
@@ -68,8 +69,8 @@ def test_a_derived_type_is_not_refused_for_its_own_bespoke_shape(tmp_path: Path)
     info = SchemaRegistry.get("mcp_server")
     assert not info.identity_carrier.writable
 
-    first = info.mint_entity_id(_ref(toml, "mcp_server"))
-    assert first == info.mint_entity_id(_ref(toml, "mcp_server"))
+    first = resolve_id(info, _ref(toml, "mcp_server"))
+    assert first == resolve_id(info, _ref(toml, "mcp_server"))
     assert toml.read_text(encoding="utf-8").startswith("[mcp_servers.x]")
 
 
@@ -79,4 +80,4 @@ def test_read_only_ref_is_refused_too_when_unclaimed(tmp_path: Path) -> None:
     py.write_text("pass\n", encoding="utf-8")
 
     with pytest.raises(UnclaimedPath):
-        SchemaRegistry.get("markdown").mint_entity_id(_ref(py, "markdown", read_only=True))
+        resolve_id(SchemaRegistry.get("markdown"), _ref(py, "markdown", read_only=True))

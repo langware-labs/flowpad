@@ -56,16 +56,6 @@ export interface ResolvedAsset {
   entity: Record<string, unknown> | null;
 }
 
-/** Returned by `systemTools.discoverByPath()`. */
-export interface DiscoverByPathResult {
-  type: string;
-  id: string;
-  asset_ref: string;
-  name?: string;
-  /** Other fields per the record's `meta_dict()` shape — caller should typecast as needed. */
-  [key: string]: unknown;
-}
-
 export interface DatabasePaths {
   db_path: string;
   backup_folder: string;
@@ -481,38 +471,6 @@ export class SystemToolsService extends EventEmitter {
       if (httpStatusOf(err) === 404) return null;
       throw err;
     }
-  }
-
-  /**
-   * @deprecated Use `resolveByPath(path)` — the client no longer names the
-   * type. Kept for the callers that still pass one: when the backend's
-   * resolution agrees with `typeName`, the resolved row is returned and the
-   * legacy per-type discover is never hit; otherwise (registry disagreement,
-   * or the resolve route not deployed yet) it falls back to
-   * `POST /fs-records/{type}/discover?path=…`.
-   *
-   * Throws if the path doesn't exist on disk or doesn't match the type's
-   * discovery rules — caller should treat that as a terminal "not found"
-   * state, not a transient error.
-   */
-  async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
-    const resolved = await this.resolveByPath(path).catch(() => null);
-    if (resolved && resolved.type === typeName) {
-      void dataManager.refreshScanInfo();
-      const row = resolved.entity ?? {};
-      return {
-        ...row,
-        type: resolved.type,
-        id: resolved.id,
-        asset_ref: (row.asset_ref as string | undefined) ?? resolved.root,
-      } as DiscoverByPathResult;
-    }
-    const url =
-      `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
-      `/discover?path=${encodeURIComponent(path)}`;
-    const res = await apiClient.post<DiscoverByPathResult>(url);
-    void dataManager.refreshScanInfo();
-    return res as unknown as DiscoverByPathResult;
   }
 
   /** Sequentially index the supplied types. Each per-type call drives its own backend progressTable snapshots. */

@@ -123,11 +123,10 @@ async def test_first_run_converts_everything_and_the_second_run_is_a_no_op(tmp_p
 
     kinds = {(i.kind, Path(i.path).name) for i in first.issues}
     assert ("unclassified_in_family_dir", "yaml-only") in kinds, "a yaml-only skill is not a skill"
-    assert {k for k, _ in kinds} <= {"unclassified_in_family_dir", "legacy_form"}
+    assert {k for k, _ in kinds} <= {"unclassified_in_family_dir"}
 
     assert not second.converted and not second.unconverted and second.rows == [] and second.rows_rewritten == 0
     assert (_snapshot(home), _rows(db)) == after_first, "second run: zero byte changes, zero row changes"
-    assert not [i for i in second.issues if i.kind == "legacy_form"]
 
 
 @pytest.mark.asyncio
@@ -142,6 +141,3 @@ async def test_dry_run_reports_and_writes_nothing(tmp_path: Path) -> None:
     assert dict(report.pending) == {"folder_capsule_id": 2, "capsule": 1, "frontmatter_asset_id": 1}
     assert not report.converted and len(report.rows) == 1 and report.rows_rewritten == 0
     assert (_snapshot(home), _rows(db)) == before
-    assert sorted(i.detail for i in report.issues if i.kind == "legacy_form") == sorted(
-        ["capsule", "folder_capsule_id", "folder_capsule_id", "frontmatter_asset_id"]
-    )

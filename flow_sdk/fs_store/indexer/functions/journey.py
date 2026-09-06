@@ -15,7 +15,6 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 
@@ -29,15 +28,6 @@ def _load_doc(journey_dir: Path) -> GraphWorkflowDoc | None:
         return None
 
 
-def journey_id_from_folder(ref: FSRef | Path) -> object | None:
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    doc = _load_doc(path)
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    return adopt_entity_id(doc.id if doc else None)
 
 
 def read_auto_launch(journey_dir: Path) -> bool:

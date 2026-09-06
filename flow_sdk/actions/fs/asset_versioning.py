@@ -107,7 +107,7 @@ def _versionable_main_files() -> set[str]:
     registry is momentarily unavailable — an unresolvable type must never be
     stamped blind, so the empty set correctly refuses every folder asset."""
     try:
-        return {t.main_file.lower() for t in _versionable_folder_types()}
+        return {t.shape.main.lower() for t in _versionable_folder_types()}
     except Exception:  # noqa: BLE001
         logger.debug("versionable-type resolve: registry unavailable", exc_info=True)
         return set()

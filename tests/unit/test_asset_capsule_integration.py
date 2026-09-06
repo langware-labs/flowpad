@@ -57,20 +57,6 @@ def test_creation_adopts_existing_filesystem_winner_on_record(tmp_path: Path) ->
     assert _fm(path)["id"] == IDENTITY
 
 
-def test_legacy_capsule_note_is_converted_on_creation(tmp_path: Path) -> None:
-    path = tmp_path / "note.md"
-    path.write_text("Existing body\n", encoding="utf-8")
-    AssetCapsule.from_path(path).write("identity", CapsuleData(version=1, data={"id": IDENTITY}))
-    proposed = "11111111-2222-4333-8444-555555555555"
-    record = FSRecord(type=RecordType.MARKDOWN, id=proposed, asset_ref=FSRef(path))
-    entity = Docs(id=proposed, title="Ignored", name="Ignored")
-
-    assert store_main(record, entity) == IDENTITY
-    text = path.read_text(encoding="utf-8")
-    assert _fm(path)["id"] == IDENTITY
-    assert "flowpad:capsule" not in text
-
-
 def test_owned_folder_rewrite_keeps_the_id_in_the_main_document(tmp_path: Path) -> None:
     from flow_sdk.builtin.task import Task
 
@@ -121,7 +107,7 @@ def test_source_less_bundle_body_mints_proposed_identity(tmp_path: Path) -> None
 
 def test_production_has_no_alternate_identity_writers() -> None:
     """Every carrier write goes through ``identity_backend.py``: no caller
-    writes a frontmatter ``id:``, a folder ``.flow/id`` or an identity capsule
+    writes a frontmatter ``id:`` or a folder json capsule
     on its own."""
     sdk_root = Path(__file__).parents[2] / "flow_sdk"
     legacy_writers = {"write_frontmatter_id"}

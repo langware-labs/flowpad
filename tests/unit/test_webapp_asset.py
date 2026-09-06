@@ -13,12 +13,14 @@ import json
 
 import pytest
 
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
 from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.fs_store.fs_ref import FSRef
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
 from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR, AssetClass
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.layout import Folder
+from tests.fixtures.identity import resolve_id
 
 AA = AGENTIC_ASSETS_DIR
 
@@ -55,7 +57,7 @@ def test_micro_app_is_a_repo_type():
     assert info.family == "webapp"
     assert SchemaRegistry.repo_family_to_info()["webapp"].type_name == "micro_app"
     # asset_ref must stay the FOLDER: serving joins <folder>/<build> onto it.
-    assert info.main_layout == "folder" and info.folder_backed
+    assert isinstance(info.shape, Folder)
 
 
 # ── discovery: an editor nested inside the asset it edits ───────────────────
@@ -108,8 +110,8 @@ def test_identity_is_derived_from_the_path_so_it_is_the_same_everywhere(tmp_path
     folder = _webapp(tmp_path / AA / "webapp" / "editor")
     info = SchemaRegistry.get("micro_app")
 
-    first = info.mint_entity_id(_ref(folder))
-    second = info.mint_entity_id(_ref(folder))
+    first = resolve_id(info, _ref(folder))
+    second = resolve_id(info, _ref(folder))
     assert first == second
     # Derived means nothing is written into the asset — a shipped editor cannot
     # arrive carrying the sender's id, and git stays clean.

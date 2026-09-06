@@ -309,7 +309,7 @@ def test_versioning_never_selects_a_non_frontmatter_type():
     assert selected, "registry unavailable — the predicate returned nothing"
 
     offenders = [
-        (t.type_name, t.main_file, type(t.identity_carrier).__name__)
+        (t.type_name, t.shape.main, type(t.identity_carrier).__name__)
         for t in selected
         if not isinstance(t.identity_carrier, Frontmatter)
     ]

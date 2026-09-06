@@ -1,8 +1,8 @@
 """Discovering a path a type does not own must not EDIT that path: the
 resolver answers ``NotAnAsset`` for an unclaimed (type, path) pair before any
 carrier is read or written, so a ``server.py`` labelled ``markdown`` never
-grows a frontmatter header. Entry point is the real ``discover_record_by_path``
-(over ``resolve_asset``); real filesystem, no mocks.
+grows a frontmatter header. Entry point is the real ``resolve_asset`` →
+``index_one``; real filesystem, no mocks.
 """
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identity_carrier import UnclaimedPath
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
+from tests.fixtures.identity import index_path, resolve_id
 
 _SERVER_PY = 'from fastmcp import FastMCP\n\nmcp = FastMCP("crm-mcp")\n'
 _README_MD = "# CRM MCP\n\nplain readme text.\n"
@@ -37,7 +37,7 @@ def _crm_mcp_server(tmp_path: Path) -> Path:
 async def test_discovering_a_py_as_markdown_does_not_corrupt_it(tmp_path: Path) -> None:
     server = _crm_mcp_server(tmp_path)
 
-    assert await discover_record_by_path("markdown", str(server)) is None
+    assert await index_path("markdown", str(server)) is None
 
     after = server.read_text(encoding="utf-8")
     compile(after, "server.py", "exec")
@@ -47,7 +47,7 @@ async def test_discovering_a_py_as_markdown_does_not_corrupt_it(tmp_path: Path) 
 async def test_discovering_a_py_as_mcp_does_not_stamp_it(tmp_path: Path) -> None:
     server = _crm_mcp_server(tmp_path)
 
-    assert await discover_record_by_path("mcp", str(server)) is None
+    assert await index_path("mcp", str(server)) is None
 
     after = server.read_text(encoding="utf-8")
     assert "flowpad:capsule identity" not in after
@@ -62,7 +62,7 @@ async def test_a_readme_inside_a_valid_mcp_folder_is_not_stamped(tmp_path: Path)
     readme = folder / "README.md"
     readme.write_text(_README_MD, encoding="utf-8")
 
-    await discover_record_by_path("mcp", str(readme))
+    await index_path("mcp", str(readme))
 
     assert readme.read_text(encoding="utf-8") == _README_MD
 
@@ -74,7 +74,7 @@ async def test_a_reference_doc_inside_a_skill_is_not_stamped_as_the_skill(tmp_pa
     notes = skill / "reference" / "notes.md"
     notes.write_text(_README_MD, encoding="utf-8")
 
-    await discover_record_by_path("skill", str(notes))
+    await index_path("skill", str(notes))
 
     assert notes.read_text(encoding="utf-8") == _README_MD
 
@@ -86,7 +86,7 @@ def test_the_seam_refuses_an_unclaimed_existing_path(tmp_path: Path) -> None:
     info = SchemaRegistry.get("markdown")
 
     with pytest.raises(UnclaimedPath):
-        info.mint_entity_id(FSRef(server, record_type=RecordType("markdown")))
+        resolve_id(info, FSRef(server, record_type=RecordType("markdown")))
 
     assert server.read_text(encoding="utf-8") == _SERVER_PY
 
@@ -97,7 +97,7 @@ def test_a_save_target_that_does_not_exist_yet_still_carries(tmp_path: Path) -> 
     info = SchemaRegistry.get("markdown")
     fresh = tmp_path / "not-created-yet.md"
 
-    minted = info.mint_entity_id(FSRef(fresh, record_type=RecordType("markdown")))
+    minted = resolve_id(info, FSRef(fresh, record_type=RecordType("markdown")))
 
     assert minted
     assert info.read_id(FSRef(fresh, record_type=RecordType("markdown"))) == minted
@@ -107,6 +107,6 @@ async def test_discovering_a_real_markdown_doc_still_stamps_it(tmp_path: Path) -
     doc = tmp_path / "notes.md"
     doc.write_text("# My notes\n\nplain user markdown.\n", encoding="utf-8")
 
-    await discover_record_by_path("markdown", str(doc))
+    await index_path("markdown", str(doc))
 
     assert SchemaRegistry.get("markdown").read_id(str(doc))

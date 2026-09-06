@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from flow_sdk.builtin.project import Project
+from flow_sdk.schema.layout import Folder
 
 # ── The layout, declared once ────────────────────────────────────────────────
 
@@ -158,14 +159,14 @@ def write_asset(root: Path, type_name: str, name: str) -> Path:
 
     body = _BODIES[type_name].format(name=name, tid=str(uuid.uuid4()))
     subdir = root / info.main_subdir
-    if info.main_layout == "folder":
+    if isinstance(info.shape, Folder):
         folder = subdir / name
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / info.main_file).write_text(body, encoding="utf-8")
+        (folder / info.shape.main).write_text(body, encoding="utf-8")
         for filename, content in _SIDECARS.get(type_name, {}).items():
             (folder / filename).write_text(content, encoding="utf-8")
         return folder
-    target = subdir / f"{name}{info.main_ext}"
+    target = subdir / f"{name}{info.shape.ext}"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body, encoding="utf-8")
     return target

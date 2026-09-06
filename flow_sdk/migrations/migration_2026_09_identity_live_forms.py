@@ -6,20 +6,19 @@ folder's ``.flow/capsules/identity.json`` and the ``"id"`` key of a report's
 json root. The retired forms this pass converts — id unchanged — are the
 markdown HTML-comment ``identity`` capsule, the ``asset_id:`` frontmatter
 key, the ``.flow/id`` line, a json capsule under a markdown main document and
-a manifest ``id`` (``dataset.json``, ``deck.json``). Their readers are deleted
-one release after this has run on every instance; a source still in a retired
-form then reads as foreign.
+a manifest ``id`` (``dataset.json``, ``deck.json``). The live carriers no
+longer read those forms — a source still in one reads as foreign and its
+scan issue names this script — so the readers live HERE, and only here.
 
 ``asset_ref`` is the folder for every folder type. Rows written while agent,
 spec and the report types pointed it at the inner main file
 (``<folder>/agent.md``) are rewritten to the folder.
 
 The walk is the production indexer graph over the instance's roots — home,
-cwd, the system project and every project row's mount — and identity is
-settled exactly as the index walk settles it (``resolve_ref_identity``:
-owner-first, writes gated by read-only roots), so what this converts is what
-the next index would have converted. A source the walk cannot write (a
-borrowed checkout) stays as it is and is reported.
+cwd, the system project and every project row's mount. A retired id moves
+into the live carrier unchanged, and only when that carrier is still empty:
+a live id always wins. A source the walk cannot write (a read-only root)
+stays as it is and is reported.
 
 Idempotent: a second run reads every carrier in its live form, rewrites no
 row and changes no byte. Scan issues the walk raises on the way (a yaml-only
@@ -62,7 +61,7 @@ class Report:
     #: legacy form -> sources still in it (dry-run: what --apply would convert)
     pending: Counter = field(default_factory=Counter)
     converted: Counter = field(default_factory=Counter)
-    #: legacy form -> sources the walk could not convert (read-only, fossil)
+    #: legacy form -> sources the walk could not convert (a read-only root)
     unconverted: Counter = field(default_factory=Counter)
     rows: list[RowMove] = field(default_factory=list)
     rows_rewritten: int = 0
@@ -132,35 +131,116 @@ def _roots(conn) -> list[Any]:
     return roots
 
 
-def _preload(conn, type_names: set[str]):
-    """The walk's ``OwnerPreload`` — live ids and stored paths per type — read
-    from the sqlite file directly."""
-    from flow_sdk.fs_store.indexer.index_function import OwnerPreload
-    from flow_sdk.fs_store.path_owners import PathOwnerIndex
-
-    preload = OwnerPreload()
-    for name in type_names:
-        rows = conn.execute(
-            "SELECT id, json_extract(data, '$.asset_ref') FROM entities WHERE type = ?", (name,)
-        ).fetchall()
-        preload.ids[name] = {str(r[0]) for r in rows}
-        preload.paths[name] = {str(r[0]): str(r[1]) for r in rows if r[1]}
-    preload.owners = PathOwnerIndex.from_preload(preload.paths)
-    return preload
 
 
 # ---------------------------------------------------------------------------
-# Carriers
+# The retired forms — read and converted here only
 # ---------------------------------------------------------------------------
 
+_MANIFEST_IDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("dataset.json", ("metadata", "id")),
+    ("template.json", ("metadata", "id")),
+    ("deck.json", ("id",)),
+    ("graph.json", ("id",)),
+)
 
-def _legacy_read(info: Any, ref: Any):
-    """The ``Found`` a retired reader answered for ``ref``, else None."""
-    from flow_sdk.fs_store.identity_carrier import Found
+
+def _valid(value: Any) -> str | None:
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+    return str(value) if is_valid_entity_id(value) else None
+
+
+def _flow_id(folder: Path) -> str | None:
+    try:
+        return _valid((folder / ".flow" / "id").read_text(encoding="utf-8").strip())
+    except OSError:
+        return None
+
+
+def _folder_json_id(folder: Path) -> str | None:
+    from flow_sdk.capsules.folder import FolderCapsule
+
+    if not (folder / ".flow" / "capsules" / "identity.json").exists():
+        return None
+    data = FolderCapsule(folder).read("identity")
+    return _valid(data.data.get("id")) if data is not None else None
+
+
+def _manifest_id(folder: Path) -> str | None:
+    for name, keys in _MANIFEST_IDS:
+        try:
+            node: Any = json.loads((folder / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for key in keys:
+            node = node.get(key) if isinstance(node, dict) else None
+        if (found := _valid(node)) is not None:
+            return found
+    return None
+
+
+def _retired_read(info: Any, ref: Any) -> tuple[str, str] | None:
+    """``(form, id)`` when the source carries its id only in a retired form."""
+    from flow_sdk.capsules import AssetCapsule
+    from flow_sdk.fs_store.identity_carrier import Found, Frontmatter, Sidecar
+    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 
     carrier = info.carrier
-    found = carrier.read(carrier.locate(info.layout_for(ref)))
-    return found if isinstance(found, Found) and found.legacy else None
+    where = carrier.locate(info.layout_for(ref))
+    if isinstance(carrier.read(where), Found):
+        return None   # already live
+    if isinstance(carrier, Frontmatter):
+        try:
+            text = where.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        header = _extract_frontmatter(text)
+        fields = (_yaml_load(header) or {}) if header else {}
+        data = AssetCapsule.from_path(where).read("identity")
+        if data is not None and (found := _valid(data.data.get("id"))):
+            return "capsule", found
+        if (found := _valid(fields.get("asset_id"))) is not None:
+            return "frontmatter_asset_id", found
+        if (found := _folder_json_id(where.parent)) is not None:
+            return "folder-json", found
+        if (found := _flow_id(where.parent)) is not None:
+            return "folder_capsule_id", found
+        return None
+    if isinstance(carrier, Sidecar):
+        if (found := _flow_id(where)) is not None:
+            return "folder_capsule_id", found
+        if (found := _manifest_id(where)) is not None:
+            return "manifest_id", found
+    return None
+
+
+def _convert(info: Any, ref: Any, form: str, entity_id: str) -> None:
+    """Move ``entity_id`` into the live carrier — same id, retired bytes gone.
+    A manifest keeps its ``id`` key: it is the asset's document, not a carrier."""
+    from flow_sdk.capsules import CapsuleData, strip_capsule_blocks
+    from flow_sdk.capsules.folder import FolderCapsule
+    from flow_sdk.fs_store.identity_carrier import Frontmatter
+    from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, merge_frontmatter
+
+    carrier = info.carrier
+    where = carrier.locate(info.layout_for(ref))
+    if isinstance(carrier, Frontmatter):
+        text = where.read_text(encoding="utf-8")
+        merged = merge_frontmatter(
+            strip_capsule_blocks(text, names={"identity"}), {"id": entity_id}, drop_keys=("asset_id",), prepend=True
+        )
+        if merged != text:
+            _atomic_write_text(where, merged)
+        folder = where.parent
+        if form == "folder-json":
+            FolderCapsule(folder).remove("identity")
+    else:
+        folder = where
+        FolderCapsule(folder).write_if_absent("identity", CapsuleData(version=1, data={"id": entity_id}))
+    flow_id = folder / ".flow" / "id"
+    if flow_id.is_file() and flow_id.read_text(encoding="utf-8").strip() == entity_id:
+        flow_id.unlink()
 
 
 async def _scan(roots: list[Any]) -> list[Any]:
@@ -172,10 +252,9 @@ async def _scan(roots: list[Any]) -> list[Any]:
     return await idx.scan(IndexerOptions(verbose=False))
 
 
-def _convert_sources(refs: list[Any], preload: Any, report: Report, *, dry_run: bool) -> None:
-    from flow_sdk.fs_store.identity_carrier import MalformedCarrier, UnclaimedPath
-    from flow_sdk.fs_store.indexer.index_function import resolve_ref_identity
-    from flow_sdk.fs_store.indexer.index_log import MALFORMED_CARRIER, ScanIssue, append_scan_issue, note_legacy_form
+def _convert_sources(refs: list[Any], report: Report, *, dry_run: bool) -> None:
+    from flow_sdk.fs_store.identity_carrier import UnclaimedPath
+    from flow_sdk.fs_store.indexer.index_log import MALFORMED_CARRIER, ScanIssue, append_scan_issue
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     for ref in refs:
@@ -184,29 +263,28 @@ def _convert_sources(refs: list[Any], preload: Any, report: Report, *, dry_run: 
             continue
         report.scanned += 1
         try:
-            found = _legacy_read(info, ref)
+            retired = _retired_read(info, ref)
         except UnclaimedPath:
             continue
-        except MalformedCarrier as exc:
+        except Exception as exc:  # noqa: BLE001 — a malformed carrier or a broken source must not abort the run
             append_scan_issue(ScanIssue(path=str(ref._path), kind=MALFORMED_CARRIER, detail=str(exc), type_name=info.type_name))
             continue
-        if found is None:
+        if retired is None:
             continue
-        form = found.source
+        form, entity_id = retired
         if dry_run:
-            note_legacy_form(ref._path, form, info.type_name)
             report.pending[form] += 1
             continue
-        try:
-            resolve_ref_identity(info, ref, preload)
-            still_legacy = _legacy_read(info, ref) is not None
-        except Exception as exc:  # noqa: BLE001 — one bad source must not abort the run
-            logger.warning("identity migration: %s at %s not converted: %s", info.type_name, ref._path, exc)
-            still_legacy = True
-        if still_legacy:
+        if getattr(ref, "read_only", False):
             report.unconverted[form] += 1
-        else:
-            report.converted[form] += 1
+            continue
+        try:
+            _convert(info, ref, form, entity_id)
+            still_retired = _retired_read(info, ref) is not None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("identity migration: %s at %s not converted: %s", info.type_name, ref._path, exc)
+            still_retired = True
+        (report.unconverted if still_retired else report.converted)[form] += 1
 
 
 # ---------------------------------------------------------------------------
@@ -262,12 +340,11 @@ async def migrate(*, dry_run: bool = True, db: Path | None = None, roots: list[A
     register_all()
     report = Report()
     started = index_log._now_iso()
-    index_log._legacy_noted.clear()   # the report lists every retired form this walk sees
     conn = _open(db)
     try:
         refs = await _scan(list(roots) if roots is not None else _roots(conn))
         types = {str(r.record_type) for r in refs if r.record_type is not None}
-        _convert_sources(refs, _preload(conn, types), report, dry_run=dry_run)
+        _convert_sources(refs, report, dry_run=dry_run)
         report.rows = plan_rows(conn)
         if report.rows and not dry_run:
             report.rows_rewritten = _rewrite_rows(conn, report.rows)

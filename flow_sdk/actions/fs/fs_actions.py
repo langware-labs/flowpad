@@ -24,6 +24,7 @@ from flow_sdk.config import default_service_config
 from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.layout import File
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError, get_entity_storage
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ async def push_entity_files_to_hub(entity) -> int:
     ALREADY remote, which is exactly the window this closes.
 
     A type opts into the record-aware transport by naming its canonical Hub
-    file in ``TypeInfo.hub_main_file``; ``TypeInfo.main_layout`` then says how:
+    file in ``TypeInfo.hub_main_file``; ``TypeInfo.shape`` then says how:
 
     * ``file`` publishes the record's main ref under its canonical Hub name;
     * ``folder`` recursively publishes the record's asset folder, preserving
@@ -214,13 +215,13 @@ async def push_entity_files_to_hub(entity) -> int:
         logger.debug(f"share: unsupported file push for {entity.typeid}: {e}")
         return 0
 
-    # Layout is TypeInfo's — ``hub_main_file`` is the opt-in, ``main_layout`` the how.
+    # Layout is TypeInfo's — ``hub_main_file`` is the opt-in, ``shape`` the how.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     _info = SchemaRegistry.get(entity.get_type())
     canonical_main = _info.hub_main_file if _info is not None else None
     if canonical_main:
-        layout = _info.main_layout
+        layout = "file" if isinstance(_info.shape, File) else "folder"
         try:
             record = await entity.get_record()
         except Exception as e:  # noqa: BLE001

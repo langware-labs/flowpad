@@ -180,7 +180,10 @@ def markdown_id(ref: FSRef) -> str:
         # bootstrap is strictly better than a silently forked document.
         raise RuntimeError("markdown TypeInfo is not registered; cannot resolve identity")
     # A read-only derive: the walk already stamped; this must never write.
-    return info.mint_entity_id(FSRef(ref._path, read_only=True, record_type=ref.record_type, scope=ref.scope))
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
+    probe = FSRef(ref._path, read_only=True, record_type=ref.record_type, scope=ref.scope)
+    return reconcile(info, info.layout_for(probe), None, None, write=False, ref=probe)
 
 
 def _derive(data: dict, root: Path, header_raw: dict, *, titled: bool) -> None:
@@ -235,7 +238,7 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     _derive(data, path or Path("Untitled.md"), fields, titled=True)
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
     # adopted; derive the stable uuid5(path) instead.
-    asset_id = adopt_entity_id(fields.get("asset_id") or fields.get("id"))
+    asset_id = adopt_entity_id(fields.get("id"))
     if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
     if asset_id:

@@ -12,6 +12,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 from tests.unit._disk import store_main
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -68,7 +69,7 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
 
     # 2. Extraction reads summary fields only — payload stays out of FTS.
     ref = FSRef(doc)
-    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, SchemaRegistry.get("agent_trace").mint_entity_id(ref))
+    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, resolve_id(SchemaRegistry.get("agent_trace"), ref))
     assert len(recs) == 1
     out = recs[0]
     assert out.id == TRACE_ID

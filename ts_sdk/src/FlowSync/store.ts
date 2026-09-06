@@ -1906,7 +1906,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * lookup (`GET /assets/entity`, backed by `Entity.get_by_asset_ref`). No
    * recovery, no discovery scan, no indexing — returns the entity or null.
    * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
-   * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
+   * `systemTools.resolveByPath` is the classifying counterpart, used only by
    * the editor view on a miss. Hydrates + caches the hit via the standard
    * dedup path.
    *

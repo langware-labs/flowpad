@@ -19,6 +19,7 @@ from flow_sdk.fs_store.indexer.functions.claude_projects import (
     extract_claude_project,
 )
 from flow_sdk.schema.type_info.project_type_info import PROJECT
+from tests.fixtures.identity import resolve_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing-project"))
@@ -42,7 +43,7 @@ async def test_existing_project_record_id_is_preserved(tmp_path: Path, existing_
     ref = _project_ref(tmp_path, cwd, encoded)
     info = PROJECT
 
-    assert info.mint_entity_id(ref) == existing_id
+    assert resolve_id(info, ref) == existing_id
     parsed = await extract_claude_project(ref, existing_id)
     assert parsed[0].id == existing_id
     assert FSRecord.discover(RecordType.PROJECT)[0].id == existing_id
@@ -56,7 +57,7 @@ async def test_missing_project_record_mints_and_persists_dns_v5() -> None:
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{Path(cwd).resolve().as_posix()}"))
 
     assert info.read_id(ref) is None
-    assert info.mint_entity_id(ref) == expected
+    assert resolve_id(info, ref) == expected
     parsed = await extract_claude_project(ref, expected)
     assert parsed[0].id == expected
     assert FSRecord.discover(RecordType.PROJECT)[0].id == expected

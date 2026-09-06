@@ -1,5 +1,6 @@
 import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Mcp, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { isFolderShape } from '@sdk/FlowSync/schema';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
@@ -146,7 +147,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
       // entity storage without a compute-node or sender-local asset_ref.
       if (!mainRef) return null;
       return {
-        fsRef: recordContentRef(mainRef, !!dataManager.getTypeInfo(typeId!.type)?.folder_backed),
+        fsRef: recordContentRef(mainRef, isFolderShape(dataManager.getTypeInfo(typeId!.type)?.shape)),
         assetType: typeId!.type,
         mainFileRef: mainRef,
       };

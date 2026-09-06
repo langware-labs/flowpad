@@ -16,9 +16,9 @@ id is stamped back. The axis is CARRIER LIVENESS:
 only the index walk, holding the complete per-type id set, may conclude a
 carrier is a fossil. A ``Foreign`` carrier (a v7, a slug) is recorded as a
 ``foreign_id`` scan issue and answered with the keyed/path v5 so the asset
-still indexes. A carrier answered by a legacy form is a ``legacy_form`` scan
-issue and, when ``write`` allows, is converted into the live form here, id
-unchanged.
+still indexes; a retired id form (``asset_id:``, the comment capsule,
+``.flow/id``) is foreign too, and its issue names the migration that
+converts it.
 """
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.fs_store.identity_carrier import Foreign, Found, Unstamped
-from flow_sdk.fs_store.indexer.index_log import FOREIGN_ID, ScanIssue, append_scan_issue, note_legacy_form
+from flow_sdk.fs_store.identity_carrier import Foreign, Found, Unstamped, foreign_detail
+from flow_sdk.fs_store.indexer.index_log import FOREIGN_ID, ScanIssue, append_scan_issue
 from flow_sdk.schema.layout import Layout
 
 
@@ -55,15 +55,8 @@ def reconcile(
         return mint_uuid(key or str(Path(layout.ref or where).resolve()), namespace=info.id_namespace)
 
     if isinstance(found, Found):
-        if found.legacy:
-            note_legacy_form(where, found.source, info.type_name)
         live = owner_row is None or found.id == owner_row or live_ids is None or found.id in live_ids
         if live:
-            if write and found.legacy and hasattr(carrier, "convert") and carrier.accepts(where):
-                try:
-                    carrier.convert(where, found)
-                except OSError:
-                    logging.debug("[asset-id] legacy conversion skipped for %s", where, exc_info=True)
             return found.id
         if owner_row and carrier.writable:
             # A fossil: syntactically valid, names no entity. The bytes stay —
@@ -74,9 +67,7 @@ def reconcile(
             )
             return owner_row
     elif isinstance(found, Foreign):
-        append_scan_issue(
-            ScanIssue(path=str(where), kind=FOREIGN_ID, detail=f"{found.source}: {found.raw!r}", type_name=info.type_name)
-        )
+        append_scan_issue(ScanIssue(path=str(where), kind=FOREIGN_ID, detail=foreign_detail(found), type_name=info.type_name))
         if owner_row and carrier.writable:
             return owner_row
         return _fallback()

@@ -5,7 +5,7 @@ slot functions:
 - ``repo_assets_fn`` emits one FSRef per ``agentic-assets/dataset/<slug>/`` folder.
 - ``extract_dataset`` parses the manifest + rows into one FSRecord with counts.
 - ``iter_examples`` normalizes both layouts into the shared ``Example`` shape.
-- ``TypeInfo.mint_id`` adopts a valid manifest id else mints a capsule v4.
+- the json capsule carries the id (a manifest id is not a carrier).
 
 Pure-sync (no scan needed): the walker is called directly with a project node.
 """
@@ -27,6 +27,7 @@ from flow_sdk.fs_store.indexer.functions.dataset import (
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 from tests.unit.test_fs_store._dataset_tree import (
     is_file as _is_file,
 )
@@ -45,7 +46,7 @@ from tests.unit.test_fs_store._dataset_tree import (
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("dataset").mint_entity_id(ref)
+    return resolve_id(SchemaRegistry.get("dataset"), ref)
 
 
 def _extract(ref: FSRef):
@@ -237,19 +238,11 @@ def test_repo_walker_no_dataset_dir(tmp_path: Path) -> None:
 
 # ── id minting ────────────────────────────────────────────────────────────────
 
-def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
-    valid = str(uuid.uuid4())  # v4 → adoptable
-    ds = _seed_csv_dataset(
-        tmp_path, "adopt", manifest={"id": valid, "data_layout": "csv"}, csv_text="input\nx\n"
-    )
-    assert _mint(FSRef(ds)) == valid
-
-
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(tmp_path, "derive", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
     first = _mint(FSRef(ds))
     second = _mint(FSRef(ds))
-    assert first == second  # idempotent (adopted from the .flow/id capsule)
+    assert first == second  # idempotent (adopted from the json capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4: a fresh random id, not uuid5(path)
 
 

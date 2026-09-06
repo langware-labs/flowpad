@@ -1,14 +1,10 @@
 """Type metadata for WHITEBOARD."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    folder_capsule_id,
-    folder_capsule_json_id,
     frontmatter_identity,
-    in_folder,
 )
 from flow_sdk.fs_store.indexer.functions.whiteboard import (
     extract_whiteboard,
     whiteboard_asset_hash,
-    whiteboard_id_from_folder,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import Folder
@@ -26,12 +22,12 @@ WHITEBOARD = TypeInfo(
     index_fields=["description"],
     asset_class="repo",
     family="whiteboard",
-    # The folder's main doc — drives the share id-pin (TypeInfo.main_file) and
+    # The folder's main doc — drives the share id-pin (``Folder.main``) and
     # stabilizes asset_ref/hash (without it asset_ref was the bare folder and the
     # index hash oscillated, making receive intermittent).
     shape=Folder(main="WHITE_BOARD.md"),
     editor="whiteboard",
     from_disk_fn=extract_whiteboard,
-    identity_carrier=frontmatter_identity(folder_capsule_json_id, in_folder(folder_capsule_id), in_folder(whiteboard_id_from_folder)),
+    identity_carrier=frontmatter_identity(),
     asset_hash_fn=whiteboard_asset_hash,
 )

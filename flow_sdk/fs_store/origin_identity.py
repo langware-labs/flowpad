@@ -51,5 +51,14 @@ async def stamp(entity: Any, origin_id: str, *, reload: bool = True) -> None:
         except Exception:  # noqa: BLE001
             current = entity
     if current is not None and current.origin_id != origin_id:
+        # Row-only: an origin id is never in the asset's bytes, and a source
+        # that does not own its bytes (a git working tree) must not be
+        # re-serialized — or re-stamped — by this save.
+        from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE  # noqa: PLC0415
+
         current.origin_id = origin_id
-        await current.save()
+        token = _SUPPRESS_STORE.set(True)
+        try:
+            await current.save()
+        finally:
+            _SUPPRESS_STORE.reset(token)

@@ -17,24 +17,21 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule, CapsuleData, CapsuleSpec
-from flow_sdk.fs_store.identity_carrier import Derived, Frontmatter, JsonRoot, MalformedCarrier
+from flow_sdk.fs_store.identity_carrier import Derived, Frontmatter, JsonRoot, MalformedCarrier, Sidecar
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.indexer.index_log import read_scan_issues
 from flow_sdk.fs_store.indexer.reconcile import reconcile
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.layout import File, Folder
 
 CARRIER = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 OWNER = "11111111-2222-4333-8444-555555555555"
 OTHER = "99999999-8888-4777-8666-555555555555"
-IDENTITY = CapsuleSpec("identity", 1)
 
 
 def _info(*, stable: bool = False, carrier=None) -> TypeInfo:
     return TypeInfo(
-        type_name="probe", capsules=(IDENTITY,),
+        type_name="probe",
         identity_carrier=carrier or Frontmatter(),
         id_stable_key_fn=(lambda ref: "stable-key") if stable else None,
     )
@@ -150,19 +147,13 @@ def test_json_root_restamp_preserves_sibling_keys(tmp_path: Path) -> None:
     assert data["id"] == OWNER and data["kept"] == [1, 2] and data["nested"] == {"a": 1}
 
 
-def test_legacy_capsule_converts_only_when_writing(tmp_path: Path) -> None:
-    path = _md(tmp_path, "---\ntitle: Note\n---\n\nbody\n")
-    AssetCapsule.from_path(path).write("identity", CapsuleData(1, {"id": CARRIER}))
-    info = _info(carrier=frontmatter_identity())
-    assert _run(info, path, write=False) == CARRIER and "flowpad:capsule" in path.read_text(encoding="utf-8")
-    assert _run(info, path, write=True) == CARRIER
-    assert "flowpad:capsule" not in path.read_text(encoding="utf-8") and _fm_id(path) == CARRIER
-
-
 def test_malformed_carrier_raises_even_with_an_owner(tmp_path: Path) -> None:
-    path = _md(tmp_path, "<!-- flowpad:capsule identity\nversion: [\nflowpad:endcapsule identity -->\n")
+    folder = tmp_path / "asset"
+    (folder / ".flow" / "capsules").mkdir(parents=True)
+    (folder / ".flow" / "capsules" / "identity.json").write_text("{", encoding="utf-8")
+    info = TypeInfo(type_name="probe", shape=Folder(), identity_carrier=Sidecar())
     with pytest.raises(MalformedCarrier):
-        _run(_info(carrier=frontmatter_identity()), path, OWNER, {OWNER})
+        _run(info, folder, OWNER, {OWNER})
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the read-only bit")
