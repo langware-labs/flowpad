@@ -180,3 +180,39 @@ describe('AddPeopleDialog — uploading a CSV', () => {
     expect(h.mutateAsync.mock.calls[0][0].existing).toHaveLength(1);
   });
 });
+
+/**
+ * The whole sheet is weighed at once against what the team pool has left. Row by row would wave
+ * through forty $10 allowances against a pool holding $50 — each one fits, the sheet does not.
+ */
+/**
+ * A sheet is NOT weighed against what the team has left. Over-allocation is a state the hub
+ * supports and the budgets page explains: every hop's cap is checked when the money is SPENT, so
+ * the team's own ceiling bounds its whole roster however the shares inside it are written.
+ */
+describe('AddPeopleDialog — more than the team has left', () => {
+  function typeRow(index: number, email: string, budget: string) {
+    if (index > 0) fireEvent.click(screen.getByTestId('add-person-row'));
+    fireEvent.change(screen.getByTestId(`add-person-email-${index}`), { target: { value: email } });
+    fireEvent.change(screen.getByTestId(`add-person-budget-${index}`), { target: { value: budget } });
+  }
+
+  it('sends a sheet that comes to more than the pool holds', async () => {
+    h.mutateAsync.mockResolvedValue({ added: ['a@example.com', 'b@example.com'], updated: [], failed: [] });
+    draw();
+    typeRow(0, 'a@example.com', '40');
+    typeRow(1, 'b@example.com', '40');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
+  });
+
+  it('sends a row with no amount at all — blank is "no cap of their own", not "unbounded spend"', async () => {
+    h.mutateAsync.mockResolvedValue({ added: ['a@example.com'], updated: [], failed: [] });
+    draw();
+    typeRow(0, 'a@example.com', '');
+    fireEvent.click(screen.getByTestId('add-people-submit'));
+
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
+  });
+});

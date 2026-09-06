@@ -74,6 +74,10 @@ class Capability(Entity):
     reference_kind: str | None = APIField(default=None)
     # Prompt the install agentic process runs with (None → registry default).
     install_prompt: str | None = APIField(default=None)
+    # The install one-liner for THIS machine, resolved from the spec's
+    # per-platform table (CapabilitySpec.install_command). None → no unattended
+    # installer for this capability/platform, and the UI offers no auto-install.
+    install_command: str | None = APIField(default=None)
     # Discovered typed value (mirror of the discovery dict — see
     # core/capabilities/discovery.py). None ⇔ capability absent. value_type
     # is the spec's static RecordType (e.g. "folder" → value is the FSRef
@@ -155,6 +159,7 @@ class Capability(Entity):
             runnable=spec.runnable,
             reference_kind=spec.reference_kind,
             install_prompt=spec.install_prompt,
+            install_command=spec.install_command,
             system=True,
         )
 
@@ -189,6 +194,10 @@ class Capability(Entity):
                 "dependent_capability_kinds",
                 "runnable",
                 "install_prompt",
+                # Platform-resolved, so it MUST reconcile: a row seeded on one
+                # machine (or before the command existed) otherwise keeps a
+                # command for the wrong OS forever.
+                "install_command",
                 "uname",
                 "system",
             ):

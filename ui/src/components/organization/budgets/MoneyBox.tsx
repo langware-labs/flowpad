@@ -8,6 +8,17 @@
  *
  * It commits rather than saving per keystroke because each save is a hub write, and because a
  * half-typed "5" on the way to "50" is a real cap the person did not mean.
+ *
+ * **It does not refuse an amount for being larger than the pool above it has left**, because that
+ * is not an error: the hub lets a pool promise more than it holds and settles it at SPEND time, by
+ * walking every hop of the chain (`core/llm/limits.check_path`) and refusing at the first hop whose
+ * limit is used up. Ten people may each hold $10 of a $10 team pot; the team's $10 is still all
+ * anyone gets between them, first come first served. Nothing here is narrowed by the hub either --
+ * `validate_child_write` judges sources, cycles and filters, and does not look at limits at all.
+ *
+ * Refusing it in the box was a straight contradiction of the page's own over-allocation banner,
+ * which says "Nothing is blocked -- whoever spends last will be refused once the money runs out".
+ * That banner is the truthful surface for this state, so it stays and the refusal is gone.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
@@ -49,14 +60,22 @@ export function MoneyBox({ value, onCommit, disabled, ariaLabel, ...rest }: Mone
     setBad(false);
   }, [value]);
 
+  const clear = () => {
+    setBad(false);
+  };
+
   const commit = () => {
     const parsed = parseMoney(draft);
     if (parsed === undefined) {
       setBad(true);
       return;
     }
-    setBad(false);
-    if (parsed !== value) onCommit(parsed);
+    if (parsed === value) {
+      clear();
+      return;
+    }
+    clear();
+    onCommit(parsed);
   };
 
   return (
@@ -80,7 +99,7 @@ export function MoneyBox({ value, onCommit, disabled, ariaLabel, ...rest }: Mone
             }
             if (e.key === 'Escape') {
               setDraft(toText(value));
-              setBad(false);
+              clear();
             }
           }}
         />

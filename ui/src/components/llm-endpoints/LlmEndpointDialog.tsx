@@ -250,6 +250,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
               </div>
               <CredentialField
                 endpointId={editing?.id}
+                provider={draft.provider}
                 credentialHint={storedHint}
                 placeholder={spec?.keyPlaceholder}
                 value={draft.key}

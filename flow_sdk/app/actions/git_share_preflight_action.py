@@ -16,9 +16,18 @@ Returns ``{available, reason, code, git_origin}``:
   * ``code`` — a stable machine code for the same states (tests / UI branching).
   * ``git_origin`` — the derived ``GitOrigin`` dict when available, else None.
 
+The module also owns the mirror-image question, for the RECEIVING end:
+
+  GET /api/v1/graph/<type>/<id>/git_anonymous_access
+
+``{public, repo, clone_url, code, reason}`` — could a stranger clone this repo?
+Preflight says the sender may publish; this says whether anyone they publish to
+will be able to read it. See ``git_anonymous_access``.
+
 The git reads are the same blocking subprocesses ``GitOrigin.for_asset_path``
 runs; they go through ``asyncio.to_thread`` to stay off the event loop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -217,3 +226,74 @@ async def git_share_preflight_action() -> ApiResponse:
     except Exception as e:  # noqa: BLE001 — preflight must fail closed, never 500 the dialog
         logger.error("[git-preflight] error for %s: %s", typeid, e, exc_info=True)
         return ApiSuccessResponse(data=_result("status-failure"))
+
+
+async def git_anonymous_access(entity_type: str, entity_id: str) -> dict:
+    """Could someone with NO GitHub credential clone this asset's repository?
+
+    The sender-side question ``git_share_preflight`` cannot answer. Preflight is
+    about whether the sender's tree is publishable; this is about whether the
+    people on the other end will be able to read what was published. A private
+    repo shares perfectly well and then fails to open for every recipient who
+    isn't already a collaborator on it — Flowpad grants Flowpad membership, never
+    GitHub access — so the admin doing the sharing is told before, not after.
+
+    The probe is ``git ls-remote`` with the caller's own credential helpers
+    switched off (``ignore_local_credentials``). That is the whole point: run
+    with them, the admin's keychain answers and every repo they can read looks
+    public.
+
+    Returns ``{public, repo, clone_url, code, reason}`` where ``public`` is
+    ``None`` when there is no repository to ask about (``code`` says why).
+    """
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+    from flow_sdk.utils.git import git_remote_access  # noqa: PLC0415
+
+    def _unknown(code: str) -> dict:
+        return {"public": None, "repo": None, "clone_url": None, "code": code, "reason": _REASONS.get(code, code)}
+
+    src_root = await _resolve_asset_git_path(entity_type, entity_id)
+    if not src_root:
+        return _unknown("unresolved-folder" if entity_type == EntityType.FOLDER.value else "not-file-backed")
+
+    repo_cache: dict = {}
+    repo_root = await asyncio.to_thread(find_project_root, src_root)
+    if not repo_root:
+        return _unknown("not-in-repo")
+
+    origin = await asyncio.to_thread(GitOrigin.for_asset_path, src_root, repo_cache)
+    if origin is None:
+        remote = await asyncio.to_thread(git_remote_url, repo_root)
+        return _unknown("missing-remote" if not remote else "unsupported-origin")
+
+    clone_url = origin.clone_url()
+    reachable, _branch = await git_remote_access(clone_url, ignore_local_credentials=True)
+    return {
+        "public": bool(reachable),
+        "repo": f"{origin.owner}/{origin.name}",
+        "clone_url": clone_url,
+        "code": None,
+        "reason": None,
+    }
+
+
+@action.get(action_name="git_anonymous_access", types="all")
+async def git_anonymous_access_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    typeid = request_info.target_entity_typeid
+    try:
+        return ApiSuccessResponse(data=await git_anonymous_access(typeid.type, str(typeid.id)))
+    except Exception as e:  # noqa: BLE001 — an unreadable remote must not 500 the dialog
+        logger.error("[git-anon] error for %s: %s", typeid, e, exc_info=True)
+        return ApiSuccessResponse(
+            data={
+                "public": None,
+                "repo": None,
+                "clone_url": None,
+                "code": "status-failure",
+                "reason": _REASONS["status-failure"],
+            }
+        )

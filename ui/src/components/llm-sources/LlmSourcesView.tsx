@@ -13,6 +13,7 @@
 import {
   LLMFundingKind,
   llmSourceRef,
+  sameLlmSource,
   selectKindFor,
   type LLMEndpointOffer,
   type LLMSource,
@@ -36,7 +37,7 @@ import { notify } from '@src/notifications';
 
 import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
 import { harnessKinds, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
-
+import { visibleSources } from './visible-sources';
 
 /** Vendor label from the ONE table, falling back to the raw worker so a harness added to the
  *  capability registry renders as itself rather than not at all. */
@@ -50,6 +51,7 @@ function SourceRow({
   harness,
   navigation,
   onSelect,
+  inUse,
   busy,
 }: {
   source: LLMSource;
@@ -58,6 +60,10 @@ function SourceRow({
   endpoint: LLMEndpointOffer | undefined;
   harness: string;
   navigation: NavigationActions;
+  /** Whether this row is what the resolver actually landed on. Comes from `status.resolved`,
+   *  NOT from `source.auto`: these rows are offers, judged without the preference overlay, so
+   *  `auto` here means "would win if nothing were chosen" — several rows can carry it. */
+  inUse: boolean;
   onSelect: (s: LLMSource) => void;
   busy: boolean;
 }) {
@@ -66,6 +72,11 @@ function SourceRow({
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
+  //
+  // Correct only because `source` is an OFFER: judged on the login itself, so ineligible means
+  // signed out and nothing else. Fed the resolver's overlaid list this fired on a perfectly good
+  // login that a preference had ruled out, and offered a Sign in button that could not help —
+  // the one screen that could clear the preference refusing to.
   const needsSignIn = endpoint?.kind === LLMFundingKind.Device && !source.eligible;
   // The same escape hatch, one kind over. An unkeyed provider used to render the
   // problem ("no openrouter key is stored on this machine") beside a disabled
@@ -79,22 +90,14 @@ function SourceRow({
       className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2"
       data-testid={`llm-source-row-${worker}-${endpoint?.kind ?? 'unknown'}${endpoint?.provider ? `-${endpoint.provider}` : ''}`}
     >
-      <span
-        className={`h-2 w-2 shrink-0 rounded-full ${dotFor(source)}`}
-        title={source.authority}
-      />
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dotFor(source)}`} title={source.authority} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm">{source.name}</span>
-          {source.auto && (
+          {inUse && (
             <Badge variant="outline" className={TONE.emerald}>
               <Check className="mr-1 h-3 w-3" />
               <Trans>in use</Trans>
-            </Badge>
-          )}
-          {source.origin !== 'default' && (
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              {source.origin}
             </Badge>
           )}
         </div>
@@ -117,7 +120,12 @@ function SourceRow({
         </Button>
       )}
       {needsSignIn ? (
-        <Button size="sm" variant="outline" onClick={() => openHarnessLoginModal()} data-testid={`llm-source-signin-${worker}`}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openHarnessLoginModal()}
+          data-testid={`llm-source-signin-${worker}`}
+        >
           <Trans>Sign in</Trans>
         </Button>
       ) : needsKey ? (
@@ -133,12 +141,12 @@ function SourceRow({
       ) : (
         <Button
           size="sm"
-          variant={source.auto ? 'secondary' : 'outline'}
-          disabled={!source.eligible || source.auto || busy}
+          variant={inUse ? 'secondary' : 'outline'}
+          disabled={!source.eligible || inUse || busy}
           onClick={() => onSelect(source)}
           data-testid={`llm-source-use-${worker}-${endpoint?.kind ?? 'unknown'}`}
         >
-          {source.auto ? <Trans>Using</Trans> : <Trans>Use</Trans>}
+          {inUse ? <Trans>Using</Trans> : <Trans>Use</Trans>}
         </Button>
       )}
     </li>
@@ -155,10 +163,10 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   // A verdict names an endpoint and mirrors none of its fields, so every render that wants a
   // kind, a provider or a model looks the row up here. Undefined only if the backend listed a
   // verdict whose endpoint it did not also send; callers degrade rather than throw.
-  const endpointFor = useCallback(
-    (source: LLMSource) => status?.endpoints?.[source.endpoint_typeid],
-    [status],
-  );
+  const endpointFor = useCallback((source: LLMSource) => status?.endpoints?.[source.endpoint_typeid], [status]);
+  // Which source a harness actually landed on. The rows are offers and carry no such answer —
+  // `auto` on an offer means "would win if nothing were chosen", which is true of several at once.
+  const resolvedFor = useCallback((kind: string) => status?.resolved?.[kind] ?? undefined, [status]);
   const worker = parseLlmSourcesPointer(pointer);
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
@@ -238,7 +246,11 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
               data-testid={`llm-sources-chip-${chipWorker}`}
             >
               <div className="font-medium">{labelFor(chipWorker)}</div>
-              <div className="text-muted-foreground">{pick ? `→ ${pick.name}` : t`nothing eligible`}</div>
+              {/* The backend owns this sentence too: `sources` is the un-overlaid offer list, so a
+                  preference nothing can satisfy shows up here rather than on the rows. */}
+              <div className="text-muted-foreground">
+                {pick ? `→ ${pick.name}` : status.blocked[kind] || t`nothing eligible`}
+              </div>
             </button>
           );
         })}
@@ -247,7 +259,10 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
       {focused && (
         <section className="flex flex-col gap-3" data-testid="llm-sources-list">
           {GROUPS.map(([kind, heading]) => {
-            const rows = (status.sources[focused] ?? []).filter((s) => endpointFor(s)?.kind === kind);
+            // Not `status.sources` directly: the hub group is narrowed to the budgets allocated
+            // to this person, so an owner does not have to read past their org's and their teams'
+            // pools to find their own. See `visible-sources.ts` for what it refuses to hide.
+            const rows = visibleSources(status, focused, kind);
             if (!rows.length) return null;
             return (
               <div key={kind}>
@@ -263,6 +278,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
                       endpoint={endpointFor(source)}
                       harness={focused}
                       navigation={navigation}
+                      inUse={!!resolvedFor(focused) && sameLlmSource(source, resolvedFor(focused)!)}
                       busy={select.isPending}
                       onSelect={(s) => void onSelect(focused, s)}
                     />

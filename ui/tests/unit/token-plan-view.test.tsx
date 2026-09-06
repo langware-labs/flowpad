@@ -215,7 +215,9 @@ describe('TokenPlanView', () => {
     h.me.mockResolvedValue(plan([meScope, teamScope, { ...orgScope, can_configure: true }]));
     renderView('org');
     await userEvent.click(await screen.findByTestId('scope-setup-run'));
-    await waitFor(() => expect(h.setupOrg).toHaveBeenCalledTimes(1));
+    // With the org's id: `setup` is an action ON the organization, so the caller names which one
+    // and the hub checks their roles on that entity. An id-less call had no target to check.
+    await waitFor(() => expect(h.setupOrg).toHaveBeenCalledWith('o'));
     expect(h.setupTeam).not.toHaveBeenCalled();
   });
 

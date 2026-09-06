@@ -79,7 +79,19 @@ describe('shareEndpointByEmail', () => {
     const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['a@x.com', 'b@x.com', 'c@x.com']);
 
     expect(outcome.granted).toEqual(['a@x.com', 'c@x.com']);
-    expect(outcome.failed).toEqual([{ email: 'b@x.com', reason: 'Only the owner may invite' }]);
+    expect(outcome.failed).toEqual([{ email: 'b@x.com', reason: 'Only the owner may invite', accessLanded: false }]);
+  });
+
+  it('marks a mail failure as one where the access still landed', async () => {
+    // `addOne` undoes its allocation when a share fails; on 5xx the role edge was already written,
+    // so this flag is what stops the undo from taking back a share that worked.
+    const inviteMember = vi.fn().mockRejectedValue(hubError(502));
+
+    const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['b@x.com']);
+
+    expect(outcome.failed).toEqual([
+      { email: 'b@x.com', reason: 'Access granted, but the invitation email failed to send', accessLanded: true },
+    ]);
   });
 
   it('counts an existing member as granted', async () => {

@@ -68,6 +68,10 @@ export interface ICapability extends IEntity {
   reference_kind?: string | null;
   /** Prompt the install agentic process runs with (null → backend default). */
   install_prompt?: string | null;
+  /** One-liner that installs this capability on THIS machine, resolved by the
+   *  backend from its per-platform table (`CapabilitySpec.install_commands`).
+   *  Null → no unattended installer, so no auto-install affordance. */
+  install_command?: string | null;
   /** Discovered typed value (null ⇔ capability absent). For harness CLIs an
    *  FSRef dict of the bin folder — the same value workers spawn with. */
   value?: Record<string, unknown> | null;
@@ -123,6 +127,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   dependent_capability_kinds: string[] = [];
   reference_kind: string | null = null;
   install_prompt: string | null = null;
+  install_command: string | null = null;
   value: Record<string, unknown> | null = null;
   value_type: string | null = null;
   state: CapabilityState = 'none';
@@ -151,6 +156,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.dependent_capability_kinds = entity.dependent_capability_kinds ?? this.dependent_capability_kinds;
     this.reference_kind = entity.reference_kind ?? this.reference_kind;
     this.install_prompt = entity.install_prompt ?? this.install_prompt;
+    this.install_command = entity.install_command ?? this.install_command;
     this.value = entity.value ?? this.value;
     this.value_type = entity.value_type ?? this.value_type;
     this.state = entity.state ?? this.state;

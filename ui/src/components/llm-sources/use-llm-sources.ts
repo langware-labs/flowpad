@@ -26,7 +26,7 @@ export function useLlmSources() {
     queryFn: () => llmSourcesService.status(),
     staleTime: 10_000,
   });
-  return { status: (data ?? null) as LLMFundingStatus | null, isLoading };
+  return { status: data ?? null, isLoading };
 }
 
 /** Choose which source funds a harness. One write, straight through the SDK — the page never
@@ -72,7 +72,9 @@ export function endpointOf(
   return source ? status?.endpoints?.[source.endpoint_typeid] : undefined;
 }
 
-/** Every source that could fund `kind`, narrowed to one funding kind. */
+/** Every source `kind` HAS, narrowed to one funding kind. These are offers — judged on their own
+ *  credential, without the preference overlay — so `eligible` here means the source itself is
+ *  usable, and "which one is in use" comes from `status.resolved` instead. */
 export function sourcesOfKind(
   status: LLMFundingStatus | null | undefined,
   kind: string,
