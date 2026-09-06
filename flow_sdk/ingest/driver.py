@@ -197,6 +197,12 @@ class IngestDriver:
     #: the same way ``channel_for`` is — a driver that cannot send simply omits
     #: ``send`` and leaves this False, and stays a three-line class.
     sends: bool = False
+    #: Whether strangers are the POINT of this channel. The agent runner admits
+    #: an inbound author only when the source's allowlist names them — empty
+    #: admits nobody, which is right for a mailbox holding tools. A help desk
+    #: exists to answer people nobody listed, so its driver declares this and an
+    #: EMPTY allowlist admits everyone; a non-empty one still restricts.
+    open_inbound: bool = False
     #: The config field that names WHICH remote account/feed-set a source of
     #: this provider serves — the natural key a caller (e.g. ``blocks.Inbox``)
     #: matches on to reuse an existing source instead of minting a twin.

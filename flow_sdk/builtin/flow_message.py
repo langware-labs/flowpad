@@ -522,6 +522,16 @@ class FlowMessage(Entity):
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     _api_visible: ClassVar[bool] = True
 
+    #: Written by the inbox projection, never by the hub: a hub payload never
+    #: carries them, and letting its absence blank them would strip a projected
+    #: message of its channel (`origin`) and its thread the moment the mirror
+    #: refreshes it — the help desk's rows are written by both.
+    PROJECTION_OWNED: ClassVar[frozenset[str]] = frozenset({"origin", "thread_id", "reply_to_id"})
+
+    @classmethod
+    def fields_not_accepted_from_hub(cls) -> frozenset[str]:
+        return super().fields_not_accepted_from_hub() | cls.PROJECTION_OWNED
+
     @classmethod
     def is_stale(cls, local, hub_payload):  # type: ignore[override]
         """LWW staleness, with a *touch* guard on top of the base date compare.

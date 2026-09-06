@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   Archive,
   Inbox as InboxIcon,
-  LifeBuoy,
   Mail,
   MailOpen,
   MailPlus,
@@ -31,15 +30,11 @@ import {
   declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
-  dataContext,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
   leaveConversation,
-  listHelpdeskTickets,
-  pickupConversation,
   unarchiveConversation,
-  type HelpdeskTicket,
   latestPointer,
   type AgentInboxScope,
 } from '@sdk';
@@ -94,7 +89,7 @@ function formatGmailTime(iso?: string | Date | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
-type InboxViewMode = 'inbox' | 'unread' | 'archived' | 'helpdesk';
+type InboxViewMode = 'inbox' | 'unread' | 'archived';
 
 interface ConversationListRowProps {
   conv: Conversation;
@@ -460,7 +455,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   // — only gates the empty state; the unread NUMBER is backend-owned.
   const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
   // Whose channels the header line shows: the agent's on an agent inbox, else
   // the local user's — absent until that typeid is known, so no empty bar flashes.
@@ -907,50 +901,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
-  const inHelpdeskView = viewMode === 'helpdesk';
-
-  // Staff helpdesk ticket queue. Sourced from the hub (not local entities)
-  // because unpicked tickets don't fan out to non-participants — see
-  // listHelpdeskTickets / hub Project.helpdesk_conversations.
-  const [helpdeskTickets, setHelpdeskTickets] = useState<HelpdeskTicket[]>([]);
-  const [helpdeskLoading, setHelpdeskLoading] = useState(false);
-  const [pickingUpId, setPickingUpId] = useState<string | null>(null);
-  const loadHelpdeskTickets = useCallback(async () => {
-    setHelpdeskLoading(true);
-    try {
-      const res = await listHelpdeskTickets(dataContext.project?.id);
-      setHelpdeskTickets(res.tickets ?? []);
-    } catch (err) {
-      console.error('[inbox] failed to load help desk tickets', err);
-      setHelpdeskTickets([]);
-    } finally {
-      setHelpdeskLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    if (inHelpdeskView) void loadHelpdeskTickets();
-  }, [inHelpdeskView, loadHelpdeskTickets]);
-
-  // Open a queued ticket: pick it up first (joins the roster so the caller can
-  // read + reply) unless already joined, then navigate to it.
-  const handleOpenTicket = useCallback(
-    async (ticket: HelpdeskTicket) => {
-      if (!ticket.picked_up) {
-        setPickingUpId(ticket.conversation_id);
-        try {
-          await pickupConversation(ticket.conversation_id);
-        } catch (err) {
-          console.error('[inbox] pickup failed', ticket.conversation_id, err);
-          setPickingUpId(null);
-          return;
-        }
-        setPickingUpId(null);
-      }
-      navigation.openDock(DockPointer.forConversation(ticket.conversation_id));
-    },
-    [navigation],
-  );
-
   // Segmented view pill — Inbox | Unread | Archived. Active mode is filled,
   // inactive is ghost. Count badge sits inside the active pill so it
   // reflects exactly what the user is looking at.
@@ -1000,13 +950,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {renderViewPill('inbox', t`Inbox`, InboxIcon)}
             {renderViewPill('unread', t`Unread`, MailPlus)}
             {renderViewPill('archived', t`Archived`, Archive)}
-            {!agentId && renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
           {/* Text search — filters the list below to conversations whose
-              messages contain the query, spanning archived rows. Hidden in
-              the Help Desk view (hub-sourced tickets, not local messages). */}
-          {!inHelpdeskView && (
-            <div className="relative ms-2 flex items-center">
+              messages contain the query, spanning archived rows. */}
+          <div className="relative ms-2 flex items-center">
               <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
@@ -1029,7 +976,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 </button>
               )}
             </div>
-          )}
         </div>
         {/* CENTER — new conversation / new contacts group */}
         {!agentId && <div className="flex shrink-0 items-center">
@@ -1058,7 +1004,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
         </div>}
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
-          {selectedCount > 0 && !inHelpdeskView ? (
+          {selectedCount > 0 ? (
             <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
               <span className="me-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
                 <Trans>{selectedCount} selected</Trans>
@@ -1118,20 +1064,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             </div>
           ) : (
             <>
-              {inHelpdeskView && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => void loadHelpdeskTickets()}
-                  disabled={helpdeskLoading}
-                  title={t`Refresh help desk tickets`}
-                  data-testid="inbox-helpdesk-refresh-button"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
-              {!inArchivedView && !inHelpdeskView && (
+              {!inArchivedView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1144,7 +1077,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
               )}
               {/* Archive all archives every conversation regardless of read state;
               hide it in the Archived view where it makes no sense. */}
-              {!inArchivedView && !inUnreadView && !inHelpdeskView && (
+              {!inArchivedView && !inUnreadView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1169,83 +1102,26 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   <Trans>Delete all</Trans>
                 </Button>
               )}
-              {!inHelpdeskView && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => void handleRefresh()}
-                  disabled={fetching}
-                  title={t`Fetch new messages from hub`}
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => void handleRefresh()}
+                disabled={fetching}
+                title={t`Fetch new messages from hub`}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+              </Button>
             </>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Help-desk staff queue — hub-sourced tickets, including unpicked ones
-            that don't appear in the local conversation list. */}
-        {inHelpdeskView && helpdeskLoading && helpdeskTickets.length === 0 && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            <Trans>Loading…</Trans>
-          </div>
-        )}
-        {inHelpdeskView && !helpdeskLoading && helpdeskTickets.length === 0 && (
-          <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm">
-              <Trans>No help desk tickets</Trans>
-            </span>
-            <Button variant="outline" size="sm" onClick={() => void loadHelpdeskTickets()} disabled={helpdeskLoading}>
-              <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
-              <Trans>Refresh</Trans>
-            </Button>
-          </div>
-        )}
-        {inHelpdeskView &&
-          helpdeskTickets.map((ticket) => (
-            <div
-              key={ticket.conversation_id}
-              className="group flex items-center gap-2 border-b px-3 py-2 hover:bg-muted/40"
-              data-testid="helpdesk-ticket-row"
-              data-conversation-id={ticket.conversation_id}
-            >
-              <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-foreground">
-                  {ticket.title || ticket.preview || t`Support ticket`}
-                </div>
-                {ticket.preview && ticket.title && (
-                  <div className="truncate text-xs text-muted-foreground">{ticket.preview}</div>
-                )}
-              </div>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                <Trans>{ticket.message_count} msg</Trans>
-              </span>
-              {ticket.picked_up && (
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Trans>Joined</Trans>
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => void handleOpenTicket(ticket)}
-                disabled={pickingUpId === ticket.conversation_id}
-                className="shrink-0 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                data-testid="helpdesk-ticket-pickup-button"
-              >
-                {pickingUpId === ticket.conversation_id ? t`Picking up…` : ticket.picked_up ? t`Open` : t`Pick up`}
-              </button>
-            </div>
-          ))}
-
         {/* The header line: select-all on the left, the owner's attached channels
             on the right. Rendered even with no conversations — the channels are
             how one gets some. */}
-        {!inHelpdeskView && !initialLoading && (
+        {!initialLoading && (
           <div
             className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
             data-testid="inbox-select-all-row"
@@ -1277,13 +1153,13 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!inHelpdeskView && initialLoading && (
+        {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
 
-        {!inHelpdeskView && !initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
+        {!initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive
@@ -1303,11 +1179,11 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!agentId && !inHelpdeskView && !inArchivedView && !initialLoading && (
+        {!agentId && !inArchivedView && !initialLoading && (
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
-        {!inHelpdeskView &&
+        {
           !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow

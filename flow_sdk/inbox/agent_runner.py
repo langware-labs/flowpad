@@ -60,12 +60,35 @@ async def _conversation_id_for(item, source) -> Optional[str]:
     derivation here would answer with the pre-merge id and split the session.
     """
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-    from flow_sdk.inbox.projection import channel_of, thread_key_for  # noqa: PLC0415
-
-    thread = await MessageThread.find_existing(
-        channel_of(source), thread_key_for(item, item.name or "")
+    from flow_sdk.inbox.projection import (  # noqa: PLC0415
+        channel_of,
+        owner_of,  # noqa: PLC0415
+        thread_key_for,
     )
+
+    channel, key = channel_of(source), thread_key_for(item, item.name or "")
+    # Owner-scoped, the way `resolve_thread` writes it — with the same fallback
+    # to a pre-owner row, so a legacy thread keeps answering after the upgrade.
+    thread = await MessageThread.find_existing(channel, key, await owner_of(source))
+    if thread is None:
+        thread = await MessageThread.find_unowned(channel, key)
     return str(getattr(thread, "conversation_id", "") or "") or None
+
+
+def _admits(source, inbox, author: str) -> bool:
+    """Whether `author` may drive the agent through this source.
+
+    The allowlist is the rule; `open_inbound` is a driver's declaration that
+    strangers are the point of its channel (a help desk), under which an EMPTY
+    list admits everyone. A non-empty list restricts either way, and a paused
+    source admits nobody either way.
+    """
+    if inbox.allowed(author):
+        return True
+    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+    driver = get_driver(getattr(source, "provider", "") or "")
+    return bool(driver is not None and driver.open_inbound and inbox.is_active and not inbox.allowed_senders)
 
 
 def _is_own_outgoing(item, source) -> bool:
@@ -176,7 +199,7 @@ async def handle_inbound(item) -> bool:
     # so a Hub round trip here would put the network on the path of every piece of
     # mail, including the ones we are about to ignore.
     inbox = EmailInbox.from_source(source)
-    if not inbox.allowed(item.author_external_id or ""):
+    if not _admits(source, inbox, item.author_external_id or ""):
         logger.info("[agent-mail] ignoring mail to %s from unlisted sender", agent.name or agent.id)
         return False
 
