@@ -3,23 +3,20 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Checkbox, shadcn-shaped.
- *
- * Native `<input type="checkbox">` rather than `@radix-ui/react-checkbox`,
- * which is NOT in this template's dependencies. It keeps the usual
- * `checked` / `onCheckedChange` surface so code written against the shadcn
- * component works unchanged, and `onChange` still fires for anything expecting
- * the DOM event.
+ * Native `<input type="checkbox">` — `@radix-ui/react-checkbox` is not a template
+ * dependency. It keeps shadcn's `onCheckedChange`, but NOT shadcn's styling
+ * contract: colour the checked state with `accent-*`, not `data-[state=checked]:*`.
  */
-export interface CheckboxProps extends Omit<React.ComponentProps<"input">, "type"> {
-  onCheckedChange?: (checked: boolean) => void;
-}
-
-const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
-  ({ className, onCheckedChange, onChange, ...props }, ref) => (
+function Checkbox({
+  className,
+  onCheckedChange,
+  onChange,
+  ...props
+}: React.ComponentProps<"input"> & { onCheckedChange?: (checked: boolean) => void }) {
+  return (
     <input
       type="checkbox"
-      ref={ref}
+      data-slot="checkbox"
       className={cn(
         "peer h-4 w-4 shrink-0 cursor-pointer rounded-sm border border-primary shadow accent-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
@@ -30,8 +27,7 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
       }}
       {...props}
     />
-  ),
-);
-Checkbox.displayName = "Checkbox";
+  );
+}
 
 export { Checkbox };

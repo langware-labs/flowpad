@@ -14,29 +14,28 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates git gnupg \
  && rm -rf /var/lib/apt/lists/*
 
-# Node 20 (current LTS) — required to install the @anthropic-ai/claude-code CLI
-# globally. The QA cycle's "spawn Claude session" scenarios shell out to
-# ``claude`` from the agentic_process PTY; without it every such test fails
-# with "command not found: claude".
+# Node 20 (current LTS). The harness CLIs below are npm globals, and the QA
+# cycle's scenarios shell out to them from the agentic_process PTY.
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-# All four agentic harnesses, so a scenario can be run across every worker in the
-# same container rather than proving one and assuming the rest. Binary names are
-# what the drivers shell out to: claude / codex / copilot / opencode
-# (``flow_sdk/flowpad_types/vendors.py``).
+# All four harnesses (binary names the drivers shell out to — see
+# ``flow_sdk/flowpad_types/vendors.py``). claude is pinned because its releases
+# have broken worker spawning before, and an unpinned harness turns "we changed
+# the model" into "we changed the model and the CLI".
 #
-# claude is PINNED. Its releases have broken worker spawning before (2.1.209),
-# and an unpinned harness turns "we changed the model" into "we changed the model
-# and the CLI" — 2.1.197 is the build this rig's earlier runs were validated on.
-# The other three float: there is no validated baseline for them here, so latest
-# is the honest starting point.
+# Caveat worth knowing: the other three are NOT really floating. This layer is
+# cached, so each machine freezes whatever npm served on ITS build day, with the
+# version recorded nowhere. Four other install sites are unpinned too
+# (tests/long_tests/stress_matrix, scripts/docker_login_poc, and both
+# .github/actions), so moving a pin here moves it for one rig of five.
 RUN npm install -g \
       @anthropic-ai/claude-code@2.1.197 \
       @openai/codex \
       @github/copilot \
       opencode-ai \
+ && npm cache clean --force \
  && claude --version && codex --version && copilot --version && opencode --version
 
 # Install uv for fast deps install (already used on the host).

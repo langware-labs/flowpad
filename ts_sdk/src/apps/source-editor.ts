@@ -693,7 +693,4 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   statusEl.textContent = 'Live';
   statusEl.classList.add('ok');
   ($('main') as HTMLElement).hidden = false;
-  // `initSdk` schedules `asyncSdkInit` itself now -- the double-rAF this used to
-  // hand-roll is redundant, and was the same step every other SDK consumer had to
-  // remember (and template-flowpad did not).
 }
