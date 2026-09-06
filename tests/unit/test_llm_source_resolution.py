@@ -499,3 +499,35 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
 
     with pytest.raises(LLMSourceError):
         await resolve_llm_source(_process())
+
+
+# ── what the auth-status action REPORTS about a key-funded harness ────────────────
+
+
+async def test_auth_status_reports_the_provider_of_a_key_funded_harness(env, monkeypatch) -> None:
+    """The provider comes off the ENDPOINT row: ``LLMSource`` carries a verdict, not a provider.
+
+    First test to enter the api-funded branch, which every stored key and hub budget takes.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult, WorkerAuthStatus
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    # Load-bearing: without the preference the unproven device login outranks the key, the
+    # DEVICE branch is taken instead, and ``auth_mode`` comes back "device".
+    cap.auth_mode, cap.api_provider = "api", "openrouter"
+    await cap.save(notify=False)
+
+    # The action always probes the vendor (it is the only producer of ``login_state``), and that
+    # is a subprocess. Stub it so this stays a unit test.
+    async def _probe(*_args, **_kwargs):
+        return WorkerAuthResult(status=WorkerAuthStatus.LOGGED_OUT)
+
+    monkeypatch.setattr(Capability, "refresh_login_state", _probe)
+
+    data = (await cap.auth_status_action()).data
+    assert data["auth_mode"] == "api", "the api-funded branch was taken"
+    assert data["details"]["provider"] == "openrouter"
