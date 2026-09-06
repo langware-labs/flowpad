@@ -142,9 +142,8 @@ def write_asset(root: Path, type_name: str, name: str) -> Path:
     """Write one asset of ``type_name`` where its walker will find it.
 
     Placement is derived from the type registry — ``main_subdir`` for the
-    directory, ``main_layout``/``main_file``/``main_ext`` for the file, and
-    ``asset_ref_for`` for the folder-vs-inner-file rule that
-    ``main_file_is_asset_ref`` selects. Transcribing those paths by hand (as an
+    directory, ``main_layout``/``main_file``/``main_ext`` for the file.
+    Transcribing those paths by hand (as an
     earlier version did) buys no independence: the copy was taken *from* the
     registry, and because the tests assert discovery COUNTS rather than paths, a
     hand-written writer would keep placing files where the walker looks even if
@@ -165,7 +164,7 @@ def write_asset(root: Path, type_name: str, name: str) -> Path:
         (folder / info.main_file).write_text(body, encoding="utf-8")
         for filename, content in _SIDECARS.get(type_name, {}).items():
             (folder / filename).write_text(content, encoding="utf-8")
-        return Path(info.asset_ref_for(folder))
+        return folder
     target = subdir / f"{name}{info.main_ext}"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body, encoding="utf-8")

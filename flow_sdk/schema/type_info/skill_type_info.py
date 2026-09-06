@@ -1,7 +1,6 @@
 """Type metadata for SKILL."""
 from flow_sdk.builtin.skill import SkillSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_capsule_json_id,
     frontmatter_identity,
@@ -42,7 +41,6 @@ SKILL = TypeInfo(
     editor="skill",
     hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(folder_capsule_json_id, in_folder(folder_capsule_id), in_folder(skill_id_from_folder)),
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,

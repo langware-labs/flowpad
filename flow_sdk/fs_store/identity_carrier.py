@@ -20,7 +20,9 @@ to ``TypeInfo``; owner/fossil reconciliation to the indexer
 What ``read`` answers is one of three outcomes: ``Found`` (a valid v4/v5),
 ``Foreign`` (something is there but it is not an id we accept — a
 hand-written v7, a slug; present-but-unusable is distinct from absent) or
-``ABSENT``.
+``ABSENT``. A ``Found`` answered by a legacy reader says so (``legacy``):
+``convert`` moves that id into the live form and removes the legacy bytes,
+which is what the identity migration and a writing ``reconcile`` do.
 """
 from __future__ import annotations
 
@@ -52,12 +54,11 @@ from flow_sdk.schema.layout import Layout
 #: ``Found``/``Foreign``/``ABSENT`` of its own when it knows the source.
 IdentityReader = Callable[[Any], object | None]
 
-#: Source names for the two legacy forms ``reconcile`` converts in place: the
-#: markdown HTML-comment capsule (stripped) and a folder's json capsule under a
-#: markdown main document (left in place; the id is copied into the header).
+#: Source names: the markdown HTML-comment ``identity`` capsule (legacy) and a
+#: folder's ``.flow/capsules/identity.json`` (live for ``Sidecar``, legacy
+#: under a markdown main document).
 CAPSULE_SOURCE = "capsule"
 FOLDER_JSON_SOURCE = "folder-json"
-LEGACY_CONVERTIBLE = frozenset({CAPSULE_SOURCE, FOLDER_JSON_SOURCE})
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +110,12 @@ class UnclaimedPath(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Found:
-    """The source names a valid v4/v5 id; ``source`` says which reader answered."""
+    """The source names a valid v4/v5 id; ``source`` says which reader answered,
+    ``legacy`` that it was one of the carrier's retired forms."""
 
     id: str
     source: str = ""
+    legacy: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,10 +191,18 @@ def _read_legacy(readers: tuple[IdentityReader, ...], path: Path) -> CarrierRead
         except Exception as exc:  # noqa: BLE001 — a broken legacy carrier is not absence
             raise MalformedCarrier(f"{source}: {exc}") from exc
         if isinstance(found, Found):
-            return found
+            return Found(found.id, found.source or source, legacy=True)
         if isinstance(found, Foreign) and first_foreign is None:
             first_foreign = found
     return first_foreign or ABSENT
+
+
+def _drop_flow_id(folder: Path, entity_id: str) -> None:
+    """Delete the retired ``.flow/id`` line when it names ``entity_id``; one
+    naming another id is another asset's and stays."""
+    flow_id = folder / ".flow" / "id"
+    if flow_id.is_file() and flow_id.read_text(encoding="utf-8").strip() == entity_id:
+        flow_id.unlink()
 
 
 def _resolve(primary: CarrierRead, legacy: CarrierRead) -> CarrierRead:
@@ -249,8 +260,7 @@ _MARKDOWN_SUFFIXES = frozenset({".md", ".mdx", ".markdown"})
 @dataclass(frozen=True, slots=True)
 class Frontmatter:
     """A markdown document: ``id:`` in its YAML frontmatter. ``legacy`` readers
-    are read-only fallbacks; the two convertible ones among them are moved
-    into the header by ``convert`` (invoked only from ``reconcile``)."""
+    answer the retired forms ``convert`` moves into the header."""
 
     legacy: tuple[IdentityReader, ...] = ()
 
@@ -292,13 +302,21 @@ class Frontmatter:
         _atomic_write_text(where, merge_frontmatter(text, {"id": entity_id}, prepend=True))
         return entity_id
 
-    def convert(self, where: Path, entity_id: str) -> None:
-        """Move a legacy carrier into the header: one rewrite, same id. A
-        markdown comment capsule is stripped; a folder json is left in place."""
+    def convert(self, where: Path, found: Found) -> None:
+        """Move a retired form into the header — same id, retired bytes gone:
+        the ``identity`` comment capsule stripped, ``asset_id:`` dropped, the
+        folder's ``.flow/id`` line or json capsule deleted."""
         if not self.accepts(where):
             raise NotWritable(f"frontmatter carrier cannot write into {where}")
         text = where.read_text(encoding="utf-8")
-        _atomic_write_text(where, merge_frontmatter(strip_capsule_blocks(text), {"id": entity_id}, prepend=True))
+        merged = merge_frontmatter(
+            strip_capsule_blocks(text, names={"identity"}), {"id": found.id}, drop_keys=("asset_id",), prepend=True
+        )
+        if merged != text:
+            _atomic_write_text(where, merged)
+        _drop_flow_id(where.parent, found.id)
+        if found.source == FOLDER_JSON_SOURCE:
+            FolderCapsule(where.parent).remove("identity")
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +355,16 @@ class Sidecar:
         except CapsuleError as exc:
             raise MalformedCarrier(f"identity capsule at {where}: {exc}") from exc
         return str(committed.data.get("id") or entity_id)
+
+    def convert(self, where: Path, found: Found) -> None:
+        """Move a retired form (``.flow/id``, a manifest ``id``) into the json
+        capsule — same id — and delete the ``.flow/id`` line. A manifest keeps
+        its ``id`` key: it is the asset's document, not a carrier."""
+        try:
+            FolderCapsule(where).write_if_absent("identity", CapsuleData(version=1, data={"id": found.id}))
+        except CapsuleError as exc:
+            raise MalformedCarrier(f"identity capsule at {where}: {exc}") from exc
+        _drop_flow_id(where, found.id)
 
 
 @dataclass(frozen=True, slots=True)

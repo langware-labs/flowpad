@@ -1,6 +1,6 @@
 """Type metadata for MARKDOWN."""
 from flow_sdk.builtin.claude_memory_entities import MarkdownSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.indexer.functions.markdown import derive_markdown
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -30,7 +30,6 @@ MARKDOWN = TypeInfo(
     # per-FOLDER emitter ``markdown_in_folder_fn`` (typed-ancestor fence).
     walk=Walk(roots=("user_home_folder",), recursive=True),
     fts_content=("body", "links"),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     # Two observers, and the order does not matter — neither reads the other's writes.
     # ``mark_rag_stale`` is a containment test plus at most one flag write; it never chunks,

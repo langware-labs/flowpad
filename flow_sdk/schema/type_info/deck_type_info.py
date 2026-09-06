@@ -2,7 +2,6 @@
 from typing import Optional
 
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_json_identity,
 )
@@ -38,11 +37,10 @@ DECK = TypeInfo(
     # deck.json is the marker + shape claim: `flow show file <deck folder>`
     # resolves through discover_record_by_path → extract_deck → the deck entity
     # in one call (no project-root walk). asset_ref stays the FOLDER
-    # (``ref_is_main`` default False) so the viewer reads <folder>/*.html.
+    # so the viewer reads <folder>/*.html.
     shape=Folder(main="deck.json"),
     editor="deck",
     from_disk_fn=extract_deck,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, deck_id_from_folder),
     asset_hash_fn=deck_asset_hash,
     meta_model=DeckMeta,

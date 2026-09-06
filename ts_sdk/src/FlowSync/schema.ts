@@ -87,15 +87,12 @@ export interface TypeInfo {
   main_layout?: string | null;
   /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
   main_file?: string | null;
-  /** True when a folder-layout type's asset_ref points at the inner main_file. */
-  main_file_is_asset_ref?: boolean;
-  /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
-   *  expands the row into its on-disk file tree. Derived from the folder layout. */
+  /** True when asset_ref is a folder (every folder-layout type): the Assets
+   *  sidebar expands the row into its on-disk file tree. */
   folder_backed: boolean;
   /** THE on-disk shape declaration this type makes (the fields above are its
-   *  projections): `{kind:'folder', main:'SKILL.md', ref_is_main:false}` or
-   *  `{kind:'file', ext:'.md'}`. */
-  shape?: { kind: 'folder'; main: string | null; ref_is_main: boolean } | { kind: 'file'; ext: string } | null;
+   *  projections): `{kind:'folder', main:'SKILL.md'}` or `{kind:'file', ext:'.md'}`. */
+  shape?: { kind: 'folder'; main: string | null } | { kind: 'file'; ext: string } | null;
   /** The asset editor that opens this type (`'markdown'`, `'skill'`, …), declared
    *  once on the backend so the client never keeps a hand-maintained type→editor map. */
   editor?: string | null;

@@ -29,7 +29,7 @@ def test_legacy_layout_fields_are_projections_of_the_shape() -> None:
     for info in _declared():
         if isinstance(info.shape, Folder):
             assert info.main_layout == "folder" and info.main_file == info.shape.main, info.type_name
-            assert info.main_file_is_asset_ref is info.shape.ref_is_main, info.type_name
+            assert info.folder_backed, info.type_name
             if info.shape.main:
                 assert info.main_ext == "." + info.shape.main.rsplit(".", 1)[-1].lower(), info.type_name
         else:
@@ -50,8 +50,8 @@ def test_a_declared_folder_type_names_its_main_document() -> None:
 
 
 def test_the_layout_fields_project_the_shape() -> None:
-    probe = TypeInfo(type_name="probe_shape", shape=Folder(main="X.json", ref_is_main=True))
-    assert (probe.main_layout, probe.main_file, probe.main_file_is_asset_ref, probe.main_ext) == ("folder", "X.json", True, ".json")
+    probe = TypeInfo(type_name="probe_shape", shape=Folder(main="X.json"))
+    assert (probe.main_layout, probe.main_file, probe.folder_backed, probe.main_ext) == ("folder", "X.json", True, ".json")
     assert TypeInfo(type_name="probe_file").shape == File(ext=".md")
 
 

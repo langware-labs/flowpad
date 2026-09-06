@@ -124,9 +124,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
             else Derived
         )
         assert isinstance(info.identity_carrier, expected_backend), name
-        assert tuple((spec.name, spec.version) for spec in info.capsules) == (
-            (("identity", 1),) if name in capsule_types else ()
-        ), name
+        assert info.capsules == (), f"{name}: identity is the carrier's, not a declared capsule"
         parameters = list(inspect.signature(info.from_disk_fn).parameters.values())
         assert [parameter.name for parameter in parameters[:2]] == ["ref", "resolved_id"], name
 
@@ -151,9 +149,10 @@ def test_file_invalid_canonical_does_not_mask_valid_legacy(
 ) -> None:
     path = _own_document(tmp_path, type_name, "asset.md")
     _frontmatter(path, canonical=V7, legacy=V5)
-    before = path.read_bytes()
     assert _info(type_name).mint_entity_id(path) == V5
-    assert path.read_bytes() == before, "legacy adoption never cleans/backfills"
+    assert read_frontmatter_id(path, keys=("id",)) == V5, "the retired key is moved over the foreign id:"
+    assert "asset_id" not in path.read_text(encoding="utf-8")
+    assert _info(type_name).mint_entity_id(path) == V5
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_PORTABLE)
@@ -198,13 +197,15 @@ def test_folder_capsule_adopted_unchanged_without_write(
 ) -> None:
     folder = tmp_path / type_name
     (folder / ".flow").mkdir(parents=True)
-    capsule = folder / ".flow" / "id"
-    capsule.write_text(existing + "\n", encoding="utf-8")
-    before = capsule.read_bytes()
+    legacy = folder / ".flow" / "id"
+    legacy.write_text(existing + "\n", encoding="utf-8")
     info = _info(type_name)
     assert info.mint_entity_id(folder) == existing
+    if type_name in FOLDER_MARKDOWN:
+        assert legacy.exists(), "no main document: nothing is written into the folder"
+    else:
+        assert not legacy.exists(), "the retired .flow/id is converted into the json capsule"
     assert info.mint_entity_id(folder) == existing
-    assert capsule.read_bytes() == before
 
 
 @pytest.mark.parametrize("type_name", FOLDER_CAPSULE)

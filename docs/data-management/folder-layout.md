@@ -101,7 +101,7 @@ Which meta fields are mirrored is driven by the registered `TypeInfo.meta_model`
 ```python
 subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
 base = Path(scope_root) / subdir
-target = info.asset_ref_for(base / safe) if info.main_layout == "folder" else base / f"{safe}{info.main_ext}"
+target = base / safe if info.main_layout == "folder" else base / f"{safe}{info.main_ext}"
 ```
 
 Types whose placement resolves to no subdir have no asset file. `TypeInfo.main_subdir` survives as a derived, read-only view of the same triple (claude default). Examples: `skill` → `.claude/skills` / `folder`; `markdown` → `docs` / `file`. Only the `asset_ref` path is persisted (as the `asset_ref` key in `metadata.json`); the shadow-folder path is computed at runtime.

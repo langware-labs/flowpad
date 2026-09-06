@@ -1,7 +1,6 @@
 """Type metadata for DATASET."""
 from flow_sdk.builtin.dataset import DatasetManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_json_identity,
 )
@@ -27,13 +26,12 @@ DATASET = TypeInfo(
     family="dataset",
     # The manifest that marks a folder as a dataset — also the repo walker's
     # marker gate (a dataset folder must carry it). asset_ref stays the folder
-    # (``ref_is_main`` unset), so this only names the marker/body file.
+    # so this only names the marker/body file.
     shape=Folder(main="dataset.json"),
     rows_layout_field="data_layout",
     derive_fields_fn=derive_dataset,
     asset_spec=DatasetManifestSpec,
     fts_content=("title", "description"),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, dataset_id_from_folder),
     asset_hash_fn=dataset_asset_hash,
 )

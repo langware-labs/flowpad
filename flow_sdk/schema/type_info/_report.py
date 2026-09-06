@@ -35,9 +35,7 @@ def report_type_info(
         index_fields=index_fields,
         asset_class="repo",
         family=str(type),
-        # asset_ref IS agentic-assets/<type>/<name>/<main_file> (the walker emits
-        # the inner file), so create and rescan agree on the inner-file path.
-        shape=Folder(main=main_file, ref_is_main=True),
+        shape=Folder(main=main_file),
         # Every report family has a viewer keyed by its own type name.
         editor=str(type),
         asset_spec=asset_spec,

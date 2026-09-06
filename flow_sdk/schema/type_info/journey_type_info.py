@@ -1,6 +1,5 @@
 """Type metadata for JOURNEY — folder-backed guided-onboarding document."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_json_identity,
 )
@@ -28,7 +27,6 @@ JOURNEY = TypeInfo(
     shape=Folder(main="graph.json"),
     editor="journey",
     from_disk_fn=extract_journey,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, journey_id_from_folder),
     asset_hash_fn=journey_asset_hash,
 )

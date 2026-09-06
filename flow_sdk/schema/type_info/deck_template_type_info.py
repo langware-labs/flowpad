@@ -2,7 +2,6 @@
 from typing import Optional
 
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_json_identity,
 )
@@ -41,7 +40,6 @@ DECK_TEMPLATE = TypeInfo(
     shape=Folder(main="template.json"),
     editor="deck_template",
     from_disk_fn=extract_deck_template,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(folder_capsule_id, deck_template_id_from_folder),
     asset_hash_fn=deck_template_asset_hash,
     meta_model=DeckTemplateMeta,

@@ -216,8 +216,7 @@ class Mcp(Entity):
     def folder(self) -> "Path | None":
         """This asset's folder, or ``None`` before it has been saved.
 
-        ``asset_ref`` IS the folder for this type (``main_layout="folder"`` with
-        ``main_file_is_asset_ref`` unset). Guarded like ``Journey.folder``:
+        ``asset_ref`` IS the folder for this type. Guarded like ``Journey.folder``:
         unguarded, an unsaved row yields ``Path("")`` → ``.``, and a caller
         would stat ``./server.py`` against the backend's cwd.
         """

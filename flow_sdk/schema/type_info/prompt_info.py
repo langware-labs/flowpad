@@ -1,7 +1,6 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
 from flow_sdk.builtin.prompt import PromptSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
@@ -15,7 +14,6 @@ PROMPT = TypeInfo(
     shape=File(ext=".md"),
     editor="markdown",
     fts_content=("text",),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,

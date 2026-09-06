@@ -60,10 +60,10 @@ export class Skill extends APIEntity<Skill> {
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    // asset_ref is the skill FOLDER by contract (main_file_is_asset_ref=False),
-    // so append the main file. Guard the case where a producer (e.g. a direct
-    // `flow record index <SKILL.md>`) left asset_ref pointing at the file itself
-    // — appending again would request `.../SKILL.md/SKILL.md` and 404.
+    // asset_ref is the skill FOLDER, so append the main file. Guard the case
+    // where a producer (e.g. a direct `flow record index <SKILL.md>`) left
+    // asset_ref pointing at the file itself — appending again would request
+    // `.../SKILL.md/SKILL.md` and 404.
     const base = this.asset_ref.replace(/\/$/, '');
     // The inner file name is the registry's `shape.main` for `skill`; the
     // literal is only the fallback for an unbound registry (hub / unit tests).

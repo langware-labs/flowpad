@@ -181,6 +181,16 @@ def append_scan_issue(issue: ScanIssue) -> None:
     _append_jsonl(_log_path(SCAN_ISSUES_LOG, issue.type_name), asdict(issue))
 
 
+_legacy_noted: set[str] = set()   # a walk re-reads a source many times; one line per path
+
+
+def note_legacy_form(path: Path | str, form: str, type_name: str | None) -> None:
+    """Record once per path that ``path`` still carries its id in the retired ``form``."""
+    if str(path) not in _legacy_noted:
+        _legacy_noted.add(str(path))
+        append_scan_issue(ScanIssue(path=str(path), kind=LEGACY_FORM, detail=form, type_name=type_name))
+
+
 def read_scan_issues(type_name: str | None = None) -> list[ScanIssue]:
     """Issues logged for *type_name* (or the untyped global log), oldest first."""
     out: list[ScanIssue] = []

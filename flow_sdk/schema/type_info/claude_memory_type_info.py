@@ -1,6 +1,5 @@
 """Type metadata for CLAUDE_MEMORY."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
@@ -23,7 +22,6 @@ CLAUDE_MEMORY = TypeInfo(
     api_visible=True,
     index_fields=["name"],
     from_disk_fn=extract_claude_memory,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
 )

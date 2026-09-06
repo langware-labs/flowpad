@@ -1,7 +1,7 @@
 """Type metadata for COMMAND."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.indexer.functions.claude_command import (
     command_identity_key,
     extract_claude_command,
@@ -23,7 +23,6 @@ COMMAND = TypeInfo(
     # ``.claude/commands/*.md`` (mount derived from placement) at user + both project roots.
     walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root")),
     from_disk_fn=extract_claude_command,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=command_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,

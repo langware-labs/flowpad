@@ -1,15 +1,9 @@
-"""The ``.flow/id`` folder-entity id capsule.
+"""The retired ``.flow/id`` folder id file — read-only.
 
-A folder-backed entity stores its id in ``<folder>/.flow/id`` — a single-line
-UTF-8 file holding the canonical v4/v5 UUID. This is the portable, move-safe
-capsule: the id travels with the folder on share/copy and survives a rename (it
-lives in the bytes, not the path), and it is the only place a main-doc-less
-folder (e.g. a project) can carry its id. ``.flow/id`` is CONTENT, not ignorable
-— it must travel; do not gitignore it (downstream repos that blanket-ignore
-``.flow/`` must add ``!.flow/id``).
-
-Mirrors the file/frontmatter carrier: read and write are separate pure/mutating
-operations; ``TypeInfo`` alone decides whether an ID must be minted.
+A folder asset once stored its id in ``<folder>/.flow/id`` (one line, the
+v4/v5 UUID). The live forms are the json capsule (``Sidecar``) and the main
+document's frontmatter (``Frontmatter``); this reader exists so the identity
+migration can carry an old id across, and it is never written.
 """
 
 from __future__ import annotations
@@ -39,25 +33,3 @@ def read_folder_capsule_id(folder: Any) -> str | None:
     except OSError:
         return None
     return adopt_entity_id(raw)
-
-
-def write_folder_capsule_id(folder: Any, entity_id: str) -> bool:
-    """Write ``entity_id`` into ``<folder>/.flow/id`` — returns whether it persisted.
-
-    Uses ``write_text_if_changed`` so an unchanged id never churns mtime/index
-    hash. Swallows ``OSError`` (read-only mounts) — a capsule write must never
-    abort an index run — and returns ``False`` in that case so callers can fall
-    back without a confirming re-read.
-    """
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
-
-    adopted = adopt_entity_id(entity_id)
-    if adopted is None:
-        return False
-
-    try:
-        _atomic_write_text(_capsule_path(folder), adopted + "\n")
-        return True
-    except OSError:
-        return False

@@ -21,7 +21,6 @@ from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_ori
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_carrier import (
-    LEGACY_CONVERTIBLE,
     Absent,
     Derived,
     ForeignId,
@@ -258,9 +257,9 @@ class TypeInfo:
     asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
     harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
     family: str | None = field(default=None, metadata=_MERGE)
-    # --- THE shape declaration: ``File(ext)`` | ``Folder(main, ref_is_main)`` ---
-    # ``main_layout`` / ``main_file`` / ``main_ext`` / ``main_file_is_asset_ref``
-    # are read-only projections of it (below). Not hashed.
+    # --- THE shape declaration: ``File(ext)`` | ``Folder(main)`` ---
+    # ``main_layout`` / ``main_file`` / ``main_ext`` are read-only projections
+    # of it (below). Not hashed.
     shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.schema.layout.Shape
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
     # shipped in the bootstrap so the frontend derives its editor tables from
@@ -314,11 +313,6 @@ class TypeInfo:
         return self.shape.main if isinstance(self.shape, Folder) else None
 
     @property
-    def main_file_is_asset_ref(self) -> bool:
-        """Folder types: ``asset_ref`` IS ``<folder>/<main_file>`` (spec) rather than the folder (skill)."""
-        return isinstance(self.shape, Folder) and self.shape.ref_is_main
-
-    @property
     def main_ext(self) -> str:
         """The document suffix a create writes: the file's, or the folder's main document's."""
         if isinstance(self.shape, File):
@@ -327,9 +321,9 @@ class TypeInfo:
 
     @property
     def folder_backed(self) -> bool:
-        """``asset_ref`` points at a browsable folder (skill-style), not the
-        inner main file (spec-style). The Assets sidebar expands these rows."""
-        return isinstance(self.shape, Folder) and not self.shape.ref_is_main
+        """``asset_ref`` is the asset's folder — every folder-layout type. Kept
+        one release for the bootstrap; the shape's kind is the declaration."""
+        return isinstance(self.shape, Folder)
 
     @property
     def git_publishable(self) -> bool:
@@ -339,10 +333,6 @@ class TypeInfo:
             and self.from_disk_fn is not None
             and self.identity_carrier is not None
         )
-
-    def asset_ref_for(self, folder: Path) -> Path:
-        """Where ``asset_ref`` points for the asset rooted at ``folder``."""
-        return self.shape.ref_for(folder)
 
     def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
         """THE path→layout classifier: ``shape.locate``. ``NONE`` when the path
@@ -365,8 +355,8 @@ class TypeInfo:
 
     def storage_root_for(self, path: Path) -> Path:
         """The asset ROOT a serializer stores at — the folder for a folder-layout
-        type even when ``asset_ref`` names the inner main file; the file
-        otherwise. Inverse of ``asset_ref_for``; the shape's ``root_of``."""
+        type, also when handed a row's retired inner-main-file ``asset_ref``;
+        the file otherwise. The shape's ``root_of``."""
         return self.shape.root_of(path)
 
     @property
@@ -528,8 +518,8 @@ class TypeInfo:
             raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
         found = carrier.read(where)
         if isinstance(found, Found):
-            if write and found.source in LEGACY_CONVERTIBLE and hasattr(carrier, "convert"):
-                carrier.convert(where, found.id)   # a create over a legacy source moves the id into the header
+            if write and found.legacy and hasattr(carrier, "convert"):
+                carrier.convert(where, found)   # a create over a legacy source moves the id into the live form
             return found.id
         if not write:
             return entity_id
@@ -592,10 +582,6 @@ class TypeInfo:
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": sorted(self.locations),
-            "capsules": [
-                {"name": spec.name, "version": spec.version}
-                for spec in sorted(self.capsules, key=lambda item: item.name)
-            ],
         }
         return hashlib.md5(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
@@ -641,10 +627,9 @@ class TypeInfo:
             "family": self.family,
             "main_layout": self.main_layout,
             "main_file": self.main_file,
-            "main_file_is_asset_ref": self.main_file_is_asset_ref,
             "folder_backed": self.folder_backed,
-            # THE shape declaration the four fields above project; the client
-            # reads this one and derives, never a hand-written per-type table.
+            # THE shape declaration the fields above project; the client reads
+            # this one and derives, never a hand-written per-type table.
             "shape": self.shape.to_dict(),
             "editor": self.editor,
             # The entity owns its backing file (re-rendered from default_body on
@@ -1185,6 +1170,19 @@ class SchemaRegistry:
             by = tables.by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
         return "markdown" if "markdown" in cls._types else None
+
+    #: The main documents of the folder types whose ``asset_ref`` was the inner
+    #: file before it was unified to the folder (agent, spec, the reports).
+    _RETIRED_INNER_MAINS: ClassVar[tuple[str, ...]] = ("agent.md", "spec.md", "trace.json", "report.json")
+
+    @classmethod
+    def retired_ref_spellings(cls, path: Path) -> list[Path]:
+        """The other ``asset_ref`` spelling a row may still hold until the
+        identity migration has run: the folder for a retired inner main
+        document, ``<folder>/<main>`` for a folder. Goes with the legacy readers."""
+        if path.name.lower() in cls._RETIRED_INNER_MAINS:
+            return [path.parent]
+        return [path / main for main in cls._RETIRED_INNER_MAINS]
 
     @classmethod
     def ref_for(cls, type_name: str, path: "Path | str") -> str:

@@ -72,14 +72,13 @@ def test_stable_policy_persists_v5_in_frontmatter(tmp_path: Path) -> None:
     assert info.read_id(path) == expected
 
 
-def test_valid_legacy_asset_id_is_adopted_without_backfill(tmp_path: Path) -> None:
+def test_valid_legacy_asset_id_is_adopted_and_moved_to_id(tmp_path: Path) -> None:
     path = tmp_path / "asset.md"
     path.write_text(f"---\nasset_id: {V4}\n---\nbody\n", encoding="utf-8")
-    before = path.read_bytes()
     info = TypeInfo(type_name="probe", capsules=(IDENTITY,), identity_carrier=frontmatter_identity())
     assert info.read_id(path) == V4
     assert info.mint_entity_id(path) == V4
-    assert path.read_bytes() == before
+    assert path.read_text(encoding="utf-8") == f"---\nid: {V4}\n---\n\nbody\n"
 
 
 @pytest.mark.parametrize("candidate", ["garbage", V7])
@@ -191,7 +190,7 @@ def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> 
     assert info.body_path_for(same_named_folder) == same_named_folder / "SKILL.md"
 
 
-def test_declaration_carries_identity_traits_and_capsules_affect_hash() -> None:
+def test_declaration_carries_identity_traits_and_capsules_do_not_affect_hash() -> None:
     carrier = Derived()
     key = lambda ref: "key"  # noqa: E731
     info = TypeInfo(
@@ -204,7 +203,7 @@ def test_declaration_carries_identity_traits_and_capsules_affect_hash() -> None:
     assert (info.capsules, info.identity_carrier, info.id_stable_key_fn, info.id_namespace) == (
         (IDENTITY,), carrier, key, uuid.NAMESPACE_DNS,
     )
-    assert info.schema_hash != TypeInfo(type_name="probe").schema_hash
+    assert info.schema_hash == TypeInfo(type_name="probe").schema_hash
 
 
 def test_registry_merges_capsules_and_rejects_same_name_conflict() -> None:

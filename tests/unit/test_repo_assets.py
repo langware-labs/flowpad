@@ -169,7 +169,7 @@ def test_repo_walker_emits_only_requested_type_but_traverses_other_parents(
         IndexerOptions(types=[EntityType.SPEC]),
     )
 
-    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec / "spec.md", EntityType.SPEC)]
+    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec, EntityType.SPEC)]
 
 
 def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):

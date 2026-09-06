@@ -923,10 +923,7 @@ class FSRecord(Generic[M]):
         safe = self._safe_name(entity)
         base = Path(scope_root) / subdir
         if info.main_layout == "folder":
-            # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
-            # body_path_for, recovers the body on write) so the convention lives
-            # in one place rather than mirrored here.
-            target = info.asset_ref_for(base / safe)
+            target = base / safe
         else:
             target = base / f"{safe}{info.main_ext}"
         resolved_root = Path(scope_root).resolve()

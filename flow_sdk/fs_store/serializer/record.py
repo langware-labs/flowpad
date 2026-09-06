@@ -65,7 +65,7 @@ def spec_extractor(type_name: str):
         fields["content"] = fts_content(obj, info)
         rec = FSRecord(type=type_name, id=resolved_id, **fields)
         if info.main_layout == "folder":
-            rec.asset_ref = FSRef(info.asset_ref_for(root.resolve()))
+            rec.asset_ref = FSRef(root.resolve())
         else:
             rec.asset_ref = FrontMatterFsRef(root) if info.main_ext == ".md" else FSRef(root)
         if ref.scope:
