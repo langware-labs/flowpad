@@ -203,23 +203,13 @@ Read the matching reference before making that kind of change:
 
 ## Before you show it: prove the page BOOTS
 
-An HTTP 200 is not a working app. A dev server answers 200 while the page throws
-on load — a missing component, a module the browser cannot resolve — and the
-user gets a blank or half-rendered pane while you report success. Two real runs
-ended that way: one imported `@/components/ui/input` that did not exist, the
-other hit a module the page could not resolve. Both returned 200 the whole time.
-
-So before `flow show webapp`, load the page and check it is free of errors:
-
-```bash
-# The check that matters: no console errors, and the app's own markup rendered.
-uv run --with playwright python "$SKILL_DIR/../web-tester/runner.py" --url http://localhost:<fe-port>
-```
-
-If the runner is unavailable, `curl` the page and grep the served HTML for the
-element your app actually renders — never settle for the status code alone.
-Fix what you find and re-check BEFORE presenting. Report a failure you could not
-fix; do not present a broken app as done.
+An HTTP 200 is not a working app: a dev server answers 200 while the page throws
+on load, and the user gets a blank pane while you report success. Before
+`flow show webapp`, load the page in a real browser and confirm it renders with
+no console errors — the **`web-tester`** skill is the tool for that, so follow it
+rather than hand-rolling a check here. If it cannot run, at minimum fetch the
+page and grep for markup your app actually renders; never settle for the status
+code. Fix what you find and re-check before presenting.
 
 ## IMPORTANT: show the running app to the user
 

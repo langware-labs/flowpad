@@ -44,8 +44,9 @@ RUN uv pip install --system 'fastmcp<4' 'mcp<2'
 # dependency; this env var tells the ``keyring`` library to use the file
 # backend without any code changes.
 #
-# Credentials live in /root/.local/share/python_keyring/keyring_pass.cfg
-# inside the container's volume — per-container, fully isolated.
+# Credentials live in /root/.local/share/python_keyring/keyring_pass.cfg.
+# That path is NOT under /root/.flow, so docker-compose gives it a volume of its
+# own; without one a `--force-recreate` discards every stored key.
 ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
 
 # Default port; compose overrides per service via LOCAL_SERVER_PORT.

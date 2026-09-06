@@ -385,20 +385,16 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
   },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,
+    // A build is SENT from the hero the moment the user hits enter, so the stored
+    // tier has to be readable at first paint: without the synchronous seed a fast
+    // submit spends the default while the user's choice is still in flight.
+    boot: true,
     category: 'ui',
     label: 'Vibe model',
     description: 'Which model size a Vibe build starts on: Fast, Balanced or Accurate.',
     dataType: PrefDataType.STRING,
-    // Balanced, matching the tier a Vibe session used before the composer could
-    // choose one. Persisted because the choice is usually about COST, and a
-    // preference that resets to the expensive default on every mount is worse
-    // than no preference at all.
+    // Balanced — the tier a Vibe session used before the composer could pick one.
     defaultValue: 'md',
-    options: [
-      { value: 'sm', label: 'Fast' },
-      { value: 'md', label: 'Balanced' },
-      { value: 'lg', label: 'Accurate' },
-    ],
   },
   [PrefKey.VIEW_MODE]: {
     key: PrefKey.VIEW_MODE,

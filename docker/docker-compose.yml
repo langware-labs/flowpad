@@ -14,9 +14,9 @@
 # Bring up:    docker compose -f docker/docker-compose.yml up -d --build --wait
 # Tear down:   docker compose -f docker/docker-compose.yml down -v
 
-# Every backend container shares the same image, host gateway, workspace mount and
-# health shape; only ports, env and the data volume differ. Kept as one anchor so a
-# change to the mount or the health endpoint cannot land in two of three services.
+# Every backend container shares the same image, host gateway and health shape.
+# Kept as one anchor so a change to the image or the health endpoint cannot land
+# in two of three services. Ports, env and volumes are per-service.
 x-flow-backend: &flow-backend
   image: flowpad-backend:latest
   # Claude Code refuses --dangerously-skip-permissions as root; these containers
@@ -26,13 +26,6 @@ x-flow-backend: &flow-backend
     IS_SANDBOX: "1"
   extra_hosts:
     - "host.docker.internal:host-gateway"
-  # /root/.flow alone is NOT the container's state. The file keyring
-  # (/root/.local/share/python_keyring, where a stored LM api key lives) and the
-  # vendor CLI's own dir (/root/.claude — transcripts, shell snapshots) sit on the
-  # writable layer, so a `--force-recreate` silently threw away a seeded OpenRouter
-  # key and every transcript. Each service names its own volumes for these; the
-  # Dockerfile comment claiming the keyring is "inside the container's volume" was
-  # only true once they were mounted.
   healthcheck: &flow-backend-healthcheck
     interval: 2s
     timeout: 1s
@@ -131,6 +124,10 @@ services:
       <<: *flow-backend-healthcheck
       test: ["CMD", "curl", "-fs", "http://localhost:9006/api/v1/health/status"]
 
+# Three volumes per service, because /root/.flow alone is NOT the container's
+# state: the file keyring (a stored LM api key) and the vendor CLI's own dir
+# (transcripts, shell snapshots) sit on the writable layer, so a
+# `--force-recreate` used to discard both.
 volumes:
   alice_flow:
   alice_keyring:
