@@ -4,6 +4,7 @@ const path = require('path');
 const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
+const { createShutdown, relaunchAfterStop } = require('./shutdown');
 const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
@@ -248,6 +249,14 @@ const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded pat
 let mainWindow = null;
 let uvManager = null;
 let isQuitting = false;
+// The in-flight quit sequence (shutdown.js), if any. A launch that arrives
+// while it runs is absorbed by it instead of being dropped by the
+// single-instance lock.
+let shutdown = null;
+// The backend stop started by the startup-timeout path, which leaves the window
+// up instead of quitting. A reopen from that panel must not abandon it — see
+// shutdown.js.
+let pendingBackendStop = null;
 // True once the startup-timeout recovery panel is showing. In this state the
 // window is intentionally kept open (so the user can copy the recovery commands)
 // but the backend is stopped — so a "reopen" must relaunch from scratch rather
@@ -313,14 +322,23 @@ app.on('open-url', (event, url) => {
 
 // Windows / Linux: a second launch passes the URL as a CLI argument.
 app.on('second-instance', (_event, argv) => {
+  // A launch that lands while we are stopping the backend must not be dropped:
+  // this process still holds the single-instance lock, so the new one exits
+  // immediately. Hand it to the quit sequence, which relaunches once its stop
+  // has released the lifecycle lock.
+  if (shutdown && shutdown.requestRelaunch()) return;
   // If we're stuck on the startup-timeout panel, a second launch means the user
   // ran the recovery command and is "reopening" to pick up the fix. The backend
   // is already stopped, so relaunch from scratch (fresh startApp + upgrade path)
   // instead of just refocusing the dead window.
   if (startupFailed) {
     log.info('[second-instance] reopen while in startup-failed state — relaunching');
-    app.relaunch();
-    app.exit(0);
+    relaunchAfterStop({
+      pendingStop: pendingBackendStop,
+      log,
+      relaunch: () => app.relaunch(),
+      exit: code => app.exit(code),
+    });
     return;
   }
   const deepLinkUrl = argv.find(arg => arg.startsWith('flowpad://'));
@@ -836,7 +854,7 @@ async function startApp() {
     // we just keep the window open (instead of quitting) so the user can read
     // and copy the recovery commands. Fire-and-forget: the panel shows now.
     if (uvManager) {
-      uvManager
+      pendingBackendStop = uvManager
         .stop()
         .catch((e) => log.warn(`[startup-timeout] backend stop failed: ${e.message}`));
     }
@@ -907,8 +925,12 @@ app.on('activate', () => {
   // (the dead window is still open, so the 0-windows path below won't fire).
   if (startupFailed) {
     log.info('[activate] reopen while in startup-failed state — relaunching');
-    app.relaunch();
-    app.exit(0);
+    relaunchAfterStop({
+      pendingStop: pendingBackendStop,
+      log,
+      relaunch: () => app.relaunch(),
+      exit: code => app.exit(code),
+    });
     return;
   }
   // On macOS, recreate window when dock icon is clicked
@@ -931,16 +953,16 @@ app.on('before-quit', (event) => {
   if (uvManager) {
     event.preventDefault();
 
-    const forceQuitTimer = setTimeout(() => {
-      log.warn('Force quitting after timeout');
-      app.exit(0);
-    }, 1000);
-
-    // Graceful shutdown: flow stop, then kill any remaining processes on port
-    uvManager.stop().finally(() => {
-      clearTimeout(forceQuitTimer);
-      app.exit(0);
+    // Graceful shutdown: flow stop, then kill any remaining processes on port.
+    // We exit only once that has finished — see shutdown.js for why exiting
+    // on a timer stranded the next launch with "service_busy".
+    shutdown = createShutdown({
+      uvManager,
+      log,
+      exit: code => app.exit(code),
+      relaunch: () => app.relaunch(),
     });
+    shutdown.run();
   }
 });
 
