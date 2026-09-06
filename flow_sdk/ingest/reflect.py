@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 import shutil
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol
@@ -251,7 +250,7 @@ class SymlinkReflector(_ProjectionReflector):
 
     # ── the link is placed; the TARGET is what gets indexed ──
     #
-    # `discover_record_by_path` resolves the path it is given, so an entity for
+    # `resolve_asset` resolves the path it is given, so an entity for
     # a symlinked file keys on the source, not the link. Reporting the link here
     # would hand the indexer a path no entity will ever carry: creates would
     # look fine (the target still resolves) while deletes silently missed,
@@ -435,116 +434,113 @@ async def reflect_refs(
         report.skipped.extend(refs)
         return report
 
-    # A source that does not own its bytes runs the whole page with carrier
-    # writes suppressed. Scoped to the page rather than to each call because the
-    # write happens deep inside `Entity.save`, and a narrower guard would leave
-    # the re-stamp at the end of the loop free to dirty the file after all.
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
+    # A source that does not own its bytes (a git working tree) resolves
+    # identity without stamping it: ``write`` is threaded into every resolve
+    # on this page, and the origin stamp at the end is row-only.
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store import origin_identity  # noqa: PLC0415
-    from flow_sdk.fs_store.fs_record import carrier_writes_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
-    guard = carrier_writes_suppressed() if not _stamps_identity(source) else nullcontext()
-    with guard:
-        # The tree is obtained once, here — never inside the per-ref loop. A
-        # source whose origin cannot be reached this page places nothing.
-        root = await _materialize(source)
-        if root is None and refs:
-            report.skipped.extend(refs)
-            return report
-
-        fresh: list[tuple[str, str]] = []
-        renames = renames or {}
-        for ref in refs:
-            placed = reflector.place(source, ref, root)
-            if not placed:
-                report.skipped.append(ref)
-                continue
-            origin_id = origin_id_for(source, ref, root)
-            report.origin_ids[placed] = origin_id
-            known = await origin_identity.resolve(origin_id)
-            previous_ref = renames.get(ref)
-            moved = False
-            if known is None and previous_ref:
-                # The source says this path IS the old one, moved. Its identity
-                # lives under the ORIGIN IT HAD — for git that is computable even
-                # though the old path no longer exists, because the handle is
-                # repo-relative rather than a property of the file on disk.
-                known = await origin_identity.resolve(origin_id_for(source, previous_ref, root))
-                moved = known is not None
-            if known is None:
-                fresh.append((placed, ref))
-                continue
-            if moved:
-                report.renamed[placed] = _placement_of(reflector, source, previous_ref, root)
-            else:
-                report.changed.append(placed)
-            # Known origin: re-parse onto the row it already names. `proposed_id` is
-            # what stops a re-parse from forking — the same thread `_resync` uses
-            # when the path is unchanged, applied here when only the PATH moved.
-            #
-            # Clear the previous placement FIRST. After a rename, `copy` has put the
-            # same bytes at a second path while the old copy is still there, and the
-            # asset-occurrence rules then read the pair as a duplicate and keep the
-            # ORIGINAL as primary — so the re-parse is discarded and the row stays
-            # pointing at a file we are about to remove. One origin owns one
-            # placement; retiring the old one is what makes that true.
-            # Compare and re-parse at the TYPE's asset root, not the touched
-            # file. A folder-layout asset is named by its DIRECTORY, so the raw
-            # leaf path is the wrong unit twice over: `_retire_stale_placement`
-            # would read the asset's own root as a stale placement and delete
-            # it, and `discover_record_by_path` given the inner main_file
-            # resolves nothing and silently drops the re-parse.
-            from flow_sdk.fs_store.reindex import asset_target_for  # noqa: PLC0415
-
-            target = asset_target_for(known.type, placed)
-            _retire_stale_placement(source, known, target)
-            await discover_record_by_path(
-                known.type,
-                target,
-                notify=True,
-                proposed_id=str(known.id),
-            )
-            await origin_identity.stamp(known, origin_id)
-            report.placed.append(placed)
-
-        if fresh:
-            # One path for both. Under suppression `discover_record_by_path`
-            # resolves read-only and mints its own id, so type inference,
-            # containment and consent stay in one place either way.
-            await reindex_paths([path for path, _ in fresh], [], mint=True)
-            for path, ref in fresh:
-                entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
-                if entity is None:
-                    report.skipped.append(path)
-                    continue
-                # Just resolved after the reindex — already current, no re-read.
-                # The origin id is derived AGAIN here on purpose: a folder source
-                # keys it on the inode, and the reindex may have rewritten the file.
-                await origin_identity.stamp(entity, origin_id_for(source, ref, root), reload=False)
-                report.placed.append(path)
-                report.added.append(path)
-
-        for ref in tombstones or []:
-            removed = reflector.unplace(source, ref, root)
-            if removed:
-                report.removed.append(removed)
-        for path in report.removed:
-            await _retire_row(path)
-
-        # The durable form of this page, then the announcement. In that order: a consumer woken
-        # by the tag re-derives from the row, so the row has to be there first.
-        if report.moved_anything:
-            from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
-            from flow_sdk.ingest.change_event import emit_applied  # noqa: PLC0415
-
-            await SourceChange.record(source, report)
-            emit_applied(
-                str(source.id), str(source.provider or ""),
-                refs=[*report.added, *report.changed, *report.renamed],
-                tombstones=report.removed,
-                renames=report.renamed,
-            )
-
+    write = _stamps_identity(source)
+    # The tree is obtained once, here — never inside the per-ref loop. A
+    # source whose origin cannot be reached this page places nothing.
+    root = await _materialize(source)
+    if root is None and refs:
+        report.skipped.extend(refs)
         return report
+
+    fresh: list[tuple[str, str]] = []
+    renames = renames or {}
+    for ref in refs:
+        placed = reflector.place(source, ref, root)
+        if not placed:
+            report.skipped.append(ref)
+            continue
+        origin_id = origin_id_for(source, ref, root)
+        report.origin_ids[placed] = origin_id
+        known = await origin_identity.resolve(origin_id)
+        previous_ref = renames.get(ref)
+        moved = False
+        if known is None and previous_ref:
+            # The source says this path IS the old one, moved. Its identity
+            # lives under the ORIGIN IT HAD — for git that is computable even
+            # though the old path no longer exists, because the handle is
+            # repo-relative rather than a property of the file on disk.
+            known = await origin_identity.resolve(origin_id_for(source, previous_ref, root))
+            moved = known is not None
+        if known is None:
+            fresh.append((placed, ref))
+            continue
+        if moved:
+            report.renamed[placed] = _placement_of(reflector, source, previous_ref, root)
+        else:
+            report.changed.append(placed)
+        # Known origin: re-parse onto the row it already names. `proposed_id` is
+        # what stops a re-parse from forking — the same thread `_resync` uses
+        # when the path is unchanged, applied here when only the PATH moved.
+        #
+        # Clear the previous placement FIRST. After a rename, `copy` has put the
+        # same bytes at a second path while the old copy is still there, and the
+        # asset-occurrence rules then read the pair as a duplicate and keep the
+        # ORIGINAL as primary — so the re-parse is discarded and the row stays
+        # pointing at a file we are about to remove. One origin owns one
+        # placement; retiring the old one is what makes that true.
+        # Compare and re-parse at the TYPE's asset root, not the touched
+        # file. A folder-layout asset is named by its DIRECTORY, so the raw
+        # leaf path is the wrong unit twice over: `_retire_stale_placement`
+        # would read the asset's own root as a stale placement and delete
+        # it, and a resolve of the inner main_file would answer nothing
+        # and silently drop the re-parse.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        info = SchemaRegistry.get(known.type)
+        target = str(info.storage_root_for(Path(placed)) if info is not None else placed)
+        _retire_stale_placement(source, known, target)
+        try:
+            resolved = await resolve_asset(target, write=write, type_name=known.type, owner_id=str(known.id))
+        except NotAnAsset as reason:
+            logger.debug("[reflect] %s at %s: %s", known.type, target, reason)
+        else:
+            await index_one(resolved, notify=True)
+        await origin_identity.stamp(known, origin_id)
+        report.placed.append(placed)
+
+    if fresh:
+        # One path for both: type inference, containment and consent stay
+        # in one place; a non-stamping source resolves without writing.
+        await reindex_paths([path for path, _ in fresh], [], mint=True, write=write)
+        for path, ref in fresh:
+            entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
+            if entity is None:
+                report.skipped.append(path)
+                continue
+            # Just resolved after the reindex — already current, no re-read.
+            # The origin id is derived AGAIN here on purpose: a folder source
+            # keys it on the inode, and the reindex may have rewritten the file.
+            await origin_identity.stamp(entity, origin_id_for(source, ref, root), reload=False)
+            report.placed.append(path)
+            report.added.append(path)
+
+    for ref in tombstones or []:
+        removed = reflector.unplace(source, ref, root)
+        if removed:
+            report.removed.append(removed)
+    for path in report.removed:
+        await _retire_row(path)
+
+    # The durable form of this page, then the announcement. In that order: a consumer woken
+    # by the tag re-derives from the row, so the row has to be there first.
+    if report.moved_anything:
+        from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
+        from flow_sdk.ingest.change_event import emit_applied  # noqa: PLC0415
+
+        await SourceChange.record(source, report)
+        emit_applied(
+            str(source.id), str(source.provider or ""),
+            refs=[*report.added, *report.changed, *report.renamed],
+            tombstones=report.removed,
+            renames=report.renamed,
+        )
+
+    return report

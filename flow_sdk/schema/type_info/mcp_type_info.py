@@ -14,18 +14,18 @@ into the asset. Nothing here is derived from a path: derivation exists only for
 read-only sources we cannot write into, which is the sibling MCP_SERVER scan.
 """
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_json_identity,
 )
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-MCP = TypeMetadata(
-    type=EntityType.MCP,
+MCP = TypeInfo(
+    type_name=EntityType.MCP,
     icon="Plug",
-    displayName="MCP Servers",
+    display_name="MCP Servers",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
@@ -33,9 +33,8 @@ MCP = TypeMetadata(
     index_fields=["command", "url", "transport"],
     asset_class="repo",
     family="mcp",
-    main_layout="folder",
-    main_file="mcp.json",
+    shape=Folder(main="mcp.json"),
+    editor="mcp",
     asset_spec=McpSpec,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(),
 )

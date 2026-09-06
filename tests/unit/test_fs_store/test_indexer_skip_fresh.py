@@ -19,7 +19,7 @@ from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 
 # ── FSRecord index-state block ───────────────────────────────────────────
@@ -82,7 +82,7 @@ async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
     driver = get_db_driver()
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
 
     r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
@@ -126,7 +126,7 @@ async def test_stale_sentinel_without_db_row_reindexes(tmp_path: Path) -> None:
     driver = get_db_driver()
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
 
     # First run: rows + sentinels created.
@@ -166,7 +166,7 @@ async def test_force_reindexes_everything(tmp_path: Path) -> None:
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
 
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     rf = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], force=True))

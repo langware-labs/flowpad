@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.schema.layout import Layout
 
 
 def _read_existing_frontmatter(path: Path) -> dict:
@@ -40,6 +41,7 @@ class FSRef:
         type_id: str = "compute_node-@local",
         project_id: str | None = None,
         json_path: str | None = None,
+        layout: "Layout | None" = None,
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
@@ -53,6 +55,15 @@ class FSRef:
         # whole file (e.g. one hook inside settings.json). Enables recursive
         # walkers that descend into file content. None for regular file/dir refs.
         self._json_path: str | None = json_path
+        # The layout a WALKER already verified, so the id seam
+        # (``TypeInfo.layout_for``) need not stat this path again. Never part
+        # of identity: two refs are the same ref when their paths are.
+        self._layout: "Layout | None" = layout
+
+    @property
+    def layout(self) -> "Layout | None":
+        """The walker-verified layout, when this ref came from a walk."""
+        return self._layout
 
     @property
     def json_path(self) -> str | None:

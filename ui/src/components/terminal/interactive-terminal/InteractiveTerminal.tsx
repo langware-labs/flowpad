@@ -1254,6 +1254,40 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
   }, [shell, terminalReady]);
 
+  // ── The dock's command, typed once the PTY is actually at a prompt ─────────
+  //
+  // `?startCommand=` / `?prefillCommand=` name a command the navigation asked
+  // this terminal to type (see START_COMMAND_PARAM). The write lands HERE, on
+  // the mounted view at `shellReady`, and nowhere else: the click handler that
+  // navigated has no PTY yet, and the loader must not await one — a shell is
+  // created, then attached, and bytes sent before the attach handshake
+  // completes are simply dropped by a PTY that has not reached its prompt.
+  //
+  // Consumed exactly once per arrival. The ref guards a re-render, and the
+  // `replace` navigation drops the param from the URL so a reload — or a back
+  // button — cannot retype it. That matters more than tidiness: `startCommand`
+  // SUBMITS, and silently re-running a command on refresh is not something a
+  // URL should do.
+  const startCommandRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !shellReady || !sessionId) return;
+    // Only the dock we are actually showing may type into us. Warm-mounted
+    // panels for other tabs share this component, and a command addressed to
+    // one terminal must never land in another.
+    if (currentDock?.pointer !== sessionId) return;
+    const ask = currentDock?.shellStartCommand ?? null;
+    if (!ask || startCommandRef.current === ask.command) return;
+    startCommandRef.current = ask.command;
+    void (async () => {
+      const { runInTerminal, prefillInTerminal } = await import('@src/terminal/run-in-terminal');
+      await (ask.submit ? runInTerminal(sessionId, ask.command) : prefillInTerminal(sessionId, ask.command));
+      navigation.openDock(currentDock.withoutShellStartCommand(), undefined, { replace: true });
+    })().catch((err: unknown) => {
+      startCommandRef.current = null;
+      console.warn('[InteractiveTerminal] start command failed', err);
+    });
+  }, [active, shellReady, sessionId, currentDock, navigation]);
+
   const reportFirstPromptIfNeeded = useCallback(
     (prompt: string) => {
       const submittedPrompt = prompt.trim();

@@ -16,8 +16,8 @@ from pydantic import BaseModel
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.dataset import Dataset
-from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.builtin.subagent import SubAgent
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType, to_authoring_form
@@ -118,16 +118,17 @@ COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude=
 
 
 def _register_probe_types() -> None:
-    from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, folder_md_identity, frontmatter_identity
+    from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
     from flow_sdk.fs_store.schema_registry import TypeInfo
+    from flow_sdk.schema.layout import File, Folder
 
-    for cls, spec, layout, main_file in (
-        (_Leaf, _LeafSpec, "file", None), (_Inner, _InnerSpec, "folder", "inner.md"), (_Root, _RootSpec, "folder", "root.md"),
+    for cls, spec, shape in (
+        (_Leaf, _LeafSpec, File(ext=".md")),
+        (_Inner, _InnerSpec, Folder(main="inner.md")),
+        (_Root, _RootSpec, Folder(main="root.md")),
     ):
-        info = TypeInfo(type_name=cls.model_fields["type"].default, capsules=(IDENTITY_CAPSULE,),
-                        identity_carrier=frontmatter_identity() if layout == "file" else folder_md_identity(),
-                        main_layout=layout, main_file=main_file,
-                        main_file_is_asset_ref=bool(main_file), asset_spec=spec)
+        info = TypeInfo(type_name=cls.model_fields["type"].default,
+                        identity_carrier=frontmatter_identity(), shape=shape, asset_spec=spec)
         info.entity_cls = cls
         SchemaRegistry.register(info)
 

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assignableRoles,
   canInviteMembers,
+  grantableRoles,
   participantRank,
 } from '@src/components/conversation/participant-display';
 
@@ -75,5 +76,36 @@ describe('canInviteMembers', () => {
     expect(canInviteMembers(editor)).toBe(false);
     expect(canInviteMembers(member)).toBe(false);
     expect(canInviteMembers(null)).toBe(false);
+  });
+});
+
+/**
+ * Inviting somebody NEW. `assignableRoles` cannot answer this — an invite has no target yet, so it
+ * correctly bails and a picker built on it would render empty. The ceiling is the half that still
+ * applies, and it is the half with the rule in it.
+ */
+describe('grantableRoles', () => {
+  it('lets an owner hand out every assignable role', () => {
+    expect(grantableRoles(owner)).toEqual(['admin', 'editor', 'member', 'reader']);
+  });
+
+  it('does not let an admin create another admin', () => {
+    // The hub's `can_assign` refuses a role at or above the granter's own, so offering `admin`
+    // here put the one entry that could never work at the top of the menu.
+    expect(grantableRoles(admin)).toEqual(['editor', 'member', 'reader']);
+    expect(grantableRoles(admin)).not.toContain('admin');
+  });
+
+  it('narrows further down the ladder', () => {
+    expect(grantableRoles(editor)).toEqual(['member', 'reader']);
+    expect(grantableRoles(member)).toEqual(['reader']);
+  });
+
+  it('grants nothing when the caller has no resolvable rank', () => {
+    // Both call sites render the picker only once the roster has resolved, so this is unreachable
+    // in practice — and guessing "the whole ladder" when we do not know who is asking is the wrong
+    // direction to be wrong in.
+    expect(grantableRoles(null)).toEqual([]);
+    expect(grantableRoles({ role: 'something-custom' })).toEqual([]);
   });
 });

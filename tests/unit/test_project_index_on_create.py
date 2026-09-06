@@ -1,7 +1,7 @@
 """A freshly-created project must NOT read as ``never_indexed``.
 
 Bug: creating a Project persists the entity but never builds/stamps its index,
-so the project record has no ``.hash`` sentinel. ``SchemaRegistry.get_index_status``
+so the project record has no ``.hash`` sentinel. ``index_log.get_index_status``
 scoped to that project then reports ``never_indexed=True`` (``indexed_at is None``),
 which drives the UI's "no index / Build Index" warning + modal on a brand-new,
 empty project.
@@ -23,13 +23,13 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.project import Project
+from flow_sdk.fs_store.indexer import index_log
 from flow_sdk.fs_store.record_paths import (
-    get_default_records_root,
     get_default_records_data_root,
-    set_default_records_root,
+    get_default_records_root,
     set_default_records_data_root,
+    set_default_records_root,
 )
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +57,7 @@ async def test_new_project_is_not_never_indexed(tmp_path: Path):
     await proj.save()
 
     scope = SimpleNamespace(projects=[pid])
-    status = await SchemaRegistry.get_index_status(scope=scope)
+    status = await index_log.get_index_status(scope=scope)
 
     # A brand-new (empty) project is trivially "indexed" — it must not trip the
     # "no index / Build Index" warning. Fails today: creation never stamps the

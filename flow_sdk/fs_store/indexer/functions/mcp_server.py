@@ -47,6 +47,7 @@ except ImportError:
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer.functions._asset_identity import needs_ref
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (
@@ -333,6 +334,7 @@ def _record_id(source_file: str, json_path: str) -> str:
     return f"{source_file}:{json_path}"
 
 
+@needs_ref
 def mcp_server_identity_key(ref: FSRef | Path) -> str:
     path = Path(getattr(ref, "path", ref))
     json_path = getattr(ref, "json_path", None) or ""

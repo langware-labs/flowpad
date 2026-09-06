@@ -40,7 +40,9 @@ async def test_git_asset_record_and_fs_use_entity_relative_vfs(bootstrapped_clie
         },
     }
 
-    source_path = Path(agent["asset_ref"])
+    # ``asset_ref`` is the asset ROOT (the folder asserted as ``record`` above);
+    # the body is its main file, the same ``agent.md`` ``main_ref`` names.
+    source_path = Path(agent["asset_ref"]) / "agent.md"
     source = source_path.read_text(encoding="utf-8")
     updated = source.replace("title: QA manager", "title: QA manager — entity VFS")
     write_response = await bootstrapped_client.post(

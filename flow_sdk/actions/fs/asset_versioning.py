@@ -93,13 +93,13 @@ async def _scope_changed_excluding_version(
 def _versionable_folder_types() -> list:
     """``asset_scope``'s folder-backed types narrowed to those whose main file can
     CARRY the frontmatter ``version:`` this module writes — skill, task, whiteboard.
-    The test is the type's ``identity_carrier``: ``FrontmatterCarrier`` already means
+    The test is the type's ``identity_carrier``: ``Frontmatter`` already means
     "my id lives in this document's header", the gate the identity seam uses too.
     Which folders are assets is shape (there); which may be STAMPED is policy (here).
     """
-    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier
+    from flow_sdk.fs_store.identity_carrier import Frontmatter
 
-    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, FrontmatterCarrier)]
+    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter)]
 
 
 def _versionable_main_files() -> set[str]:
@@ -107,7 +107,7 @@ def _versionable_main_files() -> set[str]:
     registry is momentarily unavailable — an unresolvable type must never be
     stamped blind, so the empty set correctly refuses every folder asset."""
     try:
-        return {t.main_file.lower() for t in _versionable_folder_types()}
+        return {t.shape.main.lower() for t in _versionable_folder_types()}
     except Exception:  # noqa: BLE001
         logger.debug("versionable-type resolve: registry unavailable", exc_info=True)
         return set()

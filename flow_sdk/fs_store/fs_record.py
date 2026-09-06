@@ -32,7 +32,7 @@ import asyncio
 import json
 import logging
 import uuid
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, TypeVar
@@ -41,6 +41,7 @@ from weakref import WeakValueDictionary
 from pydantic import BaseModel
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -72,41 +73,6 @@ _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 _RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
     WeakValueDictionary()
 )
-#: "Do not write into the source bytes during this operation."
-#:
-#: Some sources own their bytes and some only READ them. A git working tree is
-#: the clear second case: stamping an identity capsule into a tracked file
-#: dirties the tree, is committed, and propagates our metadata to everyone who
-#: pulls. Such a source resolves identity by an `origin_id` lookup instead, so
-#: the carrier write is not merely unwanted — it is redundant.
-#:
-#: A ContextVar rather than a parameter because the write happens four layers
-#: below the decision (`reflect` → `Entity.save` → `_store` → `upsert_main_ref`),
-#: and threading a flag through all four would put a "may I write" argument on
-#: methods that have no business asking. Same mechanism as the sync guard above.
-_SUPPRESS_CARRIER_WRITE: "ContextVar[bool]" = ContextVar(
-    "_SUPPRESS_CARRIER_WRITE", default=False
-)
-
-
-def carrier_writes_are_suppressed() -> bool:
-    """Whether this operation must leave the source bytes alone.
-
-    Public so the resolvers can ASK rather than be TOLD. A policy threaded as a
-    parameter has to be passed correctly by every caller; one read from the
-    operation's own context cannot be forgotten.
-    """
-    return _SUPPRESS_CARRIER_WRITE.get()
-
-
-@contextmanager
-def carrier_writes_suppressed():
-    """Resolve identity without stamping it into the asset."""
-    token = _SUPPRESS_CARRIER_WRITE.set(True)
-    try:
-        yield
-    finally:
-        _SUPPRESS_CARRIER_WRITE.reset(token)
 
 
 _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
@@ -168,7 +134,7 @@ def assert_create_target_available(
     carrier = info.body_path_for(asset_ref._path)
     collision = carrier.exists() or carrier.is_symlink()
 
-    if not collision and info.main_layout == "folder":
+    if not collision and isinstance(info.shape, Folder):
         target_folder = info.storage_root_for(asset_ref._path)
         if target_folder.is_symlink():
             collision = True
@@ -430,7 +396,7 @@ class FSRecord(Generic[M]):
         — ``Entity.allocate_id`` keys ``type:rid`` under NAMESPACE_DNS, while
         this keys ``type:path`` under NAMESPACE_URL — and it can fall back to
         ``name``, so two records with the same name at unrelated paths collide.
-        Entity identity comes from ``TypeInfo.mint_entity_id`` and nowhere else.
+        Entity identity comes from the type's carrier (``reconcile``) and nowhere else.
         """
         key = self._asset_ref.path if self._asset_ref else (self.__dict__.get("name") or "")
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.type}:{key}"))
@@ -501,13 +467,13 @@ class FSRecord(Generic[M]):
 
         An id-less record reaching disk used to silently mint a FIFTH identity
         formula (``content_fingerprint``), invisible to every identity guard.
-        Identity comes from ``TypeInfo.mint_entity_id`` before save — the
+        Identity is resolved through the type's carrier before save — the
         fallback was logged for one release and is now a hard error.
         """
         if self.id is None:
             raise ValueError(
                 f"FSRecord({self.type}) reached {caller} with no id; "
-                "mint through TypeInfo.mint_entity_id first"
+                "resolve it through the type's carrier (reconcile) first"
             )
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
@@ -922,13 +888,10 @@ class FSRecord(Generic[M]):
             return None
         safe = self._safe_name(entity)
         base = Path(scope_root) / subdir
-        if info.main_layout == "folder":
-            # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
-            # body_path_for, recovers the body on write) so the convention lives
-            # in one place rather than mirrored here.
-            target = info.asset_ref_for(base / safe)
+        if isinstance(info.shape, Folder):
+            target = base / safe
         else:
-            target = base / f"{safe}{info.main_ext}"
+            target = base / f"{safe}{info.shape.ext}"
         resolved_root = Path(scope_root).resolve()
         resolved_target = target.resolve()
         if not resolved_target.is_relative_to(resolved_root):

@@ -1,4 +1,5 @@
 import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
+import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 
 /**
  * Resolve a descriptor's typeid string to the cached entity's `displayName`.
@@ -83,8 +84,7 @@ export function descriptorKey(descriptor: { typeid: string; posix_path?: string 
 
 /** The subset of a type's TypeInfo that decides its improvable main file. */
 export interface ImprovableTypeInfo {
-  folder_backed?: boolean;
-  main_file?: string | null;
+  shape?: TypeShape | null;
 }
 
 /**
@@ -93,7 +93,7 @@ export interface ImprovableTypeInfo {
  * shown-then-errored ("no main file metadata"). Single source of truth shared by
  * the row's `canImprove` gate and `resolveImproveTarget`, so the affordance is
  * offered iff improvement can actually run:
- *   - folder-backed type → its TypeInfo `main_file` (empty ⇒ not improvable)
+ *   - folder-shaped type → its TypeInfo `shape.main` (empty ⇒ not improvable)
  *   - flat type          → the path basename
  */
 export function improvableMainFile(
@@ -104,6 +104,7 @@ export function improvableMainFile(
   if (!assetPath) return null;
   const { type } = parseTypeid(descriptor.typeid);
   const ti = typeInfoByName.get(type);
-  const file = ti?.folder_backed ? (ti.main_file ?? '') : basename(assetPath);
+  const shape = ti?.shape;
+  const file = isFolderShape(shape) ? (shape.main ?? '') : basename(assetPath);
   return file || null;
 }

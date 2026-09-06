@@ -20,8 +20,10 @@ import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
+import { llmEndpointListChildren } from './llmEndpointRoot';
 import { tagListChildren } from './tagRoot';
 import { config, dataManager } from '@sdk';
+import { isFolderShape } from '@sdk/FlowSync/schema';
 
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
@@ -121,13 +123,11 @@ function typeInfoOf(typeName: string) {
 /**
  * True when an asset of this type can OWN other assets — i.e. a folder-LAYOUT
  * type, the shape the backend `repo_assets_fn` walker recurses into
- * (`<asset>/agentic-assets/<type>/<name>`). Deliberately NOT `folder_backed`:
- * an Agent is folder-layout (it owns its copies of the Mcps it declares) but is
- * not folder-backed, because its `asset_ref` is the inner `agent.md`. Gating on
- * layout is also what keeps a chevron off the 400-odd file-layout markdown rows.
+ * (`<asset>/agentic-assets/<type>/<name>`). Gating on layout is what keeps a
+ * chevron off the 400-odd file-layout markdown rows.
  */
 function canOwnAssets(typeName: string): boolean {
-  return typeInfoOf(typeName)?.main_layout === 'folder';
+  return isFolderShape(typeInfoOf(typeName)?.shape);
 }
 
 /**
@@ -164,7 +164,7 @@ async function fetchChildAssets(parentTypeId: string, parentNodeId: string, limi
     const child = buildAssetChild(
       r.record_type,
       r,
-      !!typeInfoOf(r.record_type)?.folder_backed,
+      isFolderShape(typeInfoOf(r.record_type)?.shape),
       parentNodeId,
       onAfterDelete,
     );
@@ -323,7 +323,7 @@ function buildTaskTree(
   // on-disk task must collapse to a single row (shared across the whole tree).
   const seen = new Set<string>();
   const buildNode = (r: SearchResult, ancestry: Set<string>): Browseable | null => {
-    const node = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
+    const node = buildAssetChild(type.type_name, r, isFolderShape(type.shape), rootId, onAfterDelete);
     if (seen.has(node.id)) return null;
     seen.add(node.id);
     const selfBare = resultTypeId(r)?.id ?? '';
@@ -429,6 +429,12 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     if (type.type_name === 'tag') {
       return tagListChildren(rootId);
     }
+    // LLM endpoints are row-only for a different reason: there is no local record at
+    // all. They are read through the box's `llm-endpoint` action, which already answers
+    // with exactly the budgets this person may spend.
+    if (type.type_name === 'llm_endpoint') {
+      return llmEndpointListChildren();
+    }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     // Tasks nest: a group/parent task's member (child) tasks render indented
     // under it (children first, then the parent's folder files). See buildTaskTree.
@@ -442,7 +448,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     const seen = new Set<string>();
     const children: Browseable[] = [];
     for (const r of results) {
-      const child = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
+      const child = buildAssetChild(type.type_name, r, isFolderShape(type.shape), rootId, onAfterDelete);
       if (seen.has(child.id)) continue;
       seen.add(child.id);
       children.push(child);

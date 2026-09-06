@@ -22,7 +22,14 @@ import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewTy
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAddress } from './url-builder';
 import { isValidView } from './validators';
-import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import {
+  AssetEditor,
+  AssetMode,
+  AssetRoutingMethod,
+  editorForPath,
+  editorForType,
+  LOCAL_COMPUTE_NODE,
+} from './asset-doc-types';
 import {
   assetEditorOf,
   assetEditorValue,
@@ -255,6 +262,22 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
  * { capabilityKind })`.
  */
 export const CAPABILITY_PARAM = 'capability';
+
+/**
+ * A command the shell dock hands its terminal to type on first attach.
+ *
+ * `startCommand` is typed AND submitted; `prefillCommand` is typed and left at
+ * the prompt for the user to press Enter on. The distinction is the whole
+ * point of the pair: "resume this session" is an instruction Flowpad is
+ * carrying out, while "install Claude Code" is one it is only proposing — that
+ * one pipes a remote script into a shell, so the Enter belongs to the user.
+ *
+ * Consumed exactly once, by the mounted `InteractiveTerminal` at the moment
+ * its PTY reports ready, which then navigates to the same dock WITHOUT the
+ * param (`withoutShellStartCommand`) so a reload cannot retype it.
+ */
+export const START_COMMAND_PARAM = 'startCommand';
+export const PREFILL_COMMAND_PARAM = 'prefillCommand';
 
 /**
  * Canonicalize an entity-relative path: forward slashes, collapsed separators,
@@ -674,6 +697,11 @@ export class DockPointer implements IDockPointer {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, `Invalid view type: ${viewType}`);
     }
 
+    // `isValidView` validates at runtime but is not a type predicate, so bind
+    // the narrowed value ONCE here rather than casting at each use — the
+    // comparison below is against the enum and has to be enum-typed too.
+    const view = viewType as ViewType;
+
     // Decode pointer if provided (may be URL-encoded)
     // Normalize the string "undefined" to actual undefined
     const decodedPointer = pointer && pointer !== 'undefined' ? decodeURIComponent(pointer) : undefined;
@@ -685,20 +713,14 @@ export class DockPointer implements IDockPointer {
     // so it stays out of tab identity (see HOST_PARAM). Lifting here is what
     // keeps every downstream reader of a project sub-pointer — splitProjectPointer,
     // targetTypeId, the AssetsPage parsers — unaware that a host exists at all.
-    if (viewType === ViewType.PROJECT) {
+    if (view === ViewType.PROJECT) {
       const lifted = liftHostFromProjectPointer(decodedPointer);
       if (lifted.hostProcessId) {
-        return new DockPointer(
-          viewType as ViewType,
-          lifted.pointer,
-          { ...options, [HOST_PARAM]: lifted.hostProcessId },
-          layout,
-          page,
-        );
+        return new DockPointer(view, lifted.pointer, { ...options, [HOST_PARAM]: lifted.hostProcessId }, layout, page);
       }
     }
 
-    return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
+    return new DockPointer(view, decodedPointer, options, layout, page);
   }
 
   /**
@@ -992,8 +1014,15 @@ export class DockPointer implements IDockPointer {
   ): DockPointer {
     // Delegates to the canonical AssetDocPointer grammar:
     //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
-    // The editor is derived from the record type (one editor serves many types).
-    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    // The editor is the registry's declaration for the record type
+    // (`TypeInfo.editor`; the static table only when the registry is unbound).
+    // A type with no editor falls back to the editor the PATH names, never to
+    // markdown: the VFS branch of AssetEditorRouter asks the backend to resolve
+    // the path's type, and a markdown fallback would send a `.py` there as if
+    // it were a document (FLOWPAD-2083). `editorForPath` routes unknown
+    // extensions to the file-only CODE editor, which has no backing entity and
+    // never resolves.
+    const editor = editorForType(assetType) ?? editorForPath(vfsPath);
     const path = normalizeAssetVfsPath(vfsPath);
     return new DockPointer(
       ViewType.ASSETS,
@@ -1432,19 +1461,41 @@ export class DockPointer implements IDockPointer {
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
    * @param options.cwd - Working directory to cd into before starting the shell
-   * @param options.startCommand - Optional command to run on shell startup
+   * @param options.startCommand - Command typed AND submitted once the shell is ready
+   * @param options.prefillCommand - Command typed but NOT submitted; the user presses Enter
    * @param options.skipPermissions - Pass through `--dangerously-skip-permissions` semantics where applicable
    */
   static forShell(
     sessionId?: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; prefillCommand?: string; skipPermissions?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
     if (options?.cwd) queryOptions.cwd = options.cwd;
-    if (options?.startCommand) queryOptions.startCommand = options.startCommand;
+    if (options?.startCommand) queryOptions[START_COMMAND_PARAM] = options.startCommand;
+    if (options?.prefillCommand) queryOptions[PREFILL_COMMAND_PARAM] = options.prefillCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
     return new DockPointer(ViewType.SHELL, sessionId, queryOptions, layout);
+  }
+
+  /**
+   * The command this shell dock asks its terminal to type on first attach, and
+   * whether to submit it. Consumed ONCE by the mounted `InteractiveTerminal`
+   * (see `START_COMMAND_PARAM`) — a PTY write is a side effect on a live
+   * terminal, so it belongs to the mounted view, not to the loader or to the
+   * click handler that navigated here.
+   */
+  get shellStartCommand(): { command: string; submit: boolean } | null {
+    const submitted = this.options?.[START_COMMAND_PARAM];
+    if (submitted) return { command: submitted, submit: true };
+    const typed = this.options?.[PREFILL_COMMAND_PARAM];
+    return typed ? { command: typed, submit: false } : null;
+  }
+
+  /** Clone this dock with both command params dropped — what the terminal
+   *  navigates to after typing, so a refresh cannot retype the command. */
+  withoutShellStartCommand(): DockPointer {
+    return this.withOption(START_COMMAND_PARAM, null).withOption(PREFILL_COMMAND_PARAM, null);
   }
 
   /**
@@ -2490,9 +2541,8 @@ export class DockPointer implements IDockPointer {
    */
   private get urlParts(): { pointer?: string; options?: Record<string, string> } {
     const host = this.hostProcessId;
-    const embedded = host && this.viewType === ViewType.PROJECT
-      ? embedHostInProjectPointer(this.pointer, host)
-      : undefined;
+    const embedded =
+      host && this.viewType === ViewType.PROJECT ? embedHostInProjectPointer(this.pointer, host) : undefined;
     // A hosted dock with no project segment to nest under (a terminal, a web
     // app) keeps the plain `?host=` form rather than losing the host.
     if (!embedded || embedded === this.pointer) return { pointer: this.pointer, options: this.options };
@@ -2510,7 +2560,6 @@ export class DockPointer implements IDockPointer {
     const { pointer, options } = this.urlParts;
     return buildDockUrl(currentPath, this.viewType, pointer, options, this.layout, this.page);
   }
-
 
   /**
    * Convert options to URLSearchParams

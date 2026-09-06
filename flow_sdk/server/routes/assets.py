@@ -4,6 +4,10 @@ Endpoints:
 - ``GET /api/v1/assets/types``    — registered user-asset entity types.
 - ``GET /api/v1/assets/by-path``  — entities whose ``asset_ref`` lives under
   one or more folders. Thin wrapper over ``Entity.assets_by_path``.
+- ``GET /api/v1/assets/resolve``  — THE path → asset resolver: type, id,
+  layout, editor and the row (indexed on a miss). 404 when not an asset.
+- ``GET /api/v1/assets/entity``   — exact ``asset_ref`` → row, else the
+  containing folder asset; ``null`` when nothing owns the path. Never indexes.
 """
 
 from pathlib import Path
@@ -171,21 +175,40 @@ async def list_entities_by_path(
     }})
 
 
+@router.get("/api/v1/assets/resolve")
+async def resolve_by_path(
+    path: str = Query(..., description="Absolute machine path of the asset to resolve."),
+):
+    """``{type, id, root, body, editor, entity}`` for the asset at ``path``.
+
+    ``resolve_asset`` classifies the path and settles its id through the
+    indexer's reconcile; ``ensure_entity`` indexes the asset when no row
+    exists yet, so a client that gets ``entity: null`` can still fetch by
+    ``(type, id)``. A path no type claims is 404.
+    """
+    from flow_sdk.fs_store.resolve import NotAnAsset, ensure_entity, resolve_asset  # noqa: PLC0415
+
+    try:
+        resolved = await resolve_asset(path, write=True)
+    except NotAnAsset as reason:
+        return JSONResponse(status_code=404, content={"status": "FAIL", "message": str(reason), "data": None})
+    entity = await ensure_entity(resolved)
+    return JSONResponse(content={"status": "SUCCESS", "data": {
+        **resolved.to_dict(),
+        "entity": entity.model_dump(mode="json") if entity is not None else None,
+    }})
+
+
 @router.get("/api/v1/assets/entity")
 async def get_entity_by_path(
     path: str = Query(..., description="Exact asset_ref (file path) of the entity to resolve."),
 ):
-    """Resolve the single entity whose ``asset_ref`` equals ``path``.
+    """The entity row whose ``asset_ref`` equals ``path``, or ``null``.
 
-    Pure DB lookup across every file-backed type (thin wrapper over
-    ``Entity.get_by_asset_ref``) — **no discovery, no recovery scan, no
-    indexing**. Exact match wins; on a miss, a file inside a folder-backed
-    asset (skill, whiteboard, task, ...) resolves to its owning folder entity
-    (deepest ancestor ``asset_ref`` — still a pure indexed DB lookup). Returns
-    the full entity row, or ``null`` when no entity owns the path (caller
-    keeps its fallback). This is the cheap, best-effort path→entity conversion
-    the loader uses; ``/fs-records/{type}/discover`` is the heavy recovery
-    counterpart and stays out of the hot path.
+    Pure DB lookup — no discovery, no indexing (``/assets/resolve`` is the
+    indexing counterpart). Exact match first; on a miss a file INSIDE a
+    folder-backed asset answers its owning folder entity (deepest ancestor
+    ``asset_ref``). ``null`` when no entity owns the path.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 

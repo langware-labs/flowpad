@@ -60,13 +60,13 @@ The `meta` property (`fs_record.py:357`) returns a read-only dict view of the me
 | Field | Type | Notes |
 |---|---|---|
 | `type` | `str` | Record type string, e.g. `"claude_session"`. Defaults to the `_record_type` ClassVar (empty by default). |
-| `id` | `str \| None` | Stable identity for both the filesystem path and the Entity DB row. Must be resolved (`TypeInfo.mint_entity_id` / `Entity.allocate_id`) before the record reaches disk — see below. |
+| `id` | `str \| None` | Stable identity for both the filesystem path and the Entity DB row. Must be resolved (`reconcile` / `TypeInfo.mint` / `TypeInfo.stamp_id` for a filesystem asset, `Entity.allocate_id` for a row) before the record reaches disk — see below. |
 
 There is no `name`/`status`/`uid` property on the base class — `name`, `status`, `scope`, etc. are ordinary meta attributes when a caller sets them.
 
 ### `content_fingerprint` is NOT an id
 
-`content_fingerprint` (`fs_record.py:425`) is a deterministic `uuid5(NAMESPACE_URL, f"{type}:{key}")` where `key` is the `asset_ref` path (or the `name` attr if there is no asset). It is **not** an entity id and never agreed with `Entity.allocate_id` (which keys `type:id` under `NAMESPACE_DNS`); it can also collide for two records with the same name at unrelated paths. Entity identity comes only from `TypeInfo.mint_entity_id` (filesystem assets) or `Entity.allocate_id` (row-only entities) — see [Asset capsules](asset-capsules.md) and the entity id policy in the repo `CLAUDE.md`.
+`content_fingerprint` (`fs_record.py:425`) is a deterministic `uuid5(NAMESPACE_URL, f"{type}:{key}")` where `key` is the `asset_ref` path (or the `name` attr if there is no asset). It is **not** an entity id and never agreed with `Entity.allocate_id` (which keys `type:id` under `NAMESPACE_DNS`); it can also collide for two records with the same name at unrelated paths. Entity identity comes only from `TypeInfo.mint` / `TypeInfo.stamp_id` (filesystem assets) or `Entity.allocate_id` (row-only entities) — see [Asset capsules](asset-capsules.md) and the entity id policy in the repo `CLAUDE.md`.
 
 `save()` therefore does **not** mint. An id-less record that reaches `save()` logs an `[asset-id]` warning and falls back to `content_fingerprint` (`_meta_path_for_write`, `fs_record.py:499`); that fallback is scheduled to become a raise. A constructor-provided `id` always wins.
 
@@ -110,7 +110,7 @@ An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `
 | `discover(type)` | `classmethod -> list[FSRecord]` | Walks `<root>/<type>/`, loading each child shadow via `load_record`; skips malformed entries. |
 | `count(type)` | `classmethod -> int` | Counts shadow folders for `type` without reading/parsing any `metadata.json`. |
 | `iter_discovered(type)` | `classmethod -> Iterator[FSRecord]` | Lazy form of `discover` (`fs_record.py:667`); used by `type_has_pending_changes`. |
-| `type_has_pending_changes(type)` | `classmethod -> bool` | True if ANY record of the type has `index_required` (short-circuits on the first). Backs `SchemaRegistry.get_index_status().stale`. |
+| `type_has_pending_changes(type)` | `classmethod -> bool` | True if ANY record of the type has `index_required` (short-circuits on the first). Backs `index_log.get_index_status().stale`. |
 
 There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_record`, `save_record_json`, `write_record`, `persist`, or `open()` on `FSRecord`.
 
@@ -130,7 +130,7 @@ There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_re
 
 `ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
-`compute_asset_ref(scope_root, entity, *, default_worker="claude")` resolves the user-facing asset location under `scope_root`: the family subdir comes from the placement axis (`placement.family_subdir(asset_class, harness, family, default_worker)` — `.claude/skills`, `docs`, …; `TypeInfo.main_subdir` is now a derived read-only view of the same triple), then `main_layout` decides the tail (`"file"` → `<safe_name><main_ext>`, `"folder"` → `info.asset_ref_for(<safe_name>/)`). A target that resolves outside `scope_root` raises. The asset itself is written by the type's **serializer** (`TypeInfo.serializer(origin).store(entity, origin)`, `flow_sdk/fs_store/serializer/`): `DiskSerializer` renders the `asset_spec`-declared main doc plus every `FileRef` / `FolderSpec` / sub-asset / rows field, writing the main doc iff it does not yet exist (or on every save for `owns_main_ref` types), then commits the entity id to the asset's identity carrier (for a markdown main document the header itself — the id is rendered first) and returns the origin with `id` set. A type with no `asset_spec` renders through `TypeInfo.default_body_fn` under the same exists/owns rule. There is no other writer. When carrier writes are suppressed for the operation (see [asset capsules](asset-capsules.md)) the proposed id is returned untouched and the source file is never rewritten.
+`compute_asset_ref(scope_root, entity, *, default_worker="claude")` resolves the user-facing asset location under `scope_root`: the family subdir comes from the placement axis (`placement.family_subdir(asset_class, harness, family, default_worker)` — `.claude/skills`, `docs`, …; `TypeInfo.main_subdir` is now a derived read-only view of the same triple), then `shape` decides the tail (`File(ext)` → `<safe_name><ext>`, `Folder` → `<safe_name>/`). A target that resolves outside `scope_root` raises. The asset itself is written by the type's **serializer** (`TypeInfo.serializer(origin).store(entity, origin)`, `flow_sdk/fs_store/serializer/`): `DiskSerializer` renders the `asset_spec`-declared main doc plus every `FileRef` / `FolderSpec` / sub-asset / rows field, writing the main doc iff it does not yet exist (or on every save for `owns_main_ref` types), then commits the entity id through `TypeInfo.stamp_id` (for a markdown main document the header itself — the id is rendered first) and returns the origin with `id` set. A type with no `asset_spec` renders through `TypeInfo.default_body_fn` under the same exists/owns rule. There is no other writer. For a `read_only` ref the proposed id is returned untouched and the source file is never rewritten (see [asset capsules](asset-capsules.md)).
 
 ---
 
@@ -194,7 +194,7 @@ r = FSRecord("claude_session", "abc-123", name="my-session", prompt="hello")
 # Passing asset_ref="..." (str) is coerced into an FSRef via the setter.
 ```
 
-`type` falls back to the class `_record_type` ClassVar when omitted. `id` may stay `None` in memory, but must be resolved through `TypeInfo.mint_entity_id` / `Entity.allocate_id` before `save()` (see [Identity](#identity)).
+`type` falls back to the class `_record_type` ClassVar when omitted. `id` may stay `None` in memory, but must be resolved through `reconcile` / `TypeInfo.stamp_id` / `Entity.allocate_id` before `save()` (see [Identity](#identity)).
 
 ### Loading via `from_dict`
 
@@ -217,12 +217,12 @@ There are no `FSRecord` subclasses and no `__init_subclass__` auto-registration.
 | `meta_model` | Optional hand-written Pydantic model for the `meta` view; read via `effective_meta_model`, which derives one from the type's `asset_spec` when absent. |
 | `default_origin_kind` / `serializer(origin)` | Which `DataSerializer` stores/loads the type (`"local"` disk, `"db"`, `"hub"`); `name_from_path`, `rows_layout_field`, `hub_main_file`, `manifest_layout` are its layout facts. `db_only=True` marks a row-only type with no shadow; `fts_content` names the row fields such a type feeds to FTS. |
 | `from_disk_fn` | Cold-path parser: `(FSRef, resolved_id) -> list[FSRecord]`. |
-| `capsules` / `identity_carrier` | Named capsule declarations and WHERE the id lives (frontmatter for a markdown main document, folder json, native json, or derived). |
-| `identity_key_fn` / `id_stable_key_fn` / `id_namespace` | Optional deterministic key (`stable_key_for`) and UUID namespace used by `TypeInfo.mint_entity_id()` for provider/natural/path-v5 identities. |
+| `identity_carrier` | WHERE the id lives: `Frontmatter` (a markdown main document), `Sidecar` (`<folder>/.flow/capsules/identity.json`), `JsonRoot` (a report), or `Derived`. |
+| `identity_key_fn` / `id_stable_key_fn` / `id_namespace` | Optional deterministic key (`stable_key_for`) and UUID namespace used by `TypeInfo.mint()` for provider/natural/path-v5 identities. |
 | `asset_hash_fn` | Cheap freshness token: `(FSRef) -> ...`. |
 | `post_sync_fn` | Async hook run after `sync_to_db`. |
 | `default_body_fn` | Default body for a type with no `asset_spec` (`dynamic_workflow`); spec-bearing types render through `DiskSerializer.render`. |
-| `asset_class` / `harness` / `family` (placement axis), `main_layout` / `main_file` / `main_ext` / `owns_main_ref` | Asset placement under the user's scope root. `main_subdir` is a derived read-only property (`family_subdir(...)` with the claude default), not a stored field. |
+| `asset_class` / `harness` / `family` (placement axis), `shape` / `owns_main_ref` | Asset placement under the user's scope root. `main_subdir` is a derived read-only property (`family_subdir(...)` with the claude default), not a stored field. |
 
 Per-type `TypeInfo` definitions live in `flow_sdk/schema/type_info/<type>_info.py` and are registered via `SchemaRegistry.register(info)` (merging into any existing entry). `SchemaRegistry` is the single source of truth for types — `get(type)`, `get_all_types()`, `get_entity_cls(type)`, `get_icon(type)`, etc.
 

@@ -1,7 +1,7 @@
 """Loading and resolving icon packs.
 
 This is the first thing on the Python side that can answer "is this a real icon
-name?". Until now nothing could: ``TypeMetadata.icon`` is a free string whose
+name?". Until now nothing could: ``TypeInfo.icon`` is a free string whose
 docstring says outright that the valid set "lives in the frontend's bundle, not
 here", so a typo was invisible until someone looked at a screen and saw the
 generic document glyph.

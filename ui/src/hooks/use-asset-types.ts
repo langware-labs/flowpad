@@ -5,7 +5,7 @@ import type { AssetTypeVault } from '@sdk/lazy/assets';
 export type { AssetTypeVault } from '@sdk/lazy/assets';
 const NO_VAULTS: AssetTypeVault[] = [];
 import { dataManager } from '@sdk';
-import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
+import { isBrowseableIn, type TypeShape, type ViewMode } from '@sdk/FlowSync/schema';
 import { useViewMode, ViewMode as UiViewMode } from '@src/contexts/view-mode-context';
 import { translateTypeLabel } from '@src/i18n/type-labels';
 
@@ -15,16 +15,11 @@ export interface AssetTypeInfo {
   icon: string | null;
   creatable: boolean;
   browseable_by: ViewMode | null;
-  /** Folder-layout type whose asset_ref is the bare folder (e.g. skill): its
-   *  sidebar row expands into the on-disk file tree. Sourced synchronously from
-   *  the registry (TypeInfo.folder_backed), so it's set on the first render. */
-  folder_backed?: boolean;
-  /** `'folder'` when the asset is a directory that can own nested assets, `'file'`
-   *  otherwise. Distinct from `folder_backed`: an Agent is folder-LAYOUT (so it can
-   *  own an Mcp) but not folder-BACKED (its asset_ref is the inner agent.md). */
-  main_layout?: string | null;
-  /** Fixed inner filename for folder-backed assets, e.g. SKILL.md. */
-  main_file?: string | null;
+  /** The type's on-disk shape (TypeInfo.shape): `kind:'folder'` means the asset
+   *  IS a directory — its sidebar row expands into the on-disk file tree and it
+   *  can own nested assets. Sourced synchronously from the registry, so it's set
+   *  on the first render. */
+  shape?: TypeShape | null;
   vaults?: AssetTypeVault[];
 }
 
@@ -70,9 +65,7 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
       browseable_by: t.browseable_by,
       // Sourced synchronously from the registry like every other static field —
       // available on the first render, so a deep-link auto-expand can't race it.
-      folder_backed: t.folder_backed,
-      main_layout: t.main_layout,
-      main_file: t.main_file,
+      shape: t.shape,
     }));
 }
 
@@ -97,7 +90,7 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
-  // folder_backed is already on each entry (sync, from the registry).
+  // shape is already on each entry (sync, from the registry).
   const types = useMemo(
     () => staticAssetTypes(mode).map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
     [mode, vaults],

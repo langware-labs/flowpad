@@ -27,10 +27,7 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "template.json"
@@ -64,14 +61,6 @@ def _deck_template_id_from_path(path: Path) -> str:
     )
 
 
-def deck_template_id_from_folder(ref: FSRef | Path) -> object | None:
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    meta, _ = _load_manifest(path)
-
-    return adopt_entity_id(meta.get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────

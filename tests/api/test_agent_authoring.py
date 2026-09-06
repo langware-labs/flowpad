@@ -7,11 +7,11 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import frontmatter_id
 
 pytestmark = pytest.mark.asyncio
 
@@ -46,7 +46,7 @@ async def test_project_agent_collision_preserves_the_first_bundle(bootstrapped_c
 
     agent_md = first_root / "agentic-assets" / "agent" / "q" / "agent.md"
     original_bytes = agent_md.read_bytes()
-    original_identity = read_frontmatter_id(agent_md)  # markdown identity IS frontmatter ``id:``
+    original_identity = frontmatter_id(agent_md)  # markdown identity IS frontmatter ``id:``
     assert original_identity == created["id"]
 
     [disk_record] = SchemaRegistry.get("agent").from_disk_fn(FSRef(agent_md), created["id"])
@@ -63,11 +63,11 @@ async def test_project_agent_collision_preserves_the_first_bundle(bootstrapped_c
     assert collision.status_code == 409, collision.text
     assert "already exists in this scope" in collision.text
     assert agent_md.read_bytes() == original_bytes
-    assert read_frontmatter_id(agent_md) == original_identity
+    assert frontmatter_id(agent_md) == original_identity
     assert (await Agent.get_by_id(created["id"])).title == "QA manager"
 
     rows = await Agent.get_all(QueryFilter(match=ExpressionNode(project_id=first["id"])))
-    assert [row.id for row in rows if row.asset_ref == str(agent_md)] == [created["id"]]
+    assert [row.id for row in rows if row.asset_ref == str(agent_md.parent)] == [created["id"]]
 
     other_scope = await client.post(f"/api/v1/graph/project/{second['id']}/agent", json=payload)
     assert other_scope.status_code == 200, other_scope.text
@@ -113,11 +113,11 @@ async def test_create_rejects_caller_asset_ref_and_uses_project_placement(bootst
         json={"type": "agent", "name": "Contained"},
     )
     assert response.status_code == 200, response.text
-    expected = project_root / "agentic-assets" / "agent" / "contained" / "agent.md"
+    expected = project_root / "agentic-assets" / "agent" / "contained"
     assert response.json()["data"]["asset_ref"] == str(expected)
     assert response.json()["data"]["project_id"] == project["id"]
     assert response.json()["data"]["scope"] == "project"
-    assert expected.is_file()
+    assert (expected / "agent.md").is_file()
     assert not outside.exists()
 
 
@@ -151,9 +151,9 @@ async def test_simultaneous_same_slug_creates_have_one_winner(bootstrapped_clien
     assert sorted(response.status_code for response in responses) == [200, 409]
     carrier = tmp_path / "race" / "agentic-assets" / "agent" / "race_agent" / "agent.md"
     winner = next(response.json()["data"] for response in responses if response.status_code == 200)
-    assert read_frontmatter_id(carrier) == winner["id"]
+    assert frontmatter_id(carrier) == winner["id"]
     rows = await Agent.get_all(QueryFilter(match=ExpressionNode(project_id=project["id"])))
-    assert [row.id for row in rows if row.asset_ref == str(carrier)] == [winner["id"]]
+    assert [row.id for row in rows if row.asset_ref == str(carrier.parent)] == [winner["id"]]
 
 
 async def test_prepared_fresh_asset_rechecks_collision_at_save(bootstrapped_client, tmp_path):

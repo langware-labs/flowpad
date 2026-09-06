@@ -18,7 +18,7 @@ import uuid as _uuid
 from pathlib import Path
 
 from flow_sdk.capsules import strip_capsule_blocks
-from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load, read_frontmatter_id
+from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions.markdown import (
     markdown_id as _markdown_id,
 )
@@ -32,16 +32,17 @@ class _MarkdownRecordAdapter:
         return _markdown_id(ref)
     @staticmethod
     def genId(ref):
-        return SchemaRegistry.get("markdown").mint_entity_id(ref)
+        return resolve_id(SchemaRegistry.get("markdown"), ref)
     @staticmethod
     def from_file(path):
         from flow_sdk.fs_store.fs_ref import FSRef
         ref = FSRef(path)
-        resolved_id = SchemaRegistry.get("markdown").mint_entity_id(ref)
+        resolved_id = resolve_id(SchemaRegistry.get("markdown"), ref)
         return SchemaRegistry.get("markdown").from_disk_fn(ref, resolved_id)[0]
 
 MarkdownRecord = _MarkdownRecordAdapter
 from flow_sdk.fs_store.fs_ref import FSRef
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -66,14 +67,6 @@ def test_getId_without_asset_id_returns_path_uuid5(tmp_path: Path) -> None:
     ref = FSRef(p)
     expected = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(p.resolve())))
     assert MarkdownRecord.getId(ref) == expected
-
-
-def test_getId_reads_asset_id_from_frontmatter(tmp_path: Path) -> None:
-    """Legacy `asset_id:` field is still read."""
-    known = "11111111-2222-4333-8444-555555555555"
-    p = tmp_path / "b.md"
-    _write_md(p, "# body\n", frontmatter=f"asset_id: {known}\ntitle: T\n")
-    assert MarkdownRecord.getId(FSRef(p)) == known
 
 
 def test_getId_reads_id_from_frontmatter(tmp_path: Path) -> None:
@@ -101,7 +94,7 @@ def test_genId_mints_v4_capsule_when_no_frontmatter(tmp_path: Path) -> None:
     assert minted != path_uuid5, "genId must NOT derive uuid5(path) anymore"
     text = p.read_text(encoding="utf-8")
     assert text.startswith(f"---\nid: {minted}\n---"), "a frontmatter block is created for the id"
-    assert read_frontmatter_id(p) == minted
+    assert frontmatter_id(p) == minted
     # Body survives
     assert "# body only" in _extract_body(text)
     assert "nothing else" in _extract_body(text)
@@ -149,21 +142,7 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
     p = tmp_path / "g.md"
     _write_md(p, "# body\n", frontmatter="title: T\n")
     minted = MarkdownRecord.genId(FSRef(p))
-    assert SchemaRegistry.get("markdown").mint_entity_id(FSRef(p)) == minted
-
-
-def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
-    """Legacy `asset_id:` is respected; no rewrite, no rename to `id`."""
-    preexisting = "deadbeef-dead-4eef-8ead-beefdeadbeef"
-    p = tmp_path / "h.md"
-    _write_md(p, "# body\n", frontmatter=f"asset_id: {preexisting}\ntitle: T\n")
-    mtime_before = p.stat().st_mtime
-
-    result = MarkdownRecord.genId(FSRef(p))
-
-    assert result == preexisting
-    # File not rewritten since legacy asset_id was present
-    assert p.stat().st_mtime == mtime_before
+    assert resolve_id(SchemaRegistry.get("markdown"), FSRef(p)) == minted
 
 
 def test_genId_respects_existing_id_key(tmp_path: Path) -> None:
@@ -193,7 +172,7 @@ def test_genId_on_empty_file_still_returns_id(tmp_path: Path) -> None:
     p.write_text("", encoding="utf-8")
     minted = MarkdownRecord.genId(FSRef(p))
     assert _UUID_RE.match(minted)
-    assert read_frontmatter_id(p) == minted
+    assert frontmatter_id(p) == minted
 
 
 def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
@@ -202,7 +181,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_entity_id(ref))})
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: resolve_id(SchemaRegistry.get("plan"), ref))})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")
@@ -213,7 +192,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     assert result == expected_derived
     # File was rewritten with the id as its frontmatter.
     text = p.read_text(encoding="utf-8")
-    assert read_frontmatter_id(p) == result
+    assert frontmatter_id(p) == result
     # Body preserved
     assert "some plan body" in _extract_body(text)
 

@@ -71,9 +71,11 @@ def _skill_id_from_path(script_path: str) -> str | None:
     info = SchemaRegistry.get(str(RecordType.SKILL))
     if info is None:
         return None
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
     try:
         ref = FSRef(skill_dir, record_type=RecordType.SKILL)
-        return info.mint_entity_id(ref)
+        return reconcile(info, info.layout_for(ref), None, None, write=True, ref=ref)
     except Exception:
         return None
 

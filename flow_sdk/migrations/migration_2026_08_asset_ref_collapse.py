@@ -439,6 +439,7 @@ def _restamp(groups: list[Group], report: Report) -> None:
     are a copy, but the files on disk are not.
     """
     from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.reconcile import reconcile
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -448,9 +449,7 @@ def _restamp(groups: list[Group], report: Report) -> None:
             continue
         try:
             ref = FSRef(Path(group.path), record_type=RecordType(group.type_name))
-            resolved = info.mint_entity_id(
-                ref, owner_id=group.winner, live_ids={group.winner}
-            )
+            resolved = reconcile(info, info.layout_for(ref), group.winner, {group.winner}, write=True, ref=ref)
             if resolved == group.winner:
                 report.files_restamped += 1
         except Exception as e:

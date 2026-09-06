@@ -16,7 +16,7 @@ Deliberate shape:
 """
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -26,8 +26,8 @@ class FolderMeta(BaseMeta):
     path: Optional[str] = None
 
 
-FOLDER = TypeMetadata(
-    type=EntityType.FOLDER,
+FOLDER = TypeInfo(
+    type_name=EntityType.FOLDER,
     icon="Folder",
     api_visible=True,
     creatable=False,

@@ -1,4 +1,5 @@
 import { lazyAssets, LazyAsset } from '../lazy';
+import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -336,6 +337,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         throw error;
       }
     }
+    // The registry is the authority for type → editor and per-type extensions
+    // (`editorForType`, `editorForPath`, `mainFileForType`); bind it once the
+    // payload is in hand so the model layer reads live TypeInfos, not a copy.
+    bindAssetEditorRegistry({
+      get: (type) => this.getTypeInfo(type),
+      all: () => this.getAllTypeInfos(),
+    });
     for (const typeInfo of types) {
       if (!typeInfo?.type_name) {
         console.warn('TypeInfo has no type_name', typeInfo);
@@ -1921,7 +1929,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * lookup (`GET /assets/entity`, backed by `Entity.get_by_asset_ref`). No
    * recovery, no discovery scan, no indexing — returns the entity or null.
    * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
-   * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
+   * `systemTools.resolveByPath` is the classifying counterpart, used only by
    * the editor view on a miss. Hydrates + caches the hit via the standard
    * dedup path.
    *

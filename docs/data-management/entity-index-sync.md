@@ -22,7 +22,7 @@ There are three distinct "index" concepts in the codebase:
 
 DB Entities are SQLite-backed queryable indexes. The filesystem Record is the source of truth for domain data. These two layers are linked but deliberately kept separate: the Entity stores only a small, indexed subset of Record metadata, while the Record holds the full domain content.
 
-The Entity and its Record share the same `id` — minted once (`TypeInfo.mint_entity_id` for a filesystem asset, `Entity.allocate_id` for a row-only entity) and carried by both sides — so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
+The Entity and its Record share the same `id` — minted once (the indexer's `reconcile` → `TypeInfo.mint` for a filesystem asset, `Entity.allocate_id` for a row-only entity) and carried by both sides — so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
 
 ```
 Record (filesystem, source of truth)
@@ -62,7 +62,7 @@ The Entity layer answers "which ones" and "how many"; the Record layer answers "
 
 The `Entity` base class (`flow_sdk/core/entity/entity_model.py`) does **not** carry a `record_data_ref` or `indexed_content` field anymore. (A legacy `record_data_ref` *column* still exists on the SQLite `entities` table from an old migration in `sqlite_driver.py`, but the model no longer reads or writes it.)
 
-The link is implicit: the Entity and its Record share the same `(type, id)` pair. The id is minted exactly once — by `TypeInfo.mint_entity_id` (carrier → owning row → mint) for a filesystem asset, or `Entity.allocate_id` for a row-only entity — and both sides carry it. `FSRecord.content_fingerprint` is **not** an id and does not participate in the link (see [Record Model](record-model.md#identity)). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
+The link is implicit: the Entity and its Record share the same `(type, id)` pair. The id is minted exactly once — by the indexer's `reconcile` (carrier → owning row → `TypeInfo.mint`) for a filesystem asset, or `Entity.allocate_id` for a row-only entity — and both sides carry it. `FSRecord.content_fingerprint` is **not** an id and does not participate in the link (see [Record Model](record-model.md#identity)). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
 
 ### Loading the Record from an Entity
 
@@ -121,7 +121,7 @@ The whole pipeline runs inside a single shared DB session (`async with _db_sessi
 
 4. **Wiki edge re-extraction.** `await wiki.index(self.type, self.id, self.wiki_body())`. Failures here are logged as warnings, not fatal.
 
-5. **Type-specific `post_sync_fn` hook.** If the type's `TypeInfo.post_sync_fn` is set (registered from the per-type `TypeMetadata`), it is awaited: `await info.post_sync_fn(self)`. Failures are logged as warnings, not fatal.
+5. **Type-specific `post_sync_fn` hook.** If the type's `TypeInfo.post_sync_fn` is set (declared on the per-type `TypeInfo`), it is awaited: `await info.post_sync_fn(self)`. Failures are logged as warnings, not fatal.
 
 6. **Error handling.** On any exception in the pipeline, `from_exception(self, exc, trigger="sync_to_db")` (in `flow_sdk/fs_store/operations/record_error.py`) builds and `.save()`s a `RecordError` before re-raising.
 
@@ -139,7 +139,7 @@ There is no `Record.deindex()` method. De-indexing is done by the caller: the fs
 | Indexer scan/index pass | `FSIndexer.index()` / `.scan()` (`flow_sdk/fs_store/indexer/index_function.py`) | Walk roots, index per-type via registered indexer functions |
 | Discover-or-recover by path | `FsRecordsActionsMixin._handle_fs_records_discover_by_path()` | `sync_to_db()` after recovering a record by path |
 | GET-time freshness refresh | `Entity.check_and_refresh_record()` (via `handle_get_by_id`) | Re-sync iff `index_required`; then stamps the sentinel |
-| Push invalidate / agent turn-end | `reindex_paths()` → `discover_record_by_path(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
+| Push invalidate / agent turn-end | `reindex_paths()` → `resolve_asset` + `index_one(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
 | Explicit application code | anywhere | `await record.sync_to_db()` |
 | `Entity.get_all()` / `get_one()` | (none) | NOT triggered -- performance |
 
@@ -176,17 +176,17 @@ Scan/index *orchestration* lives in `FSIndexer` (`flow_sdk/fs_store/indexer/inde
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `get()` | `(type_name) -> TypeInfo \| None` | Look up the registered `TypeInfo` for a type |
-| `register()` | `(info: TypeInfo)` | Register a type (called by `TypeMetadata.register()`) |
+| `register()` | `(info: TypeInfo)` | Register a type (called by `register_all()`) |
 | `get_entity_cls()` | `(type_name) -> type \| None` | Resolve the `Entity` subclass for a type |
-| `clear_index()` | `async (types)` | Delete Entity rows + FTS entries, the per-type `index_log.jsonl`, and persisted `RecordError`s. It does **not** touch the on-disk `.hash` sentinels — the `DELETE /fs-records/index` handler and `?rebuild=true` call `FSRecord.clear_hashes_for_type()` themselves (`fs_records_actions.py:1188`, `:1656`) |
-| `get_index_status()` | `async (types, scope)` | Per-type status: `last_indexed_at` (JSONL run history), `entity_count`, `stale` (= `FSRecord.type_has_pending_changes`). Single-project scope answers from the project record's own sentinel |
-| `get_errors()` | `(type_name)` | List `RecordError`s from failed indexing |
-| `append_scan()` / `append_index()` | `(...)` | Append a scan/index log entry |
+| `index_log.clear_index()` | `async (types)` | Delete Entity rows + FTS entries, the per-type `index_log.jsonl`, and persisted `RecordError`s. It does **not** touch the on-disk `.hash` sentinels — the `DELETE /fs-records/index` handler and `?rebuild=true` call `FSRecord.clear_hashes_for_type()` themselves (`fs_records_actions.py:1188`, `:1656`) |
+| `index_log.get_index_status()` | `async (types, scope)` | Per-type status: `last_indexed_at` (JSONL run history), `entity_count`, `stale` (= `FSRecord.type_has_pending_changes`). Single-project scope answers from the project record's own sentinel |
+| `index_log.get_errors()` | `(type_name)` | List `RecordError`s from failed indexing, plus logged `ScanIssue`s |
+| `index_log.append_scan()` / `append_index()` | `(...)` | Append a scan/index log entry |
 | `get_default_index_types()` | `()` | Types to index by default (see below) |
 
 ### Default Indexed Types
 
-`SchemaRegistry.get_default_index_types()` returns the types whose `TypeMetadata.indexed_by_default=True` (collected at `register()` time).
+`SchemaRegistry.get_default_index_types()` returns the types whose `TypeInfo.indexed_by_default=True` (collected at `register()` time).
 
 ### Staleness
 
@@ -222,7 +222,7 @@ Rows are written via the `FtsEntry` dataclass (`entity_id`, `entity_type`, `name
 |--------|-----------|-------|
 | `fts_upsert` | `(entry: FtsEntry \| list[FtsEntry], batch_size=500)` | Delete + insert (full replace). Called by `sync_to_db()`; accepts a batch. |
 | `fts_delete` | `(entity_id)` | Remove a row from FTS table. Called on record deletion. |
-| `fts_clear` | `()` | Delete every FTS row; returns the count. Used by `SchemaRegistry.clear_index()`. |
+| `fts_clear` | `()` | Delete every FTS row; returns the count. Used by `index_log.clear_index()`. |
 | `fts_search` | `(query, limit, record_type, status, calibration)` | FTS5 MATCH, joins `entities_fts` to `entities`. Returns hydrated Entity objects. |
 | `browse_by_type` | `(entity_type, limit, status)` | Filter-only browsing (no query) with FTS metadata, ordered by recency. |
 
@@ -330,7 +330,7 @@ No sync needed -- `entity.get_record()` loads the Record from disk by `(type, id
 | Find entities modified in the last hour | `Entity.get_all()` with `updated_date` filter |
 | Scan all records in a directory tree not yet indexed | `FSIndexer.index(...)` over the roots |
 | Rebuild the full index after corruption | `POST /fs-records/index?rebuild=true` (= `clear_index()` + `FSRecord.clear_hashes_for_type()` + `FSIndexer.index(...)`) |
-| Check if index is stale | `SchemaRegistry.get_index_status()` -- `stale` = source changed since last index |
+| Check if index is stale | `index_log.get_index_status()` -- `stale` = source changed since last index |
 
 ---
 
@@ -340,10 +340,11 @@ No sync needed -- `entity.get_record()` loads the Record from disk by `(type, id
 |------|-------------------|
 | `flow_sdk/core/entity/entity_model.py` | `Entity` base (no `record_data_ref`/`indexed_content`); `search()`, `browse()`, `assets_by_path()`; `from_record()`; `get_record()`, `destroy()`, `updateSearchIndex()`/`removeSearchIndex()`; `allocate_id()` |
 | `flow_sdk/fs_store/fs_record.py` | `FSRecord` -- `async def sync_to_db()`, `sync_from_entity()`, `index_required`, `write_hash()`, `meta_dict()`, `search_*` readers; `record_sync_guard()` per-record lock |
-| `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry`, `TypeInfo` -- type metadata, `clear_index()`, `get_index_status()`, `get_errors()`, index logging |
+| `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry`, `TypeInfo` -- type metadata |
+| `flow_sdk/fs_store/indexer/index_log.py` | `clear_index()`, `get_index_status()`, `get_errors()`, scan/index logging, `ScanIssue` log |
 | `flow_sdk/fs_store/indexer/index_function.py` | `FSIndexer.index()` / `.scan()` -- scan/index orchestration |
 | `flow_sdk/schema/types.py` | `EntityType` -- single consolidated type-name enum (was `RecordType` + `BuiltinEntityType`) |
-| `flow_sdk/schema/type_info/` | per-type `TypeMetadata` (`<t>_type_info.py`) + `register_all()`; `post_sync_fn`, `meta_model`, `default_body_fn`, `serializer()`, etc. |
+| `flow_sdk/schema/type_info/` | per-type `TypeInfo` (`<t>_type_info.py`) + `register_all()`; `post_sync_fn`, `meta_model`, `default_body_fn`, `serializer()`, etc. |
 | `flow_sdk/db/drivers/sqlite/sqlite_driver.py` | `FtsEntry`, `fts_upsert()`, `fts_delete()`, `fts_search()`, `browse_by_type()`; `entities_fts` schema |
 | `flow_sdk/builtin/faas/fs_records_actions.py` | `FsRecordsActionsMixin._fs_records_action()`, `_broadcast_fs_record_op()` -- CRUD gateway + DataOp notify |
 | `flow_sdk/core/network/resource_tracker.py` | `handle_entity_op()`, `_resolve_recipients()` |
