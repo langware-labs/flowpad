@@ -49,6 +49,7 @@ export enum PrefKey {
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
+  VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
@@ -381,6 +382,23 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Interface language and text direction.',
     dataType: PrefDataType.STRING,
     defaultValue: 'en-US',
+  },
+  [PrefKey.VIBE_MODEL_TIER]: {
+    key: PrefKey.VIBE_MODEL_TIER,
+    category: 'ui',
+    label: 'Vibe model',
+    description: 'Which model size a Vibe build starts on: Fast, Balanced or Accurate.',
+    dataType: PrefDataType.STRING,
+    // Balanced, matching the tier a Vibe session used before the composer could
+    // choose one. Persisted because the choice is usually about COST, and a
+    // preference that resets to the expensive default on every mount is worse
+    // than no preference at all.
+    defaultValue: 'md',
+    options: [
+      { value: 'sm', label: 'Fast' },
+      { value: 'md', label: 'Balanced' },
+      { value: 'lg', label: 'Accurate' },
+    ],
   },
   [PrefKey.VIEW_MODE]: {
     key: PrefKey.VIEW_MODE,

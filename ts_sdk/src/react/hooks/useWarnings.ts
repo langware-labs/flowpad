@@ -15,7 +15,8 @@ import {
   HubClientErrorInfo,
   UserWarning,
 } from '../..';
-import { shouldWarnAboutEmptyProjects, useCleanupSummary } from '../../stores/project-cleanup-store';
+import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
+import { useCleanupSummary } from './use-cleanup-summary';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { HARNESS_CAPABILITY_KINDS, capabilityManager } from '../../capabilities';
 import { useContext } from './useContext';

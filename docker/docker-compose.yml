@@ -26,6 +26,13 @@ x-flow-backend: &flow-backend
     IS_SANDBOX: "1"
   extra_hosts:
     - "host.docker.internal:host-gateway"
+  # /root/.flow alone is NOT the container's state. The file keyring
+  # (/root/.local/share/python_keyring, where a stored LM api key lives) and the
+  # vendor CLI's own dir (/root/.claude — transcripts, shell snapshots) sit on the
+  # writable layer, so a `--force-recreate` silently threw away a seeded OpenRouter
+  # key and every transcript. Each service names its own volumes for these; the
+  # Dockerfile comment claiming the keyring is "inside the container's volume" was
+  # only true once they were mounted.
   healthcheck: &flow-backend-healthcheck
     interval: 2s
     timeout: 1s
@@ -55,6 +62,8 @@ services:
       - "9008:9008"
     volumes:
       - alice_flow:/root/.flow
+      - alice_keyring:/root/.local/share/python_keyring
+      - alice_claude:/root/.claude
       - "${HOME}/Flowpad workspace:/root/Flowpad workspace"
     healthcheck:
       <<: *flow-backend-healthcheck
@@ -80,6 +89,8 @@ services:
       - "9007:9007"
     volumes:
       - bob_flow:/root/.flow
+      - bob_keyring:/root/.local/share/python_keyring
+      - bob_claude:/root/.claude
       - "${HOME}/Flowpad workspace:/root/Flowpad workspace"
     healthcheck:
       <<: *flow-backend-healthcheck
@@ -113,6 +124,8 @@ services:
       - "3000-3001:3000-3001"
     volumes:
       - vibe_flow:/root/.flow
+      - vibe_keyring:/root/.local/share/python_keyring
+      - vibe_claude:/root/.claude
       - "${HOME}/Flowpad workspace:/root/Flowpad workspace"
     healthcheck:
       <<: *flow-backend-healthcheck
@@ -120,5 +133,11 @@ services:
 
 volumes:
   alice_flow:
+  alice_keyring:
+  alice_claude:
   bob_flow:
+  bob_keyring:
+  bob_claude:
   vibe_flow:
+  vibe_keyring:
+  vibe_claude:
