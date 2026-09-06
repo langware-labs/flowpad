@@ -34,7 +34,13 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat: h.openNewChat }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
-  capabilityManager: { ensureChecked: h.ensureChecked, test: h.test, getSnapshot: h.getSnapshot },
+  capabilityManager: {
+    ensureChecked: h.ensureChecked,
+    test: h.test,
+    getSnapshot: h.getSnapshot,
+    // The dialog reads its install command from the summary, not the row.
+    getCachedSummary: () => null,
+  },
 }));
 
 // Boundaries the strip needs to mount but whose behaviour is not under test.
