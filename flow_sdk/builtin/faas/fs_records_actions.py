@@ -18,9 +18,6 @@ from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
-#: The one-time deprecation notice for ``/fs-records/{type}/discover``.
-_DISCOVER_DEPRECATION_LOGGED: list[bool] = []
-
 
 class FsRecordsActionsMixin:
     """fs-records CRUD gateway and indexing implementation for ComputeNode.
@@ -646,13 +643,14 @@ class FsRecordsActionsMixin:
         callers decide the fallback (the scan list falls back to the path; the
         diff loop skips).
         """
+        from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(str(ref.record_type)) if ref.record_type is not None else None
         if info is None:
             return None
         try:
-            return info.mint_entity_id(ref)
+            return reconcile(info, info.layout_for(ref), None, None, write=not ref.read_only, ref=ref)
         except Exception:
             return None
 
@@ -1543,12 +1541,18 @@ class FsRecordsActionsMixin:
 
         # Direct non-force file lookup: resolve exactly the requested asset
         # before any global scope/project inventory or custom-root work.
-        # ``discover_record_by_path`` still stamps an already-known owning
-        # project through its targeted project-mount lookup.
+        # ``index_one`` still stamps an already-known owning project through
+        # its targeted project-mount lookup.
         if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
+            from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
             _t_direct = time.perf_counter()
             try:
-                found = await discover_record_by_path(filter_type, str(_p))
+                try:
+                    found = await index_one(await resolve_asset(_p, write=True, type_name=filter_type))
+                except NotAnAsset as reason:
+                    logging.debug("[fs-records] index %s: %s", filter_type, reason)
+                    found = None
             except Exception as e:
                 return ApiFailResponse(
                     message=f"Failed to index {filter_type} at {index_path}: {e}",
@@ -2005,47 +2009,6 @@ class FsRecordsActionsMixin:
             return ApiFailResponse(message=f"Invalidate failed: {e}", status_code=500)
         return ApiSuccessResponse(data=result.as_dict())
 
-    async def _handle_fs_records_discover_by_path(
-        self,
-        record_type: str,
-        request_info,
-    ) -> ApiResponse:
-        """POST /fs-records/{type}/discover?path=<P> — deprecated alias of
-        ``GET /api/v1/assets/resolve?path=``, kept for one release.
-
-        Resolves the path on its own (the registry names the type); the
-        record is answered only when that type is ``{type}``. 404 when the
-        path is not an asset or is an asset of another type. Never walks.
-        """
-        from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
-
-        qp = request_info.request.query_params
-        raw_path = (qp.get("path") or "").strip()
-        if not raw_path:
-            return ApiFailResponse(message="Missing required 'path' query parameter", status_code=400)
-        if _SR.get(record_type) is None:
-            return ApiFailResponse(
-                message=f"Unknown record type '{record_type}'. Available: {_SR.get_all_record_types()}",
-                status_code=400,
-            )
-        if not _DISCOVER_DEPRECATION_LOGGED:
-            _DISCOVER_DEPRECATION_LOGGED.append(True)
-            logging.warning("[fs-records] POST /fs-records/{type}/discover is deprecated; use GET /api/v1/assets/resolve?path=")
-        try:
-            resolved = await resolve_asset(raw_path, write=True)
-        except NotAnAsset:
-            return ApiFailResponse(message=f"No {record_type} found at path: {raw_path}", status_code=404)
-        if resolved.type_name != record_type:
-            logging.warning("[fs-records] discover asked for %s but %s is a %s", record_type, raw_path, resolved.type_name)
-            return ApiFailResponse(message=f"No {record_type} found at path: {raw_path}", status_code=404)
-        found = await index_one(resolved)
-        if found is None:
-            return ApiFailResponse(message=f"No {record_type} found at path: {raw_path}", status_code=404)
-        data = found.meta_dict()
-        data["orphan"] = False
-        return ApiSuccessResponse(data=data)
-
     async def _handle_fs_records_activity_status(self, request_info) -> ApiResponse:
         """Return the currently-running scan/index activity for this compute node, if any.
 
@@ -2146,8 +2109,7 @@ class FsRecordsActionsMixin:
         branch, so no record type may take their name. Eleven are first
         segments — ``file``, ``history_entry``, ``search``, ``mcp-reconcile``,
         ``scan``, ``index``, ``invalidate``, ``index-sessions``,
-        ``index-status``, ``asset-stats``, ``activity-status`` — and one is a
-        second segment: ``discover`` (``POST /fs-records/{type}/discover``).
+        ``index-status``, ``asset-stats``, ``activity-status``.
 
         POST and PUT answer SUCCESS with the saved record even when the DB row
         could not be written; that case is surfaced in the envelope's
@@ -2224,13 +2186,6 @@ class FsRecordsActionsMixin:
 
         if not segments:
             return ApiFailResponse(message="Record type is required in URL path", status_code=400)
-
-        # Discover-or-recover by path: POST /fs-records/{type}/discover?path=...
-        if len(segments) == 2 and segments[1] == "discover" and method == "post":
-            return await self._handle_fs_records_discover_by_path(
-                record_type=segments[0],
-                request_info=request_info,
-            )
 
         record_type = segments[0]
         uid = segments[1] if len(segments) > 1 else None
@@ -2606,41 +2561,3 @@ class FsRecordsActionsMixin:
             logging.warning(f"[fs-records] Failed to broadcast DataOp: {e}")
 
 
-async def discover_record_by_path(
-    record_type: str,
-    path: str,
-    *,
-    notify: bool = False,
-    proposed_id: str | None = None,
-    scope: str | None = None,
-    project_id: str | None = None,
-    strict_owner: bool = False,
-):
-    """Re-parse ONE asset of ``record_type`` at ``path`` and sync its row; the
-    record, or None when the path is not a ``record_type`` asset.
-
-    ``resolve_asset`` settles the identity (the type must claim the path and
-    the asset must exist), ``index_one`` parses and syncs. No walks, no
-    fallbacks. ``proposed_id`` is the row the caller already resolved
-    (``reindex_paths``, ``reflect``): a re-parse must land on it even when a
-    full-content rewrite wiped the carrier. ``notify`` broadcasts the entity
-    op so watching clients re-read the body. ``scope``/``project_id`` are the
-    row's own labels when known. Carrier writes follow the caller's
-    suppression context (a git working tree resolves without stamping).
-    """
-    import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
-    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
-
-    try:
-        resolved = await resolve_asset(
-            path,
-            write=not carrier_writes_are_suppressed(),
-            type_name=record_type,
-            owner_id=proposed_id,
-            strict=strict_owner,
-        )
-    except NotAnAsset as reason:
-        logging.debug("[fs-records] discover %s: %s", record_type, reason)
-        return None
-    return await index_one(resolved, notify=notify, scope=scope, project_id=project_id)

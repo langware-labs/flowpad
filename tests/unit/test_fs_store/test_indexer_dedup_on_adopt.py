@@ -32,9 +32,9 @@ from tests.unit.test_fs_store._md_harness import (
 
 def _capsule_id(path: Path) -> str | None:
     """The id the markdown carries — its frontmatter ``id:`` now."""
-    from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
+    from tests.fixtures.identity import frontmatter_id
 
-    return read_frontmatter_id(path)
+    return frontmatter_id(path)
 
 
 @pytest.mark.asyncio

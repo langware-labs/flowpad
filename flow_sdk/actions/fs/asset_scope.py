@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from flow_sdk.schema.layout import Folder
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +27,7 @@ def _folder_backed_types() -> list:
     out = []
     for name in SchemaRegistry.get_all_types():
         t = SchemaRegistry.get(name)
-        if t and t.main_file and t.main_subdir:
+        if t and isinstance(t.shape, Folder) and t.shape.main and t.main_subdir:
             out.append(t)
     return out
 
@@ -63,7 +65,7 @@ def folder_asset_for(path: str | Path) -> tuple[Path, Path] | None:
     chain = ([p] if p.is_dir() else []) + list(p.parents)
     for anc in chain:
         for t in types:
-            main = anc / t.main_file
+            main = anc / t.shape.main
             if main.is_file() and _subdir_match(anc, t.main_subdir):
                 return anc, main
     return None
@@ -76,6 +78,6 @@ def is_folder_asset_dir(path: str | Path) -> bool:
     if not p.is_dir():
         return False
     return any(
-        (p / t.main_file).is_file() and _subdir_match(p, t.main_subdir)
+        (p / t.shape.main).is_file() and _subdir_match(p, t.main_subdir)
         for t in _safe_folder_backed_types()
     )

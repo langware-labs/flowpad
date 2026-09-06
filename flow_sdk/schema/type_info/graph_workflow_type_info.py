@@ -1,12 +1,10 @@
 """Type metadata for GRAPH_WORKFLOW — folder-backed flow document (whiteboard model)."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    folder_capsule_id,
     folder_json_identity,
 )
 from flow_sdk.fs_store.indexer.functions.graph_workflow import (
     extract_graph_workflow,
     graph_workflow_asset_hash,
-    graph_workflow_id_from_folder,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import Folder
@@ -29,6 +27,6 @@ GRAPH_WORKFLOW = TypeInfo(
     family="graph_workflow",
     shape=Folder(main="graph.json"),
     from_disk_fn=extract_graph_workflow,
-    identity_carrier=folder_json_identity(folder_capsule_id, graph_workflow_id_from_folder),
+    identity_carrier=folder_json_identity(),
     asset_hash_fn=graph_workflow_asset_hash,
 )

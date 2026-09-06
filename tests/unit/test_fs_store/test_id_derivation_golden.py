@@ -30,6 +30,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 from tests.unit.test_fs_store.test_asset_identity_matrix import V4, V5, V7, _info
 
 # ---------------------------------------------------------------------------
@@ -142,7 +143,7 @@ def test_golden_fsrecord_content_fingerprint_is_not_an_entity_id(tmp_path: Path)
     assert rec.content_fingerprint == str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"markdown:{FSRef(path).path}")
     )
-    seam = _info("markdown").mint_entity_id(FSRef(path))
+    seam = resolve_id(_info("markdown"), FSRef(path))
     assert rec.content_fingerprint != seam, "a content hash is not an entity id"
 
 
@@ -151,10 +152,10 @@ def test_golden_markdown_id_agrees_with_the_seam_on_a_capsule_only_doc(
 ) -> None:
     """Regression: `markdown_id` used to FORK a capsule-stamped, frontmatter-less doc.
 
-    It read frontmatter only, while the indexer's backend reads the identity
-    capsule first — and its result flows straight into `sync_to_db()` from
-    `agentic_process` and `bootstrap`. The two derivations must agree, or those
-    paths mint a second entity for a document the walk already owns.
+    The comment capsule is a retired form now — foreign to the carrier — so
+    both derivations answer the path v5 and neither adopts the capsule's id
+    nor touches the bytes. They must still agree: `markdown_id` flows straight
+    into `sync_to_db()` from `agentic_process` and `bootstrap`.
     """
     from flow_sdk.capsules import AssetCapsule, CapsuleData
     from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
@@ -162,10 +163,13 @@ def test_golden_markdown_id_agrees_with_the_seam_on_a_capsule_only_doc(
     path = tmp_path / "doc.md"
     path.write_text("# Doc\n\nbody\n", encoding="utf-8")
     AssetCapsule.from_path(path).write("identity", CapsuleData(1, {"id": V4}))
+    before = path.read_bytes()
     ref = FSRef(path, record_type="markdown")
 
-    assert _info("markdown").mint_entity_id(ref) == V4, "the seam sees the capsule"
-    assert markdown_id(ref) == V4, "and so must the read-only derive"
+    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert resolve_id(_info("markdown"), ref) == expected, "a retired form is foreign: the path v5 answers"
+    assert markdown_id(ref) == expected, "and so must the read-only derive"
+    assert path.read_bytes() == before
 
 
 def test_golden_markdown_id_miss_path_is_unchanged(tmp_path: Path) -> None:
@@ -198,7 +202,7 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
 
     peek = subagent_peek_entity_id(ref)
     assert peek == str(uuid.uuid5(uuid.NAMESPACE_DNS, "subagent:helper"))
-    assert peek != _info("subagent").mint_entity_id(FSRef(ref._path, read_only=True))
+    assert peek != resolve_id(_info("subagent"), FSRef(ref._path, read_only=True))
     assert path.read_bytes() == b"# Helper\n\nbody\n", "the peek never writes"
 
 

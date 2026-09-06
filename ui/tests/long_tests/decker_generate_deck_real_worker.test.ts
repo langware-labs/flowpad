@@ -157,9 +157,10 @@ describe('decker — real agent generates a deck from a template → deck entity
 
     // The deck folder must discover as a `deck` entity (walker + extractor run).
     const deckDir = path.dirname(htmls[0]);
-    const disc = await systemTools.discoverByPath('deck', deckDir);
+    const disc = await systemTools.resolveByPath(deckDir);
+    expect(disc?.type, 'deck folder must classify as a deck').toBe('deck');
     expect(disc?.id, 'deck folder must mint a deck entity').toBeTruthy();
-    const entity: any = await sdk.dataManager.getByTypeId(new TypeId('deck', disc.id)).catch(() => null);
+    const entity: any = await sdk.dataManager.getByTypeId(new TypeId('deck', disc!.id)).catch(() => null);
     expect(entity, 'deck entity must be fetchable').toBeTruthy();
     expect(entity.num_slides, 'deck should record its slide count').toBeGreaterThan(0);
   }, 240_000);

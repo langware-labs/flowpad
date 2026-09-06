@@ -90,6 +90,11 @@ class Folder:
 
     main: str | None = None
 
+    @property
+    def ext(self) -> str | None:
+        """The main document's suffix (``.md`` for ``SKILL.md``); None for a bare folder."""
+        return PurePath(self.main).suffix.lower() if self.main else None
+
     def locate(self, path: Path, *, verify: bool = False) -> Layout:
         # Decide by NAME; the one stat keeps a real directory named like the
         # main file a directory. ``verify`` is where existence is required.

@@ -1,5 +1,5 @@
-"""Every declared type states its shape once; the layout fields are
-read-only projections of it."""
+"""Every declared type states its shape once; ``info.shape`` is the one
+declaration every reader asks."""
 from __future__ import annotations
 
 import pytest
@@ -25,18 +25,6 @@ def test_every_declared_type_has_a_shape() -> None:
         assert isinstance(info.shape, (File, Folder)), info.type_name
 
 
-def test_legacy_layout_fields_are_projections_of_the_shape() -> None:
-    for info in _declared():
-        if isinstance(info.shape, Folder):
-            assert info.main_layout == "folder" and info.main_file == info.shape.main, info.type_name
-            assert info.folder_backed, info.type_name
-            if info.shape.main:
-                assert info.main_ext == "." + info.shape.main.rsplit(".", 1)[-1].lower(), info.type_name
-        else:
-            assert info.main_layout == "file" and info.main_file is None, info.type_name
-            assert info.main_ext == info.shape.ext, info.type_name
-
-
 def test_every_walked_declared_type_names_a_carrier() -> None:
     for info in _declared():
         if info.from_disk_fn is not None:
@@ -49,9 +37,9 @@ def test_a_declared_folder_type_names_its_main_document() -> None:
             assert info.shape.main, f"{info.type_name}: a walked folder type must name its main document"
 
 
-def test_the_layout_fields_project_the_shape() -> None:
-    probe = TypeInfo(type_name="probe_shape", shape=Folder(main="X.json"))
-    assert (probe.main_layout, probe.main_file, probe.folder_backed, probe.main_ext) == ("folder", "X.json", True, ".json")
+def test_a_folder_shape_takes_its_format_from_its_main_document() -> None:
+    assert Folder(main="X.json").ext == ".json"
+    assert Folder().ext is None
     assert TypeInfo(type_name="probe_file").shape == File(ext=".md")
 
 

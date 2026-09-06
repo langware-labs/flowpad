@@ -83,6 +83,7 @@ from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -467,8 +468,8 @@ def disk_asset_descriptors(
     serves all of them; they key off ``node.path`` and ``node.record_type``.
 
     Strictly read-only. Ids come from the peek seams (``skill_id`` /
-    ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
-    or frontmatter id rather than minting one, so a later index converges on
+    ``subagent_peek_entity_id``), which ADOPT an existing frontmatter id
+    rather than minting one, so a later index converges on
     the same id instead of creating a second row for the same file.
 
     ``seen_paths`` carries the paths the DB pass already considered; a path is
@@ -5073,16 +5074,17 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+            from flow_sdk.fs_store.indexer.reconcile import reconcile
             from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
             # extract_markdown requires a resolved id (capsule refactor 4f94fb92
-            # made it a positional arg). Resolve it READ-ONLY via markdown_id
-            # (adopted frontmatter id, else the stable uuid5(path)) — the plan
-            # file is a transient Claude transcript artifact we must not mutate
-            # with an identity-capsule write.
+            # made it a positional arg). Resolve it READ-ONLY (adopted
+            # frontmatter id, else the stable uuid5(path)) — the plan file is a
+            # transient Claude transcript artifact we must not mutate with an
+            # identity write.
             info = SchemaRegistry.get("markdown")
             ref = _FSRef(Path(plan_file_path), read_only=True)
-            rec = info.record_for(ref, info.mint_entity_id(ref))
+            rec = info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=False, ref=ref))
             if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
             await rec.sync_to_db()
@@ -6122,7 +6124,7 @@ class AgenticProcess(Entity):
                 continue
             type_name = descriptor.typeid.split("-", 1)[0]
             type_info = SchemaRegistry.get(type_name)
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             for entry, read_path in reads:
                 if read_path != asset_path and not (
                     folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
@@ -6192,7 +6194,7 @@ class AgenticProcess(Entity):
                 continue
             asset_path = canonical_posix_path(asset_ref)
             type_info = SchemaRegistry.get(entity.type or entity.get_type())
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             if read_path == asset_path or (folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")):
                 return entity
         return None

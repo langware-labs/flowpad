@@ -10,10 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_frontmatter,
-    _yaml_load,
-)
+from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
 
 
 def _spec_id_from_path(path: Path) -> str:
@@ -23,18 +20,9 @@ def _spec_id_from_path(path: Path) -> str:
 
 
 def _read_spec_frontmatter_id(path: Path) -> str | None:
-    """Return ``id`` (or legacy ``asset_id``) from frontmatter, or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
+    """The valid frontmatter ``id``, or None — the carrier's own read."""
+    found = Frontmatter().read(path)
+    return found.id if isinstance(found, Found) else None
 
 
 def spec_id(ref: FSRef) -> str:

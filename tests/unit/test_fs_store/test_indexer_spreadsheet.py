@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
@@ -29,13 +29,14 @@ from flow_sdk.fs_store.indexer.functions.spreadsheet import (
 from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
 
 
 def _extract(ref: FSRef):
-    resolved_id = SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
+    resolved_id = resolve_id(SchemaRegistry.get("spreadsheet"), ref)
     return extract_spreadsheet(ref, resolved_id)
 
 _WORKBOOK_XML = (
@@ -151,8 +152,8 @@ def test_extract_gates_on_extension(tmp_path: Path) -> None:
 def test_gen_id_is_stable_and_valid(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "d.csv")
     ref = FSRef(p)
-    first = SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
-    assert first == SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
+    first = resolve_id(SchemaRegistry.get("spreadsheet"), ref)
+    assert first == resolve_id(SchemaRegistry.get("spreadsheet"), ref)
     assert is_valid_entity_id(first)  # v4/v5 mint policy
     # The extractor stamps the same id.
     assert extract_spreadsheet(ref, first)[0].id == first

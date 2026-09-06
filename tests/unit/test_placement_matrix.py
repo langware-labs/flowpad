@@ -28,6 +28,7 @@ from flow_sdk.fs_store.placement import (
     untyped_rel_subdir,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 ALL_CLASSES = list(AssetClass)
 ALL_HARNESSES = list(HarnessType)
@@ -389,8 +390,8 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
     bundle.mkdir(parents=True)
     (bundle / "agent.md").write_text("# Q\n")
     info = SchemaRegistry.get("agent")
-    info.mint_entity_id(FSRef(bundle / "agent.md"), proposed_id=mine)
-    assert info.mint_entity_id(FSRef(bundle / "agent.md")) == mine
+    info.stamp_id(FSRef(bundle / "agent.md"), mine)
+    assert resolve_id(info, FSRef(bundle / "agent.md")) == mine
 
     # Same entity → adopted, no raise.
     assert_create_target_available(

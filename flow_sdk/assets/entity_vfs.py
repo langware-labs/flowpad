@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.layout import Folder
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ def local_asset_vfs_binding(entity) -> LocalAssetVFSBinding | None:
     layout = info.layout_of(Path(raw_asset_ref))
     if layout.body is None:
         return None
-    root = layout.root if info.main_layout == "folder" else layout.body.parent
+    root = layout.root if isinstance(info.shape, Folder) else layout.body.parent
     main_ref = layout.body.name
 
     resolved_root = root.resolve(strict=True)

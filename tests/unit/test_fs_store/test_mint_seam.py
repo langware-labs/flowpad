@@ -6,15 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_carrier import ForeignId, Frontmatter, Unstamped
-from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_json_id, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import File, Folder
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-IDENTITY = CapsuleSpec("identity", 1)
-INFO = TypeInfo(type_name="probe", shape=File(ext=".md"), capsules=(IDENTITY,), identity_carrier=Frontmatter())
+INFO = TypeInfo(type_name="probe", shape=File(ext=".md"), identity_carrier=Frontmatter())
 
 
 def test_found_returns_without_writing(tmp_path: Path) -> None:
@@ -49,8 +47,8 @@ def test_no_write_keyed_answers_the_v5(tmp_path: Path) -> None:
 
 def test_folder_and_main_file_mint_the_same_id(tmp_path: Path) -> None:
     info = TypeInfo(
-        type_name="probe_folder", shape=Folder(main="PROBE.md"), capsules=(IDENTITY,),
-        identity_carrier=frontmatter_identity(folder_capsule_json_id),
+        type_name="probe_folder", shape=Folder(main="PROBE.md"),
+        identity_carrier=frontmatter_identity(),
     )
     folder = tmp_path / "s"
     folder.mkdir()

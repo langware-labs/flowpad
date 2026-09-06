@@ -7,27 +7,26 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.claude_memory_entities import Markdown
-from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import index_path, resolve_id
 from tests.unit.test_fs_store._md_harness import MD_OPTS, md_indexer, md_sources
 
 CANONICAL_ID = "1743cb5d-f670-4e26-b6f6-c62b65522f7c"
-LEGACY_ID = "a80e0616-ef1a-4dd7-a986-c7ce1ae18bdb"
 
 
 def _resolved_id(path: Path) -> str | None:
-    return SchemaRegistry.get("markdown").mint_entity_id(FSRef(path))
+    return resolve_id(SchemaRegistry.get("markdown"), FSRef(path))
 
 
 def _conflicting_markdown(tmp_path: Path) -> Path:
     path = tmp_path / "proj" / "docs" / "conflict.md"
     path.parent.mkdir(parents=True)
     path.write_text(
-        f"---\nid: {CANONICAL_ID}\nasset_id: {LEGACY_ID}\n---\n# conflict\n",
+        f"---\nid: {CANONICAL_ID}\n---\n# conflict\n",
         encoding="utf-8",
     )
     return path
@@ -50,7 +49,7 @@ async def test_targeted_discover_mints_then_passes_same_id(tmp_path: Path) -> No
     path = tmp_path / "new.md"
     path.write_text("# new\n", encoding="utf-8")
 
-    record = await discover_record_by_path("markdown", str(path))
+    record = await index_path("markdown", str(path))
 
     assert record is not None
     assert record.id == _resolved_id(path)

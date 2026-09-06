@@ -33,6 +33,7 @@ from flow_sdk.fs_store.serializer.fields import (
     spec_layout,
     type_default,
 )
+from flow_sdk.schema.layout import Folder
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
@@ -58,13 +59,13 @@ def _sub_target(root: Path, name: str, sub_cls: type) -> Path:
     """Where a single nested asset field lives — by the nested TYPE's own
     placement: a folder-layout type is a directory, a file-layout one a file."""
     info = asset_info(sub_cls)
-    return root / name if info.main_layout == "folder" else root / f"{name}{info.main_ext}"
+    return root / name if isinstance(info.shape, Folder) else root / f"{name}{info.shape.ext}"
 
 
 def _list_element_ext(sub_cls: type) -> str:
     """A ``list[...]`` of assets is a directory of FILES, one per element —
     ``check_asset_spec`` refused a folder-layout element type at registration."""
-    return asset_info(sub_cls).main_ext
+    return asset_info(sub_cls).shape.ext
 
 
 def _manifest_layout(info: Any) -> str:
@@ -183,7 +184,8 @@ class DiskSerializer:
             return fn(obj) if fn is not None else None
         from flow_sdk.schema.type_info import render_entity_frontmatter  # noqa: PLC0415
 
-        main = info.main_file if info.main_layout == "folder" else None
+        folder = isinstance(info.shape, Folder)
+        main = info.shape.main if folder else None
         if main and main.endswith(".json"):
             # A flat document IS its payload: an entity carrying no payload (a
             # metadata-only save of a report) has nothing to say — no document,
@@ -192,10 +194,10 @@ class DiskSerializer:
             if _manifest_layout(info) == "flat" and free_field and getattr(obj, free_field, None) is None:
                 return None
             return json.dumps(_manifest(obj, info), indent=2, ensure_ascii=False) + "\n"
-        if info.main_layout == "folder" and not main:
+        if folder and not main:
             return None
         body = _body(obj, info)
-        tail = f"\n\n{body}\n" if body or info.main_layout != "folder" else "\n"
+        tail = f"\n\n{body}\n" if body or not folder else "\n"
         return render_entity_frontmatter(obj, _frontmatter(obj, info)) + tail
 
     # ── store ─────────────────────────────────────────────────────────────
@@ -222,7 +224,7 @@ class DiskSerializer:
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
 
-        if info is not None and info.main_layout == "folder":
+        if info is not None and isinstance(info.shape, Folder):
             root.mkdir(parents=True, exist_ok=True)       # the carrier target for a FolderCapsule
         if main is None:
             return

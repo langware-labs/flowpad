@@ -1,24 +1,21 @@
 """``asset_ref`` is the folder for every folder type. A row written while
 agent, spec and the reports pointed it at the inner main file
-(``<folder>/agent.md``) is found under either spelling until the migration
-rewrites it to the folder — id unchanged."""
+(``<folder>/agent.md``) is rewritten to the folder by the migration — id
+unchanged."""
 from __future__ import annotations
 
 import json
 import sqlite3
-import uuid
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
-from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.migrations import migration_2026_09_identity_live_forms as mig
+from flow_sdk.schema.layout import Folder
 
 pytestmark = pytest.mark.timeout(30)
 
@@ -66,33 +63,8 @@ def test_every_folder_type_refs_its_folder() -> None:
         info = SchemaRegistry.get(name)
         folder = Path("/w/x")
         assert info.layout_of(folder).ref == folder, name
-        assert info.layout_of(folder / info.main_file).ref == folder, name
-        assert info.folder_backed, name
-
-
-def test_owner_index_keys_rows_by_the_layout_root() -> None:
-    idx = PathOwnerIndex.from_preload({"agent": {AGENT_ID: "/w/agentic-assets/agent/a/agent.md"}}, exclude_types=())
-    assert idx.owner_for("agent", "/w/agentic-assets/agent/a") == AGENT_ID
-    assert idx.owner_for("agent", "/w/agentic-assets/agent/a/agent.md") == AGENT_ID
-
-
-def test_retired_ref_spellings_cover_both_directions(tmp_path: Path) -> None:
-    folder = tmp_path / "spec-a"
-    assert folder / "spec.md" in SchemaRegistry.retired_ref_spellings(folder)
-    assert SchemaRegistry.retired_ref_spellings(folder / "spec.md") == [folder]
-    assert SchemaRegistry.retired_ref_spellings(folder / "SKILL.md") == [
-        folder / "SKILL.md" / m for m in ("agent.md", "spec.md", "trace.json", "report.json")
-    ], "a skill never had the inner-file spelling"
-
-
-@pytest.mark.asyncio
-async def test_get_by_asset_ref_finds_a_row_under_either_spelling(sync_db, tmp_path: Path) -> None:
-    folder = tmp_path / "agentic-assets" / "agent" / "a"
-    agent = Agent(id=str(uuid.uuid4()), name="a", asset_ref=str(folder / "agent.md"))
-    await sync_db.save(agent)
-
-    assert (await Entity.get_by_asset_ref(folder)).id == agent.id, "a not-yet-migrated row, asked by the folder"
-    assert (await Entity.get_by_asset_ref(folder / "agent.md")).id == agent.id
+        assert isinstance(info.shape, Folder), name
+        assert info.layout_of(folder / info.shape.main).ref == folder, name
 
 
 @pytest.mark.asyncio

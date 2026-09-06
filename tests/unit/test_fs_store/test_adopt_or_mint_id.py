@@ -1,4 +1,4 @@
-"""The markdown miss-policy through ``TypeInfo.mint_entity_id``.
+"""The markdown miss-policy through ``reconcile`` over the frontmatter carrier.
 
 Adopt a valid v4/v5 frontmatter ``id:``, else mint a random v4 INTO the
 frontmatter
@@ -18,10 +18,10 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
-    read_frontmatter_id,
 )
 from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "seed"))
@@ -31,7 +31,7 @@ V7 = "018f0000-0000-7000-8000-000000000000"  # valid syntax, foreign version
 def _mint(ref: FSRef) -> str:
     info = SchemaRegistry.get("markdown")
     assert info is not None
-    return info.mint_entity_id(ref)
+    return resolve_id(info, ref)
 
 
 def _ver(u: str) -> int:
@@ -134,7 +134,7 @@ def test_helper_write_back_false_never_writes(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     p.write_text("no id here", encoding="utf-8")
     before = p.read_text(encoding="utf-8")
-    got = read_frontmatter_id(p)
+    got = frontmatter_id(p)
     assert got is None
     assert p.read_text(encoding="utf-8") == before
 

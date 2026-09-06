@@ -5,8 +5,7 @@ Covers the slot functions end-to-end:
   folder carrying a ``template.json`` manifest.
 - ``extract_deck_template`` parses the manifest + ``layouts/`` into one FSRecord
   with denormalized layout data.
-- ``TypeInfo.mint_id`` adopts a valid manifest id else mints via the
-  ``.flow/id`` capsule (idempotent).
+- the json capsule carries the id (idempotent; a manifest id is not a carrier).
 - ``deck_template_asset_hash`` tracks inner layout/common file edits.
 
 Pure-sync (no scan needed): the walker is called directly with a project node.
@@ -30,10 +29,11 @@ from flow_sdk.fs_store.indexer.functions.deck_template import (
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("deck_template").mint_entity_id(ref)
+    return resolve_id(SchemaRegistry.get("deck_template"), ref)
 
 
 def _extract(ref: FSRef):
@@ -107,17 +107,11 @@ def test_walker_no_templates_dir(tmp_path: Path) -> None:
 
 # ── id minting ────────────────────────────────────────────────────────────────
 
-def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
-    valid = str(uuid.uuid4())  # v4 → adoptable
-    tpl = _seed_template(tmp_path, "adopt", manifest={"id": valid})
-    assert _mint(FSRef(tpl)) == valid
-
-
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "mint")
     first = _mint(FSRef(tpl))
     second = _mint(FSRef(tpl))
-    assert first == second  # idempotent (adopted from the .flow/id capsule)
+    assert first == second  # idempotent (adopted from the json capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4, not uuid5(path)
 
 

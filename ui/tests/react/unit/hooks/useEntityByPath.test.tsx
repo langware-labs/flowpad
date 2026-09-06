@@ -103,8 +103,9 @@ describe('useEntityByPath — stage-1 exact path lookup (no corpus list, no disc
       filePath,
       '# Exact-resolve doc\n\nBody.\n',
     );
-    const row = await systemTools.discoverByPath('markdown', filePath);
-    expect(row?.asset_ref).toContain('EXACT-RESOLVE.md');
+    const row = await systemTools.resolveByPath(filePath);
+    expect(row?.type).toBe('markdown');
+    expect(row?.root).toContain('EXACT-RESOLVE.md');
   }, 30000);
 
   afterAll(async () => {

@@ -1,7 +1,7 @@
 /**
  * Phase 5 — path-only resolve. The client sends a PATH and the backend names
  * the record type: `useEntityByPath` calls `systemTools.resolveByPath(path)`
- * (never a `discoverByPath(type, path)`), keys the entity by the RETURNED
+ * (the backend names the type; the client never sends one), keys the entity by the RETURNED
  * type/id, treats the `type` argument as a hint only, maps a 404 (null) to
  * `missing_asset`, and a file-only pointer (a `.py` under the CODE editor)
  * never reaches resolve at all.
@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   resolveByPath: vi.fn(),
-  discoverByPath: vi.fn(),
   getEntityByPath: vi.fn(),
   updateEntityFromJson: vi.fn(),
   getByTypeId: vi.fn(),
@@ -26,7 +25,6 @@ vi.mock('@sdk', async (importOriginal) => {
     systemTools: {
       ...actual.systemTools,
       resolveByPath: mocks.resolveByPath,
-      discoverByPath: mocks.discoverByPath,
     },
     dataManager: {
       ...actual.dataManager,
@@ -91,7 +89,6 @@ describe('useEntityByPath — path-only resolve', () => {
 
     expect(mocks.resolveByPath).toHaveBeenCalledTimes(1);
     expect(mocks.resolveByPath).toHaveBeenCalledWith(SKILL_DIR);
-    expect(mocks.discoverByPath).not.toHaveBeenCalled();
 
     expect(result.current.resolvedType).toBe('skill');
     expect(result.current.entity).toMatchObject({ type: 'skill', id: SKILL_ID, name: 'decker' });

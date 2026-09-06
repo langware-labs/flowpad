@@ -45,6 +45,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -777,13 +778,12 @@ async def _pack_file_backed_attachment(
         if text is None:
             return  # nothing renderable to ship
         safe = _safe_entity_name(ent)
-        if info.main_layout == "folder":
-            main_file = getattr(info, "main_file", None)
-            if not main_file:
+        if isinstance(info.shape, Folder):
+            if not info.shape.main:
                 return  # folder type without a main doc: nothing to ship
-            dest = subdir / safe / main_file
+            dest = subdir / safe / info.shape.main
         else:
-            dest = subdir / f"{safe}{info.main_ext}"
+            dest = subdir / f"{safe}{info.shape.ext}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
         _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
@@ -1826,7 +1826,7 @@ async def _collect_descendant_envelopes(entry_type: str, ent, entities: dict) ->
 
         info = SchemaRegistry.get(entry_type)
         ar = getattr(ent, "asset_ref", None)
-        if info is None or not ar or info.main_layout != "folder":
+        if info is None or not ar or not isinstance(info.shape, Folder):
             return
         folder = info.storage_root_for(Path(ar))
         if not folder.is_dir():

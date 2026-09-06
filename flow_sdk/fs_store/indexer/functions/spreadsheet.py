@@ -96,7 +96,7 @@ def extract_spreadsheet(ref: FSRef, resolved_id: str) -> list[FSRecord]:
 
     Single-path index paths bypass the walker's suffix glob, so gate on the
     extension here (mirrors ``extract_markdown``'s ``.md`` gate) — otherwise any
-    file handed to ``discover_record_by_path`` would mint as a spreadsheet.
+    file handed to ``resolve_asset`` would mint as a spreadsheet.
     """
     path = ref._path
     suffix = path.suffix.lower()

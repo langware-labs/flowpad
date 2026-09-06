@@ -25,11 +25,12 @@ def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
 
     Replaces ``AgentRecord.from_file``. Returns None if the file can't be read.
     """
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     ref = FSRef(Path(path), record_type=RecordType.SUBAGENT)
-    return info.record_for(ref, info.mint_entity_id(ref))
+    return info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=True, ref=ref))
 
 
 def _md(candidate: Path) -> Path | None:

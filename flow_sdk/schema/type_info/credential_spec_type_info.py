@@ -41,7 +41,7 @@ CREDENTIAL_SPEC = TypeInfo(
     # stamping one in would make a shared definition arrive carrying the
     # sender's id. A derived carrier has nowhere to write an id back, so
     # identity must be a pure function of the source, and `identity_key_fn` is
-    # what supplies it. It is NOT optional: without a key `mint_entity_id` falls
+    # what supplies it. It is NOT optional: without a key `TypeInfo.mint` falls
     # through to `uuid5(resolved path)`, and a shipped spec's path is the
     # INSTALL's, so one credential would fork into a row per install location.
     identity_carrier=derived_identity(),

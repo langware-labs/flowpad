@@ -16,7 +16,7 @@ actions on that compute node are used:
 | Base path | Backend | Used for |
 |-----------|---------|----------|
 | `/graph/compute_node/@local/desktop-db/<sub>` | `flow_sdk/app/actions/desktop_db.py` (`@action.all("desktop-db")`) | `paths`, `stats`, `db-settings` (GET); `backup`, `archive`, `restore`, `clear`, `clear-index`, `db-settings`, `open-backup` / `open-db` / `open-logs` folders (POST) |
-| `/graph/compute_node/@local/fs-records/<sub>` | `FsRecordsActionsMixin` (see `compute-node-fs-records.md`) | `scan` (GET), `index` (POST, also with `?type=`, `?path=`, `?projects=`, `?force=`), `index-sessions` (POST), `index-status` (GET), `activity-status` (GET), `{type}/discover?path=` (POST, deprecated alias of `GET /api/v1/assets/resolve?path=`) |
+| `/graph/compute_node/@local/fs-records/<sub>` | `FsRecordsActionsMixin` (see `compute-node-fs-records.md`) | `scan` (GET), `index` (POST, also with `?type=`, `?path=`, `?projects=`, `?force=`), `index-sessions` (POST), `index-status` (GET), `activity-status` (GET) |
 
 On construction the service immediately calls `refreshActivityStatus()` so an
 in-flight scan/index is picked up again after a page reload, and subscribes to
@@ -217,7 +217,6 @@ explicit per-type sequencing.
 | `fastScanProject(projectId)` / `hardRefreshProject(projectId)` | `POST /fs-records/index?projects=…` (hard refresh adds `force=true`) |
 | `indexProjectSessions(projectId)` | `POST /fs-records/index-sessions?project_id=…` |
 | `resolveByPath(path)` | `GET /api/v1/assets/resolve?path=…` — one path → `{type, id, root, body, editor, entity}`; the row is indexed on a miss; 404 when not an asset |
-| `discoverByPath(typeName, path)` | deprecated shim: resolve first, then `POST /fs-records/{type}/discover?path=…` (itself a one-release alias of resolve) |
 
 Each resets `currentActivity` to `null` in `finally` only if it is still
 `'index'`, so a phase that took over in between is not clobbered.

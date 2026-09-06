@@ -44,6 +44,15 @@ export interface JSONSchemaProperty {
  * the JSON validation schema for entity-backed types (null otherwise); ``icon``
  * is the single source of truth for the lucide icon name (backend-owned).
  */
+export type TypeShape =
+  | { kind: 'folder'; main: string | null }
+  | { kind: 'file'; ext: string; also?: string[]; names?: string[] };
+
+/** True when an asset of this shape IS a directory (skill/task/mcp). */
+export function isFolderShape(shape: TypeShape | null | undefined): boolean {
+  return shape?.kind === 'folder';
+}
+
 export interface TypeInfo {
   type_name: string;
   uid_field: string;
@@ -80,19 +89,13 @@ export interface TypeInfo {
   /** Scope-relative subdir for the claude-default mount (e.g. `.claude/skills`,
    *  `agentic-assets/task`). Derived server-side from the three fields above. */
   main_subdir?: string | null;
-  /** `'folder'` when the asset IS a directory (skill/task/mcp/agent), `'file'` when
-   *  the asset IS a single file (markdown/subagent). Only a folder-layout asset can
-   *  OWN nested assets under its own `agentic-assets/` — that is what the backend
-   *  `repo_assets_fn` walker recurses into. */
-  main_layout?: string | null;
-  /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
-  main_file?: string | null;
-  /** True when asset_ref is a folder (every folder-layout type): the Assets
-   *  sidebar expands the row into its on-disk file tree. */
-  folder_backed: boolean;
-  /** THE on-disk shape declaration this type makes (the fields above are its
-   *  projections): `{kind:'folder', main:'SKILL.md'}` or `{kind:'file', ext:'.md'}`. */
-  shape?: { kind: 'folder'; main: string | null } | { kind: 'file'; ext: string } | null;
+  /** THE on-disk shape declaration this type makes — mirrors `flow_sdk/schema/layout.py`
+   *  `Folder.to_dict` / `File.to_dict`. `{kind:'folder', main:'SKILL.md'}`: the asset IS
+   *  a directory (asset_ref is the folder; the Assets sidebar expands it into its file
+   *  tree, and it can OWN nested assets under its own `agentic-assets/` — what the
+   *  backend `repo_assets_fn` walker recurses into); `main` is its fixed inner file
+   *  when one exists. `{kind:'file', ext:'.md'}`: the asset IS a single file. */
+  shape?: TypeShape | null;
   /** The asset editor that opens this type (`'markdown'`, `'skill'`, …), declared
    *  once on the backend so the client never keeps a hand-maintained type→editor map. */
   editor?: string | null;

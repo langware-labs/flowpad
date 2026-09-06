@@ -22,7 +22,7 @@ There are three distinct "index" concepts in the codebase:
 
 DB Entities are SQLite-backed queryable indexes. The filesystem Record is the source of truth for domain data. These two layers are linked but deliberately kept separate: the Entity stores only a small, indexed subset of Record metadata, while the Record holds the full domain content.
 
-The Entity and its Record share the same `id` — minted once (`TypeInfo.mint_entity_id` for a filesystem asset, `Entity.allocate_id` for a row-only entity) and carried by both sides — so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
+The Entity and its Record share the same `id` — minted once (the indexer's `reconcile` → `TypeInfo.mint` for a filesystem asset, `Entity.allocate_id` for a row-only entity) and carried by both sides — so the link is the `(type, id)` pair, not a stored cross-reference column. The Entity also mirrors the Record's on-disk `asset_ref` path string so path-based queries (`Entity.assets_by_path`) work without filesystem reads.
 
 ```
 Record (filesystem, source of truth)
@@ -62,7 +62,7 @@ The Entity layer answers "which ones" and "how many"; the Record layer answers "
 
 The `Entity` base class (`flow_sdk/core/entity/entity_model.py`) does **not** carry a `record_data_ref` or `indexed_content` field anymore. (A legacy `record_data_ref` *column* still exists on the SQLite `entities` table from an old migration in `sqlite_driver.py`, but the model no longer reads or writes it.)
 
-The link is implicit: the Entity and its Record share the same `(type, id)` pair. The id is minted exactly once — by `TypeInfo.mint_entity_id` (carrier → owning row → mint) for a filesystem asset, or `Entity.allocate_id` for a row-only entity — and both sides carry it. `FSRecord.content_fingerprint` is **not** an id and does not participate in the link (see [Record Model](record-model.md#identity)). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
+The link is implicit: the Entity and its Record share the same `(type, id)` pair. The id is minted exactly once — by the indexer's `reconcile` (carrier → owning row → `TypeInfo.mint`) for a filesystem asset, or `Entity.allocate_id` for a row-only entity — and both sides carry it. `FSRecord.content_fingerprint` is **not** an id and does not participate in the link (see [Record Model](record-model.md#identity)). The Entity additionally mirrors the Record's `asset_ref` path string (a base column) so path-range queries work without disk reads.
 
 ### Loading the Record from an Entity
 
