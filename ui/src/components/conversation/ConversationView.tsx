@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
-import { LifeBuoy, RefreshCw } from 'lucide-react';
+import { CheckCircle2, LifeBuoy, RefreshCw, RotateCcw } from 'lucide-react';
 import {
   Agent,
   Conversation,
@@ -10,6 +10,7 @@ import {
   FlowMessage,
   MessageThread,
   pickupConversation,
+  settleTicket,
   QueryFilter,
   QueryRequest,
   TypeId,
@@ -17,7 +18,7 @@ import {
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
-import { isHelpdeskKind } from '@sdk/entities/conversation';
+import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
 import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel, sourceForOrigin } from './channel-attribution';
@@ -82,6 +83,11 @@ interface ConversationViewProps {
   /** Restrict this view and every mutation to one Agent's formal inbox. */
   agentId?: string | null;
 }
+
+/** Geometry shared by the ticket-header actions. Only the colour differs
+ *  between them, so a padding or type-scale tweak belongs in one place. */
+const ticketActionClassName =
+  'flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50';
 
 export function ConversationView({
   conversationId,
@@ -626,6 +632,26 @@ export function ConversationView({
     [dockNavigation],
   );
 
+  // Affordance only — the hub's `_set_settlement` is the authority on who may
+  // settle. Mirrors `canPickup` below. Note this is NARROWER than the server
+  // rule: desk staff triaging from the queue who have not picked the ticket up
+  // see no button until they do.
+  const [settling, setSettling] = useState(false);
+  const isClosed = isClosedConversation(conversation?.status);
+  const canSettle = isHelpdeskConversation && (isConversationOwner || isParticipant);
+
+  const handleSettle = useCallback(async () => {
+    setSettling(true);
+    try {
+      await settleTicket(conversationId, isClosed ? 'reopen' : 'close');
+      await handleRefresh();
+    } catch (err) {
+      console.error('[conversation] settle failed', conversationId, err);
+    } finally {
+      setSettling(false);
+    }
+  }, [conversationId, isClosed, handleRefresh]);
+
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -648,10 +674,23 @@ export function ConversationView({
             disabled={pickingUp}
             title={t`Join this support ticket so you can reply`}
             data-testid="pickup-conversation-button"
-            className="flex items-center gap-1 rounded border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-600 transition-colors hover:bg-violet-500/25 disabled:opacity-50 dark:text-violet-400"
+            className={`${ticketActionClassName} border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400`}
           >
             <LifeBuoy className="h-3 w-3" />
             {pickingUp ? <Trans>Picking up…</Trans> : <Trans>Pick up</Trans>}
+          </button>
+        )}
+        {canSettle && (
+          <button
+            type="button"
+            onClick={() => void handleSettle()}
+            disabled={settling}
+            title={isClosed ? t`Reopen this ticket` : t`Mark this ticket answered and take it off the desk's queue`}
+            data-testid="settle-conversation-button"
+            className={`${ticketActionClassName} border-border text-muted-foreground hover:bg-muted hover:text-foreground`}
+          >
+            {isClosed ? <RotateCcw className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+            {settling ? <Trans>Saving…</Trans> : isClosed ? <Trans>Reopen</Trans> : <Trans>Close ticket</Trans>}
           </button>
         )}
         <button
