@@ -201,6 +201,19 @@ Read the matching reference before making that kind of change:
 - **Deploying to Vercel + Supabase, Claude Code GitHub Action** →
   [references/deploy.md](references/deploy.md)
 
+## Need a UI component the template does not ship?
+
+`components/ui/` carries `button`, `card`, and native lookalikes for `input`,
+`label` and `checkbox`. For anything else — dialog, table, select, form — run:
+
+```bash
+cd frontend && npx shadcn@latest add dialog table select form
+```
+
+Do NOT hand-write one and do NOT import `@/components/ui/<x>` before it exists:
+the dev server answers 200 while the page throws on the missing module, which is
+how three separate builds shipped a blank pane.
+
 ## Before you show it: prove the page BOOTS
 
 An HTTP 200 is not a working app: a dev server answers 200 while the page throws
