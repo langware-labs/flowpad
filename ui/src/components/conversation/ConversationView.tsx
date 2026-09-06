@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
-import { LifeBuoy, Radio, RefreshCw } from 'lucide-react';
+import { LifeBuoy, RefreshCw } from 'lucide-react';
 import {
   Agent,
   Conversation,
@@ -12,14 +12,13 @@ import {
   pickupConversation,
   QueryFilter,
   QueryRequest,
-  RemoteWorkerSession,
-  RemoteWorkerSessionStatus,
   TypeId,
   latestPointer,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
+import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel, sourceForOrigin } from './channel-attribution';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
@@ -27,10 +26,9 @@ import { useAttentionPolling } from '@src/components/data-sources/useAttentionPo
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
-import { LiveSessionGroup, SessionEventLine } from './LiveSessionGroup';
+import { SessionEventLine } from './SessionEventLine';
+import { SessionCard } from './SessionCard';
 import { MessageComposer } from './MessageComposer';
-import { useApproveAndExecute } from './useApproveAndExecute';
-import { ExecutePromptDialog } from './ExecutePromptDialog';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -39,7 +37,7 @@ import {
   groupThreadItems,
   itemThreadId,
   ConversationItemKind,
-  groupConversationItems,
+  anchorSessionItems,
   shouldShowSoloSendNotice,
   type ConversationItem,
 } from './conversation-items';
@@ -49,7 +47,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
-import { useRemoteWorkerSessionForConversation } from '@src/hooks/useRemoteWorkerSessionForConversation';
+import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -114,10 +112,9 @@ export function ConversationView({
   // mid-turn), so read it directly instead of deriving over the stream.
   const convRunStatus = convRun?.workerStatus ?? null;
 
-  // Resolve the conversation's worker session ONCE (the RemoteWorkerSession the
-  // backend binds on execute). Drives the session-aware run chip ("Run" vs
-  // "<Host>'s session · new run") and the open-worker-session icon.
-  const workerSession = useRemoteWorkerSessionForConversation(conversationId);
+  // Every live session of this conversation, resolved ONCE and handed down:
+  // the feed pins each to its opening message; each card reads its own row.
+  const { byId: sessionsById, anchors: sessionAnchors } = useConversationSessions(conversationId);
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. `useMembers` is the single precedence point: the live
@@ -241,52 +238,6 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, conversationId, pointers.map((p) => p.id).join(',')]);
 
-  // Execute is backend-owned now; the hook is just the trigger.
-  const { executePrompt } = useApproveAndExecute();
-
-  const canApproveAndExecute = !!task || !!conversationId;
-
-  // The Execute CTA opens a confirm dialog (run now + persist per-contact
-  // permissions); this holds the message + sender + project it targets.
-  const [executeTarget, setExecuteTarget] = useState<{
-    messageId: string;
-    contact: { userId?: string | null; email?: string | null; name?: string | null };
-    projectId: string | null;
-  } | null>(null);
-
-  const runApprove = useCallback(
-    (messageId: string) => {
-      if (!canApproveAndExecute) return;
-      const fm = messagesById.get(messageId);
-      const senderId = fm?.sender_id ?? null;
-      const sender = senderId ? participants.find((p) => p.user_id === senderId) : undefined;
-      setExecuteTarget({
-        messageId,
-        contact: {
-          userId: senderId,
-          email: sender?.email ?? null,
-          name: sender?.name ?? null,
-        },
-        projectId: conversation?.project_id ?? null,
-      });
-    },
-    [canApproveAndExecute, messagesById, participants, conversation?.project_id],
-  );
-
-  const runExecute = useCallback(
-    (messageId: string, autoReply: boolean) => {
-      // No drawer pop on execute — the per-message run-status one-liner surfaces
-      // the spawned run in place; the drawer opens only when the user clicks it.
-      const action = async () => {
-        await executePrompt(messageId, { autoReply });
-        void refetch();
-      };
-      if (ensureMapped) ensureMapped(action);
-      else void action();
-    },
-    [executePrompt, refetch, ensureMapped],
-  );
-
   // Implement Plan lifecycle — spawn + watch + open. See `useImplementPlan.ts`
   // for the full lifecycle docs. The hook returns `runImplementPlan` to wire
   // into each bubble's chip and a single `openPlanSession` that flips every
@@ -310,14 +261,6 @@ export function ConversationView({
     },
     [dockNavigation],
   );
-
-  // Open the conversation's worker session in its collaboration room view
-  // (SharedSessionView). No-op unless the session has a mapped project + room.
-  const { projectId: wsProjectId, roomId: wsRoomId, sessionId: wsSessionId } = workerSession;
-  const openWorkerSession = useCallback(() => {
-    if (!wsProjectId || !wsRoomId || !wsSessionId) return;
-    dockNavigation.openProject(wsProjectId, { roomId: wsRoomId, sessionId: wsSessionId });
-  }, [wsProjectId, wsRoomId, wsSessionId, dockNavigation]);
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
@@ -406,16 +349,15 @@ export function ConversationView({
   //   (absent)     → every thread packed into one row, internal chat flat
   //
   // Threaded and session messages are disjoint — an ingested email never has a
-  // `remote_worker_session_id` — so each grouper gets its own slice and ONE
-  // call. Feeding non-thread rows through `groupConversationItems` one at a
-  // time (the obvious composition) would silently defeat it: it collapses
-  // CONSECUTIVE runs, and a one-element array can never form a run, so two
-  // adjacent session messages would render as two separate groups.
+  // `remote_worker_session_id` — so each grouper gets its own slice. Session
+  // messages collapse onto the message that opened the session (the anchor);
+  // follow-ups, replies and lifecycle lines are hidden from the thread and
+  // live in the session view.
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     if (threadId) {
       const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
-      return groupConversationItems(inThread, getFm);
+      return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
     const threaded: ConversationItem[] = [];
     const plain: ConversationItem[] = [];
@@ -424,13 +366,13 @@ export function ConversationView({
     }
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
-      ...groupConversationItems(plain, getFm),
+      ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts]);
+  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
 
-  // One row of the feed — a normal bubble, a draft bubble, or (for
-  // kind=session_event messages) a slim centered system line. Shared by the
-  // flat feed and the children of a LiveSessionGroup.
+  // One row of the feed — a normal bubble or a draft bubble. A stray
+  // kind=session_event row (a lifecycle line whose session the feed could not
+  // anchor) renders as a slim centered system line.
   const renderConversationItem = (item: ConversationItem) => {
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
@@ -451,14 +393,9 @@ export function ConversationView({
           task={task}
           participants={participants}
           rosterReady={rosterReady}
-          onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
           run={convRun}
           runStatus={convRunStatus}
           onOpenRun={onOpenRun}
-          workerSessionExists={workerSession.exists}
-          workerSessionLabel={workerSession.label}
-          workerSessionInFlight={workerSession.inFlight}
-          onOpenWorkerSession={workerSession.exists ? openWorkerSession : undefined}
           onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
           onOpenPlanSession={openPlanSession}
           onViewPlan={runViewPlan}
@@ -467,6 +404,7 @@ export function ConversationView({
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
           isHelpdesk={isHelpdeskConversation}
+          viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
           showEmailHeaders={!!agentId}
@@ -610,8 +548,7 @@ export function ConversationView({
       const latestId = latestPointer(pointers)?.id;
       const latest = latestId ? messagesById.get(latestId) : undefined;
       if (!latest?.id || latest.is_read) return;
-      const senderId = latest.sender_id ?? null;
-      if (senderId && (senderId === cloudUserId || senderId === localUser?.id)) return;
+      if (isViewer(latest.sender_id, { email: '', cloudUserId, localUserId: localUser?.id ?? null })) return;
       const key = `${conversationId}:${latest.id}`;
       if (readMarkedRef.current === key) return;
       readMarkedRef.current = key;
@@ -667,68 +604,21 @@ export function ConversationView({
     lastItem,
     lastMessageSenderId,
   });
-  // ── Start live session ────────────────────────────────────────────────
-  // 1:1 conversations only (v1): the OTHER participant is the host. The click
-  // mints the session id locally (uuid4 — validate-on-adopt backend-side),
-  // saves a guest-local DRAFT row, and ONLY navigates (URL-first: the live-
-  // session loader/view own everything else). Disabled while a non-terminal
-  // session already exists or in multi-party rosters.
+  // The other participant of a 1:1 shared conversation is the HOST every
+  // prompt runs on. The peer's user_id must be RESOLVED (an unresolved roster
+  // row passes the filter with user_id null) before the composer offers to
+  // run there.
   const otherParticipant = useMemo(
     () => (participants ?? []).find((p) => p.user_id !== cloudUserId) ?? null,
     [participants, cloudUserId],
   );
-  const canStartLiveSession =
-    conversation?.remote === true &&
-    rosterReady &&
-    (participants ?? []).length === 2 &&
-    !!cloudUserId &&
-    // The peer's user_id must be RESOLVED, not just the participant row
-    // present: an unresolved roster row (user_id null) passes the
-    // `p.user_id !== cloudUserId` filter and would mint a session draft with
-    // host_user_id=null — the host then materializes a row without its own
-    // identity and never shows the Approve bar (see apply_snapshot heal).
-    !!otherParticipant?.user_id &&
-    !workerSession.hasLiveSession;
-  const liveSessionDisabledReason = !conversation?.remote
-    ? t`Live sessions need a shared conversation`
-    : (participants ?? []).length !== 2
-      ? t`Live sessions are 1:1 — available in two-person conversations`
-      : workerSession.hasLiveSession
-        ? t`A live session is already running in this conversation`
-        : otherParticipant && !otherParticipant.user_id
-          ? t`Waiting for the other participant's identity to sync…`
-          : null;
-  const [startingSession, setStartingSession] = useState(false);
-  const handleStartLiveSession = useCallback(async () => {
-    if (!canStartLiveSession || startingSession) return;
-    setStartingSession(true);
-    try {
-      const sessionId = crypto.randomUUID();
-      const draft = new RemoteWorkerSession({
-        id: sessionId,
-        conversation_id: conversationId,
-        status: RemoteWorkerSessionStatus.DRAFT,
-        guest_user_id: cloudUserId,
-        guest_name: cloudUser?.name ?? cloudUser?.email ?? null,
-        host_user_id: otherParticipant?.user_id ?? null,
-        host_name: otherParticipant?.name ?? otherParticipant?.email ?? null,
-      });
-      await draft.save();
-      dockNavigation.openDock(DockPointer.forLiveSession(sessionId));
-    } catch (err) {
-      console.error('[conversation] start live session failed', err);
-    } finally {
-      setStartingSession(false);
-    }
-  }, [
-    canStartLiveSession,
-    startingSession,
-    conversationId,
-    cloudUserId,
-    cloudUser,
-    otherParticipant,
-    dockNavigation,
-  ]);
+  const sessionHost = useMemo(
+    () =>
+      conversation?.remote === true && rosterReady && (participants ?? []).length === 2 && !!cloudUserId && !!otherParticipant?.user_id
+        ? { userId: otherParticipant.user_id, name: otherParticipant.name ?? otherParticipant.email ?? null }
+        : null,
+    [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant],
+  );
   const openLiveSession = useCallback(
     (sessionId: string) => {
       dockNavigation.openDock(DockPointer.forLiveSession(sessionId));
@@ -751,33 +641,6 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-1">
-        {(conversation?.remote === true || workerSession.hasLiveSession) && (
-          <button
-            type="button"
-            onClick={() =>
-              workerSession.hasLiveSession && workerSession.sessionId
-                ? openLiveSession(workerSession.sessionId)
-                : void handleStartLiveSession()
-            }
-            disabled={!canStartLiveSession && !workerSession.hasLiveSession}
-            title={
-              workerSession.hasLiveSession
-                ? t`Open the live session`
-                : (liveSessionDisabledReason ?? t`Work on the other participant's machine`)
-            }
-            data-testid="start-live-session-button"
-            className="flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-600 transition-colors hover:bg-emerald-500/25 disabled:opacity-50 dark:text-emerald-400"
-          >
-            <Radio className="h-3 w-3" />
-            {workerSession.hasLiveSession ? (
-              <Trans>Live session</Trans>
-            ) : startingSession ? (
-              <Trans>Starting…</Trans>
-            ) : (
-              <Trans>Start live session</Trans>
-            )}
-          </button>
-        )}
         {canPickup && (
           <button
             type="button"
@@ -819,17 +682,23 @@ export function ConversationView({
                 </ThreadStack>
               );
             }
-            if (item.kind === ConversationItemKind.SESSION_GROUP) {
+            if (item.kind === ConversationItemKind.SESSION_ANCHOR) {
+              const session = sessionsById.get(item.sessionId) ?? null;
+              const role = sessionRole(session, cloudUserId);
               return (
-                <LiveSessionGroup
-                  key={item.key}
-                  sessionId={item.sessionId}
-                  promptCount={item.promptCount}
-                  replyCount={item.replyCount}
-                  onOpenSession={() => openLiveSession(item.sessionId)}
-                >
-                  {item.children.map((child) => renderConversationItem(child))}
-                </LiveSessionGroup>
+                <div key={item.key} className="flex flex-col gap-1" data-testid="session-anchor">
+                  {renderConversationItem(item.anchor)}
+                  <SessionCard
+                    sessionId={item.sessionId}
+                    session={session}
+                    role={role}
+                    promptCount={item.promptCount}
+                    replyCount={item.replyCount}
+                    onOpen={() => openLiveSession(item.sessionId)}
+                    onApprove={role === 'host' && session ? () => session.approve() : undefined}
+                    onDecline={role === 'host' && session ? () => session.decline() : undefined}
+                  />
+                </div>
               );
             }
             return renderConversationItem(item);
@@ -867,17 +736,8 @@ export function ConversationView({
         onChannelSent={setSendingText}
         placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
         agentId={agentId ?? undefined}
+        sessionHost={channelOrigin ? null : sessionHost}
       />
-
-      {executeTarget && (
-        <ExecutePromptDialog
-          open
-          onClose={() => setExecuteTarget(null)}
-          contact={executeTarget.contact}
-          projectId={executeTarget.projectId}
-          onExecute={(autoReply) => runExecute(executeTarget.messageId, autoReply)}
-        />
-      )}
     </div>
   );
 }

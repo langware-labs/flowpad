@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { useProject } from '@src/hooks/useProject';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/hooks/useWorkerHistory', async (orig) => ({
@@ -8,7 +9,10 @@ vi.mock('@src/hooks/useWorkerHistory', async (orig) => ({
   useWorkerHistory: vi.fn(),
 }));
 
+vi.mock('@src/hooks/useProject', () => ({ useProject: vi.fn(() => ({ project: null })) }));
+
 const mockUseWorkerHistory = vi.mocked(useWorkerHistory);
+const mockUseProject = vi.mocked(useProject);
 
 function entry(overrides: Partial<WorkerHistoryEntry>): WorkerHistoryEntry {
   return {
@@ -98,5 +102,51 @@ describe('HistoryModal', () => {
     expect(screen.getByText(/investigate flaky test/i)).toBeTruthy();
     expect(screen.queryByText('Refactor auth')).toBeNull();
     expect(screen.queryByText('Docs cleanup')).toBeNull();
+  });
+
+  /**
+   * The active project scope goes to the BACKEND. This modal used to fetch
+   * unscoped and keep only rows whose `project_id` equalled the active project's
+   * — but the unscoped walk labels a session with the project derived from its
+   * cwd, while the scoped walk labels it with the id its AgenticProcess carries.
+   * With two Project rows over one checkout those disagree, every row was
+   * dropped, and the modal read "No recent sessions" beside a Chats panel
+   * listing the very same sessions.
+   */
+  describe('project scope', () => {
+    const ACTIVE_PROJECT_ID = '6b4fb358-0eb0-4417-bf71-2ec7e519d7c5';
+
+    beforeEach(() => {
+      mockUseProject.mockReturnValue({ project: { id: ACTIVE_PROJECT_ID } } as ReturnType<typeof useProject>);
+      mockUseWorkerHistory.mockReturnValue({
+        entries: [
+          entry({
+            worker_id: '55555555-5555-4555-8555-555555555555',
+            name: 'Vibemode active display stripe investigation',
+            // The id the cwd-derived path stamps — NOT the active project's.
+            project_id: '4cac3e87-803e-41a0-a5d5-f7d230c48da2',
+          }),
+        ],
+        fetchedCount: 1,
+        isLoading: false,
+        refetch: vi.fn(),
+      });
+    });
+
+    it('asks the backend for the active project instead of filtering client-side', () => {
+      render(<HistoryModal open onOpenChange={vi.fn()} onSelect={vi.fn()} />);
+
+      expect(mockUseWorkerHistory).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.objectContaining({ projectIds: [ACTIVE_PROJECT_ID] }),
+      );
+    });
+
+    it('renders a scoped row whose project_id differs from the active project id', () => {
+      render(<HistoryModal open onOpenChange={vi.fn()} onSelect={vi.fn()} />);
+
+      expect(screen.getByText('Vibemode active display stripe investigation')).toBeTruthy();
+      expect(screen.queryByText(/No recent sessions/i)).toBeNull();
+    });
   });
 });

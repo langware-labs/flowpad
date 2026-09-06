@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { dataManager, gitOriginRepoFullName, gitOriginWebUrl, type TypeId } from '@sdk';
+import { isFolderShape } from '@sdk/FlowSync/schema';
 import { useGitSharePreflight } from './use-git-share-preflight';
 
 export interface AssetGitLink {
@@ -25,8 +26,8 @@ const NO_LINK: AssetGitLink = { url: null, repoLabel: null };
 export function useAssetGitLink(ref: TypeId | null | undefined, enabled: boolean): AssetGitLink {
   const { origin } = useGitSharePreflight(ref ?? undefined, enabled);
   // Folder-layout types point at a directory in the repo, not a file. The flag is
-  // backend-owned (TypeInfo.folder_backed) — never a hardcoded type list here.
-  const isDir = !!(ref?.type && dataManager?.getTypeInfo?.(ref.type)?.folder_backed);
+  // backend-owned (TypeInfo.shape) — never a hardcoded type list here.
+  const isDir = !!ref?.type && isFolderShape(dataManager?.getTypeInfo?.(ref.type)?.shape);
 
   return useMemo(() => {
     if (!origin) return NO_LINK;

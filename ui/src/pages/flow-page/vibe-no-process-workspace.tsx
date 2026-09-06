@@ -1,10 +1,10 @@
 import { useProject } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { createVibeProcessForProject, launchVibeSessionForProject } from './use-start-vibe-session';
+import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import { VibeRecentSessions } from './vibe-recent-sessions';
-import { Loader2, Plus } from 'lucide-react';
+import { VibeNoProcessPane } from './vibe-no-process-pane';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -16,22 +16,6 @@ export function VibeNoProcessWorkspace() {
   const [startingPrompt, setStartingPrompt] = useState<string | null>(null);
 
   const workdir = project?.fs_storage_mount_path || project?.name || undefined;
-
-  const startNewChat = async () => {
-    if (!project?.id || starting) return;
-    setStarting(true);
-    try {
-      await createVibeProcessForProject({
-        projectId: project.id,
-        workdir,
-        navigation,
-      });
-    } catch (error) {
-      console.error('[Vibe] Failed to start empty workspace session:', error);
-      notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
-      setStarting(false);
-    }
-  };
 
   const startFromPrompt = async (prompt: string) => {
     if (!project?.id || startingPrompt) return;
@@ -71,21 +55,7 @@ export function VibeNoProcessWorkspace() {
             that the "Past builds" list directly below it contradicts whenever
             the project has any. The action and the labelled list carry the
             state on their own, in both the empty and populated case. */}
-        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-y-auto border-r border-border p-4 text-center">
-          <button
-            type="button"
-            onClick={() => void startNewChat()}
-            disabled={!project?.id || starting || !!startingPrompt}
-            data-testid="vibe-start-new-chat"
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            <Trans>Start new chat</Trans>
-          </button>
-          {/* Self-gating: renders null when this project has no earlier builds,
-              so a fresh project keeps the bare button and gains no empty box. */}
-          <VibeRecentSessions className="max-w-sm" heading={<Trans>Past builds</Trans>} />
-        </div>
+        <VibeNoProcessPane disabled={!!startingPrompt} onStartingChange={setStarting} />
         <div className="flex h-full flex-col bg-muted/20">
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"

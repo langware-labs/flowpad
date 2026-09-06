@@ -1,4 +1,5 @@
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
+import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
@@ -215,15 +216,6 @@ export function MarkdownEditor({
 
 function isSlugLink(href: string): string | null {
   return href.startsWith('#') ? decodeURIComponent(href.slice(1)).toLowerCase() : null;
-}
-
-function gfmSlug(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
 }
 
 // Whitelist a frontmatter `direction` value to the two recognized base

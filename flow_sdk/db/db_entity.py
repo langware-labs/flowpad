@@ -21,7 +21,6 @@ from pydantic import BaseModel, Field, model_validator
 from flow_sdk import service_log
 from flow_sdk.api.api_types.api_field import NoDBAPIField, Sharing
 from flow_sdk.api.api_types.messages import DataOpMessage, OperationType
-from flow_sdk.fs_store.type_id import TypeId, is_namespace_key
 from flow_sdk.db.db_relationship import DBRelationshipType
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, db_fields_sync
 from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver
@@ -35,6 +34,7 @@ from flow_sdk.db.rolerelationship import RoleRelationship
 from flow_sdk.db.tracked_collections import TrackedDict, TrackedList
 from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes, ExpansionType, RelationshipDirection
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId, is_namespace_key
 
 DBEntityType = TypeVar("DBEntityType", bound="DBEntity")
 
@@ -435,10 +435,13 @@ class DBEntity(DBBaseRecord):
         if not self.dirty:
             return self
 
-        if not self.exist_in_db:
-            await self._db.save(self, owner)
-        else:
-            await self._db.update(self, owner)
+        try:
+            if not self.exist_in_db:
+                await self._db.save(self, owner)
+            else:
+                await self._db.update(self, owner)
+        finally:
+            self._after_persist()
 
         # Must notify after the entity is saved to the DB and the children are saved
         if notify:
@@ -454,6 +457,15 @@ class DBEntity(DBBaseRecord):
         self._dirty = False
 
         return self
+
+    def _after_persist(self) -> None:
+        """The seam between the write and its announcement.
+
+        A subclass that persists a DIFFERENT shape from the one it holds
+        (``FlowMessage``: a reference row stores no body) puts the read shape
+        back here. The announcement below serializes the row on the spot, so
+        what the row looks like after this hook is what every socket sees.
+        """
 
     async def notify_updated(self):
         change = DataOpMessage(data=self, op=OperationType.UPDATE, to_entity=self.typeid)
@@ -1097,6 +1109,33 @@ class DBEntity(DBBaseRecord):
         # carry a dangling reference the recipient cannot resolve.
         if notify and removed:
             await self.emit_child_op(child, OperationType.CHILD_DELETED)
+        return removed
+
+    async def detach_from_all_parents(self) -> int:
+        """Remove this entity's incoming ``is_child`` edges from EVERY parent.
+
+        Defensive severing for a shared singleton that must never be reachable
+        as a descendant of a delete cascade — the @local compute node above all.
+        A ``parent.detach_child(self)`` only cuts ONE edge, so it cannot protect
+        the singleton when the offending edge sits on a nested/descendant parent
+        (the 9007 incident: a nested project carried the legacy
+        ``project -> @local`` edge, and the self-only detach missed it, so the
+        recursive delete walked into @local and destroyed every PTY/agentic
+        session on the instance).
+
+        Returns the number of edges removed. Idempotent: a singleton with no
+        parents removes nothing.
+        """
+        rel_filter = QueryFilter.parse({"is_child": True}, RoleRelationship.get_type())
+        incoming = await self.get_incoming_relationships(rel_filter)
+        removed = 0
+        for rel in incoming:
+            await self._db.delete_relationship(rel)
+            removed += 1
+        if removed:
+            from flow_sdk.core.auth.auth_cache import get_auth_cache
+
+            get_auth_cache().clear()
         return removed
 
     async def remove_role(self, removed_entity_typeid: TypeId, roles_filter: QueryFilter | None = None) -> int:

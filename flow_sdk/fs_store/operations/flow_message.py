@@ -55,7 +55,8 @@ def is_downloaded(record_id: str) -> bool:
 
 
 def is_unpacked(record_id: str) -> bool:
-    return (unpacked_dir(record_id) / "header.json").is_file()
+    root = unpacked_dir(record_id)
+    return (root / "flow_message.json").is_file() or (root / "header.json").is_file()
 
 
 async def purge_flow_message_local_data(record_id: str) -> None:

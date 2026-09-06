@@ -1,8 +1,9 @@
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { cn } from '@src/lib/utils';
 import { openWikiModal } from './wiki-modal';
 
-interface WikiButtonProps {
+interface WikiButtonProps extends Omit<ComponentPropsWithoutRef<'button'>, 'onClick' | 'children'> {
   /** The wiki page this button opens (resolved by title/name). */
   wikiword: string;
   /** Optional heading slug to deep-link into a section of the page. */
@@ -15,6 +16,12 @@ interface WikiButtonProps {
    * that already carries a sentence, or a popover with a learn-more line.
    */
   linkText?: string;
+  /**
+   * Arbitrary content instead of either skin — for a control that is a wiki
+   * link but looks like something else (a colored chip). The caller's
+   * `className` then owns the whole look; no skin is applied.
+   */
+  children?: ReactNode;
   className?: string;
 }
 
@@ -27,9 +34,9 @@ const LINK_SKIN = 'shrink-0 text-xs text-primary underline-offset-2 hover:underl
  *
  * Two skins, one behaviour: a compact W-square by default (inheriting the
  * surrounding text color via the shared {@link WikiIcon}), or a text link when
- * `linkText` is given.
+ * `linkText` is given. `children` opts out of both skins.
  */
-export function WikiButton({ wikiword, fragment, label, linkText, className }: WikiButtonProps) {
+export function WikiButton({ wikiword, fragment, label, linkText, children, className, ...rest }: WikiButtonProps) {
   // The link skin's visible wording IS its name — announcing the page title
   // instead would leave the accessible name without the label a user can see
   // (and would announce untranslated English against localized text).
@@ -37,12 +44,13 @@ export function WikiButton({ wikiword, fragment, label, linkText, className }: W
   return (
     <button
       type="button"
+      {...rest}
       onClick={() => openWikiModal(wikiword, undefined, fragment)}
-      className={cn(linkText ? LINK_SKIN : ICON_SKIN, className)}
+      className={cn(children ? undefined : linkText ? LINK_SKIN : ICON_SKIN, className)}
       aria-label={title}
       title={title}
     >
-      {linkText ?? <FlowIcon icon="flowpad.wiki" className="h-4 w-4" />}
+      {children ?? linkText ?? <FlowIcon icon="flowpad.wiki" className="h-4 w-4" />}
     </button>
   );
 }

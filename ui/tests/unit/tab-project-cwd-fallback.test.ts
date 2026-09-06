@@ -8,6 +8,7 @@
  * Also covers `Project.getProjectByPath` itself (longest-prefix selection).
  */
 import { dataManager, Project, Tab } from '@sdk';
+import { lazyAssets } from '@sdk/lazy';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,7 +31,7 @@ function captureNewTabProjectId(): { value: () => string | null } {
 
 describe('Project.getProjectByPath', () => {
   it('returns null for empty / unmatched paths', async () => {
-    vi.spyOn(Project, 'query').mockResolvedValue([] as any);
+    vi.spyOn(lazyAssets, 'load').mockResolvedValue([] as any);
     expect(await Project.getProjectByPath('')).toBeNull();
     expect(await Project.getProjectByPath('/nope')).toBeNull();
   });
@@ -40,7 +41,7 @@ describe('Project.getProjectByPath', () => {
     const INNER = '44444444-4444-4444-8444-444444444444';
     const outer = new Project({ id: OUTER, fs_storage_mount_path: '/work' } as any);
     const inner = new Project({ id: INNER, fs_storage_mount_path: '/work/repo' } as any);
-    vi.spyOn(Project, 'query').mockResolvedValue([outer, inner] as any);
+    vi.spyOn(lazyAssets, 'load').mockResolvedValue([outer, inner] as any);
     const match = await Project.getProjectByPath('/work/repo/src/main.ts');
     expect(match?.id).toBe(INNER);
   });

@@ -180,7 +180,7 @@ failed unpack. The receiver reads `origins_map[key]` (or the entry payload's
 ## Related
 
 - [Record model](record-model.md) — the `FSRecord` manifest an origin is stamped onto
-- [Asset capsules](asset-capsules.md) — identity capsules and `TypeInfo.mint_entity_id`
+- [Asset capsules](asset-capsules.md) — the `tag` capsule and the identity carriers
 - [Messages and attachments](../collab/messages-and-attachments.md) — bundle transport
 - [Sharing and sync](../collab/sharing-and-sync.md) — the share paths that carry origins
 - [FSRef](../fs-ref.md) — the *local* path reference; an origin is the remote one

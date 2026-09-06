@@ -18,8 +18,7 @@ interface UseImplementPlanOptions {
    *  plan-implementation session (live or in-flight). Reference-stable while
    *  the underlying Conversation entity hasn't changed. */
   pointers: readonly ConversationMessagePointer[];
-  /** Wraps any action that needs a `cwd`/project — same gate `useApproveAndExecute`
-   *  expects. When provided, the start-session run is deferred until the
+  /** Wraps any action that needs a `cwd`/project. When provided, the start-session run is deferred until the
    *  mapping dialog has resolved. */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
@@ -40,7 +39,7 @@ interface UseImplementPlanResult {
 }
 
 /**
- * Implement Plan lifecycle for a conversation, parallel to `useApproveAndExecute`.
+ * Implement Plan lifecycle for a conversation.
  *
  * Two halves:
  *   1. **runImplementPlan(messageId)** — spawns an AgenticProcess with the

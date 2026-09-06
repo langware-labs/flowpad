@@ -7,7 +7,7 @@
  *   - `buildProjectTreeRows` — parent→child render order + the tree-guide
  *     columns each row draws, including multi-level nesting.
  */
-import { buildProjectTreeRows, isPathInside } from '@src/components/terminal/ProjectsCounterChip';
+import { buildProjectTreeRows, isPathInside } from '@src/components/terminal/project-list-menu';
 import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
 import type { Project } from '@sdk';
 import { describe, expect, it } from 'vitest';

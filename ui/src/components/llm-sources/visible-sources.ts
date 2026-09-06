@@ -30,22 +30,27 @@ import { isAllocatedToUser } from '@src/components/llm-endpoints/my-endpoints';
 
 import { endpointOf } from './use-llm-sources';
 
-/** The rows to render for `kind`, narrowed to one funding kind. */
+/**
+ * The rows to render for `kind`, in the backend's own rank order.
+ *
+ * `funding` narrows to ONE kind, for a screen that renders per-kind groups. Omit it for every
+ * visible row at once — a picker that shows one flat list must not enumerate the funding kinds
+ * itself, or a fourth kind becomes a silent omission with no error anywhere.
+ */
 export function visibleSources(
   status: LLMFundingStatus | null | undefined,
   kind: string,
-  funding: LLMFundingKind,
+  funding?: LLMFundingKind,
 ): LLMSource[] {
-  const rows = (status?.sources?.[kind] ?? []).filter((s) => endpointOf(status, s)?.kind === funding);
-  // Device logins and stored keys are per-machine facts with no principal to compare against —
-  // there is nothing to narrow, and asking would rule every one of them out.
-  if (funding !== LLMFundingKind.Hub) return rows;
-
   const inUse = status?.resolved?.[kind]?.endpoint_typeid ?? '';
   const bound = status?.endpoint_typeid ?? '';
-  return rows.filter((source) => {
-    if (source.endpoint_typeid === inUse || source.endpoint_typeid === bound) return true;
+  return (status?.sources?.[kind] ?? []).filter((source) => {
     const offer = endpointOf(status, source);
+    if (funding && offer?.kind !== funding) return false;
+    // Device logins and stored keys are per-machine facts with no principal to compare
+    // against — there is nothing to narrow, and asking would rule every one of them out.
+    if (offer?.kind !== LLMFundingKind.Hub) return true;
+    if (source.endpoint_typeid === inUse || source.endpoint_typeid === bound) return true;
     return !!offer && isAllocatedToUser(offer, status?.hub_user_typeid);
   });
 }

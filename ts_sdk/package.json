@@ -6,6 +6,7 @@
   "homepage": "https://flowpad.ai",
   "type": "module",
   "dependencies": {
+    "@tanstack/query-core": "5.90.17",
     "dotenv": "^17.3.1"
   }
 }

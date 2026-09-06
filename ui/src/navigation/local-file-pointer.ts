@@ -12,10 +12,11 @@ import { DockPointer } from './DockPointer';
  * editor (an "Open in Editor" affordance, code hook sources) use
  * `DockPointer.forFile` directly.
  *
- * NOTE: markdown keeps the wider `isMarkdownDocumentPath` predicate (mdx,
- * md.out, …) — the SDK map only knows md/markdown. Built via
- * `AssetDocPointer.forVfs`, NOT `DockPointer.forAssetEditor` (that takes a
- * record type and falls back to MARKDOWN for unknown types).
+ * NOTE: markdown keeps the wider `isMarkdownDocumentPath` predicate — the
+ * registry's `markdown` shape (`shape.ext` + `also`) plus the display-only
+ * spellings (mdx, md.out, …); `editorForPath` reads the same registry set
+ * without the extras. Built via `AssetDocPointer.forVfs`, NOT
+ * `DockPointer.forAssetEditor` (that takes a record type).
  */
 export function dockPointerForFile(
   path: string,

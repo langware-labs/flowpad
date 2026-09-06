@@ -50,7 +50,7 @@ class AssetKind:
     """How to author, revise and locate one kind of asset."""
 
     name: str
-    layout: str  # "file" | "folder" — mirrors TypeInfo.main_layout
+    layout: str  # "file" | "folder" — mirrors the TypeInfo shape kind (File | Folder)
     record_type: str  # the type it is INDEXED as — a skill folder is a skill
 
     def create(self, root: Path) -> Path:

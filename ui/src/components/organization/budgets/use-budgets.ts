@@ -10,7 +10,14 @@
  * records — so every mutation invalidates explicitly and a focus refetch covers "I came back after
  * someone spent something".
  */
-import { budgetsService, type MemberBudget, type OrgBudgets, type TeamBudgets } from '@sdk';
+import {
+  budgetsService,
+  standingService,
+  type MemberBudget,
+  type OrgBudgets,
+  type OrgStanding,
+  type TeamBudgets,
+} from '@sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useInvalidateTokenPlan } from '@src/components/token-plan/use-token-plan';
@@ -30,6 +37,22 @@ export function useOrgBudgets(orgId: string | null | undefined) {
     staleTime: 15_000,
     refetchOnWindowFocus: true,
     // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401.
+    retry: false,
+  });
+}
+
+/**
+ * The member's answer to the same question `useOrgBudgets` refuses: the org's name, the caller's
+ * role on it, and the teams inside it they belong to. Cheap (no pool or usage read anywhere) and
+ * open to every role, so it is what the page falls back to when the budgets read comes back denied.
+ */
+export function useOrgStanding(orgId: string | null | undefined) {
+  return useQuery<OrgStanding>({
+    queryKey: [...BUDGETS_KEY, 'standing', orgId ?? ''] as const,
+    queryFn: () => standingService.orgStanding(orgId as string),
+    enabled: !!orgId,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 }

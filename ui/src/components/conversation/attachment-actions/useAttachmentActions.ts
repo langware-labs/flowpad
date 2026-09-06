@@ -13,12 +13,7 @@ export interface UseAttachmentActionsArgs {
   /** Sender-perspective gate, computed by the bubble (roster/local-user aware). */
   isFromOther: boolean;
   handlers: AttachmentActionHandlers;
-  isComposerPreview?: boolean;
   hasPlanSession?: boolean;
-  /** Whether the conversation already has a worker session (→ "new run" chip). */
-  workerSessionExists?: boolean;
-  workerSessionLabel?: string | null;
-  workerSessionInFlight?: boolean;
 }
 
 export interface UseAttachmentActionsResult {
@@ -40,11 +35,7 @@ export function useAttachmentActions({
   messageId,
   isFromOther,
   handlers,
-  isComposerPreview = false,
   hasPlanSession = false,
-  workerSessionExists = false,
-  workerSessionLabel = null,
-  workerSessionInFlight = false,
 }: UseAttachmentActionsArgs): UseAttachmentActionsResult {
   return useMemo(() => {
     const resolvedFm = fm ?? null;
@@ -52,13 +43,9 @@ export function useAttachmentActions({
       fm: resolvedFm,
       messageId,
       isFromOther,
-      isComposerPreview,
       specOrPlanTypeId: flowMessageSpecOrPlanTypeId(resolvedFm),
       promptEntityTypeId: flowMessagePromptEntityTypeId(resolvedFm),
       hasPlanSession,
-      workerSessionExists,
-      workerSessionLabel,
-      workerSessionInFlight,
       handlers,
     };
     const actions = ATTACHMENT_ACTION_DESCRIPTORS.filter((d) => d.visible(ctx)).map((d) => d.build(ctx));
@@ -69,5 +56,5 @@ export function useAttachmentActions({
     };
     // handlers is rebuilt per render by the bubble — memo on its fields' identities
     // would be noise; the bubble's own memoization keeps this cheap enough.
-  }, [fm, messageId, isFromOther, isComposerPreview, hasPlanSession, workerSessionExists, workerSessionLabel, workerSessionInFlight, handlers]);
+  }, [fm, messageId, isFromOther, hasPlanSession, handlers]);
 }

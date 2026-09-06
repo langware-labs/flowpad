@@ -1,4 +1,5 @@
-import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project, QueryRequest } from '@sdk';
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -44,9 +45,7 @@ export function useEnsureProject() {
       if (!normalized) throw new Error('Please provide a valid project path');
       const pathKey = canonicalPath(normalized);
 
-      const freshProjects = await Project.query(
-        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'ensure-project-dedup' }),
-      );
+      const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
       let target = freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path ?? '') === pathKey) ?? null;
       if (!target) {
         target = await new Project({ name: normalized }).save([dataContext.someone]);

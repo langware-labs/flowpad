@@ -234,6 +234,13 @@ Resolves `{ processTab, processDock, processId, onProcessUrl }` from the current
 `processTab` may be null briefly on the process URL before the row lands in the
 store — it is needed to parent new children and drive the strip, not to render.
 
+A standalone asset with no session shows the shared `VibeNoProcessPane`, also
+used by the home workspace. Its **Start new chat** action uses the existing Vibe
+launcher and navigates to the same asset with the new process as its URL host.
+The editor stays mounted; the loader binds the session. Opening a file alone
+does not create or resume a session, and a named host still loading does not
+offer a second session.
+
 ### Layout (`vibe-workspace.tsx`)
 
 A horizontal `ResizablePanelGroup`:
@@ -282,8 +289,11 @@ immediately after the process that showed it.
 
 **It never navigates**, and that is the load-bearing decision. A show is the agent
 saying "this is ready", not "drop what you are doing"; navigating would yank a
-user who is mid-task in another tab. The intent is carried instead by the marker
-`ShownTargetBadge` puts on the process's own chip. Three problems fall away with
+user who is mid-task in another tab. The destination tab glows for two seconds,
+and `ShownTargetBadge` puts a persistent shortcut on the process's own chip.
+The shared `TabStrip` starts the glow after the chip mounts; a later live show
+of the same target restarts it. This cue is local and expires, so old shows do
+not light up when switching projects later. Three problems fall away with
 the navigation: a background agent cannot interrupt anyone, `on_show`'s broadcast
 to EVERY client (browser tabs, `/win` popouts, the desktop shell) becomes
 idempotent — minting one deterministic row N times is still one row and zero

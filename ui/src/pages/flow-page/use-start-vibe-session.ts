@@ -20,7 +20,7 @@ import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
 import { chatTargetForProject } from '@src/lib/chat-target';
-import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
+import { VIBE_MODEL_DEFAULT, type VibeModelChoice } from './vibe-model-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
 // The vibe sub-agent's asset_ref is stable for the app's lifetime — resolve
@@ -113,7 +113,7 @@ export async function createVibeProcessForProject(opts: {
   navigation?: OpenShell;
   /** Open the process's workspace after creating it (default true). */
   open?: boolean;
-  model?: VibeModelTier;
+  model?: VibeModelChoice;
   workerType?: WorkerType;
 }): Promise<AgenticProcess> {
   const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
@@ -170,7 +170,7 @@ export async function launchVibeSessionForProject(opts: {
   message: string;
   files?: File[];
   navigation: OpenShell;
-  model?: VibeModelTier;
+  model?: VibeModelChoice;
   workerType?: WorkerType;
   /** Called when attachment upload fails (session still opens, text-only). */
   onAttachmentError?: () => void;
@@ -211,7 +211,7 @@ export async function continueVibeSessionForProject(opts: {
   workdir?: string;
   targetVfsPath?: string;
   navigation: OpenShell;
-  model: VibeModelTier;
+  model: VibeModelChoice;
   workerType: WorkerType;
 }): Promise<string> {
   const { sourceProcess, projectId, workdir, targetVfsPath, navigation, model, workerType } = opts;
@@ -235,7 +235,7 @@ export async function continueVibeSessionForProject(opts: {
 export function useStartVibeSession(): (
   message: string,
   files?: File[],
-  model?: VibeModelTier,
+  model?: VibeModelChoice,
   workerType?: WorkerType,
 ) => void {
   const { project } = useProject();
@@ -243,7 +243,7 @@ export function useStartVibeSession(): (
   const { t } = useLingui();
 
   return useCallback(
-    (message: string, files?: File[], model?: VibeModelTier, workerType?: WorkerType) => {
+    (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => {
       if (!project?.id) {
         // forceToast: this is the ONLY feedback the submit produces — without it
         // the prompt silently vanishes and the send button reads as broken.

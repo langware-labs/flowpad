@@ -62,8 +62,11 @@ export function IndexerStatusPill() {
     );
   }
 
-  // Idle: never render during the initial fetch to avoid flicker.
-  if (indexStatus.phase !== 'ready') return null;
+  if (indexStatus.phase === 'loading') return <Loader2 aria-label="Loading index status" className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
+  if (indexStatus.phase === 'error') return <button type="button" onClick={refresh}
+    className="px-1.5 text-[10px] text-muted-foreground" title={indexStatus.error.message}>
+    Index status unavailable · Retry
+  </button>;
 
   const iso = indexStatus.status.last_indexed_at;
   return (

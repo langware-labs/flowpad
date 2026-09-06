@@ -1,65 +1,6 @@
 import { useEffect } from 'react';
-import { ConnectionManager, IEntity, TypeId } from '@sdk';
-
-export type EntityOp = 'create' | 'update' | 'delete';
-/**
- * A `delete` frame carries NO payload — the server sends `{message_type,
- * message_id, instance_id, to_entity, op}` and nothing else, so `data` really is
- * `undefined` for every delete. Typing it as always-present made consumers
- * dereference it and throw (see `use-show-target-listener`), which — because the
- * event bus fans out with an unguarded `forEach` — silently truncated delivery of
- * that delete to every listener behind the thrower.
- */
-export type EntityOpListener = (typeId: TypeId, op: EntityOp, data: IEntity | undefined) => void;
-
-export interface SubscribeToEntityOpsOptions {
-  /** Restrict to a subset of ops. Defaults to all three. */
-  ops?: readonly EntityOp[];
-}
-
-/**
- * Imperative subscription to entity create / update / delete events that
- * arrive over the WebSocket. Returns an unsubscribe function.
- *
- * Filters by entity type and op O(1) before invoking the listener — consumers
- * do not re-implement type-match boilerplate. The listener fires AFTER the
- * SDK has updated its entity cache and watched-query results, so reads from
- * `Entity.getByIdFromCache(...)` inside the callback are safe.
- *
- * The listener is attached to the singleton `ConnectionManager`, so it
- * survives WS reconnects (the connection re-emits `on_data_op` after
- * recovery; the listener does not need to re-attach).
- *
- * Use this when the subscription's lifetime is the application (module-scoped
- * stores, top-level data hooks). For component-scoped subscriptions, prefer
- * the {@link useEntityOps} React hook which handles `useEffect` cleanup.
- */
-export function subscribeToEntityOps(
-  types: string | readonly string[],
-  listener: EntityOpListener,
-  options?: SubscribeToEntityOpsOptions,
-): () => void {
-  const typeSet = new Set(Array.isArray(types) ? types : [types as string]);
-  const opSet = options?.ops ? new Set(options.ops) : null;
-
-  const wrapped = (typeIdStr: string, op: EntityOp, data: IEntity | undefined): void => {
-    if (opSet && !opSet.has(op)) return;
-    let typeId: TypeId;
-    try {
-      typeId = new TypeId(typeIdStr);
-    } catch {
-      return;
-    }
-    if (!typeSet.has(typeId.type)) return;
-    listener(typeId, op, data);
-  };
-
-  const cm = ConnectionManager.getInstance();
-  cm.on('on_data_op', wrapped);
-  return () => {
-    cm.off('on_data_op', wrapped);
-  };
-}
+import { subscribeToEntityOps, type EntityOpListener, type SubscribeToEntityOpsOptions } from '../../FlowSync/entity-ops';
+export * from '../../FlowSync/entity-ops';
 
 /**
  * React hook wrapper around {@link subscribeToEntityOps}. Subscribes on

@@ -3,6 +3,7 @@ import {
   AgenticProcess,
   dataContext,
   isValidTag,
+  isHubOnly,
   PageId,
   Plan,
   Project,
@@ -44,7 +45,13 @@ export interface DockLoaderContext {
  */
 export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   const projectId = dock.scopeProjectId;
-  if (!projectId || dataContext.project?.id === projectId) return;
+  if (!projectId) {
+    // Only an unscoped, context-neutral route restores browser memory. Explicit
+    // global scopes and entity-owned routes must never inherit a default here.
+    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) await dataContext.setupProject();
+    return;
+  }
+  if (dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
 
@@ -263,7 +270,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadAgentInboxRoute(dock.pointer);
         break;
       case ViewType.ASSETS:
-        await adoptScopeProject(dock);
+        // A concrete asset resolves its owner; only a browse landing needs a
+        // remembered/default project before it can resolve anything.
+        if (!dock.pointer || dock.scopeProjectId) await adoptScopeProject(dock);
         await loadAssetRoute(dock.pointer, {
           allowLocalWikiAlias: dock.page !== PageId.HUB,
           wikiAuthority: wikiAuthorityForPage(dock.page),

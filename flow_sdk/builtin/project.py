@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, List, Optional
 
 from pydantic import (
     BaseModel,
@@ -44,6 +44,9 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +189,18 @@ class HelpdeskConfig(BaseModel):
 
 
 class Project(Entity):
+    @classmethod
+    async def get_last_active(cls) -> Optional["Project"]:
+        """The most recently opened visible project; hydrate only the winner."""
+        from flow_sdk.config import is_hidden_project
+
+        for row in await cls._db.get_entity_locations(cls.get_type(), active_only=True):
+            if not is_hidden_project(row.fs_storage_mount_path or "", row.system):
+                project = await cls.get_by_id(row.id)
+                if project is not None:
+                    return project
+        return None
+
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
     artifacts: List[str] = APIField(
@@ -2906,8 +2921,24 @@ class Project(Entity):
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
-    async def _delete_with_children(self) -> dict:
+    async def _delete_with_children(
+        self, *, folder: str = "rmtree", delete_chats: bool = True, harness_index: "HarnessIndex | None" = None,
+    ) -> dict:
         """Permanently delete this project and everything that belongs to it.
+
+        ``folder`` says what happens to the user's own files at
+        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default, what
+        the assets-page delete has always done), ``trash`` moves them to the
+        desktop Trash so the deletion is recoverable, and ``keep`` leaves them
+        alone. Everything else — the child records, their bundles, the ``@local``
+        detach and the project's own record — is identical in all three, which
+        is why the cleanup screen calls this rather than growing its own
+        deletion: the cascade guards below are the part nobody should re-derive.
+
+        ``delete_chats`` also removes native worker history and registrations
+        for this cwd. When False, the chat files survive removal of their index
+        rows and can be discovered again. ``harness_index`` lets bulk cleanup
+        reuse its single scan of the native stores.
 
         Irreversible. Removes, for the project and for every indexed record
         whose ``project_id`` is this project:
@@ -2927,16 +2958,19 @@ class Project(Entity):
         import logging  # noqa: PLC0415
         import shutil  # noqa: PLC0415
 
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
         from flow_sdk.fs_store import (  # noqa: PLC0415
             FSRecord,
             get_default_records_data_root,
             get_default_records_root,
         )
+        from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex, clear_harness_state  # noqa: PLC0415
 
         log = logging.getLogger(__name__)
         pid = str(self.id)
         records_root = get_default_records_root()
         data_root = get_default_records_data_root()
+        ap_type = AgenticProcess.get_type()
 
         def _purge_data(rtype: str, rid: str) -> None:
             # records_data has two on-disk shapes: the current bare <id>/ and the
@@ -2955,6 +2989,11 @@ class Project(Entity):
             # Build the record from the metadata we already read — no second
             # read of metadata.json. destroy() = DB row + FTS + wiki + shadow.
             try:
+                if rtype == ap_type and not delete_chats:
+                    proc = await AgenticProcess.get_by_id(rid)
+                    if proc is not None:
+                        await proc.removeSearchIndex()
+                        await proc.delete(delete_chats=False)
                 await FSRecord.from_dict(meta).destroy()
             except Exception as exc:  # noqa: BLE001
                 log.warning("[project-delete] destroy %s:%s failed: %s", rtype, rid, exc)
@@ -2982,6 +3021,35 @@ class Project(Entity):
                         continue  # skip malformed + the project's own record
                     targets.append(data)
 
+        # 1b. Terminate live workers BEFORE destroying their rows. ``_destroy``
+        #     only removes the DB row + shadow; it never touches the OS child.
+        #     A deleted agentic_process whose codex/claude worker is still
+        #     running leaks that process — and the orphan keeps holding its
+        #     session's writer lock, so a later ``resume`` of the same session
+        #     collides ("thread already has an active writer") and stalls. Reap
+        #     the worker through the normal teardown (SIGTERM -> SIGKILL + PTY
+        #     kill) first. Each ``exit()`` blocks on its own worker's reap
+        #     (up to a few seconds), so run them concurrently — the reaps target
+        #     distinct pids and don't share a lock. Failed teardown must abort
+        #     deletion; a surviving writer could recreate the history.
+        async def _reap_worker(meta: dict) -> None:
+            proc = await AgenticProcess.get_by_id(meta["id"])
+            if proc is not None:
+                result = await proc.exit()
+                if proc.shell_id and isinstance(result, ApiFailResponse):
+                    raise RuntimeError(f"Could not stop chat {proc.id}: {result.message}")
+
+        await asyncio.gather(*(_reap_worker(m) for m in targets if m.get("type") == ap_type))
+
+        # Resolve native paths while the cwd and transcripts still exist. Stop
+        # writers first; remove history before deleting rows can tombstone it.
+        chat_cleanup = None
+        if delete_chats and self.fs_storage_mount_path:
+            index = harness_index or await asyncio.to_thread(HarnessIndex.build)
+            chat_cleanup = await asyncio.to_thread(
+                clear_harness_state, {"cwd": self.fs_storage_mount_path}, index,
+            )
+
         # 2. Destroy each child record.
         for meta in targets:
             await _destroy(meta)
@@ -2993,38 +3061,62 @@ class Project(Entity):
         #    install. Portal checkouts live under the workspace and stay
         #    deletable.
         mount = self.fs_storage_mount_path
-        if mount and not self.protected_path:
+        folder_mechanism: str | None = None
+        if mount and folder == "keep":
+            log.info("[project-delete] keeping source folder %s", mount)
+        elif mount and not self.protected_path:
             try:
-                shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+                if folder == "trash":
+                    from flow_sdk.fs_store.path_utils import trash_path  # noqa: PLC0415
+
+                    folder_mechanism = trash_path(mount)
+                else:
+                    shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
+                log.warning("[project-delete] source folder %s failed %s: %s", folder, mount, exc)
         elif mount:
             log.warning("[project-delete] preserved protected source path %s", mount)
 
-        # 4. Sever the shared @local compute node before deleting the project
-        #    record. Destroying the project record cascades down `is_child` edges
-        #    (sqlite delete walks get_children_sub_tree), and older projects were
-        #    set up with the @local compute node mistakenly attached as a child
-        #    (see setup_for_desktop). Detaching it here keeps the cascade from
-        #    deleting the global compute node and breaking every PTY/agentic
-        #    session. Idempotent: detach_child is a no-op when no edge exists.
+        # 4. Sever the shared @local compute node from EVERY parent before
+        #    deleting the project record. Destroying the project record cascades
+        #    down `is_child` edges (sqlite delete walks get_children_sub_tree),
+        #    and older projects were set up with the @local compute node
+        #    mistakenly attached as a child (see setup_for_desktop). A
+        #    ``self.detach_child`` only cut the edge on THIS project — so when a
+        #    nested/descendant project in the subtree carried the legacy edge,
+        #    the cascade still walked into @local and destroyed the global
+        #    compute node, breaking every PTY/agentic session (the 9007
+        #    incident). Detach @local from all its parents so no delete subtree
+        #    can reach it, regardless of which project holds the edge.
+        #    Idempotent: a no-op when @local has no parents.
         try:
             # Read-only resolve: do NOT mint a node just to detach it.
             local_compute_node = await ComputeNode.get_local(create=False)
             if local_compute_node:
-                await self.detach_child(local_compute_node.typeid)
+                await local_compute_node.detach_from_all_parents()
         except Exception as exc:  # noqa: BLE001
             log.warning("[project-delete] detach @local compute node failed: %s", exc)
 
         # 5. Delete the project's own record (DB row + FTS + wiki + shadow + data).
         await _destroy({"type": self.type, "id": pid})
 
-        return {"project_id": pid, "deleted_children": len(targets)}
+        return {
+            "project_id": pid,
+            "deleted_children": len(targets),
+            "delete_chats": delete_chats,
+            "chat_cleanup": chat_cleanup,
+            "folder": folder,
+            "folder_mechanism": folder_mechanism,
+        }
 
     @action.post(action_name="delete-with-children")
     async def _http_delete_with_children(self) -> ApiResponse:
         """Permanently delete this project and all of its children. Irreversible."""
-        result = await self._delete_with_children()
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        if not isinstance(body, dict) or not isinstance(body.get("delete_chats", True), bool):
+            return ApiFailResponse(message="delete_chats must be a boolean", status_code=400)
+        result = await self._delete_with_children(delete_chats=body.get("delete_chats", True))
         return ApiSuccessResponse(data=result)

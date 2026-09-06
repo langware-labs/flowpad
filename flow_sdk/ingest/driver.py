@@ -110,10 +110,19 @@ class SetupVerdict:
 
 @dataclass(frozen=True)
 class SegmentRef:
-    """One syncable unit within a source — a feed URL, a channel."""
+    """One syncable unit within a source — a feed URL, a channel.
+
+    ``stamp`` is OPTIONAL: a change token the LISTING already carries (a
+    message count, an updated-at, an etag). The sync records it on the
+    cursor after a good fetch and, while the listing keeps answering the same
+    token, does not fetch the stream again — and does not spend budget on
+    it. A listing that cannot say leaves it empty and the stream is
+    round-robined like any other.
+    """
 
     key: str
     label: str = ""
+    stamp: str = ""
 
 
 @dataclass(frozen=True)
@@ -197,6 +206,12 @@ class IngestDriver:
     #: the same way ``channel_for`` is — a driver that cannot send simply omits
     #: ``send`` and leaves this False, and stays a three-line class.
     sends: bool = False
+    #: Whether strangers are the POINT of this channel. The agent runner admits
+    #: an inbound author only when the source's allowlist names them — empty
+    #: admits nobody, which is right for a mailbox holding tools. A help desk
+    #: exists to answer people nobody listed, so its driver declares this and an
+    #: EMPTY allowlist admits everyone; a non-empty one still restricts.
+    open_inbound: bool = False
     #: The config field that names WHICH remote account/feed-set a source of
     #: this provider serves — the natural key a caller (e.g. ``blocks.Inbox``)
     #: matches on to reuse an existing source instead of minting a twin.

@@ -173,7 +173,7 @@ async def test_a_project_parent_is_not_a_nesting(bootstrapped_client, seeded):
 async def test_the_badge_count_matches_the_list(seeded):
     """``asset-stats`` feeds the sidebar count chip. A count that still included
     the nested copy would read 2 over a 1-row list."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.fs_store.indexer import index_log
 
-    stats = await SchemaRegistry.get_asset_stats()
+    stats = await index_log.get_asset_stats()
     assert stats.per_type["mcp"] == 1

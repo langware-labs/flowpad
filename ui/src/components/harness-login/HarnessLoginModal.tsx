@@ -1,3 +1,4 @@
+import { usePrimaryContentReady } from '@sdk/react/primary-content';
 import { i18n } from '@lingui/core';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
@@ -26,7 +27,7 @@ import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { AlertCircle, ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -913,8 +914,10 @@ export function markHarnessGateSeen(): void {
  * opens this modal on click.
  */
 function useHarnessLoginGate() {
+  const primaryReady = usePrimaryContentReady();
+  const probed = useRef(false);
   useEffect(() => {
-    if (harnessGateDismissed()) return;
+    if (!primaryReady || probed.current || harnessGateDismissed()) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -930,6 +933,7 @@ function useHarnessLoginGate() {
             }
           }),
         );
+        probed.current = true;
         const anySignedIn = results.some((r) => r?.status === 'logged_in');
         if (!cancelled && !anySignedIn) openHarnessLoginModal();
       } catch {
@@ -939,7 +943,7 @@ function useHarnessLoginGate() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [primaryReady]);
 }
 
 /** The default assistant — persisted on the `harness` reference capability's

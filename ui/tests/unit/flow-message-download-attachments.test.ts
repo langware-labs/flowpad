@@ -43,4 +43,21 @@ describe('FlowMessage.downloadAttachments gate', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]?.[0].name).toBe('download_body');
   });
+
+  it('dispatches a fresh download on every explicit retry of a downloaded body', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
+    const fm = new FlowMessage({
+      id: '33333333-3333-4333-8333-333333333333',
+      body_status: BodyStatus.READY,
+      body_downloaded: true,
+      body_unpacked: true,
+    });
+    await fm.downloadAttachments();
+    await fm.downloadAttachments();
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const [action] of spy.mock.calls) {
+      expect(action.name).toBe('download_body');
+      expect(action.bodyParameters).toEqual({ overwrite: false });
+    }
+  });
 });

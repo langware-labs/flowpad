@@ -16,8 +16,8 @@ serves both formats. The store additionally carries the user's own message,
 which the stdout stream never emits (upstream #29997) — so a PTY session
 actually replays more completely than a headless one.
 
-Only the ``session`` / ``message`` / ``part`` tables are ever read, always
-read-only: the same database also holds provider credentials.
+Discovery reads only the ``session`` / ``message`` / ``part`` tables. Deletion
+uses OpenCode's own session command; its database also holds credentials.
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ from typing import Any, Iterator
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
     load_transcript_history as shared_load_transcript_history,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
+    transcript_path_for_process,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptFormat
 from flow_sdk.transcript_analyzer.resolver import sqlite_source_mtime
 
 from .event_to_flowdata import _element_type_for_kind
-from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
-    transcript_path_for_process,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,40 @@ def external_session_ids() -> set[str]:
         return set()
     finally:
         con.close()
+
+
+def project_session_ids() -> dict[str, list[str]]:
+    """Native session IDs keyed by cwd, including chats absent from our index."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    con = _connect_readonly(opencode_db_path())
+    if con is None:
+        return {}
+    try:
+        projects: dict[str, list[str]] = {}
+        for session_id, directory in con.execute("SELECT id, directory FROM session"):
+            if directory:
+                projects.setdefault(canonical_posix_path(directory), []).append(session_id)
+        return projects
+    finally:
+        con.close()
+
+
+def delete_sessions(session_ids: list[str]) -> None:
+    """Let the vendor remove selected sessions and their related rows."""
+    import os
+    import subprocess
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import resolve_worker_argv0
+
+    env = {**os.environ, "XDG_DATA_HOME": str(opencode_data_dir().parent)}
+    for session_id in session_ids:
+        if find_opencode_session(session_id) is None:
+            continue
+        subprocess.run(
+            resolve_worker_argv0("opencode", ["opencode", "session", "delete", session_id], env),
+            env=env, check=True, capture_output=True, text=True,
+        )
 
 
 def _iter_store_events(con: sqlite3.Connection, session_id: str) -> Iterator[dict[str, Any]]:

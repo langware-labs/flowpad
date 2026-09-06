@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import needs_ref
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (
@@ -97,6 +98,7 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, str]:
     return parts[0], (parts[1] if len(parts) > 1 else "unknown")
 
 
+@needs_ref
 def plugin_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id. The natural key
     ``<name>@<marketplace>`` is hashed into a uuid5 with the same

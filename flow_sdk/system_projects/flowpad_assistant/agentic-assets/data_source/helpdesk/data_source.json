@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "helpdesk",
+  "title": "Help desk",
+  "icon_name": "LifeBuoy",
+  "description": "A hub help desk's tickets. Each ticket is a conversation you can answer from the inbox; an Agent can own the desk and answer for you.",
+  "reflect": ["record"],
+  "config": {
+    "desk_project_id": {
+      "type": "text",
+      "required": true,
+      "account_key": true,
+      "choices": true,
+      "label": "Desk",
+      "placeholder": "hub project id",
+      "hint": "Pick a desk you belong to, or paste the hub project id of one."
+    }
+  }
+}

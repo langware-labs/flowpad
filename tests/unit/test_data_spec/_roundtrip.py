@@ -21,6 +21,7 @@ from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.layout import Folder
 
 
 def sample(name: str, annotation: Any, default: Any) -> Any:
@@ -84,7 +85,7 @@ def disk_origin(cls: type, root: Path) -> LocalOrigin:
     """Where a probe of ``cls`` lives under ``root`` — a file or a folder."""
     from flow_sdk.fs_store.serializer.fields import asset_info  # noqa: PLC0415
 
-    return LocalOrigin(base=str(root), rel_path="asset" if asset_info(cls).main_layout == "folder" else "asset.md")
+    return LocalOrigin(base=str(root), rel_path="asset" if isinstance(asset_info(cls).shape, Folder) else "asset.md")
 
 
 def assert_roundtrip(cls: type, root: Path) -> Any:

@@ -88,7 +88,7 @@ def test_sub_assets_are_recognised_by_the_registry_not_inheritance():
     class _PlainSpec(DataSpec):
         name: str = ""
 
-    info = TypeInfo(type_name="probe_unregistered", main_layout="file", asset_spec=_PlainSpec)
+    info = TypeInfo(type_name="probe_unregistered", asset_spec=_PlainSpec)
     info.entity_cls = _Plain
     SchemaRegistry.register(info)
     assert dict(field_kinds(_Holder))["items"] is FieldKind.SUB_ASSET_LIST

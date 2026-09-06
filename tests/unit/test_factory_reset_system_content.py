@@ -190,7 +190,7 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     monkeypatch.setattr(
         bootstrap_module,
         "invalidate_bootstrap_cache",
-        lambda: events.append("invalidate_bootstrap"),
+        lambda **kwargs: events.append("invalidate_bootstrap"),
     )
     monkeypatch.setattr(
         bootstrap_module,
@@ -308,7 +308,7 @@ async def test_factory_reset_terminates_live_pty_children_before_db_wipe(
     monkeypatch.setattr(db_driver, "db_lifecycle_guard", lifecycle_guard)
     monkeypatch.setattr(db_driver, "get_db_driver", lambda: initialize_test_db)
     monkeypatch.setattr(db_driver, "remove_db_sidecars", Mock())
-    monkeypatch.setattr(bootstrap_module, "invalidate_bootstrap_cache", lambda: None)
+    monkeypatch.setattr(bootstrap_module, "invalidate_bootstrap_cache", lambda **kwargs: None)
     monkeypatch.setattr(bootstrap_module, "bootstrap", AsyncMock())
     monkeypatch.setattr(bootstrap_module, "index_system_content", AsyncMock())
     monkeypatch.setattr(capability_discovery, "run_discovery", AsyncMock())

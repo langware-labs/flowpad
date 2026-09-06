@@ -165,7 +165,8 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
       const s = drawingRef.current;
       if (!s) return;
       const point = toCanvasPoint(e.clientX, e.clientY);
-      if (s.tool === 'arrow') s.points[1] = point; // move the end point
+      if (s.tool === 'arrow')
+        s.points[1] = point; // move the end point
       else s.points.push(point);
       redraw();
     },
@@ -175,8 +176,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
   const onPointerUp = useCallback(() => {
     const s = drawingRef.current;
     drawingRef.current = null;
-    const isDegenerateArrow =
-      s?.tool === 'arrow' && s.points[0].x === s.points[1].x && s.points[0].y === s.points[1].y;
+    const isDegenerateArrow = s?.tool === 'arrow' && s.points[0].x === s.points[1].x && s.points[0].y === s.points[1].y;
     if (s && s.points.length > 0 && !isDegenerateArrow) {
       strokesRef.current.push(s);
       setStrokeCount(strokesRef.current.length);
@@ -263,13 +263,16 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
     <>
       <Dialog open={open} onOpenChange={(o) => !o && requestClose()}>
         <DialogContent
+          hideClose
           className="flex max-h-[92vh] w-auto max-w-[92vw] flex-col gap-3 p-3"
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             requestClose();
           }}
         >
-          <DialogTitle className="sr-only"><Trans>Annotate image</Trans></DialogTitle>
+          <DialogTitle className="sr-only">
+            <Trans>Annotate image</Trans>
+          </DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy.</Trans>
           </DialogDescription>

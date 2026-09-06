@@ -1,9 +1,10 @@
-"""Indexer function: USER_HOME_FOLDER → TODO_FILE.
+"""Extractor + id mint for TODO_FILE records.
 
-Walks ``~/.claude/todos/*.json`` — flat per-session/agent todo files written by
+``~/.claude/todos/*.json`` — flat per-session/agent todo files written by
 Claude Code (distinct from project ``tasks/<title>/header.json`` handled by
-``task.py``). One FSRef per file. Read-only. Replaces
-``user_collector.get_todos`` (minus its O(projects) project-correlation loop).
+``task.py``). Discovery is the type's declared ``walk``
+(``todo_file_type_info.py``). Read-only. Replaces ``user_collector.get_todos``
+(minus its O(projects) project-correlation loop).
 """
 
 from __future__ import annotations
@@ -14,35 +15,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def _todos_dir(node: FSRef) -> Path:
-    return Path(node.path) / ".claude" / "todos"
-
-
-def todo_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one TODO_FILE FSRef per ``~/.claude/todos/*.json``.
-
-    Register on USER_HOME_FOLDER only.
-    """
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        todos_dir = _todos_dir(node)
-        if not todos_dir.is_dir():
-            continue
-        for f in sorted(todos_dir.glob("*.json")):
-            key = str(f.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(f, record_type=RecordType.TODO_FILE, parent=node))
-    return out
 
 
 def todo_identity_key(ref: FSRef | Path) -> str:

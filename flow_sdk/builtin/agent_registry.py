@@ -11,6 +11,7 @@ Accepts a bare name (``"asset-cleanup"``), a ``TypeId`` or its string form
 from typing import TYPE_CHECKING, Optional, Union
 
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
@@ -76,11 +77,11 @@ def _shipped_agent(name: str) -> Optional["Agent"]:
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     info = SchemaRegistry.get(EntityType.AGENT.value)
-    if info is None or not info.main_subdir or not info.main_file:
+    if info is None or not info.main_subdir or not isinstance(info.shape, Folder) or not info.shape.main:
         return None
     # Placement comes off the type, not a literal: family_subdir is the single
     # seam for the mount rule, so the fallback can't drift from the walk.
-    path = flowpad_assistant_project_root() / info.main_subdir / name / info.main_file
+    path = flowpad_assistant_project_root() / info.main_subdir / name / info.shape.main
     if not path.is_file():
         return None
     # read_only: the shipped file is package data — minting must never write to it.

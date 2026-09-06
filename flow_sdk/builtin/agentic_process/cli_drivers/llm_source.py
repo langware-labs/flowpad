@@ -65,6 +65,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.llm_source_spec import (
+    LLMScope,
     LLMSource,
     LLMSourceAuthority,
     LLMSourceOrigin,
@@ -381,27 +382,30 @@ def _hub_logged_in() -> bool:
     return bool(resolve_hub_api_key())
 
 
-async def _constraint(process) -> tuple[str, LLMSourceOrigin] | None:
-    """The endpoint this spawn is REQUIRED to spend, and who required it.
+async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
+    """The endpoint this question is REQUIRED to answer with, and who required it.
 
-    Process beats project. A process with no project contributes nothing rather than
-    failing closed -- ``project_id`` is legitimately ``None`` for embedded and inline
+    Process beats project. A scope with no project contributes nothing rather than
+    failing closed -- ``project_id`` is legitimately empty for embedded and inline
     processes, and those must keep working.
+
+    Takes an :class:`LLMScope`, not a process, so the two rungs above the user's preference
+    are askable by something that HAS no process. The picker is exactly that, and while this
+    read the fields off a process the picker skipped rungs 1 and 2 entirely -- so a project
+    pin was invisible on the one screen whose job is to say what funds a spawn.
     """
-    typeid = str(getattr(process, "llm_endpoint_typeid", "") or "")
-    if typeid:
-        return typeid, LLMSourceOrigin.PROCESS
+    if scope.process_llm_endpoint_typeid:
+        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS
 
     from flow_sdk.builtin.project import Project
 
     project = None
-    project_id = getattr(process, "project_id", None)
-    if project_id:
-        project = await Project.get_by_id(project_id)
-    if project is None:
+    if scope.project_id:
+        project = await Project.get_by_id(scope.project_id)
+    if project is None and scope.owner_typeid:
         # Same fallback the secret resolver uses -- see ``apply_worker_secret_env``.
         try:
-            project = await Project.get_ancestor(process.typeid)
+            project = await Project.get_ancestor(scope.owner_typeid)
         except Exception:  # noqa: BLE001 -- no project is an ordinary state, not an error
             project = None
     typeid = str(getattr(project, "llm_endpoint_typeid", "") or "") if project is not None else ""
@@ -526,31 +530,47 @@ def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> lis
     ]
 
 
-async def list_llm_candidates(worker_type: str, process=None) -> list[Candidate]:
-    """Every endpoint that could fund *worker_type*, ranked, each with its verdict — for
-    THIS process when one is given, otherwise the box-wide view the picker renders.
+def _overlay(
+    candidates: list[Candidate],
+    cap,
+    worker_type: str,
+    constraint: tuple[str, LLMSourceOrigin] | None,
+) -> list[Candidate]:
+    """The ranked answer for an inventory that has ALREADY been read.
+
+    Pure, and split out for one reason: ``_inventory`` is not memoized. It costs a capability
+    read, a stored-key listing, a shadow-root scan and a sodot round-trip per harness, and
+    ``PickerView`` promises "three answers from ONE inventory read". A picker that reached for
+    the answer by calling ``list_llm_candidates`` read the whole thing a second time — four
+    harnesses became eight inventories per status poll. The constraint is passed in for the
+    same reason: it is not harness-dependent, so a batch resolves it once for all four.
+    """
+    if constraint is not None:
+        return sorted(_apply_constraint(candidates, *constraint, _hub_logged_in()), key=lambda c: c.source.rank)
+    return sorted(_apply_preference(candidates, cap, worker_type), key=lambda c: c.source.rank)
+
+
+async def list_llm_candidates(worker_type: str, scope: LLMScope = LLMScope()) -> list[Candidate]:
+    """Every endpoint that could fund *worker_type*, ranked, each with its verdict — within
+    *scope* when one is given, otherwise the box-wide view.
 
     The endpoint travels with the verdict so a caller never has to re-read a row to learn
     the provider, the key or the model slugs behind an answer this function already chose.
+
+    **This is the one list source.** A spawn passes ``LLMScope.of_process(process)`` and the
+    picker passes ``LLMScope.of_project(project_id)``; the rungs applied are the same either
+    way, which is the whole reason the scope is a value rather than a process. Anything that
+    answers "what funds this harness" and does not come through here is a second resolver.
     """
     candidates, cap = await _inventory(worker_type)
     if not candidates:
         return []
-
-    if process is not None:
-        constraint = await _constraint(process)
-        if constraint is not None:
-            return sorted(
-                _apply_constraint(candidates, *constraint, _hub_logged_in()),
-                key=lambda c: c.source.rank,
-            )
-
-    return sorted(_apply_preference(candidates, cap, worker_type), key=lambda c: c.source.rank)
+    return _overlay(candidates, cap, worker_type, await resolve_constraint(scope))
 
 
-async def list_llm_sources(worker_type: str, process=None) -> list[LLMSource]:
+async def list_llm_sources(worker_type: str, scope: LLMScope = LLMScope()) -> list[LLMSource]:
     """The verdicts alone, for callers that render them and never need the row."""
-    return [c.source for c in await list_llm_candidates(worker_type, process)]
+    return [c.source for c in await list_llm_candidates(worker_type, scope)]
 
 
 # ── resolution ───────────────────────────────────────────────────────────────────
@@ -576,9 +596,9 @@ def pick_llm_candidate(candidates: list[Candidate]) -> Candidate | None:
     return None
 
 
-async def resolve_box_llm_endpoint(worker_type: str) -> Candidate | None:
-    """The box-wide answer, with the endpoint behind it."""
-    return pick_llm_candidate(await list_llm_candidates(worker_type))
+async def resolve_box_llm_endpoint(worker_type: str, scope: LLMScope = LLMScope()) -> Candidate | None:
+    """The box-wide answer, with the endpoint behind it — narrowed by *scope* when given."""
+    return pick_llm_candidate(await list_llm_candidates(worker_type, scope))
 
 
 class PickerView(NamedTuple):
@@ -605,16 +625,30 @@ class PickerView(NamedTuple):
     blocked: str
 
 
-async def llm_picker_view(worker_type: str) -> PickerView:
-    """The picker's three answers for *worker_type*.
+async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> PickerView:
+    """The picker's three answers for *worker_type*, within *scope*.
 
-    Deliberately NOT ``list_llm_candidates``: that applies the preference overlay, which is
+    ``offers`` is deliberately NOT ``list_llm_candidates``: that applies the overlay, which is
     correct for a spawn and circular for a picker. See :func:`_apply_preference`.
+
+    ``chosen`` and ``blocked`` DO go through it, so the winner this reports is the winner a
+    spawn in the same scope gets — including a project pin, which the offer list cannot show
+    because an offer is judged on its own credential alone.
+    """
+    return await picker_view_for(worker_type, await resolve_constraint(scope))
+
+
+async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin] | None) -> PickerView:
+    """:func:`llm_picker_view` for a constraint that has already been resolved.
+
+    The batch form. ``resolve_constraint`` is a project lookup and does not depend on the harness, so
+    a caller answering for every harness at once resolves it once and hands it here rather
+    than paying the same ``Project.get_by_id`` four times.
     """
     inventory, cap = await _inventory(worker_type)
     if not inventory:
         return PickerView([], None, "")
-    overlaid = sorted(_apply_preference(inventory, cap, worker_type), key=lambda c: c.source.rank)
+    overlaid = _overlay(inventory, cap, worker_type, constraint)
     chosen = pick_llm_candidate(overlaid)
     return PickerView(
         offers=sorted(inventory, key=lambda c: c.source.rank),
@@ -636,7 +670,7 @@ async def resolve_llm_endpoint(process) -> Candidate:
     a second lookup is a second chance to disagree with the answer.
     """
     worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
-    candidates = await list_llm_candidates(worker_type, process)
+    candidates = await list_llm_candidates(worker_type, LLMScope.of_process(process))
     chosen = pick_llm_candidate(candidates)
     if chosen is None:
         raise LLMSourceError(worker_type, [c.source for c in candidates])

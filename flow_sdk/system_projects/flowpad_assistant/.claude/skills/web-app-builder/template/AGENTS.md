@@ -40,3 +40,19 @@ supabase start                      # optional local DB (Docker)
   `frontend/lib/db/schema.ts` is the typed mirror — keep them in sync.
 - New tables get RLS enabled in their creation migration.
 - `frontend/lib/db` (Drizzle, bypasses RLS) is server-only.
+
+## `components/ui/` — what is real shadcn and what is not
+
+`button` and `card` are shadcn. `input`, `label` and `checkbox` are **lookalikes**:
+same import path and prop names, but native elements, because the template carries
+no radix packages beyond `@radix-ui/react-slot`. So `checkbox` has no
+`indeterminate`, and its checked colour is `accent-*`, not `data-[state=checked]:*`.
+
+Need anything else — dialog, table, select, form — do NOT hand-write it:
+
+```bash
+cd frontend && npx shadcn@latest add dialog table select form
+```
+
+That pulls the real component and its radix dependency. Verified working from the
+exec sandbox.

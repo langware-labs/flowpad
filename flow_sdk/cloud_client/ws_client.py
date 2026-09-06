@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import secrets
@@ -396,7 +397,27 @@ class HubWebSocketManager:
 
     @property
     def is_running(self) -> bool:
-        return self._task is not None and not self._task.done()
+        return self._live_task() is not None
+
+    def _live_task(self) -> asyncio.Task | None:
+        """The run task IF it is ours and alive — the only way to read ``_task``.
+
+        A handle from another (typically closed) event loop can never complete
+        here and raises when awaited; ``_run_forever``'s own ``finally`` never
+        ran for it, so it is dropped on read instead.
+        """
+        task = self._task
+        if task is None or task.done():
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return task  # sync caller: nothing to compare against
+        if task.get_loop() is not loop:
+            self._task = None
+            self._outbound = None
+            return None
+        return task
 
     @property
     def is_connected(self) -> bool:
@@ -488,14 +509,10 @@ class HubWebSocketManager:
 
     async def stop(self) -> dict[str, Any]:
         self.request_stop()
-        task = self._task
-        if not task or task.done() or asyncio.current_task() is task:
-            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
-            return self.status_payload()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        task = self._live_task()
+        if task is not None and asyncio.current_task() is not task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
         return self.status_payload()
 
@@ -509,14 +526,19 @@ class HubWebSocketManager:
         Mutates in-memory state only; the connection-status broadcast is
         emitted by callers (``stop()`` calls ``_set_state`` after; the logout
         path in ``clear_cloud_credentials`` broadcasts DISCONNECTED itself).
+
+        This is the call that is safe from ANYWHERE in the WS task tree —
+        including the reader loop's token-rejection path, which reaches
+        ``clear_cloud_credentials``. ``stop()`` is not: awaiting the run task
+        from one of its own children deadlocks.
         """
         self._stop_requested = True
         self._connected = False
         self._verified = False
         self._status = HubConnectionStatus.DISCONNECTED
         self._last_error = None
-        task = self._task
-        if not task or task.done():
+        task = self._live_task()
+        if task is None:
             return
 
         try:

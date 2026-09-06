@@ -74,7 +74,9 @@ export function useChannelAttribution() {
     ): ChannelAttribution | null => {
       if (!origin?.kind) return null;
       const kind = origin.kind.trim().toLowerCase();
-      const label = channelLabel(kind);
+      // The spec's own title when one is installed ("Help desk", not
+      // "Helpdesk"); `humanizeType` only for a channel nothing names.
+      const label = specFor(kind)?.title || channelLabel(kind);
 
       const source = sourceForOrigin(sources, origin, originLocal);
       const name =
@@ -91,21 +93,13 @@ export function useChannelAttribution() {
 const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
 // The source chip is the one a row is recognised BY, so its glyph is bigger than
 // a category's and keeps its brand colour — the text stays quiet.
-const SOURCE_CHIP = 'gap-1 rounded border border-border bg-muted ps-1 pe-1.5 py-px align-middle text-[10px] font-semibold leading-tight text-muted-foreground';
+const SOURCE_CHIP = cn(COMPACT, 'gap-1 border-border bg-muted ps-1 pe-1.5 py-px text-[10px] font-semibold text-muted-foreground');
 
 /** The per-row source chip: icon + channel, only for channel conversations.
- *  Hub-native rows pass no origin and render nothing — absence means "ours". */
-export function SourceChip({
-  origin,
-  originLocal,
-  className,
-}: {
-  origin: ICloudOrigin | null | undefined;
-  originLocal?: ICloudOriginLocal | null;
-  className?: string;
-}) {
-  const { attributionFor } = useChannelAttribution();
-  const attribution = attributionFor(origin, originLocal);
+ *  Presentational: the LIST resolves attribution once (`useChannelAttribution`)
+ *  and hands each row its answer, so 300 rows do not hold 600 query watchers.
+ *  Hub-native rows have no attribution and render nothing — absence means "ours". */
+export function SourceChip({ attribution, className }: { attribution: ChannelAttribution | null; className?: string }) {
   if (!attribution) return null;
   const Icon = attribution.icon;
   return (

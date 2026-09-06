@@ -29,6 +29,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
+from tests.fixtures.identity import resolve_id
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -508,10 +509,10 @@ async def test_inline_legacy_name_resolves_to_entity_id(tree):
 async def test_inline_resolved_dedups_against_embedded(tree):
     """A legacy name that resolves to an entity id already in
     embedded_asset_refs collapses into the EMBEDDED row (no INLINE dup)."""
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.fs_store.type_id import TypeId
 
     proc = _make_proc()
     assets_dir = await proc._assets_dir_path()
@@ -576,8 +577,8 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     cannot predict a not-yet-minted random v4 (the documented asymmetry), but
     once gen_id has stamped the v4 into the frontmatter capsule, peek reads and
     returns that same id. An already-adopted frontmatter UUID wins on both."""
-    from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -588,7 +589,7 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     assert md.read_bytes() == before, "peek must not write"
     assert is_valid_entity_id(peeked)
     # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
-    minted = SchemaRegistry.get("subagent").mint_entity_id(FSRef(md, record_type=RecordType.SUBAGENT))
+    minted = resolve_id(SchemaRegistry.get("subagent"), FSRef(md, record_type=RecordType.SUBAGENT))
     assert uuid.UUID(minted).version == 4
     assert subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT)) == minted
 

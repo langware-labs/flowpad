@@ -89,6 +89,7 @@ async def run_headless_turn(
     uses it to strip a materialised ``fork_session_id``.
     """
     from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+        register_prompt_task,
         register_prompt_worker,
         unregister_prompt_worker,
     )
@@ -165,7 +166,8 @@ async def run_headless_turn(
                 # (see AgenticProcess.end_headless_turn).
                 await process.end_headless_turn(log_prefix)
 
-        asyncio.create_task(_run_turn(), name=f"{driver.name}-{process.id[:8]}")
+        task = asyncio.create_task(_run_turn(), name=f"{driver.name}-{process.id[:8]}")
+        register_prompt_task(process.id, task)
     except BaseException:
         # _run_turn never took ownership of the slot — release it here so the
         # next turn is not permanently rejected with a 409.

@@ -1,10 +1,10 @@
-"""`TypeInfo.mint_entity_id` is the ONLY way to resolve a filesystem asset's id.
+"""``reconcile`` over the type's carrier is the ONLY way to resolve a filesystem asset's id.
 
 The seam was open-coded as ``extract_id(...) or mint_id(...)`` in eight places.
 That expression means "use the id in the file, otherwise invent one" — which
 forks the entity whenever a rewrite has wiped the carrier. It was already fixed
-ONCE, at a single call site, by threading ``proposed_id`` through
-``discover_record_by_path``; the index walk never got the memo and kept forking
+ONCE, at a single call site, by threading ``proposed_id`` through the targeted
+discover route; the index walk never got the memo and kept forking
 for another release.
 
 A parameter only protects the callers who remember to pass it. These tests
@@ -36,9 +36,9 @@ _PER_TYPE_MINTER_ALLOWLIST = {
     # second entry here; a row is plain JSON now, and a value has no id.)
     ("dataset.py", "_example_id"),
     # The task type's folder-name fallback, the last leg of
-    # ``_task_id_from_fields``' reader precedence (capsule → frontmatter →
-    # folder name). Mirrors the TypeInfo reader order rather than competing
-    # with it; changing it would move every transitional task id.
+    # ``_task_id_from_fields``' reader precedence (frontmatter → folder name).
+    # Mirrors the TypeInfo reader order rather than competing with it;
+    # changing it would move every transitional task id.
     ("task.py", "_mint_task_id"),
     # Provider-owned journals: the run id IS the natural key and doubles as the
     # type's ``id_stable_key_fn``. Read-only source, so nothing is ever stamped.
@@ -83,19 +83,19 @@ def test_the_legacy_seam_methods_no_longer_exist() -> None:
     are gone — so the real guarantee is that they cannot come back. If someone
     re-adds `mint_id`, this fails before the pattern lint has to.
     """
-    for gone in ("mint_id", "extract_id", "resolve_id", "_mint_from", "_observe", "_derive", "capsule_target_for"):
+    for gone in ("mint_id", "extract_id", "resolve_id", "mint_entity_id", "_mint_from", "_observe", "_derive", "capsule_target_for"):
         assert not hasattr(TypeInfo, gone), (
             f"TypeInfo.{gone} is back. Identity resolution has exactly one seam, "
-            "`mint_entity_id`; a second entry point is how this bug survived its "
-            "first fix."
+            "`reconcile` over the carrier; a second entry point is how this bug "
+            "survived its first fix."
         )
-    assert hasattr(TypeInfo, "mint_entity_id") and hasattr(TypeInfo, "read_id")
+    assert hasattr(TypeInfo, "mint") and hasattr(TypeInfo, "stamp_id") and hasattr(TypeInfo, "read_id")
 
 
 def _carrier_or_mint_sites(root: Path) -> list[str]:
     """Any ``<x>.<read>(...) or <y>.<mint>(...)`` identity shape under ``root``."""
     reads = ("extract_id", "peek_entity_id", "read_id", "mint_entity_id")
-    mints = ("mint_id", "mint_entity_id")
+    mints = ("mint_id", "mint_entity_id", "mint")
     hits: list[str] = []
     for path, tree in _trees(root):
         for node in ast.walk(tree):
@@ -112,7 +112,7 @@ def _carrier_or_mint_sites(root: Path) -> list[str]:
 def test_no_carrier_or_mint_pairs_remain() -> None:
     sites = _carrier_or_mint_sites(FLOW_SDK)
     assert sites == [], (
-        "identity must be resolved by ONE call to TypeInfo.mint_entity_id, which "
+        "identity must be resolved by ONE call to reconcile, which "
         "consults the row that already owns the path. A read-then-mint pair skips "
         "that and forks the entity when a rewrite has wiped the carrier. Found at:\n  "
         + "\n  ".join(sites)
@@ -145,7 +145,7 @@ def test_no_per_type_minters_regrow() -> None:
         "a per-type `*_id()` helper that calls mint_uuid is a second identity "
         "policy for a type whose TypeInfo already has one — they drift, and every "
         "one of them was dead code by the time it was found. Use "
-        "TypeInfo.mint_entity_id, or add an id_stable_key_fn and let the seam mint. "
+        "reconcile, or add an id_stable_key_fn and let the seam mint. "
         "Found:\n  " + "\n  ".join(sites)
     )
 
@@ -186,7 +186,7 @@ def test_no_raw_uuid_in_the_identity_tree() -> None:
     sites += _raw_uuid_sites(FLOW_SDK / "schema" / "type_info")
     assert sites == [], (
         "construct ids through `mint_uuid` (or, for a filesystem asset, "
-        "`TypeInfo.mint_entity_id`) so the v4/v5 policy stays in one place. Note "
+        "`reconcile` / `TypeInfo.mint`) so the v4/v5 policy stays in one place. Note "
         "the argument order differs — mint_uuid(key, namespace=...) vs "
         "uuid.uuid5(namespace, key) — so preserve the pair exactly or every id of "
         "that type moves. Found:\n  " + "\n  ".join(sites)
@@ -196,7 +196,7 @@ def test_no_raw_uuid_in_the_identity_tree() -> None:
 @pytest.mark.parametrize(
     "source, detector",
     [
-        ("rid = info.read_id(ref) or info.mint_entity_id(ref)\n", _carrier_or_mint_sites),
+        ("rid = info.read_id(ref) or info.mint(layout)\n", _carrier_or_mint_sites),
         ("def thing_id(ref):\n    return mint_uuid(str(ref))\n", _per_type_minters),
         ("import uuid\nx = uuid.uuid4()\n", _raw_uuid_sites),
     ],

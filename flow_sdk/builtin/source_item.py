@@ -167,6 +167,13 @@ class TeamsMessageSpec(ChannelMessageSpec):
     """
 
 
+class HelpdeskMessageSpec(ChannelMessageSpec):
+    """Outbound help-desk reply: ``to`` is the TICKET — the hub conversation id
+    the inbound record's ``segment_key`` spells — and ``thread_key`` rides
+    through unchanged. The hub threads by conversation, so there is no
+    in-thread reply target beyond the ticket itself."""
+
+
 class WhatsAppMessageSpec(MessageSpec):
     """Outbound WhatsApp message: the generic shape, person-targeted replies.
 
@@ -217,6 +224,11 @@ class SourceItem(Entity):
     # the whole corpus once. The accepted consequence is that rows ingested
     # before this field existed never backfill it.
     reply_to_external_id: Optional[str] = APIField(default=None)
+    # Adoption hints (see `SourceItemSpec`): the local Conversation / FlowMessage
+    # ids this record must land on. Not digested, for the same reason as
+    # `reply_to_external_id`.
+    conversation_id: Optional[str] = APIField(default=None)
+    message_id: Optional[str] = APIField(default=None)
     permalink: Optional[str] = APIField(default=None)
     occurred_at: Optional[str] = APIField(default=None, description="ISO-8601; the ordering key")
 

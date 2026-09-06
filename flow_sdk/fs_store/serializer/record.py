@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from flow_sdk.schema.layout import Folder
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,10 +66,10 @@ def spec_extractor(type_name: str):
         fields["status"] = fields.get("status") or "active"
         fields["content"] = fts_content(obj, info)
         rec = FSRecord(type=type_name, id=resolved_id, **fields)
-        if info.main_layout == "folder":
-            rec.asset_ref = FSRef(info.asset_ref_for(root.resolve()))
+        if isinstance(info.shape, Folder):
+            rec.asset_ref = FSRef(root.resolve())
         else:
-            rec.asset_ref = FrontMatterFsRef(root) if info.main_ext == ".md" else FSRef(root)
+            rec.asset_ref = FrontMatterFsRef(root) if info.shape.ext == ".md" else FSRef(root)
         if ref.scope:
             rec.scope = ref.scope
         return [rec]

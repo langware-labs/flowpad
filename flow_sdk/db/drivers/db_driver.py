@@ -4,18 +4,19 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from flow_sdk._compat import UTC
 from typing import AsyncIterator, Callable, Generic, List, Optional, Tuple
-from flow_sdk.settings import is_desktop
+
 from pydantic import BaseModel
 
-from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
-from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, RecordType
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.entity_factory import type_registry as _entity_registry
+from flow_sdk._compat import UTC
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, EntityLocation, RecordType
 from flow_sdk.db.drivers.path_model import NodesPath
 from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.entity_factory import type_registry as _entity_registry
+from flow_sdk.settings import is_desktop
 
 
 # Stub for transaction handling
@@ -106,8 +107,8 @@ class DBDriver(Generic[RecordType]):
 
     @staticmethod
     def apply_create_fields(record: DBBaseRecord):
-        from flow_sdk.request_context.methods import get_current_request_info
         from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
+        from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
         # created_through/updated_through are local provenance (not identity) and
@@ -160,8 +161,8 @@ class DBDriver(Generic[RecordType]):
 
     @staticmethod
     def apply_update_fields(record: DBBaseRecord):
-        from flow_sdk.request_context.methods import get_current_request_info
         from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
+        from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
         # updated_through is local provenance, identical in both modes — stamp once.
@@ -202,6 +203,26 @@ class DBDriver(Generic[RecordType]):
         if schema validation is needed.
         """
         pass
+
+    async def get_entity_locations(self, entity_type: str, *, active_only: bool = False) -> list[EntityLocation]:
+        """Location projection; drivers may avoid constructing complete entities."""
+        rows = await self.get_all(QueryFilter(type=entity_type))
+        if active_only:
+            rows = sorted(
+                (row for row in rows if getattr(row, "last_active_at", None)),
+                key=lambda row: row.last_active_at,
+                reverse=True,
+            )
+        return [
+            EntityLocation(
+                id=row.id,
+                name=getattr(row, "name", None),
+                uname=row.uname,
+                fs_storage_mount_path=getattr(row, "fs_storage_mount_path", None),
+                system=bool(getattr(row, "system", False)),
+            )
+            for row in rows
+        ]
 
     async def create_entity_fulltext_index(self, entity_type: str, fulltext_field: str):
         raise NotImplementedError("create_entity_fulltext_index is not implemented")

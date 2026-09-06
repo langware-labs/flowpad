@@ -1,3 +1,6 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
+import { useContext } from '@sdk/react/hooks';
 /**
  * The box's funding picture, as one cached read.
  *
@@ -16,16 +19,44 @@ import {
   type LLMSource,
   type LLMSourceRef,
 } from '@sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-export const LLM_SOURCES_KEY = ['llm-sources'] as const;
+import { WORKER_LABELS, type WorkerType } from '@src/hooks/useWorkerHistory';
+
+/**
+ * The funding picture, scoped to the ACTIVE PROJECT.
+ *
+ * The project is not decoration: a project may pin an endpoint, and that pin outranks the
+ * user's own preference — so without it `resolved` reports the box-wide winner while every
+ * process in the project spends something else. The backend applies the same rungs a spawn
+ * applies (one `LLMScope`, one resolver), which is the whole point of passing it.
+ *
+ * `useContext()` is the same call the footer already makes for `version`; a null project is
+ * the ordinary box-wide question, not an error.
+ */
+/**
+ * The params every reader and writer of this asset must agree on.
+ *
+ * Shared because the cache key is built from them: a `setQueryData` that omitted the project
+ * wrote to `[node, '']` while every observer sat on `[node, <project>]`, so the write landed
+ * nowhere and the screen stayed stale until it refetched. One helper, so the read and the
+ * write cannot address different entries.
+ */
+function useFundingParams() {
+  const projectId = useContext().project?.id ?? undefined;
+  return { projectId };
+}
 
 export function useLlmSources() {
-  const { data, isLoading } = useQuery({
-    queryKey: LLM_SOURCES_KEY,
-    queryFn: () => llmSourcesService.status(),
-    staleTime: 10_000,
-  });
+  // Deliberately NOT `priority: 'background'`, though this read looks exactly like the
+  // background widget that setting is for. `background` waits on `usePrimaryContentReady`,
+  // which never fires on a shell/PTY page — measured: the footer chip AND the sibling
+  // `IndexerStatusPill` (which does use `background`) are both absent there indefinitely. A
+  // chip whose whole job is to be visible at rest cannot be invisible on the page type the
+  // funding bug was reported from. The cost that motivated the idea was the per-harness
+  // inventory fan-out, and that is fixed at the source instead (`_overlay` / `picker_view_for`
+  // in `cli_drivers/llm_source.py` read the inventory once).
+  const { data, isLoading } = useLazyAsset(LazyAsset.LlmFunding, useFundingParams());
   return { status: data ?? null, isLoading };
 }
 
@@ -33,11 +64,12 @@ export function useLlmSources() {
  *  touches `auth_mode` / `api_provider` itself, so the kind→fields mapping lives in Python. */
 export function useSelectSource() {
   const qc = useQueryClient();
+  const params = useFundingParams();
   return useMutation({
     mutationFn: ({ harness, source }: { harness: string; source: LLMSourceRef }) =>
       llmSourcesService.select(harness, source),
     onSuccess: (status) => {
-      qc.setQueryData(LLM_SOURCES_KEY, status);
+      qc.setQueryData(lazyAssets.key(LazyAsset.LlmFunding, params), status);
       // `select` writes the same `auth_mode` / `api_provider` that `capabilityManager.setAuthMode`
       // does, but server-side — so it bypasses that manager's own invalidation. Everything else
       // that shows a harness's auth mode (the login modal, the footer warnings, the terminal
@@ -86,4 +118,16 @@ export function sourcesOfKind(
 /** `harness.claude.cli` → `claude`. */
 export function workerOf(kind: string): string {
   return kind.split('.')[1] ?? kind;
+}
+
+/**
+ * A vendor's display name, from the ONE table.
+ *
+ * Falls back to the raw worker so a harness added to the capability registry renders as
+ * itself rather than not at all. Deliberately NOT via `providerKeyFor`, which falls back to
+ * `'claude'` for anything it does not know — on a surface whose job is to say what funds a
+ * run, silently relabelling an unknown harness as Claude is the one mistake to avoid.
+ */
+export function labelForWorker(worker: string): string {
+  return WORKER_LABELS[worker as WorkerType] ?? worker;
 }

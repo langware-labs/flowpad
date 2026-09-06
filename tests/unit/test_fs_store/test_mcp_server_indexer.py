@@ -28,13 +28,14 @@ from flow_sdk.fs_store.indexer.functions.mcp_server import (
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 PROJ_ALPHA = "/Users/alice/proj-alpha"
 PROJ_BETA = "/Users/alice/proj-beta"
 
 
 def _extract(ref: FSRef):
-    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref))
+    return extract_mcp_server(ref, resolve_id(SchemaRegistry.get("mcp_server"), ref))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -203,7 +204,7 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     # FTS feeds on description — searchable by command/package.
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
     # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
-    assert d["id"] == SchemaRegistry.get("mcp_server").mint_entity_id(
+    assert d["id"] == resolve_id(SchemaRegistry.get("mcp_server"), 
         ref
     )
 
@@ -255,13 +256,13 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     the probe's shadow home and the DB row address the same record — and it must
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
     """
-    from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.core.entity.entity_model import Entity
 
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = _extract(ref)
-        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref)
+        gen = resolve_id(SchemaRegistry.get("mcp_server"), ref)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())

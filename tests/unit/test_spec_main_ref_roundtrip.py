@@ -38,9 +38,8 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
 
     # 1. owns_main_ref writes specs/<safe>/spec.md (folder + main_file).
     resolved_id = store_main(rec, entity)
-    md = ar._path
-    assert md.name == "spec.md", f"expected inner spec.md, got {md}"
-    assert md.parent.parent.name == "spec", f"expected agentic-assets/spec/<name>/spec.md, got {md}"
+    assert ar._path.parent.name == "spec", f"expected agentic-assets/spec/<name>, got {ar._path}"
+    md = ar._path / "spec.md"
     assert md.exists()
     written = md.read_text(encoding="utf-8")
     assert written.startswith("---")

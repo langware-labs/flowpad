@@ -12,23 +12,12 @@
  * reduced-motion preference all degrade to doing nothing.
  */
 
+import { animateGlow } from './animate-glow';
+
 // Dedicated runtime anchors (not test ids — those may be renamed freely by
 // test refactors without anyone noticing the animation silently degrading).
 const PENDING_CHIP_SELECTOR = '[data-minimize-anchor="process-chip"]';
 const FOOTER_SELECTOR = '[data-minimize-anchor="footer"]';
-
-// Arrival pulse — mirrors the `pending-glow-once` keyframes in
-// tailwind.config.ts, but run through WAAPI so we never touch `className` on
-// a React-managed target (the chip toggles that class itself via state; two
-// owners of one class fight on re-render).
-const GLOW_SOFT = '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)';
-const GLOW_STRONG = '0 0 0 2px hsl(var(--primary) / 0.85), 0 0 12px 2px hsl(var(--primary) / 0.65)';
-const GLOW_KEYFRAMES: Keyframe[] = [
-  { boxShadow: GLOW_SOFT, offset: 0 },
-  { boxShadow: GLOW_STRONG, offset: 0.25 },
-  { boxShadow: GLOW_STRONG, offset: 0.75 },
-  { boxShadow: GLOW_SOFT, offset: 1 },
-];
 
 export function animateMinimizeToElement(
   source: HTMLElement | null,
@@ -81,7 +70,7 @@ export function animateMinimizeToElement(
   flight.oncancel = cleanup;
   flight.onfinish = () => {
     cleanup();
-    target.animate(GLOW_KEYFRAMES, { duration: 3000, easing: 'ease-in-out' });
+    animateGlow(target);
   };
 }
 

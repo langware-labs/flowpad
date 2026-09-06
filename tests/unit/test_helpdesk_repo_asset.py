@@ -27,6 +27,7 @@ from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_d
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.fs_store.indexer.functions.helpdesk import helpdesk_stable_key, read_manifest
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.layout import Folder
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -68,8 +69,7 @@ def test_helpdesk_enrolls_as_a_repo_family_without_indexer_edits() -> None:
     assert info is not None
     assert info.asset_class == "repo"
     assert info.family == "helpdesk"
-    assert info.main_layout == "folder"
-    assert info.main_file == "helpdesk.json"
+    assert info.shape == Folder(main="helpdesk.json")
     assert "helpdesk" in SchemaRegistry.get_repo_types()
 
 

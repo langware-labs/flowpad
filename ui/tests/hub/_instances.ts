@@ -194,6 +194,16 @@ export async function queryMessageAttachments(inst: ResolvedInstance, fmId: stri
   ).catch(() => [])) as any[];
 }
 
+/** A conversation's FlowMessage rows on one instance, read past the realm's
+ *  query cache (a poll that reuses the cached answer never sees the arrival
+ *  it is waiting for). */
+export async function queryConversationMessages(inst: ResolvedInstance, convId: string): Promise<any[]> {
+  return (await inst.sdk.FlowMessage.query(
+    new inst.sdk.QueryRequest({ query: { conversation_id: convId }, scope: [] }),
+    /* invalidate */ true,
+  )) as any[];
+}
+
 /** Materialize one immediately assigned conversation on the receiver. */
 export async function syncAssignedConversation(inst: ResolvedInstance, convId: string): Promise<unknown> {
   return syncAssignedConversationAt(`${inst.apiUrl}/api/v1`, convId, inst.name);

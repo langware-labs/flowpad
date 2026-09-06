@@ -251,7 +251,7 @@ export function HubHome() {
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
-  const { projects } = useProjects();
+  const { projects } = useProjects({ priority: 'demand' });
   const {
     sandboxes,
     createSandbox,
@@ -439,7 +439,15 @@ export function HubHome() {
             </TooltipTrigger>
             {!canCreateSandbox && (
               <TooltipContent>
-                {!sandboxesEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create sandboxes</Trans>}
+                {!sandboxesEnabled ? (
+                  // `sandboxes_enabled` is the hub reporting it holds no sandbox
+                  // provider credential — an operator's missing config, not a
+                  // transient outage and nothing the viewer can retry. Say that,
+                  // so nobody burns time re-clicking a tile that cannot work.
+                  <Trans>This hub isn't configured to run sandboxes</Trans>
+                ) : (
+                  <Trans>Sign in to create sandboxes</Trans>
+                )}
               </TooltipContent>
             )}
           </Tooltip>

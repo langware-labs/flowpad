@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * The box's funding picture: which `LLMSource`s could pay for each harness, which one wins,
  * and how to choose a different one.
@@ -51,9 +52,15 @@ export interface LLMEndpointOffer {
   /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
   limits: LLMEndpointLimits;
   /** Whose pot this is — `organization-`/`team-`/`user-<uuid>`, or null for a root or an
-   *  allocation. The one field that says whether a budget is a person's own or a pool they
-   *  merely draw through, which is what the user-scoped asset view filters on. */
+   *  allocation. Says whether a budget is a person's own or a pool they merely draw through —
+   *  but NOT whether an untagged one was handed to them; `can_administer` answers that. */
   principal_typeid: string | null;
+  /** May this person CHANGE this budget (the hub's own `update` permission)? Three states:
+   *  `true` they administer it, `false` they hold it and may only spend it — which is what a
+   *  beneficiary is, since `allocate` grants `reader` and stamps no principal — and `null` when
+   *  they hold no role on it at all (the catalog's shared root), or the hub answered no
+   *  expansion. Unknown is never "it was given to me". */
+  can_administer: boolean | null;
 }
 
 export interface LLMFundingStatus {
@@ -92,7 +99,7 @@ export interface LLMFundingStatus {
 export class LlmSourcesService {
   private readonly base: string;
 
-  constructor(nodeTypeId: { type: string; id: string }) {
+  constructor(private readonly nodeTypeId: { type: string; id: string }) {
     this.base = `/graph/${nodeTypeId.type}/${nodeTypeId.id}/${ACTION}`;
   }
 
@@ -102,9 +109,23 @@ export class LlmSourcesService {
    *  box that genuinely has nothing, so the screen renders a bare header instead of saying it is
    *  desktop-only — and every field added to `LLMFundingStatus` would have to be mirrored into
    *  that constant forever. */
-  status(): Promise<LLMFundingStatus | null> {
+  status(projectId?: string): Promise<LLMFundingStatus | null> {
+    return lazyAssets.load(LazyAsset.LlmFunding, { nodeTypeId: this.nodeTypeId, projectId });
+  }
+
+  /**
+   * `projectId` narrows `resolved` to the verdict a spawn IN THAT PROJECT gets.
+   *
+   * A project may pin an endpoint (`Project.llm_endpoint_typeid`), and that pin outranks the
+   * user's own preference. Asked without one the backend answers the box-wide question and a
+   * pin is simply invisible — which is what it always did, and why the picker could report a
+   * different source than the one a process actually spent. `sources` is unaffected: an offer
+   * is judged on its own credential, never on someone else's constraint.
+   */
+  fetchStatus(projectId?: string): Promise<LLMFundingStatus | null> {
     if (isHubOnly()) return Promise.resolve(null);
-    return apiClient.get(this.base);
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+    return apiClient.get(`${this.base}${query}`);
   }
 
   /**

@@ -40,7 +40,7 @@ vi.mock('@src/components/agent-layout/agent-layout', () => ({
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
 
-import { dataContext, Project, type TypeId } from '@sdk';
+import { dataContext, lazyAssets, Project, type TypeId } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
 import {
@@ -71,7 +71,7 @@ describe('useProjectOpener — home stays home on the new project', () => {
     vi.clearAllMocks();
     surface.isHome = true;
     surface.isVibe = true;
-    vi.spyOn(Project, 'query').mockResolvedValue([targetProject]);
+    vi.spyOn(lazyAssets, 'refresh').mockResolvedValue([targetProject]);
     // `someone` → localUserTypeId (computed) → getContextEntityTypeId; stub
     // the leaf so the hook sees a logged-in user.
     vi.spyOn(dataContext, 'getContextEntityTypeId').mockReturnValue({ id: 'user' } as unknown as TypeId);

@@ -59,6 +59,40 @@ _attention: dict[str, dict] = {}
 _attention_tasks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task]" = (
     weakref.WeakKeyDictionary()
 )
+#: The lane's doorbell, per loop (same weak-key idiom as the task above).
+#: The loop waits on it INSTEAD of sleeping blind, because a plain sleep is
+#: computed from the schedule as it stands at that moment and cannot be
+#: recalled: arming a source one millisecond later left it unpolled until the
+#: nap it could not interrupt ran out — up to a full clamp, on the very lane
+#: whose job is sub-tick responsiveness.
+_attention_wakes: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Event]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _lane_doorbell() -> Optional[asyncio.Event]:
+    """This loop's doorbell, created on first use. None off-loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    bell = _attention_wakes.get(loop)
+    if bell is None:
+        bell = asyncio.Event()
+        _attention_wakes[loop] = bell
+    return bell
+
+
+def wake_attention_lane() -> None:
+    """Ring the doorbell: the schedule changed, re-read it now.
+
+    Every writer of ``_attention`` must ring — the loop reads the schedule
+    once, then waits on the answer, so a change made while it waits is
+    invisible until the bell (or the timeout) returns it.
+    """
+    bell = _lane_doorbell()
+    if bell is not None:
+        bell.set()
 
 
 def note_attention(source_id: str, cadence_seconds: int) -> None:
@@ -80,6 +114,7 @@ def note_attention(source_id: str, cadence_seconds: int) -> None:
     task = _attention_tasks.get(loop)
     if task is None or task.done():
         _attention_tasks[loop] = asyncio.ensure_future(_attention_loop())
+    wake_attention_lane()
 
 
 async def _attention_loop() -> None:
@@ -93,20 +128,45 @@ async def _attention_loop() -> None:
             if lease["next"] > now or source_id in _inflight:
                 continue
             lease["next"] = now + lease["cadence"]
-            source = await DataSource.get_by_id(source_id)
-            if source is None or source.poll_refusal():
+            # One source must never take the lane down with it. A read that
+            # raises (a row deleted under us, a DB torn down while a lease was
+            # still held) used to escape this loop and end the task — every
+            # OTHER leased source then stopped being polled, silently, until
+            # something re-armed the lane.
+            try:
+                source = await DataSource.get_by_id(source_id)
+                refused = source is None or source.poll_refusal()
+            except Exception:  # noqa: BLE001 — classified as "drop the lease"
+                logger.exception("[ingest] attention lane: dropping %s", source_id)
+                refused = True
+            if refused:
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
             if not _claim(source_id):
                 continue
             asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
-        # Sleep to the nearest upcoming edge (a due round or a lease expiry)
+        # Wait to the nearest upcoming edge (a due round or a lease expiry)
         # instead of a fixed 1s spin — most wakeups were dead time under a 5s
         # cadence. Clamped so a renewal arming a fresh "due now" round never
         # waits long, and an inflight-skipped source retries promptly.
+        #
+        # The wait is INTERRUPTIBLE, and that is the point: the delay is
+        # computed from the schedule as it stands right now, so anything that
+        # changes the schedule while we wait (arming a source, renewing a
+        # lease) rings the doorbell and we re-read it immediately instead of
+        # honouring a deadline that is already stale.
         edges = [min(l["next"], l["expiry"]) for l in _attention.values()]
         if edges:
-            await asyncio.sleep(min(max(min(edges) - time.monotonic(), 0.25), 5.0))
+            delay = min(max(min(edges) - time.monotonic(), 0.25), 5.0)
+            bell = _lane_doorbell()
+            if bell is None:
+                await asyncio.sleep(delay)
+                continue
+            bell.clear()
+            try:
+                await asyncio.wait_for(bell.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                pass  # nothing changed; the edge we computed came due
 
 
 def _claim(source_id: str) -> bool:

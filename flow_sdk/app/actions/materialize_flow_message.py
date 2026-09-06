@@ -20,7 +20,7 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields
+from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields, session_snapshot_from_header
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
@@ -167,6 +167,22 @@ async def ensure_conversation_entity(
     return conv
 
 
+async def _adopt_header_session_snapshot(fm: "FlowMessage", someone_typeid: str) -> None:
+    """Fast path for live-session state: a hub-origin session message carries
+    the session's wire snapshot in its carrier preview; adopt it now rather
+    than after the body bundle downloads. Best-effort — never fails the
+    materialize."""
+    snap = session_snapshot_from_header(fm)
+    if not snap:
+        return
+    try:
+        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+
+        await RemoteWorkerSession.adopt_snapshot(snap, someone_typeid=someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[session] header snapshot adopt failed for fm=%s: %s", fm.id, e)
+
+
 async def materialize_flow_message(
     payload: dict,
     conversation_id: str,
@@ -231,6 +247,7 @@ async def materialize_flow_message(
             # verbatim, never the local sync user.
             with remote_reflection():
                 fm = await fm.save(someone_typeid, notify=False)
+            await _adopt_header_session_snapshot(fm, someone_typeid)
         elif remote and not existing.remote:
             # Not stale, but the local row never got flagged remote (legacy
             # rows from before remote-marking) — flip the flag without touching
@@ -257,6 +274,8 @@ async def materialize_flow_message(
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with remote_reflection() if remote else nullcontext():
             fm = await fm.save(someone_typeid, notify=False)
+        if remote:
+            await _adopt_header_session_snapshot(fm, someone_typeid)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).

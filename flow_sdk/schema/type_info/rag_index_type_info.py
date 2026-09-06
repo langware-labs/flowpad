@@ -8,13 +8,13 @@ Deliberately not ``browseable_by``: an index is operated with verbs (add a folde
 clear) that a generic type browser has nowhere to put. Its own surface owns those.
 """
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-RAG_INDEX = TypeMetadata(
-    type=EntityType.RAG_INDEX,
+RAG_INDEX = TypeInfo(
+    type_name=EntityType.RAG_INDEX,
     icon="Brain",
-    displayName="RAG indexes",
+    display_name="RAG indexes",
     api_visible=True,
     creatable=True,
     index_fields=["name", "status"],

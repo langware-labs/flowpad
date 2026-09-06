@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
-
 
 EXCLUDED_DIRS = {
     ".git",
@@ -162,7 +162,9 @@ def _candidate_from_package(package_json: Path, root: Path, query_terms: set[str
     if script_name == "dev":
         score += 15
     score += _path_score(root, app_dir)
-    score += _query_score(query_terms, [name, str(app_dir.relative_to(root)) if _is_relative_to(app_dir, root) else str(app_dir)])
+    score += _query_score(
+        query_terms, [name, str(app_dir.relative_to(root)) if _is_relative_to(app_dir, root) else str(app_dir)]
+    )
     score -= _path_depth(root, app_dir)
 
     return WebAppCandidate(
@@ -186,7 +188,9 @@ def _candidate_from_static(index_html: Path, root: Path, query_terms: set[str]) 
         name=name,
         path=str(app_dir),
         kind="static",
-        start_cmd="python3 -m http.server {port}",
+        # sys.executable, not "python3": the flow CLI is itself Python, so this always
+        # names a real interpreter. `python3` is a dangling Store alias on stock Windows.
+        start_cmd=f'"{sys.executable}" -m http.server {{port}}',
         port=None,
         health="/",
         score=score,

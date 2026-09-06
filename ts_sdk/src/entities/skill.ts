@@ -2,6 +2,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
+import { mainFileForType } from '../models/asset-editor';
 
 /**
  * Skill entity — backed by a SkillRecord on disk (~/.claude/skills/<name>/).
@@ -59,12 +60,15 @@ export class Skill extends APIEntity<Skill> {
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    // asset_ref is the skill FOLDER by contract (main_file_is_asset_ref=False),
-    // so append the main file. Guard the case where a producer (e.g. a direct
-    // `flow record index <SKILL.md>`) left asset_ref pointing at the file itself
-    // — appending again would request `.../SKILL.md/SKILL.md` and 404.
+    // asset_ref is the skill FOLDER, so append the main file. Guard the case
+    // where a producer (e.g. a direct `flow record index <SKILL.md>`) left
+    // asset_ref pointing at the file itself — appending again would request
+    // `.../SKILL.md/SKILL.md` and 404.
     const base = this.asset_ref.replace(/\/$/, '');
-    const mdPath = base.endsWith('/SKILL.md') ? base : `${base}/SKILL.md`;
+    // The inner file name is the registry's `shape.main` for `skill`; the
+    // literal is only the fallback for an unbound registry (hub / unit tests).
+    const main = mainFileForType(Skill.type, 'SKILL.md') as string;
+    const mdPath = base.endsWith(`/${main}`) ? base : `${base}/${main}`;
     return new FrontMatterFsRef(mdPath, typeId);
   }
 

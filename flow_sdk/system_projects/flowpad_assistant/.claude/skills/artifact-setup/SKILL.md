@@ -69,9 +69,15 @@ flow app open "<artifact name>" --root "<artifact folder>"
 
   ```bash
   PORT=$(flow app free-dev-port --bare)                     # never pick a number — other builds are serving too
-  (cd "<artifact folder>" && python3 -m http.server $PORT >/dev/null 2>&1 &); echo $PORT
-  flow show webapp --port <the port it echoed>              # renders it in the Vibe display (run ONCE)
+  (cd "<artifact folder>" && "$(command -v python3 || command -v python)" -m http.server $PORT >/dev/null 2>&1 &)
+  curl -fsS "http://localhost:$PORT/index.html" > /dev/null || exit 1   # PROVE it answers first
+  flow show webapp --port $PORT                             # renders it in the Vibe display (run ONCE)
   ```
+
+  On Windows use PowerShell and `py -3` — `python3` is a dangling Store alias there, and
+  the launch reports success even when nothing starts. See the **building-deliverables**
+  skill for the PowerShell form. Either way, the `curl`/`Invoke-WebRequest` line is not
+  optional: without it a dead server is indistinguishable from a live one.
 
 ## 3. Confirm it shows
 

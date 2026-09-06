@@ -11,7 +11,7 @@
     "dev:backend": "cd .. && python -m server.run",
     "dev:electron": "cross-env MINIHUB_DEV=true electron .",
 
-    "test": "node semver.test.js && node uv-manager.test.js && node flow-rs-keychain.test.js",
+    "test": "node semver.test.js && node uv-manager.test.js && node flow-rs-keychain.test.js && node shutdown.test.js",
 
     "cleanup": "rimraf release",
 

@@ -18,7 +18,7 @@ export function isImagePromptFileAttachment(a: Attachment): boolean {
  * Prompt attachments come in two generations:
  *   - legacy `AttachmentType.PROMPT` — inline text or a `prompt/<file>` VFS path
  *   - entity-backed `TYPE_ID` entries pointing at a library `prompt` entity,
- *     carrying `prompt_preview` (inline copy) + `proposer_id`/`approved_by`.
+ *     carrying `prompt_preview` (inline copy).
  * These helpers are the single place that knows both shapes — mirrors the
  * backend's `_is_prompt_attachment` (notification_action.py); both sides key
  * on the entity type `Prompt.type` ('prompt').
@@ -47,16 +47,9 @@ export function promptAttachmentsOf(fm: FlowMessage | null | undefined): Attachm
   return (fm?.attachment ?? []).filter(isPromptAttachment);
 }
 
-/** Index of the first unapproved prompt attachment, or -1. */
-export function firstUnapprovedPromptIdx(fm: FlowMessage | null | undefined): number {
-  return (fm?.attachment ?? []).findIndex((a) => isPromptAttachment(a) && !a.approved_by);
-}
-
-/** True when the message carried a prompt and every prompt attachment is now
- *  approved — i.e. it has been executed, so the "Execute" CTA (gated on the
- *  inverse `firstUnapprovedPromptIdx >= 0`) has self-hidden. */
-export function isPromptExecuted(fm: FlowMessage | null | undefined): boolean {
-  return promptAttachmentsOf(fm).length > 0 && firstUnapprovedPromptIdx(fm) < 0;
+/** True when the message carries a prompt — i.e. it is a session turn. */
+export function isPromptMessage(fm: FlowMessage | null | undefined): boolean {
+  return promptAttachmentsOf(fm).length > 0;
 }
 
 /** TypeId of the first prompt-entity attachment, or null. */

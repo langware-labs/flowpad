@@ -1,6 +1,13 @@
 import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
-import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import {
+  AttachmentType,
+  BodyStatus,
+  attachmentDataString,
+  isAttachmentMissing,
+  type Attachment,
+  type AttachmentReference,
+} from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
@@ -48,6 +55,18 @@ export interface AttachmentTypeChipView {
   count: number;
 }
 
+/** Session-local record of the pulls this device attempted for one message. */
+export interface DownloadAttempts {
+  /** Epoch ms of the last `download()` invocation, or null if none this session. */
+  lastAttemptAt: number | null;
+  /** Epoch ms of the last invocation that completed without throwing. */
+  lastSuccessAt: number | null;
+  /** How many pulls ran this session. */
+  count: number;
+}
+
+const NO_ATTEMPTS: DownloadAttempts = { lastAttemptAt: null, lastSuccessAt: null, count: 0 };
+
 export interface UseAttachments {
   /** FILE attachments. */
   items: AttachmentView[];
@@ -55,11 +74,9 @@ export interface UseAttachments {
    *  spec — as TypeIds. Rendered as entity chips once the body is
    *  downloaded; until then they ride inside the single Download button. */
   entities: TypeId[];
-  /** Message-level download state, straight from the backend-derived
-   *  `fm.body_downloaded`: true once the body bundle has been pulled + unpacked
-   *  so every renderable attachment is local. The UI switches the whole message
-   *  between the Download button and rendered chips off this one flag. */
+  /** Bundle download completion, independent of missing assets. */
   downloaded: boolean;
+  missingAttachments: AttachmentReference[];
   /** True when the message carries a PROMPT attachment (the prompt row
    *  renders it). */
   hasPrompt: boolean;
@@ -76,6 +93,14 @@ export interface UseAttachments {
   dismissError: () => void;
   /** True while a body pull triggered via `download()` is in flight. */
   downloading: boolean;
+  /** Body lifecycle on the hub — `na` means no bundle was ever uploaded, so a
+   *  retry cannot succeed. Surfaced in the missing-attachment diagnostics. */
+  bodyStatus: BodyStatus;
+  /** Session-local pull history: when `download()` was last invoked, when it
+   *  last returned without throwing, and how many times it ran. Not persisted
+   *  (no backend field records a per-device pull) — it resets on refresh, and
+   *  the diagnostics label says so. */
+  attempts: DownloadAttempts;
   /** The single download entrypoint — pulls + unpacks the body via
    *  `FlowMessage.downloadAttachments()`, which is a no-op unless body_status
    *  is READY. Chips call this; they never build a download URL themselves.
@@ -122,7 +147,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
     .filter((a) => isDownloadableFileAttachment(a) || isImagePromptFileAttachment(a))
     .map((a) => {
       const d = attachmentDataString(a);
-      const state = stateFor(a, bodyStatus);
+      const state = isAttachmentMissing(fm, a) ? AttachmentChipState.Unavailable : stateFor(a, bodyStatus);
       return {
         key: d,
         filename: d.split('/').pop() || d,
@@ -165,6 +190,7 @@ function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): Attac
  */
 export function useAttachments(fm: FlowMessage | null | undefined, messageId: string): UseAttachments {
   const [downloading, setDownloading] = useState(false);
+  const [attempts, setAttempts] = useState<DownloadAttempts>(NO_ATTEMPTS);
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
 
@@ -184,22 +210,26 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   const download = useCallback(async () => {
     if (!fm || downloading) return;
     setDownloading(true);
+    setAttempts((prev) => ({ ...prev, lastAttemptAt: Date.now(), count: prev.count + 1 }));
     try {
       // No-op unless body_status === READY (frontend gate #1). On success an
       // entity UPDATE fans out and the chips re-render as Downloaded; on failure
       // the error surfaces via useFlowMessageDownloadError, so swallow here.
       await fm.downloadAttachments();
+      setAttempts((prev) => ({ ...prev, lastSuccessAt: Date.now() }));
+      dismiss();
     } catch {
       /* surfaced inline via the download-error hook */
     } finally {
       setDownloading(false);
     }
-  }, [fm, downloading]);
+  }, [fm, downloading, dismiss]);
 
   return {
     items,
     entities,
     downloaded,
+    missingAttachments: downloaded ? (fm?.body_missing_attachments ?? []) : [],
     hasPrompt,
     assetCount,
     assetLabels,
@@ -208,6 +238,8 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
     error,
     dismissError: dismiss,
     downloading,
+    bodyStatus: fm?.body_status ?? BodyStatus.NA,
+    attempts,
     download,
   };
 }

@@ -22,7 +22,14 @@ import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewTy
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAddress } from './url-builder';
 import { isValidView } from './validators';
-import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import {
+  AssetEditor,
+  AssetMode,
+  AssetRoutingMethod,
+  editorForPath,
+  editorForType,
+  LOCAL_COMPUTE_NODE,
+} from './asset-doc-types';
 import {
   assetEditorOf,
   assetEditorValue,
@@ -1007,8 +1014,15 @@ export class DockPointer implements IDockPointer {
   ): DockPointer {
     // Delegates to the canonical AssetDocPointer grammar:
     //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
-    // The editor is derived from the record type (one editor serves many types).
-    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    // The editor is the registry's declaration for the record type
+    // (`TypeInfo.editor`; the static table only when the registry is unbound).
+    // A type with no editor falls back to the editor the PATH names, never to
+    // markdown: the VFS branch of AssetEditorRouter asks the backend to resolve
+    // the path's type, and a markdown fallback would send a `.py` there as if
+    // it were a document (FLOWPAD-2083). `editorForPath` routes unknown
+    // extensions to the file-only CODE editor, which has no backing entity and
+    // never resolves.
+    const editor = editorForType(assetType) ?? editorForPath(vfsPath);
     const path = normalizeAssetVfsPath(vfsPath);
     return new DockPointer(
       ViewType.ASSETS,

@@ -105,3 +105,43 @@ async def test_project_delete_preserves_dynamic_protected_source(
 
     assert sentinel.read_text() == "keep"
     assert await Project.get_by_id(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_nested_project_delete_preserves_local_compute_node() -> None:
+    """The real 9007 catastrophe: the legacy ``project -> @local`` edge sat on a
+    NESTED (child) project, and the parent was deleted.
+
+    ``_delete_with_children`` step-4 detaches @local only from ``self`` (the top
+    project). When the bad edge lives on a descendant project instead, the
+    detach is a no-op there, and step-5's cascading ``delete`` walks
+    parent -> child -> @local and destroys the shared singleton — taking every
+    other project/PTY/agentic session on the instance with it.
+
+    Faithful reproduction: real ComputeNode + two real Projects nested via the
+    real ``is_child`` edge (as ``Project.get_mcp_connector`` mints it), the real
+    ``_delete_with_children`` path. No mocks.
+    """
+    cn = await ComputeNode.get_local()
+    cn_id = str(cn.id)
+
+    parent = Project(name="/tmp/flowpad-nested-parent")
+    await parent.save()
+    child = Project(name="/tmp/flowpad-nested-child")
+    await child.save()
+
+    # Nest the child under the parent ("double oss under docs").
+    await parent.attach_child(child.typeid)
+    # The legacy bad edge lives on the NESTED project (Project.get_mcp_connector
+    # does exactly ``self.add_child(compute_node)`` at project.py:1239).
+    await child.attach_child(cn.typeid)
+
+    # Delete the parent the way the UI does.
+    await parent._delete_with_children()
+
+    survivor = await ComputeNode.get_local(create=False)
+    assert survivor is not None, (
+        "nested project delete destroyed the shared @local compute node "
+        "(the guard only detaches @local from the top project)"
+    )
+    assert str(survivor.id) == cn_id

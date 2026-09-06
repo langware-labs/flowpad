@@ -9,7 +9,8 @@ from flow_sdk.fs_store.indexer.functions.claude_projects import (
     existing_project_record_id,
     extract_claude_project,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -43,8 +44,9 @@ class ProjectMeta(BaseMeta):
     private_context_entity_data: Optional[dict] = None
 
 
-PROJECT = TypeMetadata(
-    type=EntityType.PROJECT,
+PROJECT = TypeInfo(
+    type_name=EntityType.PROJECT,
+    shape=File(ext=".md"),
     icon="Briefcase",
     indexed_by_default=True,
     api_visible=True,

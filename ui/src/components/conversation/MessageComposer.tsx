@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Boxes, ChevronDown, File as FileIcon, Paperclip, Play, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
+import { SessionReplyPolicy } from '@sdk';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
-import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -10,8 +10,8 @@ import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerP
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { EmojiPicker } from './EmojiPicker';
-import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
-import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
@@ -32,16 +32,16 @@ interface MessageComposerProps {
   agentId?: string;
   /** Fires when a channel send is accepted (dispatched, not delivered). */
   onChannelSent?: (text: string) => void;
-  /** Live-session composer: every send is stamped with this session id (the
-   *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
-   *  the plain conversation composer leaves it unset. */
+  /** Live-session composer: every send is a follow-up turn stamped with this
+   *  session id (the backend appends the snapshot-carrier attachment). Set by
+   *  LiveSessionView; the plain conversation composer leaves it unset. */
   liveSessionId?: string;
+  /** The participant whose machine a prompt runs on. When set, the composer
+   *  offers the "Run on <host>'s machine" toggle: a send in prompt mode opens
+   *  a NEW session (the backend mints it). Null = plain chat box. */
+  sessionHost?: SessionHost | null;
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
-  /** Optional queued prompt provided by per-message Add-prompt chips. */
-  queuedPrompt?: QueuedPrompt | null;
-  /** Update / clear the externally-queued prompt. */
-  onQueuedPromptChange?: (prompt: QueuedPrompt | null) => void;
   /**
    * Draft mode. When set, this composer edits an existing local-only draft
    * `FlowMessage` (e.g. a headless agent-drafted reply): it auto-saves edits,
@@ -122,9 +122,9 @@ function PendingFileChip({ file, disabled, onRemove }: { file: File; disabled?: 
 
 /**
  * The single conversation composer. Two modes share one implementation
- * (attach File / Asset / Repo, prompt suggestion, and the `sendReply` send
- * path): the regular reply box, and — when `draft` is supplied — an editable
- * draft bubble. This is the one place the conversation attaches assets, so a
+ * (attach File / Asset / Repo, the session-start toggle, and the `sendReply`
+ * send path): the regular reply box, and — when `draft` is supplied — an
+ * editable draft bubble. This is the one place the conversation attaches assets, so a
  * feature added here (e.g. Attach Repo) reaches every send surface.
  */
 export function MessageComposer({
@@ -135,9 +135,8 @@ export function MessageComposer({
   agentId,
   onChannelSent,
   liveSessionId,
+  sessionHost,
   onSent,
-  queuedPrompt,
-  onQueuedPromptChange,
   draft,
   onAfterDiscard,
 }: MessageComposerProps) {
@@ -150,8 +149,10 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
-  const [showPromptDialog, setShowPromptDialog] = useState(false);
+  // Prompt mode: the typed text is the prompt that opens a session on the
+  // host's machine (not a chat line). Off by default; sticky until toggled.
+  const [promptMode, setPromptMode] = useState(false);
+  const [replyPolicy, setReplyPolicy] = useState<SessionReplyPolicy>(SessionReplyPolicy.AUTO);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,21 +160,15 @@ export function MessageComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // "Suggest prompt" is the legacy relay affordance (attach a prompt for the
-  // other user to approve). In a live session the composer text IS the prompt
-  // that runs on the host, so the button is redundant — hide it there.
-  const canAddPrompt = !!effectiveConversationId && !liveSessionId;
+  // The session-start control lives on the plain conversation composer only:
+  // inside a session view every send is already a turn of that session.
+  const canStartSession = !!sessionHost && !liveSessionId && !isDraftMode;
+  const startsSession = canStartSession && promptMode;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
   // A channel send carries text only, so offering the paperclip would
   // invite an attachment the send silently drops.
   const attachmentsDisabled = isDisabled || !!channel;
-
-  const activePrompt = queuedPrompt ?? localPrompt;
-  const setActivePrompt = (p: QueuedPrompt | null) => {
-    if (onQueuedPromptChange) onQueuedPromptChange(p);
-    else setLocalPrompt(p);
-  };
 
   // Auto-grow the composer to fit what's been typed so far — wrapped lines
   // count, not just explicit newlines — up to MAX_COMPOSER_HEIGHT_PX, after
@@ -202,29 +197,6 @@ export function MessageComposer({
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [text, draft]);
-
-  // Synthesise PROMPT-shaped attachments so the preview reuses
-  // PromptAttachmentPreview (legacy shape is fine — the send path mints the
-  // real Prompt entity server-side).
-  const queuedPromptAttachments: Attachment[] = useMemo(() => {
-    if (!activePrompt) return [];
-    const list: Attachment[] = [];
-    if (activePrompt.text) {
-      list.push({ attachment_type: AttachmentType.PROMPT, data: activePrompt.text });
-    }
-    for (const f of activePrompt.files) {
-      list.push({ attachment_type: AttachmentType.PROMPT, data: `prompt/${f.name}` });
-    }
-    return list;
-  }, [activePrompt]);
-
-  // Composer-preview actions (Edit only — no FlowMessage exists yet).
-  const { actions: composerActions } = useAttachmentActions({
-    fm: null,
-    isFromOther: false,
-    isComposerPreview: true,
-    handlers: { edit: () => setShowPromptDialog(true) },
-  });
 
   // Returns how many files survived (0 when every image's markup was cancelled),
   // so paste can decide whether to also insert accompanying text.
@@ -281,36 +253,33 @@ export function MessageComposer({
 
   const assetSelection = useAssetRefSelection(assetRefs, setAssetRefs);
 
-  const buildExtras = (effectivePrompt: QueuedPrompt | null): Parameters<typeof sendReply>[3] | undefined => {
-    const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
-    if (effectivePrompt) {
-      if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
-      if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
+  const send = async () => {
+    if (isBusy) return;
+    const trimmed = text.trim();
+    if (!trimmed && files.length === 0 && assetRefs.length === 0) {
+      return;
     }
+    // A prompt send — a follow-up inside a session view, or a NEW session from
+    // the conversation composer in prompt mode. The typed text IS the prompt
+    // that runs on the host, so it rides as a PROMPT attachment (not a plain
+    // body): the host's gate keys on the attachment, and the backend
+    // synthesizes the placeholder body. A new session's opening proposal
+    // (reply policy) rides along; the backend mints the session id.
+    const isPromptSend = !!trimmed && (!!liveSessionId || startsSession);
+    const messageBody = isPromptSend ? '' : trimmed;
+    const outgoingFiles = isPromptSend ? undefined : files.length > 0 ? files : undefined;
+    const extras: NonNullable<Parameters<typeof sendReply>[3]> = isPromptSend
+      ? buildSessionStartExtras({
+          text: trimmed,
+          files,
+          sessionId: liveSessionId ?? null,
+          replyPolicy: liveSessionId ? null : replyPolicy,
+        })
+      : {};
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
     if (assetSelection.selectedTypeIds.length > 0) {
       extras.assetReferences = assetSelection.selectedTypeIds;
     }
-    if (liveSessionId) extras.remoteWorkerSessionId = liveSessionId;
-    return Object.keys(extras).length > 0 ? extras : undefined;
-  };
-
-  const send = async (effectivePrompt: QueuedPrompt | null) => {
-    if (isBusy) return;
-    const trimmed = text.trim();
-    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0) {
-      return;
-    }
-    // Live session: the typed text IS the prompt that runs on the host, so it
-    // must ride as a PROMPT attachment (not a plain message body) — otherwise
-    // the host's execute gate (`_is_prompt_attachment`) never fires and
-    // build_merged_prompt is empty. Route the textarea text through the prompt
-    // path and send an empty body (the backend synthesizes the placeholder).
-    const liveSessionPrompt: QueuedPrompt | null =
-      liveSessionId && trimmed && !effectivePrompt ? { text: trimmed, files: files } : null;
-    const outgoingPrompt = liveSessionPrompt ?? effectivePrompt;
-    const messageBody = liveSessionPrompt ? '' : trimmed;
-    const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
 
@@ -337,22 +306,33 @@ export function MessageComposer({
           if (isDraftMode) notify.error({ title: gate.error });
           return;
         }
-        // Draft promotion: discard the local-only draft, then send through the
-        // SAME reply pipeline as a fresh send. Single code path beats forking
-        // the upload/push plumbing for drafts.
-        if (draft) await discardDraftFlowMessage(draft);
-        await sendReply(
-          { conversationId: effectiveConversationId },
-          messageBody,
-          outgoingFiles,
-          buildExtras(outgoingPrompt),
-        );
+        if (draft?.remote_worker_session_id) {
+          // A session reply held for review: promote the ROW (backend
+          // `send-draft`), so its prompt_completion attachment and session id
+          // travel with it and it lands in the guest's session view. Discard +
+          // resend would strip both and drop the text into the thread.
+          if (draft.text !== text) {
+            draft.text = text;
+            await draft.save();
+          }
+          await draft.sendDraft();
+        } else {
+          // Draft promotion: discard the local-only draft, then send through the
+          // SAME reply pipeline as a fresh send. Single code path beats forking
+          // the upload/push plumbing for drafts.
+          if (draft) await discardDraftFlowMessage(draft);
+          await sendReply(
+            { conversationId: effectiveConversationId },
+            messageBody,
+            outgoingFiles,
+            Object.keys(extras).length > 0 ? extras : undefined,
+          );
+        }
       }
       if (!isDraftMode) {
         setText('');
         setFiles([]);
         setAssetRefs([]);
-        setActivePrompt(null);
       }
       if (!channel) onSent?.();
     } catch (err: unknown) {
@@ -364,7 +344,7 @@ export function MessageComposer({
     }
   };
 
-  const handleSend = () => void send(activePrompt);
+  const handleSend = () => void send();
 
   const handleDiscard = async () => {
     if (!draft || isBusy) return;
@@ -425,7 +405,7 @@ export function MessageComposer({
     });
   };
 
-  const canSend = (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
+  const canSend = (!!text.trim() || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -491,22 +471,87 @@ export function MessageComposer({
     </>
   );
 
-  const promptButton = canAddPrompt ? (
-    <button
-      type="button"
-      onClick={() => setShowPromptDialog(true)}
-      disabled={isDisabled}
-      title={activePrompt ? t`Edit attached prompt` : t`Suggest a prompt for the other user to approve`}
+  /** "Run on <host>'s machine": a two-part pill. The left half toggles prompt
+   *  mode (the typed text opens a session); the chevron picks the session's
+   *  reply policy. Rendered on the plain conversation composer only. */
+  const hostName = sessionHost?.name?.trim() || t`the other participant`;
+  const sessionStartControl = canStartSession ? (
+    <div
       className={cn(
-        'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
-        activePrompt
-          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
-          : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
+        'inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-full border text-xs font-medium transition-colors',
+        promptMode
+          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+          : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300',
       )}
     >
-      <MessageSquarePlus className="h-3 w-3" />
-      {activePrompt ? <Trans>Edit prompt</Trans> : <Trans>Suggest prompt</Trans>}
-    </button>
+      <button
+        type="button"
+        onClick={() => setPromptMode((v) => !v)}
+        disabled={isDisabled}
+        aria-pressed={promptMode}
+        title={promptMode ? t`Prompt mode: this text opens a live session on ${hostName}'s machine` : t`Run this as a prompt on ${hostName}'s machine`}
+        data-testid="composer-session-toggle"
+        className="inline-flex items-center gap-1.5 px-2.5 hover:bg-emerald-500/15 disabled:opacity-40"
+      >
+        <Play className="h-3 w-3" />
+        <Trans>Run on {hostName}'s machine</Trans>
+      </button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={isDisabled}
+            title={t`Session settings`}
+            data-testid="composer-session-settings"
+            className="inline-flex items-center border-s border-emerald-500/30 px-1.5 hover:bg-emerald-500/15 disabled:opacity-40"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="end" className="w-64 p-3 text-xs">
+          <p className="mb-2 font-medium text-foreground">
+            <Trans>Replies</Trans>
+          </p>
+          <div role="radiogroup" className="flex flex-col gap-1.5">
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="radio"
+                name="reply-policy"
+                checked={replyPolicy === SessionReplyPolicy.AUTO}
+                onChange={() => setReplyPolicy(SessionReplyPolicy.AUTO)}
+                data-testid="composer-reply-policy-auto"
+                className="mt-0.5"
+              />
+              <span>
+                <Trans>Auto-send</Trans>
+                <span className="block text-muted-foreground">
+                  <Trans>Each reply lands in the session as soon as it is ready.</Trans>
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="radio"
+                name="reply-policy"
+                checked={replyPolicy === SessionReplyPolicy.REVIEW}
+                onChange={() => setReplyPolicy(SessionReplyPolicy.REVIEW)}
+                data-testid="composer-reply-policy-review"
+                className="mt-0.5"
+              />
+              <span>
+                <Trans>{hostName} reviews before sending</Trans>
+                <span className="block text-muted-foreground">
+                  <Trans>Replies wait as drafts until {hostName} sends them.</Trans>
+                </span>
+              </span>
+            </label>
+          </div>
+          <p className="mt-2 text-muted-foreground">
+            <Trans>You can change this later inside the session.</Trans>
+          </p>
+        </PopoverContent>
+      </Popover>
+    </div>
   ) : null;
 
   const sendButton = (
@@ -533,41 +578,6 @@ export function MessageComposer({
       <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={isDisabled} />
     </>
   );
-
-  const promptPreview =
-    canAddPrompt && activePrompt ? (
-      <div className="flex items-start gap-1">
-        <div className="min-w-0 flex-1">
-          <AttachmentActionsRow
-            actions={composerActions}
-            preview={
-              <PromptAttachmentPreview attachments={queuedPromptAttachments} pendingFiles={activePrompt.files} />
-            }
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => setActivePrompt(null)}
-          title={t`Remove queued prompt`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    ) : null;
-
-  const promptDialog = canAddPrompt ? (
-    <PromptComposerDialog
-      open={showPromptDialog}
-      onClose={() => setShowPromptDialog(false)}
-      initial={activePrompt}
-      onQueue={(p) => setActivePrompt(p)}
-      onQueueAndSend={(p) => {
-        setActivePrompt(p);
-        void send(p);
-      }}
-    />
-  ) : null;
 
   // ── Draft mode: editable "Draft" bubble with Discard + Send ─────────────
 
@@ -609,7 +619,6 @@ export function MessageComposer({
             />
             <div className="flex items-center gap-1.5">
               {attachButtons}
-              {promptButton}
               <div className="ms-auto flex items-center gap-1.5">
                 <button
                   type="button"
@@ -625,11 +634,9 @@ export function MessageComposer({
             </div>
           </div>
 
-          {promptPreview}
           {chipLists}
           {error && <p className="text-xs text-destructive">{error}</p>}
           {hiddenFileInput}
-          {promptDialog}
         </div>
       </div>
     );
@@ -655,20 +662,24 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
+          placeholder={
+            dragging
+              ? t`Drop files here`
+              : startsSession
+                ? t`Prompt to run on ${hostName}'s machine…`
+                : (placeholder ?? t`Reply to sender…`)
+          }
           rows={1}
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
-        {promptButton}
+        {sessionStartControl}
         {sendButton}
       </div>
 
-      {promptPreview}
       {chipLists}
       {error && <p className="text-xs text-destructive">{error}</p>}
       {hiddenFileInput}
-      {promptDialog}
     </div>
   );
 }

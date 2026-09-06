@@ -26,7 +26,9 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { cn } from '@src/lib/utils';
+import { formatBytes } from '@src/utils/format-bytes';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -49,7 +51,7 @@ import {
   Trash2,
   Unplug,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** Above this many files a row is flagged: it holds real work, whatever the verdict. */
 const CONTENT_WARNING_FILES = 4;
@@ -88,16 +90,10 @@ const TABS: TabSpec[] = [
   },
 ];
 
-function formatBytes(bytes: number): string {
-  if (!bytes) return '—';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+/** Shared formatter, plus this screen's "no bytes at all" glyph — the same
+ *  wrapper the sibling scanner lens uses, so sizes agree across the app. */
+function fmtBytes(bytes: number): string {
+  return bytes ? formatBytes(bytes) : '—';
 }
 
 function whenever(iso: string | null): string {
@@ -138,29 +134,34 @@ interface RowProps {
   computeNodeId: string | undefined;
 }
 
-function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
+/** Memoized: every prop is already stable (the item comes from a memoized list,
+ *  `onToggle` from a `useCallback`), so without this one checkbox click
+ *  re-renders every row in the tab. */
+const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
   const [expanded, setExpanded] = useState(false);
   const [git, setGit] = useState<GitInfo | null>(item.git);
-  // Tracked separately rather than inferred from `git.remote`: the bulk report
-  // always sends `remote: null`, so "not looked up yet" and "looked up, has no
-  // remote" are the same value there. Keying the fetch on it means the detail
-  // never loads and every repo reads as remote-less and clean.
-  const [gitResolved, setGitResolved] = useState(false);
+  // Asked-once latch. `git.resolved` says whether the ANSWER is complete, which
+  // is what the UI renders on; this says whether we have already asked, which is
+  // what the fetch keys on. They are not the same question: a backend that does
+  // not send `resolved` would otherwise leave the condition permanently true and
+  // refetch on every render forever.
+  const asked = useRef(false);
 
   // Remote and dirty cost a subprocess pair each, so they are resolved for the
   // one row a person opened rather than for the whole listing.
   useEffect(() => {
-    if (!expanded || !computeNodeId || gitResolved || !item.git?.has_repo) return;
+    if (!expanded || !computeNodeId || asked.current || !item.git?.has_repo) return;
+    asked.current = true;
     let alive = true;
     void getProjectGitDetail(computeNodeId, item.cwd).then((detail) => {
-      if (!alive) return;
-      setGit(detail);
-      setGitResolved(true);
+      // An older backend omits `resolved`; treat a returned answer as resolved
+      // rather than leaving the row reading "checking…" forever.
+      if (alive) setGit({ ...detail, resolved: detail.resolved ?? true });
     });
     return () => {
       alive = false;
     };
-  }, [expanded, computeNodeId, item.cwd, item.git?.has_repo, gitResolved]);
+  }, [expanded, computeNodeId, item.cwd, item.git?.has_repo]);
 
   const heavy = item.file_count >= CONTENT_WARNING_FILES;
   const sessions = item.harnesses.reduce((total, use) => total + use.session_count, 0);
@@ -228,7 +229,7 @@ function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
         </span>
 
         <span className={cn(COL.size, 'shrink-0 text-end tabular-nums text-muted-foreground')}>
-          {formatBytes(item.size_bytes)}
+          {fmtBytes(item.size_bytes)}
         </span>
       </div>
 
@@ -240,7 +241,7 @@ function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
             <span>last session: {whenever(item.modified_at)}</span>
             <span>last opened: {whenever(item.last_active_at)}</span>
             {git?.has_repo &&
-              (gitResolved ? (
+              (git.resolved ? (
                 <>
                   <span>remote: {git.remote || 'none'}</span>
                   <span>{git.dirty ? 'uncommitted changes' : 'clean'}</span>
@@ -261,7 +262,7 @@ function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
       )}
     </>
   );
-}
+});
 
 interface Props {
   /** Optional project id to focus — passed by the picker's info icon. */
@@ -303,10 +304,15 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
   // A project arriving from the picker's info icon opens its own tab and starts
   // selected, so the row the user asked about is on screen rather than filed
   // behind whichever tab happened to be first.
+  const focusHandled = useRef<string | null>(null);
   useEffect(() => {
-    if (!focusProjectId) return;
+    if (!focusProjectId || focusHandled.current === focusProjectId) return;
     const found = items.find((item) => item.project_id === focusProjectId);
     if (!found) return;
+    // One-shot. `items` gets a new identity from every reload, including the one
+    // after each action — without the guard, finishing a delete would re-select
+    // the focused project and yank the user back to its tab.
+    focusHandled.current = focusProjectId;
     setTab(found.verdict);
     setSelected(new Set([focusProjectId]));
   }, [focusProjectId, items]);
@@ -327,8 +333,14 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
   // stores per project), so gating on them disables the button for every row.
   // The backend resolves the paths when the action runs and refuses per project
   // if there turn out to be none.
-  const selectedWithHarness = selectedRows.filter((item) => item.harnesses.length > 0);
-  const selectedWithFiles = selectedRows.filter((item) => item.file_count > 0);
+  const selectedWithHarness = useMemo(
+    () => selectedRows.filter((item) => item.harnesses.length > 0),
+    [selectedRows],
+  );
+  const selectedWithFilesCount = useMemo(
+    () => selectedRows.filter((item) => item.file_count > 0).length,
+    [selectedRows],
+  );
   const allShownSelected = rows.length > 0 && selectedRows.length === rows.length;
 
   const toggle = useCallback((id: string) => {
@@ -343,14 +355,13 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
   const toggleAllShown = useCallback(() => {
     setSelected((held) => {
       const next = new Set(held);
-      const everyOne = rows.every((item) => next.has(item.project_id));
       for (const item of rows) {
-        if (everyOne) next.delete(item.project_id);
+        if (allShownSelected) next.delete(item.project_id);
         else next.add(item.project_id);
       }
       return next;
     });
-  }, [rows]);
+  }, [rows, allShownSelected]);
 
   const switchTab = useCallback((next: CleanupVerdict) => {
     setTab(next);
@@ -387,14 +398,13 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
     [computeNode?.id, selectedRows, selectedWithHarness, load],
   );
 
-  /** Why an action is unavailable, in the user's terms. Empty ⇒ it is available. */
-  const harnessBlocked =
-    selectedRows.length === 0
-      ? 'Select a project first'
-      : selectedWithHarness.length === 0
-        ? 'None of the selected projects has harness history'
-        : '';
-  const deleteBlocked = selectedRows.length === 0 ? 'Select a project first' : '';
+  const nothingSelected = selectedRows.length === 0;
+  /** Why clearing is unavailable, in the user's terms. Empty ⇒ available. */
+  const harnessBlocked = nothingSelected
+    ? 'Select a project first'
+    : selectedWithHarness.length === 0
+      ? 'None of the selected projects has harness history'
+      : '';
 
   const activeTab = TABS.find((spec) => spec.verdict === tab);
 
@@ -418,37 +428,28 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
         </Button>
       </div>
 
-      {/* One kind of project per tab, each carrying its own count. */}
-      <div className="flex items-center gap-1 border-b px-2 pt-1" role="tablist">
-        {TABS.map((spec) => {
-          const count = byVerdict.get(spec.verdict)?.length ?? 0;
-          const isActive = spec.verdict === tab;
-          return (
-            <button
-              key={spec.verdict}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => switchTab(spec.verdict)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-t border-b-2 px-3 py-1.5 text-xs transition-colors',
-                isActive
-                  ? 'border-primary font-medium text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {spec.label}
-              <span
-                className={cn(
-                  'rounded px-1.5 py-0.5 text-[10px] tabular-nums',
-                  isActive ? 'bg-primary/15 text-foreground' : 'bg-muted text-muted-foreground',
-                )}
+      {/* One kind of project per tab, each carrying its own count. Radix rather
+          than hand-rolled buttons, so arrow-key roving and the aria wiring come
+          for free instead of being maintained here. */}
+      <Tabs value={tab} onValueChange={(next) => switchTab(next as CleanupVerdict)}>
+        <TabsList className="h-auto w-full justify-start rounded-none border-b bg-transparent p-0 px-2 pt-1">
+          {TABS.map((spec) => {
+            const count = byVerdict.get(spec.verdict)?.length ?? 0;
+            return (
+              <TabsTrigger
+                key={spec.verdict}
+                value={spec.verdict}
+                className="gap-1.5 rounded-t border-b-2 border-transparent px-3 py-1.5 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:shadow-none"
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                {spec.label}
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  {count}
+                </span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
 
       {/* What this tab means, and what can be done with it. The actions are
           always rendered — disabled with a reason, never absent. */}
@@ -474,8 +475,10 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
           variant="destructive"
           size="sm"
           className="h-7 shrink-0 gap-1 text-xs"
-          disabled={busy || !!deleteBlocked}
-          title={deleteBlocked || 'Move the folder to the Trash and remove the project'}
+          disabled={busy || nothingSelected}
+          title={
+            nothingSelected ? 'Select a project first' : 'Move the folder to the Trash and remove the project'
+          }
           onClick={() => setConfirming('delete')}
         >
           <Trash2 className="h-3 w-3" />
@@ -555,8 +558,8 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
         description={
           // Trash is recoverable, so this must not claim otherwise — but a
           // selection holding real files still deserves to be named out loud.
-          selectedWithFiles.length > 0
-            ? `${selectedWithFiles.length} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder.`
+          selectedWithFilesCount > 0
+            ? `${selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder.`
             : 'The folders go to your Trash and their Flowpad projects are removed. You can restore them from Finder.'
         }
         confirmLabel="Move to Trash"

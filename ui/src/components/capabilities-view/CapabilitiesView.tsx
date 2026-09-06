@@ -1,3 +1,5 @@
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { AgenticProcess, capabilityManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
 import type {
   CapabilitiesSummary,
@@ -511,6 +513,7 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
 }
 
 export function CapabilitiesView() {
+  const { isLoading, error } = useLazyAsset(LazyAsset.CapabilitySummary);
   const [summary, setSummary] = useState<CapabilitiesSummary | null>(() => capabilityManager.getCachedSummary());
   // URL-first: the capability the user was reaching for is read off the dock,
   // never handed over by the click that navigated here.
@@ -525,7 +528,6 @@ export function CapabilitiesView() {
 
   useEffect(() => {
     const sync = () => setSummary(capabilityManager.getCachedSummary());
-    void capabilityManager.getSummary().then(setSummary);
     return capabilityManager.subscribe(sync);
   }, []);
 
@@ -566,7 +568,7 @@ export function CapabilitiesView() {
             <Trans>Capabilities</Trans>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => void refresh()}>
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => { void refresh().catch(() => {}); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           <Trans>Refresh</Trans>
         </Button>
@@ -576,7 +578,13 @@ export function CapabilitiesView() {
 
       <ScrollArea className="flex-1">
         <div className="space-y-3 p-4">
-          {intents.length === 0 ? (
+          {error && !summary ? (
+            <button type="button" role="alert" className="p-2 text-sm text-destructive" onClick={() => { void refresh().catch(() => {}); }}>
+              <Trans>Capabilities unavailable. Retry</Trans>
+            </button>
+          ) : !isLoading && intents.length === 0 ? (
+            <div className="p-2 text-sm text-muted-foreground"><Trans>No capabilities available</Trans></div>
+          ) : intents.length === 0 ? (
             <div className="flex items-center gap-2 px-1 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               <Trans>Loading capabilities…</Trans>

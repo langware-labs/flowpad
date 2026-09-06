@@ -23,10 +23,11 @@ from flow_sdk.builtin.remote_worker_session import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
     RemoteWorkerSession,
-    RemoteWorkerSessionStatus as S,
     can_transition,
-    is_active,
     is_terminal,
+)
+from flow_sdk.builtin.remote_worker_session import (
+    RemoteWorkerSessionStatus as S,
 )
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
@@ -79,8 +80,6 @@ def test_unknown_current_adopts_any_state():
 
 def test_status_predicates():
     assert ACTIVE_STATUSES == {S.IDLE, S.RUNNING}
-    assert is_active(S.IDLE) and is_active(S.RUNNING)
-    assert not is_active(S.PAUSED) and not is_active(None)
     assert is_terminal(S.ENDED) and is_terminal(S.DECLINED)
     assert not is_terminal(S.PAUSED) and not is_terminal(None)
 
@@ -248,3 +247,61 @@ def test_no_carrier_is_a_noop():
     derive_session_fields(fm)
     assert fm.remote_worker_session_id is None
     assert fm.kind == FlowMessageKind.USER
+
+
+# ── the inbound gate (pure) ──────────────────────────────────────────────────
+
+from flow_sdk.builtin.remote_worker_session import (  # noqa: E402, I001
+    InboundDecision as D,
+    ReplyPolicy,
+    decide_inbound_prompt,
+)
+
+
+@pytest.mark.parametrize("status,grant,expected", [
+    (S.ENDED, False, D.IGNORE), (S.ENDED, True, D.IGNORE),
+    (S.DECLINED, False, D.IGNORE), (S.DECLINED, True, D.IGNORE),
+    (S.PAUSED, False, D.BOUNCE_PAUSED), (S.PAUSED, True, D.BOUNCE_PAUSED),
+    (S.IDLE, False, D.RUN), (S.RUNNING, False, D.RUN), (S.ERROR, False, D.RUN),
+    (S.PENDING, False, D.PARK_PENDING), (S.PENDING, True, D.RUN),
+    (S.DRAFT, False, D.PARK_PENDING), (S.DRAFT, True, D.RUN),
+    (None, False, D.PARK_PENDING), (None, True, D.RUN),
+])
+def test_decide_inbound_prompt_matrix(status, grant, expected):
+    assert decide_inbound_prompt(status=status, standing_grant=grant) is expected
+
+
+# ── session settings ride the snapshot ───────────────────────────────────────
+
+def test_snapshot_fields_include_session_settings():
+    assert {"starting_message_id", "reply_policy", "approved_at", "approved_via"} <= RemoteWorkerSession.SNAPSHOT_FIELDS
+    assert {"reply_policy", "approved_at", "approved_via"} <= RemoteWorkerSession._HOST_AUTHORITATIVE_FIELDS
+    assert "starting_message_id" not in RemoteWorkerSession._HOST_AUTHORITATIVE_FIELDS
+
+
+def test_host_fill_merges_starting_message_and_reply_policy_once():
+    host = RemoteWorkerSession(id=SESSION_ID, host_user_id="h", status=S.PENDING)
+    out = RemoteWorkerSession.apply_snapshot(host, {
+        "id": SESSION_ID, "starting_message_id": "fm-1", "reply_policy": "review", "status": "idle",
+    }, local_is_host=True)
+    assert out.starting_message_id == "fm-1" and out.reply_policy == "review"
+    assert out.status == S.PENDING  # host never adopts status from a snapshot
+    RemoteWorkerSession.apply_snapshot(host, {"id": SESSION_ID, "starting_message_id": "fm-2", "reply_policy": "auto"}, local_is_host=True)
+    assert host.starting_message_id == "fm-1" and host.reply_policy == "review"
+
+
+def test_guest_adopts_reply_policy_on_fresher_clock():
+    guest = RemoteWorkerSession(id=SESSION_ID, status=S.PENDING, reply_policy="auto",
+                                last_activity_at="2026-09-06T10:00:00+00:00")
+    RemoteWorkerSession.apply_snapshot(guest, {"id": SESSION_ID, "reply_policy": "review",
+                                               "last_activity_at": "2026-09-06T09:00:00+00:00"}, local_is_host=False)
+    assert guest.reply_policy == "auto"  # older snapshot never regresses
+    RemoteWorkerSession.apply_snapshot(guest, {"id": SESSION_ID, "reply_policy": "review", "approved_via": "manual",
+                                               "last_activity_at": "2026-09-06T11:00:00+00:00"}, local_is_host=False)
+    assert guest.reply_policy == "review" and guest.approved_via == "manual"
+
+
+def test_effective_reply_policy_defaults_and_tolerates_garbage():
+    assert RemoteWorkerSession(id=SESSION_ID).effective_reply_policy is ReplyPolicy.AUTO
+    assert RemoteWorkerSession(id=SESSION_ID, reply_policy="review").effective_reply_policy is ReplyPolicy.REVIEW
+    assert RemoteWorkerSession(id=SESSION_ID, reply_policy="bogus").effective_reply_policy is ReplyPolicy.AUTO

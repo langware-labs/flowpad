@@ -1019,9 +1019,12 @@ export class Project extends APIEntity<Project> {
    * every indexed record whose ``project_id`` is this project (DB row + FTS +
    * wiki edges + on-disk record shadow + records_data bundle), the project's
    * own record, and the project source folder on disk. Irreversible.
+   * Native worker chat history is also deleted by default. Pass false to keep it.
    */
-  async deleteWithChildren(): Promise<{ project_id: string; deleted_children: number } | null> {
-    return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children');
+  async deleteWithChildren(deleteChats = true): Promise<{ project_id: string; deleted_children: number } | null> {
+    return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children', {
+      delete_chats: deleteChats,
+    });
   }
 
   /**
@@ -1037,7 +1040,8 @@ export class Project extends APIEntity<Project> {
    */
   static async getProjectByPath(path: string | null | undefined): Promise<Project | null> {
     if (!path) return null;
-    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
+    const { lazyAssets, LazyAsset } = await import('../lazy');
+    const projects = await lazyAssets.load(LazyAsset.Projects);
     const candidates = projects.filter(
       (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
     );

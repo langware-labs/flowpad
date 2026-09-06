@@ -10,7 +10,7 @@ import '@src/journey/journey-load-redirect';
 
 /**
  * Ensure compute node is loaded for the current project
- * Project setup is handled by initSdk -> initContext -> setupProject
+ * The route loader owns project selection; initSdk only caches the default.
  */
 async function ensureComputeNodeLoaded(): Promise<void> {
   if (dataContext.project && !dataContext.computeNode) {
@@ -95,6 +95,6 @@ export async function loadHomePage(args: LoaderArgs) {
 
   t.done(1.2); // warn if total > 1200ms
 
-  // Project setup is handled by initSdk -> initContext -> setupProject
+  // The route loader owns project selection; initSdk only caches the default.
   // If no projects exist, user will be shown project setup screen
 }

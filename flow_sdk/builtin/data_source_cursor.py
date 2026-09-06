@@ -44,6 +44,10 @@ class DataSourceCursor(Entity):
 
     # ── opaque half — ONLY the driver reads or writes this ──
     state: dict = APIField(default_factory=dict)
+    #: The listing's change token (`SegmentRef.stamp`) as of the last good
+    #: fetch. Sync-owned, not driver state: the sync compares it to the token
+    #: the next listing carries and skips the stream while they agree.
+    segment_stamp: Optional[str] = APIField(default=None)
 
     last_synced_at: Optional[datetime] = APIField(default=None)
     last_attempted_at: Optional[datetime] = APIField(default=None)

@@ -61,6 +61,7 @@ import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
 import { ShareOrgButton } from './OrgSharePanel';
 import { ShareProjectButton } from './ShareProjectPanel';
+import { MemberStanding } from './MemberStanding';
 import { MoneyBox } from './MoneyBox';
 import { PayingProviderSetup } from './PayingProviderSetup';
 import {
@@ -95,7 +96,7 @@ function TokenCount({ tokens, testIdPrefix }: { tokens: number; testIdPrefix?: s
 
 // ── organization ──────────────────────────────────────────────────────────────
 
-export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => void }) {
+export function OrgUnit({ orgId, orgName, onDeleted }: { orgId: string; orgName?: string; onDeleted: () => void }) {
   const { t } = useLingui();
   const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
   const setCap = useSetLifetimeCap();
@@ -111,7 +112,10 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
     onCreated: () => void invalidate(),
   });
 
-  if (error) return <Denied />;
+  // Refused, not broken: `budgets` is admin-and-above on the hub, so this is the ordinary answer
+  // for a member who was invited to a team here. They get their own standing instead of a line
+  // about somebody else's permission -- see `MemberStanding`.
+  if (error) return <MemberStanding orgId={orgId} orgName={orgName} />;
   if (isLoading) return <Loading />;
   // Settled, and still no `org`. The declared shape promises one, so this is a hub answering
   // something we cannot render -- an older deployment without the action, or a refusal riding an
@@ -827,15 +831,6 @@ function Unreadable({ onRetry }: { onRetry: () => void }) {
       <Button size="sm" variant="outline" onClick={onRetry}>
         <Trans>Try again</Trans>
       </Button>
-    </div>
-  );
-}
-
-/** The hub refuses the read outright below admin, so there is nothing to show and nothing to retry. */
-function Denied() {
-  return (
-    <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-      <Trans>Only an admin of this organization can see its budgets.</Trans>
     </div>
   );
 }

@@ -264,7 +264,7 @@ async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
     checkout = Path(response.data["path"])
     agent_md = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.md"
 
-    agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_md))]
+    agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_md.parent))]
     assert agents, "indexing the clone should have discovered the vendor's agent"
     await agents[0].save()
 

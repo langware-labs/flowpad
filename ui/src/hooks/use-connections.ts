@@ -1,8 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { useEffect, useRef } from 'react';
 import { connectionsService, type TypeId } from '@sdk';
 
-export const CONNECTIONS_KEY = ['connections'] as const;
+export const CONNECTIONS_KEY = ['lazy', LazyAsset.Connections] as const;
 
 /**
  * Every connection this box has, as one cached read.
@@ -17,11 +19,7 @@ export const CONNECTIONS_KEY = ['connections'] as const;
  */
 export function useConnections(projectTypeId?: TypeId | null) {
   const projectId = projectTypeId?.id ?? '';
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: [...CONNECTIONS_KEY, projectId],
-    queryFn: () => connectionsService.list(projectId || undefined),
-    staleTime: 10_000,
-  });
+  const { data, isLoading, reload: refetch } = useLazyAsset(LazyAsset.Connections, { projectId: projectId || undefined });
   return { connections: data ?? null, isLoading, refetch };
 }
 

@@ -12,11 +12,12 @@ so its system prompt, model, permissions and MCP servers reach every mail turn.
 Continuity across days and restarts is solved by the process's own `session_id`
 plus the vendor's on-disk transcript. Nothing here has to remember anything.
 
-**The allowlist is also the loop breaker.** The hub files an agent's sent copy
-in the same mailbox, so the next poll ingests the agent's own reply and fires
-this handler again. An agent's address is not in its own allowlist, so the reply
-is ignored — and because that is load-bearing rather than incidental, the self
-check below states it a second time and does not rely on the coincidence.
+**The self check is the loop breaker.** The hub files an agent's sent copy in
+the same mailbox, so the next poll ingests the agent's own reply and fires this
+handler again. `_is_own_outgoing` — the source's stamped identity — is what
+stops it. On a mailbox the allowlist happens to stop it too (an agent's address
+is never on its own list), but an `open_inbound` channel (a help desk) admits
+everyone, so the self check is the mechanism and not a belt on braces.
 """
 from __future__ import annotations
 
@@ -26,12 +27,11 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger(__name__)
 
 
-async def _agent_for(source) -> Optional[Any]:
-    """The agent whose mailbox this source is, or None if it is not one."""
+async def _agent_for(owner) -> Optional[Any]:
+    """The agent this source belongs to, or None when the owner is a user."""
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-    from flow_sdk.inbox.projection import is_agent_owner, owner_of  # noqa: PLC0415
+    from flow_sdk.inbox.projection import is_agent_owner  # noqa: PLC0415
 
-    owner = await owner_of(source)
     return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
 
 
@@ -51,21 +51,45 @@ async def _workdir_for(agent) -> str:
     return mount or str(get_instance_settings().instance_dir)
 
 
-async def _conversation_id_for(item, source) -> Optional[str]:
+async def _conversation_id_for(item, source, owner) -> Optional[str]:
     """The conversation this message landed in.
 
-    READ from the thread rather than re-derived. The thread is resolved by its
-    natural key (`find_existing`), and once it exists its `conversation_id` is
-    authoritative, because merging two threads repoints it — a second
-    derivation here would answer with the pre-merge id and split the session.
+    READ from the thread rather than re-derived. The thread is looked up by
+    its natural key the way the projection wrote it (`find_thread`), and once
+    it exists its `conversation_id` is authoritative, because merging two
+    threads repoints it — a second derivation here would answer with the
+    pre-merge id and split the session.
     """
-    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-    from flow_sdk.inbox.projection import channel_of, thread_key_for  # noqa: PLC0415
+    from flow_sdk.inbox.projection import channel_of, find_thread, thread_key_for  # noqa: PLC0415
 
-    thread = await MessageThread.find_existing(
-        channel_of(source), thread_key_for(item, item.name or "")
-    )
+    thread = await find_thread(channel_of(source), thread_key_for(item, item.name or ""), owner)
     return str(getattr(thread, "conversation_id", "") or "") or None
+
+
+def _admits(source, author: str) -> bool:
+    """Whether `author` may drive the agent through this source.
+
+    Answered from the SOURCE alone — its status and its cached allowlist —
+    not from an `EmailInbox` built out of it: that constructor needs a mailbox's
+    `agent_id`, which a desk or a chat channel does not carry, and a gate that
+    raises inside the bus handler reads as "the agent never answered".
+
+    The allowlist is the rule (`sender_allowed`, the one fold). `open_inbound`
+    is a driver's declaration that strangers are the point of its channel (a
+    help desk), under which an EMPTY list admits everyone; a non-empty list
+    restricts either way, and a paused source admits nobody either way.
+    """
+    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
+    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+    if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
+        return False
+    allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
+    if sender_allowed(allowlist, author):
+        return True
+    driver = get_driver(getattr(source, "provider", "") or "")
+    return bool(driver is not None and driver.open_inbound and not allowlist)
 
 
 def _is_own_outgoing(item, source) -> bool:
@@ -154,8 +178,8 @@ async def handle_inbound(item) -> bool:
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.email_inbox import EmailInbox  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
+    from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     source = await DataSource.get_one({"id": item.data_source_id})
@@ -167,16 +191,13 @@ async def handle_inbound(item) -> bool:
     # every outgoing message pays an Agent row read on its way to being ignored.
     if _is_own_outgoing(item, source):
         return False
-    agent = await _agent_for(source)
+    owner = await owner_of(source)
+    agent = await _agent_for(owner)
     if agent is None:
         return False
-    # The mailbox owns the gate, and it answers from the source alone: the config
-    # carries the Hub identity and the row carries the cached allowlist.
-    # `from_source` is deliberately the local constructor — this runs per message,
-    # so a Hub round trip here would put the network on the path of every piece of
-    # mail, including the ones we are about to ignore.
-    inbox = EmailInbox.from_source(source)
-    if not inbox.allowed(item.author_external_id or ""):
+    # The gate answers from the source alone — the row carries its status and
+    # the cached allowlist — so this per-message path never touches the Hub.
+    if not _admits(source, item.author_external_id or ""):
         logger.info("[agent-mail] ignoring mail to %s from unlisted sender", agent.name or agent.id)
         return False
 
@@ -184,7 +205,7 @@ async def handle_inbound(item) -> bool:
     if not body:
         return False
 
-    conversation_id = await _conversation_id_for(item, source)
+    conversation_id = await _conversation_id_for(item, source, owner)
     if not conversation_id:
         logger.warning("[agent-mail] no conversation for source_item %s", item.id)
         return False

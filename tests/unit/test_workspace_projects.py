@@ -314,3 +314,65 @@ def test_is_hidden_project_predicate(tmp_path, monkeypatch):
     # a normal project (and a subfolder under the root) does not
     assert is_hidden_project(str(normal)) is False
     assert is_hidden_project(str(ws / "real-project")) is False
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_duplicate_mount_path_resolves_to_the_same_row_everywhere(
+    project_db, tmp_path, monkeypatch
+):
+    """Two Project rows at ONE mount path must resolve to the SAME row through
+    every reader.
+
+    ``find_by_cwd`` and ``index_by_mount`` both document first-match; the scan
+    here used to overwrite as it went, so it answered with the LAST row while
+    every other caller got the FIRST. That disagreement is what let a session be
+    labelled with one project id while the UI scope carried the other, and a
+    project-scoped history list come back empty next to a panel listing the very
+    same sessions.
+
+    The duplicate itself is a separate defect (the find-then-create upsert has no
+    uniqueness behind it, and
+    ``migrations/migration_2026_09_duplicate_project_rows`` merges the rows it
+    let through). Until a row is merged, the readers must at least agree.
+    """
+    import dataclasses
+
+    import flow_sdk.fs_store.operations.all_projects as ap
+    import flow_sdk.instance_settings as isettings
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    home = tmp_path / "home"
+    ws = home / "Flowpad workspace"
+    ws.mkdir(parents=True)
+    (ws / "twice").mkdir()
+    records_root = tmp_path / "records"
+    records_root.mkdir(exist_ok=True)
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+        claude_projects_dir=home / ".claude" / "projects",
+        codex_config_path=home / ".codex" / "config.toml",
+        records_root=records_root,
+    )
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+
+    cwd = canonical_posix_path(ws / "twice")
+    first = Project.model_validate({"fs_storage_mount_path": cwd, "name": "twice"})
+    first.id = Project.allocate_id(first.model_dump())
+    await first.save()
+    second = Project.model_validate({"fs_storage_mount_path": cwd, "name": "twice"})
+    second.id = Project.allocate_id(second.model_dump())
+    await second.save()
+    assert first.id != second.id
+
+    infos = await ap.get_all_projects(include_temp=True, create_missing=False)
+    scanned = [i.project_id for i in infos if i.cwd == cwd]
+    found = await Project.find_by_cwd(cwd)
+    indexed = (await Project.index_by_mount()).get(cwd)
+
+    assert len(scanned) == 1, scanned
+    assert found is not None and indexed is not None
+    assert scanned[0] == found.id == indexed.id

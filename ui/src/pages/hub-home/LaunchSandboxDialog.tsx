@@ -1,6 +1,6 @@
 import type { ComputeNode } from '@sdk';
+import { AutoLoginField } from '@src/pages/hub-home/AutoLoginField';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -106,12 +106,7 @@ export function LaunchSandboxDialog({
         </DialogHeader>
 
         {phase === 'idle' && (
-          <label className="flex items-start gap-2 text-xs" data-testid="launch-auto-login">
-            <Checkbox checked={autoLogin} onCheckedChange={(v) => setAutoLogin(v === true)} className="mt-0.5" />
-            <span className="text-muted-foreground">
-              <Trans>Sign me in automatically — this sandbox belongs to one person.</Trans>
-            </span>
-          </label>
+          <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="launch-auto-login" />
         )}
 
         {error && <p className="text-xs text-destructive">{error}</p>}

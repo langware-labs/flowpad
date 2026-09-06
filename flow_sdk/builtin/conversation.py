@@ -126,6 +126,38 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
+def _recipient_user_id(value) -> Optional[str]:
+    """A hub user id fit to address an invitation with, or ``None``.
+
+    Accepts a bare id, a ``"user-<uuid>"`` typeid string, or a ``TypeId`` — the
+    address book and the members roster each hand out a slightly different
+    shape, and every one of them means the same person. Parsed by hand rather
+    than through ``TypeId`` precisely because of the bare form: ``TypeId``
+    splits at the first dash, so a naked UUID would parse as type ``"<first
+    group>"`` rather than being recognized as an id.
+
+    The id must be a real UUID: the hub resolves it with a point read, so junk
+    would surface as a confusing "user not found" rather than a malformed-input
+    error. Version-agnostic (``is_valid_uuid``, not ``is_valid_entity_id``) —
+    this is a reference to a row the hub minted, not an id being born here.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+
+    if isinstance(value, TypeId):
+        value = str(value)
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    user_prefix = f"{EntityType.USER.value}-"
+    if candidate.startswith(user_prefix):
+        candidate = candidate[len(user_prefix) :]
+    # Anything left that is not a bare UUID (a "project-<id>" typeid, a name) is
+    # not something this path may address.
+    return candidate if is_valid_uuid(candidate) else None
+
+
 class Conversation(ProjectedFields, Entity):
     """A conversation composed into a Task (or other parent entity).
 
@@ -300,31 +332,52 @@ class Conversation(ProjectedFields, Entity):
                 return proj
         return fallback
 
-    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
-        """Push to hub + invite recipients via the standard hub pattern.
+    async def share(
+        self,
+        recipients: Optional[List[str]] = None,
+        recipient_user_ids: Optional[List[str]] = None,
+    ) -> "Conversation":
+        """Push to hub + admit people via the standard hub pattern.
 
-        Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
+        Without either list: equivalent to ``Entity.share()`` — POSTs to
         ``/graph/conversation`` so the hub-side row exists; the caller then
         has ``owner`` role.
 
-        With ``recipients`` (list of email strings): after the create, the
-        caller joins the conversation (so they enter ``participants``), then
-        one ``MembershipRequest`` per recipient is sent via the canonical
-        ``POST /graph/conversation/<id>/members`` endpoint, targeting this
-        Conversation with role ``member``. Each recipient discovers the
-        invitation via ``GET /graph/invitation/pending``, accepts via
-        ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
-        themselves (wired in ``flow_message_action.handle_invitation_accept``).
+        Two ways to admit someone, because the address book knows people two
+        ways. A contact learned from a conversation roster carries a hub
+        ``user_id`` and NO email (the hub never discloses other people's
+        addresses — see ``_learn_address_book``), so an email-only admit path
+        makes exactly those contacts unreachable even though the picker offers
+        them.
 
-        Persisting ``remote=True`` to the local DB is the caller's
-        responsibility (``share_action.share_entity`` does the local row
-        UPDATE immediately after ``share()`` returns).
+        Both are the SAME invitation — one ``MembershipRequest`` per person via
+        the canonical ``POST /graph/conversation/<id>/members``, targeting this
+        Conversation with role ``member``; the recipient discovers it via
+        ``GET /graph/invitation/pending``, accepts via
+        ``GET /graph/members/accept``, and then
+        ``POST /graph/conversation/<id>/join`` themselves (wired in
+        ``flow_message_action.handle_invitation_accept``). Only the ADDRESS
+        differs:
+
+        ``recipients`` (email strings) — for anyone, including someone with no
+        account yet: the hub provisions a shadow user for them.
+
+        ``recipient_user_ids`` (hub user ids, or ``"user-<id>"`` typeid strings)
+        — for someone the hub already knows, addressed the only way we can
+        address them. The hub resolves the id to their address server-side. Use
+        it for a contact whose email we do not have and cannot get.
+
+        Both lists may be passed together; each person should appear in only
+        one (the hub refuses a request naming both). Persisting ``remote=True``
+        to the local DB is the caller's responsibility
+        (``share_action.share_entity`` does the local row UPDATE immediately
+        after ``share()`` returns).
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        if not recipients:
+        if not recipients and not recipient_user_ids:
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
             # comment on it auto-shares under the conversation (the hub parent).
@@ -362,15 +415,14 @@ class Conversation(ProjectedFields, Entity):
             # on the same invitation as the conversation member grant.
             asset_targets = await self._share_hostable_assets()
 
-            # One invitation per recipient.
-            for email in recipients:
-                if not email or not isinstance(email, str):
-                    continue
-                email = normalize_email(email)
-                if not email:
-                    continue
+            def _membership_body(**identity) -> dict:
+                """One ``MembershipRequest`` for this conversation. ``identity``
+                is the single key addressing the invitee — ``recipient_email``
+                or ``recipient_user_id`` — so both forms carry the identical
+                targets (conversation + any shared assets) and cannot drift
+                apart."""
                 body: dict = {
-                    "recipient_email": email,
+                    **identity,
                     "invitation_targets": [
                         {"typeid": f"conversation-{self.id}", "role": "member"},
                         *asset_targets,
@@ -378,9 +430,28 @@ class Conversation(ProjectedFields, Entity):
                 }
                 if callback_override:
                     body["callback_override"] = callback_override
+                return body
+
+            # One invitation per recipient.
+            for email in recipients or []:
+                if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
+                    continue
                 await client.post(
                     f"/graph/conversation/{self.id}/members",
-                    body,
+                    _membership_body(recipient_email=email),
+                )
+
+            # One invitation per contact we can only name by hub id.
+            for value in recipient_user_ids or []:
+                user_id = _recipient_user_id(value)
+                if not user_id:
+                    continue
+                await client.post(
+                    f"/graph/conversation/{self.id}/members",
+                    _membership_body(recipient_user_id=user_id),
                 )
         return self
 

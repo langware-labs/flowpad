@@ -102,7 +102,7 @@ def test_collision_is_left_alone_never_overwritten(tmp_path: Path):
 
 def test_user_scope_claude_plans_is_never_touched(tmp_path: Path):
     """``~/.claude/plans`` belongs to Claude Code (plan-mode output) and is still
-    read in place by ``claude_plan_fn`` — moving it would both lose the user's
+    read in place by the plan walk — moving it would both lose the user's
     plans and break the harness."""
     m = _load_migration()
     _seed(tmp_path, ".claude/plans", "my-plan.md", "plan body")
@@ -136,7 +136,7 @@ def test_untyped_dirs_move_to_docs_and_the_project_root(tmp_path: Path):
 
 
 def test_user_scope_moves_docs_but_not_loose_files(tmp_path: Path):
-    """``~/.claude/docs`` MUST move — ``markdown_flat_fn`` now scans ``~/docs``, so
+    """``~/.claude/docs`` MUST move — the markdown docs walk now scans ``~/docs``, so
     leaving it silently de-indexes every user-scope document. ``~/.claude/files``
     is deliberately left alone: PROJECT is project-scope only, and strewing loose
     files across the user's home is never the right answer."""

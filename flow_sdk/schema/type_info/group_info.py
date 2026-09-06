@@ -4,7 +4,7 @@ record persists name/group_namespace/icon/color (+ BaseMeta's group_id) so trees
 survive a full index rebuild."""
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -15,8 +15,8 @@ class GroupMeta(BaseMeta):
     color: Optional[str] = None
 
 
-GROUP = TypeMetadata(
-    type=EntityType.GROUP,
+GROUP = TypeInfo(
+    type_name=EntityType.GROUP,
     icon="Folder",
     api_visible=True,
     indexed_by_default=False,

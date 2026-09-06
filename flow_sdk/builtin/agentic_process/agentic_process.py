@@ -83,6 +83,7 @@ from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -459,16 +460,16 @@ def disk_asset_descriptors(
     indexed listed nothing at all despite having real ``.claude/skills``
     folders on disk.
 
-    Discovery is DELEGATED to the indexer's own walkers (``skill_fn`` /
-    ``subagent_fn``) rather than re-deriving where assets live, so this pass
-    cannot drift from the indexer: a new harness dot-dir in ``WORKER_PREFIX``
-    or a new skill marker file is picked up here for free. Both walkers ignore
-    their options argument, so one throwaway ``IndexerOptions`` serves all of
-    them, and they key off ``node.path`` alone.
+    Discovery is DELEGATED to the indexer's own walkers (the declared
+    ``walk`` of skill / subagent, run by ``layout_walker``) rather than
+    re-deriving where assets live, so this pass cannot drift from the indexer:
+    a new harness dot-dir in ``WORKER_PREFIX`` is picked up here for free. The
+    walkers ignore their options argument, so one throwaway ``IndexerOptions``
+    serves all of them; they key off ``node.path`` and ``node.record_type``.
 
     Strictly read-only. Ids come from the peek seams (``skill_id`` /
-    ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
-    or frontmatter id rather than minting one, so a later index converges on
+    ``subagent_peek_entity_id``), which ADOPT an existing frontmatter id
+    rather than minting one, so a later index converges on
     the same id instead of creating a second row for the same file.
 
     ``seen_paths`` carries the paths the DB pass already considered; a path is
@@ -484,15 +485,15 @@ def disk_asset_descriptors(
     from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
         parse_skill_yaml_from_dir,
         resolve_skill_name,
-        skill_fn,
         skill_id,
     )
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.walkers.generic import walker_for  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     opts = IndexerOptions()
+    skill_fn, subagent_fn = walker_for("skill"), walker_for("subagent")
     out: list[AssetDescriptor] = []
 
     def claim(path: Path) -> str | None:
@@ -507,8 +508,8 @@ def disk_asset_descriptors(
         return key
 
     for src_dir, source in ranked:
-        # The walkers read ``node.path`` and nothing else; the record type only
-        # has to be one they are registered under.
+        # The walkers serve the walks declared on this root kind; a project
+        # root is one both types name.
         nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
         if "skill" in types:
             for ref in skill_fn(nodes, opts):
@@ -641,6 +642,18 @@ async def scan_path_asset_descriptors(
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
+_PROMPT_TASKS: dict[str, asyncio.Task] = {}
+
+
+def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
+    """Retain the turn until its final writes finish, so exit can join it."""
+    _PROMPT_TASKS[process_id] = task
+
+    def finished(done: asyncio.Task) -> None:
+        if _PROMPT_TASKS.get(process_id) is done:
+            _PROMPT_TASKS.pop(process_id)
+
+    task.add_done_callback(finished)
 
 
 def prompt_lock_locked(process_id: str) -> bool:
@@ -1978,6 +1991,23 @@ class AgenticProcess(Entity):
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
+        worker = _PROMPT_WORKERS.get(self.id)
+        turn = _PROMPT_TASKS.get(self.id)
+        if worker is not None or turn is not None:
+            # A completion must not launch another queued turn during teardown.
+            if self.queue.exists():
+                self.queue.clear(source="exit")
+            if worker is not None:
+                await worker.close_session()
+            if turn is not None and turn is not asyncio.current_task():
+                turn.cancel()
+                await asyncio.gather(turn, return_exceptions=True)
+            if worker is not None:
+                unregister_prompt_worker(self.id, worker)
+            if not self.shell_id:
+                self.status = ProcessStatus.STOPPED.value
+                await self.save()
+                return ApiSuccessResponse(data={"status": "stopped"})
         if not self.shell_id:
             return ApiFailResponse(message="No active shell session")
 
@@ -3915,6 +3945,7 @@ class AgenticProcess(Entity):
 
         try:
             turn_task = asyncio.create_task(_run_turn())
+            register_prompt_task(self.id, turn_task)
         except BaseException:
             unregister_prompt_worker(self.id, worker)
             raise
@@ -5073,14 +5104,17 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+            from flow_sdk.fs_store.indexer.reconcile import reconcile
             from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
             # extract_markdown requires a resolved id (capsule refactor 4f94fb92
-            # made it a positional arg). Resolve it READ-ONLY via markdown_id
-            # (adopted frontmatter id, else the stable uuid5(path)) — the plan
-            # file is a transient Claude transcript artifact we must not mutate
-            # with an identity-capsule write.
-            rec = SchemaRegistry.get("markdown").record_for(_FSRef(Path(plan_file_path), read_only=True))
+            # made it a positional arg). Resolve it READ-ONLY (adopted
+            # frontmatter id, else the stable uuid5(path)) — the plan file is a
+            # transient Claude transcript artifact we must not mutate with an
+            # identity write.
+            info = SchemaRegistry.get("markdown")
+            ref = _FSRef(Path(plan_file_path), read_only=True)
+            rec = info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=False, ref=ref))
             if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
             await rec.sync_to_db()
@@ -6120,7 +6154,7 @@ class AgenticProcess(Entity):
                 continue
             type_name = descriptor.typeid.split("-", 1)[0]
             type_info = SchemaRegistry.get(type_name)
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             for entry, read_path in reads:
                 if read_path != asset_path and not (
                     folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
@@ -6190,7 +6224,7 @@ class AgenticProcess(Entity):
                 continue
             asset_path = canonical_posix_path(asset_ref)
             type_info = SchemaRegistry.get(entity.type or entity.get_type())
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             if read_path == asset_path or (folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")):
                 return entity
         return None
@@ -6981,8 +7015,11 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
-    async def delete(self):  # noqa: D401
+    async def delete(self, *, delete_chats: bool = True):  # noqa: D401
         """Tombstone the on-disk session transcript, then delete the entity.
+
+        Project deletion can pass ``delete_chats=False`` to discard only the
+        index row while keeping the native chat available for rediscovery.
 
         The AgenticProcess DB row is only an index. Both on-disk read paths —
         ``worker_history``'s Claude/Codex/Copilot collectors (the Chats
@@ -7001,7 +7038,8 @@ class AgenticProcess(Entity):
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
-        self._tombstone_session_transcript()
+        if delete_chats:
+            self._tombstone_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
@@ -7500,7 +7538,68 @@ class AgenticProcess(Entity):
         """
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         summary = (await self.resolve_context_summary()) or ""
-        return "\n\n".join(p for p in (explicit, summary) if p) or None
+        always = self._resolve_always_use_skills_block()
+        return "\n\n".join(p for p in (explicit, summary, always) if p) or None
+
+    def _resolve_always_use_skills_block(self) -> str:
+        """The project's ``always_use_skills`` as a system-prompt directive.
+
+        A project's skills are otherwise only OFFERED — their name and
+        description are listed in context and the model decides whether to
+        invoke one. Measured on a freshly cloned help-desk project: a prompt
+        that did not name the skill produced ZERO ``Skill`` invocations and an
+        improvised answer that merely *looked* like the skill's schema, because
+        the description alone is enough to fake the shape. Naming the skill in
+        the prompt invoked it properly. So "the skill is available" and "the
+        skill is applied" are two different things, and only the second is what
+        a project author sharing a help desk actually means.
+
+        Read from the repo's own ``.flowpad/bootstrap.json`` rather than from
+        local settings, because the declaration has to survive the trip: someone
+        who received the project over git gets the author's intent with it.
+
+        Best-effort by construction — no workdir, no manifest, or a manifest that
+        declares nothing all mean "no directive", never a failed launch.
+
+        Cached in ``context_data`` for the same reason as
+        :meth:`resolve_context_summary`, and it is not an optimization worth
+        skipping: this resolves on EVERY headless/print turn, not once per
+        launch, so an uncached read re-opens and re-parses the manifest on every
+        message the worker receives. The manifest is a file in the project the
+        process is already pinned to; it does not change under a running
+        session. ``""`` is cached as readily as a directive — "this project
+        declares nothing" is an answer, and re-deriving it per turn is the same
+        waste.
+        """
+        data = self.context_data or {}
+        cached = data.get("always_use_skills_block")
+        if cached is not None:
+            return cached
+        block = self._read_always_use_skills_block()
+        self.context_data = {**data, "always_use_skills_block": block}
+        return block
+
+    def _read_always_use_skills_block(self) -> str:
+        """The uncached read behind :meth:`_resolve_always_use_skills_block`."""
+        workdir = (self.workdir or "").strip()
+        if not workdir:
+            return ""
+        try:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+
+            skills = read_bootstrap_manifest(_Path(workdir)).always_use_skills
+        except Exception:  # noqa: BLE001 -- a manifest must never fail a launch
+            return ""
+        if not skills:
+            return ""
+        listed = ", ".join(f"`{name}`" for name in skills)
+        return (
+            f"This project declares that the following skill(s) apply to every request: {listed}. "
+            "Use them without being asked — treat each turn as though the user had named them. "
+            "Follow the skill's own instructions rather than inferring its shape from its description."
+        )
 
     async def resolve_context_summary(self) -> str:
         """The bound context as a system-prompt block — resolved at launch.

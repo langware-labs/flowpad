@@ -26,7 +26,7 @@ from .conftest import commit, git
 @dataclass(frozen=True)
 class AssetKind:
     name: str
-    layout: str  # "file" | "folder" — mirrors TypeInfo.main_layout
+    layout: str  # "file" | "folder" — mirrors the TypeInfo shape kind (File | Folder)
     record_type: str  # the type it is INDEXED as — a skill folder is a skill
 
     def create(self, repo: Path) -> None:

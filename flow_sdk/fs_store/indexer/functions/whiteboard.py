@@ -22,22 +22,11 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
 from flow_sdk.fs_store.record_types import RecordType
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"
 
-def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
-    """Pick ``id`` (or legacy ``asset_id``) from a parsed frontmatter dict."""
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-    for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
-        adopted = adopt_entity_id(candidate)
-        if adopted:
-            return adopted
-    return None
 
 def _resolve_whiteboard_name(yaml_fields: dict, folder_name: str) -> str:
     """Pick the whiteboard's display name: yaml.name first, else folder name."""
@@ -63,13 +52,6 @@ def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def whiteboard_id_from_folder(ref: FSRef | Path) -> object | None:
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    fm = _load_whiteboard_fm(path)
-    return _read_frontmatter_id_from_yaml(fm)
 
 def whiteboard_asset_hash(ref: FSRef) -> float:
     """mtime across the whiteboard's inner content files.

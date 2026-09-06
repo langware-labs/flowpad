@@ -17,6 +17,7 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.migrations import migration_2026_09_data_source_spec_name_identity as mig
+from tests.fixtures.identity import resolve_id
 
 #: The three roots one machine really carries — a uv tool dir, a python prefix,
 #: and uv's own unpacked wheel cache.
@@ -35,7 +36,7 @@ def _schema(db: Path) -> sqlite3.Connection:
 
 
 def _old_path_keyed_id(folder: Path) -> str:
-    """What `mint_entity_id` produced before the fix: uuid5 of the abs path."""
+    """What the seam produced before the fix: uuid5 of the abs path."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, str(folder.resolve())))
 
 
@@ -89,7 +90,7 @@ def _expected_id(folder: Path) -> str:
 
     info = SchemaRegistry.get("data_source_spec")
     assert info is not None
-    return info.mint_entity_id(FSRef(folder, record_type=RecordType.DATA_SOURCE_SPEC, scope="system"))
+    return resolve_id(info, FSRef(folder, record_type=RecordType.DATA_SOURCE_SPEC, scope="system"))
 
 
 def test_forked_specs_collapse_to_one_row_per_name(tmp_path: Path) -> None:

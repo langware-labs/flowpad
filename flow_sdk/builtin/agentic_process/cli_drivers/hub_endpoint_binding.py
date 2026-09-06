@@ -34,6 +34,7 @@ from flow_sdk.instance_settings.llm_endpoint import (
     listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
+from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class HubEndpointBindError(Exception):
         self.status_code = status_code
 
 
-async def _sources_by_kind() -> tuple[dict, dict, dict, dict]:
+async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, dict, dict]:
     """``(sources, resolved, blocked, endpoints)`` for every hub-capable harness.
 
     ``sources``, ``resolved`` and ``blocked`` are keyed by capability kind; ``endpoints`` is
@@ -68,19 +69,28 @@ async def _sources_by_kind() -> tuple[dict, dict, dict, dict]:
     nothing to click. ``resolved`` still carries the overlay's answer, so what the page says is
     in use and what a spawn does still come from one producer.
 
+    *scope* is that producer's other half. Without one this answers the box-wide question and
+    a project pin is invisible — which is what it did, so the picker could never show that a
+    project had taken the choice away. Passing the active project makes ``resolved`` the same
+    verdict a spawn in that project gets.
+
     Reads only what is already local (including the endpoint memo), so this adds no
     round-trip to a status the harness picker polls.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import picker_view_for, resolve_constraint
 
     sources: dict[str, list] = {}
     resolved: dict[str, dict | None] = {}
     blocked: dict[str, str] = {}
     endpoints: dict[str, dict] = {}
+    # ONCE, not per harness: the constraint is a project lookup and the project is the same
+    # for all four, so resolving it inside the loop was the same ``Project.get_by_id`` four
+    # times per status request.
+    constraint = await resolve_constraint(scope)
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
-        view = await llm_picker_view(worker)
+        view = await picker_view_for(worker, constraint)
         sources[kind] = [c.source.model_dump(mode="json") for c in view.offers]
         resolved[kind] = view.chosen.source.model_dump(mode="json") if view.chosen else None
         blocked[kind] = view.blocked
@@ -108,7 +118,7 @@ def _hub_user_typeid() -> str | None:
     return f"user-{user_id}" if user_id else None
 
 
-async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
+async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
     # Read the endpoint listing FIRST, then build the sources from the now-warm memo.
     # ``_inventory`` is memo-only by design (it runs in the spawn path and must not call
@@ -128,7 +138,7 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
             logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
             clear_hub_llm_endpoint()
             bound = None
-    sources, resolved, blocked, endpoints = await _sources_by_kind()
+    sources, resolved, blocked, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {
         # Every endpoint this user could be pointed at, not just the one the hub pushed -- the
@@ -174,11 +184,17 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
     }
 
 
-async def hub_llm_endpoint_status() -> dict:
-    """What the box is bound to and which harnesses actually route through it."""
+async def hub_llm_endpoint_status(project_id: str = "") -> dict:
+    """What the box is bound to and which harnesses actually route through it.
+
+    *project_id* narrows the answer to a project's scope, so ``resolved`` reports the
+    endpoint a spawn IN THAT PROJECT would spend rather than the box-wide guess. Optional:
+    a caller with no project in hand (the box status screen, a CLI) asks the box-wide
+    question and gets exactly the previous behaviour.
+    """
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
 
-    return await _status(bool(resolve_hub_api_key()), refresh=True)
+    return await _status(bool(resolve_hub_api_key()), refresh=True, scope=LLMScope.of_project(project_id))
 
 
 async def bind_hub_llm_endpoint(payload: dict) -> dict:

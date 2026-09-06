@@ -115,7 +115,7 @@ with the ids to fan out on. Subscribing to `item.*` is opting into the per-item
 lane and its 30/min ceiling.
 
 **The write route.** `POST /api/v1/ingest/items` (`server/routes/ingest.py`,
-body `{"items": [<SourceItemSpec>…], "first_run"?: bool}`, at most 500 items)
+body `{"items": [<SourceItemSpec>…]}`, at most 500 items)
 exposes the same `ingest_items` chokepoint to anything that is not the
 poller — `flow record create source_item`, an agent worker, a test — so a
 record written from outside converges with what the poller writes instead of
@@ -299,8 +299,7 @@ can open; nothing downstream can tell the two apart.
 holds the source's own name for an asset; two observations carrying the same
 handle converge on one row. That is what makes the reflect mode irrelevant to
 identity — a file indexed in place and copied into a project share an origin, so
-they are one entity, and neither file has to carry an identity capsule for it to
-work.
+they are one entity, and neither file has to carry an id for it to work.
 
 The handle is per-driver, because only the driver knows what its source can
 promise:
@@ -325,10 +324,10 @@ git can (`--find-renames`), a lossy watcher cannot. Without the pair, identity i
 destroyed at the old path and re-minted at the new one.
 
 **Some bytes are not ours to write.** A driver declaring `stamps_identity = False`
-runs its reflection inside `carrier_writes_suppressed()`, and the carrier is
-neither consulted nor written. Git declares it: a capsule stamped into a tracked
-file dirties the working tree, is committed, and propagates to everyone who
-pulls. See [asset capsules](asset-capsules.md).
+reflects with `write=False`, so the identity carrier is read but never
+stamped. Git declares it: an id stamped into a tracked file dirties the
+working tree, is committed, and propagates to everyone who pulls. See
+[asset capsules](asset-capsules.md).
 
 ## The change envelope
 

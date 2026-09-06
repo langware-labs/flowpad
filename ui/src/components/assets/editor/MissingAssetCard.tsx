@@ -28,7 +28,7 @@ interface MissingAssetCardProps<T extends APIEntity<T>> {
  * Terminal "missing asset" surface for the editor pane.
  *
  * Rendered by `EntityResolutionGate` when `useEntityByPath` settles to
- * `state === 'missing_asset'` — either the backend's discoverByPath returned
+ * `state === 'missing_asset'` — either the backend's resolveByPath returned
  * 404, or a row was matched but its FSIndexer-driven ``orphan`` flag is true
  * (file gone). Distinct from a transient error: retry only helps if the file
  * has since been created or moved, so the affordance is explicit rather than

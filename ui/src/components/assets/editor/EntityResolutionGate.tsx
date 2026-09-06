@@ -1,3 +1,4 @@
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { ReactNode } from 'react';
 import { APIEntity, FSRef } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -7,8 +8,10 @@ import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface EntityResolutionGateProps<T extends APIEntity<T>> {
-  /** Entity type, e.g. `Workflow.type`. */
-  type: string;
+  /** Type HINT, e.g. `Workflow.type` — the editor this gate wraps expects it.
+   *  The backend names the actual type from the path; a disagreement is only
+   *  reported, never used to pick the entity. */
+  type?: string;
   /** Path to resolve. */
   fsRef: FSRef;
   /** Display label for status messages, e.g. "workflow", "agent". */
@@ -47,10 +50,11 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
     error,
     retry,
   } = useEntityByPath<T>(
-    resolvedEntity ? null : type,
+    resolvedEntity ? null : type ?? null,
     resolvedEntity ? null : fsRef,
   );
   const entity = resolvedEntity ?? pathEntity;
+  usePrimaryContentPending(!resolvedEntity && (state === 'querying' || state === 'discovering'));
 
   if (entity && (resolvedEntity || state === 'resolved')) return <>{render(entity)}</>;
 

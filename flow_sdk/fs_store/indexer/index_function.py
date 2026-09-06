@@ -231,33 +231,40 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
-def ref_typeid(ref, owners: "PathOwnerIndex | None" = None) -> str | None:
+def ref_typeid(
+    ref, owners: "PathOwnerIndex | None" = None, memo: "dict[tuple[str, str], str | None] | None" = None
+) -> str | None:
     """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
-    identity API. None when the ref is absent, isn't a repo asset, or has no id
-    resolver. The single ref→typeid primitive shared by the enclosure-parent
-    derivation (below) and the bundle's descendant collector.
+    identity API. None when the ref is absent, isn't a repo asset, the type
+    refuses the path, or has no id resolver. The single ref→typeid primitive
+    shared by the enclosure-parent derivation (below) and the bundle's
+    descendant collector.
 
     ``owners`` matters here: this resolves the PARENT folder asset, so minting
     would stamp a fresh capsule into a skill/task folder and fork it on the
-    next walk. Callers with a preloaded owner map should pass it."""
+    next walk. ``memo`` (per run) answers the same parent once."""
     if ref is None or ref.record_type is None:
         return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     rtype = str(ref.record_type)
+    key = (rtype, str(ref._path))
+    if memo is not None and key in memo:
+        return memo[key]
     if rtype not in SchemaRegistry.get_repo_types():
         return None
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
     info = SchemaRegistry.get(rtype)
-    if info is None:
-        return None
     try:
-        rid = info.mint_entity_id(
-            ref,
-            owner_id=owners.owner_for(rtype, str(ref._path)) if owners is not None else None,
-        )
+        owner = owners.owner_for(rtype, key[1]) if owners is not None else None
+        rid = reconcile(info, info.layout_for(ref), owner, None, write=not ref.read_only, ref=ref)
     except Exception:
-        return None
-    return f"{rtype}-{rid}" if rid else None
+        rid = None
+    out = f"{rtype}-{rid}" if rid else None
+    if memo is not None:
+        memo[key] = out
+    return out
 
 
 def _is_async_walker(fn: Any) -> bool:
@@ -350,6 +357,120 @@ def _scope_filter_keeps(
         return pid in set((*sf.projects, *record_projects))
     # Genuinely-empty scope (scope == "" or other falsy).
     return _empty_scope_keeps(type_name)
+
+
+@dataclass
+class OwnerPreload:
+    """What the store already knows about a set of types, read ONCE before a
+    walk touches a path: the live row ids per type (skip-fresh's row check),
+    each id's stored path (dedup-on-adopt / same-path sweep), the stored
+    occurrences the collision resolver re-validates, and the path→owner index
+    that keeps a source whose capsule was wiped on its OWN row instead of
+    minting a fork. Every consumer of the index pipeline — the walk and the
+    resource-browser scan alike — starts from this one preload."""
+
+    ids: dict[str, set[str]] = field(default_factory=dict)
+    paths: dict[str, dict[str, str]] = field(default_factory=dict)
+    occurrences: StoredOccurrenceMap = field(default_factory=StoredOccurrenceMap)
+    owners: PathOwnerIndex = field(default_factory=lambda: PathOwnerIndex({}))
+
+
+
+async def preload_owners(driver: Any, type_names: "Collection[Any]") -> OwnerPreload:
+    """One lean SELECT per type into an :class:`OwnerPreload`. A driver
+    without ``list_entity_sources_by_type`` or a failing preload yields an
+    EMPTY preload — identity then degrades to the historic carrier-or-mint
+    behaviour and freshness to sentinel-only, never to adopting a wrong row."""
+    preload = OwnerPreload()
+    if not hasattr(driver, "list_entity_sources_by_type"):
+        return preload
+    try:
+        for rt in type_names:
+            rows = await driver.list_entity_sources_by_type(str(rt))
+            preload.ids[str(rt)] = set(rows.keys())
+            preload.paths[str(rt)] = {rid: src[0] for rid, src in rows.items() if src and src[0]}
+            type_occurrences = stored_asset_occurrences(str(rt), rows)
+            preload.occurrences.update(type_occurrences)
+            preload.occurrences.synthetic_keys.update(getattr(type_occurrences, "synthetic_keys", ()))
+    except Exception:
+        logging.warning(
+            "[FSIndexer] could not preload DB ids for skip-fresh row check; "
+            "falling back to sentinel-only freshness",
+            exc_info=True,
+        )
+        return OwnerPreload()
+    preload.owners = PathOwnerIndex.from_preload(preload.paths)
+    # Only a preload that HELD rows yet yielded no owners is a problem — a
+    # first index legitimately has type keys with no rows behind them.
+    if any(preload.paths.values()) and not preload.owners:
+        logging.warning(
+            "[FSIndexer] preloaded %d row(s) but resolved no path owners; "
+            "a source whose identity carrier was wiped will mint a NEW id and fork its entity",
+            sum(len(v) for v in preload.paths.values()),
+        )
+    return preload
+
+
+def resolve_ref_identity(info: Any, ref: FSRef, preload: OwnerPreload) -> tuple[str, str]:
+    """``(entity_id, canonical_path)`` for one walked ref — the ONE identity
+    step of the pipeline. Owner-first: a source whose capsule was wiped by a
+    full-content rewrite is NOT a new asset; minting there forks the entity and
+    the same-path sweep then reaps the row every reference points at. Raises
+    when the type refuses the path (``UnclaimedPath``) or the carrier fails;
+    no fallback id may bypass ``TypeInfo``."""
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    rtype = str(ref.record_type)
+    canon_path = canonical_posix_path(str(ref._path))
+    ref_id = reconcile(
+        info,
+        info.layout_for(ref),
+        preload.owners.owner_for(rtype, str(ref._path), canon_path),
+        preload.ids.get(rtype),
+        write=not ref.read_only,
+        ref=ref,
+    )
+    return ref_id, canon_path
+
+
+def resolve_collisions(
+    candidates: "list[Any]",
+    stored: "StoredOccurrenceMap | dict",
+    live_identity: "Callable[[Any], tuple[str, str, str] | None]",
+):
+    """One primary path per ``(type, id)`` across the live ``candidates`` and
+    the ``stored`` occurrences — ``resolve_asset_collisions`` with the stored
+    side re-validated READ-ONLY: a stored path counts only while its file still
+    carries that very id. ``live_identity`` names a live candidate's
+    ``(type, id, canonical path)`` (None ⇒ unresolved). Synchronous and
+    file-bound; run it off the loop."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
+
+    stored_identities: dict[str, tuple[str, str, str]] = {}
+    for (type_name, entity_id), occurrences in stored.items():
+        info = SchemaRegistry.get(type_name)
+        if info is None:
+            continue
+        for occurrence in occurrences:
+            try:
+                path = occurrence.path
+                if not Path(path).exists():
+                    continue
+                rid = info.read_id(FSRef(path, record_type=RecordType(type_name)))
+                if rid == entity_id:
+                    stored_identities[path] = (type_name, entity_id, path)
+            except Exception:
+                continue
+
+    def identity(candidate):
+        if isinstance(candidate, str):
+            return stored_identities.get(canonical_posix_path(candidate))
+        return live_identity(candidate)
+
+    return resolve_asset_collisions(candidates, stored, identity, git_asset_introduction, datetime.now(timezone.utc))
 
 
 def _same_path_dupe_groups(
@@ -716,29 +837,12 @@ class FSIndexer:
         # existing entity ids per dispatchable type — one lean SELECT each —
         # and gate freshness on membership. An empty ``existing_db_ids`` means
         # "couldn't enumerate" → fall back to sentinel-only (prior behaviour).
-        existing_db_ids: dict[str, set[str]] = {}
-        # ``{type: {id: asset_ref}}`` — the incumbent path an id already lives at.
-        # Powers dedup-on-adopt (move vs copy). Same lean SELECT as the id set.
-        existing_db_paths: dict[str, dict[str, str]] = {}
-        stored_occurrences = StoredOccurrenceMap()
-        if hasattr(driver, "list_entity_sources_by_type"):
-            try:
-                for rt in per_type_totals:
-                    rows = await driver.list_entity_sources_by_type(str(rt))
-                    existing_db_ids[str(rt)] = set(rows.keys())
-                    existing_db_paths[str(rt)] = {rid: src[0] for rid, src in rows.items() if src and src[0]}
-                    type_occurrences = stored_asset_occurrences(str(rt), rows)
-                    stored_occurrences.update(type_occurrences)
-                    stored_occurrences.synthetic_keys.update(getattr(type_occurrences, "synthetic_keys", ()))
-            except Exception:
-                logging.warning(
-                    "[FSIndexer] could not preload DB ids for skip-fresh row check; "
-                    "falling back to sentinel-only freshness",
-                    exc_info=True,
-                )
-                existing_db_ids.clear()
-                existing_db_paths.clear()
-                stored_occurrences.clear()
+        preload = await preload_owners(driver, per_type_totals)
+        existing_db_ids = preload.ids
+        existing_db_paths = preload.paths
+        stored_occurrences = preload.occurrences
+        path_owners = preload.owners
+        parent_typeids: dict[tuple[str, str], str | None] = {}   # ref_typeid memo for this run
 
         # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
         # one id at two paths): paths already claimed by MORE THAN ONE row.
@@ -753,20 +857,6 @@ class FSIndexer:
         # id⇄path reconciliation policy.
         dupe_ids_by_path = _same_path_dupe_groups(existing_db_paths) if opts.dedup_on_adopt else {}
         stale_dupe_candidates: dict[RecordType, set[str]] = {}
-
-        # Who already owns each walked path. Built from the SAME preload as the
-        # freshness/dedup maps above — no extra query — and empty when the
-        # preload failed, in which case identity degrades to the historic
-        # carrier-or-mint behaviour rather than silently adopting a wrong row.
-        path_owners = PathOwnerIndex.from_preload(existing_db_paths)
-        # Only a preload that HELD rows yet yielded no owners is a problem — a
-        # first index legitimately has type keys with no rows behind them.
-        if any(existing_db_paths.values()) and not path_owners:
-            logging.warning(
-                "[FSIndexer] preloaded %d row(s) but resolved no path owners; "
-                "a source whose identity carrier was wiped will mint a NEW id and fork its entity",
-                sum(len(v) for v in existing_db_paths.values()),
-            )
 
         # Deepest-project-wins association: snapshot (canonical_mount, id) for
         # every project once per run. With NESTED project mounts (an umbrella
@@ -820,18 +910,8 @@ class FSIndexer:
             """
             out: list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]] = []
             for ref, info in items:
-                canon_path = canonical_posix_path(str(ref._path))
                 try:
-                    # Owner-first identity: a source whose capsule was wiped by a
-                    # full-content rewrite is NOT a new asset. Minting here forks
-                    # the entity and the same-path sweep below then reaps the row
-                    # every reference points at. ``path_owners`` comes from the
-                    # preload above, so this costs no extra query.
-                    ref_id = info.mint_entity_id(
-                        ref,
-                        owner_id=path_owners.owner_for(str(ref.record_type), str(ref._path), canon_path),
-                        live_ids=existing_db_ids.get(str(ref.record_type)),
-                    )
+                    ref_id, canon_path = resolve_ref_identity(info, ref, preload)
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the
@@ -853,6 +933,7 @@ class FSIndexer:
                     ref_id = None
                     probe = None
                     fresh = False
+                    canon_path = canonical_posix_path(str(ref._path))
                 out.append((ref, info, ref_id, probe, fresh, canon_path))
             return out
 
@@ -894,43 +975,13 @@ class FSIndexer:
                 key for key in stored_occurrences.synthetic_keys if key in resolver_occurrences
             )
 
-        def _resolve_occurrences():
-            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-            from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
+        def _live_identity(candidate):
+            ref, _info, ref_id, _probe, _fresh, canon_path = candidate
+            return None if ref_id is None else (str(ref.record_type), ref_id, canon_path)
 
-            stored_identities: dict[str, tuple[str, str, str]] = {}
-            for (type_name, entity_id), occurrences in resolver_occurrences.items():
-                info = SchemaRegistry.get(type_name)
-                if info is None:
-                    continue
-                for occurrence in occurrences:
-                    try:
-                        path = occurrence.path
-                        if not Path(path).exists():
-                            continue
-                        rid = info.read_id(FSRef(path, record_type=RecordType(type_name)))
-                        if rid == entity_id:
-                            stored_identities[path] = (type_name, entity_id, path)
-                    except Exception:
-                        continue
-
-            def identity(candidate):
-                if isinstance(candidate, str):
-                    return stored_identities.get(canonical_posix_path(candidate))
-                ref, _info, ref_id, _probe, _fresh, canon_path = candidate
-                if ref_id is None:
-                    return None
-                return (str(ref.record_type), ref_id, canon_path)
-
-            return resolve_asset_collisions(
-                all_probed,
-                resolver_occurrences,
-                identity,
-                git_asset_introduction,
-                datetime.now(timezone.utc),
-            )
-
-        collision_decisions = await asyncio.to_thread(_resolve_occurrences)
+        collision_decisions = await asyncio.to_thread(
+            resolve_collisions, all_probed, resolver_occurrences, _live_identity
+        )
         collision_by_key = {(item.type_name, item.entity_id): item for item in collision_decisions}
         duplicate_paths = {
             (item.type_name, item.entity_id, path) for item in collision_decisions for path in item.duplicate_paths
@@ -1037,7 +1088,7 @@ class FSIndexer:
                     # parented. Loop-invariant — derive once from the FSRef
                     # parent chain. Only when the enclosing ref is itself a
                     # repo asset (not the walk root).
-                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners)
+                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners, parent_typeids)
                     for rec in records:
                         if ref_scope is not None:
                             object.__setattr__(rec, "scope", ref_scope)

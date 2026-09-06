@@ -129,6 +129,7 @@ class BootstrapInfo(BaseModel):
     # frontend SchemaRegistry. One entry per registered type; ``schema`` is
     # populated only for public api_visible entity types. Replaces the former
     # ``schemas`` (bare JSON-schema list) channel.
+    info_available: bool = False
     types: List[Dict[str, Any]] = []
     # The icon vocabulary — every pack this backend serves, in resolution
     # order. Static and definitional like ``types``, which is why it rides the

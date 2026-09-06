@@ -1,12 +1,8 @@
-"""Indexer function: <root> -> COMMAND.
+"""Extractor + id mint for COMMAND records (``<root>/.claude/commands/*.md``).
 
-Emits COMMAND for every `*.md` in `<root>/.claude/commands/`. Legacy walker
-only searches user (~/.claude/commands) and cwd (<cwd>/.claude/commands),
-so register only on USER_HOME_FOLDER and CWD_ROOT. Scope inherits via FSRef.
-
-Also provides the extractor + id mint used by FSIndexer in place of the
-deleted ``ClaudeCommandFsRecord`` subclass. Registration lives in
-``flow_sdk/fs_store/indexer/builtin.py``.
+Discovery is the type's declared ``walk`` (``command_type_info.py``), run by
+the generic ``layout_walker``. Replaces the deleted ``ClaudeCommandFsRecord``
+subclass.
 """
 
 from __future__ import annotations
@@ -21,31 +17,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def command_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        commands = Path(node.path) / ".claude" / "commands"
-        if not commands.is_dir():
-            continue
-        for md in sorted(commands.glob("*.md")):
-            if not md.is_file():
-                continue
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                FSRef(md, record_type=RecordType.COMMAND, parent=node)
-            )
-    return out
 
 
 def _read_command_frontmatter_id(path: Path) -> str | None:

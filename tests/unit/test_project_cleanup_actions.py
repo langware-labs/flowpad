@@ -1,11 +1,13 @@
-"""The destructive half: what each cleanup action actually removes.
+"""The destructive half: what clearing harness state actually removes.
 
-These tests delete real directories and move real folders to a real trash root.
-Nothing is mocked, because the thing worth proving is that the guards hold on a
-filesystem — a stubbed `rmtree` would prove only that the stub was called.
+Every fixture is a real directory on a real filesystem. The guards' whole job is
+to read a path correctly, so a stubbed `rmtree` would prove only that the stub
+was called.
 
-The trash root is redirected onto ``tmp_path`` by pointing the instance's home
-there, so a failing test cannot reach the developer's own Trash.
+Deleting the project ROW and trashing its folder are deliberately NOT tested
+here — that is `Project._delete_with_children(folder="trash")`, which owns the
+cascade guards and the ``@local`` detach. This module only clears harness state
+and answers whether a path may be deleted at all.
 """
 
 from __future__ import annotations
@@ -17,45 +19,43 @@ import pytest
 from flow_sdk.fs_store.operations import project_cleanup
 from flow_sdk.fs_store.operations.project_cleanup import (
     CleanupRefused,
-    delete_permanently,
+    HarnessIndex,
+    clear_harness_state,
+    codex_config_entry,
+    guard_deletable,
     harness_uses,
-    move_to_trash,
+    has_harness_state,
     remove_from_harness,
 )
 
 
 @pytest.fixture
-def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A throwaway `Flowpad workspace` that the guards will accept.
+def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway home whose harness roots the readers will actually consult.
 
-    The guard refuses anything outside the configured workspace, so a test that
-    wants to prove a *successful* delete has to move the workspace here rather
-    than weaken the guard.
+    The paths come from `InstanceSettings`, so redirecting them here is exactly
+    what a redirected `CLAUDE_HOME`/`CODEX_HOME` does in production — and the
+    reason the readers must not rebuild those paths out of `user_home`.
     """
-    home = tmp_path / "home"
-    root = home / "Flowpad workspace"
-    root.mkdir(parents=True)
-    monkeypatch.setattr(project_cleanup, "agent_workspace_root", lambda: root)
+    root = tmp_path / "home"
+    workspace = root / "Flowpad workspace"
+    workspace.mkdir(parents=True)
+
+    class _Settings:
+        user_home = root
+        claude_projects_dir = root / ".claude" / "projects"
+        codex_sessions_dir = root / ".codex" / "sessions"
+        codex_config_path = root / ".codex" / "config.toml"
+        copilot_session_state_dir = root / ".copilot" / "session-state"
+
+    monkeypatch.setattr(project_cleanup, "get_instance_settings", lambda: _Settings())
+    monkeypatch.setattr(project_cleanup, "agent_workspace_root", lambda: workspace)
     return root
 
 
 @pytest.fixture
-def trash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Force the fallback trash path onto tmp_path and disable send2trash.
-
-    `send2trash` would put the folder in the developer's real Trash, which is
-    both a side effect a test may not have and unverifiable from here.
-    """
-    home = tmp_path / "home"
-    (home / ".Trash").mkdir(parents=True, exist_ok=True)
-
-    class _Settings:
-        user_home = home
-        codex_sessions_dir = home / ".codex" / "sessions"
-
-    monkeypatch.setattr(project_cleanup, "get_instance_settings", lambda: _Settings())
-    monkeypatch.setitem(__import__("sys").modules, "send2trash", None)
-    return home / ".Trash"
+def workspace(home: Path) -> Path:
+    return home / "Flowpad workspace"
 
 
 def _project(workspace: Path, name: str, *, files: int = 0) -> Path:
@@ -86,30 +86,34 @@ def _row(path: Path, **over) -> dict:
     return row
 
 
-# ── remove from harness ────────────────────────────────────────────────────
+def _copilot_session(home: Path, cwd: Path, name: str) -> Path:
+    session = home / ".copilot" / "session-state" / name
+    session.mkdir(parents=True)
+    (session / "workspace.yaml").write_text(f"cwd: {cwd}\n")
+    (session / "events.jsonl").write_text("{}\n")
+    return session
 
 
-def test_remove_from_harness_refuses_when_there_is_no_state(workspace: Path, trash: Path) -> None:
+# ── clearing harness state ─────────────────────────────────────────────────
+
+
+def test_refuses_when_there_is_no_harness_state(home: Path, workspace: Path) -> None:
     """The case every empty workspace folder is in.
 
     Refusing is the point: reporting success for an action that deleted nothing
-    would tell the user their harness state is gone when it never existed.
+    would tell the user their harness history is gone when it never existed.
     """
     path = _project(workspace, "no-harness")
     with pytest.raises(CleanupRefused, match="No harness state"):
-        remove_from_harness(_row(path))
+        remove_from_harness(_row(path), HarnessIndex.build())
     assert path.is_dir()
 
 
-def test_remove_from_harness_deletes_copilot_state_and_keeps_the_folder(
-    workspace: Path, trash: Path, tmp_path: Path
-) -> None:
+def test_clears_copilot_state_and_keeps_the_folder(home: Path, workspace: Path) -> None:
     path = _project(workspace, "copilot-proj", files=2)
-    session = tmp_path / "home" / ".copilot" / "session-state" / "ws-1"
-    session.mkdir(parents=True)
-    (session / "workspace.yaml").write_text(f"cwd: {path}\n")
+    session = _copilot_session(home, path, "ws-1")
 
-    result = remove_from_harness(_row(path, copilot=True, copilot_session_count=1))
+    result = remove_from_harness(_row(path, copilot=True, copilot_session_count=1), HarnessIndex.build())
 
     assert not session.exists(), "harness state should be gone"
     assert path.is_dir(), "the project folder must survive"
@@ -117,31 +121,51 @@ def test_remove_from_harness_deletes_copilot_state_and_keeps_the_folder(
     assert str(session) in result["removed_paths"]
 
 
-def test_remove_from_harness_drops_the_codex_config_entry(
-    workspace: Path, trash: Path, tmp_path: Path
-) -> None:
-    """A TOML edit, not a file delete — and it must leave the rest intact.
+def test_clears_every_session_dir_for_one_project(home: Path, workspace: Path) -> None:
+    """Copilot keeps one directory per session, so N of them point at one cwd."""
+    path = _project(workspace, "many-sessions")
+    sessions = [_copilot_session(home, path, f"ws-{i}") for i in range(3)]
 
-    The config entry is also the only harness state this project has, which is
-    the case Codex creates whenever it prunes transcripts but keeps the project
-    registered. It must be enough on its own to make the action run.
+    result = remove_from_harness(_row(path, copilot=True), HarnessIndex.build())
 
-    Rollout deletion is not asserted here: `_read_codex_session_cwd` gates on
-    `is_valid_project_cwd`, which rejects every temp-directory descendant by
-    policy, so a rollout under `tmp_path` can never resolve. Harness-file
-    deletion is covered by the copilot case above, whose reader has no such gate.
-    """
-    path = _project(workspace, "codex-proj")
-    config = tmp_path / "home" / ".codex" / "config.toml"
+    assert all(not s.exists() for s in sessions)
+    assert len(result["removed_paths"]) == 3
+
+
+def test_one_projects_state_is_not_another_projects(home: Path, workspace: Path) -> None:
+    keep = _project(workspace, "keep")
+    drop = _project(workspace, "drop")
+    keep_session = _copilot_session(home, keep, "ws-keep")
+    drop_session = _copilot_session(home, drop, "ws-drop")
+
+    remove_from_harness(_row(drop, copilot=True), HarnessIndex.build())
+
+    assert keep_session.exists(), "the untargeted project keeps its history"
+    assert not drop_session.exists()
+
+
+# ── the codex config table ─────────────────────────────────────────────────
+
+
+def _write_codex_config(home: Path, body: str) -> Path:
+    config = home / ".codex" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
+    config.write_text(body)
+    return config
+
+
+def test_drops_the_codex_entry_and_leaves_the_rest_intact(home: Path, workspace: Path) -> None:
+    path = _project(workspace, "codex-proj")
+    config = _write_codex_config(
+        home,
         "model = 'gpt-5'\n\n"
         f'[projects."{path}"]\n'
         "trust_level = 'trusted'\n\n"
         '[projects."/somewhere/else"]\n'
-        "trust_level = 'trusted'\n"
+        "trust_level = 'trusted'\n",
     )
-    result = remove_from_harness(_row(path, codex=True, codex_session_count=1))
+
+    result = remove_from_harness(_row(path, codex=True, codex_session_count=1), HarnessIndex.build())
 
     text = config.read_text()
     assert f'[projects."{path}"]' not in text
@@ -151,95 +175,100 @@ def test_remove_from_harness_drops_the_codex_config_entry(
     assert path.is_dir()
 
 
-def test_codex_config_entry_alone_counts_as_harness_state(
-    workspace: Path, trash: Path, tmp_path: Path
-) -> None:
+def test_codex_registration_alone_counts_as_harness_state(home: Path, workspace: Path) -> None:
     """Codex prunes transcripts but keeps the registration; that must be removable."""
-    from flow_sdk.fs_store.operations.project_cleanup import codex_config_has_entry
-
     path = _project(workspace, "config-only")
-    config = tmp_path / "home" / ".codex" / "config.toml"
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(f'[projects."{path}"]\ntrust_level = \'trusted\'\n')
+    _write_codex_config(home, f"[projects.\"{path}\"]\ntrust_level = 'trusted'\n")
 
-    assert codex_config_has_entry(str(path)) is True
-    result = remove_from_harness(_row(path, codex=True))
+    assert codex_config_entry(str(path)) == str(path)
+    result = remove_from_harness(_row(path, codex=True), HarnessIndex.build())
     assert result["removed_paths"] == [], "there were no files, only a registration"
     assert result["codex_config_entry_removed"] is True
-    assert codex_config_has_entry(str(path)) is False
+    assert codex_config_entry(str(path)) is None
 
 
-def test_harness_uses_reports_state_paths_only_when_asked(
-    workspace: Path, trash: Path, tmp_path: Path
-) -> None:
-    """The listing shows counts; paths are resolved when someone is about to act."""
+def test_single_quoted_codex_key_is_found_and_removed(home: Path, workspace: Path) -> None:
+    """The entry is located by PARSING, not by matching one literal spelling.
+
+    A key written in any other legal TOML form used to read as "has state" and
+    then prove un-removable — the project would reappear forever.
+    """
+    path = _project(workspace, "single-quoted")
+    config = _write_codex_config(home, f"[projects.'{path}']\ntrust_level = 'trusted'\n")
+
+    assert has_harness_state(str(path), HarnessIndex.build()) is True
+    remove_from_harness(_row(path, codex=True), HarnessIndex.build())
+    assert f"[projects.'{path}']" not in config.read_text()
+
+
+def test_a_commented_out_entry_is_not_harness_state(home: Path, workspace: Path) -> None:
+    """A substring test over the file counted a comment as a registration."""
+    path = _project(workspace, "commented")
+    _write_codex_config(home, f'# [projects."{path}"]\n')
+    assert codex_config_entry(str(path)) is None
+    assert has_harness_state(str(path), HarnessIndex.build()) is False
+
+
+# ── the index ──────────────────────────────────────────────────────────────
+
+
+def test_index_is_built_once_and_answers_every_project(home: Path, workspace: Path) -> None:
+    """The reason the index exists: one read of each store serves N projects."""
+    first = _project(workspace, "first")
+    second = _project(workspace, "second")
+    _copilot_session(home, first, "ws-a")
+    _copilot_session(home, second, "ws-b")
+
+    index = HarnessIndex.build()
+
+    assert index.any_state(str(first)) and index.any_state(str(second))
+    assert index.any_state(str(workspace / "never-existed")) == []
+
+
+def test_harness_uses_reports_counts_without_touching_disk(home: Path, workspace: Path) -> None:
+    """The listing shows counts; paths are resolved only when something is deleted."""
     path = _project(workspace, "proj")
-    session = tmp_path / "home" / ".copilot" / "session-state" / "ws-2"
-    session.mkdir(parents=True)
-    (session / "workspace.yaml").write_text(f"cwd: {path}\n")
-    row = _row(path, copilot=True, copilot_session_count=1)
-
-    assert harness_uses(row)[0].state_paths == []
-    assert harness_uses(row, with_paths=True)[0].state_paths == [str(session)]
+    uses = harness_uses(_row(path, copilot=True, copilot_session_count=4))
+    assert [(u.harness, u.session_count) for u in uses] == [("copilot", 4)]
 
 
-# ── permanent delete ───────────────────────────────────────────────────────
-
-
-def test_permanent_delete_moves_the_folder_to_trash(workspace: Path, trash: Path) -> None:
-    """Recoverable, not destroyed — the whole reason Trash was chosen."""
-    path = _project(workspace, "leftover", files=1)
-
-    result = delete_permanently(_row(path))
-
-    assert not path.exists(), "the folder should be out of the workspace"
-    assert (trash / "leftover").is_dir(), "and sitting in the Trash"
-    assert (trash / "leftover" / "f0.txt").read_text() == "content", "contents intact"
-    assert result["trashed"] is True
-    assert result["mechanism"] == "trash_fallback"
-
-
-def test_trash_collision_does_not_overwrite(workspace: Path, trash: Path) -> None:
-    """Two projects with the same basename are common; the first must survive."""
-    (trash / "dupe").mkdir()
-    (trash / "dupe" / "old.txt").write_text("first")
-    path = _project(workspace, "dupe")
-    (path / "new.txt").write_text("second")
-
-    move_to_trash(path)
-
-    assert (trash / "dupe" / "old.txt").read_text() == "first"
-    assert (trash / "dupe 1" / "new.txt").read_text() == "second"
-
-
-def test_permanent_delete_of_an_orphan_touches_nothing(workspace: Path, trash: Path) -> None:
-    """No folder left, so there is nothing to trash — the row removal is the job."""
-    result = delete_permanently(_row(workspace / "already-gone"))
-    assert result["trashed"] is False
-    assert list(trash.iterdir()) == []
+def test_clear_harness_state_does_not_raise_when_there_is_nothing(home: Path, workspace: Path) -> None:
+    """The non-raising half, so a delete can call it without a `try` that would
+    also swallow a genuine guard refusal."""
+    path = _project(workspace, "bare")
+    result = clear_harness_state(_row(path), HarnessIndex.build())
+    assert result["removed_paths"] == []
+    assert path.is_dir()
 
 
 # ── the guards ─────────────────────────────────────────────────────────────
 
 
-def test_delete_refuses_a_path_outside_the_workspace(workspace: Path, trash: Path, tmp_path: Path) -> None:
+def test_guard_refuses_a_path_outside_the_workspace(home: Path, workspace: Path, tmp_path: Path) -> None:
     """Containment: a bad cwd cannot reach the rest of the disk."""
     outside = tmp_path / "not-the-workspace"
     outside.mkdir()
-    (outside / "precious.txt").write_text("keep me")
-
     with pytest.raises(CleanupRefused, match="outside"):
-        delete_permanently(_row(outside))
-    assert (outside / "precious.txt").exists()
+        guard_deletable(str(outside))
 
 
-def test_delete_refuses_the_workspace_root_itself(workspace: Path, trash: Path) -> None:
-    """`is_protected_path` fails closed on the container; this pins that it is wired."""
-    with pytest.raises(CleanupRefused):
-        delete_permanently(_row(workspace))
+def test_guard_refuses_the_workspace_root_itself(home: Path, workspace: Path) -> None:
+    """`is_path_under` is true for the root itself, so this case is named."""
+    with pytest.raises(CleanupRefused, match="workspace root"):
+        guard_deletable(str(workspace))
     assert workspace.is_dir()
 
 
-def test_delete_refuses_an_empty_path(workspace: Path, trash: Path) -> None:
+def test_guard_refuses_an_empty_path(home: Path, workspace: Path) -> None:
     with pytest.raises(CleanupRefused, match="No path"):
-        delete_permanently(_row(workspace / "x") | {"cwd": ""})
+        guard_deletable("")
+
+
+def test_guard_accepts_a_project_inside_the_workspace(home: Path, workspace: Path) -> None:
+    path = _project(workspace, "ordinary")
+    assert guard_deletable(str(path)).name == "ordinary"
+
+
+def test_guard_accepts_an_orphan_whose_folder_is_gone(home: Path, workspace: Path) -> None:
+    """An orphaned row still has to be removable — there is just nothing on disk."""
+    assert guard_deletable(str(workspace / "already-gone")).name == "already-gone"

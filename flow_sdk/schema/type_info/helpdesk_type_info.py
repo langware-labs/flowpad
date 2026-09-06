@@ -6,14 +6,15 @@ from flow_sdk.fs_store.indexer.functions.helpdesk import (
     helpdesk_asset_hash,
     helpdesk_stable_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-HELPDESK = TypeMetadata(
-    type=EntityType.HELPDESK,
+HELPDESK = TypeInfo(
+    type_name=EntityType.HELPDESK,
     icon="LifeBuoy",
-    displayName="Help desks",
+    display_name="Help desks",
     browseable_by=ViewMode.ADVANCED,
     # Authored in a git repo, never through the app's New-asset tiles.
     creatable=False,
@@ -26,8 +27,7 @@ HELPDESK = TypeMetadata(
     # the indexer's registration table is needed or wanted.
     asset_class="repo",
     family="helpdesk",
-    main_layout="folder",
-    main_file="helpdesk.json",
+    shape=Folder(main="helpdesk.json"),
     from_disk_fn=extract_helpdesk,
     # Derived, NOT capsule or native-JSON: both of those write into the
     # checkout. Native-JSON would stamp an `id` into the tracked

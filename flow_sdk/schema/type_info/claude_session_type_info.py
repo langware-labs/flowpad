@@ -8,11 +8,12 @@ from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_identity_key,
     extract_claude_session,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-CLAUDE_SESSION = TypeMetadata(
-    type=EntityType.CLAUDE_SESSION,
+CLAUDE_SESSION = TypeInfo(
+    type_name=EntityType.CLAUDE_SESSION,
     indexed_by_default=True,
     # Same defect AGENTIC_PROCESS documents: the broadcast gate in
     # ``resource_tracker._sync_handle_entity_op`` drops every data_op for a type
@@ -48,8 +49,7 @@ CLAUDE_SESSION = TypeMetadata(
     # is carried by the TYPE, so no ``harness`` declaration is needed.
     asset_class="repo",
     family="claude_session",
-    main_layout="file",
-    main_ext=".jsonl",
+    shape=File(ext=".jsonl"),
     # No ``receive_policy``: a shared transcript stages and waits for the normal
     # review → pick-a-project → install gate like every other attachment.
     # ``received=True`` marks it never ran here (so it is not resumable);

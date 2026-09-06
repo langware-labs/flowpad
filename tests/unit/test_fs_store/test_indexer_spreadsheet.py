@@ -1,8 +1,8 @@
 """Indexer tests for the SPREADSHEET type (flat CSV/XLSX file asset).
 
 Covers the slot functions end-to-end:
-- ``spreadsheet_in_folder_fn`` emits one FSRef per direct ``*.csv``/``*.xlsx``
-  child of a walked FOLDER (mirrors ``markdown_in_folder_fn``).
+- the declared spreadsheet walk emits one FSRef per direct ``*.csv``/``*.xlsx``
+  child of a walked FOLDER (the per-FOLDER emitter pattern).
 - ``extract_spreadsheet`` denormalizes format + row/col counts (CSV) and sheet
   names (XLSX) and gates on the extension.
 - ``TypeInfo.mint_id`` produces a stable, valid (v5) entity id.
@@ -19,23 +19,24 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
     spreadsheet_asset_hash,
-    spreadsheet_in_folder_fn,
 )
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
 
 
 def _extract(ref: FSRef):
-    resolved_id = SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
+    resolved_id = resolve_id(SchemaRegistry.get("spreadsheet"), ref)
     return extract_spreadsheet(ref, resolved_id)
 
 _WORKBOOK_XML = (
@@ -75,7 +76,7 @@ def test_walker_emits_one_ref_per_tabular_file(tmp_path: Path) -> None:
     _seed_xlsx(tmp_path, "b.xlsx")
     (tmp_path / "notes.md").write_text("# not tabular", encoding="utf-8")  # skipped
 
-    refs = spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False))
+    refs = walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False))
 
     assert all(r.record_type == RecordType.SPREADSHEET for r in refs)
     assert sorted(Path(r.path).name for r in refs) == ["a.csv", "b.xlsx"]
@@ -85,18 +86,18 @@ def test_walker_ignores_non_folder_nodes(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "a.csv")
     # A non-FOLDER node must not emit (only project_folder_walker FOLDER refs feed us).
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert spreadsheet_in_folder_fn([node], IndexerOptions(verbose=False)) == []
+    assert walker_for("spreadsheet")([node], IndexerOptions(verbose=False)) == []
 
 
 def test_walker_skips_appledouble(tmp_path: Path) -> None:
     _seed_csv(tmp_path, "._resource.csv")
-    assert spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False)) == []
+    assert walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False)) == []
 
 
 def test_walker_is_not_recursive(tmp_path: Path) -> None:
     # A csv in a SUBfolder is emitted when THAT folder is walked, not the parent's.
     _seed_csv(tmp_path / "sub", "deep.csv")
-    refs = spreadsheet_in_folder_fn([_folder_node(tmp_path)], IndexerOptions(verbose=False))
+    refs = walker_for("spreadsheet")([_folder_node(tmp_path)], IndexerOptions(verbose=False))
     assert refs == []
 
 
@@ -151,8 +152,8 @@ def test_extract_gates_on_extension(tmp_path: Path) -> None:
 def test_gen_id_is_stable_and_valid(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "d.csv")
     ref = FSRef(p)
-    first = SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
-    assert first == SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
+    first = resolve_id(SchemaRegistry.get("spreadsheet"), ref)
+    assert first == resolve_id(SchemaRegistry.get("spreadsheet"), ref)
     assert is_valid_entity_id(first)  # v4/v5 mint policy
     # The extractor stamps the same id.
     assert extract_spreadsheet(ref, first)[0].id == first

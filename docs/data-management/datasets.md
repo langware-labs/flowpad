@@ -113,7 +113,7 @@ the consumer's call.
 ### Portability
 
 On the first writable index, FlowPad mints a UUID v4 and stores it in the
-dataset folder's named identity capsule:
+dataset folder's `Sidecar` carrier:
 
 ```json
 // .flow/capsules/identity.json
@@ -121,9 +121,10 @@ dataset folder's named identity capsule:
 ```
 
 Copy or move the complete dataset folder, including `.flow/`, to retain that
-identity. You may create the capsule yourself with a valid UUID v4 or v5 when
-pre-pinning is required. An existing `metadata.id` inside `dataset.json` remains
-a read-only compatibility source, but new identity is never written there.
+identity. You may create the file yourself with a valid UUID v4 or v5 when
+pre-pinning is required. A `metadata.id` inside `dataset.json` is not an
+identity source; `flow_sdk/migrations/migration_2026_09_identity_live_forms.py`
+moves a folder that still relies on one into the sidecar.
 
 ---
 

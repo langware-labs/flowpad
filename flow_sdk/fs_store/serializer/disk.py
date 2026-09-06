@@ -7,7 +7,7 @@ field TYPES say what the document holds (frontmatter scalars, a ``Body``, a
 through the substrate that already exists — ``FrontMatterFsRef`` (atomic,
 capsule-preserving), ``load_doc``/``write_doc`` for JSON manifests, a
 ``DatasetLayout`` for rows — and identity goes through the type's
-``IdentityBackend`` via ``TypeInfo.mint_entity_id``. Nothing here names a
+``IdentityBackend`` via ``TypeInfo.stamp_id``. Nothing here names a
 concrete asset class; dispatch is by ``FieldKind``.
 
 A type that declares no ``asset_spec`` still goes through here: it renders via
@@ -33,6 +33,7 @@ from flow_sdk.fs_store.serializer.fields import (
     spec_layout,
     type_default,
 )
+from flow_sdk.schema.layout import Folder
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
@@ -50,21 +51,21 @@ def _main_doc(info: Any, root: Path) -> Optional[Path]:
 
 
 def _asset_ref(info: Any, root: Path) -> Path:
-    """The ref the type's identity backend is registered for (``Layout.ref``)."""
-    return info.layout_of(root).ref or root
+    """The ref the type's identity backend is registered for — the asset ROOT."""
+    return info.layout_of(root).root or root
 
 
 def _sub_target(root: Path, name: str, sub_cls: type) -> Path:
     """Where a single nested asset field lives — by the nested TYPE's own
     placement: a folder-layout type is a directory, a file-layout one a file."""
     info = asset_info(sub_cls)
-    return root / name if info.main_layout == "folder" else root / f"{name}{info.main_ext}"
+    return root / name if isinstance(info.shape, Folder) else root / f"{name}{info.shape.ext}"
 
 
 def _list_element_ext(sub_cls: type) -> str:
     """A ``list[...]`` of assets is a directory of FILES, one per element —
     ``check_asset_spec`` refused a folder-layout element type at registration."""
-    return asset_info(sub_cls).main_ext
+    return asset_info(sub_cls).shape.ext
 
 
 def _manifest_layout(info: Any) -> str:
@@ -128,9 +129,9 @@ def _frontmatter(obj: Any, info: Any) -> dict[str, Any]:
     )
     if info.name_from_path and getattr(obj, "name", None):
         out = {"name": obj.name, **out}
-    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier  # noqa: PLC0415
+    from flow_sdk.fs_store.identity_carrier import Frontmatter  # noqa: PLC0415
 
-    if isinstance(info.identity_carrier, FrontmatterCarrier) and getattr(obj, "id", None):
+    if isinstance(info.identity_carrier, Frontmatter) and getattr(obj, "id", None):
         # The header IS this type's identity carrier: an owned re-render must
         # keep the id (it rewrites the header wholesale), so it is written first.
         out = {"id": str(obj.id), **out}
@@ -151,15 +152,15 @@ def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     authoritative, so the COMMITTED id may differ from the one proposed (the
     seam owns the read-only / suppression gates).
 
-    The ref handed to ``mint_entity_id`` is the ASSET_REF the type's carrier
-    was registered for — the inner ``agent.md`` for a ``main_file_is_asset_ref``
-    type, the folder for a bare-folder type, the file for a file type."""
+    The ref handed to ``stamp_id`` is the ASSET_REF the type's carrier
+    was registered for — the folder for a folder type, the file for a file
+    type; the carrier locates the main document itself."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
     entity_id = getattr(obj, "id", None)
     if info is None or info.identity_carrier is None or not entity_id:
         return str(entity_id or "")
-    return str(info.mint_entity_id(FSRef(_asset_ref(info, root)), proposed_id=str(entity_id)))
+    return str(info.stamp_id(FSRef(_asset_ref(info, root)), str(entity_id)))
 
 
 # ── the serializer ────────────────────────────────────────────────────────────
@@ -183,7 +184,8 @@ class DiskSerializer:
             return fn(obj) if fn is not None else None
         from flow_sdk.schema.type_info import render_entity_frontmatter  # noqa: PLC0415
 
-        main = info.main_file if info.main_layout == "folder" else None
+        folder = isinstance(info.shape, Folder)
+        main = info.shape.main if folder else None
         if main and main.endswith(".json"):
             # A flat document IS its payload: an entity carrying no payload (a
             # metadata-only save of a report) has nothing to say — no document,
@@ -192,10 +194,10 @@ class DiskSerializer:
             if _manifest_layout(info) == "flat" and free_field and getattr(obj, free_field, None) is None:
                 return None
             return json.dumps(_manifest(obj, info), indent=2, ensure_ascii=False) + "\n"
-        if info.main_layout == "folder" and not main:
+        if folder and not main:
             return None
         body = _body(obj, info)
-        tail = f"\n\n{body}\n" if body or info.main_layout != "folder" else "\n"
+        tail = f"\n\n{body}\n" if body or not folder else "\n"
         return render_entity_frontmatter(obj, _frontmatter(obj, info)) + tail
 
     # ── store ─────────────────────────────────────────────────────────────
@@ -222,7 +224,7 @@ class DiskSerializer:
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
 
-        if info is not None and info.main_layout == "folder":
+        if info is not None and isinstance(info.shape, Folder):
             root.mkdir(parents=True, exist_ok=True)       # the carrier target for a FolderCapsule
         if main is None:
             return
@@ -233,9 +235,9 @@ class DiskSerializer:
             if text is None:
                 return                                    # nothing to render: the folder is the asset
             if main.exists() and main.suffix.lower() in {".md", ".markdown"}:
-                from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks  # noqa: PLC0415
+                from flow_sdk.fs_store.indexer._frontmatter import carry_capsules  # noqa: PLC0415
 
-                text = restore_capsule_blocks(text, snapshot_capsule_blocks(main.read_text(encoding="utf-8")))
+                text = carry_capsules(text, main.read_text(encoding="utf-8"))
             _atomic_write_text(main, text)
         elif main.suffix == ".json":
             text = self.render(obj, info)

@@ -13,7 +13,7 @@ gate exists to prevent.
 """
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -32,8 +32,8 @@ class MessageThreadMeta(BaseMeta):
     message_count: Optional[int] = None
 
 
-MESSAGE_THREAD = TypeMetadata(
-    type=EntityType.MESSAGE_THREAD,
+MESSAGE_THREAD = TypeInfo(
+    type_name=EntityType.MESSAGE_THREAD,
     icon="MessagesSquare",
     api_visible=True,
     creatable=False,

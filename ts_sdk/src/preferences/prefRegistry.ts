@@ -49,6 +49,7 @@ export enum PrefKey {
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
+  VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
@@ -381,6 +382,19 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Interface language and text direction.',
     dataType: PrefDataType.STRING,
     defaultValue: 'en-US',
+  },
+  [PrefKey.VIBE_MODEL_TIER]: {
+    key: PrefKey.VIBE_MODEL_TIER,
+    // A build is SENT from the hero the moment the user hits enter, so the stored
+    // tier has to be readable at first paint: without the synchronous seed a fast
+    // submit spends the default while the user's choice is still in flight.
+    boot: true,
+    category: 'ui',
+    label: 'Vibe model',
+    description: 'Which model size a Vibe build starts on: Fast, Balanced or Accurate.',
+    dataType: PrefDataType.STRING,
+    // Balanced — the tier a Vibe session used before the composer could pick one.
+    defaultValue: 'md',
   },
   [PrefKey.VIEW_MODE]: {
     key: PrefKey.VIEW_MODE,

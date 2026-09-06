@@ -1,9 +1,9 @@
-"""Walker + extractor + id mint for PLAN records.
+"""Extractor + id mint for PLAN records.
 
-Emits PLAN records for every `*.md` in `<root>/.claude/plans/`. The default
-indexer registers this walker on USER_HOME_FOLDER only because that directory
-is Claude Code's own plan-mode store. Flowpad-native and received project Plans
-use `agentic-assets/plan/` and are discovered by the repo-assets walker.
+Discovery is the type's declared ``walk`` (``plan_type_info.py``): every
+`*.md` in `~/.claude/plans/`, Claude Code's own plan-mode store, on the user
+root only. Flowpad-native and received project Plans use
+`agentic-assets/plan/` and are discovered by the repo-assets walker.
 
 The extractor remains usable by exact-file indexing so a just-written harness
 plan can be materialized without a broad user-home walk.
@@ -22,27 +22,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def claude_plan_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        plans = Path(node.path) / ".claude" / "plans"
-        if not plans.is_dir():
-            continue
-        for md in sorted(plans.glob("*.md")):
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(md, record_type=RecordType.PLAN, parent=node))
-    return out
 
 
 def _read_plan_frontmatter_id(path: Path) -> str | None:

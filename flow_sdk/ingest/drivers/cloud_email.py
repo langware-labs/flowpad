@@ -40,6 +40,7 @@ from flow_sdk.ingest.driver import (
     SendOutcome,
     SendStatus,
 )
+from flow_sdk.ingest.drivers._watermark import Watermark
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -90,12 +91,11 @@ class CloudEmailDriver(IngestDriver):
 
     async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         state = dict(cursor.state or {})
-        floor = str(state.get("high_water") or cursor.window_start or "")
-        seen_at_floor = set(state.get("boundary_ids") or [])
+        mark = Watermark.from_state(state, cursor.window_start)
 
         params: dict[str, str] = {"limit": str(PAGE_LIMIT), "ascending": "true"}
-        if floor:
-            params["after"] = _nudge_back(floor)
+        if mark.high_water:
+            params["after"] = _nudge_back(mark.high_water)
         # Deliberately NO `labels` filter. `send` returns `recorded=False` on the
         # promise that the next poll ingests the sent copy through this very
         # path — filtering to `received` would make every reply the user sends
@@ -111,19 +111,11 @@ class CloudEmailDriver(IngestDriver):
         messages = payload.get("messages") or []
 
         items: list[SourceItemSpec] = []
-        high_water = floor
-        boundary_ids: list[str] = list(seen_at_floor) if floor else []
-
         for msg in messages:
             stamp = str(msg.get("timestamp") or "")
             message_id = str(msg.get("message_id") or "")
-            if not message_id:
+            if not message_id or not mark.is_new(stamp, message_id):
                 continue
-            if floor and stamp:
-                if stamp < floor:
-                    continue
-                if stamp == floor and message_id in seen_at_floor:
-                    continue
 
             # Hydrate BEFORE mapping: the list call carries `preview`, and only
             # `messages/<id>` carries `text`. `body` is a digested field, so
@@ -140,18 +132,12 @@ class CloudEmailDriver(IngestDriver):
                 break
 
             items.append(self._to_item(source, full or msg))
-            if stamp > high_water:
-                high_water, boundary_ids = stamp, [message_id]
-            elif stamp == high_water:
-                boundary_ids.append(message_id)
+            mark.advance(stamp, message_id)
 
-        if high_water:
-            state["high_water"] = high_water
-            state["boundary_ids"] = boundary_ids
         return FetchResult(
             items=items,
-            next_state=state,
-            high_water=high_water or None,
+            next_state=mark.into(state),
+            high_water=mark.high_water or None,
             unchanged=not items,
         )
 
@@ -291,9 +277,7 @@ def _as_source_error(exc: EmailInboxError) -> SourceError:
       a human act, so it parks rather than retrying forever.
     """
     if exc.status_code == 0:
-        if "not configured" in (exc.reason or ""):
-            return SourceError.config("mailbox_not_configured", exc.reason)
-        return SourceError.transient("network", exc.reason)
+        return SourceError.for_no_status(exc.reason, not_configured_code="mailbox_not_configured")
     if exc.status_code == 404:
         return SourceError.config("no_inbox", exc.reason or "this agent has no mailbox")
     return SourceError.for_status(exc.status_code, exc.reason or "")

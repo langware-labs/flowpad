@@ -455,7 +455,11 @@ export class ConnectionManager extends EventEmitter {
     // Kick a connect if none is in flight. connect() short-circuits when
     // OPEN/CONNECTING, so this is cheap to call concurrently.
     if (!this._openPromise) {
-      void this.connect();
+      // `.catch`, not `void`: a fire-and-forget connect that REJECTS (the
+      // backend is down, or the unit tier points at an invalid host) becomes an
+      // unhandled rejection and fails the whole run even when every test passed.
+      // The caller below already observes the outcome through `_openPromise`.
+      this.connect().catch(() => undefined);
     }
     const open = this._openPromise;
     if (!open) return; // race: connect() resolved synchronously to OPEN

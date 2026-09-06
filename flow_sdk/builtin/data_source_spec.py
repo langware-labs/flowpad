@@ -298,7 +298,7 @@ class DataSourceSpec(Entity):
     """The ROW; its shape on disk is ``ManifestSpec`` (``TypeInfo.asset_spec``)."""
 
     #: Folder markers. Runtime is DERIVED from these, never declared. The
-    #: manifest itself is ``TypeInfo.main_file`` (``data_source.json``).
+    #: manifest itself is the shape's ``Folder.main`` (``data_source.json``).
     SCRIPT_FILE: ClassVar[str] = "fetch.py"
     AGENT_FILE: ClassVar[str] = "FETCH.md"
 

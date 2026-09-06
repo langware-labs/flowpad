@@ -21,16 +21,11 @@ vi.mock('@sdk/websocket', () => ({
 }));
 
 const listCalls: number[] = [];
-vi.mock('@sdk/activity', async () => {
-  const actual = await vi.importActual<typeof import('@sdk/activity')>('@sdk/activity');
-  return {
-    ...actual,
-    listActivities: () => {
-      listCalls.push(Date.now());
-      return Promise.resolve([]);
-    },
-  };
-});
+vi.mock('@sdk/lazy', () => ({
+  LazyAsset: { Activities: 'activities' },
+  lazyAssets: { refresh: () => { listCalls.push(Date.now()); return Promise.resolve([]); } },
+}));
+vi.mock('@sdk/react/hooks/useLazyAsset', () => ({ useLazyAsset: () => ({ data: [] }) }));
 
 import { __resetActivityStoreForTest, subscribeToActivities } from '@src/store/activity-store';
 
@@ -48,14 +43,14 @@ describe('activity store — reconnect', () => {
     expect(handlers['on_open']?.length).toBe(1);
   });
 
-  it('replays once on attach and again on every reconnect', () => {
+  it('attaches without HTTP hydration and replays on every reconnect', () => {
     subscribeToActivities(() => {});
+    expect(listCalls).toHaveLength(0);
+
+    handlers['on_open']?.forEach((fn) => fn());
     expect(listCalls).toHaveLength(1);
 
     handlers['on_open']?.forEach((fn) => fn());
     expect(listCalls).toHaveLength(2);
-
-    handlers['on_open']?.forEach((fn) => fn());
-    expect(listCalls).toHaveLength(3);
   });
 });

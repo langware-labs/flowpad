@@ -22,7 +22,6 @@ const base = () => ({
   empty_count: 0,
   orphaned_count: 0,
   stale_count: 0,
-  empty_size_bytes: 0,
   threshold: 10,
 });
 

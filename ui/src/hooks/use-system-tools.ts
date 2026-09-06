@@ -1,3 +1,5 @@
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { systemTools, SystemActivity, IndexProgressTable, ScanInfo, LastScanResult } from '@sdk';
 
@@ -30,6 +32,7 @@ function shallowEqual(a: SystemToolsSnapshot, b: SystemToolsSnapshot): boolean {
 }
 
 export function useSystemTools() {
+  useLazyAsset(LazyAsset.IndexActivity, undefined, { priority: 'background' });
   const snapshotRef = useRef<SystemToolsSnapshot>(buildSnapshot());
 
   const subscribe = useCallback((cb: () => void) => {

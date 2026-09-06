@@ -1,11 +1,11 @@
 """Type metadata for DEPLOYMENT."""
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-DEPLOYMENT = TypeMetadata(
-    type=EntityType.DEPLOYMENT,
+DEPLOYMENT = TypeInfo(
+    type_name=EntityType.DEPLOYMENT,
     api_visible=True,
     icon="Cloud",
-    displayName="Deployments",
+    display_name="Deployments",
 )

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   Archive,
   Inbox as InboxIcon,
-  LifeBuoy,
   Mail,
   MailOpen,
   MailPlus,
@@ -25,22 +24,17 @@ import {
   Invitation,
   QueryRequest,
   TypeId,
-  User,
   acceptInvitation,
   archiveAllConversations,
   archiveConversation,
   declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
-  dataContext,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
   leaveConversation,
-  listHelpdeskTickets,
-  pickupConversation,
   unarchiveConversation,
-  type HelpdeskTicket,
   latestPointer,
   type AgentInboxScope,
 } from '@sdk';
@@ -55,9 +49,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
-import { SourceChip } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
-import { sourceForOrigin } from '@src/components/conversation/channel-attribution';
+import { type ChannelAttribution, SourceChip, sourceForOrigin, useChannelAttribution } from '@src/components/conversation/channel-attribution';
+import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
+import { channelsOwnerFor } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -95,7 +89,7 @@ function formatGmailTime(iso?: string | Date | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
-type InboxViewMode = 'inbox' | 'unread' | 'archived' | 'helpdesk';
+type InboxViewMode = 'inbox' | 'unread' | 'archived';
 
 interface ConversationListRowProps {
   conv: Conversation;
@@ -138,9 +132,10 @@ interface ConversationListRowProps {
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
-  /** Source ids the list is narrowed to (empty = all) and how a message names its source. */
-  channelFilter?: ReadonlySet<string>;
-  sourceIdOf?: (message: FlowMessage) => string | undefined;
+  /** Set while the list is narrowed to some channels: does this message's source pass? */
+  channelMatch?: (message: FlowMessage) => boolean;
+  /** The list resolves attribution once and hands each row its answer. */
+  attributionFor: (origin: FlowMessage['origin']) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
   allowedMessageIds?: ReadonlySet<string>;
@@ -160,8 +155,8 @@ export function ConversationListRow({
   onRequestDelete,
   cloudUserId,
   onVisibilityChange,
-  channelFilter,
-  sourceIdOf,
+  channelMatch,
+  attributionFor,
   refSetter,
   agentId,
   allowedMessageIds,
@@ -208,6 +203,7 @@ export function ConversationListRow({
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId: currentUser?.id ?? null },
   });
+  const attribution = attributionFor(latestMessage?.origin);
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -249,10 +245,7 @@ export function ConversationListRow({
   }
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
-  if (!isHidden && channelFilter && channelFilter.size > 0) {
-    const sid = latestMessage && sourceIdOf ? sourceIdOf(latestMessage) : undefined;
-    isHidden = !sid || !channelFilter.has(sid);
-  }
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
 
   const convId = conv.id ?? '';
   // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
@@ -398,10 +391,12 @@ export function ConversationListRow({
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
-        <CategoryChips facets={facets} className="me-1" />
         {/* Channel conversations carry exactly one compact source chip; hub
-            rows have no origin and render none — absence means "ours". */}
-        <SourceChip origin={latestMessage?.origin} className="me-1" />
+            rows have no origin and render none — absence means "ours". A
+            source-backed ticket wears the source chip alone: the kind chip is
+            for the requester's side, where no source exists. */}
+        <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
+        <SourceChip attribution={attribution} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -446,12 +441,6 @@ export function ConversationListRow({
 
 // ── InboxView ───────────────────────────────────────────────────────────────
 
-/** Whose channels an inbox shows: the agent's on an agent inbox, else the local user's. */
-function channelsOwnerFor(agentId: string | undefined, localUserId: string | undefined): TypeId | null {
-  if (agentId) return new TypeId(Agent.type, agentId);
-  return localUserId ? new TypeId(User.type, localUserId) : null;
-}
-
 export function InboxView({ agentId }: { agentId?: string } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -469,7 +458,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   // — only gates the empty state; the unread NUMBER is backend-owned.
   const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
   // Whose channels the header line shows: the agent's on an agent inbox, else
   // the local user's — absent until that typeid is known, so no empty bar flashes.
@@ -479,13 +467,21 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   const localUserId = localUser?.id;
   // The channel filter: source ids the list is narrowed to. Local like the text
   // search, and empty means everything.
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
-  const { rows: ownerChannels } = useAttachedChannels(channelsOwnerFor(agentId, localUserId));
-  const sourceIdOf = useCallback(
-    (m: FlowMessage) => sourceForOrigin(ownerChannels, m.origin, m.origin_local)?.id,
-    [ownerChannels],
-  );
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
+  const { rows: ownerChannels, specFor } = useAttachedChannels(channelsOwner);
+  const { attributionFor: attributionForOrigin } = useChannelAttribution();
+  const attributionFor = useCallback((origin: FlowMessage['origin']) => attributionForOrigin(origin), [attributionForOrigin]);
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  const channelMatch = useMemo(
+    () =>
+      channelFilter.size
+        ? (m: FlowMessage) => {
+            const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
+            return !!source && channelFilter.has(channelKeyOf(source));
+          }
+        : undefined,
+    [channelFilter, ownerChannels],
+  );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
   const hubReachable = connection.status === 'connected' || connection.status === 'verified';
@@ -908,50 +904,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
-  const inHelpdeskView = viewMode === 'helpdesk';
-
-  // Staff helpdesk ticket queue. Sourced from the hub (not local entities)
-  // because unpicked tickets don't fan out to non-participants — see
-  // listHelpdeskTickets / hub Project.helpdesk_conversations.
-  const [helpdeskTickets, setHelpdeskTickets] = useState<HelpdeskTicket[]>([]);
-  const [helpdeskLoading, setHelpdeskLoading] = useState(false);
-  const [pickingUpId, setPickingUpId] = useState<string | null>(null);
-  const loadHelpdeskTickets = useCallback(async () => {
-    setHelpdeskLoading(true);
-    try {
-      const res = await listHelpdeskTickets(dataContext.project?.id);
-      setHelpdeskTickets(res.tickets ?? []);
-    } catch (err) {
-      console.error('[inbox] failed to load help desk tickets', err);
-      setHelpdeskTickets([]);
-    } finally {
-      setHelpdeskLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    if (inHelpdeskView) void loadHelpdeskTickets();
-  }, [inHelpdeskView, loadHelpdeskTickets]);
-
-  // Open a queued ticket: pick it up first (joins the roster so the caller can
-  // read + reply) unless already joined, then navigate to it.
-  const handleOpenTicket = useCallback(
-    async (ticket: HelpdeskTicket) => {
-      if (!ticket.picked_up) {
-        setPickingUpId(ticket.conversation_id);
-        try {
-          await pickupConversation(ticket.conversation_id);
-        } catch (err) {
-          console.error('[inbox] pickup failed', ticket.conversation_id, err);
-          setPickingUpId(null);
-          return;
-        }
-        setPickingUpId(null);
-      }
-      navigation.openDock(DockPointer.forConversation(ticket.conversation_id));
-    },
-    [navigation],
-  );
-
   // Segmented view pill — Inbox | Unread | Archived. Active mode is filled,
   // inactive is ghost. Count badge sits inside the active pill so it
   // reflects exactly what the user is looking at.
@@ -1001,13 +953,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {renderViewPill('inbox', t`Inbox`, InboxIcon)}
             {renderViewPill('unread', t`Unread`, MailPlus)}
             {renderViewPill('archived', t`Archived`, Archive)}
-            {!agentId && renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
           {/* Text search — filters the list below to conversations whose
-              messages contain the query, spanning archived rows. Hidden in
-              the Help Desk view (hub-sourced tickets, not local messages). */}
-          {!inHelpdeskView && (
-            <div className="relative ms-2 flex items-center">
+              messages contain the query, spanning archived rows. */}
+          <div className="relative ms-2 flex items-center">
               <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
@@ -1030,7 +979,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 </button>
               )}
             </div>
-          )}
         </div>
         {/* CENTER — new conversation / new contacts group */}
         {!agentId && <div className="flex shrink-0 items-center">
@@ -1059,7 +1007,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
         </div>}
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
-          {selectedCount > 0 && !inHelpdeskView ? (
+          {selectedCount > 0 ? (
             <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
               <span className="me-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
                 <Trans>{selectedCount} selected</Trans>
@@ -1119,20 +1067,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             </div>
           ) : (
             <>
-              {inHelpdeskView && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => void loadHelpdeskTickets()}
-                  disabled={helpdeskLoading}
-                  title={t`Refresh help desk tickets`}
-                  data-testid="inbox-helpdesk-refresh-button"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
-              {!inArchivedView && !inHelpdeskView && (
+              {!inArchivedView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1145,7 +1080,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
               )}
               {/* Archive all archives every conversation regardless of read state;
               hide it in the Archived view where it makes no sense. */}
-              {!inArchivedView && !inUnreadView && !inHelpdeskView && (
+              {!inArchivedView && !inUnreadView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1170,83 +1105,26 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   <Trans>Delete all</Trans>
                 </Button>
               )}
-              {!inHelpdeskView && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => void handleRefresh()}
-                  disabled={fetching}
-                  title={t`Fetch new messages from hub`}
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => void handleRefresh()}
+                disabled={fetching}
+                title={t`Fetch new messages from hub`}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+              </Button>
             </>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Help-desk staff queue — hub-sourced tickets, including unpicked ones
-            that don't appear in the local conversation list. */}
-        {inHelpdeskView && helpdeskLoading && helpdeskTickets.length === 0 && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            <Trans>Loading…</Trans>
-          </div>
-        )}
-        {inHelpdeskView && !helpdeskLoading && helpdeskTickets.length === 0 && (
-          <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm">
-              <Trans>No help desk tickets</Trans>
-            </span>
-            <Button variant="outline" size="sm" onClick={() => void loadHelpdeskTickets()} disabled={helpdeskLoading}>
-              <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
-              <Trans>Refresh</Trans>
-            </Button>
-          </div>
-        )}
-        {inHelpdeskView &&
-          helpdeskTickets.map((ticket) => (
-            <div
-              key={ticket.conversation_id}
-              className="group flex items-center gap-2 border-b px-3 py-2 hover:bg-muted/40"
-              data-testid="helpdesk-ticket-row"
-              data-conversation-id={ticket.conversation_id}
-            >
-              <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-foreground">
-                  {ticket.title || ticket.preview || t`Support ticket`}
-                </div>
-                {ticket.preview && ticket.title && (
-                  <div className="truncate text-xs text-muted-foreground">{ticket.preview}</div>
-                )}
-              </div>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                <Trans>{ticket.message_count} msg</Trans>
-              </span>
-              {ticket.picked_up && (
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Trans>Joined</Trans>
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => void handleOpenTicket(ticket)}
-                disabled={pickingUpId === ticket.conversation_id}
-                className="shrink-0 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                data-testid="helpdesk-ticket-pickup-button"
-              >
-                {pickingUpId === ticket.conversation_id ? t`Picking up…` : ticket.picked_up ? t`Open` : t`Pick up`}
-              </button>
-            </div>
-          ))}
-
         {/* The header line: select-all on the left, the owner's attached channels
             on the right. Rendered even with no conversations — the channels are
             how one gets some. */}
-        {!inHelpdeskView && !initialLoading && (
+        {!initialLoading && (
           <div
             className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
             data-testid="inbox-select-all-row"
@@ -1268,6 +1146,8 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             {channelsOwner && (
               <AttachedChannelsBar
                 owner={channelsOwner}
+                rows={ownerChannels}
+                specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}
                 className="ms-auto"
@@ -1276,13 +1156,13 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!inHelpdeskView && initialLoading && (
+        {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
 
-        {!inHelpdeskView && !initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
+        {!initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive
@@ -1302,11 +1182,11 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!agentId && !inHelpdeskView && !inArchivedView && !initialLoading && (
+        {!agentId && !inArchivedView && !initialLoading && (
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
-        {!inHelpdeskView &&
+        {
           !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow
@@ -1324,8 +1204,8 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
-              channelFilter={channelFilter}
-              sourceIdOf={sourceIdOf}
+              channelMatch={channelMatch}
+              attributionFor={attributionFor}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}

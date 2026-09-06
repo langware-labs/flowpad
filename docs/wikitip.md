@@ -81,6 +81,13 @@ Everything lives in `ui/src/components/wiki-tip/` (re-exported from its `index.t
 - `wiki-modal.ts` — a zustand store + the `openWikiModal()` function.
 - `WikiModalRoot.tsx` — a single global host (a `Dialog` wrapping
   `WikiResolveView`), mounted once in `App.tsx` next to `ActivityProgressModalRoot`.
+  Two rules every caller would otherwise repeat live here: a call with no
+  `space` is a **shipped** page, so the root resolves the Flowpad Assistant
+  project's wiki (`assistant-wiki.ts`) before rendering — `@local` would look
+  in the active project, where a help page never lives; and on the **hub**
+  runtime, which has no wiki graph entity, the body is the legacy
+  `GET /api/v1/wiki/resolve` markdown (`HubWikiMarkdown.tsx`) instead of
+  `WikiResolveView`. Pass `space` only for a page outside the shipped docs.
 
 **Why store-driven, not URL-driven.** The CLAUDE.md URL-first rule governs
 tab/view/asset **navigation** — "what is shown" as the primary surface. A transient

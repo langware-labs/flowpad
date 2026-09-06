@@ -23,8 +23,8 @@
  *   B. loadDockPointer: a project-pinned scope on a browse dock loads that
  *      project into context (delegation to `loadProject`).
  */
-import { Tab, tabManager, TypeId, type TabRow } from '@sdk';
-import { projectScope } from '@src/lib/scope-filter';
+import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type TabRow } from '@sdk';
+import { allScope, projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
@@ -37,6 +37,8 @@ vi.mock('@src/routes/loaders/load-project', () => ({
 }));
 
 import { adoptScopeProject, loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
+
+vi.mock('@src/routes/loaders/load-asset', () => ({ loadAssetRoute: vi.fn().mockResolvedValue(undefined) }));
 
 const PROJECT_P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MARKDOWN_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -205,5 +207,40 @@ describe('the home dock canonicalizes, and the root loader adopts (C)', () => {
     await adoptScopeProject(DockPointer.forHome());
 
     expect(loadProjectMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('route-owned startup fallback', () => {
+  beforeEach(async () => {
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('restores browser/default context for an unscoped home', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await adoptScopeProject(DockPointer.root());
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restore browser memory over an explicit global scope', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await adoptScopeProject(DockPointer.root().withScopeFilter(allScope()));
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('lets a concrete asset resolve its owner without fetching remembered context', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await loadDockPointer(new DockPointer(ViewType.ASSETS, `markdown/typeid/markdown-${MARKDOWN_ID}`), { requestPath: '/dock/assets' });
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('loads an explicit project URL without consulting remembered/default context', async () => {
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await loadDockPointer(DockPointer.forProject(PROJECT_P), { requestPath: '/dock/project' });
+    expect(restore).not.toHaveBeenCalled();
   });
 });

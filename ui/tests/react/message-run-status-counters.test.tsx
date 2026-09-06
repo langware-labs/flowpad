@@ -12,7 +12,7 @@ import { AttachmentType } from '@sdk';
 import { MessageRunStatus } from '@src/components/conversation/MessageRunStatus';
 
 const EXECUTED_FM = {
-  attachment: [{ attachment_type: AttachmentType.PROMPT, approved_by: 'user-1' }],
+  attachment: [{ attachment_type: AttachmentType.PROMPT }],
 } as any;
 
 function runWithReport(counters: Record<string, number> | null, id: string) {
