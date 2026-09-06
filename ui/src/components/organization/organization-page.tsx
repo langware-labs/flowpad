@@ -29,8 +29,10 @@ export function OrganizationPage() {
   const { available, reason } = useMembershipAvailability();
   // Orgs are role-walk scoped by the hub, so this is "the schools you can see" — and it supports
   // someone belonging to more than one, which the login payload's single ``organization`` claim
-  // cannot express. Only IDs are read from this query: each `OrgUnit` fetches its own live name
-  // (and everything else) from the budgets read, which is what stays fresh after a rename.
+  // cannot express. The id is what each `OrgUnit` works from: it fetches its own live name (and
+  // everything else) from the budgets read, which is what stays fresh after a rename. The name is
+  // passed alongside it only as the fallback for a caller the budgets read REFUSES -- a member,
+  // who is shown their standing instead and would otherwise have a card with no title.
   // Memoized: ``useEntitiesQuery`` re-subscribes when the request identity changes and its
   // subscribe callback re-renders immediately, so a request built inline renders -> resubscribes
   // -> renders forever ("Maximum update depth exceeded").
@@ -136,7 +138,7 @@ export function OrganizationPage() {
     >
       <div className="flex flex-col gap-4" data-testid="org-list">
         {organizations.map((org) => (
-          <OrgUnit key={org.id} orgId={org.id} onDeleted={() => void refetch()} />
+          <OrgUnit key={org.id} orgId={org.id} orgName={org.name} onDeleted={() => void refetch()} />
         ))}
       </div>
     </Shell>
