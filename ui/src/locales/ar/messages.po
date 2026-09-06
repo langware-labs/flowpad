@@ -3325,7 +3325,7 @@ msgstr "تحديد المشاريع المراد التصفية بها. مرتب
 msgid "Choose…"
 msgstr ""
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "chosen by you"
 msgstr ""
 
@@ -4423,8 +4423,8 @@ msgid "Copy as log"
 msgstr "نسخ كسجل"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-msgid "Copy attachment id"
-msgstr ""
+#~ msgid "Copy attachment id"
+#~ msgstr ""
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -8349,15 +8349,15 @@ msgstr "الثقة الكاملة"
 msgid "Fullscreen"
 msgstr "ملء الشاشة"
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
 msgstr ""
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a stored API key"
 msgstr ""
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
 msgstr ""
 
@@ -12058,7 +12058,7 @@ msgstr "لم يتم تحديد جلسة مباشرة"
 msgid "No LLM index for this folder yet."
 msgstr "لا يوجد فهرس LLM لهذا المجلد بعد."
 
-#: src/components/funding-chip/FundingChip.tsx
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "No LLM source funds this harness"
 msgstr ""
 
@@ -14285,7 +14285,7 @@ msgstr "مشكلة"
 msgid "Problems found"
 msgstr "تم العثور على مشاكل"
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "process"
 msgstr ""
 
@@ -14332,7 +14332,7 @@ msgstr "صورة الملف الشخصي:"
 msgid "Progress"
 msgstr "التقدم"
 
-#: src/components/funding-chip/funding-chip-visuals.ts
+#: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
 msgstr ""
 
@@ -14971,8 +14971,8 @@ msgid "Reconnected."
 msgstr "تم إعادة الاتصال."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-msgid "Record updated"
-msgstr ""
+#~ msgid "Record updated"
+#~ msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
@@ -16169,6 +16169,7 @@ msgid "Saving..."
 msgstr "جاري الحفظ..."
 
 #: src/components/account/secrets-section.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -18602,6 +18603,10 @@ msgstr "اختبار المحفز"
 #: src/navigation/agentic-process-open.ts
 msgid "That agent is no longer in your workspace."
 msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك."
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "That change could not be applied."
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
