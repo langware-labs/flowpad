@@ -1521,6 +1521,10 @@ msgstr "Agent disabled"
 msgid "Agent enabled"
 msgstr "Agent enabled"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Agent funding"
+msgstr "Agent funding"
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "Agent Hook"
@@ -2480,6 +2484,10 @@ msgstr "Auto-send"
 msgid "Auto-updates check hourly."
 msgstr "Auto-updates check hourly."
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Automatic"
+msgstr "Automatic"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3240,6 +3248,10 @@ msgstr "Checking the help desk files"
 msgid "Checking the tag index…"
 msgstr "Checking the tag index…"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Checking what funds {harnessLabel}…"
+msgstr "Checking what funds {harnessLabel}…"
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
 msgstr "Checking whether {folderName} is ready to share."
@@ -3312,6 +3324,10 @@ msgstr "Choose which projects to filter by. Sorted by latest activity."
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Choose…"
 msgstr "Choose…"
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "chosen by you"
+msgstr "chosen by you"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome"
@@ -3730,6 +3746,10 @@ msgstr "Close tab"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Close terminal"
 msgstr "Close terminal"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Close ticket"
+msgstr "Close ticket"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close to the Right"
@@ -4401,6 +4421,10 @@ msgstr "Copy all"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Copy as log"
 msgstr "Copy as log"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Copy attachment id"
+msgstr "Copy attachment id"
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -5567,6 +5591,7 @@ msgstr "Default"
 msgid "Default ({defaultDbPath})"
 msgstr "Default ({defaultDbPath})"
 
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Default assistant"
 msgstr "Default assistant"
@@ -8324,6 +8349,22 @@ msgstr "Full Trust"
 msgid "Fullscreen"
 msgstr "Fullscreen"
 
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by a hub endpoint"
+msgstr "Funded by a hub endpoint"
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by a stored API key"
+msgstr "Funded by a stored API key"
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by your vendor subscription"
+msgstr "Funded by your vendor subscription"
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Funding for"
+msgstr "Funding for"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
 msgstr "garbage"
@@ -10243,6 +10284,7 @@ msgid "LLM keys"
 msgstr "LLM keys"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -10738,6 +10780,10 @@ msgstr "Mark all read"
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
 msgstr "Mark this task as Done?"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Mark this ticket answered and take it off the desk's queue"
+msgstr "Mark this ticket answered and take it off the desk's queue"
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -12011,6 +12057,10 @@ msgstr "No live session specified"
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No LLM index for this folder yet."
 msgstr "No LLM index for this folder yet."
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "No LLM source funds this harness"
+msgstr "No LLM source funds this harness"
 
 #: src/components/project-home/BindSecretDialog.tsx
 #~ msgid "No local app secrets"
@@ -14235,6 +14285,10 @@ msgstr "problem"
 msgid "Problems found"
 msgstr "Problems found"
 
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "process"
+msgstr "process"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -14277,6 +14331,10 @@ msgstr "Profile Picture:"
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "Progress"
 msgstr "Progress"
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "project"
+msgstr "project"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14912,6 +14970,10 @@ msgstr "Reconnected"
 msgid "Reconnected."
 msgstr "Reconnected."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Record updated"
+msgstr "Record updated"
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
 #~ msgstr "Record where {lockedEnvVar} comes from"
@@ -15283,9 +15345,14 @@ msgstr "Rename folder"
 msgid "Rename this budget"
 msgstr "Rename this budget"
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "Reopen"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Reopen this ticket"
+msgstr "Reopen this ticket"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
