@@ -152,8 +152,8 @@ def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     seam owns the read-only / suppression gates).
 
     The ref handed to ``stamp_id`` is the ASSET_REF the type's carrier
-    was registered for — the inner ``agent.md`` for a ``main_file_is_asset_ref``
-    type, the folder for a bare-folder type, the file for a file type."""
+    was registered for — the folder for a folder type, the file for a file
+    type; the carrier locates the main document itself."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
     entity_id = getattr(obj, "id", None)
@@ -233,9 +233,9 @@ class DiskSerializer:
             if text is None:
                 return                                    # nothing to render: the folder is the asset
             if main.exists() and main.suffix.lower() in {".md", ".markdown"}:
-                from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks  # noqa: PLC0415
+                from flow_sdk.fs_store.indexer._frontmatter import carry_capsules  # noqa: PLC0415
 
-                text = restore_capsule_blocks(text, snapshot_capsule_blocks(main.read_text(encoding="utf-8")))
+                text = carry_capsules(text, main.read_text(encoding="utf-8"))
             _atomic_write_text(main, text)
         elif main.suffix == ".json":
             text = self.render(obj, info)

@@ -121,10 +121,8 @@ function typeInfoOf(typeName: string) {
 /**
  * True when an asset of this type can OWN other assets — i.e. a folder-LAYOUT
  * type, the shape the backend `repo_assets_fn` walker recurses into
- * (`<asset>/agentic-assets/<type>/<name>`). Deliberately NOT `folder_backed`:
- * an Agent is folder-layout (it owns its copies of the Mcps it declares) but is
- * not folder-backed, because its `asset_ref` is the inner `agent.md`. Gating on
- * layout is also what keeps a chevron off the 400-odd file-layout markdown rows.
+ * (`<asset>/agentic-assets/<type>/<name>`). Gating on layout is what keeps a
+ * chevron off the 400-odd file-layout markdown rows.
  */
 function canOwnAssets(typeName: string): boolean {
   return typeInfoOf(typeName)?.main_layout === 'folder';

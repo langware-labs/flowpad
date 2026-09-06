@@ -351,7 +351,7 @@ def test_agent_main_ref_uses_backend_slug_and_bundle_layout(tmp_path):
     ref = FSRecord(type="agent").compute_asset_ref(tmp_path, Agent(name="Q"))
 
     assert ref is not None
-    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q" / "agent.md"
+    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q"
 
 
 def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):

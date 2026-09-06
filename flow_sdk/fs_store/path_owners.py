@@ -14,6 +14,9 @@ from __future__ import annotations
 import functools
 import unicodedata
 from collections.abc import Iterable, Mapping
+from pathlib import PurePosixPath
+
+from flow_sdk.schema.layout import Folder
 
 
 def _posix_key(raw: str) -> str | None:
@@ -63,6 +66,17 @@ def _non_owner_types() -> frozenset[str]:
     return frozenset(out)
 
 
+def _root_key(type_name: str, key: str) -> str:
+    """``key`` at the layout root: a row may still hold the retired
+    ``<folder>/<main>`` spelling and the walk asks by the folder. No syscalls."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    if info is not None and isinstance(info.shape, Folder) and info.shape.main:
+        return str(info.shape.root_of(PurePosixPath(key)))
+    return key
+
+
 class PathOwnerIndex:
     """``{type: {path_key: owner_id}}`` over the rows that already exist.
 
@@ -103,6 +117,7 @@ class PathOwnerIndex:
                 key = _posix_key(raw) if raw else None
                 if not key:
                     continue
+                key = _root_key(type_name, key)
                 incumbent = owners.get(key)
                 # Already-forked path: pick deterministically so every walk
                 # converges on the SAME row and the same-path sweep retires the
@@ -124,7 +139,7 @@ class PathOwnerIndex:
         if not owners:
             return None
         for candidate in (canon_path, raw_path):
-            if candidate and (hit := owners.get(_posix_key(candidate) or "")):
+            if candidate and (hit := owners.get(_root_key(type_name, _posix_key(candidate) or ""))):
                 return hit
         return None
 

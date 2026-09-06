@@ -124,7 +124,7 @@ def test_production_has_no_alternate_identity_writers() -> None:
     writes a frontmatter ``id:``, a folder ``.flow/id`` or an identity capsule
     on its own."""
     sdk_root = Path(__file__).parents[2] / "flow_sdk"
-    legacy_writers = {"write_frontmatter_id", "write_folder_capsule_id"}
+    legacy_writers = {"write_frontmatter_id"}
     violations: list[str] = []
     search_roots = (sdk_root / "fs_store", sdk_root / "schema" / "type_info")
     paths = [path for root in search_roots for path in root.rglob("*.py")]

@@ -14,7 +14,6 @@ into the asset. Nothing here is derived from a path: derivation exists only for
 read-only sources we cannot write into, which is the sibling MCP_SERVER scan.
 """
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_json_identity,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -37,6 +36,5 @@ MCP = TypeInfo(
     shape=Folder(main="mcp.json"),
     editor="mcp",
     asset_spec=McpSpec,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=folder_json_identity(),
 )

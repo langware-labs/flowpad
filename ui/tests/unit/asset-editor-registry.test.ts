@@ -29,7 +29,7 @@ afterEach(() => bindAssetEditorRegistry(null));
 describe('editorForType', () => {
   it('reads the registry editor when bound', () => {
     // A deliberately non-static answer proves the registry, not the table, spoke.
-    bind([{ type_name: 'skill', editor: 'whiteboard', shape: { kind: 'folder', main: 'SKILL.md', ref_is_main: false } }]);
+    bind([{ type_name: 'skill', editor: 'whiteboard', shape: { kind: 'folder', main: 'SKILL.md' } }]);
     expect(editorForType('skill')).toBe(AssetEditor.WHITEBOARD);
     // A type the static table never knew becomes openable once declared.
     bind([{ type_name: 'runbook', editor: 'markdown', shape: { kind: 'file', ext: '.md' } }]);
@@ -78,7 +78,7 @@ describe('extensions and main file', () => {
 
   it('mainFileForType reads shape.main and falls back to the literal', () => {
     expect(mainFileForType('skill', 'SKILL.md')).toBe('SKILL.md');
-    bind([{ type_name: 'skill', editor: 'skill', shape: { kind: 'folder', main: 'skill.md', ref_is_main: false } }]);
+    bind([{ type_name: 'skill', editor: 'skill', shape: { kind: 'folder', main: 'skill.md' } }]);
     expect(mainFileForType('skill', 'SKILL.md')).toBe('skill.md');
     bind([{ type_name: 'markdown', editor: 'markdown', shape: { kind: 'file', ext: '.md' } }]);
     expect(mainFileForType('markdown')).toBeNull();

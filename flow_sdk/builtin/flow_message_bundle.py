@@ -1051,10 +1051,7 @@ def _parse_entry_key(key: str) -> tuple[str, str] | None:
 def _asset_ref_for_git_origin(checkout_root: Path, rel_path: str, info) -> Path | None:
     from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
-    asset_root = safe_join(checkout_root, rel_path)
-    if asset_root is None:
-        return None
-    return info.asset_ref_for(asset_root) if info is not None else asset_root   # the type's ref convention, once
+    return safe_join(checkout_root, rel_path)
 
 
 def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:

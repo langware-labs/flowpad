@@ -1,6 +1,5 @@
 """Type metadata for CLAUDE_RULES."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
@@ -27,7 +26,6 @@ CLAUDE_RULES = TypeInfo(
     # ``.claude/rules/*.md`` (mount derived from placement) at user + both project roots.
     walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root")),
     from_disk_fn=extract_claude_rules,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
 )

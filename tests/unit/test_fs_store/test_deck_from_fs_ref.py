@@ -14,7 +14,6 @@ import pytest
 
 from flow_sdk.builtin.deck import Deck
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.deck import extract_deck
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -48,7 +47,8 @@ def test_indexer_compatible_all_fields(tmp_path: Path) -> None:
     tpl = tmp_path / "assets" / "deck-templates" / "aurora"
     tpl.mkdir(parents=True)
     (tpl / "template.json").write_text(json.dumps({"metadata": {}, "data": {}}), encoding="utf-8")
-    write_folder_capsule_id(tpl, tpl_id)
+    (tpl / ".flow").mkdir()
+    (tpl / ".flow" / "id").write_text(tpl_id + "\n", encoding="utf-8")   # the retired form
 
     deck = _seed_deck(tmp_path, "pitch", manifest={
         "title": "Pitch", "description": "investor deck",

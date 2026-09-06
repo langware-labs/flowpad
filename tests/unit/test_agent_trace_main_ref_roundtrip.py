@@ -60,9 +60,8 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
     # 1. Create writes agentic-assets/agent_trace/<name>/trace.json with the payload
     #    and the entity id injected.
     store_main(rec, entity)
-    doc = ar._path
-    assert doc.name == "trace.json", f"expected inner trace.json, got {doc}"
-    assert doc.parent.parent.name == "agent_trace"
+    assert ar._path.parent.name == "agent_trace", f"expected agentic-assets/agent_trace/<name>, got {ar._path}"
+    doc = ar._path / "trace.json"
     written = json.loads(doc.read_text(encoding="utf-8"))
     assert written["id"] == TRACE_ID
     assert written["summary"]["verdict"] == "mixed"

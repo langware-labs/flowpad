@@ -5,7 +5,7 @@ from flow_sdk.fs_store.schema_registry import LayoutKind, TypeInfo
 from flow_sdk.schema.layout import File, Folder
 
 SKILL = TypeInfo(type_name="t_skill", shape=Folder(main="SKILL.md"))   # skill-style
-SPEC = TypeInfo(type_name="t_spec", shape=Folder(main="spec.md", ref_is_main=True))
+SPEC = TypeInfo(type_name="t_spec", shape=Folder(main="spec.md"))
 DOC = TypeInfo(type_name="t_doc", shape=File(ext=".md"))
 
 
@@ -17,14 +17,14 @@ def test_folder_types_classify_folder_and_inner_main_file(tmp_path: Path):
     inner = SKILL.layout_of(folder / "SKILL.md")
     assert (inner.kind, inner.root, inner.body, inner.ref) == (LayoutKind.MAIN_FILE, folder, folder / "SKILL.md", folder)
     spec = SPEC.layout_of(folder / "spec.md")
-    assert (spec.kind, spec.root, spec.ref) == (LayoutKind.MAIN_FILE, folder, folder / "spec.md")
+    assert (spec.kind, spec.root, spec.ref) == (LayoutKind.MAIN_FILE, folder, folder)
 
 
 def test_names_compare_case_insensitively_and_the_id_lands_in_the_main_document(tmp_path: Path):
     folder = tmp_path / "agent"
     folder.mkdir()
     (folder / "AGENT.MD").write_text("x")
-    info = TypeInfo(type_name="t_agent", shape=Folder(main="agent.md", ref_is_main=True))
+    info = TypeInfo(type_name="t_agent", shape=Folder(main="agent.md"))
     assert info.layout_of(folder / "AGENT.MD").kind is LayoutKind.MAIN_FILE
     assert info.storage_root_for(folder / "AGENT.MD") == folder
     assert SKILL.layout_of(folder / "SKILL.MD").body == folder / "SKILL.md"

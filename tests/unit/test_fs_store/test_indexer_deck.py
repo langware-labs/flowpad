@@ -22,7 +22,6 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.deck import (
     deck_asset_hash,
     extract_deck,
@@ -62,7 +61,8 @@ def _seed_template(project: Path, slug: str, *, capsule_id: str | None = None) -
     (tpl / "layouts").mkdir(parents=True)
     (tpl / "template.json").write_text(json.dumps({"metadata": {"title": slug}, "data": {}}), encoding="utf-8")
     if capsule_id:
-        write_folder_capsule_id(tpl, capsule_id)
+        (tpl / ".flow").mkdir()
+        (tpl / ".flow" / "id").write_text(capsule_id + "\n", encoding="utf-8")   # the retired form
     return tpl
 
 

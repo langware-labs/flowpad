@@ -252,7 +252,7 @@ A spec-bearing type needs **no `from_disk_fn`**: `SchemaRegistry.register`
 defaults it to `spec_extractor(type)` (`fs_store/serializer/record.py`), which
 resolves the asset root from the walker's ref (folder / inner main file / file
 with `main_ext`), runs `serializer().load`, emits every declared field plus
-`content` from `fts_content`, and anchors `asset_ref` via `asset_ref_for`. A
+`content` from `fts_content`, and anchors `asset_ref` at the asset root. A
 rejected file (bad manifest, binary under `.md`) is `[]`, never an indexer error.
 Per-type facts live in `derive_fields_fn`; a hand `from_disk_fn` is only for a
 type with no spec.

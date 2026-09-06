@@ -47,7 +47,7 @@ def _materialize(info, root: Path) -> Path:
             (root / info.main_file).write_text(
                 "{}\n" if info.main_file.endswith(".json") else "body\n", encoding="utf-8"
             )
-        return root / info.main_file if info.main_file_is_asset_ref and info.main_file else root
+        return root
     path = root.with_suffix(info.main_ext or ".md")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{}\n" if path.suffix == ".json" else "body\n", encoding="utf-8")

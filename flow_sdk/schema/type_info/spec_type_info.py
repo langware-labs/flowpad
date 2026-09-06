@@ -1,7 +1,6 @@
 """Type metadata for SPEC."""
 from flow_sdk.builtin.spec import SpecDocSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
@@ -14,7 +13,6 @@ from flow_sdk.schema.view_mode import ViewMode
 SPEC = TypeInfo(
     type_name=EntityType.SPEC,
     fts_content=("content",),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
@@ -24,9 +22,7 @@ SPEC = TypeInfo(
     index_fields=["name", "spec_type"],
     asset_class="repo",
     family="spec",
-    # asset_ref IS specs/<name>/spec.md (the indexer emits the inner file), so
-    # both create and rescan agree on the inner-file path.
-    shape=Folder(main="spec.md", ref_is_main=True),
+    shape=Folder(main="spec.md"),
     asset_spec=SpecDocSpec,
     derive_fields_fn=derive_spec,
     # WRITE-ONCE (owns_main_ref stays False): a DB-only spec materializes its

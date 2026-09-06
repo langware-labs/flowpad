@@ -1,9 +1,10 @@
 """Folder identity capsule policy plus read-only ``.flow/id`` compatibility.
 
-A folder-backed entity carries its id in ``.flow/capsules/identity.json`` — the portable,
+A folder entity carries its id in ``.flow/capsules/identity.json`` — the portable,
 move-safe capsule (survives rename, travels on share/copy, and is the only home
 for a main-doc-less folder's id). On a miss: mint a random v4 and write it. No
-name/path derivation (the cross-machine collision source).
+name/path derivation (the cross-machine collision source). The retired
+``.flow/id`` is read, never written, and a writing resolve converts it.
 """
 from __future__ import annotations
 
@@ -13,15 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule, CapsuleSpec
+from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identity_carrier import NotWritable, Sidecar
 from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
 from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_id
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-    write_folder_capsule_id,
-)
+from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.skill import (
     skill_id_from_name,
 )
@@ -33,7 +31,6 @@ V7 = "018f0000-0000-7000-8000-000000000000"
 
 _CAPSULE_INFO = TypeInfo(
     type_name="capsule_probe", shape=Folder(),
-    capsules=(CapsuleSpec("identity", 1),),
     identity_carrier=Sidecar(legacy=(folder_capsule_id,)),
 )
 
@@ -56,15 +53,15 @@ def _cap(folder: Path):
 
 # ── the .flow/id capsule ─────────────────────────────────────────────────────
 
-def test_valid_flow_id_is_adopted(tmp_path: Path) -> None:
+def test_valid_flow_id_is_adopted_and_converted(tmp_path: Path) -> None:
     d = tmp_path / "e"
-    d.mkdir()
-    write_folder_capsule_id(d, V4)
+    (d / ".flow").mkdir(parents=True)
+    (d / ".flow" / "id").write_text(V4 + "\n", encoding="utf-8")
     assert read_folder_capsule_id(d) == V4
-    before = (d / ".flow" / "id").read_text(encoding="utf-8")
     assert _folder_mint(d) == V4
-    assert (d / ".flow" / "id").read_text(encoding="utf-8") == before, "adopt must not rewrite"
-    assert not _cap(d).exists()
+    assert not (d / ".flow" / "id").exists(), "the retired form is converted, id unchanged"
+    assert AssetCapsule.from_path(d).read("identity").data["id"] == V4
+    assert _folder_mint(d) == V4
 
 
 def test_missing_capsule_mints_v4_and_is_idempotent(tmp_path: Path) -> None:

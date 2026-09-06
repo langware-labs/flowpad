@@ -46,7 +46,7 @@ export interface EditorTypeInfo {
   /** Backend-declared on-disk shape. `also` lists secondary file extensions
    *  a file-shaped type accepts (`.markdown` next to `.md`). */
   shape?:
-    | { kind: 'folder'; main: string | null; ref_is_main: boolean }
+    | { kind: 'folder'; main: string | null }
     | { kind: 'file'; ext: string; also?: string[] }
     | null;
 }

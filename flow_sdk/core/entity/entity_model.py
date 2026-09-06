@@ -823,6 +823,8 @@ class Entity(DBEntity):
 
         path_str = str(path)
         spellings = asset_ref_spellings(path_str)
+        for alt in SchemaRegistry.retired_ref_spellings(Path(path_str)):
+            spellings.extend(s for s in asset_ref_spellings(alt) if s not in spellings)
         # Only types that OWN their path may answer "who owns this path". A type
         # that merely *references* an asset (``owns_asset_ref = False``, e.g.
         # Artifact) carries the same ``asset_ref`` as the entity it points at, so
@@ -904,16 +906,17 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.fs_store.path_utils import ancestors_of
+        from flow_sdk.schema.layout import Folder  # noqa: PLC0415
 
         ancestors = ancestors_of(path_str)
         if not ancestors:
             return None
 
-        def _folder_backed(ecls: type) -> bool:
+        def _folder_shaped(ecls: type) -> bool:
             info = SchemaRegistry.get(ecls.get_type())
-            return info is not None and info.folder_backed
+            return info is not None and isinstance(info.shape, Folder)
 
-        folder_types = [ecls for ecls in candidates if _folder_backed(ecls)]
+        folder_types = [ecls for ecls in candidates if _folder_shaped(ecls)]
 
         async def _hits(ecls: type) -> "list[Entity]":
             try:

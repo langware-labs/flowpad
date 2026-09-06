@@ -118,16 +118,16 @@ COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude=
 
 
 def _register_probe_types() -> None:
-    from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
+    from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
     from flow_sdk.fs_store.schema_registry import TypeInfo
     from flow_sdk.schema.layout import File, Folder
 
     for cls, spec, shape in (
         (_Leaf, _LeafSpec, File(ext=".md")),
-        (_Inner, _InnerSpec, Folder(main="inner.md", ref_is_main=True)),
-        (_Root, _RootSpec, Folder(main="root.md", ref_is_main=True)),
+        (_Inner, _InnerSpec, Folder(main="inner.md")),
+        (_Root, _RootSpec, Folder(main="root.md")),
     ):
-        info = TypeInfo(type_name=cls.model_fields["type"].default, capsules=(IDENTITY_CAPSULE,),
+        info = TypeInfo(type_name=cls.model_fields["type"].default,
                         identity_carrier=frontmatter_identity(), shape=shape, asset_spec=spec)
         info.entity_cls = cls
         SchemaRegistry.register(info)

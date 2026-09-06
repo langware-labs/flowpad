@@ -1,6 +1,5 @@
 """Type metadata for PLAN."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
@@ -28,7 +27,6 @@ PLAN = TypeInfo(
     # by the repo-assets walker.
     walk=Walk(roots=("user_home_folder",), mounts=(".claude/plans",)),
     from_disk_fn=extract_claude_plan,
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
 )

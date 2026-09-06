@@ -9,7 +9,7 @@ shape, and if so what is its root, body and asset_ref? The registry-wide half
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from flow_sdk._compat import StrEnum
 
@@ -85,12 +85,10 @@ class File:
 class Folder:
     """A directory asset told apart by the main document it holds
     (``SKILL.md``, ``mcp.json``). ``main=None`` is a bare folder asset.
-    ``ref_is_main`` ⇒ ``asset_ref`` points at ``<folder>/<main>`` instead of
-    the folder (agent, spec, the reports); it changes nothing about locating.
+    ``asset_ref`` is the folder for every folder type.
     """
 
     main: str | None = None
-    ref_is_main: bool = False
 
     def locate(self, path: Path, *, verify: bool = False) -> Layout:
         # Decide by NAME; the one stat keeps a real directory named like the
@@ -105,18 +103,21 @@ class Folder:
         body = root / self.main if self.main else None
         return Layout(kind, root, body, self.ref_for(root))
 
-    def root_of(self, ref: Path) -> Path:
-        """The folder for either ``asset_ref`` spelling (the folder, or its main)."""
-        if self.main and ref.name.lower() == self.main.lower() and not ref.is_dir():
+    def root_of(self, ref: PurePath) -> PurePath:
+        """The folder for either ``asset_ref`` spelling — the folder, or the
+        retired ``<folder>/<main>`` a row may still hold. A pure path (a
+        stored row) is decided by name; a real directory named like the main
+        document stays the root."""
+        if self.main and ref.name.lower() == self.main.lower() and not (isinstance(ref, Path) and ref.is_dir()):
             return ref.parent
         return ref
 
     def ref_for(self, root: Path) -> Path:
-        """Where ``asset_ref`` points for the asset rooted at ``root``."""
-        return root / self.main if self.main and self.ref_is_main else root
+        """Where ``asset_ref`` points for the asset rooted at ``root``: the root."""
+        return root
 
     def to_dict(self) -> dict:
-        return {"kind": "folder", "main": self.main, "ref_is_main": self.ref_is_main}
+        return {"kind": "folder", "main": self.main}
 
 
 Shape = File | Folder
@@ -127,7 +128,7 @@ def shape_from_dict(data: dict | None) -> Shape | None:
     if not data:
         return None
     if data.get("kind") == "folder":
-        return Folder(main=data.get("main"), ref_is_main=bool(data.get("ref_is_main")))
+        return Folder(main=data.get("main"))
     return File(ext=data.get("ext") or ".md", also=tuple(data.get("also") or ()), names=tuple(data.get("names") or ()))
 
 

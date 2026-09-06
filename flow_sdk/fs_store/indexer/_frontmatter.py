@@ -132,6 +132,21 @@ def _extract_body(text: str) -> str:
     return text
 
 
+def carry_capsules(rendered: str, existing: str) -> str:
+    """``rendered`` with the capsule blocks of ``existing`` re-attached — every
+    non-identity capsule (a ``tag`` block another skill wrote) survives a save.
+    The ``identity`` block is carried only while ``rendered`` has no
+    frontmatter ``id``: once the id is in the header the block is legacy."""
+    from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks  # noqa: PLC0415
+
+    header = _extract_frontmatter(rendered)
+    has_id = bool(header) and "id" in (_yaml_load(header) or {})
+    blocks = snapshot_capsule_blocks(existing)
+    if has_id:
+        blocks = tuple(b for b in blocks if not b.lstrip().startswith("<!-- flowpad:capsule identity"))
+    return restore_capsule_blocks(rendered, blocks)
+
+
 def merge_frontmatter(
     text: str,
     updates: dict[str, Any],

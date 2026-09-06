@@ -1,6 +1,6 @@
 """Type metadata for CLAUDE_MD."""
 from flow_sdk.builtin.claude_memory_entities import ClaudeMdSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.indexer.functions.markdown import derive_claude_md
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import File
@@ -21,7 +21,6 @@ CLAUDE_MD = TypeInfo(
     icon="BookOpen",
     api_visible=True,
     fts_content=("body", "links"),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     asset_spec=ClaudeMdSpec,
     derive_fields_fn=derive_claude_md,

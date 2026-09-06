@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Container
 from dataclasses import dataclass
 from typing import Any
 
@@ -121,10 +122,12 @@ def _parse(text: str, block: _Block) -> CapsuleData:
     return CapsuleData.from_dict(value)
 
 
-def strip_capsule_blocks(text: str) -> str:
+def strip_capsule_blocks(text: str, names: "Container[str] | None" = None) -> str:
+    """``text`` without its capsule blocks — all of them, or only ``names``."""
     blocks = _scan(text)
     for block in reversed(blocks):
-        text = text[:block.start] + text[block.end:]
+        if names is None or block.name in names:
+            text = text[:block.start] + text[block.end:]
     return text
 
 

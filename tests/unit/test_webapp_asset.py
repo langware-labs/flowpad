@@ -55,7 +55,7 @@ def test_micro_app_is_a_repo_type():
     assert info.family == "webapp"
     assert SchemaRegistry.repo_family_to_info()["webapp"].type_name == "micro_app"
     # asset_ref must stay the FOLDER: serving joins <folder>/<build> onto it.
-    assert info.main_layout == "folder" and not info.main_file_is_asset_ref
+    assert info.main_layout == "folder" and info.folder_backed
 
 
 # ── discovery: an editor nested inside the asset it edits ───────────────────

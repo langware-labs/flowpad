@@ -76,7 +76,6 @@ class TypeInfo:
     family: str | None                 # bare leaf subdir ("skills", "docs")
     main_layout: str = "file"          # "file" | "folder"
     main_file: str | None = None       # inner main file of a folder asset ("SKILL.md")
-    main_file_is_asset_ref: bool = False
     main_ext: str = ".md"
     # main_subdir is a DERIVED read-only property (claude-default family subdir)
 
@@ -113,7 +112,7 @@ A type's `TypeInfo` is assembled from up to two sources that merge into one entr
 
 ### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=..., ref_is_main=...)` (`flow_sdk/schema/layout.py`); the legacy `main_layout` / `main_file` / `main_ext` / `main_file_is_asset_ref` fields are projected from it in `__post_init__`. Example (`skill_type_info.py`):
+Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/schema/layout.py`); the legacy `main_layout` / `main_file` / `main_ext` fields are projected from it in `__post_init__`. Example (`skill_type_info.py`):
 
 ```python
 SKILL = TypeInfo(
@@ -325,5 +324,5 @@ classifier: a folder type names its folder (`FOLDER`) or the inner main file (`M
 root = parent); a file type names the file (`FILE`); `NONE` otherwise. Names compare
 case-insensitively; `verify=True` also requires the bytes to exist (the indexer's gate).
 `storage_root_for`, `body_path_for` and `carrier_path_for` are one-line
-projections of it; `asset_ref_for(root)` is the inverse. Never re-derive "is this the main
+projections of it; `asset_ref` is the root for every shape. Never re-derive "is this the main
 file" at a call site.

@@ -153,17 +153,15 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
 
 
 def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
-    """Legacy `asset_id:` is respected; no rewrite, no rename to `id`."""
+    """A retired `asset_id:` is the id; it is moved to `id:`, value unchanged."""
     preexisting = "deadbeef-dead-4eef-8ead-beefdeadbeef"
     p = tmp_path / "h.md"
     _write_md(p, "# body\n", frontmatter=f"asset_id: {preexisting}\ntitle: T\n")
-    mtime_before = p.stat().st_mtime
 
-    result = MarkdownRecord.genId(FSRef(p))
-
-    assert result == preexisting
-    # File not rewritten since legacy asset_id was present
-    assert p.stat().st_mtime == mtime_before
+    assert MarkdownRecord.genId(FSRef(p)) == preexisting
+    text = p.read_text(encoding="utf-8")
+    assert f"id: {preexisting}" in text and "asset_id" not in text
+    assert MarkdownRecord.genId(FSRef(p)) == preexisting
 
 
 def test_genId_respects_existing_id_key(tmp_path: Path) -> None:

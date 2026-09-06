@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from flow_sdk.builtin.task import TaskSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     folder_capsule_id,
     folder_capsule_json_id,
     frontmatter_identity,
@@ -40,7 +39,6 @@ TASK = TypeInfo(
     shape=Folder(main="task.md"),
     editor="task",
     fts_content=("title", "description"),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(folder_capsule_json_id, in_folder(folder_capsule_id), in_folder(task_id_from_folder)),
     asset_hash_fn=task_asset_hash,
     # ``TaskSpec`` IS the share whitelist — see its docstring.
