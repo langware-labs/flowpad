@@ -249,6 +249,21 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
         })}
       </section>
 
+      {/* A stated preference that is NOT in force — the box is signed out of Flowpad while
+          Claude is set to use it. Sits above the list because it explains the whole page:
+          without it the reader sees "use Flowpad" selected and something else plainly doing
+          the spending, with nothing joining the two. Not an error — the harness IS funded,
+          which is why it is a note and not the `blocked` sentence. */}
+      {focused && status.notes?.[focused] && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-500"
+          data-testid="llm-sources-note"
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{status.notes[focused]}</span>
+        </div>
+      )}
+
       {focused && (
         <section className="flex flex-col gap-3" data-testid="llm-sources-list">
           {GROUPS.map(([kind, heading]) => {

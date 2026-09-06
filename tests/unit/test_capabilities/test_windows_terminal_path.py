@@ -16,7 +16,7 @@ expansion, partial failure) on any platform.
 
 from __future__ import annotations
 
-import os
+import ntpath
 import sys
 import types
 
@@ -25,6 +25,12 @@ import pytest
 from flow_sdk.core.capabilities import env_probe
 
 MACHINE = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+# A directory that exists ONLY in this process's environment — an activated
+# venv's Scripts dir is the real instance of this, and dropping it was a
+# regression the union exists to prevent.
+SESSION_ONLY = r"C:\projects\flowpad\.venv\Scripts"
+# Windows' separator, spelled explicitly: this file runs on a host whose
+# ``os.pathsep`` is ":", which would split every "C:\..." entry in two.
 USER = "Environment"
 
 
@@ -60,8 +66,13 @@ def _fake_winreg(values: dict[tuple[int, str], str]) -> types.ModuleType:
 
 @pytest.fixture
 def on_windows(monkeypatch: pytest.MonkeyPatch):
-    """Pretend to be Windows, and let each test install its own registry."""
+    """Pretend to be Windows, with a KNOWN process PATH and its own registry.
+
+    The process PATH is pinned because the result unions the two: leaving the
+    real one in would make every assertion depend on the developer's machine.
+    """
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("PATH", SESSION_ONLY)
 
     def install(values: dict[tuple[int, str], str]) -> None:
         monkeypatch.setitem(sys.modules, "winreg", _fake_winreg(values))
@@ -74,7 +85,8 @@ def test_machine_path_comes_before_user_path(on_windows) -> None:
     # decides which of two installs wins when both provide the same command.
     on_windows({(0, MACHINE): r"C:\Windows\system32", (1, USER): r"C:\Users\me\.local\bin"})
 
-    assert env_probe.capture_terminal_path() == rf"C:\Windows\system32{os.pathsep}C:\Users\me\.local\bin"
+    entries = env_probe.capture_terminal_path().split(ntpath.pathsep)
+    assert entries[:2] == [r"C:\Windows\system32", r"C:\Users\me\.local\bin"]
 
 
 def test_sees_a_directory_this_process_never_had(on_windows, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,7 +103,7 @@ def test_expands_variable_references(on_windows, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("USERPROFILE", r"C:\Users\me")
     on_windows({(1, USER): r"%USERPROFILE%\.local\bin"})
 
-    assert env_probe.capture_terminal_path() == r"C:\Users\me\.local\bin"
+    assert env_probe.capture_terminal_path().split(ntpath.pathsep)[0] == r"C:\Users\me\.local\bin"
 
 
 def test_one_missing_key_does_not_lose_the_other(on_windows) -> None:
@@ -99,7 +111,7 @@ def test_one_missing_key_does_not_lose_the_other(on_windows) -> None:
     # PATH still answers.
     on_windows({(0, MACHINE): r"C:\Windows\system32"})
 
-    assert env_probe.capture_terminal_path() == r"C:\Windows\system32"
+    assert env_probe.capture_terminal_path().split(ntpath.pathsep)[0] == r"C:\Windows\system32"
 
 
 def test_falls_back_to_the_process_path_when_the_registry_is_unreadable(
@@ -126,4 +138,28 @@ def test_windows_never_spawns_a_shell(on_windows, monkeypatch: pytest.MonkeyPatc
     )
     on_windows({(1, USER): r"C:\Users\me\.local\bin"})
 
-    assert env_probe.capture_terminal_path() == r"C:\Users\me\.local\bin"
+    assert env_probe.capture_terminal_path().split(ntpath.pathsep)[0] == r"C:\Users\me\.local\bin"
+
+
+def test_keeps_directories_only_this_process_knows_about(on_windows) -> None:
+    """The regression the union exists to prevent.
+
+    Reading the registry INSTEAD of the process environment lost every entry a
+    launching shell had added and never persisted. The backend runs from an
+    activated venv, so its Scripts dir is exactly such an entry — and anything
+    living there stopped being discoverable the moment the registry read landed.
+    """
+    on_windows({(1, USER): r"C:\Users\me\.local\bin"})
+
+    entries = env_probe.capture_terminal_path().split(ntpath.pathsep)
+    assert entries[0] == r"C:\Users\me\.local\bin"  # fresh half still wins
+    assert SESSION_ONLY in entries  # and the session half survives
+
+
+def test_does_not_repeat_a_directory_both_halves_name(on_windows, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The common case — the registry entry is already in the process PATH too.
+    monkeypatch.setenv("PATH", ntpath.pathsep.join([r"C:\Users\me\.local\bin", SESSION_ONLY]))
+    on_windows({(1, USER): r"C:\Users\me\.local\bin"})
+
+    entries = env_probe.capture_terminal_path().split(ntpath.pathsep)
+    assert entries.count(r"C:\Users\me\.local\bin") == 1

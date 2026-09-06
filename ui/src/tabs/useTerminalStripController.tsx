@@ -170,24 +170,20 @@ export function useTerminalStripController({
           ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
           ...(workerType ? { workerType } : {}),
         });
-      } catch {
-        // The spawn failed. The overwhelming cause is a harness that is gone
-        // from disk while its capability row still calls it available — the
-        // pre-flight above reads that same row, which is why it let us through.
+      } catch (error: unknown) {
+        // The spawn failed. ASK what is wrong rather than assuming, because the
+        // two likely causes want different screens and the pre-flight cannot
+        // tell them apart: it reads the capability row, which is what let us
+        // through here.
         //
-        // ASK, don't assume. `test` re-runs discovery for this kind, which both
-        // answers the question and rewrites the stale row; the pre-flight's
-        // `ensureChecked` cannot, because it returns early the moment any
-        // verdict exists. Paying for one probe HERE is the point: it costs a
-        // subprocess only on a path that has already failed, so the common case
-        // stays free.
-        //
-        // A confirmed-missing harness gets the install dialog — the same one
-        // the pre-flight would have shown, and the thing the user needs. Any
-        // other failure is NOT a missing harness, so it keeps the Capabilities
-        // view for this kind rather than being mislabelled as one: the previous
-        // code sent every failure there and called it "uninstalled".
-        confirmMissingThen(requiredKind, () =>
+        // A harness gone from disk gets the install dialog. A harness that is
+        // PRESENT but has nothing to run on — no sign-in, no key, no budget —
+        // gets the sign-in modal; sending that one to the Capabilities view (an
+        // inventory of what is installed) offered a re-check and an installer
+        // for something already installed, which is what a real Windows report
+        // looked like. Anything else keeps the Capabilities view rather than
+        // being mislabelled as either.
+        confirmMissingThen(requiredKind, error, () =>
           navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind }),
         );
       } finally {

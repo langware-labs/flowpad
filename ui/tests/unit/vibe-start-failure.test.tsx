@@ -25,6 +25,12 @@ const { PROJECT, ...h } = vi.hoisted(() => ({
   test: vi.fn(),
   getSnapshot: vi.fn(),
   notifyError: vi.fn(),
+  openSources: vi.fn(),
+}));
+
+vi.mock('@src/components/llm-sources/llm-sources-pointer', () => ({
+  openLlmSources: h.openSources,
+  llmSourcesPointer: (w?: string) => w ?? '',
 }));
 
 vi.mock('@src/notifications', () => ({ notify: { error: h.notifyError, success: vi.fn() } }));
@@ -150,5 +156,29 @@ describe('vibe chat start failure', () => {
     await waitFor(() => expect(h.test).toHaveBeenCalledWith(CLAUDE));
     expect(h.test).not.toHaveBeenCalledWith(CapabilityKinds.Harness);
     await waitFor(() => expect(dialog()).toBeTruthy());
+  });
+
+  it('sends an unfunded harness to LLM sources, not to an install screen', async () => {
+    // The Windows report, verbatim. Claude was installed AND signed in: both
+    // real sources were excluded by a preference pinning it to a Flowpad budget
+    // that produced no candidate at all. Neither an installer nor a sign-in
+    // modal can clear a preference — only the sources page can.
+    h.launch.mockRejectedValue(
+      refusal(
+        'claude has no usable LLM source:\n' +
+          '  - claude device login: claude is set to use flowpad\n' +
+          '  - openrouter key: claude is set to use flowpad',
+      ),
+    );
+
+    const { submit, dialog } = mountVibe();
+    submit();
+
+    // Focused on the harness that failed, not a bare page.
+    await waitFor(() => expect(h.openSources).toHaveBeenCalledWith(expect.anything(), 'claude_code'));
+    expect(dialog()).toBeNull();
+    // And no probe at all: the failure already said what is wrong.
+    expect(h.test).not.toHaveBeenCalled();
+    expect(h.notifyError).not.toHaveBeenCalled();
   });
 });

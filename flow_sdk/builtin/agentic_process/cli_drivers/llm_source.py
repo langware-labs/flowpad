@@ -516,9 +516,27 @@ def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> lis
     questions about one inventory, and the picker must not ask this one: filtering the list
     of choices BY the current choice is circular, and it is what left a box pinned to a
     vanished endpoint with no row it could click. See :func:`llm_picker_view`.
+
+    **A Flowpad preference is not applied while this box is signed out of the hub.** A
+    preference names which source to prefer; it cannot conjure one this box has no key to
+    sign for. Applied anyway it did not select the hub budget -- there is no hub candidate
+    at all when signed out -- it only made everything ELSE ineligible, so a machine with a
+    working device login and a stored key had nothing to spawn with:
+
+        claude has no usable LLM source:
+          - claude device login: claude is set to use flowpad
+          - openrouter key: claude is set to use flowpad
+
+    Ignoring it drops the box through to the ranking underneath, which is exactly where a
+    box with no stated preference already lands. Nothing about the order is redefined here
+    and the preference is not cleared -- it is a stored choice that becomes live again the
+    moment the box signs in, and rewriting it on a transient sign-out would silently
+    discard a decision the user made.
     """
     preferred = _preferred(cap)
     if not preferred:
+        return candidates
+    if preferred == LMApiProvider.FLOWPAD.value and not _hub_logged_in():
         return candidates
     name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
     why = f"{worker_type} is set to use {name}"
@@ -623,6 +641,12 @@ class PickerView(NamedTuple):
     #: other way to say WHY a box is stuck once the choices stop carrying the overlay's
     #: sentence, and "the list is the explanation" has to keep holding.
     blocked: str
+    #: A stated preference that is NOT in force, and why -- empty when the preference (if any)
+    #: is being honoured. Distinct from ``blocked``: nothing is stuck, something is funding the
+    #: harness, and the screen would otherwise show a Flowpad preference silently having no
+    #: effect. Saying it is the difference between "your setting is being ignored, here is
+    #: why" and a box that appears to disobey its own configuration.
+    note: str = ""
 
 
 async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> PickerView:
@@ -654,6 +678,26 @@ async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrig
         offers=sorted(inventory, key=lambda c: c.source.rank),
         chosen=chosen,
         blocked="" if chosen else next((c.source.reason for c in overlaid if c.source.reason), ""),
+        note=_ignored_preference_note(worker_type, cap, constraint),
+    )
+
+
+def _ignored_preference_note(worker_type: str, cap, constraint) -> str:
+    """The sentence for a Flowpad preference this box cannot act on.
+
+    ``_apply_preference`` drops such a preference so the ranking underneath still funds the
+    harness. That rescue is silent by construction, and silence is its own bug here: the
+    screen shows "use Flowpad" selected while something else plainly does the spending, and
+    a reader has no way to connect the two. This is the connection.
+
+    Says nothing when a constraint is in force -- a process or project pin already outranks
+    the preference, so reporting the preference as "ignored" would blame the wrong rung.
+    """
+    if constraint is not None or _preferred(cap) != LMApiProvider.FLOWPAD.value or _hub_logged_in():
+        return ""
+    return (
+        f"{worker_type} is set to use Flowpad, but this box is signed out of Flowpad — "
+        f"falling back to its other sources until you sign in."
     )
 
 

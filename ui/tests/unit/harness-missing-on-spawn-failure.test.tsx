@@ -26,6 +26,12 @@ const h = vi.hoisted(() => ({
   // The re-probe resolves the kind first, so a launch that failed for the
   // DEFAULT assistant is not answered by a sibling that happens to be present.
   getSnapshot: vi.fn(() => ({ resolvedKind: 'harness.claude.cli' })),
+  openSources: vi.fn(),
+}));
+
+vi.mock('@src/components/llm-sources/llm-sources-pointer', () => ({
+  openLlmSources: h.openSources,
+  llmSourcesPointer: (w?: string) => w ?? '',
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -130,5 +136,18 @@ describe('a spawn failure asks whether the harness is really gone', () => {
     await waitFor(() =>
       expect(h.openTab).toHaveBeenCalledWith(ViewType.CAPABILITIES, { capabilityKind: CapabilityKinds.ClaudeCode }),
     );
+  });
+
+  it('sends an unfunded harness to LLM sources instead of the Capabilities view', async () => {
+    // Installed, resolved, and refused for want of funding. Capabilities is an
+    // inventory of what is INSTALLED — it can only offer a re-check and an
+    // installer for something the machine already has.
+    h.openNewChat.mockRejectedValue(new Error('claude has no usable LLM source:\n  - claude device login: signed out'));
+
+    await mountController()();
+
+    await waitFor(() => expect(h.openSources).toHaveBeenCalled());
+    expect(h.openTab).not.toHaveBeenCalled();
+    expect(h.test).not.toHaveBeenCalled();
   });
 });

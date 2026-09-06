@@ -82,6 +82,16 @@ def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
     llm_endpoint.set_hub_llm_endpoint(typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool")
 
 
+def _hub_key(monkeypatch) -> None:
+    """Signed in to the hub, with no endpoint bound — the half of ``_bind`` that decides
+    whether a Flowpad preference is actionable at all."""
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
+    set_api_key("fp-hub-key")
+
+
 def _process(worker_type: str = "claude", *, endpoint: str | None = None, project_id: str | None = None):
     return SimpleNamespace(
         driver=SimpleNamespace(name=worker_type),
@@ -224,7 +234,9 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     chosen = await resolve_llm_source(_process(project_id=project.id))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "project"
 
-    device = _by_kind(await list_llm_candidates("claude", LLMScope.of_process(_process(project_id=project.id))), "device")[0]
+    device = _by_kind(
+        await list_llm_candidates("claude", LLMScope.of_process(_process(project_id=project.id))), "device"
+    )[0]
     assert not device.eligible and "this project requires" in device.reason
 
     # a process naming its own endpoint outranks the project's
@@ -537,7 +549,7 @@ async def test_auth_status_reports_the_provider_of_a_key_funded_harness(env, mon
 # ── the picker chooses from the inventory, not from the choice ───────────────────
 
 
-async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env) -> None:
+async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env, monkeypatch) -> None:
     """The escape hatch. A pin makes every other source ineligible TO SPAWN, and that is
     right — but the LLM Sources screen is where a pin gets changed, so filtering its rows by
     the pin is circular: the row that would undo the choice is the one greyed out.
@@ -559,6 +571,11 @@ async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env) -> 
     cap.login_state = DeviceLoginState.AUTHENTICATED
     cap.auth_mode, cap.api_provider = "api", "flowpad"  # a hub pin with no hub endpoint behind it
     await cap.save(notify=False)
+    # SIGNED IN, deliberately. The pin is only a constraint while this box can act on it —
+    # see ``test_a_flowpad_pin_is_not_applied_while_signed_out``, which is the same state
+    # minus the key and gets the opposite answer. Without the key here this test would be
+    # asserting the signed-out rule and reporting it as the signed-in one.
+    _hub_key(monkeypatch)
 
     # The spawn still fails loudly: a preference is a constraint, and substituting the
     # personal subscription for the budget the user chose is the thing we must never do.
@@ -828,3 +845,43 @@ async def test_a_status_read_costs_one_inventory_per_harness(env, monkeypatch) -
         f"one inventory per harness, got {inventories} for {len(HUB_ENDPOINT_HARNESSES)} harnesses"
     )
     assert projects == 1, f"the project is the same for every harness; looked it up {projects} times"
+
+
+async def test_a_flowpad_pin_is_not_applied_while_signed_out(env) -> None:
+    """A preference names which source to prefer; it cannot conjure one this box has no key
+    to sign for.
+
+    The real report: a Windows box pinned to Flowpad and signed OUT of it had a working
+    device login and a stored OpenRouter key, and could start nothing —
+
+        claude has no usable LLM source:
+          - claude device login: claude is set to use flowpad
+          - openrouter key: claude is set to use flowpad
+
+    — because applying the pin selected no hub candidate (there is none when signed out) and
+    only made everything else ineligible. Dropping it lands the box on the ranking underneath,
+    which is where a box with no preference already lands: device before key.
+
+    The pin is NOT cleared. It is a stored choice that becomes live again on sign-in, and the
+    sibling test above is that same state with a key, still failing loudly.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view, resolve_llm_endpoint
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    cap.auth_mode, cap.api_provider = "api", "flowpad"
+    await cap.save(notify=False)
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+
+    endpoint, _ = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "device", "the ladder underneath, in its own order: device before key"
+
+    view = await llm_picker_view("claude")
+    assert view.chosen is not None, "something funds the harness — this is not the blocked state"
+    assert not view.blocked
+    # And it says so, because a pin that silently stops applying is its own confusion: the
+    # screen would show "use Flowpad" selected while something else plainly does the spending.
+    assert "signed out of Flowpad" in view.note
