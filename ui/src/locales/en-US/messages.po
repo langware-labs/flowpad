@@ -6389,15 +6389,6 @@ msgstr "Email enabled"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email disabled"
-msgstr "Email disabled"
-
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email enabled"
-msgstr "Email enabled"
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 msgid "Email inbox"
 msgstr "Email inbox"
 
