@@ -10590,6 +10590,7 @@ msgstr "Loading..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -13009,8 +13010,8 @@ msgid "Only a sandbox's owner can start one. If you share it as it is, they'll g
 msgstr "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Only an admin of this organization can see its budgets."
-msgstr "Only an admin of this organization can see its budgets."
+#~ msgid "Only an admin of this organization can see its budgets."
+#~ msgstr "Only an admin of this organization can see its budgets."
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -21018,6 +21019,14 @@ msgstr "Yesterday"
 msgid "You"
 msgstr "You"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "you are {role}"
+msgstr "you are {role}"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "You are not in any team in this organization yet."
+msgstr "You are not in any team in this organization yet."
+
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -21186,6 +21195,10 @@ msgstr "Your questions"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready"
 msgstr "Your sandbox is ready"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Your teams"
+msgstr "Your teams"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

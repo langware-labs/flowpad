@@ -623,6 +623,13 @@ class Capability(Entity):
                 auth_mode="api",
                 message=source.reason or f"Using {source.name}",
                 details={
+                    # The ROW's provider, not the verdict's: ``LLMSource`` names an endpoint and
+                    # mirrors none of its fields, so reading ``source.provider`` raised
+                    # ``AttributeError`` and 500'd this action for every harness a key or a hub
+                    # endpoint funds -- the exact harnesses whose device login most needs
+                    # re-probing. A crash here froze ``login_state`` at whatever the last sweep
+                    # saw, so a user who signed in afterwards stayed "signed out" on the
+                    # LLM-sources screen with no way to pick their own login.
                     "provider": endpoint.provider,
                     "hub_endpoint": source.endpoint_typeid or None,
                     "llm_source": source.model_dump(mode="json"),
@@ -640,5 +647,11 @@ class Capability(Entity):
                 **result.details,
                 "supported_providers": [p.value for p in spec.supported_providers],
             }
-        await self._mirror_probe_to_login_state(result)
+        # No second mirror. ``refresh_login_state`` above already wrote the vendor's own
+        # verdict, and ``result`` on the api path is NOT that verdict -- it is a synthesized
+        # answer about the ENDPOINT (logged_in iff the endpoint is eligible). Mirroring it wrote
+        # a judgement about a hub budget onto the field that means "is this device login signed
+        # in", so a budget the box could not spend reported the user's perfectly good ``claude``
+        # login as signed out -- and a signed-out device row offers "Sign in" where it should
+        # offer "Use", the one control that switches funding back to OAuth.
         return ApiSuccessResponse(data=result.to_json())
