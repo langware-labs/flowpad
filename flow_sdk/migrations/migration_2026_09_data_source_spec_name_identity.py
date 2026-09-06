@@ -1,7 +1,7 @@
 """One-shot migration: collapse `data_source_spec` rows onto their name-keyed id.
 
 Until FLOWPAD-2070 the type declared a derived identity carrier and NO stable
-key, so `TypeInfo.mint_entity_id` fell through to `uuid5(resolved path)`. A spec
+key, so the id seam fell through to `uuid5(resolved path)`. A spec
 ships inside the wheel, so that path names the INSTALL, not the asset:
 
     …/AppData/Roaming/uv/tools/flowpad/Lib/site-packages/flow_sdk/…/rss
@@ -132,16 +132,16 @@ def _scan(conn) -> dict[str, list[dict[str, Any]]]:
 def _target_id(name: str, rows: list[dict[str, Any]]) -> str:
     """The id the fixed minter now produces for this spec.
 
-    Resolved through `TypeInfo.mint_entity_id` against a folder that still
-    exists — the one sanctioned id seam, so this can never drift from what the
+    Resolved through `reconcile` over the type's carrier against a folder that
+    still exists — the one sanctioned id seam, so this can never drift from what the
     next index writes. Falls back to the same key text when every path is gone.
     """
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — populate the registry
     from flow_sdk.api.api_types.identifier import mint_uuid
     from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.reconcile import reconcile
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-    import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — populate the registry
 
     info = SchemaRegistry.get(TYPE_NAME)
     if info is not None:
@@ -149,7 +149,8 @@ def _target_id(name: str, rows: list[dict[str, Any]]) -> str:
             ref = row["asset_ref"]
             if ref and Path(ref).is_dir():
                 try:
-                    return info.mint_entity_id(FSRef(Path(ref), record_type=RecordType(TYPE_NAME), scope="system"))
+                    probe = FSRef(Path(ref), record_type=RecordType(TYPE_NAME), scope="system")
+                    return reconcile(info, info.layout_for(probe), None, None, write=True, ref=probe)
                 except Exception:  # noqa: BLE001 — a bad ref must not stop the pass
                     logger.debug("mint via %s failed", ref, exc_info=True)
     namespace = getattr(info, "id_namespace", None)

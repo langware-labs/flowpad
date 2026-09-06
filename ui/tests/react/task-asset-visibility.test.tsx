@@ -24,8 +24,7 @@ function taskTypeInfo() {
     creatable: true,
     icon: 'CheckSquare',
     main_subdir: 'tasks',
-    main_layout: 'folder',
-    folder_backed: true,
+    shape: { kind: 'folder', main: 'task.md' },
   };
 }
 

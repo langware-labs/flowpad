@@ -96,12 +96,12 @@ Which meta fields are mirrored is driven by the registered `TypeInfo.meta_model`
 
 ### The `asset_ref` (user-facing source file)
 
-`FSRecord.asset_ref` is an `FSRef` to the primary user-facing content file, which lives **outside** the shadow folder — under the user's project scope or under `records_data/`. The path is resolved by `FSRecord.compute_asset_ref(scope_root, entity, *, default_worker="claude")`, which derives the family subdir from the placement axis (`TypeInfo.asset_class` / `harness` / `family` → `placement.family_subdir(...)`) and the tail from `main_layout` / `main_ext`:
+`FSRecord.asset_ref` is an `FSRef` to the primary user-facing content file, which lives **outside** the shadow folder — under the user's project scope or under `records_data/`. The path is resolved by `FSRecord.compute_asset_ref(scope_root, entity, *, default_worker="claude")`, which derives the family subdir from the placement axis (`TypeInfo.asset_class` / `harness` / `family` → `placement.family_subdir(...)`) and the tail from `shape`:
 
 ```python
 subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
 base = Path(scope_root) / subdir
-target = info.asset_ref_for(base / safe) if info.main_layout == "folder" else base / f"{safe}{info.main_ext}"
+target = base / safe if isinstance(info.shape, Folder) else base / f"{safe}{info.shape.ext}"
 ```
 
 Types whose placement resolves to no subdir have no asset file. `TypeInfo.main_subdir` survives as a derived, read-only view of the same triple (claude default). Examples: `skill` → `.claude/skills` / `folder`; `markdown` → `docs` / `file`. Only the `asset_ref` path is persisted (as the `asset_ref` key in `metadata.json`); the shadow-folder path is computed at runtime.
@@ -328,10 +328,10 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
 - `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
-- `capsules` / `identity_carrier` — named capsule declarations plus WHERE the id lives (frontmatter / folder json / native json / derived)
+- `identity_carrier` — WHERE the id lives (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/fs_store/identity_carrier.py`)
 - `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
-- `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
+- `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `shape`
 
 These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `claude_command.py`, `claude_plan.py`, `claude_memory.py`, `claude_rules.py`, `claude_hook.py`, `todo.py`, `skill.py`, `subagent.py`, `agent.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_type_info.py`; `flow_sdk/fs_store/indexer/builtin.py` wires them onto roots; `indexable_types()` there derives the walked set from those registrations (`FSIndexer.terminal_output_types()`), so there is no hand-maintained list to drift. The table below maps types to the on-disk location their indexer reads; rows marked *not walked* are enum members with no registered indexer function.
 

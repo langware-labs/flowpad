@@ -4,11 +4,13 @@ from flow_sdk.fs_store.indexer.functions.markdown_index import (
     extract_markdown_index,
     markdown_index_identity_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-MARKDOWN_INDEX = TypeMetadata(
-    type=EntityType.MARKDOWN_INDEX,
+MARKDOWN_INDEX = TypeInfo(
+    type_name=EntityType.MARKDOWN_INDEX,
+    shape=File(ext=".md"),
     from_disk_fn=extract_markdown_index,
     identity_carrier=derived_identity(),
     id_stable_key_fn=markdown_index_identity_key,

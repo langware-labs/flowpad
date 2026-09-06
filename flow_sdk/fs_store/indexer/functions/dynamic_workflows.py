@@ -1,4 +1,4 @@
-"""Walker + extractor + id mint + default body for DYNAMIC_WORKFLOW records.
+"""Extractor + id mint + default body for DYNAMIC_WORKFLOW records.
 
 A **dynamic workflow** is an authored, creatable asset (like an agent or a
 skill): a JavaScript orchestration script in the Workflow-tool format
@@ -8,8 +8,12 @@ then runs; each execution produces a separate WORKFLOW_RUN (the run journal /
 transcript), the way an Agent definition produces AgenticProcess runs.
 
 On disk it lives beside the AMD ``.md`` workflows under
-``<root>/.claude/workflows/`` and is distinguished purely by extension:
-``*.md`` → WORKFLOW (prose AMD), ``*.js`` → DYNAMIC_WORKFLOW (dynamic script).
+``<root>/.claude/workflows/`` (or skill-bundled at ``.claude/skills/<name>/``)
+and is distinguished purely by extension: ``*.md`` → WORKFLOW (prose AMD),
+``*.js`` → DYNAMIC_WORKFLOW (dynamic script). Discovery is the type's declared
+``walk`` (``dynamic_workflow_type_info.py``). Safe alongside the skill walker:
+it emits the skill *folder* and ``skill_asset_hash`` only touches
+SKILL.md/skill.yaml — nothing else claims these ``.js`` files.
 
 The script has no YAML frontmatter to carry an id, so the entity id is a stable
 v5 minted from the file path (validate-on-adopt is satisfied — the id is born
@@ -25,7 +29,6 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 _META_PEEK_BYTES = 8 * 1024
@@ -37,32 +40,6 @@ def _meta_field(head: str, key: str) -> str:
     the compiled pattern, so the two per-file lookups don't re-compile."""
     m = re.search(rf"""\b{re.escape(key)}\s*:\s*(['"])(.*?)\1""", head)
     return m.group(2) if m else ""
-
-# ── Walker ───────────────────────────────────────────────────────────────────
-
-def dynamic_workflows_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    """Emit DYNAMIC_WORKFLOW for every ``*.js`` workflow script — both the
-    top-level ``<root>/.claude/workflows/*.js`` and skill-bundled
-    ``<root>/.claude/skills/<name>/*.js`` (the documented "pack a workflow as a
-    skill" layout). Mirrors ``workflow_fn`` (the ``*.md`` AMD sibling). Register
-    on USER_HOME_FOLDER / REAL_PROJECT_CWD / CWD_ROOT; scope inherits via FSRef.
-
-    Safe alongside the skill walker: ``skill_fn`` emits the skill *folder* and
-    ``skill_asset_hash`` only touches SKILL.md/skill.yaml — nothing else claims
-    these ``.js`` files, so no double-index."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        claude = Path(node.path) / ".claude"
-        if not claude.is_dir():
-            continue
-        for js in sorted([*claude.glob("workflows/*.js"), *claude.glob("skills/*/*.js")]):
-            key = str(js.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(js, record_type=RecordType.DYNAMIC_WORKFLOW, parent=node))
-    return out
 
 # ── Id ───────────────────────────────────────────────────────────────────────
 

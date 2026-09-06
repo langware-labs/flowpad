@@ -43,10 +43,6 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.api.api_types.identifier import adopt_entity_id
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
 from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum, ExampleSpec
 from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, is_binary, layout_for, load_doc
 
@@ -62,13 +58,6 @@ def _load_manifest(dataset_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     return load_doc(dataset_dir / MANIFEST)
 
 
-def dataset_id_from_folder(ref: FSRef | Path) -> object | None:
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    meta, _ = _load_manifest(path)
-    return adopt_entity_id(meta.get("id"))
 
 
 # ── parser (shared by both layouts) ───────────────────────────────────────────

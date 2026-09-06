@@ -186,7 +186,7 @@ async def build_asset_menu(
     )
     from flow_sdk.builtin.project import Project, mount_key  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
     count_types = menu_count_types(types)
     depth_cap = max(1, min(int(max_depth), MAX_MENU_DEPTH))
@@ -207,7 +207,7 @@ async def build_asset_menu(
             project_id=pid,
             folder_typeid=(info or {}).get("typeid") or None,
             origin_kind=(info or {}).get("origin_kind") or None,
-            never_indexed=(SchemaRegistry.project_never_indexed(pid) if pid else None),
+            never_indexed=(index_log.project_never_indexed(pid) if pid else None),
         )
 
     def walk(raw_path: str, source: AssetSource, depth: int, proj: "Project | None", info: dict | None) -> MenuNode | None:

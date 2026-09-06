@@ -1249,7 +1249,11 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     # refactor 4f94fb92, and bootstrap must not stamp identity
                     # capsules into tracked repo/system docs. Deterministic id
                     # also makes this seeding idempotent across bootstraps.
-                    rec = SchemaRegistry.get("markdown").record_for(_FSRef(md_path, read_only=True))
+                    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
+                    info = SchemaRegistry.get("markdown")
+                    ref = _FSRef(md_path, read_only=True)
+                    rec = info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=False, ref=ref))
                     if rec is None:
                         continue
                     # System-project ownership is authoritative at seed time.

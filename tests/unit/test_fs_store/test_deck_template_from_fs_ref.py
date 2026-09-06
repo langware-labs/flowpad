@@ -18,6 +18,8 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.deck_template import (
     extract_deck_template,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -56,9 +58,9 @@ def _seed_template(
 def _assert_indexer_compatible(tpl_path: Path) -> DeckTemplate:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(tpl_path)
-    # gen_id stamps the `.flow/id` capsule first — the production index order.
+    # the resolve stamps the json capsule first — the production index order.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    gen = SchemaRegistry.get("deck_template").mint_entity_id(ref)
+    gen = resolve_id(SchemaRegistry.get("deck_template"), ref)
     loaded = DeckTemplate.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real deck template"
     assert isinstance(loaded, DeckTemplate)
@@ -109,7 +111,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
         layouts=["cover-centered", "metrics-grid"],
     )
     loaded = _assert_indexer_compatible(tpl)
-    assert loaded.id == VALID_V4  # manifest id adopted
+    assert loaded.id == SchemaRegistry.get("deck_template").read_id(FSRef(tpl))  # the carrier's id; a manifest id is not a carrier
     assert loaded.title == "Full"
     assert loaded.description == "every field"
     assert loaded.layouts == ["cover-centered", "metrics-grid"]

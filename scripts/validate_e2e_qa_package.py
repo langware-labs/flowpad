@@ -18,7 +18,6 @@ ALGORITHM = "sha256-path-content-v1"
 PACKAGE_ROOT = PurePosixPath(".claude/skills/e2e-qa")
 
 EXPECTED_PATHS = (
-    ".flow/id",
     "SKILL.md",
     "agents/bug_fixer.md",
     "agents/qa-tester.md",

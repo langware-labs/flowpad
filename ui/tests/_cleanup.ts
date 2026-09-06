@@ -246,7 +246,7 @@ function isOurRunEntity(label: string): boolean {
  * tracked delete.
  *
  * Why re-materialisation happens: opening a skill/analysis in the app fires
- * `useEntityByPath` → `discoverByPath`, which kicks a single-type skill re-index.
+ * `useEntityByPath` → `resolveByPath`, which can mint/recover the skill row.
  * If that walk read the skill folder BEFORE `afterEach` deleted the row+folder,
  * it finishes AFTER and `sync_to_db`'s the row back (same frontmatter id). The
  * per-test `purgeTracked` already ran and drained the registry, so nothing
