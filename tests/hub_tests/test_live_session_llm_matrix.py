@@ -7,11 +7,11 @@ WebSocket bridge, which routes it through ``process_inbound_prompt``; a standing
 grant pre-approves the session, and the host runs the turn on whichever CLI this
 row names — claude / codex / copilot / opencode.
 
-**Both sides are on the same direct endpoint.** The host box is put in
-``api``-mode for the harness under test (``Capability.auth_mode="api"`` +
-``api_provider="openrouter"``) with the ``OPENROUTER_API_KEY`` stored locally, so
-the resolver's hard rung picks the ``api_key`` (direct) endpoint over any device
-login. Nothing here touches a native Anthropic/OpenAI/GitHub account or the hub's
+**Both sides are on the same direct endpoint.** The ``OPENROUTER_API_KEY`` is
+stored locally and its ``api_key`` ``LLMEndpoint`` is named on the host process
+itself (``ap.set_llm_endpoint``) — the resolver's hard rung, so it wins over any
+device login for THIS process without re-funding anything else on the box.
+Nothing here touches a native Anthropic/OpenAI/GitHub account or the hub's
 metered relay — the turn's wire is ``base_url = openrouter.ai`` verbatim.
 
 The one model differs only in how each CLI must NAME it: claude/codex/copilot take
@@ -90,36 +90,21 @@ PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
 EXPECTED = "pong"
 
 
-async def _force_direct_openrouter(worker_type: WorkerType):
-    """Put this box's harness in ``api``-mode on the direct OpenRouter key;
-    returns the coroutine function that restores the capability as it was.
-    (``auth_mode="api"`` persists in the shared session DB — left behind, a
-    later worker test fails with "set to API-key auth but no key".)
+async def _direct_openrouter_endpoint():
+    """The LOCAL ``api_key`` endpoint for the stored OpenRouter key.
 
-    Two writes make the hard rung win over any device login (``llm_source`` ladder
-    rung 3): store the provider key locally, and stamp the harness capability's
-    ``auth_mode``/``api_provider``. After this, ``resolve_worker_api_auth`` returns
-    the direct binding (``base_url = openrouter.ai``), never the vendor CLI's own
-    credentials.
+    Per-PROCESS binding, deliberately: ``ap.set_llm_endpoint(...)`` is the
+    sanctioned "spend this budget" seam (ladder rung 1, hard), so it beats any
+    device login for this process alone. The alternative — stamping
+    ``Capability.auth_mode="api"`` — is box-wide: it re-funds every other process
+    on the machine and has to be undone in teardown, and a failure before that
+    teardown leaves the shared DB poisoned for later tests.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.cli.auth.lm_api_keys import set_lm_api
-    from flow_sdk.flowpad_types.enums import LMApiProvider
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api(os.environ["OPENROUTER_API_KEY"], LMApiProvider.OPENROUTER)
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type.value))
-    assert cap is not None, f"no capability for {worker_type.value}"
-    prior = (cap.auth_mode, cap.api_provider)
-    cap.auth_mode = "api"
-    cap.api_provider = LMApiProvider.OPENROUTER.value
-    await cap.save(notify=False)
-
-    async def restore() -> None:
-        cap.auth_mode, cap.api_provider = prior
-        await cap.save(notify=False)
-
-    return restore
+    return await LLMEndpoint.ensure_for_secret(LMApiProvider.OPENROUTER.value)
 
 
 @pytest.mark.timeout(600)  # real CLI + real network; do not increase without approval
@@ -134,7 +119,6 @@ async def test_session_turn_runs_direct_on_glm(
     model,
 ) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind
     from flow_sdk.builtin.project import Project
@@ -149,7 +133,7 @@ async def test_session_turn_runs_direct_on_glm(
     bob = await guest_login(hub_base_url, hub)
 
     # ── put the host box on the pure-direct OpenRouter endpoint ────────────────
-    restore_harness = await _force_direct_openrouter(worker_type)
+    endpoint = await _direct_openrouter_endpoint()
 
     # ── host: a project-mapped, shared conversation + standing grant ───────────
     host_root = tmp_path / "host-project"
@@ -166,11 +150,9 @@ async def test_session_turn_runs_direct_on_glm(
     await assert_auto_assigned(
         hub_base_url, bob.token, entity_type="conversation", entity_id=conv.id, user_id=bob.user_id, expected_role="member"
     )
-    alice_key = hub_login_payload.get("api_key") or hub_login_payload.get("token")
-    headers_a = {"Authorization": f"Bearer {alice_key}", "Content-Type": "application/json"}
-    for hdrs in (headers_a, bob.headers):
-        r = await hub.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=hdrs, json={})
-        assert r.status_code < 300, r.text
+    # Alice joined inside ``conv.share()``; only the guest still needs to.
+    r = await hub.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=bob.headers, json={})
+    assert r.status_code < 300, r.text
 
     grant = ContactPermission(
         contact_user_id=bob.user_id, project_id=None, allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value]
@@ -190,12 +172,14 @@ async def test_session_turn_runs_direct_on_glm(
         visible=False,
         pty_mode=False,
     ).save()
+    # THE interface: name the budget this process spends. Nothing box-wide is
+    # touched, so no other process on this machine is re-funded by the test.
+    await ap.set_llm_endpoint(endpoint)
 
-    # (1) FREE proof it is pure-direct, before a single token is spent. The funding
-    # source must be the local API_KEY endpoint for openrouter (NOT the hub relay,
-    # NOT a device login), and the spawn must carry the GLM slug. Never interpolate
-    # ``auth.env`` into a message — it holds the provider key.
-    endpoint, _source = await resolve_llm_endpoint(ap)
+    # (1) FREE proof it is pure-direct, before a single token is spent: the spawn
+    # binding must exist (api mode, not a device login), be funded by the local
+    # api_key endpoint for openrouter (not the hub relay), and carry the GLM slug.
+    # Never interpolate ``auth.env`` into a message — it holds the provider key.
     assert endpoint.kind == LLMEndpointKind.API_KEY, f"{binary}: funded by {endpoint.kind}, not a direct api_key endpoint"
     assert endpoint.provider == "openrouter", f"{binary}: direct endpoint provider is {endpoint.provider!r}, not openrouter"
     auth = await resolve_worker_api_auth(ap)
@@ -231,7 +215,26 @@ async def test_session_turn_runs_direct_on_glm(
                 reply = done[0]
                 break
             await asyncio.sleep(2.0)
-        assert reply is not None, f"{binary}: no reply landed in the session within the budget"
+        if reply is None:
+            # Say WHY nothing landed: a silent "no reply" is unactionable, and the
+            # three states that produce it (worker never finished, worker finished
+            # but the turn errored, turn fine but nothing was written back) are only
+            # distinguishable from the process + session rows and the transcript.
+            fresh = await AgenticProcess.get_by_id(ap.id)
+            session_row = await RemoteWorkerSession.get_one({"id": session_id})
+            history = ""
+            try:
+                history = str(fresh.driver.load_history(fresh))[-800:] if fresh else ""
+            except Exception as exc:  # noqa: BLE001
+                history = f"<load_history raised: {exc}>"
+            raise AssertionError(
+                f"{binary}: no reply landed in the session.\n"
+                f"  process.status = {getattr(fresh, 'status', None)!r}\n"
+                f"  worker_status  = {fresh.fetch_worker_status() if fresh else None!r}\n"
+                f"  session.status = {getattr(session_row, 'status', None)!r}\n"
+                f"  host_process   = {getattr(session_row, 'host_process_id', None)!r} (seeded {ap.id})\n"
+                f"  transcript tail= {history}"
+            )
 
         answer = (reply.text or "").lower()
         assert EXPECTED in answer, f"{binary}: session reply did not carry the model's answer: {answer[:400]!r}"
@@ -256,4 +259,3 @@ async def test_session_turn_runs_direct_on_glm(
         await asyncio.shield(safe_exit(ap))
         await hub_ws_manager.stop()
         await grant.delete()
-        await restore_harness()
