@@ -44,8 +44,17 @@ export function useHarnessInstallPrompt(): HarnessInstallPrompt {
 
   const confirmMissingThen = useCallback(
     (kind: string, otherwise: () => void) => {
+      // Resolve the umbrella FIRST. `getSnapshot('harness').available` is a
+      // `.some()` across every `harness.*` row — "at least one assistant on
+      // this machine" — which is not the question. A box with Codex installed
+      // and Claude missing answers `true` to the umbrella while the launch that
+      // just failed was Claude's, so the toast fired and the install dialog
+      // never appeared. `resolvedKind` is the concrete harness a launch would
+      // actually use (the reference's target, or the kind itself when already
+      // concrete), and a snapshot of THAT reports only its own verdict.
+      const resolved = capabilityManager.getSnapshot(kind).resolvedKind ?? kind;
       void capabilityManager
-        .test(kind)
+        .test(resolved)
         .then((probe) => (probe.available ? otherwise() : promptToInstall()))
         .catch(otherwise);
     },

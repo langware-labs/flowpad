@@ -15,7 +15,7 @@
  * not) it re-runs discovery, so it can both answer the question and correct the
  * row. These pin that the answer — not an assumption — picks the destination.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -23,6 +23,9 @@ const h = vi.hoisted(() => ({
   openNewChat: vi.fn(),
   ensureChecked: vi.fn(),
   test: vi.fn(),
+  // The re-probe resolves the kind first, so a launch that failed for the
+  // DEFAULT assistant is not answered by a sibling that happens to be present.
+  getSnapshot: vi.fn(() => ({ resolvedKind: 'harness.claude.cli' })),
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -31,7 +34,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat: h.openNewChat }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
-  capabilityManager: { ensureChecked: h.ensureChecked, test: h.test },
+  capabilityManager: { ensureChecked: h.ensureChecked, test: h.test, getSnapshot: h.getSnapshot },
 }));
 
 // Boundaries the strip needs to mount but whose behaviour is not under test.
@@ -75,6 +78,9 @@ function mountController(): () => Promise<void> | void {
 
 describe('a spawn failure asks whether the harness is really gone', () => {
   beforeEach(() => {
+    // The dialog is portaled to document.body, so a previous test's copy
+    // outlives its container and `screen` would find THAT one.
+    cleanup();
     vi.clearAllMocks();
     // The stale row that lets the pre-flight through: it says "available", so
     // no dialog is shown up front and the spawn is what discovers the truth.
@@ -87,7 +93,7 @@ describe('a spawn failure asks whether the harness is really gone', () => {
 
     await mountController()();
 
-    await waitFor(() => expect(h.test).toHaveBeenCalledWith(CapabilityKinds.ClaudeCode));
+    await waitFor(() => expect(h.test).toHaveBeenCalledWith('harness.claude.cli'));
     // The dialog itself, on screen — this is the affordance that carries "Try
     // auto install", and the whole point of the fix is that it can now be
     // reached from a failed spawn.

@@ -276,6 +276,9 @@ export const CAPABILITY_PARAM = 'capability';
  * its PTY reports ready, which then navigates to the same dock WITHOUT the
  * param (`withoutShellStartCommand`) so a reload cannot retype it.
  */
+/** The Shell entity's type token — the `shell-` prefix on a shell TypeId. */
+const SHELL_TYPE = 'shell';
+
 export const START_COMMAND_PARAM = 'startCommand';
 export const PREFILL_COMMAND_PARAM = 'prefillCommand';
 
@@ -1490,6 +1493,23 @@ export class DockPointer implements IDockPointer {
     if (submitted) return { command: submitted, submit: true };
     const typed = this.options?.[PREFILL_COMMAND_PARAM];
     return typed ? { command: typed, submit: false } : null;
+  }
+
+  /**
+   * The bare Shell id this dock addresses, or null when it addresses something
+   * else (a process, nothing at all).
+   *
+   * A shell has TWO spellings and they are not interchangeable: `Shell.dockPointer`
+   * is the TypeId (`shell-<uuid>`) while every consumer holding a "session id"
+   * — tabs, the PTY transport, `InteractiveTerminal` — holds the bare uuid.
+   * Comparing the two raw silently never matches, which is exactly how the
+   * typed-command effect came to do nothing at all. One accessor, so the next
+   * comparison cannot get it wrong either.
+   */
+  get shellId(): string | null {
+    const pointer = this.viewType === ViewType.SHELL ? this.pointer : null;
+    if (!pointer || DockPointer.isAgenticProcessPointer(pointer)) return null;
+    return pointer.startsWith(`${SHELL_TYPE}-`) ? pointer.slice(SHELL_TYPE.length + 1) : pointer;
   }
 
   /** Clone this dock with both command params dropped — what the terminal

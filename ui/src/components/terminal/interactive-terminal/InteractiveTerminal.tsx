@@ -1274,7 +1274,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // Only the dock we are actually showing may type into us. Warm-mounted
     // panels for other tabs share this component, and a command addressed to
     // one terminal must never land in another.
-    if (currentDock?.pointer !== sessionId) return;
+    //
+    // Through `shellId`, because the dock spells a shell as its TypeId
+    // (`shell-<uuid>`) while `sessionId` here is the bare uuid — comparing the
+    // two raw never matched, and the command was silently never typed.
+    if (currentDock?.shellId !== sessionId) return;
     const ask = currentDock?.shellStartCommand ?? null;
     if (!ask || startCommandRef.current === ask.command) return;
     startCommandRef.current = ask.command;
