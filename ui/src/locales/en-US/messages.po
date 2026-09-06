@@ -391,10 +391,9 @@ msgstr "{0} keys start with {1} — this one does not."
 msgid "{0} messages"
 msgstr "{0} messages"
 
-#. placeholder {0}: ticket.message_count
 #: src/components/inbox-view/InboxView.tsx
-msgid "{0} msg"
-msgstr "{0} msg"
+#~ msgid "{0} msg"
+#~ msgstr "{0} msg"
 
 #. placeholder {0}: item.messageCount
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -466,6 +465,11 @@ msgstr "{0} stayed in your .env.local."
 #: src/components/connections-manager.tsx
 msgid "{0} test failed"
 msgstr "{0} test failed"
+
+#. placeholder {0}: info.attemptCount
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "{0} this session"
+msgstr "{0} this session"
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -653,14 +657,6 @@ msgstr "{name} was added, but its guides cannot be opened"
 msgid "{pct}% of your token budget used {windowText}"
 msgstr "{pct}% of your token budget used {windowText}"
 
-#: src/components/conversation/SessionCard.tsx
-msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
-msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
-
-#: src/components/conversation/SessionCard.tsx
-#~ msgid "{promptCount} prompts · {replyCount} replies"
-#~ msgstr "{promptCount} prompts · {replyCount} replies"
-
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
@@ -669,9 +665,13 @@ msgstr "{people, plural, one {# person will be invited.} other {# people will be
 msgid "{projectName} shared"
 msgstr "{projectName} shared"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
+msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
+
 #: src/components/conversation/LiveSessionGroup.tsx
-msgid "{promptCount} prompts · {replyCount} replies"
-msgstr "{promptCount} prompts · {replyCount} replies"
+#~ msgid "{promptCount} prompts · {replyCount} replies"
+#~ msgstr "{promptCount} prompts · {replyCount} replies"
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -2382,6 +2382,10 @@ msgstr "Attachment upload failed"
 msgid "Attachments"
 msgstr "Attachments"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Attempts"
+msgstr "Attempts"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Attribution"
 msgstr "Attribution"
@@ -2492,6 +2496,10 @@ msgstr "Available Models"
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "Available on cloud"
 msgstr "Available on cloud"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "available to pull"
+msgstr "available to pull"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Awaiting {host}"
@@ -2648,6 +2656,10 @@ msgstr "Blocks: "
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "bm25 / (1 + days × k)"
 msgstr "bm25 / (1 + days × k)"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Body status"
+msgstr "Body status"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Bold"
@@ -5903,6 +5915,7 @@ msgstr "Deleting a project is permanent: it removes the project folder and every
 msgid "Deleting…"
 msgstr "Deleting…"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delivered"
 msgstr "Delivered"
@@ -8747,8 +8760,8 @@ msgid "Help desk"
 msgstr "Help desk"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Help Desk"
-msgstr "Help Desk"
+#~ msgid "Help Desk"
+#~ msgstr "Help Desk"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Help desk files removed"
@@ -9023,6 +9036,10 @@ msgstr "HTTP Proxy Port"
 #: src/components/settings-view/settings-utils.ts
 msgid "HTTP proxy URL for network requests"
 msgstr "HTTP proxy URL for network requests"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "HTTP status"
+msgstr "HTTP status"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "HTTPS Proxy"
@@ -9685,8 +9702,8 @@ msgid "Join this support ticket so you can reply"
 msgstr "Join this support ticket so you can reply"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Joined"
-msgstr "Joined"
+#~ msgid "Joined"
+#~ msgstr "Joined"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Joining…"
@@ -9845,6 +9862,10 @@ msgstr "last {0}"
 msgid "Last {0}"
 msgstr "Last {0}"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Last attempt"
+msgstr "Last attempt"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last Indexed"
 msgstr "Last Indexed"
@@ -9865,6 +9886,10 @@ msgstr "Last Login:"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Last message"
 msgstr "Last message"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Last success"
+msgstr "Last success"
 
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
@@ -10519,7 +10544,6 @@ msgstr "Loading..."
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -10952,6 +10976,7 @@ msgid "Merge conflicts"
 msgstr "Merge conflicts"
 
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Message"
 msgstr "Message"
@@ -10974,6 +10999,10 @@ msgstr "Message not queued"
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not sent"
 msgstr "Message not sent"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Message sent"
+msgstr "Message sent"
 
 #: src/i18n/type-labels.ts
 msgid "Message Suggest"
@@ -11653,13 +11682,17 @@ msgstr "no budget"
 msgid "No budget set"
 msgstr "No budget set"
 
-#: src/components/capabilities-view/CapabilitiesView.tsx
-msgid "No capabilities available"
-msgstr "No capabilities available"
-
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
 msgstr "No budgets are allocated to you"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "no bundle was ever uploaded"
+msgstr "no bundle was ever uploaded"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "No capabilities available"
+msgstr "No capabilities available"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "no ceiling"
@@ -11894,8 +11927,8 @@ msgid "No help desk in this repository"
 msgstr "No help desk in this repository"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "No help desk tickets"
-msgstr "No help desk tickets"
+#~ msgid "No help desk tickets"
+#~ msgstr "No help desk tickets"
 
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "No high-level calls in this session."
@@ -12941,7 +12974,6 @@ msgstr "Only harness entries here — enable “Show all” to view them."
 #: src/components/conversation/SessionCard.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -13893,7 +13925,6 @@ msgid "Pick the local project folder this conversation should run in. We'll use 
 msgstr "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/inbox-view/InboxView.tsx
 msgid "Pick up"
 msgstr "Pick up"
 
@@ -13902,7 +13933,6 @@ msgid "Pick what to do with this invitation."
 msgstr "Pick what to do with this invitation."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/inbox-view/InboxView.tsx
 msgid "Picking up…"
 msgstr "Picking up…"
 
@@ -14609,6 +14639,10 @@ msgstr "Pull changes now"
 msgid "Pull failed."
 msgstr "Pull failed."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "pulled, but arrived short"
+msgstr "pulled, but arrived short"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pulling…"
 msgstr "Pulling…"
@@ -14941,7 +14975,6 @@ msgstr "referenced but not in entities table"
 #: src/components/git/RepoPicker.tsx
 #: src/components/graph-view/GraphView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -14998,8 +15031,8 @@ msgid "Refresh from the tag index"
 msgstr "Refresh from the tag index"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Refresh help desk tickets"
-msgstr "Refresh help desk tickets"
+#~ msgid "Refresh help desk tickets"
+#~ msgstr "Refresh help desk tickets"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Refresh index"
@@ -15373,6 +15406,10 @@ msgstr "Repository URL"
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Repository URL:"
 msgstr "Repository URL:"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Request"
+msgstr "Request"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
@@ -15961,7 +15998,6 @@ msgstr "Sandbox Metrics"
 msgid "Sandbox started without cloud sign-in"
 msgstr "Sandbox started without cloud sign-in"
 
-#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox unavailable"
 msgstr "Sandbox unavailable"
@@ -17367,8 +17403,7 @@ msgstr "Sign in with a provider"
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 
-#: src/pages/hub-home/LaunchSandboxDialog.tsx
-#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/AutoLoginField.tsx
 msgid "Sign me in automatically — this sandbox belongs to one person."
 msgstr "Sign me in automatically — this sandbox belongs to one person."
 
@@ -18170,8 +18205,8 @@ msgid "Support room"
 msgstr "Support room"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Support ticket"
-msgstr "Support ticket"
+#~ msgid "Support ticket"
+#~ msgstr "Support ticket"
 
 #: src/components/drag-drop-overlay.tsx
 msgid "Supported: Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)"
@@ -18711,13 +18746,13 @@ msgstr "The logout did not complete."
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "The member tasks were created; {messageFailures} notification message(s) did not go through."
 
-#: src/components/conversation/MessageComposer.tsx
-msgid "the other participant"
-msgstr "the other participant"
-
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 msgstr "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "the other participant"
+msgstr "the other participant"
 
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "The project was not linked to the cloud."
@@ -18778,6 +18813,10 @@ msgstr "The selected entity has no name yet. Choose one — it will be saved to 
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "The selected project has no folder on this machine."
 msgstr "The selected project has no folder on this machine."
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "the sender is still staging it"
+msgstr "the sender is still staging it"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -19007,6 +19046,10 @@ msgstr "This folder can't be shared yet"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "This folder-backed asset has no main file metadata."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "This hub isn't configured to run sandboxes"
+msgstr "This hub isn't configured to run sandboxes"
 
 #: src/lib/content-install.ts
 msgid "This install link has an invalid content branch."
@@ -20777,6 +20820,10 @@ msgstr "Window (days)"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
+
+#: src/pages/hub-home/AutoLoginField.tsx
+msgid "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."
+msgstr "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."
 
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard"

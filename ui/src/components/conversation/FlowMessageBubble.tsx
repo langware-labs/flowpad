@@ -289,6 +289,8 @@ export function FlowMessageBubble({
     error: downloadError,
     dismissError: dismissDownloadError,
     downloading,
+    bodyStatus: attachmentBodyStatus,
+    attempts: downloadAttempts,
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
 
@@ -617,7 +619,17 @@ export function FlowMessageBubble({
             {downloaded ? <Trans>Downloaded</Trans> : <Trans>Could not download</Trans>}
             <AttachmentDownloadWarning
               attachments={missingAttachments}
-              error={downloadError?.message}
+              error={downloadError}
+              info={{
+                messageTime: fm?.eventTime,
+                deliveredAt: fm?.delivered_at,
+                lastAttemptAt: downloadAttempts.lastAttemptAt,
+                lastSuccessAt: downloadAttempts.lastSuccessAt,
+                attemptCount: downloadAttempts.count,
+                bodyStatus: attachmentBodyStatus,
+                downloaded,
+                messageId,
+              }}
               downloading={downloading}
               onDownload={triggerDownload}
             />
