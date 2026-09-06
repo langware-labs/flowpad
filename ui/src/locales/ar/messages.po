@@ -4459,6 +4459,11 @@ msgstr ""
 msgid "Copy event JSON"
 msgstr "نسخ JSON للحدث"
 
+#: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Copy id"
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
 msgstr "نسخ رمز الانضمام"
