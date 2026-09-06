@@ -1143,10 +1143,32 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        # Splatted rather than `id=project_id`: the model rejects an explicit
-        # None, and "no id" has to mean "mint one".
-        project = Project(name=target_dir, **({"id": project_id} if project_id else {}))
-        await project.save()
+        # `find_by_cwd or save-new` — the documented upsert for a Project, whose
+        # natural key is the canonical mount path ("dedup is the job of
+        # find_by_cwd (a lookup), NOT of a path-derived id", see Project).
+        #
+        # Minting unconditionally here produced TWO rows for one folder on every
+        # git clone (reproduced 2/2, two different public repos): two v4 rows,
+        # same mount path, ~40-120ms apart. The later won the UI and the earlier
+        # was left an orphan, so someone opening a shared repo saw the project
+        # twice in their switcher. Which writer got there first was NOT pinned
+        # down — no frontend clone path posts a Project before calling this — so
+        # this is deliberately a dedup, not a fix to a named racer: the lookup
+        # is correct whoever wrote first, and is what this call site should have
+        # been doing regardless.
+        #
+        # An ADOPTED id is the one case that must not reuse a stray: the hub
+        # minted that identity and it has to span both sides, so a local row at
+        # the same path under a different id is not the project being handed
+        # over. Reuse only when the ids agree.
+        existing = await Project.find_by_cwd(target_dir)
+        if existing is not None and (not project_id or str(existing.id) == str(project_id)):
+            project = existing
+        else:
+            # Splatted rather than `id=project_id`: the model rejects an explicit
+            # None, and "no id" has to mean "mint one".
+            project = Project(name=target_dir, **({"id": project_id} if project_id else {}))
+            await project.save()
         await project.setup_for_desktop()
         if project_id:
             await ComputeNode._adopt_hub_project_fields(project)

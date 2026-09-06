@@ -7538,7 +7538,68 @@ class AgenticProcess(Entity):
         """
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         summary = (await self.resolve_context_summary()) or ""
-        return "\n\n".join(p for p in (explicit, summary) if p) or None
+        always = self._resolve_always_use_skills_block()
+        return "\n\n".join(p for p in (explicit, summary, always) if p) or None
+
+    def _resolve_always_use_skills_block(self) -> str:
+        """The project's ``always_use_skills`` as a system-prompt directive.
+
+        A project's skills are otherwise only OFFERED — their name and
+        description are listed in context and the model decides whether to
+        invoke one. Measured on a freshly cloned help-desk project: a prompt
+        that did not name the skill produced ZERO ``Skill`` invocations and an
+        improvised answer that merely *looked* like the skill's schema, because
+        the description alone is enough to fake the shape. Naming the skill in
+        the prompt invoked it properly. So "the skill is available" and "the
+        skill is applied" are two different things, and only the second is what
+        a project author sharing a help desk actually means.
+
+        Read from the repo's own ``.flowpad/bootstrap.json`` rather than from
+        local settings, because the declaration has to survive the trip: someone
+        who received the project over git gets the author's intent with it.
+
+        Best-effort by construction — no workdir, no manifest, or a manifest that
+        declares nothing all mean "no directive", never a failed launch.
+
+        Cached in ``context_data`` for the same reason as
+        :meth:`resolve_context_summary`, and it is not an optimization worth
+        skipping: this resolves on EVERY headless/print turn, not once per
+        launch, so an uncached read re-opens and re-parses the manifest on every
+        message the worker receives. The manifest is a file in the project the
+        process is already pinned to; it does not change under a running
+        session. ``""`` is cached as readily as a directive — "this project
+        declares nothing" is an answer, and re-deriving it per turn is the same
+        waste.
+        """
+        data = self.context_data or {}
+        cached = data.get("always_use_skills_block")
+        if cached is not None:
+            return cached
+        block = self._read_always_use_skills_block()
+        self.context_data = {**data, "always_use_skills_block": block}
+        return block
+
+    def _read_always_use_skills_block(self) -> str:
+        """The uncached read behind :meth:`_resolve_always_use_skills_block`."""
+        workdir = (self.workdir or "").strip()
+        if not workdir:
+            return ""
+        try:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+
+            skills = read_bootstrap_manifest(_Path(workdir)).always_use_skills
+        except Exception:  # noqa: BLE001 -- a manifest must never fail a launch
+            return ""
+        if not skills:
+            return ""
+        listed = ", ".join(f"`{name}`" for name in skills)
+        return (
+            f"This project declares that the following skill(s) apply to every request: {listed}. "
+            "Use them without being asked — treat each turn as though the user had named them. "
+            "Follow the skill's own instructions rather than inferring its shape from its description."
+        )
 
     async def resolve_context_summary(self) -> str:
         """The bound context as a system-prompt block — resolved at launch.
