@@ -146,11 +146,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.status === 'setup';
   }
 
-  /** The scheduler will not poll it until a person acts: a setup step is owed, or it
-   *  is running but parked on `config_error` (`DataSource.poll_refusal`). A PAUSED
-   *  source carrying a stale error is not this — resuming it is the fix. */
+  /** Running, but `is_due` refuses it: parked on `config_error` until a person
+   *  fixes the config. A PAUSED source carrying a stale error is not this. */
+  get isParked(): boolean {
+    return this.isActive && this.health === 'config_error';
+  }
+
+  /** The scheduler will not poll it until a person acts: a setup step is owed, or
+   *  it is parked (`DataSource.poll_refusal`). Resuming a paused source is not
+   *  attention — it is the fix. */
   get needsAttention(): boolean {
-    return this.needsSetup || (this.isActive && this.health === 'config_error');
+    return this.needsSetup || this.isParked;
   }
 
   /** Mirrors DataSource.is_due — why a source that looks configured sits idle. */

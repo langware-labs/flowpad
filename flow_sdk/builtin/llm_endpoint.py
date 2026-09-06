@@ -167,6 +167,18 @@ class LLMEndpoint(Entity):
     harness: str = APIField(default="", persist=Persist.FALSE)
     #: Whether the backend itself can call this endpoint. False for DEVICE.
     invocable: bool = APIField(default=True, persist=Persist.FALSE)
+    #: Whether this box's user may CHANGE this budget, from the hub's own permission expansion.
+    #: Three states, and the third is not a detail:
+    #:
+    #: * ``True``  -- they administer it. On an admin's box this is every allowance they minted for
+    #:   somebody else, which is exactly what must not read as their own wallet.
+    #: * ``False`` -- they hold it and may only spend it. That is what a beneficiary is: ``allocate``
+    #:   grants them ``reader`` (``_BENEFICIARY_ROLE``) and stamps no ``principal_typeid``, so this
+    #:   flag is the ONLY thing on the wire that says the budget was handed to them.
+    #: * ``None``  -- not held at all. The catalog's global root reaches every signed-in user
+    #:   without a role edge, and answering ``False`` for it would turn the shared pool into
+    #:   everybody's personal budget.
+    can_administer: bool | None = APIField(default=None, persist=Persist.FALSE)
 
     #: An explicit key handed to the constructor. A PrivateAttr, so it is never a field, never
     #: dumped, never persisted and never shared — it exists for ``LLMEndpoint(provider=...,
@@ -242,6 +254,7 @@ class LLMEndpoint(Entity):
             "models",
             "harness",
             "invocable",
+            "can_administer",
         )
     )
 

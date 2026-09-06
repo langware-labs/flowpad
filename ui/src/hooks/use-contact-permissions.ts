@@ -18,7 +18,19 @@ export function rowMatchesContact(p: ContactPermission, c: ContactKey | null): b
   return false;
 }
 
-/** Live list of one contact's permission rows (the receiver's local policy). */
+/** The standing-grant scope a contact holds for live sessions: the
+ *  project-scoped row wins, then the global row, else null. Pure. */
+export function sessionGrantScope(
+  permissions: readonly ContactPermission[],
+  projectId: string | null,
+): 'project' | 'global' | null {
+  const has = (p: ContactPermission) => (p.allowed_actions ?? []).includes(PermissionAction.AUTO_APPROVE_SESSION);
+  if (projectId && permissions.some((p) => (p.project_id ?? null) === projectId && has(p))) return 'project';
+  if (permissions.some((p) => (p.project_id ?? null) === null && has(p))) return 'global';
+  return null;
+}
+
+/** Live list of one contact's permission rows (the host's local policy). */
 export function useContactPermissions(contact: ContactKey | null) {
   const request = useMemo(() => new QueryRequest({ type: ContactPermission.type }), []);
   const { data = [], refetch } = useEntitiesQuery<ContactPermission>(request);

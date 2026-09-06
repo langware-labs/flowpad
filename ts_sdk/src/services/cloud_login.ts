@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * Cloud login — single owner of cloud auth on the SDK side.
  *
@@ -143,9 +144,10 @@ class CloudManager extends EventEmitter {
   private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null =
     null;
   private _initialized = false;
+  private _subscriptions: Promise<void> | null = null;
 
-  /** Seed initial state from the graph bootstrap response. Called once from main.ts. */
-  async bootstrap(bootstrap: CloudBootstrapSeed) {
+  /** Adopt known identity without fetching status or starting live services. */
+  async seedBootstrap(bootstrap: CloudBootstrapSeed) {
     if (this._initialized) return;
     this._initialized = true;
 
@@ -160,9 +162,6 @@ class CloudManager extends EventEmitter {
 
       const { ConnectionManager } = await import('../websocket');
       const cm = ConnectionManager.getInstance();
-      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
-        this._applyConnectionStatus(slot.status, slot.error);
-      });
       const localConnection = cm.connectionSlot;
       this._applyConnectionStatus(localConnection.status, localConnection.error, false);
 
@@ -203,11 +202,25 @@ class CloudManager extends EventEmitter {
       if (legacy) this._applyConnectionStatus(legacy, seed?.hub_ws_error ?? null, false);
     }
     await this._mirrorToContext();
+  }
 
-    const dm = await _dataManager();
-    dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
+  /** Register live listeners before the SDK proactively connects its socket. */
+  startSubscriptions(): Promise<void> {
+    return this._subscriptions ??= this._startSubscriptions();
+  }
+
+  private async _startSubscriptions(): Promise<void> {
     const { ConnectionManager } = await import('../websocket');
     const cm = ConnectionManager.getInstance();
+    if (isHubOnly()) {
+      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
+        this._applyConnectionStatus(slot.status, slot.error);
+      });
+      this._applyConnectionStatus(cm.connectionSlot.status, cm.connectionSlot.error);
+      return;
+    }
+    const dm = await _dataManager();
+    dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
     // The cloud login/connection status pushes are emitted on the
     // ConnectionManager — NOT re-emitted by the dataManager (which only
     // forwards on_oauth_msg & friends, see store.ts attach_connection_manager).
@@ -234,14 +247,15 @@ class CloudManager extends EventEmitter {
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
     cm.on('on_reconnected', () => {
-      void this._refreshFromStatus();
+      void this.refreshStatus().catch(() => {});
     });
+  }
 
-    // Always verify login on load, even when the bootstrap seed says logged-out:
-    // a freshly-booted sandbox whose auto-login failed seeds logged-out and would
-    // otherwise never run a check, so the footer cloud-disconnected warning (with
-    // its sign-in action) wouldn't surface. This IS the "login check first" on open.
-    await this._refreshFromStatus();
+  /** Compatibility entry point for callers that want the complete startup. */
+  async bootstrap(bootstrap: CloudBootstrapSeed): Promise<void> {
+    await this.seedBootstrap(bootstrap);
+    await this.startSubscriptions();
+    await this.refreshStatus();
   }
 
   /**
@@ -419,7 +433,7 @@ class CloudManager extends EventEmitter {
   }
 
   async refreshStatus(): Promise<CloudStatusData | null> {
-    return this._refreshFromStatus();
+    return lazyAssets.refresh(LazyAsset.CloudStatus);
   }
 
   /** @deprecated Listen to login_status_changed / connection_status_changed instead. */
@@ -628,40 +642,37 @@ class CloudManager extends EventEmitter {
     ctx.setCloudLoggedIn?.(this.isLoggedIn);
   }
 
-  private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+  async fetchStatus(isCurrent: () => boolean = () => true): Promise<CloudStatusData | null> {
     // No cloud layer to refresh in these modes, so don't hit `/cloud/status`:
     //  - Hub mode: the hub backend has no such route (404).
     //  - Local (private) data-privacy mode: the cloud is off-limits by contract
     //    (see login()'s hard gate). Gating here — not just at the callers — keeps
     //    bootstrap's unconditional on-load refresh and on_reconnected both correct.
     if (isHubOnly() || privacyManager.isLocal) return null;
-    try {
-      const data = await apiClient.get<CloudStatusData>('/cloud/status');
-      if (data?.cloud_url) this._cloudUrl = data.cloud_url;
-      if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
-      else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
+    const data = await apiClient.get<CloudStatusData>('/cloud/status');
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+    if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
+    else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
 
-      // Prefer nested shape; fall back to legacy aliases.
-      if (data?.connection) {
-        this._applyConnectionStatus(data.connection.status, data.connection.error ?? null, false);
-      } else {
-        const legacy = legacyConnectionStatus(data ?? {});
-        if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null, false);
-      }
-
-      if (data?.login) {
-        await this._applyLoginBlock(data.login);
-      } else if (data?.logged_in && data.user) {
-        await this._setLoggedIn(data.user);
-      } else if (data?.logged_in === false) {
-        await this._setLoggedOut();
-      } else {
-        this.emit('cloud_status_changed', this.cloudStatus);
-      }
-      return data;
-    } catch {
-      return null;
+    // Prefer nested shape; fall back to legacy aliases.
+    if (data?.connection) {
+      this._applyConnectionStatus(data.connection.status, data.connection.error ?? null, false);
+    } else {
+      const legacy = legacyConnectionStatus(data ?? {});
+      if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null, false);
     }
+
+    if (data?.login) {
+      await this._applyLoginBlock(data.login);
+    } else if (data?.logged_in && data.user) {
+      await this._setLoggedIn(data.user);
+    } else if (data?.logged_in === false) {
+      await this._setLoggedOut();
+    } else {
+      this.emit('cloud_status_changed', this.cloudStatus);
+    }
+    return data;
   }
 
   private async _onCloudLoginStatusMsg(msg: CloudLoginStatusMessage) {

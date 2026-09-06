@@ -72,6 +72,18 @@ async def close_hub_client() -> None:
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
+def rows_of(payload: Any) -> list[dict]:
+    """The rows in a hub list answer: a bare list, or a dict wrapping one under
+    ``data`` / ``items`` / ``results``. Non-dict rows are dropped."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = next((v for k in ("data", "items", "results") if isinstance((v := payload.get(k)), list)), [])
+    else:
+        rows = []
+    return [r for r in rows if isinstance(r, dict)]
+
+
 def hub_base_url() -> Optional[str]:
     """Return the hub base URL from config, or None if not configured.
 

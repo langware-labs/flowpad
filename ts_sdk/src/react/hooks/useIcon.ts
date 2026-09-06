@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getIconPacks, onIconPacksChanged } from '../../icons/registry';
+import { useMemo } from 'react';
+import { useIconPacks } from './useIconPacks';
 import { resolveIcon } from '../../icons/resolve';
 import { withRole } from '../../icons/element';
 import { flowIconComponent, type FlowIconComponent } from '../FlowIcon';
@@ -33,19 +33,16 @@ export interface UseIconResult {
 }
 
 export function useIcon(ref: string | null | undefined, opts: UseIconOptions = {}): UseIconResult {
-  const [, bump] = useState(0);
-  useEffect(() => onIconPacksChanged(() => bump((v) => v + 1)), []);
-
+  const packs = useIconPacks();
   const { role, badge } = opts;
   const tag = withRole(ref, role) || '';
 
   const icon = useMemo(() => {
-    const packs = getIconPacks();
     const base = resolveIcon(tag, packs);
     if (!badge || (base.kind !== 'asset' && base.kind !== 'bundle')) return base;
     const sub = resolveIcon(badge, packs, false);
     return sub.kind === 'none' ? base : { ...base, badge: sub };
-  }, [tag, badge]);
+  }, [tag, badge, packs]);
 
   return {
     icon,

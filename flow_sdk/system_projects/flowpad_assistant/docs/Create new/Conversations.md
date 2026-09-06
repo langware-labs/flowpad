@@ -31,9 +31,10 @@ to your cloud account first.
 - **Send files and assets.** A shared asset arrives as a chip the recipient can
   install. If the asset lives in a Git repository, [[Git sharing]] shares its
   origin instead of copying its bytes.
-- **Send a prompt.** You can compose a prompt for the other person to run
-  against their own project. They approve it and grant permissions before
-  anything runs — see [[Prompt execution]].
+- **Run a prompt on their machine.** Toggle *Run on {name}'s machine* in the
+  composer and your prompt opens a live session on the other person's
+  computer. They approve the session once; follow-ups and replies live in the
+  session view — see [[Prompt execution]].
 - **Share a project's context.** Folders marked shared travel with a shared
   project; see [[Context folders]].
 

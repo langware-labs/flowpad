@@ -20,7 +20,7 @@ import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { DATASET_FIELD_KINDS, Dataset, coerceToKind } from '../entities/dataset';
 import { dataContext } from '../FlowSync/context';
-import { initSdk } from '../main';
+import { asyncSdkInit, initSdk } from '../main';
 import { appOption, applyHostTheme, resolveAppHost } from './host';
 
 /** The kind options a person picks from: the SDK's declared kinds plus the
@@ -649,7 +649,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   $('source').addEventListener('change', (e: any) => selectSource(e.target.value));
 
   // a guest: never mint a tab/workspace for the host
-  await initSdk({ setupWorkspace: false } as any);
+  await initSdk({ setupWorkspace: false });
   // The subject is the asset this app is nested inside — its parent.
   const { subject } = await resolveAppHost();
   if (!subject) throw new Error('this app has no parent asset to edit');
@@ -690,6 +690,9 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
       },
     } as any),
   );
+  // The optional half is the caller's job: `initSdk` deliberately starts no
+  // subscriptions, and this editor has no readiness barrier to hang it off.
+  requestAnimationFrame(() => requestAnimationFrame(() => { void asyncSdkInit(); }));
   statusEl.textContent = 'Live';
   statusEl.classList.add('ok');
   ($('main') as HTMLElement).hidden = false;

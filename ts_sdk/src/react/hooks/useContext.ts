@@ -60,6 +60,7 @@ export function useContext() {
     plugins: typeof dataContext.plugins;
     project: typeof dataContext.project;
     computeNode: typeof dataContext.computeNode;
+    sandboxComputeNode: typeof dataContext.sandboxComputeNode;
     visitor: typeof dataContext.visitor;
     bootstrapError: typeof dataContext.bootstrapError;
     isBootstrapping: typeof dataContext.isBootstrapping;
@@ -79,6 +80,7 @@ export function useContext() {
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     snifferInstalled: typeof dataContext.snifferInstalled;
+    snifferReady: typeof dataContext.snifferReady;
     terminalRuntimeError: typeof dataContext.terminalRuntimeError;
     isConnected: typeof dataContext.isConnected;
   }>({
@@ -99,6 +101,7 @@ export function useContext() {
     plugins: dataContext.plugins,
     project: dataContext.project,
     computeNode: dataContext.computeNode,
+    sandboxComputeNode: dataContext.sandboxComputeNode,
     visitor: dataContext.visitor,
     bootstrapError: dataContext.bootstrapError,
     isBootstrapping: dataContext.isBootstrapping,
@@ -118,6 +121,7 @@ export function useContext() {
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     snifferInstalled: dataContext.snifferInstalled,
+    snifferReady: dataContext.snifferReady,
     terminalRuntimeError: dataContext.terminalRuntimeError,
     isConnected: dataContext.isConnected,
   });
@@ -148,6 +152,7 @@ export function useContext() {
       plugins: dataContext.plugins,
       project: dataContext.project,
       computeNode: dataContext.computeNode,
+      sandboxComputeNode: dataContext.sandboxComputeNode,
       visitor: dataContext.visitor,
       bootstrapError: dataContext.bootstrapError,
       isBootstrapping: dataContext.isBootstrapping,
@@ -167,6 +172,7 @@ export function useContext() {
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       snifferInstalled: dataContext.snifferInstalled,
+      snifferReady: dataContext.snifferReady,
       terminalRuntimeError: dataContext.terminalRuntimeError,
       isConnected: dataContext.isConnected,
     };
@@ -197,6 +203,7 @@ export function useContext() {
       prev.plugins !== current.plugins ||
       prev.project !== current.project ||
       prev.computeNode !== current.computeNode ||
+      prev.sandboxComputeNode !== current.sandboxComputeNode ||
       prev.visitor !== current.visitor ||
       prev.bootstrapError !== current.bootstrapError ||
       prev.isBootstrapping !== current.isBootstrapping ||
@@ -216,6 +223,7 @@ export function useContext() {
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.snifferInstalled !== current.snifferInstalled ||
+      prev.snifferReady !== current.snifferReady ||
       prev.terminalRuntimeError?.kind !== current.terminalRuntimeError?.kind ||
       prev.terminalRuntimeError?.processId !== current.terminalRuntimeError?.processId ||
       prev.isConnected !== current.isConnected

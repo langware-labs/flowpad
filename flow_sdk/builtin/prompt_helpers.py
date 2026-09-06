@@ -76,14 +76,24 @@ async def find_or_create_prompt(
     from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
 
     normalized = normalize_prompt_text(text)
+    scoped = await project_prompts(project_id)
     existing = next(
-        (p for p in await project_prompts(project_id) if normalize_prompt_text(p.text or "") == normalized),
+        (p for p in scoped if normalize_prompt_text(p.text or "") == normalized),
         None,
     )
     if existing is not None:
         return existing
+    # The name is the asset's path segment, so it must be unique in the scope:
+    # two DIFFERENT prompts whose first line truncates to the same auto-name
+    # ("Reply with exactly the text …") would otherwise collide on disk and
+    # fail the whole send. Suffix the way a file manager does.
+    base = (name or auto_prompt_name(text)).strip()
+    taken = {(p.name or "").strip() for p in scoped}
+    unique, n = base, 2
+    while unique in taken:
+        unique, n = f"{base} ({n})", n + 1
     prompt = Prompt(
-        name=(name or auto_prompt_name(text)).strip(),
+        name=unique,
         text=text,
         project_id=project_id,
     )
