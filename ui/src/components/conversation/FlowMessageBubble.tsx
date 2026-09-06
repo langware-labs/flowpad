@@ -193,6 +193,10 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isHelpdesk?: boolean;
+  /** The viewer's hub user id. A hub-mirrored row names its sender by hub
+   *  id while a locally written row names the local user, so "this is me"
+   *  has to accept both — otherwise my own replies wear two names. */
+  viewerCloudUserId?: string | null;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
@@ -220,6 +224,7 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   isHelpdesk = false,
+  viewerCloudUserId = null,
   attachmentProjectId,
   messageAttachments,
   showEmailHeaders = false,
@@ -368,7 +373,10 @@ export function FlowMessageBubble({
     );
   }
 
-  const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
+  const isCurrentUser = !!(
+    fm.sender_id &&
+    ((localUser?.id && fm.sender_id === localUser.id) || (viewerCloudUserId && fm.sender_id === viewerCloudUserId))
+  );
   const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
