@@ -6,7 +6,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
 
 /**
@@ -22,7 +22,7 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const model: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
@@ -58,6 +58,7 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
+            footerSlot={<VibeModelSelect value={model} onChange={setModel} />}
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
