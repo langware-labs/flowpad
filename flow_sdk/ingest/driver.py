@@ -110,10 +110,19 @@ class SetupVerdict:
 
 @dataclass(frozen=True)
 class SegmentRef:
-    """One syncable unit within a source — a feed URL, a channel."""
+    """One syncable unit within a source — a feed URL, a channel.
+
+    ``stamp`` is OPTIONAL: a change token the LISTING already carries (a
+    message count, an updated-at, an etag). The sync records it on the
+    cursor after a good fetch and, while the listing keeps answering the same
+    token, does not fetch the stream again — and does not spend budget on
+    it. A listing that cannot say leaves it empty and the stream is
+    round-robined like any other.
+    """
 
     key: str
     label: str = ""
+    stamp: str = ""
 
 
 @dataclass(frozen=True)

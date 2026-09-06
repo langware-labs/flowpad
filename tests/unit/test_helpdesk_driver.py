@@ -259,3 +259,15 @@ class TestChoices:
         offered = await HelpdeskDriver().choices(_source(), "desk_project_id")
         assert offered and isinstance(offered[0], Choice) and offered[0].id == DESK
         assert await HelpdeskDriver().choices(_source(), "other") == []
+
+
+class TestSegments:
+    @pytest.mark.asyncio
+    async def test_each_ticket_carries_the_pool_rows_change_token(self, monkeypatch):
+        """`message_count:updated_at` from the pool row is the segment stamp,
+        so the sync fetches a ticket only when the pool says it moved."""
+        _hub(monkeypatch, pool=POOL)
+        refs = await HelpdeskDriver().segments(_source())
+        row = POOL[0]
+        assert refs[0].key == row["conversation_id"]
+        assert refs[0].stamp == f"{row['message_count']}:{row.get('updated_at') or ''}"

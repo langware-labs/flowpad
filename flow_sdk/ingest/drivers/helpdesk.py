@@ -64,13 +64,6 @@ class HelpdeskDriver(IngestDriver):
     #: Chat-grade while watched, like telegram.
     attention_poll_seconds = 5
 
-    def __init__(self) -> None:
-        #: Per source, the pool's `(message_count, updated_at)` per ticket as
-        #: of the last `segments` call — `fetch` skips a ticket whose pair has
-        #: not moved, so a watched desk costs one GET per tick, not one per
-        #: ticket. Memory only: the pool is re-read every pass anyway.
-        self._pool_stamps: dict[str, dict[str, str]] = {}
-
     def channel_for(self, source) -> str:
         return CHANNEL
 
@@ -84,19 +77,25 @@ class HelpdeskDriver(IngestDriver):
 
     async def segments(self, source) -> list[SegmentRef]:
         """One stream per ticket in the desk's pool — picked up or not: the
-        pool route lists every ``kind=helpdesk`` child for a member."""
+        pool route lists every ``kind=helpdesk`` child for a member.
+
+        The pool row already says whether a ticket moved (`message_count`,
+        `updated_at`); that is the segment's `stamp`, so a watched desk with
+        many tickets costs one GET per tick plus one per ticket that changed —
+        and a moved ticket is never queued behind idle ones.
+        """
         desk = self._desk(source)
         rows = await self._hub_get(EntityType.PROJECT, desk, "helpdesk_conversations")
         refs: list[SegmentRef] = []
-        stamps: dict[str, str] = {}
-        for row in rows_of(rows):
+        # Newest activity first: on first sight the sync walks the list in
+        # this order a few tickets per pass, and the live ones should lead.
+        for row in sorted(rows_of(rows), key=lambda r: str(r.get("updated_at") or ""), reverse=True):
             conv_id = str(row.get("conversation_id") or "").strip()
             if not conv_id:
                 continue
             label = str(row.get("title") or row.get("preview") or "").strip()[:80] or conv_id
-            refs.append(SegmentRef(key=conv_id, label=label))
-            stamps[conv_id] = f"{row.get('message_count') or 0}:{row.get('updated_at') or ''}"
-        self._pool_stamps[str(source.id)] = stamps
+            stamp = f"{row.get('message_count') or 0}:{row.get('updated_at') or ''}"
+            refs.append(SegmentRef(key=conv_id, label=label, stamp=stamp))
         return refs
 
     # ── fetch: one ticket's messages ─────────────────────────────────────────
@@ -113,13 +112,6 @@ class HelpdeskDriver(IngestDriver):
         await self._ensure_identity(source)
         state = dict(cursor.state or {})
         conv_id = cursor.segment_key
-
-        # The pool row already says whether the ticket moved; a ticket that
-        # did not is one GET saved.
-        pool_stamp = self._pool_stamps.get(str(source.id), {}).get(conv_id, "")
-        if pool_stamp and pool_stamp == state.get("pool_stamp"):
-            return FetchResult(items=[], next_state=state, high_water=state.get("high_water"), unchanged=True)
-
         mark = Watermark.from_state(state)
         children = await self._hub_get(EntityType.CONVERSATION, conv_id, "flow_message")
         items: list[SourceItemSpec] = []
@@ -131,8 +123,6 @@ class HelpdeskDriver(IngestDriver):
             items.append(self._to_item(source, conv_id, fm_id, fm))
             mark.advance(stamp, fm_id)
 
-        if pool_stamp:
-            state["pool_stamp"] = pool_stamp
         return FetchResult(items=items, next_state=mark.into(state), high_water=mark.high_water or None, unchanged=not items)
 
     def _to_item(self, source, conv_id: str, fm_id: str, fm: dict) -> SourceItemSpec:
