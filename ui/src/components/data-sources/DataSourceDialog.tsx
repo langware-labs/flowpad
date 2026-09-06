@@ -82,12 +82,21 @@ function fieldValue(key: string, field: SpecConfigField, config: Record<string, 
   return '';
 }
 
+/** The one config-shaped field that is NOT stored in `config` — it is the
+ *  entity's own `inbound_allowed_senders`. Named once here so the seed, the
+ *  submit-time extraction and the pre-fill all agree on the reserved key. */
+const ALLOWED_SENDERS_KEY = 'allowed_senders';
+
 function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
   const fields: Record<string, string> = {};
   const picked: Record<string, DataSourceChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
-    fields[key] = fieldValue(key, field, source.config ?? {});
-    if (field.choices) picked[key] = pickedFrom(key, field, source.config ?? {});
+    // `allowed_senders` reads the real entity field, never `config` — it was
+    // never written there (see `submit`'s extraction below).
+    const raw =
+      key === ALLOWED_SENDERS_KEY ? { [key]: source.inbound_allowed_senders } : (source.config ?? {});
+    fields[key] = fieldValue(key, field, raw);
+    if (field.choices) picked[key] = pickedFrom(key, field, raw);
   }
   return {
     name: source.name,
@@ -165,6 +174,16 @@ export function DataSourceDialog({
     setBusy(true);
     try {
       const config = buildConfig(draft, spec);
+      // `allowed_senders` shares the manifest-driven field/picker machinery
+      // (so a provider that offers it gets the same picker-or-type UX as any
+      // other choosable field, with no bespoke render code) but it is NOT a
+      // `config` entry — it is the entity's own `inbound_allowed_senders`.
+      // Pull it back out here, the one place a manifest field's destination
+      // can differ from `config`.
+      const allowedSenders = Array.isArray(config[ALLOWED_SENDERS_KEY])
+        ? (config[ALLOWED_SENDERS_KEY] as string[])
+        : [];
+      delete config[ALLOWED_SENDERS_KEY];
       const account = accountKeyFor(draft, spec);
       if (editing) {
         const nextName = draft.name.trim();
@@ -175,13 +194,15 @@ export function DataSourceDialog({
           editing.account_key !== account ||
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
-          editing.window_days !== draft.window_days;
+          editing.window_days !== draft.window_days ||
+          JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
         editing.account_key = account;
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
+        editing.inbound_allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
@@ -198,6 +219,7 @@ export function DataSourceDialog({
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
           owner: owner ? owner.toString() : null,
+          inbound_allowed_senders: allowedSenders,
         });
         await source.save();
         notify.success({ title: t`Added ${source.name}` });

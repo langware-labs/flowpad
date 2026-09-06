@@ -247,12 +247,21 @@ class EmailInbox(Entity):
 
         One argument on purpose: taking the Agent too would make it look as
         though the gate consults it.
+
+        ``agent_id`` goes through ``agent_id_of`` — not a bare ``config.get``
+        — because a `bind_channel`-bound source (Slack, Teams, …) carries no
+        ``config.agent_id`` at all; its agent is the ``owner``. `handle_inbound`
+        only reaches here after confirming that owner IS an agent, so the
+        helper's fallback is never empty at this call site — a bare
+        ``config.get`` left it empty for every such source, and constructing
+        ``TypeId(..., id="")`` below raised on every single one of them.
         """
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
 
         config = getattr(source, "config", None) or {}
         listening = getattr(source, "status", None) == SourceStatus.ACTIVE.value
-        agent_id = str(config.get("agent_id") or "")
+        agent_id = agent_id_of(source)
         return cls(
             id=_inbox_id_from(config) or agent_id,
             address=str(config.get("address") or getattr(source, "account_key", "") or ""),
