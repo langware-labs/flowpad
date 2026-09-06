@@ -10,7 +10,7 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import { normalizeVibeModelTier, VibeModelSelect, useVibeModelTier, type VibeModelTier } from './vibe-model-select';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
@@ -56,7 +56,7 @@ export function VibeChatPane({
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
-    model: VibeModelTier;
+    model: VibeModelChoice;
     sourceProcess: AgenticProcess;
     projectId: string | null;
     workdir: string | null | undefined;
@@ -162,7 +162,7 @@ export function VibeChatPane({
     }) => {
       setPendingWorkerSwitch({
         workerType,
-        model: normalizeVibeModelTier(model),
+        model: model || VIBE_MODEL_DEFAULT,
         sourceProcess: activeProcess,
         projectId,
         workdir,
@@ -247,7 +247,7 @@ export function VibeChatPane({
         defaultWorkerType={defaultWorkerType}
         modelSelectSlot={({ value, disabled, onChange }) => (
           <VibeModelSelect
-            value={normalizeVibeModelTier(value)}
+            value={value}
             onChange={(next) => onChange(next)}
             disabled={disabled}
           />

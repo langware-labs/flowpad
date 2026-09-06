@@ -1301,7 +1301,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!entity) {
       throw new Error('Can not create, Empty ref entity');
     }
-    const entityType = entity.typeId.type;
+    // `typeId` is checked too, not just the entity and the type either side of it:
+    // without this a null typeId surfaced as a raw
+    // `TypeError: Cannot read properties of null (reading 'type')` from inside a
+    // function whose whole point is to say WHICH part of the ref was unusable.
+    const entityType = entity.typeId?.type;
     if (!entityType) {
       throw new Error('Can not create, Entity type not found');
     }
