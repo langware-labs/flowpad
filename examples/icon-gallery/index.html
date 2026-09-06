@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flowpad Icon Packs</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9'/%3E%3Cpath d='M4 4a16 16 0 0 1 16 16'/%3E%3Ccircle cx='5' cy='19' r='1' fill='%232563eb'/%3E%3C/svg%3E" />
+    <script>
+      // The SDK reads its API origin from here, before any SDK code runs — the
+      // same channel the backend uses when it serves the real app.
+      // Override with ?api=http://localhost:PORT for another instance.
+      (function () {
+        var q = new URLSearchParams(location.search).get('api');
+        if (q) globalThis.__FLOWPAD_API_URL__ = q;
+        // Theme: match the app, which toggles a `dark` class on <html>.
+        try {
+          var saved = localStorage.getItem('fp-gallery-theme');
+          if (saved === 'dark') document.documentElement.classList.add('dark');
+          if (saved === 'light') document.documentElement.classList.add('light');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

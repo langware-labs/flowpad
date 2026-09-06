@@ -131,6 +131,13 @@ class WorkerAuthResult:
     # How the harness authenticates: "device" (vendor device login — the default
     # for every native probe) or "api" (a stored LLM-provider key).
     auth_mode: str = "device"
+    # WHO is signed in, and on WHAT — normalized here because only the probe
+    # knows its vendor's JSON. `details` keeps the vendor's own keys for anyone
+    # who wants them; a consumer that just wants to show the account reads
+    # these, and does not learn that claude spells a plan `subscriptionType`.
+    # Empty whenever the vendor does not say, which is every vendor but claude.
+    identity: str = ""
+    plan: str = ""
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -139,6 +146,8 @@ class WorkerAuthResult:
             "message": self.message,
             "details": self.details,
             "auth_mode": self.auth_mode,
+            "identity": self.identity,
+            "plan": self.plan,
         }
 
 
@@ -190,6 +199,11 @@ def probe_claude_auth(
             verified=False,
             message="claude CLI has stored credentials (not validated).",
             details={k: parsed[k] for k in ("email", "authMethod", "subscriptionType", "apiProvider") if k in parsed},
+            identity=str(parsed.get("email") or ""),
+            # NOT `authMethod`: that is the mechanism ("claude.ai"), and a column
+            # meant to say which account you hold should not answer with how you
+            # signed into it.
+            plan=str(parsed.get("subscriptionType") or ""),
         )
     return WorkerAuthResult(
         status=WorkerAuthStatus.LOGGED_OUT,

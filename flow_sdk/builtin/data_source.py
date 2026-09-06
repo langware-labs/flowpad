@@ -31,6 +31,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.reflect import ReflectMode
@@ -143,6 +144,30 @@ class DataSource(Entity):
     # where a tree begins, and a `GitOrigin` materializes through the same
     # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
     origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    # ── ownership ──
+    #
+    # Whose source this is: the local user's, or an Agent's. A message source
+    # projects into ITS OWNER'S inbox and speaks with its owner's voice, so the
+    # owner is a key the inbox engine reads — which is why it is a field and
+    # not `config["agent_id"]`, the provider-opaque bag the engine promises not
+    # to open (the same argument that pulled `reflect` out of it, below).
+    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # is the ONE reader and resolves those (config.agent_id → that agent, else
+    # the local user), so nothing depends on a backfill having run. PRIVATE: an
+    # owner is a fact about this machine, never a thing that travels.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    # The mailbox allowlist, cached for the gate that runs on every inbound
+    # message (`EmailInbox.allowed`). The HUB owns this policy; this is a copy,
+    # refreshed on every reconcile, and it is never read to answer "what is the
+    # policy" — only to apply it without a network call.
+    #
+    # Deliberately NOT inside `config`, for the reason the reflection block below
+    # gives: `config` is provider-opaque and shareable, and these are third
+    # parties' personal addresses. PRIVATE, like `origin`: a fact about this
+    # machine that must not travel to a receiver or back to the hub.
+    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -258,7 +283,9 @@ class DataSource(Entity):
         return ""
 
     @classmethod
-    async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
+    async def find_for_account(
+        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
+    ) -> "Optional[DataSource]":
         """The source of ``provider`` whose ``config[key]`` names ``value``.
 
         The canonical natural-key lookup (same shape as
@@ -266,16 +293,66 @@ class DataSource(Entity):
         semantics ask HERE instead of re-scanning ``get_all`` and filtering by
         hand — the id policy's whole point is that identity is a lookup.
         ``key`` is normally the driver's ``identity_config_key``.
+
+        ``owner`` narrows to that owner's source, so the same account can be
+        watched by the local user AND by an Agent without either reusing the
+        other's row. Omitted, it is the pre-owner lookup. Resolved through
+        ``owner_of`` rather than the column, so a legacy row that only carries
+        ``config.agent_id`` still answers.
         """
+        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
             current = (row.config or {}).get(key)
             # A `lines` field (Slack's ``channels``) is a list; the source
             # serves the account when the value is one of its entries.
             members = current if isinstance(current, list) else [current]
-            if any(str(m or "").strip() == value for m in members):
-                return row
+            if not any(str(m or "").strip() == value for m in members):
+                continue
+            if owner is not None and await owner_of(row) != owner:
+                continue
+            return row
         return None
+
+    @classmethod
+    async def find_owned(cls, owner: "TypeId", *, channel: Optional[str] = None) -> "list[DataSource]":
+        """Every source ``owner`` holds — optionally only those on ``channel``.
+
+        The indexed filter first; then the rows written before ``owner`` existed
+        (``owner`` absent), which ``owner_of`` resolves the same way every other
+        reader does. The two are disjoint, so no row is counted twice.
+        """
+        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
+        rows = list(await cls.get_all({"owner": str(owner)}))
+        legacy = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]))
+        )
+        for row in legacy:
+            if await owner_of(row) == owner:
+                rows.append(row)
+        if channel is not None:
+            rows = [r for r in rows if (r.channel or "").strip() == channel]
+        return rows
+
+    def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+        """The reply to ``item``, in THIS channel's shape.
+
+        The one constructor a caller should reach for, because picking the class
+        by hand is picking the addressing rule by hand: ``EmailMessageSpec``
+        addresses the author, ``SlackMessageSpec`` addresses the channel, and a
+        caller that guesses wrong on a Slack source sends the reply as a DM to
+        the person instead of posting it where everyone is reading. The driver
+        already knows which rule is its own (``outbound_spec``); ask it.
+
+        Synchronous because every ``reply_to`` is a pure constructor — no I/O,
+        so this is safe to call anywhere the item is in hand.
+        """
+        driver = self._driver()
+        if driver is None:
+            raise RuntimeError(f"no driver for {self.provider}")
+        return driver.outbound_spec(self).reply_to(item, body=body, attachments=attachments)
 
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.
@@ -423,12 +500,20 @@ class DataSource(Entity):
         Not synchronous — the poller runs off the once-a-minute heartbeat, so
         this means "on the next tick", within 60s. Deliberately not sped up.
         """
+        return ApiSuccessResponse(data=await self.poll_now())
+
+    async def poll_now(self) -> dict:
+        """Make this source due on the next tick — the verb under ``poll_now_action``.
+
+        Thin route, real verb: the pattern ``replay``/``replay_action`` set, so an
+        in-process caller never reaches through an HTTP handler to use it.
+        """
         await self._make_due()
         await self.save()
-        return ApiSuccessResponse(data={
+        return {
             "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
-        })
+        }
 
     @core_action.post(action_name="request_poll")
     async def request_poll_action(self) -> ApiResponse:
@@ -487,14 +572,19 @@ class DataSource(Entity):
         to BACKFILL — which suppresses per-item events, making a deliberate
         re-fetch silent.
         """
-        streams = await self._reset_cursors()
-        self.next_poll_at = None
-        await self.save()
+        streams = await self.reset_cursors()
         return ApiSuccessResponse(data={
             "status": "reset", "streams": streams,
             "detail": "position cleared; existing records still gate on content digest — "
                       "pair with purge_items for a visible re-fetch",
         })
+
+    async def reset_cursors(self) -> int:
+        """Forget every segment's position and make the source due. Returns streams reset."""
+        streams = await self._reset_cursors()
+        self.next_poll_at = None
+        await self.save()
+        return streams
 
     @core_action.post(action_name="purge_items")
     async def purge_items_action(self) -> ApiResponse:
@@ -506,9 +596,12 @@ class DataSource(Entity):
         dangling reference. It also discards local state (``read`` / ``starred``),
         which is the cost operators actually feel.
         """
-
-        removed = await self.purge_records_of(self.id)
+        removed = await self.purge_items()
         return ApiSuccessResponse(data={"status": "purged", "removed": removed})
+
+    async def purge_items(self) -> int:
+        """Drop this source's records. Returns how many went."""
+        return await self.purge_records_of(self.id)
 
     @core_action.post(action_name="replay")
     async def replay_action(self) -> ApiResponse:
@@ -633,10 +726,14 @@ class DataSource(Entity):
     @classmethod
     async def delete_children_of(cls, source_id: str) -> None:
         """Every row keyed to this source — the records AND the cursors."""
+        from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
         from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+        from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
 
         await cls.purge_records_of(source_id)
         await DataSourceCursor.delete_for(source_id)
+        await ConsumerPosition.delete_for(source_id)
+        await SourceChange.delete_for(source_id)
 
     @classmethod
     async def delete_by_id(cls, eid: str):
@@ -652,7 +749,16 @@ class DataSource(Entity):
         human must complete (Slack's bot invite), so it starts in SETUP; one that
         does not is ready the moment it is configured, so it starts ACTIVE. That
         keeps a plain RSS feed from demanding a Verify click it has no use for.
+
+        Also stamps ``owner`` on the way in when nothing set it: the local user,
+        or the agent a legacy ``config.agent_id`` names. One choke-point rather
+        than one per constructor, so the UI create path and every block get it
+        without knowing it exists.
         """
+        if self.owner is None:
+            from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
+            self.owner = await owner_of(self)
         if self.status == SourceStatus.NEW.value:
             # An AUTHORED source's driver comes from a row, not an import, so it
             # may not be registered yet on a cold process. Resolving NEW without
@@ -818,9 +924,101 @@ class DataSource(Entity):
         except Exception:  # noqa: BLE001 — a bad root is the driver's verify verdict, not a save failure
             logger.debug("[data_source] origin_for failed for %s", self.id, exc_info=True)
 
+    @core_action.post(action_name="choices")
+    async def choices_action(cls) -> ApiResponse:
+        """POST /api/v1/graph/data_source/choices — the picker's data.
+
+        Body: ``{"provider": str, "field": str, "config": dict}``, read off the request
+        context rather than a declared parameter — the dispatcher resolves an annotated
+        `request` by identity, and this module's postponed annotations make that a
+        string, so a declared one would 400 on every call while direct-call tests passed.
+        Class-level, with no entity id, because the picker's whole job is to fill a form
+        for a source that does not exist yet.
+
+        POST rather than GET though it reads nothing: the in-progress config travels with
+        the call, and a draft config is exactly where a secret lives — ``telegram``'s
+        ``bot_token`` is a config field. That must never reach a URL or an access log.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        provider = str(body.get("provider") or "").strip()
+        field = str(body.get("field") or "").strip()
+        if not provider or not field:
+            return ApiFailResponse(message="provider and field are required")
+        picks = await cls.choices_for(provider, field, body.get("config") or {})
+        if picks is None:
+            return ApiFailResponse(
+                message=f"{provider!r} has no config field {field!r} that offers choices"
+            )
+        return ApiSuccessResponse(data=picks)
+
+    @classmethod
+    async def choices_for(cls, provider: str, field: str, config: Optional[dict] = None):
+        """What *provider* can offer for its *field* — a ``ChoiceSet``, or ``None``.
+
+        ``None`` means the question itself was wrong: no such provider, or a field its
+        manifest never marked ``choices``. The form only asks about fields the manifest
+        marked, so that is a caller bug and says so loudly; answering with an empty list
+        would bury it as "nothing to pick".
+
+        Everything a USER can hit answers with a ChoiceSet instead — an empty ``items``
+        and one sentence — because every one of those failures means the same thing to
+        the person filling the form: type it instead. That is why this catches
+        ``SourceError`` centrally rather than asking each driver to.
+        """
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+        from flow_sdk.ingest.driver import DRIVERS, get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
+        from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
+
+        spec = await DataSourceSpec.get_one({"name": provider})
+        field_spec = (spec.config or {}).get(field) if spec is not None else None
+        if field_spec is None or not field_spec.choices:
+            return None
+
+        # Only when the answer isn't already in hand — the guard `save` makes for the
+        # same reason. A shipped provider is registered at import, so warming the spec
+        # table for it is a DB round trip on a popover a person is waiting on; but the
+        # registry IS empty on a request that arrives before anything imported the
+        # drivers package, and without the refresh every picker would then report "this
+        # provider can't list" on a driver that can.
+        if provider not in DRIVERS:
+            await refresh_spec_drivers(provider)
+        driver = get_driver(provider)
+        if driver is None or driver.choices is None:
+            # The shipped-manifest test catches this pairing at CI. At runtime — a spec
+            # authored outside this repo — it still must not be a dead end.
+            logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
+            return ChoiceSet(detail="This provider can't list options here — type the value directly.")
+
+        draft = cls(provider=provider, config=spec.coerce_config(dict(config or {})))
+        try:
+            return ChoiceSet(items=await driver.choices(draft, field))
+        except SourceError as exc:
+            # `detail`, not `str(exc)`: the latter prefixes the machine code
+            # ("no_project: Set 'GCP project'…"), and this sentence is rendered verbatim
+            # under the field for a person to act on.
+            return ChoiceSet(detail=exc.detail or str(exc))
+        except Exception as exc:  # noqa: BLE001 — a driver must not 500 the picker
+            logger.warning("choices failed for %s.%s: %s", provider, field, exc, exc_info=True)
+            return ChoiceSet(detail=f"could not list: {exc}")
+
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/verify — is the setup finished?
+        """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
+
+        Thin on purpose, the way ``replay_action`` is thin over ``replay``: the
+        verb belongs to the source, and a caller in-process should not have to
+        reach through an HTTP handler — or unwrap an ``ApiResponse`` — to use it.
+        """
+        verdict = await self.verify()
+        if verdict is None:
+            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+        return ApiSuccessResponse(data=verdict)
+
+    async def verify(self) -> Optional[dict]:
+        """Is this source's setup finished? ``None`` when no driver is registered.
 
         Two layers, in this order, because they fail for different reasons and
         the fix is different:
@@ -837,7 +1035,7 @@ class DataSource(Entity):
         """
         driver = self._driver()
         if driver is None:
-            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+            return None
 
         connection = await self._verify_connection()
         if connection is not None:
@@ -845,10 +1043,10 @@ class DataSource(Entity):
             self.setup_detail = connection
             self.verified_at = datetime.now(timezone.utc)
             await self.save()
-            return ApiSuccessResponse(data={
+            return {
                 "ready": False, "layer": "connection", "detail": connection,
                 "status": self.status,
-            })
+            }
 
         verdict = await self._verify_setup(driver)
         self.verified_at = datetime.now(timezone.utc)
@@ -862,13 +1060,26 @@ class DataSource(Entity):
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
         await self.save()
-        return ApiSuccessResponse(data={
+        return {
             "ready": verdict.ready,
             "layer": "setup",
             "detail": verdict.detail,
             "pending": list(verdict.pending),
             "status": self.status,
-        })
+        }
+
+    async def sync(self, *, budget: int = 0):
+        """Run one sync cycle now, returning an ``IngestReport``.
+
+        Never raises — a failure is recorded as health, not thrown.
+
+        The verb belongs here; ``ingest.sync.sync_source`` stays the function the
+        POLLER calls, because it takes a budget and a clock the caller owns.
+        Do not confuse this with ``poll_now``, which only marks the source due.
+        """
+        from flow_sdk.ingest.sync import DEFAULT_SEGMENT_BUDGET, sync_source  # noqa: PLC0415
+
+        return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
 
     def _driver(self):
         from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415

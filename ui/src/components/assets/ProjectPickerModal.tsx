@@ -22,6 +22,15 @@ interface ProjectPickerModalProps {
   onConfirm: (ids: string[], items: ProjectListItem[]) => void;
   /** Optional description override — the default keeps the scope-filter wording. */
   description?: React.ReactNode;
+  /**
+   * One project at a time: picking a row replaces the selection instead of
+   * adding to it, and Confirm stays disabled until exactly one is picked. For
+   * callers whose next step is about a single project (sharing one with a team),
+   * where a multi-check list would let someone tick three and be handed one.
+   */
+  singleSelect?: boolean;
+  /** Overrides the Confirm button's label. */
+  confirmLabel?: string;
 }
 
 function relativeTime(iso: string | null | undefined): string {
@@ -49,7 +58,12 @@ interface RowItem {
   modifiedMs: number;
 }
 
-function renderRow(r: RowItem, checked: boolean, toggle: (pid: string) => void): React.ReactElement {
+function renderRow(
+  r: RowItem,
+  checked: boolean,
+  toggle: (pid: string) => void,
+  singleSelect: boolean,
+): React.ReactElement {
   return (
     <label
       key={r.pid}
@@ -58,10 +72,11 @@ function renderRow(r: RowItem, checked: boolean, toggle: (pid: string) => void):
       }`}
     >
       <input
-        type="checkbox"
+        type={singleSelect ? 'radio' : 'checkbox'}
+        name={singleSelect ? 'project-picker-choice' : undefined}
         checked={checked}
         onChange={() => toggle(r.pid)}
-        className="h-4 w-4 shrink-0 rounded border-input"
+        className={`h-4 w-4 shrink-0 border-input ${singleSelect ? 'rounded-full' : 'rounded'}`}
       />
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{r.label}</div>
@@ -85,6 +100,8 @@ export function ProjectPickerModal({
   selectedIds,
   onConfirm,
   description,
+  singleSelect = false,
+  confirmLabel,
 }: ProjectPickerModalProps): React.ReactElement {
   const { t } = useLingui();
   const { projects, isLoading } = useProjectList({ enabled: open });
@@ -140,6 +157,9 @@ export function ProjectPickerModal({
 
   const toggle = (pid: string) => {
     setCheckedIds((prev) => {
+      // Single-select replaces rather than accumulates — and re-picking the
+      // current row keeps it, because a radio that unsets itself is a trap.
+      if (singleSelect) return new Set([pid]);
       const next = new Set(prev);
       if (next.has(pid)) next.delete(pid);
       else next.add(pid);
@@ -185,24 +205,27 @@ export function ProjectPickerModal({
             <Trans>{checkedIds.size} selected</Trans>
             {search.trim() ? ` · ${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : ''}
           </span>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={selectAllFiltered}
-              disabled={filtered.length === 0}
-              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {search.trim() ? t`Select all matches` : t`Select all`}
-            </button>
-            <button
-              type="button"
-              onClick={clearSelection}
-              disabled={checkedIds.size === 0}
-              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Trans>Clear selection</Trans>
-            </button>
-          </div>
+          {/* Bulk controls are meaningless against a one-of-many pick. */}
+          {!singleSelect && (
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                disabled={filtered.length === 0}
+                className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {search.trim() ? t`Select all matches` : t`Select all`}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={checkedIds.size === 0}
+                className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trans>Clear selection</Trans>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card">
@@ -217,13 +240,13 @@ export function ProjectPickerModal({
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {selectedRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
+              {selectedRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle, singleSelect))}
               {selectedRows.length > 0 && otherRows.length > 0 && (
                 <div className="bg-muted/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   <Trans>Other projects</Trans>
                 </div>
               )}
-              {otherRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
+              {otherRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle, singleSelect))}
             </div>
           )}
         </div>
@@ -242,9 +265,11 @@ export function ProjectPickerModal({
                 rows.filter((r) => checkedIds.has(r.pid)).map((r) => r.raw),
               )
             }
-            className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
+            disabled={singleSelect && checkedIds.size !== 1}
+            data-testid="project-picker-confirm"
+            className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trans>Confirm</Trans>
+            {confirmLabel ?? t`Confirm`}
           </button>
         </DialogFooter>
       </DialogContent>

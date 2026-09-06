@@ -9,9 +9,11 @@ export type ContactIdentity = ContactKey & { name?: string | null };
  *  has neither a user id nor an email (nothing to key permissions on). Accepts
  *  any row carrying the three snake_case fields, so both the conversation
  *  participant list and the member roster share one implementation. */
-export function contactFromParticipant(
-  row: { user_id?: string | null; email?: string | null; name?: string | null },
-): ContactIdentity | null {
+export function contactFromParticipant(row: {
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+}): ContactIdentity | null {
   const userId = row.user_id?.trim() || null;
   const email = row.email?.trim() || null;
   const name = row.name?.trim() || null;
@@ -140,6 +142,27 @@ export function assignableRoles(
   if (!target?.user_id) return [];
   if (me?.user_id === target.user_id) return []; // self-change is hub-banned
   if (targetRank <= myRank) return []; // peers and above are untouchable
+  return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
+}
+
+/**
+ * Roles the caller may confer on someone NEW, mirroring the same `can_assign` ceiling
+ * `assignableRoles` applies to an existing member: strictly below the caller's own rank.
+ *
+ * Separate from `assignableRoles` because an invite has no target yet — no current rank to compare
+ * against and no `user_id` to select — so that function correctly bails, and a picker built on it
+ * would offer nothing. The ceiling is the half that still applies, and it is the half that matters:
+ * an organization's admin inviting someone must not be offered `admin`, because the hub refuses to
+ * grant a role at or above the granter's own. Offering it produced a dropdown whose top entry
+ * always failed.
+ */
+export function grantableRoles(me: ConversationParticipant | null | undefined): string[] {
+  const myRank = participantRank(me);
+  // An unknown standing grants nothing. Both call sites already render the picker only once the
+  // roster has resolved (`canInviteMembers` is false without a rank, and the share panel waits for
+  // `ready`), so this is unreachable in practice -- and answering "the whole ladder" when we do not
+  // know who is asking is the wrong direction to guess in.
+  if (myRank === null) return [];
   return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
 }
 

@@ -27,7 +27,7 @@ export const STREAMING_POLICIES: readonly LLMStreamingPolicy[] = ['allow', 'requ
  * `CLAUDE_API_AUTH_SPEC.tier_models` stamps OpenRouter slugs (`anthropic/claude-haiku-4.5`,
  * `-sonnet-4.5`, `-opus-4.1`) onto argv before spawn, so one glob covers every tier.
  */
-export const MODELS_ALLOW_DEFAULT = 'anthropic/claude-*\nopenai/gpt-4*';
+export const MODELS_ALLOW_DEFAULT = 'anthropic/claude-*\nopenai/gpt-*';
 
 /** One `from → to` row of an aliases / model_map editor. */
 export interface MappingRow {

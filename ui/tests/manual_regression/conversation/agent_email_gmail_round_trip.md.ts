@@ -29,6 +29,7 @@ import flow_sdk
 import flow_sdk.ingest.drivers  # noqa: F401
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.email_inbox import EmailInbox, email_source_for_agent
 from flow_sdk.builtin.source_item import EmailMessageSpec
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 
@@ -87,10 +88,12 @@ async def main():
         raise RuntimeError("expected CLEANUP")
     current = await Agent.get_one({"id": agent.id}) or agent
     try:
-        await current.decommission_inbox()
+        inbox = await EmailInbox.for_agent(current)
+        if inbox is not None:
+            await inbox.release()
     except Exception:
         pass
-    cloud_source = await current._email_source()
+    cloud_source = await email_source_for_agent(current.id)
     if cloud_source is not None:
         await cloud_source.delete()
     if current.remote:
@@ -147,13 +150,16 @@ import sys
 import flow_sdk
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.email_inbox import EmailInbox
 
 async def main():
     await flow_sdk.auth.login()
     agent = await Agent.get_one({"id": sys.argv[1]})
     if agent is not None:
         try:
-            await agent.decommission_inbox()
+            inbox = await EmailInbox.for_agent(agent)
+            if inbox is not None:
+                await inbox.release()
         except Exception:
             pass
         source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
@@ -182,7 +188,13 @@ async function cleanup(agentId: string, gmailCreated: string, env: NodeJS.Proces
 }
 
 async function openAgentInbox(page: Page, agentId: string): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/agent/${agentId}/inbox`);
   await expect(page.getByTestId('agent-inbox-view')).toBeVisible();
 }
@@ -224,7 +236,7 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     fallbackEnv = childEnv;
     await openAgentInbox(page, ready.agent_id);
 
-    await page.getByTestId('agent-email-enabled').click();
+    await page.getByRole('button', { name: 'Create email for agent', exact: true }).click();
     await expect(page.getByTestId('agent-inbox-address')).toBeVisible();
     const inboxAddress = (await page.getByTestId('agent-inbox-address').textContent())?.trim() ?? '';
     expect(inboxAddress).toContain('@');

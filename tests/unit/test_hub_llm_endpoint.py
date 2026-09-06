@@ -523,3 +523,76 @@ async def test_a_failed_scoped_listing_keeps_the_last_good_list(env, monkeypatch
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"]
+
+
+async def test_a_refresh_drops_a_binding_the_hub_no_longer_lists(env, monkeypatch) -> None:
+    """The record itself has to go, not just stop being offered.
+
+    ``box_bound`` is read as "this box was given a budget" -- it demotes an unproven device
+    login to the tail of the order -- so a binding left naming a deleted endpoint keeps making
+    a claim that is no longer true, and every status answer reports an endpoint that does not
+    exist. A refresh is where the box learns otherwise, so it is where the record is dropped.
+    """
+    import time
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:gone", INVOKE_PATH, provider="openrouter", name="Deleted")
+    assert llm_endpoint.get_hub_llm_endpoint() is not None
+    # A listing that SUCCEEDED and does not mention it.
+    llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic(), [])
+
+    status = await hub_llm_endpoint_status()
+    assert status["endpoint_typeid"] is None and status["invoke_url"] is None
+    assert llm_endpoint.get_hub_llm_endpoint() is None, "the dead binding survived a refresh"
+
+
+async def test_a_refresh_keeps_a_binding_when_the_hub_could_not_be_reached(env, monkeypatch) -> None:
+    """Unreachable is not a verdict. Only a listing that actually answered may drop a binding."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter", name="OR")
+    llm_endpoint.reset_cache()  # no listing has ever succeeded
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter", name="OR")
+
+    status = await hub_llm_endpoint_status()
+    assert status["endpoint_typeid"] == "llm_endpoint:ep1"
+    assert llm_endpoint.get_hub_llm_endpoint() is not None, "a binding was dropped on no evidence"
+
+
+async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bind(env, monkeypatch) -> None:
+    """A bind must never undo itself.
+
+    The hub binds a box to an endpoint the listing may not carry yet -- a fresh allocation, a
+    share made seconds ago -- and ``bind`` answers through the same status path that drops a
+    binding the hub no longer lists. Get that wrong and the push is erased by the very call
+    that delivered it, which is the loudest possible way to fail.
+
+    Written against the BEHAVIOUR rather than the guard, because two things currently prevent
+    it (the ``refresh`` gate, and the bind-time stamp that makes an older listing unable to
+    deny a newer binding) and either one may be simplified away later. The promise is what
+    must survive, not the mechanism.
+    """
+    import time
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import bind_hub_llm_endpoint
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+    # A listing that succeeded and knows nothing about what is about to be pushed.
+    llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic(), [])
+
+    status = await bind_hub_llm_endpoint(
+        {
+            "endpoint_typeid": "llm_endpoint:brand-new",
+            "invoke_path": INVOKE_PATH,
+            "provider": "openrouter",
+            "name": "New",
+        }
+    )
+    assert status["endpoint_typeid"] == "llm_endpoint:brand-new", "the bind erased its own binding"
+    assert llm_endpoint.get_hub_llm_endpoint() is not None

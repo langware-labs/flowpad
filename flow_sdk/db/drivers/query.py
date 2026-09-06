@@ -1,12 +1,13 @@
 import json
 import logging
 import traceback
+from datetime import datetime
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums import ExpansionType
 
 
@@ -32,7 +33,9 @@ class ExpressionNode(BaseModel):
     # IS_NULL/IS_NOT_NULL are unary: canonical wire shape ``operands=[field]``
     # (a trailing JSON null does not survive axios GET param serialization).
     # ``None`` stays admitted so the legacy ``[field, None]`` form still parses.
-    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, List, None]] = []
+    # ``datetime`` is admitted for COLUMN comparisons (``created_date``): the SQLite DateTime
+    # type binds only a datetime, so an ISO string would be rejected at execution.
+    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, datetime, List, None]] = []
     op: Optional[QueryOp] = QueryOp.EQ
 
     def __init__(self, **data):

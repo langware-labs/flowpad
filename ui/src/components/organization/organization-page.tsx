@@ -1,46 +1,78 @@
 import { Organization, PageId, QueryRequest, ViewType, WorldViewProjection } from '@sdk';
-import { Building2, ChevronDown, ChevronRight, GitGraph, Loader2, Users } from 'lucide-react';
+import { Building2, GitGraph, Loader2, Plus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { Button } from '@src/components/ui/button';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks/useEntitiesQuery';
 import { useMembershipAvailability } from '@src/hooks/use-membership-availability';
-import { OrgDetailPanel } from '@src/components/organization/org-detail-panel';
-import { useGroupChildren } from '@src/components/organization/use-group-children';
+import { OrgUnit } from '@src/components/organization/budgets/BudgetSection';
+import { createOrganization } from '@src/components/organization/create-organization';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications';
 
 /**
  * People and teams — the plain screen.
  *
- * Master–detail, the standard shape for hierarchical administration (and what
- * GitHub, Google Workspace and Okta all settle on): the structure lives in a tree
- * on the left, and the selected node's roster fills the right. Nothing here needs
- * to be learned — you read the tree top to bottom and edit the table beside it.
+ * One continuous, full-width column: every organization the caller administers, each with its
+ * own budget at the top, its teams indented beneath it, and each team's people indented beneath
+ * that. Nothing here is reached by selecting a node in a side tree — everything is on the page,
+ * name and amount editable in place, a delete icon beside every row. `OrgUnit`
+ * (`components/organization/budgets`) owns that whole nested rendering; this page is just the
+ * list of organizations and the "create one" control.
  *
- * The Organization WorldView shows the SAME data as a force-directed graph. That
- * is the advanced view: excellent for seeing shape and reach at a glance, wrong as
- * the place you go to add a class. This page links to it rather than being it.
+ * The Organization WorldView shows the SAME data as a force-directed graph — the advanced view,
+ * excellent for seeing shape and reach at a glance, wrong as the place you go to add a class.
  */
 export function OrganizationPage() {
   const { t } = useLingui();
   const { available, reason } = useMembershipAvailability();
-  // Orgs are role-walk scoped by the hub, so this is "the schools you can see" —
-  // and it supports someone belonging to more than one, which the login payload's
-  // single ``organization`` claim cannot express.
-  // Memoized: ``useEntitiesQuery`` re-subscribes when the request identity changes
-  // and its subscribe callback re-renders immediately, so a request built inline
-  // renders -> resubscribes -> renders forever ("Maximum update depth exceeded").
+  // Orgs are role-walk scoped by the hub, so this is "the schools you can see" — and it supports
+  // someone belonging to more than one, which the login payload's single ``organization`` claim
+  // cannot express. Only IDs are read from this query: each `OrgUnit` fetches its own live name
+  // (and everything else) from the budgets read, which is what stays fresh after a rename.
+  // Memoized: ``useEntitiesQuery`` re-subscribes when the request identity changes and its
+  // subscribe callback re-renders immediately, so a request built inline renders -> resubscribes
+  // -> renders forever ("Maximum update depth exceeded").
   const orgQuery = useMemo(() => new QueryRequest({ type: Organization.type, query: {} }), []);
-  const { data: orgs, isLoading } = useEntitiesQuery<Organization>(orgQuery);
-  const [selected, setSelected] = useState<{ type: string; id: string; label: string } | null>(null);
+  const { data: orgs, isLoading, refetch } = useEntitiesQuery<Organization>(orgQuery);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const submitOrganization = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || creating) return;
+    setCreating(true);
+    try {
+      await createOrganization(trimmed);
+      setName('');
+      setCreateOpen(false);
+      notify.success({ title: t`Organization created`, message: t`${trimmed} is ready.`, id: 'org-create' });
+      void refetch();
+    } catch (err) {
+      notify.error({
+        title: t`Could not create organization`,
+        message: err instanceof Error ? err.message : t`Unknown error.`,
+        id: 'org-create',
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const organizations = useMemo(() => (Array.isArray(orgs) ? orgs : []), [orgs]);
-  const current = selected ?? firstOrgNode(organizations);
 
   if (!available) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <EmptyState
           icon={Users}
           title={reason === 'local' ? t`Not available in Local mode` : t`Sign in to manage people`}
@@ -58,7 +90,14 @@ export function OrganizationPage() {
 
   if (isLoading && organizations.length === 0) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           <Trans>Loading organizations…</Trans>
@@ -69,7 +108,14 @@ export function OrganizationPage() {
 
   if (organizations.length === 0) {
     return (
-      <Shell>
+      <Shell
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        name={name}
+        setName={setName}
+        creating={creating}
+        onCreate={() => void submitOrganization()}
+      >
         <EmptyState
           icon={Building2}
           title={t`No organization yet`}
@@ -80,123 +126,90 @@ export function OrganizationPage() {
   }
 
   return (
-    <Shell>
-      <div className="flex min-h-0 flex-1 gap-6">
-        <nav className="w-64 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label={t`Organization`}>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <Trans>Structure</Trans>
-          </div>
-          <ul role="tree" className="flex flex-col gap-0.5">
-            {organizations.map((org) => (
-              <TreeNode
-                key={org.id}
-                node={{ type: 'organization', id: org.id, label: org.name || t`Organization` }}
-                depth={0}
-                selectedId={current?.id ?? null}
-                onSelect={setSelected}
-              />
-            ))}
-          </ul>
-        </nav>
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          {current && (
-            <OrgDetailPanel
-              nodeType={current.type}
-              nodeId={current.id}
-              nodeLabel={current.label}
-              onOpenChild={setSelected}
-            />
-          )}
-        </div>
+    <Shell
+      createOpen={createOpen}
+      setCreateOpen={setCreateOpen}
+      name={name}
+      setName={setName}
+      creating={creating}
+      onCreate={() => void submitOrganization()}
+    >
+      <div className="flex flex-col gap-4" data-testid="org-list">
+        {organizations.map((org) => (
+          <OrgUnit key={org.id} orgId={org.id} onDeleted={() => void refetch()} />
+        ))}
       </div>
     </Shell>
   );
 }
 
-/**
- * One row of the structure tree, lazily loading its children when opened.
- *
- * Progressive disclosure on purpose: a school with forty classes should not fetch
- * forty rosters to draw a sidebar, and depth is unbounded in the data model.
- */
-function TreeNode({
-  node,
-  depth,
-  selectedId,
-  onSelect,
+function Shell({
+  children,
+  createOpen,
+  setCreateOpen,
+  name,
+  setName,
+  creating,
+  onCreate,
 }: {
-  node: { type: string; id: string; label: string };
-  depth: number;
-  selectedId: string | null;
-  onSelect: (node: { type: string; id: string; label: string }) => void;
+  children: React.ReactNode;
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
+  name: string;
+  setName: (name: string) => void;
+  creating: boolean;
+  onCreate: () => void;
 }) {
-  const [open, setOpen] = useState(depth === 0);
-  const { children, loading } = useGroupChildren(node.type, node.id, open);
-  const isSelected = selectedId === node.id;
-  const Icon = node.type === 'organization' ? Building2 : Users;
-
-  return (
-    <li role="treeitem" aria-expanded={open} aria-selected={isSelected}>
-      <div
-        className={`flex items-center gap-1 rounded-md px-1.5 py-1 text-sm ${
-          isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-        }`}
-        style={{ paddingLeft: `${depth * 12 + 6}px` }}
-      >
-        <button
-          type="button"
-          aria-label={open ? 'Collapse' : 'Expand'}
-          data-testid="org-tree-toggle"
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-        <button
-          type="button"
-          data-testid="org-tree-node"
-          className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
-          onClick={() => onSelect(node)}
-        >
-          <Icon size={14} className="shrink-0 text-muted-foreground" />
-          <span className="truncate">{node.label}</span>
-        </button>
-        {loading && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
-      </div>
-      {open && children.length > 0 && (
-        <ul role="group" className="flex flex-col gap-0.5">
-          {children.map((child) => (
-            <TreeNode key={child.id} node={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
   return (
-    <div className="mx-auto flex h-full max-w-6xl flex-col px-6 py-6">
+    <div className="flex h-full w-full flex-col px-6 py-6">
       <header className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">
             <Trans>People &amp; teams</Trans>
           </h1>
           <p className="text-sm text-muted-foreground">
-            <Trans>Organizations, the teams inside them, and who belongs to each.</Trans>
+            <Trans>Organizations, the teams inside them, and who has a budget in each.</Trans>
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          data-testid="org-open-graph"
-          onClick={() => navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, WorldViewProjection.ORGANIZATION)}
-        >
-          <GitGraph className="h-4 w-4" />
-          <Trans>Graph view</Trans>
-        </Button>
+        <div className="flex items-center gap-2">
+          {!createOpen ? (
+            <Button size="sm" data-testid="org-create-open" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <Trans>New organization</Trans>
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onCreate();
+                  if (e.key === 'Escape') setCreateOpen(false);
+                }}
+                placeholder={t`Organization name…`}
+                data-testid="org-create-name"
+                className="w-44 rounded-md border border-border bg-background px-2.5 py-1 text-sm"
+              />
+              <Button size="sm" disabled={creating || !name.trim()} onClick={onCreate} data-testid="org-create-submit">
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Trans>Create</Trans>
+              </Button>
+            </div>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="org-open-graph"
+            onClick={() => navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, WorldViewProjection.ORGANIZATION)}
+          >
+            <GitGraph className="h-4 w-4" />
+            <Trans>Graph view</Trans>
+          </Button>
+        </div>
       </header>
       {children}
     </div>
@@ -211,9 +224,4 @@ function EmptyState({ icon: Icon, title, body }: { icon: typeof Users; title: st
       <p className="max-w-sm text-sm text-muted-foreground">{body}</p>
     </div>
   );
-}
-
-function firstOrgNode(orgs: Array<{ id: string; name?: string }>) {
-  const first = orgs[0];
-  return first ? { type: 'organization', id: first.id, label: first.name || 'Organization' } : null;
 }

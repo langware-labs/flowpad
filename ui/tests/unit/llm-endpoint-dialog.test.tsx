@@ -116,16 +116,16 @@ describe('LlmEndpointDialog', () => {
     await userEvent.click(screen.getByTestId('toggle-advanced'));
 
     const box = screen.getByLabelText('Models allowed (globs)') as HTMLTextAreaElement;
-    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-*');
     // Visiting and leaving changes nothing -- no seeding, no erasing.
     await userEvent.click(box);
     await userEvent.click(screen.getByTestId('llm-name'));
-    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-*');
 
     await userEvent.click(screen.getByTestId('llm-submit'));
     await waitFor(() => expect(h.save).toHaveBeenCalledOnce());
     const json = h.save.mock.calls[0][2] as Record<string, unknown>;
-    expect((json.filters as { models_allow: string[] }).models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-4*']);
+    expect((json.filters as { models_allow: string[] }).models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-*']);
   });
 
   it('clearing the globs stays cleared, and "Use defaults" puts them back', async () => {
@@ -141,7 +141,7 @@ describe('LlmEndpointDialog', () => {
     expect(box.value).toBe('');
 
     await userEvent.click(screen.getByTestId('models-allow-use-default'));
-    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-*');
   });
 
   it('a root without a key saves without touching the credential action', async () => {

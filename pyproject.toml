@@ -24,6 +24,9 @@ dependencies = [
     "rich",
     # Terminal QR for `flow connect` device-code enrollment (pure python).
     "segno>=1.6",
+    # Project cleanup moves folders to the desktop Trash rather than deleting
+    # them, so a misclick is recoverable from Finder. Pure python, no build step.
+    "send2trash>=1.8",
     "python-dotenv",
     "keyring",
     "keyrings.alt",

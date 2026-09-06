@@ -31,6 +31,7 @@ from flow_sdk.instance_settings.llm_endpoint import (
     fetch_hub_llm_endpoints,
     get_hub_llm_endpoint,
     hub_llm_endpoint_invoke_url,
+    listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
 
@@ -51,36 +52,60 @@ class HubEndpointBindError(Exception):
         self.status_code = status_code
 
 
-async def _sources_by_kind() -> tuple[dict, dict, dict]:
-    """``(sources, resolved, endpoints)`` for every hub-capable harness.
+async def _sources_by_kind() -> tuple[dict, dict, dict, dict]:
+    """``(sources, resolved, blocked, endpoints)`` for every hub-capable harness.
 
-    ``sources`` and ``resolved`` are keyed by capability kind; ``endpoints`` is keyed by
-    endpoint typeid and is the union across harnesses. A verdict names an endpoint and
+    ``sources``, ``resolved`` and ``blocked`` are keyed by capability kind; ``endpoints`` is
+    keyed by endpoint typeid and is the union across harnesses. A verdict names an endpoint and
     mirrors none of its fields, so the client needs the rows to render a row's provider or
     model beside its reason — and sending them once, deduplicated, beats repeating an
     endpoint inside every harness's list.
+
+    ``sources`` is the OFFER list (``llm_picker_view``), not the resolver's overlaid one. The
+    screen this feeds is where a user changes their funding choice, and the overlay rules out
+    every source except the one already chosen — so feeding it the overlay greys out the very
+    rows that would undo a choice, which is how a box pinned to a deleted endpoint ends up with
+    nothing to click. ``resolved`` still carries the overlay's answer, so what the page says is
+    in use and what a spawn does still come from one producer.
 
     Reads only what is already local (including the endpoint memo), so this adds no
     round-trip to a status the harness picker polls.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
-        list_llm_candidates,
-        pick_llm_candidate,
-    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
 
     sources: dict[str, list] = {}
     resolved: dict[str, dict | None] = {}
+    blocked: dict[str, str] = {}
     endpoints: dict[str, dict] = {}
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
-        listed = await list_llm_candidates(worker)
-        chosen = pick_llm_candidate(listed)
-        sources[kind] = [c.source.model_dump(mode="json") for c in listed]
-        resolved[kind] = chosen.source.model_dump(mode="json") if chosen else None
-        for candidate in listed:
+        view = await llm_picker_view(worker)
+        sources[kind] = [c.source.model_dump(mode="json") for c in view.offers]
+        resolved[kind] = view.chosen.source.model_dump(mode="json") if view.chosen else None
+        blocked[kind] = view.blocked
+        for candidate in view.offers:
             endpoints.setdefault(candidate.source.endpoint_typeid, candidate.endpoint.to_wire())
-    return sources, resolved, endpoints
+    return sources, resolved, blocked, endpoints
+
+
+def _hub_user_typeid() -> str | None:
+    """The hub identity this box is signed in as, in the same spelling an endpoint's
+    ``principal_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
+
+    The box's LOCAL user is a different person as far as ids go -- the bootstrap ``user`` is
+    ``uname: local`` with a v5 id minted here -- so a screen cannot ask "is this budget mine"
+    without being told which hub user the box is. Reported rather than filtered on: the picker
+    and the resolver legitimately spend a pool that belongs to an org, and taking those rows
+    out of the listing would break a spawn to tidy up a screen.
+    """
+    try:
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+        user_id = str((get_user() or {}).get("id") or "")
+    except Exception:  # noqa: BLE001
+        return None
+    return f"user-{user_id}" if user_id else None
 
 
 async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
@@ -90,7 +115,20 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
     # out), so computing sources before this ran left every endpoint out of the FIRST
     # answer and put it in the second -- a picker that fills in on its own second poll.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
-    sources, resolved, endpoints = await _sources_by_kind()
+    if refresh and bound is not None and listing_supersedes_binding():
+        # Drop a binding the hub has just told us it will not honour. ``_endpoint_sources``
+        # already stops OFFERING it, so routing is correct either way -- but the record itself
+        # is read as "this box was given a budget" (``box_bound`` demotes an unproven device
+        # login), so leaving a dead id in place keeps that claim alive and makes every status
+        # answer name an endpoint that no longer exists.
+        #
+        # Only on an explicit refresh: ``bind`` answers through here too, and it has just been
+        # handed an endpoint the listing may not have heard of yet.
+        if not any(str(e.typeid) == bound.endpoint_typeid for e in available):
+            logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
+            clear_hub_llm_endpoint()
+            bound = None
+    sources, resolved, blocked, endpoints = await _sources_by_kind()
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {
         # Every endpoint this user could be pointed at, not just the one the hub pushed -- the
@@ -105,11 +143,19 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False) -> dict:
         "provider": bound.provider if bound else None,
         "name": bound.name if bound else None,
         "hub_logged_in": hub_logged_in,
+        # Who the hub thinks this box is. Lets a caller tell a budget allocated TO this person
+        # from one they merely administer -- both are listed, and only this says which is which.
+        "hub_user_typeid": _hub_user_typeid(),
         # Every source each harness could be funded by, and which one actually wins. One
         # producer for the resolver and the picker, so what a spawn does and what the UI
         # claims cannot disagree.
         "sources": sources,
         "resolved": resolved,
+        # Why a harness has no funded source, when it has none -- the top-ranked refusal from
+        # the OVERLAID list. ``sources`` is now the un-overlaid offer list, so a pin that
+        # nothing can satisfy no longer shows up on the rows; without this the screen could
+        # only say "nothing eligible" and never why.
+        "blocked": blocked,
         # The rows the verdicts above name, deduplicated across harnesses. The verdict
         # carries only an ``endpoint_typeid``; everything renderable (provider, kind, model
         # slugs) lives here.
@@ -256,3 +302,97 @@ async def select_llm_source(payload: dict) -> dict:
     await cap.save(notify=True)
     logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
     return await _status(hub_key)
+
+
+def _endpoint_id(raw: str) -> str:
+    """The bare uuid out of any spelling of an endpoint id the hub hands out.
+
+    Three reach here, all the hub's own: the row's bare ``id``, the typeid form ``sources``
+    and the chain hops carry, and the colon form the bind payload uses. Strip the prefix
+    rather than parse a ``TypeId`` -- this only needs the suffix to build a path, and whether
+    that suffix names a real endpoint is the hub's answer to give, not ours.
+    """
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    raw = str(raw or "").strip()
+    if not raw:
+        raise HubEndpointBindError("endpoint_typeid is required", 400)
+    prefix = EntityType.LLM_ENDPOINT.value
+    endpoint_id = raw[len(prefix) + 1 :].strip() if raw.startswith((f"{prefix}-", f"{prefix}:")) else raw
+    if not endpoint_id:
+        raise HubEndpointBindError(f"{raw!r} is not an endpoint id", 400)
+    return endpoint_id
+
+
+def _require_hub_login() -> None:
+    """A box with no hub key cannot ask the hub anything; say so rather than 502 later."""
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+
+    if not resolve_hub_api_key():
+        raise HubEndpointBindError("this box is not logged in to the hub", 409)
+
+
+async def test_hub_llm_endpoint(payload: dict) -> dict:
+    """Send ONE minimal completion down an endpoint's chain and report the verdict.
+
+    A pass-through to the hub's own ``test`` action, and deliberately nothing more: the
+    verdict covers the credential, every hop's filters and budget, the routing and the
+    provider, and none of that is knowable from here. The box has no ``llm_endpoint`` rows
+    (the type is a read-only projection), so the desktop UI cannot reach that action the way
+    the hub UI does -- ``dataManager`` would call this box, which 404s. This is the same
+    channel the listing already rides.
+
+    **What the test spends is never this machine's credentials.** The call is made BY THE HUB,
+    down the endpoint's own resolved chain, with the provider key attached to whichever root
+    that chain ends at (``test_action`` -> ``_forward``, the same code path as ``invoke``). A
+    vendor CLI's OAuth session and a key stored in this box's sod store are not reachable from
+    there, so a green verdict cannot be one of those wearing the endpoint's name. When the
+    chain ends at no root with a key, the hub answers 503 "no usable source" rather than
+    falling back to anything.
+
+    Returns the hub's answer verbatim. A REFUSED call is a verdict, not an error, and comes
+    back inside the success envelope with ``ok: false``; only a transport/auth failure raises.
+    """
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+    endpoint_id = _endpoint_id(str(payload.get("endpoint_typeid") or payload.get("id") or ""))
+    _require_hub_login()
+
+    try:
+        verdict = await hub_post("llm_endpoint", {}, endpoint_id, "test")
+    except HubError as exc:
+        raise HubEndpointBindError(f"hub refused the test: {exc}", 502) from exc
+    if verdict is None:
+        raise HubEndpointBindError("no hub is configured for this box", 409)
+    return verdict
+
+
+async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
+    """The hub's resolved chain for one endpoint: which hops a call travels and which root's
+    key it ends up spending.
+
+    The companion of ``test``. The verdict alone says a call SUCCEEDED; it does not say what
+    paid for it, and "it worked" is exactly the answer a person cannot check. This report
+    names the root, whether that root holds a credential, and which root this caller is stuck
+    to -- so a screen can state the funding rather than imply it.
+
+    Same reason for living here as ``test``: the hub's ``chain`` action addresses an entity
+    this box has no row for.
+    """
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    endpoint_id = _endpoint_id(endpoint_ref)
+    _require_hub_login()
+
+    try:
+        body = await hub_get("llm_endpoint", endpoint_id, action="chain")
+    except HubError as exc:
+        raise HubEndpointBindError(f"hub refused the chain read: {exc}", 502) from exc
+    if body is None:
+        raise HubEndpointBindError("no hub is configured for this box", 409)
+    # ``hub_get`` answers the envelope for a type listing and the bare payload for an action;
+    # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
+    data = body.get("data") if isinstance(body, dict) and "data" in body else body
+    return data if isinstance(data, dict) else {}

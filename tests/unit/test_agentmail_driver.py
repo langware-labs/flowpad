@@ -172,3 +172,47 @@ class TestConfigFailures:
         with pytest.raises(SourceError) as caught:
             AgentMailDriver()._auth(SimpleNamespace(config={"inbox": "i"}))
         assert caught.value.code == "no_api_key"
+
+
+class TestAuthResolution:
+    """The key is a MACHINE credential (SOD store), not a per-source form field.
+
+    An ingest driver has no project, so the project-scoped `(project_id, env_var)`
+    credential model is unreachable here. A per-instance SOD secret resolves by
+    NAME with no project — the same seam `LLMEndpoint` uses — which is why the
+    manifest drops the plaintext `api_key` field and the driver reads the store.
+    """
+
+    def _bare_source(self, **config):
+        base = {"inbox": "me@agentmail.to"}  # NO api_key on the row
+        base.update(config)
+        return SimpleNamespace(id="ds-1", name="Agent mailbox", config=base)
+
+    def test_key_comes_from_the_sod_store_without_a_project(self, monkeypatch):
+        seen = {}
+
+        def fake_read_secret(name):
+            seen["name"] = name
+            return "am_from_store" if name == AgentMailDriver.SECRET_NAME else None
+
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", fake_read_secret)
+        headers = AgentMailDriver._auth(self._bare_source())
+        assert headers == {"Authorization": "Bearer am_from_store"}
+        assert seen["name"] == AgentMailDriver.SECRET_NAME
+
+    def test_legacy_config_key_still_works(self, monkeypatch):
+        # A source created before the move keeps its config key.
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
+        headers = AgentMailDriver._auth(self._bare_source(api_key="am_legacy"))
+        assert headers == {"Authorization": "Bearer am_legacy"}
+
+    def test_the_store_wins_over_a_legacy_config_key(self, monkeypatch):
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_store")
+        headers = AgentMailDriver._auth(self._bare_source(api_key="am_legacy"))
+        assert headers == {"Authorization": "Bearer am_store"}
+
+    def test_no_key_anywhere_names_the_store_in_the_error(self, monkeypatch):
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
+        with pytest.raises(SourceError) as exc:
+            AgentMailDriver._auth(self._bare_source())
+        assert AgentMailDriver.SECRET_NAME in str(exc.value)

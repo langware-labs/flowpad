@@ -5,9 +5,13 @@
  * admin-only on the hub. Limits themselves are set with a plain `LLMEndpoint`
  * entity update (`limits`, `member_default_limits`) — no plan action needed.
  *
- * Wire: `/api/v1/graph/token_plan/me`, `/api/v1/graph/token_plan/team/<id>/setup`,
- * `/api/v1/graph/token_plan/org/setup` (`ApiUrl` always mounts under the graph
- * prefix, which is where the hub serves its bare actions).
+ * Wire: `/api/v1/graph/token_plan/me` is a bare action (`ApiUrl` mounts it under
+ * the graph prefix, which is where the hub serves those). The two setups are
+ * addressed ON their principal — `/api/v1/graph/team/<id>/setup-budget` and
+ * `/api/v1/graph/organization/<id>/setup-budget` — because that is what puts the entity
+ * in the url for the hub's authorizer to check the caller's roles against; as
+ * bare `token_plan/...` routes they had no target and were open to any signed-in
+ * user.
  */
 import { dataManager } from '../APIEntity';
 import type { ActionInfo } from '../models/ActionInfo';
@@ -103,12 +107,14 @@ export class TokenPlanService {
 
   /** Ensure the team's scope endpoint exists (team admin). */
   setupTeam(teamId: string): Promise<TokenPlanSetupResult> {
-    return dataManager.callAction<undefined, TokenPlanSetupResult>(action('team', 'POST', `${teamId}/setup`));
+    return dataManager.callAction<undefined, TokenPlanSetupResult>(hubAction('setup-budget', 'team', teamId, 'POST'));
   }
 
-  /** Ensure the org's scope endpoint exists (org admin). */
-  setupOrg(): Promise<TokenPlanSetupResult> {
-    return dataManager.callAction<undefined, TokenPlanSetupResult>(action('org', 'POST', 'setup'));
+  /** Ensure the org's scope endpoint exists (org admin). The id is required: the
+   *  caller names which organization they mean, and that is the entity the hub
+   *  checks their roles on. */
+  setupOrg(orgId: string): Promise<TokenPlanSetupResult> {
+    return dataManager.callAction<undefined, TokenPlanSetupResult>(hubAction('setup-budget', 'organization', orgId, 'POST'));
   }
 }
 

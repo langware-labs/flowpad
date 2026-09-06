@@ -9,3 +9,4 @@ export { registerCommand, runCommand, runAction, registerNavigate, navigateTo } 
 export { useBadgeStore } from './store';
 export { useAlertStore } from './alerts-store';
 export type { NotificationData, NotificationInput, NotificationAction, NotificationLevel } from './types';
+export { notificationText } from './types';

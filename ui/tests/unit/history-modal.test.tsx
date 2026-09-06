@@ -59,8 +59,10 @@ describe('HistoryModal', () => {
 
     expect(screen.getByText('Codex task')).toBeTruthy();
     expect(screen.getByText('Claude task')).toBeTruthy();
-    expect(document.querySelector('svg[aria-label="Codex"]')).not.toBeNull();
-    expect(document.querySelector('svg[aria-label="Claude"]')).not.toBeNull();
+    // Which vendor a row wears — the drift this component's docstring records,
+    // where an opencode row used to show Claude's mark.
+    expect(document.querySelector('[data-provider="codex"]')).not.toBeNull();
+    expect(document.querySelector('[data-provider="claude"]')).not.toBeNull();
   });
 
   it('filters visible sessions inline by name or last prompt', () => {

@@ -18,10 +18,28 @@ so the same names mean the same things at both tiers.
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from flow_sdk.builtin.secret_origin_driver import HUB_KIND_ALIASES
+from flow_sdk.cloud_client.shared.errors import HubErrorCode
 from flow_sdk.utils.kind_registry import KindRegistry
+
+
+class EmailInboxErrorCode(str, Enum):
+    """Backend-neutral mailbox failure markers.
+
+    Pinned to the hub's spelling so the hub driver can copy ``code`` across
+    without a translation table; a hub rename cannot desynchronize the two.
+    """
+
+    TARGET_NOT_FOUND = HubErrorCode.TARGET_NOT_FOUND.value
+    #: Ours, not the hub's — the one member with no counterpart there. The hub
+    #: cannot express it: it masks "exists but not yours" as TARGET_NOT_FOUND on
+    #: purpose, so that this account holds no role is a conclusion only the SDK
+    #: reaches, by publishing and being refused. If the hub ever grows the
+    #: distinction, this adopts its spelling like every other member.
+    FOREIGN_TARGET = "foreign_target"
 
 
 class EmailInboxError(Exception):
@@ -35,9 +53,10 @@ class EmailInboxError(Exception):
     dropped packet or spins forever on a mailbox that no longer exists.
     """
 
-    def __init__(self, status_code: int, reason: str):
+    def __init__(self, status_code: int, reason: str, code: str | None = None):
         self.status_code = status_code
         self.reason = reason
+        self.code = code
         super().__init__(f"email inbox error {status_code}: {reason}")
 
 
@@ -63,6 +82,15 @@ class EmailInboxDriver(Protocol):
 
     async def disable_inbox(self, agent_id: str) -> dict:
         """Pause this agent's allocation without releasing its address."""
+        ...
+
+    async def configure_inbox(self, agent_id: str, settings: dict) -> dict:
+        """Set the mailbox's own policy — its allowlist and its read defaults.
+
+        The backend is authoritative for both: an allowlist a client could hold
+        privately would be a second answer to "who may drive this agent", and the
+        one that decides is the one the mailbox enforces.
+        """
         ...
 
     async def get_inbox(self, agent_id: str) -> Optional[dict]:

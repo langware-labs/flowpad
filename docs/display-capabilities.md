@@ -227,9 +227,20 @@ from — see [§8](#8-open-questions) Q1.
     `flow navigate view <address>`, where an address is
     `<viewType>[/<pointer>][?<opts>]`. `flow schema views` enumerates what is
     openable — the view half of the vocabulary `flow schema list` covers for
-    entities. The address is validated server-side before the UI is touched, so
-    an unknown view or a missing required pointer is a clean exit 2 and an
-    entity-shaped pointer naming nothing is exit 4.
+    entities. Each row carries `label` (the screen's name as a person says it),
+    `aliases` (the other things they call it), `page`, and the pointer rule. The
+    address is validated server-side before the UI is touched, so an unknown view
+    or a missing required pointer is a clean exit 2 and an entity-shaped pointer
+    naming nothing is exit 4; an unknown view's error names the closest labels.
+
+    **Addressable is not the same as findable.** Being able to *say* an address
+    does not help an agent that does not know the screen's name, and for a while
+    it did not: the catalogue published bare slugs, the navigation skill listed
+    nine of 57 destinations in prose, and an agent asked for "the connections
+    page" ran `flow show view data-sources`, got exit 0, and showed the wrong
+    screen. `label`/`aliases` and the full table in the `flowpad-navigation`
+    skill are the fix; `tests/unit/test_agent_schema_views.py` and the skill's
+    own contract test are what stop the vocabulary rotting again.
 
     Still open, deliberately out of that scope: an agent cannot switch view mode,
     and cannot manage tabs (the `Tab` actions exist but have no CLI surface).

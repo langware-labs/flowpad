@@ -95,7 +95,10 @@ describe('HubHome sandbox secrets button', () => {
     await userEvent.click(screen.getByTestId('sandbox-secrets'));
 
     expect(h.openDock).not.toHaveBeenCalled();
-    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.CREDENTIALS, 'environment');
+    // `connections`, not `environment`: the Environment subview is retired and
+    // forwards here anyway, so emitting it was pointing at a name that no longer
+    // renders anything of its own.
+    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.CREDENTIALS, 'connections');
   });
 
   it('does not list projects on the hub home — the current project lives in the address bar and footer', () => {

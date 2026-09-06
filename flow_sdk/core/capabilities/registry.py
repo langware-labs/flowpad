@@ -450,8 +450,8 @@ class GithubAccountRunner(CapabilityRunner):
 
     async def test(self, scope=None) -> CapabilityResult:
         if scope is not None and getattr(scope, "scope_type", None) == "project":
-            from flow_sdk.fs_store.origin.git_origin import GitOrigin
             from flow_sdk.builtin.project import Project
+            from flow_sdk.fs_store.origin.git_origin import GitOrigin
             from flow_sdk.utils.git import git_remote_access
 
             project = await Project.get_by_id(scope.scope_id)
@@ -827,7 +827,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
 def get_default_capability_specs() -> list[CapabilitySpec]:
     # Harness CLI values are typed as FOLDER (RecordType.FOLDER): the value is
     # the discovered bin directory (FSRef dict) workers prepend to spawn PATH.
-    _FOLDER = DataSpec.parse("fs_ref")   # the value is an FSRef dict
+    _FOLDER = DataSpec.parse("fs_ref")  # the value is an FSRef dict
     return [
         CapabilitySpec(
             name="Default harness",
@@ -844,6 +844,27 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             icon="Bot",
             value_spec=_FOLDER,
             homepage_url="https://docs.anthropic.com/en/docs/claude-code/getting-started",
+            # Anthropic's native installers: they fetch a signed binary into
+            # ``~/.local/bin`` and need NOTHING preinstalled — no node, no npm,
+            # no Homebrew. curl ships with macOS and with Windows 10 1803+.
+            #
+            # Each one re-exports the bin dir onto PATH before verifying,
+            # because the installer edits the shell rc / the user's registry
+            # PATH and neither reaches the shell that is already running.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://claude.ai/install.sh | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && claude --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://claude.ai/install.sh | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && claude --version'
+                ),
+                "win32": (
+                    "irm https://claude.ai/install.ps1 | iex; "
+                    '$env:Path = "$env:USERPROFILE\\.local\\bin;$env:Path"; claude --version'
+                ),
+            },
         ),
         CapabilitySpec(
             name="Codex CLI",
@@ -852,6 +873,25 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             icon="Terminal",
             value_spec=_FOLDER,
             homepage_url="https://openai.com/codex/",
+            # OpenAI's standalone installers — NOT `npm i -g @openai/codex`,
+            # which needs a Node runtime this machine is assumed not to have.
+            # Install dirs read off the scripts themselves: `$HOME/.local/bin`
+            # on unix (install.sh `BIN_DIR`), `%LOCALAPPDATA%\Programs\OpenAI\
+            # Codex\bin` on Windows (install.ps1 `$defaultVisibleBinDir`).
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && codex --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && codex --version'
+                ),
+                "win32": (
+                    "irm https://chatgpt.com/codex/install.ps1 | iex; "
+                    '$env:Path = "$env:LOCALAPPDATA\\Programs\\OpenAI\\Codex\\bin;$env:Path"; codex --version'
+                ),
+            },
         ),
         CapabilitySpec(
             name="Copilot CLI",
@@ -860,6 +900,26 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             icon="Terminal",
             value_spec=_FOLDER,
             homepage_url="https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
+            # GitHub's install script, which lands in `$PREFIX/bin` — `$HOME/
+            # .local` for a non-root user, which is what a Flowpad terminal is.
+            #
+            # Windows is the odd one out: GitHub publishes NO PowerShell
+            # installer, only WinGet and npm. WinGet is the lesser evil (it is
+            # in-box from Windows 10 1809 via App Installer, where npm implies a
+            # whole Node runtime), and it puts `copilot` on PATH itself, so
+            # there is no PATH line and no verify tail to append — the shim
+            # directory is already on the running shell's PATH.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://gh.io/copilot-install | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && copilot --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://gh.io/copilot-install | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && copilot --version'
+                ),
+                "win32": "winget install GitHub.Copilot",
+            },
         ),
         CapabilitySpec(
             name="OpenCode CLI",
@@ -868,6 +928,25 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             icon="Terminal",
             value_spec=_FOLDER,
             homepage_url="https://opencode.ai/docs/",
+            # Installs to its OWN directory — `$HOME/.opencode/bin`, not the
+            # `~/.local/bin` the other three share (install script INSTALL_DIR).
+            #
+            # No Windows entry ON PURPOSE. OpenCode ships no PowerShell
+            # installer and no plain download command; every Windows route it
+            # documents (Chocolatey, Scoop, npm, mise, Docker) needs a tool
+            # installed first, which is exactly the machine this affordance
+            # exists for. A missing key hides the button, which is the honest
+            # outcome — the homepage link is still there.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://opencode.ai/install | bash"
+                    ' && export PATH="$HOME/.opencode/bin:$PATH" && opencode --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://opencode.ai/install | bash"
+                    ' && export PATH="$HOME/.opencode/bin:$PATH" && opencode --version'
+                ),
+            },
         ),
         CapabilitySpec(
             name="Chrome Authenticated Browsing",

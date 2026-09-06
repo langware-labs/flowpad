@@ -257,6 +257,22 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
 export const CAPABILITY_PARAM = 'capability';
 
 /**
+ * A command the shell dock hands its terminal to type on first attach.
+ *
+ * `startCommand` is typed AND submitted; `prefillCommand` is typed and left at
+ * the prompt for the user to press Enter on. The distinction is the whole
+ * point of the pair: "resume this session" is an instruction Flowpad is
+ * carrying out, while "install Claude Code" is one it is only proposing — that
+ * one pipes a remote script into a shell, so the Enter belongs to the user.
+ *
+ * Consumed exactly once, by the mounted `InteractiveTerminal` at the moment
+ * its PTY reports ready, which then navigates to the same dock WITHOUT the
+ * param (`withoutShellStartCommand`) so a reload cannot retype it.
+ */
+export const START_COMMAND_PARAM = 'startCommand';
+export const PREFILL_COMMAND_PARAM = 'prefillCommand';
+
+/**
  * Canonicalize an entity-relative path: forward slashes, collapsed separators,
  * no leading/trailing slash. Route identity itself is always carried by
  * VFSPath; this helper remains for entitySubPath and legacy-route ingestion.
@@ -674,6 +690,11 @@ export class DockPointer implements IDockPointer {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, `Invalid view type: ${viewType}`);
     }
 
+    // `isValidView` validates at runtime but is not a type predicate, so bind
+    // the narrowed value ONCE here rather than casting at each use — the
+    // comparison below is against the enum and has to be enum-typed too.
+    const view = viewType as ViewType;
+
     // Decode pointer if provided (may be URL-encoded)
     // Normalize the string "undefined" to actual undefined
     const decodedPointer = pointer && pointer !== 'undefined' ? decodeURIComponent(pointer) : undefined;
@@ -685,20 +706,14 @@ export class DockPointer implements IDockPointer {
     // so it stays out of tab identity (see HOST_PARAM). Lifting here is what
     // keeps every downstream reader of a project sub-pointer — splitProjectPointer,
     // targetTypeId, the AssetsPage parsers — unaware that a host exists at all.
-    if (viewType === ViewType.PROJECT) {
+    if (view === ViewType.PROJECT) {
       const lifted = liftHostFromProjectPointer(decodedPointer);
       if (lifted.hostProcessId) {
-        return new DockPointer(
-          viewType as ViewType,
-          lifted.pointer,
-          { ...options, [HOST_PARAM]: lifted.hostProcessId },
-          layout,
-          page,
-        );
+        return new DockPointer(view, lifted.pointer, { ...options, [HOST_PARAM]: lifted.hostProcessId }, layout, page);
       }
     }
 
-    return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
+    return new DockPointer(view, decodedPointer, options, layout, page);
   }
 
   /**
@@ -1432,19 +1447,41 @@ export class DockPointer implements IDockPointer {
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
    * @param options.cwd - Working directory to cd into before starting the shell
-   * @param options.startCommand - Optional command to run on shell startup
+   * @param options.startCommand - Command typed AND submitted once the shell is ready
+   * @param options.prefillCommand - Command typed but NOT submitted; the user presses Enter
    * @param options.skipPermissions - Pass through `--dangerously-skip-permissions` semantics where applicable
    */
   static forShell(
     sessionId?: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; prefillCommand?: string; skipPermissions?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
     if (options?.cwd) queryOptions.cwd = options.cwd;
-    if (options?.startCommand) queryOptions.startCommand = options.startCommand;
+    if (options?.startCommand) queryOptions[START_COMMAND_PARAM] = options.startCommand;
+    if (options?.prefillCommand) queryOptions[PREFILL_COMMAND_PARAM] = options.prefillCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
     return new DockPointer(ViewType.SHELL, sessionId, queryOptions, layout);
+  }
+
+  /**
+   * The command this shell dock asks its terminal to type on first attach, and
+   * whether to submit it. Consumed ONCE by the mounted `InteractiveTerminal`
+   * (see `START_COMMAND_PARAM`) — a PTY write is a side effect on a live
+   * terminal, so it belongs to the mounted view, not to the loader or to the
+   * click handler that navigated here.
+   */
+  get shellStartCommand(): { command: string; submit: boolean } | null {
+    const submitted = this.options?.[START_COMMAND_PARAM];
+    if (submitted) return { command: submitted, submit: true };
+    const typed = this.options?.[PREFILL_COMMAND_PARAM];
+    return typed ? { command: typed, submit: false } : null;
+  }
+
+  /** Clone this dock with both command params dropped — what the terminal
+   *  navigates to after typing, so a refresh cannot retype the command. */
+  withoutShellStartCommand(): DockPointer {
+    return this.withOption(START_COMMAND_PARAM, null).withOption(PREFILL_COMMAND_PARAM, null);
   }
 
   /**
@@ -2103,7 +2140,46 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
       return `${pagePrefix}${this.viewType}|`;
     }
+    return this.plainKey;
+  }
+
+  /** Identity for a dock that none of `tabHash`'s special arms claim: the page
+   *  namespace, the viewType and the pointer. Named because `favoriteKey` needs
+   *  the same string for a surface `tabHash` refuses to answer for at all. */
+  private get plainKey(): string {
+    const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
     return `${pagePrefix}${this.viewType}|${this.pointer ?? ''}`;
+  }
+
+  /** The JSON form of {@link plainKey} — `toJSON`'s default arm, likewise shared
+   *  with `toFavoriteJSON` so the shape `fromJSON` must accept is written once. */
+  private get plainJSON(): string {
+    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+  }
+
+  /**
+   * Identity for a FAVORITE — a different question from identity for a TAB, and
+   * the app root is where the two answers diverge.
+   *
+   * Home is `chrome: 'fullbleed'`, so it is deliberately not a tab and `tabHash`
+   * returns null for it; that null is load-bearing (nothing materializes a Tab
+   * row for `/`, the strip highlights no chip). It is still a place you can want
+   * to come back to. So this is `tabHash` without the full-bleed veto — the same
+   * `plainKey` every ordinary dock gets — rather than a bespoke key invented
+   * elsewhere and kept in sync by hand.
+   *
+   * Restricted to the root: a bare shell (`/dock/shell` with no session) is the
+   * terminal HOST, and bookmarking it would bookmark nothing.
+   */
+  get favoriteKey(): string | null {
+    return this.tabHash ?? (this.isRoot ? this.plainKey : null);
+  }
+
+  /** What a favorite of this dock stores, restored through `fromJSON` +
+   *  `openDock`. Mirrors {@link favoriteKey}: `toJSON` when there is a tab, the
+   *  plain form for the root, null for anything else. */
+  toFavoriteJSON(): string | null {
+    return this.toJSON() ?? (this.isRoot ? this.plainJSON : null);
   }
 
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
@@ -2165,7 +2241,7 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
       return JSON.stringify({ viewType: this.viewType, pointer: '' });
     }
-    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+    return this.plainJSON;
   }
 
   /** Deserialize a stored Tab.pointer JSON back to a navigable DockPointer.
@@ -2281,6 +2357,17 @@ export class DockPointer implements IDockPointer {
     if (assetSub !== null) {
       const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
       return typeid ? DockPointer.tryTypeId(typeid) : null;
+    }
+    // A K_BROWSER dock is `<method>/<value>` (`typeid/<type>-<id>` | `vfs/<path>`),
+    // so its value must be split off by the parser that owns that grammar. Without
+    // this branch it fell to the generic fallback below, whose `/typeid/` test only
+    // matches an EMBEDDED marker — a pointer that *begins* `typeid/` slips past it,
+    // and `new TypeId('typeid/markdown-<uuid>')` then splits on the first `-` and
+    // yields type `typeid/markdown`. That produced `GET /graph/typeid/markdown/<uuid>`
+    // → 422, plus the `TypeId null` follow-ons, on every k-browser typeid address.
+    if (this.viewType === ViewType.K_BROWSER) {
+      const kb = DockPointer.parseKnowledgeBrowserPointer(pointer);
+      return kb?.method === 'typeid' ? DockPointer.tryTypeId(kb.value) : null;
     }
     const candidate = pointer.includes('/typeid/') ? (pointer.split('/typeid/').pop() ?? '') : pointer;
     return (
@@ -2440,9 +2527,8 @@ export class DockPointer implements IDockPointer {
    */
   private get urlParts(): { pointer?: string; options?: Record<string, string> } {
     const host = this.hostProcessId;
-    const embedded = host && this.viewType === ViewType.PROJECT
-      ? embedHostInProjectPointer(this.pointer, host)
-      : undefined;
+    const embedded =
+      host && this.viewType === ViewType.PROJECT ? embedHostInProjectPointer(this.pointer, host) : undefined;
     // A hosted dock with no project segment to nest under (a terminal, a web
     // app) keeps the plain `?host=` form rather than losing the host.
     if (!embedded || embedded === this.pointer) return { pointer: this.pointer, options: this.options };
@@ -2460,7 +2546,6 @@ export class DockPointer implements IDockPointer {
     const { pointer, options } = this.urlParts;
     return buildDockUrl(currentPath, this.viewType, pointer, options, this.layout, this.page);
   }
-
 
   /**
    * Convert options to URLSearchParams

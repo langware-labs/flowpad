@@ -2,7 +2,15 @@ import { useEffect } from 'react';
 import { ConnectionManager, IEntity, TypeId } from '@sdk';
 
 export type EntityOp = 'create' | 'update' | 'delete';
-export type EntityOpListener = (typeId: TypeId, op: EntityOp, data: IEntity) => void;
+/**
+ * A `delete` frame carries NO payload — the server sends `{message_type,
+ * message_id, instance_id, to_entity, op}` and nothing else, so `data` really is
+ * `undefined` for every delete. Typing it as always-present made consumers
+ * dereference it and throw (see `use-show-target-listener`), which — because the
+ * event bus fans out with an unguarded `forEach` — silently truncated delivery of
+ * that delete to every listener behind the thrower.
+ */
+export type EntityOpListener = (typeId: TypeId, op: EntityOp, data: IEntity | undefined) => void;
 
 export interface SubscribeToEntityOpsOptions {
   /** Restrict to a subset of ops. Defaults to all three. */
@@ -34,7 +42,7 @@ export function subscribeToEntityOps(
   const typeSet = new Set(Array.isArray(types) ? types : [types as string]);
   const opSet = options?.ops ? new Set(options.ops) : null;
 
-  const wrapped = (typeIdStr: string, op: EntityOp, data: IEntity): void => {
+  const wrapped = (typeIdStr: string, op: EntityOp, data: IEntity | undefined): void => {
     if (opSet && !opSet.has(op)) return;
     let typeId: TypeId;
     try {

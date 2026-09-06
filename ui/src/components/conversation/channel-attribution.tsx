@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DataSource } from '@sdk';
 import type { ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
+import { sourceIconName } from '@src/components/data-sources/source-icon';
 import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -76,10 +77,8 @@ export function useChannelAttribution() {
       const label = channelLabel(kind);
 
       const source = sourceForOrigin(sources, origin, originLocal);
-      const iconName = (spec: { icon_name?: string; channel_icon_names?: Record<string, string> } | undefined) =>
-        spec?.channel_icon_names?.[kind] || spec?.icon_name || '';
-
-      const name = iconName(source ? specFor(source.provider) : undefined) || iconName(specFor(kind));
+      const name =
+        sourceIconName(source ? specFor(source.provider) : undefined, kind) || sourceIconName(specFor(kind), kind);
       return { icon: name ? lucideByName(name) : MessageSquare, label };
     },
     [sources, specFor],
@@ -90,7 +89,9 @@ export function useChannelAttribution() {
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
 const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
-const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+// The source chip is the one a row is recognised BY, so its glyph is bigger than
+// a category's and keeps its brand colour — the text stays quiet.
+const SOURCE_CHIP = 'gap-1 rounded border border-border bg-muted ps-1 pe-1.5 py-px align-middle text-[10px] font-semibold leading-tight text-muted-foreground';
 
 /** The per-row source chip: icon + channel, only for channel conversations.
  *  Hub-native rows pass no origin and render nothing — absence means "ours". */
@@ -110,11 +111,11 @@ export function SourceChip({
   return (
     <Badge
       variant="outline"
-      className={cn(COMPACT, MUTED_CHIP, className)}
+      className={cn(SOURCE_CHIP, className)}
       data-chip-type="source"
       title={attribution.label}
     >
-      <Icon className="h-2.5 w-2.5" />
+      <Icon className="size-4 shrink-0" />
       {attribution.label}
     </Badge>
   );

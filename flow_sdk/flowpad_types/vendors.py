@@ -25,6 +25,8 @@ from flow_sdk.utils.kind_registry import KindRegistry
 class Vendor:
     key: str                          # driver short-id: what an agent.md writes, the cli_config key, the executable
     worker_type: str                  # the persisted ``AgenticProcess.worker_type`` value
+    label: str                        # the vendor's own spelling — "OpenCode", not ``key.title()``
+    account_noun: str                 # what you sign in WITH: "Anthropic account"
     aliases: tuple[str, ...]          # every other spelling ``vendor_for`` accepts
     harness: str                      # ``fs_store.placement.HarnessType`` value
     capability_kind: str              # ``CapabilityKind.<X>_CLI`` value
@@ -40,6 +42,8 @@ class Vendor:
 VENDORS: tuple[Vendor, ...] = (
     Vendor(
         key="claude",
+        label="Claude",
+        account_noun="Anthropic account",
         worker_type="claude_code",
         aliases=("claude_code_cli", "unsecured_claude"),
         harness="claude",
@@ -50,6 +54,8 @@ VENDORS: tuple[Vendor, ...] = (
     ),
     Vendor(
         key="codex",
+        label="Codex",
+        account_noun="ChatGPT account",
         worker_type="codex",
         aliases=(),
         harness="agents",
@@ -60,6 +66,8 @@ VENDORS: tuple[Vendor, ...] = (
     ),
     Vendor(
         key="copilot",
+        label="Copilot",
+        account_noun="GitHub account",
         worker_type="copilot",
         aliases=(),
         harness="copilot",
@@ -70,6 +78,8 @@ VENDORS: tuple[Vendor, ...] = (
     ),
     Vendor(
         key="opencode",
+        label="OpenCode",
+        account_noun="provider account",
         worker_type="opencode",
         aliases=(),
         harness="agents",

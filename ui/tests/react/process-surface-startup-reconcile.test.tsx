@@ -104,6 +104,22 @@ describe('process surface reconciliation during panel startup', () => {
     expect(switchMode).not.toHaveBeenCalled();
   });
 
+  it('gives a headless process a PTY when first seen in a terminal mode', async () => {
+    // A chat-born session (pty_mode=false) opened straight from a
+    // `?viewMode=advanced` URL: the footer says Terminal, but the pane renders
+    // the chat overlay because `InteractiveTerminal` follows the TRANSPORT
+    // (`isHeadless`), not the mode. Nothing else on the load path supplies a
+    // PTY, so the first-sight record-only rule leaves the session on the
+    // wrong transport until the user toggles modes by hand.
+    state.mode = 'advanced';
+    state.pty = false;
+    render(<Surface canSwitch marker="advanced-first-sight-headless" />);
+    await act(async () => {});
+
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+  });
+
   it('drains the latest mode selected while a prior switch is in flight', async () => {
     // The drain is what keeps `lastReconciledMode` honest: a mode chosen while a
     // switch is in flight is skipped at the time (the re-entry guard) and must

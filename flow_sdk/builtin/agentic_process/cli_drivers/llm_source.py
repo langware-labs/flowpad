@@ -243,7 +243,7 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
     return out
 
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_authoritative: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -256,9 +256,17 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
     rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
-    if bound_typeid and bound_typeid not in rows:
+    if bound_typeid and bound_typeid not in rows and not listing_authoritative:
         # The push is authoritative even when the listing has not caught up: a freshly
         # bound (or freshly shared) endpoint must work before any cache has heard of it.
+        #
+        # But only while we have not managed to ask. Once a listing has SUCCEEDED and does not
+        # contain the bound endpoint, its absence is an answer rather than a gap -- the endpoint
+        # was deleted, or the role that made it spendable was revoked -- and synthesising it
+        # anyway is what strands a box: the stub is eligible, a bound endpoint outranks an
+        # unproven device login, and every spawn then posts to an invoke URL that answers
+        # "Entity ... not found" until the harness exhausts its retries. Leaving it out makes
+        # the ladder fall through to whatever the box can actually spend.
         rows[bound_typeid] = _hub_stub(
             bound_typeid,
             name=bound.name if bound else "",
@@ -306,7 +314,11 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.cli.auth.secrets import get_secrets
-    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, get_hub_llm_endpoint
+    from flow_sdk.instance_settings.llm_endpoint import (
+        fetch_hub_llm_endpoints,
+        get_hub_llm_endpoint,
+        listing_supersedes_binding,
+    )
 
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
@@ -326,8 +338,31 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     candidates = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
     candidates += _key_sources(spec, rows, stored)
-    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in)
+    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
     return candidates, cap
+
+
+async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
+    """The harness's OWN login verdict, and nothing else.
+
+    What the Connections list needs per harness: it reports the device login
+    regardless of whether a stored key currently outranks it, so the preference
+    overlay does not apply — and the key/endpoint inventory (a second query plus
+    a secret-store walk per harness) is never built only to be thrown away.
+
+    ``cap`` is the harness ``Capability`` when the caller already holds it — the
+    row this reads is the only thing it needs, and a caller that has just read it
+    (to show the account it carries) should not pay for the same read twice.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+
+    if driver_api_auth_spec(worker_type) is None:
+        return None
+    if cap is None:
+        cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    return _device_source(worker_type, getattr(cap, "login_state", None), get_hub_llm_endpoint() is not None)
 
 
 # ── overlay ──────────────────────────────────────────────────────────────────────
@@ -468,6 +503,29 @@ def _matches_preference(endpoint, source: LLMSource, preferred: str) -> bool:
     return endpoint.kind == LLMEndpointKind.API_KEY and endpoint.provider == preferred
 
 
+def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> list[Candidate]:
+    """Rung 3 -- the user's stated preference -- rendered ONTO the list, the same way
+    ``_apply_constraint`` renders rungs 1 and 2.
+
+    Pure, and separate from :func:`list_llm_candidates`, because the overlay answers "what
+    funds a spawn" while the picker asks "what may the user choose". Those are different
+    questions about one inventory, and the picker must not ask this one: filtering the list
+    of choices BY the current choice is circular, and it is what left a box pinned to a
+    vanished endpoint with no row it could click. See :func:`llm_picker_view`.
+    """
+    preferred = _preferred(cap)
+    if not preferred:
+        return candidates
+    name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
+    why = f"{worker_type} is set to use {name}"
+    return [
+        Candidate(endpoint, source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER}))
+        if _matches_preference(endpoint, source, preferred)
+        else Candidate(endpoint, source.ineligible(why))
+        for endpoint, source in candidates
+    ]
+
+
 async def list_llm_candidates(worker_type: str, process=None) -> list[Candidate]:
     """Every endpoint that could fund *worker_type*, ranked, each with its verdict — for
     THIS process when one is given, otherwise the box-wide view the picker renders.
@@ -487,17 +545,7 @@ async def list_llm_candidates(worker_type: str, process=None) -> list[Candidate]
                 key=lambda c: c.source.rank,
             )
 
-    preferred = _preferred(cap)
-    if preferred:
-        name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
-        why = f"{worker_type} is set to use {name}"
-        candidates = [
-            Candidate(endpoint, source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER}))
-            if _matches_preference(endpoint, source, preferred)
-            else Candidate(endpoint, source.ineligible(why))
-            for endpoint, source in candidates
-        ]
-    return sorted(candidates, key=lambda c: c.source.rank)
+    return sorted(_apply_preference(candidates, cap, worker_type), key=lambda c: c.source.rank)
 
 
 async def list_llm_sources(worker_type: str, process=None) -> list[LLMSource]:
@@ -531,6 +579,48 @@ def pick_llm_candidate(candidates: list[Candidate]) -> Candidate | None:
 async def resolve_box_llm_endpoint(worker_type: str) -> Candidate | None:
     """The box-wide answer, with the endpoint behind it."""
     return pick_llm_candidate(await list_llm_candidates(worker_type))
+
+
+class PickerView(NamedTuple):
+    """What the LLM Sources screen renders for one harness.
+
+    Three answers from ONE inventory read. Two calls would be the obvious spelling and the
+    wrong one: ``_inventory`` costs a capability read, a key listing, a secret-store walk and
+    a keychain round-trip per harness, on a status the picker polls.
+    """
+
+    #: Every source this harness HAS, each judged on its own credential alone -- no overlay.
+    #: This is the list the user chooses FROM, so a row is ineligible here only when the row
+    #: itself cannot be used (signed out, no key stored), never because something else was
+    #: picked. That distinction is the whole point: ``ineligible`` carries no field saying
+    #: WHICH of the two happened, and ``reason`` is documented render-verbatim, never
+    #: branched on -- so a picker fed the overlay cannot tell "fix your login" from "you
+    #: chose otherwise", and greys out the row that would undo the choice.
+    offers: list[Candidate]
+    #: The source that actually funds a spawn today -- the overlay's winner, unchanged.
+    chosen: Candidate | None
+    #: When nothing can fund the harness, the top-ranked refusal, verbatim. The screen has no
+    #: other way to say WHY a box is stuck once the choices stop carrying the overlay's
+    #: sentence, and "the list is the explanation" has to keep holding.
+    blocked: str
+
+
+async def llm_picker_view(worker_type: str) -> PickerView:
+    """The picker's three answers for *worker_type*.
+
+    Deliberately NOT ``list_llm_candidates``: that applies the preference overlay, which is
+    correct for a spawn and circular for a picker. See :func:`_apply_preference`.
+    """
+    inventory, cap = await _inventory(worker_type)
+    if not inventory:
+        return PickerView([], None, "")
+    overlaid = sorted(_apply_preference(inventory, cap, worker_type), key=lambda c: c.source.rank)
+    chosen = pick_llm_candidate(overlaid)
+    return PickerView(
+        offers=sorted(inventory, key=lambda c: c.source.rank),
+        chosen=chosen,
+        blocked="" if chosen else next((c.source.reason for c in overlaid if c.source.reason), ""),
+    )
 
 
 async def resolve_llm_source(process) -> LLMSource:

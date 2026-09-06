@@ -32,6 +32,10 @@ GITHUB = "github"
 ANTHROPIC = "anthropic"
 SLACK = "slack"
 GOOGLE = "google"
+ATLASSIAN = "atlassian"
+LINEAR = "linear"
+GITLAB = "gitlab"
+MICROSOFT = "microsoft"
 
 
 class OAuthFlowKind(str, Enum):
@@ -128,6 +132,17 @@ class LocalOAuthProvider:
     #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
     #: dataclass frozen and hashable.
     extra_authorize_params: tuple[tuple[str, str], ...] = ()
+    #: Send the token exchange as JSON instead of a form.
+    #:
+    #: RFC 6749 §4.1.3 says the token request is
+    #: ``application/x-www-form-urlencoded``, and a spec-following provider
+    #: (Microsoft, Google) rejects a JSON body outright — Entra answers
+    #: ``AADSTS900144: the request body must contain 'grant_type'`` because it
+    #: never parsed it. Anthropic's endpoint takes JSON, and it was the only
+    #: local code/loopback provider for long enough that JSON became the
+    #: hard-coded default. So the DEFAULT is the spec and the exception is
+    #: named, rather than the other way round.
+    token_request_json: bool = False
     token_shape: TokenShape = TokenShape.BEARER_STRING
     probe: Optional[OAuthProbeSpec] = None
     #: The standard route is delegated to the Hub; local endpoints/client id
@@ -135,6 +150,13 @@ class LocalOAuthProvider:
     hub_required: bool = False
     #: Whether a Hub grant is copied into local SOD for non-Hub consumers.
     copy_hub_credential: bool = False
+    #: OPTIONAL. The local SOD name for this provider's APP (bot) credential,
+    #: when the provider issues a second identity alongside the user's. Slack's
+    #: one OAuth returns both an `xoxb` bot token and an `xoxp` user token; the
+    #: bot is who an agent should speak AS in a channel, and it is the identity
+    #: `_ensure_identity` was written to stamp. None means the provider has no
+    #: second identity, which is every other provider we ship.
+    app_credentials_name: Optional[str] = None
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -167,6 +189,8 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
+        # Its token endpoint takes JSON; see the field's note.
+        token_request_json=True,
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
         icon="ClaudeCode",
@@ -202,11 +226,20 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # Google's "Desktop app" client type is exactly this grant: authorize in
         # the browser, redirect to a loopback port, exchange with PKCE.
         kind=OAuthFlowKind.LOOPBACK,
-        # Read-only Drive, which is all `GoogleDriveDriver` asks for. Listed here
-        # AND in the source manifest because this is what the consent screen
-        # requests while the manifest is what the source declares it needs; the
-        # verify path asserts the granted set covers the requested one.
-        scopes=("https://www.googleapis.com/auth/drive.readonly",),
+        # Read-only Drive and read-only Storage — what `GoogleDriveDriver` and
+        # `GoogleCloudStorageDriver` ask for. Listed here AND in each source manifest
+        # because this is what the consent screen requests while the manifest is what
+        # the source declares it needs; the verify path asserts the granted set covers
+        # the requested one.
+        #
+        # `devstorage.read_only` was missing until GCS shipped, so a Google connection
+        # granted before then carries Drive only and every GCS call 403s — including the
+        # bucket picker, which then reads as "this project has no buckets". Adding a
+        # scope invalidates existing consent: anyone already connected reconnects once.
+        scopes=(
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/devstorage.read_only",
+        ),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
@@ -229,6 +262,59 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("user.permissionId",),
         ),
     ),
+    MICROSOFT: LocalOAuthProvider(
+        name=MICROSOFT,
+        display_name="Microsoft",
+        user_credentials_name="microsoft_credentials",
+        icon="Microsoft",
+        # GOOGLE's shape, NOT Slack's, and the difference is load-bearing. A
+        # Teams source is POLLED, and a background poll has no request user, so
+        # `credential_for` lands on the local tier and can never reach a
+        # hub-held token (see its docstring). Slack gets away with a hub flow
+        # because its bot token does not expire and is copied down once; a
+        # Microsoft access token lasts an hour, so a copy would be stale before
+        # the next poll. Entra ID supports a public client with PKCE and a
+        # loopback redirect — the same desktop grant Google Drive uses — which
+        # keeps the refresh token on this machine where the poller can spend it.
+        kind=OAuthFlowKind.LOOPBACK,
+        # `offline_access` is the one that matters: without it there is no
+        # refresh token and the connection dies after an hour.
+        # `ChannelMessage.Read.All` is the least-privileged delegated permission
+        # that lists channel messages; `.Send` posts. Personal Microsoft
+        # accounts are NOT supported by these APIs — work/school only.
+        scopes=(
+            "offline_access",
+            "User.Read",
+            "Team.ReadBasic.All",
+            "Channel.ReadBasic.All",
+            "ChannelMessage.Read.All",
+            "ChannelMessage.Send",
+        ),
+        endpoints=OAuthEndpoints(
+            # `common` covers any work/school tenant. A single-tenant app
+            # registration replaces it with the tenant id, which is a change to
+            # the app, not to this table.
+            authorize_url="https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            token_url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        ),
+        # No default: this repo registers no Entra application. Set
+        # MICROSOFT_CLIENT_ID from an app registration of type "Mobile and
+        # desktop" with `http://localhost` as a redirect URI. Until then
+        # `client_id_for` returns None and the flow reports a missing client
+        # rather than half-running.
+        client_id_env="MICROSOFT_CLIENT_ID",
+        client_id_default=None,
+        pkce=True,
+        # access_token + refresh_token + expiry: the refresh half is what the
+        # poller spends an hour from now.
+        token_shape=TokenShape.CREDENTIAL_DICT,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://graph.microsoft.com/v1.0/me",
+            identity_fields=("userPrincipalName", "displayName"),
+            account_key_fields=("id",),
+        ),
+    ),
     SLACK: LocalOAuthProvider(
         name=SLACK,
         display_name="Slack",
@@ -244,9 +330,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # for them. Publishing a second list here would drift from the consent
         # screen the user really sees.
         scopes=(),
-        # The entry exists so `_adopt_hub_credential` will copy the hub's token
-        # into local SOD — without it the desktop ends a successful flow holding
-        # a row and nothing else. Slack's token is a bearer string.
+        # Slack's token is a bearer string.
         token_shape=TokenShape.BEARER_STRING,
         probe=OAuthProbeSpec(
             method="POST",
@@ -257,6 +341,83 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_parts=("team_id", "user_id"),
         ),
         hub_required=True,
+        # `SlackDriver._token()` calls `token_for(SLACK)` on every poll, from the
+        # background poller, which has no request user and so cannot reach the hub
+        # tier. Adoption runs once inside the wait-callback request (which can),
+        # and the poller then reads local SOD.
+        copy_hub_credential=True,
+        # The bot half of the same grant. An agent posts AS this, not as the
+        # human who connected — which is also what makes an inbound message from
+        # that human read as someone else, so a reply is addressable at all.
+        app_credentials_name="slack_bot_credentials",
+    ),
+    ATLASSIAN: LocalOAuthProvider(
+        name=ATLASSIAN,
+        display_name="Atlassian",
+        user_credentials_name="atlassian_credentials",
+        icon="Atlassian",
+        # Same shape as Slack: the hub holds the client secret and the
+        # registered callback URLs (exact-match, hub-hosted), so the desktop
+        # can only delegate. `endpoints=None` is what routes it there.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        # Scopes are the hub plugin's; the consent screen shows that list.
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        # `/me` answers with account_id/email/name for any token carrying
+        # `read:me`. Site-scoped calls need a cloud_id and are not a probe.
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.atlassian.com/me",
+            identity_fields=("email", "name"),
+            account_key_fields=("account_id",),
+        ),
+        hub_required=True,
+        # Access tokens expire hourly and the hub refreshes them; a local copy
+        # would go stale within the hour, so read through the hub instead.
+        copy_hub_credential=False,
+    ),
+    LINEAR: LocalOAuthProvider(
+        name=LINEAR,
+        display_name="Linear",
+        user_credentials_name="linear_credentials",
+        icon="Linear",
+        # Hub-run code flow, like Slack and Atlassian.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        # GraphQL over GET: the query rides in the URL, and the JSON content-type
+        # is what gets the request past Linear's CSRF guard.
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.linear.app/graphql",
+            query=(("query", "{ viewer { id name email } }"),),
+            headers=(("Content-Type", "application/json"),),
+            identity_fields=("data.viewer.email", "data.viewer.name"),
+            account_key_fields=("data.viewer.id",),
+        ),
+        hub_required=True,
+        copy_hub_credential=False,
+    ),
+    GITLAB: LocalOAuthProvider(
+        name=GITLAB,
+        display_name="GitLab",
+        user_credentials_name="gitlab_credentials",
+        # lucide ships this one, so the name is all the frontend needs.
+        icon="Gitlab",
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://gitlab.com/api/v4/user",
+            identity_fields=("email", "username"),
+            account_key_fields=("id",),
+        ),
+        hub_required=True,
+        # Two-hour token the hub refreshes; a local copy would go stale.
         copy_hub_credential=False,
     ),
 }
@@ -320,6 +481,16 @@ def user_credentials_name(name: str) -> Optional[str]:
     return provider.user_credentials_name if provider else None
 
 
+def app_credentials_name(name: str) -> Optional[str]:
+    """The SOD entry name holding this provider's APP (bot) token, or ``None``.
+
+    ``None`` for every provider that issues only one identity, which is all of
+    them but Slack — so a caller can ask unconditionally.
+    """
+    provider = get_local_provider(name)
+    return provider.app_credentials_name if provider else None
+
+
 def prefers_hub_flow(name: str) -> bool:
     """Whether this provider should run its flow on the hub when one is available.
 
@@ -343,7 +514,7 @@ def prefers_hub_flow(name: str) -> bool:
     return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
 
 
-async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -> Any:
+async def credential_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Any:
     """The stored credential for ``provider`` in whatever shape it was saved
     (GitHub: the token string; Anthropic: the normalized OAuth dict), or ``None``.
 
@@ -364,8 +535,11 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
     resolver and a capability probe) and a new tier reached some of them.
     Never raises: absence is the normal case for a provider nobody connected.
     """
-    name = user_credentials_name(provider)
-    if not name:
+    # ``name`` reads a NON-default credential for the same provider — Slack's
+    # bot token beside the user's. The hub tier is skipped for it: that tier
+    # resolves the provider's user-token name, which is not this one.
+    entry = name or user_credentials_name(provider)
+    if not entry:
         return None
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
@@ -379,7 +553,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
         if u is None:
             return None
         try:
-            return await get_user_credentials(u, name, u.id)
+            return await get_user_credentials(u, entry, u.id)
         except KeyError:  # no SOD entry — the ordinary "not connected"
             return None
 
@@ -397,7 +571,9 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
-    if not hub:
+    # An explicit name skips the hub tier: that tier resolves the provider's
+    # USER-token name, which by definition is not the one being asked for.
+    if not hub or name:
         return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
@@ -411,9 +587,13 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -
         return None
 
 
-async def token_for(provider: str, *, user: Any = None, hub: bool = True) -> Optional[str]:
+async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:
     """The bearer token for ``provider`` — ``credential_for`` unwrapped by
-    ``token_from_credential`` (a dict credential yields its ``access_token``)."""
+    ``token_from_credential`` (a dict credential yields its ``access_token``).
+
+    ``name`` selects a non-default credential for the same provider (Slack's bot
+    token beside the user's) and is passed straight through, so a caller never
+    has to unwrap by hand."""
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
 
-    return token_from_credential(await credential_for(provider, user=user, hub=hub))
+    return token_from_credential(await credential_for(provider, user=user, hub=hub, name=name))

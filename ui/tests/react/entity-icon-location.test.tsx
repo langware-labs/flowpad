@@ -192,11 +192,11 @@ describe('EntityIcon location treatment', () => {
     const composite = container.querySelector('[data-entity-location="cloud"]')!;
     expect(composite.children[0]).toHaveAttribute('data-location-glyph', 'cloud');
     const typeStack = composite.querySelector('[data-entity-type-icon]')!;
-    const svgs = typeStack.querySelectorAll('svg');
-    expect(svgs).toHaveLength(2);
-    expect(svgs[0]).toHaveClass('text-cloud');
-    expect(svgs[1]).not.toHaveClass('text-cloud');
-    expect(typeStack.firstElementChild).toHaveClass('text-amber-500');
+    const stack = typeStack.firstElementChild!;
+    expect(stack.children).toHaveLength(2);
+    expect(stack.children[0]).toHaveClass('text-cloud');
+    expect(stack.children[1]).not.toHaveClass('text-cloud');
+    expect(stack).toHaveClass('text-amber-500');
     expect(composite).toHaveAccessibleName('Agentic process, Available on cloud');
   });
 });

@@ -10,7 +10,10 @@ import {
   capabilityManager,
   HARNESS_CAPABILITY_KINDS,
   llmSourcesService,
+  type LLMEndpointOffer,
+  type LLMFundingKind,
   type LLMFundingStatus,
+  type LLMSource,
   type LLMSourceRef,
 } from '@sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +26,7 @@ export function useLlmSources() {
     queryFn: () => llmSourcesService.status(),
     staleTime: 10_000,
   });
-  return { status: (data ?? null) as LLMFundingStatus | null, isLoading };
+  return { status: data ?? null, isLoading };
 }
 
 /** Choose which source funds a harness. One write, straight through the SDK — the page never
@@ -51,6 +54,33 @@ export function useSelectSource() {
 export function harnessKinds(status: LLMFundingStatus | null | undefined): string[] {
   const known = new Set(Object.keys(status?.sources ?? {}));
   return HARNESS_CAPABILITY_KINDS.filter((kind) => known.has(kind));
+}
+
+/**
+ * The endpoint a verdict names.
+ *
+ * A verdict mirrors none of the endpoint's fields — it carries a typeid and the
+ * judgement — so every caller that wants a kind, a provider or a model looks the
+ * row up here. Lives beside `harnessKinds`/`workerOf` because it is the same kind
+ * of plain function over the payload, and because the source→endpoint indirection
+ * is documented as in flux: one place to change beats three.
+ */
+export function endpointOf(
+  status: LLMFundingStatus | null | undefined,
+  source: LLMSource | undefined,
+): LLMEndpointOffer | undefined {
+  return source ? status?.endpoints?.[source.endpoint_typeid] : undefined;
+}
+
+/** Every source `kind` HAS, narrowed to one funding kind. These are offers — judged on their own
+ *  credential, without the preference overlay — so `eligible` here means the source itself is
+ *  usable, and "which one is in use" comes from `status.resolved` instead. */
+export function sourcesOfKind(
+  status: LLMFundingStatus | null | undefined,
+  kind: string,
+  funding: LLMFundingKind,
+): LLMSource[] {
+  return (status?.sources?.[kind] ?? []).filter((s) => endpointOf(status, s)?.kind === funding);
 }
 
 /** `harness.claude.cli` → `claude`. */

@@ -29,6 +29,10 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.activity_bridge import (
+    end_process_activity,
+    sync_process_activity,
+)
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -6977,7 +6981,7 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
-    async def delete(self):
+    async def delete(self):  # noqa: D401
         """Tombstone the on-disk session transcript, then delete the entity.
 
         The AgenticProcess DB row is only an index. Both on-disk read paths —
@@ -6992,7 +6996,11 @@ class AgenticProcess(Entity):
         ``*.jsonl`` discovery globs and the exact-``<sid>.jsonl`` resolver both
         skip it, while the data stays recoverable (no destructive unlink).
         Best-effort — a tombstone failure never blocks the entity delete.
+
+        Also ends the process's Activity: a deleted process never reaches ``close``,
+        and an unended root stays on the footer chip as live work.
         """
+        end_process_activity(self.id, message="deleted")
         self._tombstone_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
@@ -7724,6 +7732,11 @@ class AgenticProcess(Entity):
         Returns True on success, False if already terminated or on error.
         """
         logger.info(f"AgenticProcess {self.id}: close")
+
+        # End the process's activity here, not only when a terminal worker status happens
+        # to arrive on a flush: a process closed or deleted mid-turn produces no further
+        # flush, and its row would sit on the footer chip as live work forever.
+        end_process_activity(self.id, message="closed")
 
         try:
             shell_id = self.shell_id
@@ -8566,6 +8579,21 @@ class AgenticProcess(Entity):
                 focused_asset=self._derive_focused_asset(transcript),
             )
             report_dict = report.model_dump()
+
+            # A running process IS an activity: mirror this flush onto its Activity so one
+            # footer chip covers agents and every other kind of long-running work. Done
+            # BEFORE the change-gate below — an unchanged report still means the process is
+            # alive, and the activity's freshness is what keeps it off `monitor.stale()`.
+            sync_process_activity(
+                self.id,
+                label=self.name,
+                worker_status=current,
+                report=report_dict,
+                # ``ref_value`` is the abs VFS path or TypeId — what the process actually has
+                # in hand. ``FocusedAsset`` has no display name of its own.
+                focused_asset=(report.focused_asset.ref_value if report.focused_asset else None),
+            )
+
             if report_dict == self.status_report:
                 return
 

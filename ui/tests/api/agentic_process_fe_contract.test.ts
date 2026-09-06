@@ -82,7 +82,7 @@ describe('AgenticProcess.getByWorkerId — null contracts', () => {
     expect(await AgenticProcess.getByWorkerId('wf_run-123')).toBeNull();
   });
 
-  it('resolves an unknown session id to null (404), never throws', async () => {
+  it('resolves an unknown session id to null, never throws', async () => {
     await apiTestSetup();
     expect(dataContext.computeNode).toBeTruthy();
     const missing = `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`;

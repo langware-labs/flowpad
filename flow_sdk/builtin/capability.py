@@ -74,6 +74,10 @@ class Capability(Entity):
     reference_kind: str | None = APIField(default=None)
     # Prompt the install agentic process runs with (None → registry default).
     install_prompt: str | None = APIField(default=None)
+    # The install one-liner for THIS machine, resolved from the spec's
+    # per-platform table (CapabilitySpec.install_command). None → no unattended
+    # installer for this capability/platform, and the UI offers no auto-install.
+    install_command: str | None = APIField(default=None)
     # Discovered typed value (mirror of the discovery dict — see
     # core/capabilities/discovery.py). None ⇔ capability absent. value_type
     # is the spec's static RecordType (e.g. "folder" → value is the FSRef
@@ -102,6 +106,12 @@ class Capability(Entity):
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
     login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
     login_message: str | None = APIField(default=None, persist=Persist.FALSE)
+    # WHO is signed in and on WHAT plan, when the vendor says — claude reports an
+    # email and a subscription type, the others report neither. Runtime-only like
+    # the rest of this block and written by the same mirror, so the account line
+    # and the status can never disagree about the same probe.
+    login_identity: str | None = APIField(default=None, persist=Persist.FALSE)
+    login_plan: str | None = APIField(default=None, persist=Persist.FALSE)
     # Has the harness ITSELF refused a turn since the last successful login?
     # Runtime-only like the rest of the login_* block. This is the evidence
     # ranking that keeps a weak signal from overwriting a strong one: a turn is
@@ -149,6 +159,7 @@ class Capability(Entity):
             runnable=spec.runnable,
             reference_kind=spec.reference_kind,
             install_prompt=spec.install_prompt,
+            install_command=spec.install_command,
             system=True,
         )
 
@@ -183,6 +194,10 @@ class Capability(Entity):
                 "dependent_capability_kinds",
                 "runnable",
                 "install_prompt",
+                # Platform-resolved, so it MUST reconcile: a row seeded on one
+                # machine (or before the command existed) otherwise keeps a
+                # command for the wrong OS forever.
+                "install_command",
                 "uname",
                 "system",
             ):
@@ -454,6 +469,27 @@ class Capability(Entity):
         await self.notify_updated()
         return ApiSuccessResponse(data={"recorded": True})
 
+    async def refresh_login_state(self):
+        """Ask the vendor CLI whether it is signed in, and mirror the verdict.
+
+        The one way to move ``login_state``, which is ``Persist.FALSE`` and so
+        ``None`` — "nobody has asked" — after every restart. Bounded (the probe
+        caps itself at five seconds and never raises) and local: no vendor
+        probe makes a network call.
+
+        Returns the full ``WorkerAuthResult`` so a caller can read what the
+        vendor said beyond signed-in/out (claude reports an email and a
+        subscription type); the mirror keeps only the verdict, deliberately.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
+
+        worker_type = self._login_worker_type()
+        if worker_type is None:
+            return None
+        result = await get_driver(worker_type).auth_probe()
+        await self._mirror_probe_to_login_state(result)
+        return result
+
     async def _mirror_probe_to_login_state(self, result) -> None:
         """Mirror an auth probe onto ``login_state`` — but only when the probe
         actually DECIDED.
@@ -507,11 +543,22 @@ class Capability(Entity):
                 self.login_state,
             )
             return
+        # Cleared on a sign-out rather than left standing: an account line under
+        # "Signed out" is the same lie as one under "Not checked".
+        identity = result.identity if new_state is DeviceLoginState.AUTHENTICATED else ""
+        plan = result.plan if new_state is DeviceLoginState.AUTHENTICATED else ""
         # Only broadcast when the mirror actually changes (a no-op probe
         # shouldn't emit a WS frame).
-        if new_state != self.login_state or result.message != self.login_message:
+        if (
+            new_state != self.login_state
+            or result.message != self.login_message
+            or identity != (self.login_identity or "")
+            or plan != (self.login_plan or "")
+        ):
             self.login_state = new_state
             self.login_message = result.message
+            self.login_identity = identity
+            self.login_plan = plan
             await self.notify_updated()
 
     @action.get(action_name="auth-status")
@@ -541,7 +588,6 @@ class Capability(Entity):
             result = await runner.login_probe()
             await self._mirror_probe_to_login_state(result)
             return ApiSuccessResponse(data=result.to_json())
-        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
         from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
         from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_box_llm_endpoint
@@ -559,13 +605,13 @@ class Capability(Entity):
         # ALWAYS probe the vendor, whatever funds the harness today. This action and the
         # startup sweep (``discovery._resolve_login_states``) are the two producers of
         # ``login_state`` -- the sweep answers it for every box on boot, this answers it on
-        # demand -- and the resolver reads exactly that field to decide whether a device
+        # demand. The field is ``Persist.FALSE`` and therefore ``None`` after every restart,
+        # and the resolver reads exactly that field to decide whether a device
         # login is proven. Probing only when device already won closes a loop with no exit: on a
         # box the hub has bound, the endpoint wins because device is unproven, so the probe never
         # runs, so device stays unproven forever -- and the user's "Test sign-in" button stops
         # asking precisely for the harnesses where the answer matters most.
-        probe = await get_driver(worker_type).auth_probe()
-        await self._mirror_probe_to_login_state(probe)
+        probe = await self.refresh_login_state()
 
         if source is not None and endpoint.kind != LLMEndpointKind.DEVICE:
             # Funded by a key or a hub endpoint: the vendor's own login state is real news about

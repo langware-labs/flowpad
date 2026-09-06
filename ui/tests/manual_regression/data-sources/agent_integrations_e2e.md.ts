@@ -56,7 +56,13 @@ test.afterAll(async ({ request }) => {
 });
 
 async function openScreen(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(SCREEN);
   await expect(page.getByTestId('data-sources-view')).toBeVisible();
 }
@@ -137,7 +143,13 @@ test('4. the editor: config form + live items in the asset dock', async ({ page 
 });
 
 test('5. define + annotate: a dataset bound to the source, one labelled example', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/app/${editorTypeId}?source=${sourceId}&project=${fixture.projectId}`);
   const frame = editorFrame(page);
   await expect(frame.getByTestId('spec-editor-dataset-create')).toBeVisible();

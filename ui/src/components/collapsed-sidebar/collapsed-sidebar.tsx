@@ -22,6 +22,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
+import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
 import { tagAttrs } from '@src/tags/tag-attrs';
@@ -31,7 +32,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import { BadgeCheck, Bug, ChevronDown, Compass, History, KeyRound, Mail, RadioTower, Webhook, Workflow } from 'lucide-react';
+import { BadgeCheck, Bug, ChevronDown, Compass, History, KeyRound, Mail, Plug, RadioTower, Webhook, Workflow } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -85,6 +86,12 @@ export function CollapsedSidebar() {
     // slot and an AgenticProcess entity are one thing to a user, so one TypeInfo.
     chats: { title: t`Chats`, icon: iconForType(AgenticProcess.type), viewType: ViewType.SHELL },
     inbox: { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
+    // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): `llm-sources`
+    // already wears KeyRound on this rail, and two slots with one glyph is worse
+    // than a slot whose glyph differs from its header. A literal is right here —
+    // the CLAUDE.md registry rule governs per-ENTITY-TYPE icons, and this slot is
+    // a screen, like `inbox` and `events` beside it.
+    credentials: { title: t`Connections`, icon: Plug, viewType: ViewType.CREDENTIALS },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
@@ -313,7 +320,7 @@ export function CollapsedSidebar() {
               <Bug className="h-4 w-4" />
             </Button>
           )}
-          <JourneyBadge />
+          {AMBIENT_JOURNEYS_ENABLED && <JourneyBadge />}
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />

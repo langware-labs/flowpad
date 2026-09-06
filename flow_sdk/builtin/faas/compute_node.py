@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
@@ -38,6 +37,7 @@ from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -128,38 +128,47 @@ class ComputeNode(
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        """Register a new in-process activity, raising RuntimeError if one is already running."""
+        """Claim the single-flight slot for ``job_name``, or raise if it is held.
+
+        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        address is the same statement this registry used to make, so the single-flight
+        decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
+        survives only as the carrier for the legacy ``IndexProgressTable`` payload while
+        producers are migrated; it is not consulted about whether the slot is free.
+        """
+        from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        key = f"{self.typeid}:{job_name}"
-        existing = _COMPUTE_ACTIVITIES.get(key)
-        if existing is not None and not existing.is_timed_out and not existing.is_complete:
-            raise RuntimeError(f"Job '{job_name}' already running")
+        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
             timeout_seconds=timeout_seconds,
+            activity=claimed,
         )
-        _COMPUTE_ACTIVITIES[key] = activity
+        _COMPUTE_ACTIVITIES[f"{self.typeid}:{job_name}"] = activity
         return activity
 
     def _complete_activity(self, job_name: str) -> None:
-        """Remove a completed activity from the registry and wake its waiters."""
+        """Release the slot and wake its waiters."""
         activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
-        if activity is not None:
-            activity.released.set()
+        if activity is not None and activity.activity is not None:
+            # Ending the activity is what frees the address and wakes its waiters; the
+            # carrier has no release of its own to set.
+            if not activity.activity.is_terminal:
+                activity.activity.done()
 
     def _running_activity(self, job_name: str):
         """The activity holding ``job_name``, or None when the slot is free.
 
-        "Holding" is the same predicate `_start_activity` refuses on, so a
-        caller that waits on this and a caller that claims cannot disagree
-        about whether the slot is taken.
+        Freeness is the claim's answer, not this map's, so a caller that waits and a caller
+        that claims cannot disagree about whether the slot is taken.
         """
-        existing = _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
-        if existing is None or existing.is_timed_out or existing.is_complete:
+        from flow_sdk.activity import monitor  # noqa: PLC0415
+
+        if monitor.holder(job_name, scope=str(self.typeid)) is None:
             return None
-        return existing
+        return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
@@ -794,13 +803,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # resolver was handed an id the store had never seen and always 404'd.
         prefix = "get_by_worker_id/"
         if raw_sub_path.lower().startswith(prefix):
-            worker_id = raw_sub_path[len(prefix):]
+            worker_id = raw_sub_path[len(prefix) :]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
-        return ApiFailResponse(
-            message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400
-        )
+        return ApiFailResponse(message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400)
 
     @action.post(action_name="tabs")
     async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
@@ -1093,7 +1100,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         token = await _get_github_token_for_current_user()
         try:
-            await get_origin_driver(git_origin.kind).materialize(git_origin, preferred_root=Path(target_dir), token=token)
+            await get_origin_driver(git_origin.kind).materialize(
+                git_origin, preferred_root=Path(target_dir), token=token
+            )
         except RuntimeError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
@@ -1362,8 +1371,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
             HubEndpointBindError,
             bind_hub_llm_endpoint,
+            chain_hub_llm_endpoint,
             hub_llm_endpoint_status,
             select_llm_source,
+            test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
         )
 
@@ -1371,14 +1382,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         method = (request_info.request.method if request_info and request_info.request else "GET").upper()
         try:
             if method == "GET":
+                sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+                # ``chain/<id>`` is a READ of the hub's resolved chain -- which hops a call
+                # travels and whose key it ends up spending. A GET because it is a report,
+                # unlike ``test``, which spends money.
+                if sub_path.startswith("chain/"):
+                    return ApiSuccessResponse(data=await chain_hub_llm_endpoint(sub_path[len("chain/") :]))
                 return ApiSuccessResponse(data=await hub_llm_endpoint_status())
             if method == "POST":
                 body = (await request_info.get_post_data() if request_info else {}) or {}
                 # ``select`` is the USER picking a source; the bare POST is the HUB binding this
                 # box and 409s without a hub key. Keeping them apart is what lets someone choose
                 # their own OpenRouter key on a box that has never talked to a hub.
-                if (request_info.sub_path or "").strip("/") == "select":
+                sub_path = (request_info.sub_path or "").strip("/")
+                if sub_path == "select":
                     return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``test`` is a pass-through to the hub's own verdict. It lives here for the
+                # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
+                # desktop screen has no other way to reach that action.
+                if sub_path == "test":
+                    return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
@@ -1396,6 +1419,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         repo attach to a clone they already have instead of re-cloning it.
         """
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
+
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         try:
@@ -1434,6 +1458,46 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="get-host")
     def get_host_action(self, port: int, redirect: bool = True):
         return self._desktop_get_host(port, redirect)
+
+    @action.get(action_name="connections")
+    async def connections_action(self, project_id: str = "") -> "ApiResponse":
+        """Every connection this box has, in one read.
+
+        Consolidated HERE rather than in the browser, which used to fetch four
+        separate shapes and decide for itself what "connected" meant — two
+        surfaces then disagreed about the same key, twice.
+
+        ``project_id`` is optional and the answer is honestly smaller without it:
+        API-key credentials are identified by ``(project_id, env_var)`` and the
+        server has no notion of "the selected project", which lives in the
+        client. See ``core/connections/status.py`` for what each kind costs.
+
+        A pure read. ``check-harness-logins`` is the verb that asks the vendor
+        CLIs; keeping it out of here is what stops a GET from spawning
+        subprocesses on the path ``require()`` resolves through.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id) if project_id else None
+        rows = await list_connections(project=project)
+        return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
+
+    @action.post(action_name="check-harness-logins")
+    async def check_harness_logins_action(self, force: bool = False) -> "ApiResponse":
+        """Ask the installed harness CLIs whether they are signed in.
+
+        A POST because it writes: each verdict is mirrored onto the harness
+        ``Capability``, which is what makes the connections table, the LLM
+        sources screen and the login modal agree at once.
+
+        Only the harnesses nobody has asked about, unless ``force`` — the field
+        it writes means exactly "nobody has asked", so re-probing an answered
+        harness would re-shell a vendor CLI to learn what is already known.
+        """
+        from flow_sdk.core.connections.status import check_harness_logins  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"checked": await check_harness_logins(force=force)})
 
     @action.all(action_name="get-machine-status")
     async def get_machine_status_action(self):
@@ -1498,6 +1562,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="list-projects")
     async def list_projects_action(self):
         return await self._scan_list_projects()
+
+    @action.all(action_name="project-cleanup-report")
+    async def project_cleanup_report_action(self):
+        return await self._scan_project_cleanup_report()
+
+    @action.all(action_name="project-git-detail")
+    async def project_git_detail_action(self):
+        return await self._scan_project_git_detail()
+
+    @action.post(action_name="project-remove-from-harness")
+    async def project_remove_from_harness_action(self):
+        return await self._scan_project_cleanup_apply(permanent=False)
+
+    @action.post(action_name="project-delete-permanently")
+    async def project_delete_permanently_action(self):
+        return await self._scan_project_cleanup_apply(permanent=True)
 
     @action.all(action_name="scan-project")
     async def scan_project_action(self):

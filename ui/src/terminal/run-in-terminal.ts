@@ -35,6 +35,26 @@ export function sentinelCommand(command: string, marker: string): string {
   return `${command}; echo "${marker}_$?"`;
 }
 
+/**
+ * Type `command` into the shell and STOP — no `\r`, so the line sits at the
+ * prompt with the cursor after it and the user presses Enter themselves.
+ *
+ * The deliberate counterpart to `runInTerminal`, which submits. Use it when
+ * Flowpad is proposing a command rather than issuing one: the install
+ * one-liner behind "Try auto install" pipes a remote script into a shell, and
+ * that is the user's keystroke to make, not ours. It also lets them read and
+ * edit the line first, which a submitted command never allows.
+ *
+ * There is nothing to assert on: no command has run, so this only reports that
+ * the bytes reached the PTY.
+ */
+export async function prefillInTerminal(shellId: string, command: string): Promise<boolean> {
+  const shell = await Shell.getById(shellId);
+  if (!shell) return false;
+  await shell.sendInput(command);
+  return true;
+}
+
 export interface RunInTerminalOptions {
   /** Assert the command's OUTPUT contains this AND that it exited 0. */
   contains?: string;

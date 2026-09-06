@@ -108,11 +108,12 @@ describe('buildHubRailItems', () => {
     expect(items[idx + 1]?.id).toBe('credentials');
   });
 
-  it('never leaks credentials into the desk rail', () => {
-    // The two unions overlap where a destination genuinely exists on both rails
-    // ('home'). Credentials is hub-only for now, and putting its id in
-    // RAIL_ITEMS would render a silent `null` slot on the desk.
-    expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('credentials');
+  it('never leaks the hub-only ids into the desk rail', () => {
+    // The two unions overlap where a destination genuinely exists on both rails —
+    // 'home', 'inbox', and now 'credentials', which took a desk slot under the
+    // inbox and has its own entry in the desk `navMeta`. What must stay out is an
+    // id with no desk entry behind it: that renders a silent `null` slot.
+    // `llm-endpoints` and `token-plan` are hub-only and have no desk screen.
     expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('llm-endpoints');
     expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('token-plan');
   });

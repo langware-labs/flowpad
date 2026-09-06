@@ -130,6 +130,7 @@ EXPECTED = {
     "SYSTEM_JOB": "system_job",
     "JOB_EXECUTION": "job_execution",
     "API_KEY": "api_key",
+    "LLM_ENDPOINT": "llm_endpoint",
     "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",
@@ -145,6 +146,8 @@ EXPECTED = {
     "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
     "RAG_INDEX": "rag_index",
+    "CONSUMER_POSITION": "consumer_position",
+    "SOURCE_CHANGE": "source_change",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
     "FILE": "file",
@@ -177,17 +180,20 @@ EXPECTED = {
     # Deck and spreadsheet features (47d82b8e, 7531a7c0) — additive members;
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
-    "DECK": "deck", "SPREADSHEET": "spreadsheet",
+    "DECK": "deck",
+    "SPREADSHEET": "spreadsheet",
     # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
     # entity type. Flow-graph v2 added the run model.
     "TAG": "tag",
     "WIKI": "wiki",
     "WIKI_ENTRY": "wiki_entry",
-    "GRAPH_WORKFLOW": "graph_workflow", "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
+    "GRAPH_WORKFLOW": "graph_workflow",
+    "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
     "GRAPH_WORKFLOW_RUN": "graph_workflow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
     # DB-only journal — additive members, no existing value changed.
-    "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",
+    "JOURNEY": "journey",
+    "JOURNEY_JOURNAL": "journey_journal",
     # Help desk (0.2.114): folder-backed support portal discovered by indexing a
     # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
     # additive member, no existing value changed.
@@ -195,7 +201,8 @@ EXPECTED = {
     # Cloud data-source ingestion (flow_sdk/ingest): the configured remote
     # source, its per-stream cursor, and the records it produces — additive
     # members, no existing value changed.
-    "DATA_SOURCE": "data_source", "DATA_SOURCE_CURSOR": "data_source_cursor",
+    "DATA_SOURCE": "data_source",
+    "DATA_SOURCE_CURSOR": "data_source_cursor",
     "CREDENTIAL_SPEC": "credential_spec",
     "DATA_SOURCE_SPEC": "data_source_spec",
     "SOURCE_ITEM": "source_item",

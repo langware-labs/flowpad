@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from functools import cache
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
+from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
@@ -929,6 +929,8 @@ class SchemaRegistry:
     _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
+    #: Run when an entity class first binds to a type (see ``on_entity_bound``).
+    _entity_bound_hooks: ClassVar[list[Callable[[], None]]] = []
     # Whether the declarative type-info registrations have run in this process.
     _loaded: ClassVar[bool] = False
 
@@ -1018,9 +1020,28 @@ class SchemaRegistry:
         )
 
     @classmethod
+    def on_entity_bound(cls, hook: Callable[[], None]) -> None:
+        """Run ``hook`` whenever an entity class first binds to a type.
+
+        The subscriber is ``core.schema`` (its payload memo must drop). A hook
+        rather than an import: entities register from ``__init_subclass__``
+        mid-import, and importing ``core.schema`` from here at that moment
+        re-enters the partially initialized entity package.
+        """
+        if hook not in cls._entity_bound_hooks:
+            cls._entity_bound_hooks.append(hook)
+
+    @classmethod
     def register(cls, info: TypeInfo) -> None:
         """Register or enrich a TypeInfo. O(1). Idempotent — merges on re-register."""
         existing = cls._types.get(info.type_name)
+        # An entity class binding to a type AFTER the per-type schema payloads
+        # were memoized (``core.schema``) leaves that type's bootstrap ``schema``
+        # frozen at ``None``: entities self-register on import, and some are
+        # imported lazily by a server subsystem well after the first bootstrap
+        # assembled the cache (``Trigger`` via ``builtin_triggers``). A new
+        # binding therefore drops the memo so the next assembly sees the class.
+        newly_bound = info.entity_cls is not None and (existing is None or existing.entity_cls is None)
         if existing is not None:
             for loc in info.locations:
                 if loc not in existing.locations:
@@ -1153,6 +1174,9 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
+        if newly_bound:
+            for hook in cls._entity_bound_hooks:
+                hook()
         final = cls._types[info.type_name]
         if final.from_disk_fn is None and final.asset_spec is not None and not final.db_only:
             from flow_sdk.fs_store.serializer.record import spec_extractor  # noqa: PLC0415

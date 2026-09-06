@@ -36,12 +36,13 @@ import { CredentialField } from '@src/components/llm-endpoints/CredentialField';
 const ID = '99999999-0000-4000-8000-000000000000';
 const KEY = 'sk-ant-VERY-secret';
 
-function Harness({ endpointId, hint = '' }: { endpointId?: string; hint?: string }) {
+function Harness({ endpointId, hint = '', provider }: { endpointId?: string; hint?: string; provider?: string }) {
   const [value, setValue] = useState('');
   const [stored, setStored] = useState(hint);
   return (
     <CredentialField
       endpointId={endpointId}
+      provider={provider}
       credentialHint={stored}
       value={value}
       onChange={setValue}
@@ -108,6 +109,84 @@ describe('CredentialField', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(h.deleteCredential).toHaveBeenCalledWith(ID));
     await waitFor(() => expect(screen.queryByTestId('credential-hint')).toBeNull());
+  });
+
+  /**
+   * A password manager fills a `type="password"` box through the browser itself, not through a
+   * React event, so the component's `value` stays `''` while the box visibly holds a key. The
+   * field used to gate BOTH the Save button's `disabled` and `save()`'s early return on that
+   * state, so the click fired no handler and no request: a dead button and an empty network tab.
+   */
+  it('saves a key the browser autofilled without firing a React change event', async () => {
+    render(<Harness endpointId={ID} />);
+    const input = screen.getByTestId<HTMLInputElement>('credential-input');
+
+    // What autofill does: set the DOM value directly, bypassing React's onChange.
+    input.value = KEY;
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ID, KEY));
+  });
+
+  it('Test also reaches a key the browser autofilled', async () => {
+    render(<Harness endpointId={ID} />);
+    screen.getByTestId<HTMLInputElement>('credential-input').value = KEY;
+    await userEvent.click(screen.getByTestId('credential-test'));
+
+    await waitFor(() => expect(h.testCredential).toHaveBeenCalledWith(ID, KEY));
+  });
+
+  it('says the box is empty rather than silently doing nothing', async () => {
+    const { notify } = await import('@src/notifications');
+    render(<Harness endpointId={ID} />);
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    expect(h.setCredential).not.toHaveBeenCalled();
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+  });
+
+  /**
+   * The shape check exists because the hub reports this mistake terribly: a wrong-provider key
+   * stores without complaint and only the model probe notices, much later and in different words
+   * ("no model is available through this endpoint").
+   */
+  it('refuses to send a key belonging to a different provider, and says which', async () => {
+    const { notify } = await import('@src/notifications');
+    render(<Harness endpointId={ID} provider="openrouter" />);
+
+    await userEvent.type(screen.getByTestId('credential-input'), `sk-ant-api03-${'b'.repeat(40)}`);
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    expect(h.setCredential).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalled();
+  });
+
+  it('warns as the key is typed, before Save is ever pressed', async () => {
+    render(<Harness endpointId={ID} provider="openrouter" />);
+    expect(screen.queryByTestId('credential-shape-problem')).toBeNull();
+
+    await userEvent.type(screen.getByTestId('credential-input'), `sk-ant-api03-${'b'.repeat(40)}`);
+    expect(screen.getByTestId('credential-shape-problem')).toBeTruthy();
+  });
+
+  it('sends a key whose shape matches the provider', async () => {
+    const key = `sk-or-v1-${'a'.repeat(40)}`;
+    render(<Harness endpointId={ID} provider="openrouter" />);
+
+    await userEvent.type(screen.getByTestId('credential-input'), key);
+    expect(screen.queryByTestId('credential-shape-problem')).toBeNull();
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ID, key));
+  });
+
+  it('checks nothing when no provider is given — the expert dialog on a chain has none to check', async () => {
+    render(<Harness endpointId={ID} />);
+    await userEvent.type(screen.getByTestId('credential-input'), 'anything-at-all');
+    expect(screen.queryByTestId('credential-shape-problem')).toBeNull();
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ID, 'anything-at-all'));
   });
 
   it('without an endpoint (create flow) it is a plain controlled input — no Save/Test/Delete', async () => {

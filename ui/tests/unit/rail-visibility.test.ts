@@ -65,6 +65,24 @@ describe('resolveRail — modes are strictly additive', () => {
     expect(idsFor(ViewMode.Advanced)).toContain('data-sources');
     expect(idsFor(ViewMode.Standard)).not.toContain('data-sources');
   });
+
+  it('connections sits directly under the inbox, in every mode', () => {
+    // Vibe and ungated on purpose: this screen is where the first connection is
+    // made, so it must not be hidden from the mode — or the state — that needs it
+    // most. Adjacency is the requested placement, so it is pinned rather than
+    // left to survive the next edit to RAIL_ITEMS by luck.
+    for (const mode of MODE_CHAIN) {
+      const ids = idsFor(mode);
+      expect(ids).toContain('credentials');
+      expect(ids[ids.indexOf('credentials') - 1]).toBe('inbox');
+    }
+  });
+
+  it('keeps its slot when the inbox gate drops the item above it', () => {
+    const ids = idsFor(ViewMode.Vibe, { conversations: false });
+    expect(ids).not.toContain('inbox');
+    expect(ids).toContain('credentials');
+  });
 });
 
 describe('resolveRail — order is the same in every mode', () => {
@@ -87,7 +105,7 @@ describe('resolveRail — order is the same in every mode', () => {
     const top = resolveRail(ViewMode.Vibe, ALL_GATES)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'inbox']);
+    expect(top).toEqual(['chats', 'inbox', 'credentials']);
   });
 });
 
@@ -109,13 +127,14 @@ describe('resolveRail — content gates', () => {
     expect(neither).toContain('chats');
   });
 
-  it('a fresh instance shows exactly Chats', () => {
+  it('a fresh instance shows exactly Chats and Connections', () => {
     // Home, the project, Files and Bookmarks all used to sit here; each moved to
-    // the top navigation bar, so Chats is what a fresh rail is down to.
+    // the top navigation bar. Connections stays because it is ungated: a fresh
+    // instance is precisely when you need to connect something.
     const top = resolveRail(ViewMode.Vibe, { conversations: false })
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats']);
+    expect(top).toEqual(['chats', 'credentials']);
   });
 
   it('leaves Home, project, Files and Bookmarks to the top navigation bar', () => {
