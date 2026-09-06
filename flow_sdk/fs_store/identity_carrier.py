@@ -40,8 +40,10 @@ from flow_sdk.capsules import (
 )
 from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.indexer._frontmatter import (
+    StaleWrite,
     _atomic_write_text,
     _extract_frontmatter,
+    _stat_or_none,
     _yaml_load,
     merge_frontmatter,
 )
@@ -231,11 +233,9 @@ class Frontmatter:
         later (a serializer mints against the asset_ref before it writes)."""
         return where.suffix.lower() in _MARKDOWN_SUFFIXES and (where.is_file() or not where.exists())
 
-    def read(self, where: Path) -> CarrierRead:
-        try:
-            text = where.read_text(encoding="utf-8")
-        except OSError:
-            text = ""
+    def _outcome_for(self, text: str, where: Path) -> CarrierRead:
+        """The read outcome for EXACTLY these bytes. Split out so ``stamp`` can
+        judge and merge one and the same read — see its note on the race."""
         header = _extract_frontmatter(text)
         fields = (_yaml_load(header) or {}) if header else {}
         found = _outcome(fields.get("id"), "frontmatter")
@@ -248,19 +248,58 @@ class Frontmatter:
             return Foreign("identity capsule", RETIRED + "capsule")
         return retired_flow_id(where.parent) or ABSENT
 
+    def read(self, where: Path) -> CarrierRead:
+        try:
+            text = where.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        return self._outcome_for(text, where)
+
     def stamp(self, where: Path, entity_id: str) -> str:
+        """Write-if-absent, and absent must be PROVABLE.
+
+        A markdown source can be rewritten NON-ATOMICALLY under us — ``git
+        checkout``/``stash pop`` truncates a tracked file in place and then
+        writes it, so a reader really does observe it at zero length (measured:
+        0.376% of samples during a real checkout). Reading that as "no id yet"
+        is how a committed id got minted over. Two rules close it:
+
+        1. ONE read decides and is merged — never judge one read and merge a
+           LATER one. That split is the whole defect: the guard saw a truncated
+           file, the merge saw the settled one, and ``merge_frontmatter``
+           replaced an ``id`` the guard never got to veto.
+        2. The replace is a compare-and-swap on the deciding read's stat, so if
+           the file settles between the decision and the write we abandon the
+           write (``Unstamped``) rather than clobber it. The next walk, reading
+           a settled file, answers from its real carrier.
+
+        A zero-length read stays the hard case and is NOT closed here: it is
+        what a truncated file and a genuinely new empty one both look like, and
+        refusing to stamp it would push every empty markdown into the
+        path-derived v5 fallback — minting v5 for a writable type, against the
+        entity-id policy. An empty file has no id to lose, so the id invariant
+        above holds regardless; what remains at risk is its BODY, when the
+        decision, the merge and the swap all land inside one truncation window.
+        That residual is tracked by
+        ``test_body_survives_a_stamp_over_a_truncated_read``.
+        """
         if not self.accepts(where):
             raise NotWritable(f"frontmatter carrier cannot write into {where}")
-        current = self.read(where)
+        before = _stat_or_none(where)
+        try:
+            text = where.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        current = self._outcome_for(text, where)
         if isinstance(current, Found):
             return current.id
         if isinstance(current, Foreign):
             raise ForeignId(where, current.raw)
+        rendered = merge_frontmatter(text, {"id": entity_id}, prepend=True)
         try:
-            text = where.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            text = ""
-        _atomic_write_text(where, merge_frontmatter(text, {"id": entity_id}, prepend=True))
+            _atomic_write_text(where, rendered, expect=before)
+        except StaleWrite as exc:
+            raise Unstamped(str(exc)) from exc
         return entity_id
 
 

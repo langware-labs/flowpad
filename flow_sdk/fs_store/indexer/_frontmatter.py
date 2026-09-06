@@ -184,8 +184,43 @@ def merge_frontmatter(
 
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    """Atomically replace ``path`` with UTF-8 ``text``, preserving its mode."""
+def _stat_or_none(path: Path) -> "os.stat_result | None":
+    """``path``'s stat, or None when it does not exist / cannot be stat'd."""
+    try:
+        return path.stat()
+    except OSError:
+        return None
+
+
+def _same_file(a: "os.stat_result | None", b: "os.stat_result | None") -> bool:
+    """Whether two stats describe the same unchanged file. ``st_mtime_ns`` is the
+    discriminator: a rewrite to byte-identical content still moves it."""
+    if a is None or b is None:
+        return a is None and b is None
+    return (a.st_ino, a.st_size, a.st_mtime_ns) == (b.st_ino, b.st_size, b.st_mtime_ns)
+
+
+class StaleWrite(OSError):
+    """The target changed between the read that decided the write and the write
+    itself, so the replacement would clobber content the decision never saw."""
+
+
+#: "no compare-and-swap requested" — distinct from ``expect=None``, which asserts
+#: the file did not exist at decision time.
+_UNCHECKED = object()
+
+
+def _atomic_write_text(path: Path, text: str, *, expect: "os.stat_result | None | object" = _UNCHECKED) -> None:
+    """Atomically replace ``path`` with UTF-8 ``text``, preserving its mode.
+
+    ``expect`` makes the replace a COMPARE-AND-SWAP: pass the stat taken at the
+    read that decided this write, and the replace is abandoned (``StaleWrite``)
+    if the file moved on since. Callers that derive ``text`` from the file's own
+    bytes MUST pass it — otherwise a concurrent non-atomic rewriter (``git
+    checkout`` truncates a tracked file in place) can slip a newer version in
+    between the two, and the write silently discards it. Left unset the write is
+    unconditional, for callers whose ``text`` does not depend on the old content.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         if path.read_text(encoding="utf-8") == text:
@@ -203,6 +238,8 @@ def _atomic_write_text(path: Path, text: str) -> None:
             os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
         except OSError:
             pass
+        if expect is not _UNCHECKED and not _same_file(expect, _stat_or_none(path)):  # type: ignore[arg-type]
+            raise StaleWrite(f"{path} changed since the read that decided this write")
         os.replace(temporary, path)
     except BaseException:
         try:
