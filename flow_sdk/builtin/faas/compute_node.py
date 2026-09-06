@@ -1410,7 +1410,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # unlike ``test``, which spends money.
                 if sub_path.startswith("chain/"):
                     return ApiSuccessResponse(data=await chain_hub_llm_endpoint(sub_path[len("chain/") :]))
-                return ApiSuccessResponse(data=await hub_llm_endpoint_status())
+                # The active project, when the caller has one. It is what makes ``resolved``
+                # the verdict a spawn IN THAT PROJECT gets rather than the box-wide guess --
+                # a project may pin an endpoint, and without this the picker could not see it.
+                # Optional by design: the server has no notion of "the selected project", which
+                # lives in the client (same reasoning as ``connections_action``).
+                project_id = str((request_info.get_param("project_id") if request_info else "") or "")
+                return ApiSuccessResponse(data=await hub_llm_endpoint_status(project_id))
             if method == "POST":
                 body = (await request_info.get_post_data() if request_info else {}) or {}
                 # ``select`` is the USER picking a source; the bare POST is the HUB binding this

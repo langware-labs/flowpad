@@ -16,6 +16,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
 
 
 @pytest.fixture
@@ -203,7 +204,7 @@ async def test_a_process_endpoint_rules_every_other_source_out_with_a_reason(env
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP2
     assert str(chosen.origin) == "process"
 
-    listed = await list_llm_sources("claude", process)
+    listed = await list_llm_sources("claude", LLMScope.of_process(process))
     others = [s for s in listed if s.endpoint_typeid != EP2]
     assert others, "the alternatives are still listed -- ruled out, not hidden"
     assert all(not s.eligible for s in others)
@@ -223,7 +224,7 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     chosen = await resolve_llm_source(_process(project_id=project.id))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "project"
 
-    device = _by_kind(await list_llm_candidates("claude", _process(project_id=project.id)), "device")[0]
+    device = _by_kind(await list_llm_candidates("claude", LLMScope.of_process(_process(project_id=project.id))), "device")[0]
     assert not device.eligible and "this project requires" in device.reason
 
     # a process naming its own endpoint outranks the project's
@@ -473,7 +474,7 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
 
     chosen = await resolve_llm_source(_process(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2, "a named endpoint was substituted after the listing dropped it"
-    device = _by_kind(await list_llm_candidates("claude", _process(endpoint=EP2)), "device")[0]
+    device = _by_kind(await list_llm_candidates("claude", LLMScope.of_process(_process(endpoint=EP2))), "device")[0]
     assert not device.eligible and "this process requires" in device.reason
 
 
@@ -706,3 +707,124 @@ async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monk
     with pytest.raises(LLMSourceError) as excinfo:
         await resolve_llm_source(_process())
     assert "signed out" in str(excinfo.value)
+
+
+# ── one list source: the picker asks the question a spawn asks ───────────────────
+
+
+async def test_the_picker_sees_a_project_pin_when_it_is_given_the_project(env, monkeypatch) -> None:
+    """The gap this scope exists to close.
+
+    ``llm_picker_view`` took no process, so rungs 1 and 2 never ran and a project pin was
+    invisible on the one screen whose job is to say what funds a spawn: it reported the
+    box-wide winner while every process in that project actually spent the project's
+    endpoint. Handed the project, the two answers are the same answer.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view, resolve_llm_source
+    from flow_sdk.builtin.project import Project
+
+    _bind(monkeypatch)
+    project = await Project(name="pinned", llm_endpoint_typeid=EP2).save()
+
+    box_wide = await llm_picker_view("claude")
+    assert box_wide.chosen is not None
+    assert box_wide.chosen.source.endpoint_typeid != EP2, "no scope, no constraint -- unchanged"
+
+    scoped = await llm_picker_view("claude", LLMScope.of_project(project.id))
+    spawn = await resolve_llm_source(_process(project_id=project.id))
+    assert scoped.chosen is not None
+    assert scoped.chosen.source.endpoint_typeid == spawn.endpoint_typeid == EP2
+    assert str(scoped.chosen.source.origin) == "project"
+
+    # The offers keep explaining themselves on their own credential -- narrowing the scope
+    # must not grey out the rows a user would click to change things.
+    device = _by_kind(scoped.offers, "device")[0]
+    assert device.eligible and not device.reason
+
+
+async def test_a_scoped_status_reports_what_that_project_spends(env, monkeypatch) -> None:
+    """The wire shape, end to end: the payload the chip reads carries the project's verdict
+    and the sentence that rules the alternatives out."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.builtin.project import Project
+
+    _bind(monkeypatch)
+    project = await Project(name="scoped-status", llm_endpoint_typeid=EP2).save()
+
+    status = await hub_llm_endpoint_status(project.id)
+    resolved = status["resolved"]["harness.claude.cli"]
+    assert resolved["endpoint_typeid"] == EP2
+    assert resolved["origin"] == "project"
+    assert status["blocked"]["harness.claude.cli"] == "", "something funds it -- nothing to explain"
+
+    # And without the project, the previous answer, unchanged.
+    assert (await hub_llm_endpoint_status())["resolved"]["harness.claude.cli"]["origin"] != "project"
+
+
+async def test_an_empty_scope_is_the_box_wide_question(env, monkeypatch) -> None:
+    """``LLMScope()`` must be indistinguishable from passing nothing, because that is what
+    every caller with no project in hand sends."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources
+
+    _bind(monkeypatch)
+    assert await list_llm_sources("claude", LLMScope()) == await list_llm_sources("claude")
+
+
+async def test_a_process_scope_still_beats_its_project(env, monkeypatch) -> None:
+    """Precedence survives the refactor: the scope carries both rungs and rung 1 wins."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, pick_llm_candidate
+    from flow_sdk.builtin.project import Project
+
+    _bind(monkeypatch)
+    project = await Project(name="outranked", llm_endpoint_typeid=EP2).save()
+    scope = LLMScope.of_process(_process(endpoint=EP1, project_id=project.id))
+
+    chosen = pick_llm_candidate(await list_llm_candidates("claude", scope))
+    assert chosen is not None
+    assert chosen.source.endpoint_typeid == EP1 and str(chosen.source.origin) == "process"
+
+
+async def test_a_status_read_costs_one_inventory_per_harness(env, monkeypatch) -> None:
+    """``PickerView`` promises "three answers from ONE inventory read", and that promise is
+    load-bearing: ``_inventory`` is not memoized, so each call is a capability read, a stored-key
+    listing, a shadow-root scan and a sodot round-trip. Reaching for the overlaid answer by
+    calling ``list_llm_candidates`` read the whole thing a second time — four harnesses became
+    eight inventories on a status the picker polls.
+
+    The project lookup is counted for the same reason: it does not depend on the harness, so
+    resolving it inside the loop paid the same ``Project.get_by_id`` once per harness.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (
+        HUB_ENDPOINT_HARNESSES,
+        hub_llm_endpoint_status,
+    )
+    from flow_sdk.builtin.project import Project
+
+    project = await Project(name="counted", llm_endpoint_typeid=EP2).save()
+
+    inventories = 0
+    real_inventory = llm_source._inventory
+
+    async def counting_inventory(worker_type):
+        nonlocal inventories
+        inventories += 1
+        return await real_inventory(worker_type)
+
+    projects = 0
+    real_get_by_id = Project.get_by_id
+
+    async def counting_get_by_id(entity_id, *a, **kw):
+        nonlocal projects
+        projects += 1
+        return await real_get_by_id(entity_id, *a, **kw)
+
+    monkeypatch.setattr(llm_source, "_inventory", counting_inventory)
+    monkeypatch.setattr(Project, "get_by_id", counting_get_by_id)
+
+    await hub_llm_endpoint_status(project.id)
+
+    assert inventories == len(HUB_ENDPOINT_HARNESSES), (
+        f"one inventory per harness, got {inventories} for {len(HUB_ENDPOINT_HARNESSES)} harnesses"
+    )
+    assert projects == 1, f"the project is the same for every harness; looked it up {projects} times"
