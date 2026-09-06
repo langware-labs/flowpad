@@ -4459,6 +4459,11 @@ msgstr "Copy error text"
 msgid "Copy event JSON"
 msgstr "Copy event JSON"
 
+#: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Copy id"
+msgstr "Copy id"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
 msgstr "Copy join code"
