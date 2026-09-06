@@ -9,11 +9,8 @@ filesystem produces.
 from __future__ import annotations
 
 import unicodedata
-from pathlib import Path
 
-import pytest
-
-from flow_sdk.fs_store.path_owners import PathOwnerIndex, owner_id_for
+from flow_sdk.fs_store.path_owners import PathOwnerIndex
 
 A = "11111111-1111-4111-8111-111111111111"
 B = "22222222-2222-4222-8222-222222222222"
@@ -98,8 +95,3 @@ def test_build_issues_no_queries() -> None:
         assert idx.owner_for("markdown", "/w/docs/a.md") == A
     finally:
         db.get_db_driver = original  # type: ignore[assignment]
-
-
-@pytest.mark.asyncio
-async def test_owner_id_for_returns_none_for_an_unowned_path(tmp_path: Path) -> None:
-    assert await owner_id_for("markdown", str(tmp_path / "nobody.md")) is None

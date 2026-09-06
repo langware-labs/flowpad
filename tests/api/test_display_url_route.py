@@ -80,12 +80,12 @@ async def test_an_unindexed_file_is_reported_not_indexed_and_never_indexed(clien
     reaches the recovery branch at all and would make this test vacuous. That
     is also the real tagit path — ``docs/breadcrumbs/<slug>.md``.
     """
-    import flow_sdk.builtin.faas.fs_records_actions as fs_records_actions  # noqa: PLC0415
+    import flow_sdk.fs_store.resolve as resolve  # noqa: PLC0415
 
     def _boom(*args, **kwargs):
-        raise AssertionError("display/url must not index: it called discover_record_by_path")
+        raise AssertionError("display/url must not index: it called resolve_asset")
 
-    monkeypatch.setattr(fs_records_actions, "discover_record_by_path", _boom)
+    monkeypatch.setattr(resolve, "resolve_asset", _boom)
 
     docs = tmp_path / "docs" / "breadcrumbs"
     docs.mkdir(parents=True)

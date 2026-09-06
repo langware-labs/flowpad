@@ -1,8 +1,8 @@
-"""Discovering a path a type does not own must not EDIT that path: the seam
-REFUSES an unclaimed (type, path) pair (``UnclaimedPath``) before any carrier
-is read or written, so a ``server.py`` labelled ``markdown`` never grows a
-frontmatter header. Entry point is the real ``discover_record_by_path``
-(behind ``POST /fs-records/<type>/discover``); real filesystem, no mocks.
+"""Discovering a path a type does not own must not EDIT that path: the
+resolver answers ``NotAnAsset`` for an unclaimed (type, path) pair before any
+carrier is read or written, so a ``server.py`` labelled ``markdown`` never
+grows a frontmatter header. Entry point is the real ``discover_record_by_path``
+(over ``resolve_asset``); real filesystem, no mocks.
 """
 from __future__ import annotations
 
