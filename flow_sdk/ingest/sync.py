@@ -105,7 +105,8 @@ async def sync_source(
     # "this is a bug" catch, where it left the source stuck on `never_synced`
     # with no error to show.
     try:
-        cursors = await DataSourceCursor.for_source(source, await driver.segments(source))
+        segments = await driver.segments(source)
+        cursors = await DataSourceCursor.for_source(source, segments)
     except Exception as exc:  # noqa: BLE001 — classified below, never re-raised
         health, code, detail = classify(exc)
         await _fail_source(source, code, detail, now, health=health)
@@ -113,10 +114,12 @@ async def sync_source(
         return combined
     # The driver's ceiling is a limit, not a preference — `min`, so a caller
     # asking for more streams cannot spend a budget the provider does not have.
-    due = _round_robin(cursors, min(budget, driver.segment_budget or budget))
+    stamps = {ref.key: ref.stamp for ref in segments if ref.stamp}
+    due = _round_robin(cursors, min(budget, driver.segment_budget or budget), stamps)
 
     for cursor in due:
-        combined.outcomes.extend((await _sync_stream(source, driver, cursor, now)).outcomes)
+        stream = await _sync_stream(source, driver, cursor, now, stamp=stamps.get(cursor.segment_key, ""))
+        combined.outcomes.extend(stream.outcomes)
 
     await _roll_up(source, cursors, now)
     emit_sync_tag(source.provider, source.id, "completed", report=combined)
@@ -150,7 +153,7 @@ async def _place(source: DataSource, result, view: SegmentCursorView) -> Optiona
     if result.items:
         report = await ingest_items(
             result.items,
-            mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
+            mode=IngestMode.for_run(item_count=len(result.items)),
         )
     if result.refs or result.tombstones:
         # `sync_source` refused the run before enumerating segments if this
@@ -159,7 +162,9 @@ async def _place(source: DataSource, result, view: SegmentCursorView) -> Optiona
     return report
 
 
-async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) -> IngestReport:
+async def _sync_stream(
+    source, driver, cursor: DataSourceCursor, now: datetime, *, stamp: str = ""
+) -> IngestReport:
     report = IngestReport()
     cursor.last_attempted_at = now
 
@@ -204,10 +209,13 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         # identical JSON through the writer lock once a minute. `gdrive` omits
         # `high_water` entirely to dodge this; comparing fixes it for all three.
         and cursor.high_water == result.high_water
+        and (cursor.segment_stamp or "") == stamp
     )
     cursor.state = result.next_state or {}
     if result.high_water:
         cursor.high_water = result.high_water
+    if stamp:
+        cursor.segment_stamp = stamp
     cursor.last_synced_at = now
     cursor.mark_ok()
 
@@ -221,11 +229,23 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         await cursor.save()
     return report
 
-def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourceCursor]:
+def _round_robin(
+    cursors: list[DataSourceCursor], budget: int, stamps: Optional[dict[str, str]] = None
+) -> list[DataSourceCursor]:
     """The ``budget`` streams that have waited longest.
 
     Never-attempted streams sort first, so a newly added feed is picked up on
     the next tick rather than starving behind healthy ones.
+
+    A stream whose listing token (``stamps``) still equals the one recorded at
+    its last good fetch has nothing new and is not a candidate — it neither
+    costs a request nor holds a budget slot a moved stream needs. A stream
+    whose token MOVED goes first of all, ahead of the never-attempted ones: a
+    new source on a busy desk backfills dozens of old tickets a few per pass,
+    and the one ticket a person is answering right now must not wait behind
+    that backlog. Never-attempted streams keep the driver's listing order. A
+    stream that last FAILED stays a candidate whatever its token says: the
+    retry is the point.
 
     A ``config_error`` stream is not a candidate at all. It is parked until a
     person fixes it (``health.py``: that state stops polling for ITS scope), so
@@ -234,9 +254,19 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
     """
     if budget <= 0:
         return []
+    stamps = stamps or {}
+
+    def _idle(c: DataSourceCursor) -> bool:
+        token = stamps.get(c.segment_key, "")
+        return bool(token) and c.health == SourceHealth.OK.value and (c.segment_stamp or "") == token
+
+    def _moved(c: DataSourceCursor) -> bool:
+        token = stamps.get(c.segment_key, "")
+        return bool(token) and bool(c.segment_stamp) and c.segment_stamp != token
+
     ordered = sorted(
-        (c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value),
-        key=lambda c: (c.last_attempted_at is not None, c.last_attempted_at or datetime.min),
+        (c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value and not _idle(c)),
+        key=lambda c: (not _moved(c), c.last_attempted_at is not None, c.last_attempted_at or datetime.min),
     )
     return ordered[:budget]
 

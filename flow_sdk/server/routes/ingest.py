@@ -77,9 +77,9 @@ async def ingest_items_route(request: Request):
     except (TypeError, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
 
-    mode = IngestMode.for_run(
-        first_run=bool(body.get("first_run")), item_count=len(items)
-    )
+    # Size decides the mode; a caller's `first_run` flag is accepted and
+    # ignored (a small first batch announces itself like any other).
+    mode = IngestMode.for_run(item_count=len(items))
     try:
         report = await ingest_items(items, mode=mode)
     except Exception as exc:  # noqa: BLE001 — a bad payload must not 500 the server

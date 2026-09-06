@@ -389,9 +389,16 @@ export function FlowMessageBubble({
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
+  // On a help desk ticket the hub stamps every staff reply with the desk's
+  // brand — that masking is the contract the requester is shown. The roster
+  // may still resolve the responder's real id once they picked the ticket up,
+  // so here the wire name beats the roster for anyone who is not me.
+  const deskBrand = isHelpdesk && !isCurrentUser ? wireSenderName : null;
   let displayName: string;
   if (overrideName) {
     displayName = overrideName;
+  } else if (deskBrand) {
+    displayName = deskBrand;
   } else if (rosterLabel) {
     displayName = rosterLabel;
   } else if (isCurrentUser) {
