@@ -59,6 +59,14 @@ class ConversationKind(StrEnum):
     HELPDESK = "helpdesk"
 
 
+class ConversationStatus(StrEnum):
+    """Whether a ticket is still awaiting an answer. Mirrors the hub's field of
+    the same name, which is authoritative and enforces the same two values."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
 
@@ -179,6 +187,11 @@ class Conversation(ProjectedFields, Entity):
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
+    # Settlement state, mirrored from the hub by ``conversation-settle`` and by
+    # ``_upsert_hub_conversation_metadata``. The requester's portal reads this
+    # LOCAL row, so without the mirror a ticket they just closed keeps
+    # presenting as open on the surface they closed it from.
+    status: ConversationStatus = APIField(default=ConversationStatus.OPEN)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
     # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
     # and used by ``handle_conversation_delete_archived`` to classify each
@@ -404,7 +417,7 @@ class Conversation(ProjectedFields, Entity):
             # local. Flush them through the same send pipeline a normal reply
             # uses, BEFORE inviting, so the invitation's callback_override and
             # the recipient's first fetch resolve.
-            await self._deliver_pending_messages()
+            await self.deliver_pending_messages()
 
             # Post-accept landing: point at the conversation's first FlowMessage
             # on the hub. Falls back to None (hub default = entity URL) when the
@@ -546,8 +559,13 @@ class Conversation(ProjectedFields, Entity):
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
 
-    async def _deliver_pending_messages(self) -> None:
-        """Push messages that were composed before this conversation was remote.
+    async def deliver_pending_messages(self) -> None:
+        """Push messages of this conversation that are not on the hub yet.
+
+        Two callers, because there are two ways to end up holding one: ``share()``
+        below, when a local conversation first gets its hub row, and
+        ``flow_sdk.inbox.catchup`` on every hub-session transition (its module
+        docstring explains why both are needed).
 
         Reuses the SAME send pipeline a normal reply uses — there is no separate
         push path. ``_send_conversation_message_header`` is the hub-side create
@@ -745,7 +763,7 @@ class Conversation(ProjectedFields, Entity):
         (``FlowMessage.summary()``), oldest-first.
 
         Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
-        source of truth, same idiom as ``_deliver_pending_messages``) and loads
+        source of truth, same idiom as ``deliver_pending_messages``) and loads
         each FlowMessage by id. No LLM, no hub calls.
         """
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415

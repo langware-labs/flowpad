@@ -78,6 +78,18 @@ export enum ConversationKind {
   HELPDESK = 'helpdesk',
 }
 
+/** Mirrors ``flow_sdk.builtin.conversation.ConversationStatus``. Only these two
+ *  values exist; the hub rejects anything else. */
+export enum ConversationStatus {
+  OPEN = 'open',
+  CLOSED = 'closed',
+}
+
+/** True when a ticket has been settled and no longer awaits an answer. */
+export function isClosedConversation(status?: ConversationStatus | string | null): boolean {
+  return status === ConversationStatus.CLOSED;
+}
+
 /** True when `kind` denotes a helpdesk ticket. */
 export function isHelpdeskKind(kind?: ConversationKind | string | null): boolean {
   return kind === ConversationKind.HELPDESK;
@@ -87,6 +99,9 @@ export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
    *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
+  /** Settlement state of a ticket. Hub-authoritative, mirrored locally by
+   *  ``settleTicket`` and the hub-metadata upsert. Defaults to ``open``. */
+  status?: ConversationStatus;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own
    *  project at send time. Null until the receiver maps. */
   project_id?: string | null;
@@ -133,6 +148,7 @@ export interface Conversation extends EntityMerge<IConversation> {}
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;
+  status?: ConversationStatus;
   project_id?: string | null;
   remote_project_id?: string | null;
   remote_project_name?: string | null;
@@ -148,6 +164,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.kind = entity.kind ?? ConversationKind.DIRECT;
+    this.status = entity.status ?? ConversationStatus.OPEN;
     this.project_id = entity.project_id;
     this.remote_project_id = entity.remote_project_id;
     this.remote_project_name = entity.remote_project_name;
@@ -458,6 +475,22 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   return res!;
 }
 
+/** Close or reopen a helpdesk ticket. Proxies to the hub (which owns the rule
+ *  about who may settle) and mirrors `status` onto the local row, which is what
+ *  the requester's portal reads. */
+export async function settleTicket(
+  conversationId: string,
+  verb: 'close' | 'reopen',
+): Promise<{ conversation_id: string; status: ConversationStatus }> {
+  const action = new ActionInfo('conversation-settle', null, null, 'POST');
+  action.bodyParameters = { conversation_id: conversationId, verb };
+  const res = await dataManager.callAction<
+    { conversation_id: string; verb: string },
+    { conversation_id: string; status: ConversationStatus }
+  >(action);
+  return res!;
+}
+
 /** One row in the staff helpdesk triage queue (lightweight; not a full
  *  Conversation entity). Sourced from the hub via the helpdesk project. */
 export interface HelpdeskTicket {
@@ -471,6 +504,9 @@ export interface HelpdeskTicket {
   participant_count: number;
   /** True when the calling staff user is already on the roster. */
   picked_up: boolean;
+  /** Settlement state. The default queue is all-open; only an audit listing
+   *  that asks for closed tickets sees anything else here. */
+  status?: ConversationStatus;
   created_at?: string | null;
   updated_at?: string | null;
 }
