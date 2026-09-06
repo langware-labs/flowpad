@@ -74,7 +74,9 @@ export function useChannelAttribution() {
     ): ChannelAttribution | null => {
       if (!origin?.kind) return null;
       const kind = origin.kind.trim().toLowerCase();
-      const label = channelLabel(kind);
+      // The spec's own title when one is installed ("Help desk", not
+      // "Helpdesk"); `humanizeType` only for a channel nothing names.
+      const label = specFor(kind)?.title || channelLabel(kind);
 
       const source = sourceForOrigin(sources, origin, originLocal);
       const name =

@@ -104,5 +104,14 @@ class SourceItemSpec(DataSpec):
     permalink: Optional[str] = None
     thread_key: Optional[str] = None
     reply_to_external_id: Optional[str] = None
+    # Adoption hints for a channel whose messages ALREADY exist locally as
+    # hub-mirrored rows (the help desk: a ticket is a hub conversation, and
+    # after pickup the hub fans its messages out to this machine too). The
+    # projection adopts `conversation_id` at thread birth instead of minting,
+    # and mints the FlowMessage with `message_id`, so the two writers converge
+    # on one row instead of a twin. Absent for every other channel. Neither is
+    # digested — they never change for a given record.
+    conversation_id: Optional[str] = None
+    message_id: Optional[str] = None
     segment_label: str = ""
     raw: Optional[dict] = None
