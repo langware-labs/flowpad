@@ -37,8 +37,9 @@ class Spec(Entity):
 
     @model_validator(mode="after")
     def _hydrate_content_from_asset_ref(self) -> "Spec":
-        """The spec body lives in its ``asset_ref`` file (``specs/<name>/spec.md``)
-        — the source of truth the indexer reads and the share bundle carries.
+        """The spec body lives in the main document of its ``asset_ref`` folder
+        (``specs/<name>/spec.md``) — the source of truth the indexer reads and
+        the share bundle carries.
         ``content`` is a blob field that the entity GET does not expand, so a
         spec loaded from the DB row arrives with ``content=None`` and the editor
         renders blank. Hydrate it from the file (frontmatter stripped) whenever
@@ -51,8 +52,9 @@ class Spec(Entity):
                 from pathlib import Path  # noqa: PLC0415
 
                 from flow_sdk.fs_store.indexer._frontmatter import _extract_body  # noqa: PLC0415
+                from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-                p = Path(self.asset_ref)
+                p = SchemaRegistry.get(self.get_type()).body_path_for(Path(self.asset_ref))
                 if p.is_file():
                     object.__setattr__(self, "content", _extract_body(p.read_text(encoding="utf-8")))
             except OSError:

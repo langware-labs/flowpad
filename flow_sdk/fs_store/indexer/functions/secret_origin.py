@@ -1,12 +1,13 @@
-"""Walker + extractor + id mint for SECRET_ORIGIN references.
+"""Extractor + id mint for SECRET_ORIGIN references.
 
 A secret reference is a **value-free** json at ``<project>/assets/sodot/<name>.json``
 (see ``docs/secret_share.md``). It is indexed like any other asset so it travels
-with a git-shared project. This module mirrors the SPREADSHEET flat-file pattern
-(``spreadsheet.py``) but scopes discovery to the ``assets/sodot`` folder and — the
-load-bearing difference — mints the **convergent** id (``SecretOrigin.key()``),
-NOT a path-derived one, so a file-indexed row and a DB-minted row collide on one
-id across machines. The extractor refuses any file that isn't value-free.
+with a git-shared project. Discovery is the type's declared ``walk``
+(``secret_origin_type_info.py``): the ``assets/sodot`` placement mount under any
+walked project folder. The load-bearing difference from a plain flat file is the
+id: the **convergent** ``SecretOrigin.key()``, NOT a path-derived one, so a
+file-indexed row and a DB-minted row collide on one id across machines. The
+extractor refuses any file that isn't value-free.
 
 Type metadata lives in ``flow_sdk/schema/type_info/secret_origin_type_info.py``.
 """
@@ -18,7 +19,6 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 logger = logging.getLogger(__name__)
@@ -40,38 +40,6 @@ def _load_doc(path: Path) -> dict | None:
         return None
     data = obj.get("data")
     return data if isinstance(data, dict) else None
-
-
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def secret_origin_in_folder_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    """For each walked ``assets/sodot`` FOLDER, emit its direct ``*.json`` children."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        if node.record_type != RecordType.FOLDER:
-            continue
-        folder_path = Path(node.path)
-        if not _is_sodot_folder(folder_path):
-            continue
-        try:
-            entries = sorted(p for p in folder_path.iterdir() if p.suffix.lower() == _EXT)
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name.startswith("._"):
-                continue
-            try:
-                if not entry.is_file():
-                    continue
-            except OSError:
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.SECRET_ORIGIN, parent=node))
-    return out
 
 
 # ── id mint ───────────────────────────────────────────────────────────────────

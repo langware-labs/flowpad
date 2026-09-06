@@ -178,14 +178,14 @@ class DatasetManifestSpec(FrontMatter):     # dataset.json
     data_layout: str | None = None
     data: Optional[FreeSection] = None      # ⇒ {"metadata": …, "data": …}
 
-SUBAGENT = TypeMetadata(..., asset_spec=SubAgentSpec)
-DATASET  = TypeMetadata(..., main_layout="folder", main_file="dataset.json", asset_spec=DatasetManifestSpec)
+SUBAGENT = TypeInfo(..., asset_spec=SubAgentSpec)
+DATASET  = TypeInfo(..., shape=Folder(main="dataset.json"), asset_spec=DatasetManifestSpec)
 ```
 
 What `TypeInfo` still declares is **naming and placement**, not structure:
-`main_layout` (a folder with no byte fields — `DataSourceSpec` — is a Claude
-Code placement convention the spec cannot derive), `main_file`, `name_from_path`,
-`hub_main_file`, the identity backend, and the DB medium's `natural_key` /
+`shape` (a folder with no byte fields — `DataSourceSpec` — is a Claude
+Code placement convention the spec cannot derive), `name_from_path`,
+`hub_main_file`, the identity carrier, and the DB medium's `natural_key` /
 `digest_fields`. `FrontMatter` is the one `DataSpec` variant for disk documents
 (`extra="ignore"`: an undeclared key in a hand-edited file is dropped, never an
 error); a wire spec keeps `forbid`. A type with no `asset_spec` still goes
@@ -212,7 +212,7 @@ destination is resolved from `origin.kind` through a registry, exactly like
 
 | origin | serializer | what it does |
 |---|---|---|
-| `LocalOrigin` (`"local"`) | `DiskSerializer` | frontmatter/JSON main doc + every `FileRef`/`FolderSpec`/sub-asset field; rows through `DatasetLayout` (`rows_layout_field`); commits identity via `mint_entity_id` at the end of `store`, observes it at the start of `load` |
+| `LocalOrigin` (`"local"`) | `DiskSerializer` | frontmatter/JSON main doc + every `FileRef`/`FolderSpec`/sub-asset field; rows through `DatasetLayout` (`rows_layout_field`); commits identity via `TypeInfo.stamp_id` at the end of `store`, reads it (`TypeInfo.read_id`) at the start of `load` |
 | `DbOrigin` (`"db"`) | `DbSerializer` | the entity's `data` column dict |
 | `HubOrigin` (`"hub"`) | `HubSerializer` | the share body (`_hub_body`) |
 
@@ -251,8 +251,8 @@ same matrix for the other two media, including the raise cells.
 A spec-bearing type needs **no `from_disk_fn`**: `SchemaRegistry.register`
 defaults it to `spec_extractor(type)` (`fs_store/serializer/record.py`), which
 resolves the asset root from the walker's ref (folder / inner main file / file
-with `main_ext`), runs `serializer().load`, emits every declared field plus
-`content` from `fts_content`, and anchors `asset_ref` via `asset_ref_for`. A
+with the `File` ext), runs `serializer().load`, emits every declared field plus
+`content` from `fts_content`, and anchors `asset_ref` at the asset root. A
 rejected file (bad manifest, binary under `.md`) is `[]`, never an indexer error.
 Per-type facts live in `derive_fields_fn`; a hand `from_disk_fn` is only for a
 type with no spec.

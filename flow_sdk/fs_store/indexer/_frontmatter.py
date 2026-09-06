@@ -132,6 +132,23 @@ def _extract_body(text: str) -> str:
     return text
 
 
+def carry_capsules(rendered: str, existing: str) -> str:
+    """``rendered`` with the capsule blocks of ``existing`` re-attached — every
+    non-identity capsule (a ``tag`` block another skill wrote) survives a save.
+    The ``identity`` block is carried only while ``rendered`` has no
+    frontmatter ``id``: once the id is in the header the block is legacy."""
+    from flow_sdk.capsules import (  # noqa: PLC0415
+        restore_capsule_blocks,
+        snapshot_capsule_blocks,
+        strip_capsule_blocks,
+    )
+
+    header = _extract_frontmatter(rendered)
+    has_id = bool(header) and "id" in (_yaml_load(header) or {})
+    kept = strip_capsule_blocks(existing, names={"identity"}) if has_id else existing
+    return restore_capsule_blocks(rendered, snapshot_capsule_blocks(kept))
+
+
 def merge_frontmatter(
     text: str,
     updates: dict[str, Any],
@@ -165,34 +182,6 @@ def merge_frontmatter(
     tail = "\n" if body and not body.endswith("\n") else ""
     return _render_frontmatter(merged) + "\n\n" + body + tail
 
-
-def read_frontmatter_id(
-    path: Any,
-    *,
-    keys: tuple[str, ...] = ("id", "asset_id"),
-) -> str | None:
-    """Purely read the first valid v4/v5 id from frontmatter.
-
-    ``keys`` is the type-owned precedence list. Invalid candidates are ignored
-    so a valid legacy field remains backward-compatible. The file is never
-    rewritten or backfilled by extraction.
-    """
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    path = _asset_path(path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    frontmatter = _extract_frontmatter(text)
-    if not frontmatter:
-        return None
-    fields = _yaml_load(frontmatter) or {}
-    for key in keys:
-        adopted = adopt_entity_id(fields.get(key))
-        if adopted is not None:
-            return adopted
-    return None
 
 
 def _atomic_write_text(path: Path, text: str) -> None:

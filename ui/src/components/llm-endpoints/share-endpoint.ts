@@ -40,9 +40,28 @@ import { endpointShareLandingPath } from './llm-endpoints-pointer';
  *  the same value `SHARE_ROLE` pins on the Python side (`HubRole.READER`). */
 export const ENDPOINT_SHARE_ROLE = Role.READER;
 
+export interface ShareEndpointFailure {
+  email: string;
+  reason: string;
+  /**
+   * Did the role edge land anyway?
+   *
+   * True for the 5xx case ONLY: auto-accept writes the grant before the mail step runs, so a
+   * failure there is a failed EMAIL on top of a successful share. It is reported so the caller can
+   * tell the two apart -- `addOne` undoes its allocation when a share fails, and undoing it here
+   * would delete a budget the recipient can already reach.
+   */
+  accessLanded: boolean;
+}
+
 export interface ShareEndpointOutcome {
   granted: string[];
-  failed: { email: string; reason: string }[];
+  failed: ShareEndpointFailure[];
+}
+
+/** Did the grant survive the failure? See `ShareEndpointFailure.accessLanded`. */
+function accessLandedDespite(error: unknown): boolean {
+  return errorStatus(error) >= 500;
 }
 
 /**
@@ -104,7 +123,11 @@ export async function shareEndpointByEmail(
       outcome.granted.push(email);
       return;
     }
-    outcome.failed.push({ email, reason: shareEndpointFailureText(result.reason, 'Could not share') });
+    outcome.failed.push({
+      email,
+      reason: shareEndpointFailureText(result.reason, 'Could not share'),
+      accessLanded: accessLandedDespite(result.reason),
+    });
   });
   return outcome;
 }

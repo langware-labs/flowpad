@@ -208,14 +208,15 @@ def _auto_classify(payload: Dict[str, Any]) -> _AutoTarget:
 def _auto_nice_name_from_path(path: str) -> str:
     """A readable leaf title from a path — the parent folder name for a folder-main
     file (``…/website-traffic-dashboard/SKILL.md`` → "website-traffic-dashboard"),
-    else the basename stem. Reuses the folder-main-file map from display_target."""
+    else the basename stem. The registry says which names are a folder type's
+    main document (``SchemaRegistry.main_file_owners``)."""
     from pathlib import Path as _Path  # noqa: PLC0415
 
     p = _Path(path)
     try:
-        from flow_sdk.core.display_target import _folder_main_files  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        if p.name in _folder_main_files():
+        if SchemaRegistry.main_file_owners(p):
             return p.parent.name or p.name
     except Exception:
         pass

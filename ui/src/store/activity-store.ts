@@ -22,6 +22,7 @@
  * real pipeline with synthetic snapshots instead of standing up a WS bus.
  */
 
+import { isHubOnly } from '@sdk';
 import { connectionManager } from '@sdk/websocket';
 import { isTerminal, type ActivityProgressSpec } from '@sdk/activity';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -148,6 +149,10 @@ function attachOnce(): void {
 
 /** Seed from the backend. Covers first paint and any reconnect gap. */
 export async function replay(): Promise<void> {
+  // The activity route is served by a DESK backend only; on the hub it is a 404 on first
+  // paint and again on every reconnect. Nothing there produces progress either, so the
+  // store simply stays empty.
+  if (isHubOnly()) return;
   const rows = await lazyAssets.refresh(LazyAsset.Activities);
   for (const row of rows) handleActivitySnapshot(row);
 }

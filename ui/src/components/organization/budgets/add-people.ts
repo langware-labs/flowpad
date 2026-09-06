@@ -16,11 +16,21 @@
  *
  * Nothing here aborts on the first failure: rows are independent, and someone importing forty
  * people needs to know which one bounced, not to lose the other thirty-nine.
+ *
+ * And every address is invited to the TEAM as well as given a wallet, which is not a courtesy. A
+ * wallet share is a role edge on the ENDPOINT; team membership is a role edge on the TEAM, and only
+ * the second is what `get_user_teams` reads. Without it the hub sees somebody with no team at all:
+ * `resolve_default_source` walks team -> org -> global, finds no team pool, and mints their default
+ * off the ORGANISATION -- which then hands them the org's whole model list rather than the team's,
+ * for good, because `rebase_user_default` re-resolves through the same lookup that keeps returning
+ * nothing. That is how two people ended up spending models their team had never allowed.
  */
 import { LLMEndpoint, TypeId, dataManager, llmEndpointsService } from '@sdk';
 
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { shareEndpointByEmail } from '@src/components/llm-endpoints/share-endpoint';
+
+import { inviteToTeamByEmail } from './invite-to-team';
 import { errorMessage } from '@src/lib/error-message';
 
 import type { MemberBudget } from '@sdk';
@@ -80,9 +90,34 @@ async function addOne(poolId: string, draft: PersonDraft): Promise<void> {
   const allocation = new LLMEndpoint(created as never);
   const { failed } = await shareEndpointByEmail(allocation, [draft.email]);
   if (failed.length > 0) {
-    // The wallet exists but nobody can reach it. Say so plainly instead of reporting a success the
-    // owner would only discover was hollow when the person said "I can't see any budget".
+    // The wallet exists but nobody can reach it. UNDO IT, then say so plainly instead of reporting
+    // a success the owner would only discover was hollow when the person said "I can't see any
+    // budget". Leaving it behind is worse than not writing it: the row shows up in the roster with
+    // a name and an amount against it, so the money reads as spoken for and the owner's obvious
+    // next move -- press Add again -- mints a SECOND wallet rather than repairing the first, since
+    // an allowance nobody was granted carries no email for `indexByEmail` to match on.
+    //
+    // `accessLanded` is the one case that must NOT be undone: a 5xx means the role edge was written
+    // and only the mail failed, so the recipient can already reach this budget and deleting it
+    // would take back a share that worked.
+    if (!failed[0].accessLanded) await rollBack(allocation);
     throw new Error(failed[0].reason);
+  }
+}
+
+/**
+ * Take back an allocation whose hand-over failed.
+ *
+ * Deliberately swallows its own failure: the caller is already throwing the reason the SHARE
+ * bounced, and that is the sentence the owner needs. Replacing it with "could not delete" would
+ * report the cleanup's problem instead of the actual one. A rollback that does not land leaves
+ * exactly the orphan we had before -- no worse -- so it is logged and not raised.
+ */
+async function rollBack(allocation: LLMEndpoint): Promise<void> {
+  try {
+    await removeAllowance(allocation.typeId.toString());
+  } catch (e) {
+    console.error(`add-people: could not roll back allocation ${allocation.id}`, e);
   }
 }
 
@@ -94,6 +129,7 @@ async function addOne(poolId: string, draft: PersonDraft): Promise<void> {
  */
 export async function addPeopleToTeam(
   poolTypeId: string,
+  teamId: string,
   drafts: readonly PersonDraft[],
   existing: readonly MemberBudget[],
 ): Promise<AddPeopleOutcome> {
@@ -118,6 +154,21 @@ export async function addPeopleToTeam(
         outcome.added.push(draft.email);
       }
     });
+  }
+
+  // Everyone whose wallet landed, including the ones that were only re-budgeted: the invite is
+  // idempotent (`already` is reported, not raised), so a person added before this flow joined the
+  // team is repaired the next time an admin re-adds them. A row whose wallet failed is left out --
+  // it has nothing to spend, so putting them on the team would say the opposite.
+  const landed = [...outcome.added, ...outcome.updated];
+  if (landed.length > 0) {
+    const invites = await inviteToTeamByEmail(teamId, landed);
+    for (const { email, reason } of invites.failed) {
+      // Reported, never rolled back: they HAVE a wallet and can spend it, they are simply not on
+      // the team yet -- and undoing a working budget to report a membership problem would be the
+      // worse outcome. Pressing Add again retries the invite for exactly these rows.
+      outcome.failed.push({ email, reason: `budget set, but not added to the team — ${reason}` });
+    }
   }
   return outcome;
 }

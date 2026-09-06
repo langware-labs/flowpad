@@ -28,9 +28,6 @@ from typing import Any
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "deck.json"
@@ -57,14 +54,6 @@ def _deck_id_from_path(path: Path) -> str:
     return mint_uuid(f"{RecordType.DECK}:{path.resolve()}", namespace=uuid.NAMESPACE_DNS)
 
 
-def deck_id_from_folder(ref: FSRef | Path) -> object | None:
-    path = Path(getattr(ref, "_path", ref))
-    cap = read_folder_capsule_id(path)
-    if cap:
-        return cap
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    return adopt_entity_id(_load_manifest(path).get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────

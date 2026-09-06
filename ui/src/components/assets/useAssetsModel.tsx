@@ -25,6 +25,7 @@ import {
   defaultScopeFilter,
   pinnedProjectId,
   projectScope,
+  scopeIncludesUser,
   unionAssetBucket,
 } from '@src/lib/scope-filter';
 import { isProjectHomeSurface } from './asset-body-content';
@@ -32,6 +33,7 @@ import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { useMyEndpoints } from '@src/components/llm-endpoints/my-endpoints';
 import {
   ASSET_CONTEXT_FOLDERS_ROOT_ID,
   assetContextFolderNodeId,
@@ -166,7 +168,13 @@ export function useAssetsModel() {
     if (!effectivePointer.startsWith('editor/')) return null;
     try {
       const p = AssetDocPointer.parse(effectivePointer);
-      if (p.editor !== AssetEditor.CODE && p.method === AssetRoutingMethod.TYPEID) {
+      // `llm_endpoint` joins `code` in the exclusion: it is entity-backed but has no local
+      // row (a projection of hub state), so resolving it would fire a GET that always 404s.
+      if (
+        p.editor !== AssetEditor.CODE &&
+        p.editor !== AssetEditor.LLM_ENDPOINT &&
+        p.method === AssetRoutingMethod.TYPEID
+      ) {
         return new TypeId(p.value);
       }
     } catch {
@@ -195,6 +203,10 @@ export function useAssetsModel() {
   // type-row counts below and the nested rows under each context-folder row.
   const { menu: assetMenu, nodesByPath: menuNodesByPath } = useProjectAssetMenu(scopeProject);
 
+  // The budgets this person may spend — read once here for the count badge; the tree
+  // adapter and the body read the same cached answer.
+  const { endpoints: myEndpoints } = useMyEndpoints();
+
   const typeCounts = useMemo(() => {
     const counts = new Map(Object.entries(assetStats.per_type));
     // Fold in the menu's accumulated counts, which INCLUDE the project's context
@@ -209,14 +221,30 @@ export function useAssetsModel() {
     for (const group of assetMenu?.root?.groups ?? []) {
       counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
     }
+    // LLM endpoints are neither indexed nor path-attributed, so neither source above can
+    // see them and the row would be hidden for everyone outside dev mode. Their count is
+    // simply how many the box lists.
+    counts.set(RecordType.LLM_ENDPOINT, myEndpoints.length);
     return counts;
-  }, [assetStats.per_type, assetMenu]);
+  }, [assetStats.per_type, assetMenu, myEndpoints.length]);
 
   // Dev mode sees every registered type regardless of count; everyone else only
   // sees types that actually have items in the current scope.
   const isDev = useIsDev();
 
-  const visibleTypes = useMemo(() => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)), [allTypes]);
+  // An LLM endpoint belongs to a PERSON, never to a project — it is exactly the kind of
+  // user-scoped asset the User chip exists for. Under a project-only scope the row would
+  // claim the project owns budgets it has nothing to do with, so it is dropped there
+  // rather than listed with the same contents under every project.
+  const visibleTypes = useMemo(
+    () =>
+      allTypes.filter(
+        (t) =>
+          !HIDDEN_TYPES.has(t.type_name) &&
+          (t.type_name !== (RecordType.LLM_ENDPOINT as string) || scopeIncludesUser(effectiveFilter.scope)),
+      ),
+    [allTypes, effectiveFilter.scope],
+  );
 
   // The set of type names the menu lists, as a stable string key. Non-dev: hide
   // empty types once counts are in. First load (`statsLoading`, no cached counts)

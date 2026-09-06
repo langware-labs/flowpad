@@ -9,6 +9,11 @@
  * Nothing is sent until Add is pressed. A file that half-parses shows what it got and what it could
  * not read, and the good rows are still importable — someone with forty new hires and one bad
  * address should not have to fix the file to make any progress.
+ *
+ * **A sheet is not weighed against the team's remaining money.** Forty $10 allowances out of a team
+ * holding $50 is a legal state, not a mistake: every hop's cap is checked when the money is spent,
+ * so the team's $50 is all forty of them get between them. Refusing the sheet would block a shape
+ * the hub supports and the budgets page already explains in its own over-allocation banner.
  */
 import { downloadFile } from '@sdk';
 import type { MemberBudget } from '@sdk';
@@ -45,9 +50,13 @@ export interface AddPeopleDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The team pool the new allowances draw on. */
   poolId: string;
+  /** The team itself. Adding somebody to its budget also puts them ON it -- a wallet share is a
+   *  role on the endpoint, and only a role on the TEAM makes the hub treat them as a member. */
+  teamId: string;
   teamName: string;
   /** The team's current roster — a repeated address re-budgets that person instead of duplicating. */
   existing: readonly MemberBudget[];
+  /** The team pool's own cap and what it has already given out, for the whole-sheet check. */
 }
 
 /** The problem sentences. Kept beside the dialog rather than in the parser so the rules stay pure
@@ -70,7 +79,7 @@ function useProblemText() {
   };
 }
 
-export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing }: AddPeopleDialogProps) {
+export function AddPeopleDialog({ open, onOpenChange, poolId, teamId, teamName, existing }: AddPeopleDialogProps) {
   const { t } = useLingui();
   const problemText = useProblemText();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -125,7 +134,11 @@ export function AddPeopleDialog({ open, onOpenChange, poolId, teamName, existing
       setProblems(bad.map((p) => t`${p.email}: the amount must be a number.`));
       return;
     }
-    const outcome = await addPeople.mutateAsync({ poolId, drafts: people, existing });
+    // A sheet is NOT refused for coming to more than the pool holds. Over-allocation is a state the
+    // hub supports and the page already explains ("Nothing is blocked -- whoever spends last will be
+    // refused once the money runs out"): every hop's cap is checked when the money is spent, so the
+    // team's own ceiling still bounds the whole team however the shares are written.
+    const outcome = await addPeople.mutateAsync({ poolId, teamId, drafts: people, existing });
     setProblems(outcome.failed.map((f) => `${f.email} — ${f.reason}`));
     const landed = outcome.added.length + outcome.updated.length;
     if (landed > 0) {

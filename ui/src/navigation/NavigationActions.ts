@@ -714,7 +714,16 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean; viewMode?: string; host?: string },
+    options?: {
+      cwd?: string;
+      /** Typed AND submitted once the terminal attaches. */
+      startCommand?: string;
+      /** Typed and left at the prompt — the user presses Enter. */
+      prefillCommand?: string;
+      skipPermissions?: boolean;
+      viewMode?: string;
+      host?: string;
+    },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
@@ -824,7 +833,10 @@ export class NavigationActions {
 
   async openNewShell(options?: {
     cwd?: string;
+    /** Typed AND submitted once the terminal attaches. */
     startCommand?: string;
+    /** Typed and left at the prompt — the user presses Enter. */
+    prefillCommand?: string;
     computeNode?: ComputeNode;
     skipNavigate?: boolean;
     projectId?: string;

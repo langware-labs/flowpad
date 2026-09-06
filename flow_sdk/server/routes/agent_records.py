@@ -19,6 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from flow_sdk.schema.layout import File
+
 router = APIRouter()
 
 
@@ -87,7 +89,7 @@ def _derive_creation_hint(info) -> dict | None:
     """Build a creation recipe straight from the type's registered schema.
 
     Generic for any ``creatable`` type whose primary asset is a single file
-    (``main_layout == "file"``): the agent writes one markdown file with YAML
+    (a ``File`` shape): the agent writes one markdown file with YAML
     frontmatter at ``<project_cwd>/<main_subdir>/<safe-title>.md`` and indexes
     it. Every coordinate — the subfolder, the uid field, the frontmatter
     fields — is sourced from ``TypeInfo`` so nothing is hardcoded per type and
@@ -95,7 +97,7 @@ def _derive_creation_hint(info) -> dict | None:
     otherwise-irregular types are left to the ``_CREATION_HINTS`` override
     table. Returns None when no generic recipe applies.
     """
-    if not info.creatable or not info.main_subdir or info.main_layout != "file":
+    if not info.creatable or not info.main_subdir or not isinstance(info.shape, File):
         return None
     uid = info.uid_field
     fields: dict[str, str] = {

@@ -21,7 +21,7 @@ from flow_sdk.responses.response import ApiSuccessResponse
 
 def test_save_without_id_raises_instead_of_minting_a_fingerprint(tmp_records_root):
     rec = FSRecord(type="markdown", name="orphan")
-    with pytest.raises(ValueError, match="mint through TypeInfo.mint_entity_id"):
+    with pytest.raises(ValueError, match="resolve it through the type's carrier"):
         rec.save()
     assert rec.id is None, "the failed save must not have assigned an id"
     assert not any(tmp_records_root.rglob("metadata.json"))

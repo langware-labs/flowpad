@@ -85,7 +85,7 @@ These read directly from instance attrs (`__dict__`) — there is no longer a `c
 
 ```python
 # flow_sdk/schema/type_info/skill_type_info.py
-SKILL_TYPE_INFO = TypeMetadata(
+SKILL_TYPE_INFO = TypeInfo(
     type_name="skill",
     browseable_by=ViewMode.STANDARD,
     index_fields=["description"],
@@ -93,7 +93,7 @@ SKILL_TYPE_INFO = TypeMetadata(
 )
 ```
 
-`index_fields` is now a field on the per-type `TypeMetadata` (`flow_sdk/schema/type_info/*_type_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:203`) and consumed by the agent-records route (`flow_sdk/server/routes/agent_records.py:104`) and the type's `schema_hash` / `to_dict`; the FTS indexer itself does **not** read it — what reaches `entities_fts` is decided by the `search_*` readers above. Current declarations include: `agent`/`subagent`/`skill`/`whiteboard`/`deck`/`deck_template`/`graph_workflow`/`journey`/`helpdesk`/`spreadsheet` → `["description"]`, `dynamic_workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
+`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_type_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:203`) and consumed by the agent-records route (`flow_sdk/server/routes/agent_records.py:104`) and the type's `schema_hash` / `to_dict`; the FTS indexer itself does **not** read it — what reaches `entities_fts` is decided by the `search_*` readers above. Current declarations include: `agent`/`subagent`/`skill`/`whiteboard`/`deck`/`deck_template`/`graph_workflow`/`journey`/`helpdesk`/`spreadsheet` → `["description"]`, `dynamic_workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
 
 ---
 
@@ -113,7 +113,7 @@ Returns a list of hydrated Entity objects, ranked by BM25 (plus optional recency
 
 ### `driver.fts_delete(entity_id)`
 
-Remove a record from the FTS index. Called explicitly when a record is deleted. Available on the SQLite driver via `get_db_driver().fts_delete(entity_id)`. `driver.fts_clear()` empties the whole table (used by `SchemaRegistry.clear_index()`).
+Remove a record from the FTS index. Called explicitly when a record is deleted. Available on the SQLite driver via `get_db_driver().fts_delete(entity_id)`. `driver.fts_clear()` empties the whole table (used by `index_log.clear_index()`).
 
 ### `Entity.save()` → `store()` → `_fts_upsert`
 
@@ -196,7 +196,7 @@ Returns all record types with a non-null `browseable_by` view mode in their `Typ
 }
 ```
 
-To surface a Record type in the user-facing browser, set `browseable_by=ViewMode.<STANDARD|ADVANCED|DEV>` on its `TypeMetadata` (in `flow_sdk/schema/type_info/<type>_type_info.py`) — there is no boolean `browseable` and no `_browseable` ClassVar on the Record class. Currently: `STANDARD` — `agent`, `subagent`, `skill`, `markdown`, `spec`, `task`, `prompt`, `deck`, `journey`, `mcp`, `spreadsheet`; `ADVANCED` — `claude_rules`, `claude_memory`, `plan`, `whiteboard`, `dataset`, `deck_template`, `dynamic_workflow`, `graph_workflow`, `helpdesk`, `workflow_run`, the report types; `DEV` — `flowpad_diagnosis`, `tag`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see the placement axis / `main_subdir` in `TypeInfo` for that).
+To surface a Record type in the user-facing browser, set `browseable_by=ViewMode.<STANDARD|ADVANCED|DEV>` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_type_info.py`) — there is no boolean `browseable` and no `_browseable` ClassVar on the Record class. Currently: `STANDARD` — `agent`, `subagent`, `skill`, `markdown`, `spec`, `task`, `prompt`, `deck`, `journey`, `mcp`, `spreadsheet`; `ADVANCED` — `claude_rules`, `claude_memory`, `plan`, `whiteboard`, `dataset`, `deck_template`, `dynamic_workflow`, `graph_workflow`, `helpdesk`, `workflow_run`, the report types; `DEV` — `flowpad_diagnosis`, `tag`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see the placement axis / `main_subdir` in `TypeInfo` for that).
 
 ### Reindex (FaaS index endpoint)
 
@@ -257,16 +257,16 @@ A type contributes to search in two coordinated places:
 
 ```python
 # skill_type_info.py
-TypeMetadata(type_name="skill", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
+TypeInfo(type_name="skill", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
 
 # subagent_type_info.py
-TypeMetadata(type_name="subagent", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
+TypeInfo(type_name="subagent", browseable_by=ViewMode.STANDARD, index_fields=["description"], ...)
 
 # task_type_info.py
-TypeMetadata(type_name="task", browseable_by=ViewMode.STANDARD, index_fields=["description", "objective"], ...)
+TypeInfo(type_name="task", browseable_by=ViewMode.STANDARD, index_fields=["description", "objective"], ...)
 
 # markdown_type_info.py
-TypeMetadata(type_name="markdown", browseable_by=ViewMode.STANDARD, index_fields=["title", "tags", "links"], ...)
+TypeInfo(type_name="markdown", browseable_by=ViewMode.STANDARD, index_fields=["title", "tags", "links"], ...)
 ```
 
 These are registered on the `SchemaRegistry` entry and consumed by the agent-records route and the schema hash — they are not a `ClassVar` on the `Record` subclass, there is no `content` property to override, and they do not change what the FTS table stores.

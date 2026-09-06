@@ -15,7 +15,8 @@ from flow_sdk.fs_store.indexer.functions.secret_origin import (
     secret_origin_id_from_file,
     secret_origin_identity_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -30,8 +31,8 @@ class SecretOriginMeta(BaseMeta):
     sod_store: Optional[str] = None
 
 
-SECRET_ORIGIN = TypeMetadata(
-    type=EntityType.SECRET_ORIGIN,
+SECRET_ORIGIN = TypeInfo(
+    type_name=EntityType.SECRET_ORIGIN,
     icon="KeyRound",
     api_visible=True,
     # Not minted empty from the generic "new entity" UI — created via the project
@@ -41,8 +42,9 @@ SECRET_ORIGIN = TypeMetadata(
     index_fields=["name", "env_var", "project_id"],
     asset_class="internal",
     family="assets/sodot",
-    main_layout="file",
-    main_ext=".json",
+    shape=File(ext=".json"),
+    # ``assets/sodot/*.json`` (the placement mount) under any walked project folder.
+    walk=Walk(roots=("folder",)),
     from_disk_fn=extract_secret_origin,
     identity_carrier=derived_identity(secret_origin_id_from_file),
     id_stable_key_fn=secret_origin_identity_key,

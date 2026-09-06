@@ -13,9 +13,10 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 
 class MarkdownRecord:
@@ -23,7 +24,7 @@ class MarkdownRecord:
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref))
+            return SchemaRegistry.get("markdown").from_disk_fn(ref, resolve_id(SchemaRegistry.get("markdown"), ref))
 
         return _aw()
 
@@ -32,7 +33,7 @@ class WhiteboardRecord:
     @staticmethod
     def from_fsref(ref):
         async def _aw():
-            return extract_whiteboard(ref, SchemaRegistry.get("whiteboard").mint_entity_id(ref))
+            return extract_whiteboard(ref, resolve_id(SchemaRegistry.get("whiteboard"), ref))
 
         return _aw()
 

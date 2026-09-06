@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ActionInfo, AgenticProcess, dataManager, GitWorkdir, type AssetDescriptor } from '@sdk';
+import { isFolderShape } from '@sdk/FlowSync/schema';
 import { Boxes, GitCommitHorizontal, Loader2, WandSparkles } from 'lucide-react';
 import {
   Dialog,
@@ -251,7 +252,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
       }
       const { type } = _parseTypeid(descriptor.typeid);
       const typeInfo = assetTypeByName.get(type);
-      const folderBacked = !!typeInfo?.folder_backed;
+      const folderBacked = isFolderShape(typeInfo?.shape);
       const file = improvableMainFile(descriptor, assetTypeByName);
       if (!file) {
         notify.error({

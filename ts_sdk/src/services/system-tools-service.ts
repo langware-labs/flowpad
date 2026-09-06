@@ -14,6 +14,12 @@ import { projectScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } fr
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
+
+/** HTTP status of a thrown apiClient (axios) error, if it carries one. */
+function httpStatusOf(err: unknown): number | undefined {
+  const e = err as { response?: { status?: number }; status?: number } | null;
+  return e?.response?.status ?? e?.status;
+}
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
 /** The canonical ScopeFilter encoding for a single project. One spelling, so
@@ -31,14 +37,24 @@ export interface IndexTypeOptions {
   orphanAction?: 'index' | 'ignore' | 'delete';
 }
 
-/** Returned by `systemTools.discoverByPath()`. */
-export interface DiscoverByPathResult {
+/**
+ * Returned by `systemTools.resolveByPath()` — the backend's classification of
+ * one on-disk path (`GET /api/v1/assets/resolve?path=…`). The CLIENT sends a
+ * path and gets the record type back; it never derives the type from the path.
+ */
+export interface ResolvedAsset {
+  /** Record type the path classifies to (`'skill'`, `'markdown'`, …). */
   type: string;
+  /** Entity id (minted or recovered by the backend). */
   id: string;
-  asset_ref: string;
-  name?: string;
-  /** Other fields per the record's `meta_dict()` shape — caller should typecast as needed. */
-  [key: string]: unknown;
+  /** The asset root — the folder for a folder-shaped type, the file otherwise. */
+  root: string;
+  /** The main body file when the shape has one (`<root>/SKILL.md`), else null. */
+  body: string | null;
+  /** The editor that opens this type, as the registry declares it. */
+  editor: string | null;
+  /** The entity row when the backend hydrated it; null when only classified. */
+  entity: Record<string, unknown> | null;
 }
 
 export interface DatabasePaths {
@@ -424,26 +440,26 @@ export class SystemToolsService extends EventEmitter {
   }
 
   /**
-   * Discover-or-recover a single record by absolute path.
+   * Classify one absolute machine path: `GET /api/v1/assets/resolve?path=…`.
    *
-   * POSTs to `/fs-records/{type}/discover?path=...`. The backend scans
-   * just this one file (not the whole type), syncs it to the entity DB
-   * if missing, and returns the entity metadata.
+   * The backend walks the path up to its asset root, names the record type,
+   * mints/recovers the id, and returns the row when it has one. This is the
+   * ONLY path→type seam the client uses: `useEntityByPath` keys the entity by
+   * the RETURNED type/id, and `AssetEditorRouter`'s vfs branch takes its record
+   * type from here instead of the editor segment.
    *
-   * Used by `useEntityByPath` to recover when the bulk list query misses
-   * (file just created, or backend hasn't auto-scanned yet).
-   *
-   * Throws if the path doesn't exist on disk or doesn't match the type's
-   * discovery rules — caller should treat that as a terminal "not found"
-   * state, not a transient error.
+   * Resolves to null when the backend answers 404 (the path is not an asset —
+   * a `.py`, a folder with no shape, a path outside every scope). Any other
+   * failure throws so the caller can treat it as transient.
    */
-  async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
-    const url =
-      `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
-      `/discover?path=${encodeURIComponent(path)}`;
-    const res = await apiClient.post<DiscoverByPathResult>(url);
-    void dataManager.refreshScanInfo();
-    return res as unknown as DiscoverByPathResult;
+  async resolveByPath(path: string): Promise<ResolvedAsset | null> {
+    try {
+      const res = await apiClient.get<ResolvedAsset>('/api/v1/assets/resolve', { params: { path } });
+      return res ?? null;
+    } catch (err: unknown) {
+      if (httpStatusOf(err) === 404) return null;
+      throw err;
+    }
   }
 
   /** Sequentially index the supplied types. Each per-type call drives its own backend progressTable snapshots. */

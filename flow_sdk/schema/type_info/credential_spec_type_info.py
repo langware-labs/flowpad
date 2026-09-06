@@ -16,14 +16,15 @@ same kind of thing.
 from flow_sdk.builtin.credential_spec import CredentialManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.credential_spec import credential_spec_identity_key
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-CREDENTIAL_SPEC = TypeMetadata(
-    type=EntityType.CREDENTIAL_SPEC,
+CREDENTIAL_SPEC = TypeInfo(
+    type_name=EntityType.CREDENTIAL_SPEC,
     icon="Plug",
-    displayName="Credential definitions",
+    display_name="Credential definitions",
     api_visible=True,
     # Authored in a folder or written by an agent, not from a New button —
     # the same call `DATA_SOURCE_SPEC` makes.
@@ -33,15 +34,14 @@ CREDENTIAL_SPEC = TypeMetadata(
     browseable_by=ViewMode.ADVANCED,
     asset_class="repo",
     family="credential",
-    main_layout="folder",
+    shape=Folder(main="credential.json"),
     asset_spec=CredentialManifestSpec,
-    main_file="credential.json",
     fts_content=("name", "description"),
     # DERIVED, not a capsule: `credential.json` deliberately carries no id —
     # stamping one in would make a shared definition arrive carrying the
     # sender's id. A derived carrier has nowhere to write an id back, so
     # identity must be a pure function of the source, and `identity_key_fn` is
-    # what supplies it. It is NOT optional: without a key `mint_entity_id` falls
+    # what supplies it. It is NOT optional: without a key `TypeInfo.mint` falls
     # through to `uuid5(resolved path)`, and a shipped spec's path is the
     # INSTALL's, so one credential would fork into a row per install location.
     identity_carrier=derived_identity(),

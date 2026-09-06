@@ -52,12 +52,10 @@ class FrontMatterFsRef(FSRef):
         """Replace the body while preserving the existing frontmatter."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
-        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter, carry_capsules
         existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
         existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
-        rendered = _render_frontmatter(existing_fm) + "\n" + body
-        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
+        rendered = carry_capsules(_render_frontmatter(existing_fm) + "\n" + body, existing_text)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(self._path, rendered)
 
@@ -65,10 +63,8 @@ class FrontMatterFsRef(FSRef):
         """Atomically write frontmatter + body while preserving capsule blocks."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
-        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter, carry_capsules
         existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
-        rendered = _render_frontmatter(frontmatter) + "\n" + body
-        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
+        rendered = carry_capsules(_render_frontmatter(frontmatter) + "\n" + body, existing_text)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(self._path, rendered)

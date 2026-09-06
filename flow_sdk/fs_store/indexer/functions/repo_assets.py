@@ -9,7 +9,7 @@ rides in each asset's ``metadata.json`` ``parent_type_id`` (the source of truth)
 this walker only discovers folders so their bytes get indexed at all.
 
 Registered on the scope-root input types with the explicit set of repository
-record types it can emit. Mirrors the single-pass shape of ``skill_fn``.
+record types it can emit. Mirrors the single-pass shape of the generic ``layout_walker``.
 """
 
 from __future__ import annotations
@@ -55,12 +55,12 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
             wanted = requested_types is None or record_type in requested_types
             for entry in sorted(type_dir.iterdir()):
                 # The type's own classifier is the "is this really an asset?"
-                # gate (marker file present, right extension); ``layout.ref`` is
+                # gate (marker file present, right extension); ``layout.root`` is
                 # where the type's convention points the FSRef.
                 layout = info.layout_of(entry, verify=True)
                 if layout.kind is LayoutKind.FOLDER:
                     # Recursion descends into the FOLDER for nested children.
-                    ref = FSRef(layout.ref, record_type=record_type, parent=parent_ref)
+                    ref = FSRef(layout.root, record_type=record_type, parent=parent_ref, layout=layout)
                     if wanted:
                         out.append(ref)
                     # Traverse unrequested folder assets too: a requested SPEC
@@ -70,7 +70,7 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
                     # File asset (markdown/prompt…): the <name>.<ext> file IS the
                     # asset — a leaf, no nesting.
                     if wanted:
-                        out.append(FSRef(entry, record_type=record_type, parent=parent_ref))
+                        out.append(FSRef(entry, record_type=record_type, parent=parent_ref, layout=layout))
 
     for node in nodes:
         scan(Path(node.path), node, 0)
