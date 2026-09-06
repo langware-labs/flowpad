@@ -1141,12 +1141,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # desk and agents simply never arrived: the user landed in a project
         # whose own task file told them to ask an agent that was not there.
         #
-        # BEFORE the one-shot scan below, deliberately. Both write, and running
-        # the scan first meant the reconcile raced this action's own indexing of
-        # a tree it had just cloned — losing on `database is locked`, on the one
-        # path where the declaration matters most. Attaching first also means the
-        # scan sees the declared dirs, so it is one pass rather than two.
+        # AFTER the one-shot scan below, deliberately. `_index_additional_dir`
+        # re-saves this Project, and doing that after the reconcile clobbered the
+        # per-entry sidecar `add_context_dir` had just stamped — leaving the desk
+        # LINKED (`shared_context_entities`) but pathless, so `include_dirs` and
+        # therefore `context_roots` stayed empty and the agents the manifest
+        # brought in were invisible to the project home. The sidecar write is
+        # guarded by `not already_linked`, so once lost it is never re-stamped.
         declared: object = None
+        # The sanctioned one-shot scan, not a banned auto-walk: the user asked
+        # for this clone, and it has to be searchable when they land in it.
+        await _index_additional_dir(target_dir)
+
         try:
             declared = await project.reconcile_bootstrap()
         except Exception as exc:  # noqa: BLE001 -- a declaration must not fail the open
@@ -1157,10 +1163,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             # `reconcile_bootstrap` is idempotent, so saying so is enough.
             logging.error("create-project-from-git: bootstrap reconcile FAILED: %s", exc, exc_info=True)
             declared = {"status": "failed", "error": str(exc)}
-
-        # The sanctioned one-shot scan, not a banned auto-walk: the user asked
-        # for this clone, and it has to be searchable when they land in it.
-        await _index_additional_dir(target_dir)
 
         return ApiSuccessResponse(
             data={
