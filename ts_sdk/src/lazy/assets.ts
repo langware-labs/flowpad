@@ -168,10 +168,12 @@ export const assetDefinitions = {
   }),
   [LazyAsset.LlmFunding]: defineAsset({
     staleTime: 10_000,
-    key: (p: NodeParams | undefined) => p?.nodeTypeId ?? localNode,
-    load: async (p: NodeParams | undefined) => {
+    // The project is part of the KEY, not just the request: `resolved` is scoped to it, so a
+    // cache keyed on the node alone would hand one project's funding verdict to another.
+    key: (p: (NodeParams & { projectId?: string }) | undefined) => [p?.nodeTypeId ?? localNode, p?.projectId ?? ''],
+    load: async (p: (NodeParams & { projectId?: string }) | undefined) => {
       const { LlmSourcesService } = await import('../services/llm-sources-service');
-      return new LlmSourcesService(p?.nodeTypeId ?? localNode).fetchStatus();
+      return new LlmSourcesService(p?.nodeTypeId ?? localNode).fetchStatus(p?.projectId);
     },
   }),
   [LazyAsset.GitRepos]: defineAsset({
