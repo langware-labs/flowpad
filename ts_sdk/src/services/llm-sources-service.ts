@@ -12,6 +12,8 @@
  */
 import apiClient from '../client';
 import { isHubOnly } from '../utils/hub-runtime';
+import type { LLMEndpointFilters, LLMEndpointLimits } from '../entities/llm-endpoint';
+import type { LLMChain, LLMEndpointTestResult } from './llm-endpoints-service';
 import type { LLMSource } from '../entities/llm-source';
 
 const ACTION = 'llm-endpoint';
@@ -41,6 +43,17 @@ export interface LLMEndpointOffer {
   models: Record<string, string>;
   /** False for a device login: the backend can never call it. */
   invocable: boolean;
+  /** Where the provider is reached. Empty for a hub budget — the hub owns the URL. */
+  base_url: string;
+  /** What this endpoint lets through: the model allow/deny lists, the ceilings, the
+   *  aliases a narrow wallet redirects with. */
+  filters: LLMEndpointFilters;
+  /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
+  limits: LLMEndpointLimits;
+  /** Whose pot this is — `organization-`/`team-`/`user-<uuid>`, or null for a root or an
+   *  allocation. The one field that says whether a budget is a person's own or a pool they
+   *  merely draw through, which is what the user-scoped asset view filters on. */
+  principal_typeid: string | null;
 }
 
 export interface LLMFundingStatus {
@@ -52,10 +65,22 @@ export interface LLMFundingStatus {
   name: string | null;
   provider: string | null;
   hub_logged_in: boolean;
-  /** Per capability kind (`harness.claude.cli`), every source that could fund it. */
+  /** Who the hub thinks this box is (`user-<uuid>`), in the spelling an endpoint's
+   *  `principal_typeid` uses — null when signed out. The box's LOCAL user is a different
+   *  id entirely, so this is the only way a screen can tell a budget allocated TO this
+   *  person from one they merely administer. */
+  hub_user_typeid: string | null;
+  /** Per capability kind (`harness.claude.cli`), every source the harness HAS — each judged on
+   *  its own credential alone. This is the list to choose FROM, so a row is ineligible here only
+   *  when the row itself is unusable (signed out, no key stored), never because another source is
+   *  currently selected. Do NOT derive "in use" from `auto` here; read `resolved`. */
   sources: Record<string, LLMSource[]>;
-  /** Per capability kind, the one the resolver picks — `null` when nothing can fund it. */
+  /** Per capability kind, the one the resolver picks — `null` when nothing can fund it. This is
+   *  the overlaid answer, the same one a spawn gets. */
   resolved: Record<string, LLMSource | null>;
+  /** Per capability kind, why nothing funds it — `''` when something does. `sources` no longer
+   *  carries the resolver's overlay, so this is the only place a stuck harness explains itself. */
+  blocked: Record<string, string>;
   /** The endpoints those verdicts name, by typeid, deduplicated across harnesses. A verdict
    *  mirrors none of the row's fields, so anything renderable (kind, provider, models) is
    *  looked up here. */
@@ -80,6 +105,32 @@ export class LlmSourcesService {
   status(): Promise<LLMFundingStatus | null> {
     if (isHubOnly()) return Promise.resolve(null);
     return apiClient.get(this.base);
+  }
+
+  /**
+   * Does a call through `endpointId` actually succeed?
+   *
+   * A pass-through to the hub's own `test` action, and the ONLY route to it from the desktop:
+   * `llmEndpointsService.testEndpoint` addresses `/graph/llm_endpoint/<id>/test`, which on a box
+   * is a 404 — the type has no local rows (`flow_sdk/builtin/llm_endpoint.py`). Same channel the
+   * listing already rides, so a screen never has to know which of the two it is talking to.
+   *
+   * Accepts a bare uuid or a typeid; a refused call resolves with `ok: false` rather than throwing.
+   */
+  test(endpointId: string): Promise<LLMEndpointTestResult> {
+    return apiClient.post(`${this.base}/test`, { endpoint_typeid: endpointId });
+  }
+
+  /**
+   * The hub's resolved chain for `endpointId` — which hops a call travels, and which root's
+   * provider key it ends up spending.
+   *
+   * The companion of `test`, and the reason both exist: a verdict says the call SUCCEEDED, it
+   * does not say what paid. Reachable only through the box for the same reason `test` is —
+   * the hub's `chain` action addresses an entity a desktop has no row for.
+   */
+  chain(endpointId: string): Promise<LLMChain> {
+    return apiClient.get(`${this.base}/chain/${encodeURIComponent(endpointId)}`);
   }
 
   /**

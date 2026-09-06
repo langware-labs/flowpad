@@ -33,13 +33,21 @@ export interface LimitsEditorProps {
   value: LimitsForm;
   onChange: (next: LimitsForm) => void;
   disabled?: boolean;
+  /** Limits the surrounding screen already edits itself. The budgets page puts `cost_usd_total`
+   *  on the row as a money box, so its "Advanced" dialog hides it here rather than offering the
+   *  same number twice, in two shapes, with no clue which one wins. */
+  omit?: readonly LimitKey[];
 }
 
-export function LimitsEditor({ value, onChange, disabled }: LimitsEditorProps) {
+export function LimitsEditor({ value, onChange, disabled, omit }: LimitsEditorProps) {
   const { t } = useLingui();
+  const hidden = new Set(omit ?? []);
+  const groups = GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !hidden.has(k)) })).filter(
+    (g) => g.keys.length > 0,
+  );
   return (
     <div className="space-y-3" data-testid="limits-editor">
-      {GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.keys[0]} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {group.keys.map((key) => (
             <div key={key} className="space-y-1">

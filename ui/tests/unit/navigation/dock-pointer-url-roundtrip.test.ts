@@ -57,7 +57,17 @@ const SEGMENTS = [
   'encoded%2Fslash',
 ] as const;
 
-const OPTION_KEYS = ['slot', 'q', 'message', 'filter', 'scope', 'selected', 'cwd', 'startCommand'] as const;
+const OPTION_KEYS = [
+  'slot',
+  'q',
+  'message',
+  'filter',
+  'scope',
+  'selected',
+  'cwd',
+  'startCommand',
+  'prefillCommand',
+] as const;
 const OPTION_VALUES = [
   'tab',
   'activeView',
@@ -107,6 +117,13 @@ function representativePointers(): DockPointer[] {
       cwd: '/Users/me/project with spaces',
       startCommand: 'echo ready && pwd',
       skipPermissions: true,
+    }),
+    // The install one-liner is the hostile case for URL round-tripping: it
+    // carries `|`, `&&`, `$`, quotes and (on Windows) backslashes, and it is
+    // typed into a shell verbatim, so a single mangled character is a
+    // different command.
+    DockPointer.forShell(U('5he11'), {
+      prefillCommand: 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"',
     }),
     DockPointer.forFile('/Users/me/src/main file.ts', { line: 12, column: 4 }, Layout.WIN),
     DockPointer.forFs('/Users/me/src/app.ts'),

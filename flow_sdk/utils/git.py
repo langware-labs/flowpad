@@ -12,6 +12,7 @@ from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
 
+
 # The credential-helper script and its env-var name are DEFINED ONCE, in
 # git_folder. Re-declaring them here is how a security-critical path drifts: the
 # copy immediately lost ``GIT_TERMINAL_PROMPT=0`` on the no-token branch, which
@@ -68,6 +69,7 @@ def git_commit_hash():
 
 
 # ── Per-repo git operations ───────────────────────────────────────────────────
+
 
 def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
     """One blocking git invocation.
@@ -137,7 +139,7 @@ def git_repo_full_name(repo_path: str) -> str:
     url = git_remote_url(repo_path)
     if not url:
         return ""
-    m = re.search(r'[:/]([^/:\s]+/[^/:\s]+?)(?:\.git)?$', url)
+    m = re.search(r"[:/]([^/:\s]+/[^/:\s]+?)(?:\.git)?$", url)
     return m.group(1) if m else ""
 
 
@@ -325,7 +327,9 @@ async def git_clone(
         return False, f"Git clone error: {e}"
 
 
-async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+async def git_remote_access(
+    clone_url: str, token: Optional[str] = None, *, ignore_local_credentials: bool = False
+) -> Tuple[bool, Optional[str]]:
     """Can we read ``clone_url``, and what is its default branch?
 
     ``git ls-remote --symref <url> HEAD`` is the cheap, provider-agnostic
@@ -334,10 +338,23 @@ async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tupl
     as ``git_clone``, so "the check passed" and "the clone will work" cannot
     disagree.
 
+    ``ignore_local_credentials`` empties the ``credential.helper`` list for this
+    one invocation, which changes WHO the answer is about: not "can this machine
+    read it" but "can a stranger". Without it the caller's own keychain (macOS
+    osxkeychain, `gh auth`, a cached PAT) silently authenticates the probe, so a
+    private repo comes back reachable — the exact false positive that would tell
+    an admin their teammates can clone something only they can. Ignored when a
+    ``token`` is given: naming a credential and then asking to be anonymous is a
+    contradiction, and the token branch installs its own helper.
+
     Returns (accessible, default_branch or None).
     """
     try:
         auth_args, env = _git_token_auth(token)
+        if ignore_local_credentials and not token:
+            # An empty value RESETS the helper list (git-config(1)), so system,
+            # global and repo-local helpers are all dropped for this call.
+            auth_args = ["-c", "credential.helper=", *auth_args]
         env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
         cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
 
@@ -379,6 +396,7 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
     a successful no-op, not a failure.
     """
     try:
+
         async def _run(*args):
             return await asyncio.to_thread(_run_git, ["git", *args], repo_path, 30)
 
@@ -448,7 +466,6 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         return GitPushResult(ok=False, message=str(e))
 
 
-
 # ── Per-file revision history (local, no push) ────────────────────────────────
 
 _LOG_SEP = "\x1f"
@@ -482,9 +499,7 @@ def git_asset_introduction(path: str) -> datetime | None:
             except ValueError:
                 continue
             dates.append(
-                parsed.replace(tzinfo=timezone.utc)
-                if parsed.tzinfo is None
-                else parsed.astimezone(timezone.utc)
+                parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
             )
         return min(dates) if dates else None
     except (OSError, ValueError):
@@ -504,14 +519,10 @@ async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:
         if not Path(repo_path, rel_file).exists():
             return False
         await asyncio.to_thread(_run_git, ["git", "add", "--", rel_file], repo_path)
-        staged = await asyncio.to_thread(
-            _run_git, ["git", "diff", "--cached", "--quiet", "--", rel_file], repo_path
-        )
+        staged = await asyncio.to_thread(_run_git, ["git", "diff", "--cached", "--quiet", "--", rel_file], repo_path)
         if staged.returncode == 0:
             return False  # nothing staged for this file
-        result = await asyncio.to_thread(
-            _run_git, ["git", "commit", "-m", message, "--", rel_file], repo_path
-        )
+        result = await asyncio.to_thread(_run_git, ["git", "commit", "-m", message, "--", rel_file], repo_path)
         return result.returncode == 0
     except Exception as e:  # noqa: BLE001 — auto-commit must never break a save
         logger.warning("[git] commit_file error (non-fatal): %s", e)

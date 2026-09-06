@@ -10,11 +10,17 @@
  *   - no `endpointId` (create flow): the field is a plain controlled input; the
  *     dialog sends the key AFTER the entity exists. Test is unavailable until
  *     the endpoint exists (the test action needs a target).
+ *
+ * Given a `provider`, the key's SHAPE is checked against it — live under the field as it is typed,
+ * and again as a hard refusal on Save. This catches the one mistake the hub reports terribly: a
+ * key pasted for the wrong provider stores without complaint, and only the model probe notices,
+ * much later and in different words ("no model is available through this endpoint").
  */
 import { llmEndpointsService, type LLMCredentialTestResult } from '@sdk';
+import { useLingui as useLinguiCore } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, Check, Loader2, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -24,11 +30,15 @@ import { Label } from '@src/components/ui/label';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
+import { keyShapeProblem } from './endpoint-catalog';
 import { TONE } from './tone';
 
 export interface CredentialFieldProps {
   /** The endpoint the key belongs to; undefined while it is not yet created. */
   endpointId?: string;
+  /** The provider this key must belong to. Given, the field checks the key's SHAPE before sending
+   *  it and refuses an obviously wrong one; omitted, no shape check is made. */
+  provider?: string | null;
   /** The hub's masked marker (`""` when none stored). */
   credentialHint?: string;
   placeholder?: string;
@@ -41,6 +51,7 @@ export interface CredentialFieldProps {
 
 export function CredentialField({
   endpointId,
+  provider,
   credentialHint = '',
   placeholder,
   value,
@@ -49,16 +60,42 @@ export function CredentialField({
   disabled,
 }: CredentialFieldProps) {
   const { t } = useLingui();
+  const { i18n } = useLinguiCore();
   const [busy, setBusy] = useState<'save' | 'test' | 'delete' | null>(null);
   const [verdict, setVerdict] = useState<LLMCredentialTestResult | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const canReachHub = !!endpointId;
 
+  /**
+   * The key as it stands RIGHT NOW, preferring React state but falling back to the input's own
+   * value. A browser password manager fills a `type="password"` box natively without dispatching
+   * anything React hears, so `value` can be `''` while the box visibly holds a key. Reading state
+   * alone made Save a no-op on an autofilled field: the button sat disabled, the click fired no
+   * handler and no request, and the page looked broken with nothing in the network tab.
+   */
+  const currentKey = () => value.trim() || inputRef.current?.value.trim() || '';
+  const shapeProblem = keyShapeProblem(provider, value);
+
   const save = async () => {
-    if (!endpointId || !value.trim()) return;
+    if (!endpointId) return;
+    const key = currentKey();
+    if (!key) {
+      // Say so. Returning silently is what made this look like a dead button.
+      notify.error({ title: t`Paste a key first`, message: t`The key box is empty.` });
+      return;
+    }
+    // Refuse a key whose shape is visibly wrong for this provider. Storing it would "succeed" and
+    // then surface hours later as an unrelated-sounding "no model is available through this
+    // endpoint" from the model probe.
+    const badShape = keyShapeProblem(provider, key);
+    if (badShape) {
+      notify.error({ title: t`That key does not look right`, message: i18n._(badShape) });
+      return;
+    }
     setBusy('save');
     try {
-      const res = await llmEndpointsService.setCredential(endpointId, value.trim());
+      const res = await llmEndpointsService.setCredential(endpointId, key);
       onChange('');
       setVerdict(null);
       onStored?.(res.credential_hint);
@@ -76,7 +113,7 @@ export function CredentialField({
     try {
       // A typed-but-unsaved key is tested WITHOUT being stored; otherwise the
       // stored one is tested.
-      const res = await llmEndpointsService.testCredential(endpointId, value.trim() || undefined);
+      const res = await llmEndpointsService.testCredential(endpointId, currentKey() || undefined);
       setVerdict(res);
     } catch (e) {
       setVerdict({ valid: false, status: 0, models_count: 0, message: errorMessage(e, t`Test failed`) });
@@ -108,6 +145,7 @@ export function CredentialField({
       <div className="flex gap-2">
         <Input
           id="llm-credential"
+          ref={inputRef}
           type="password"
           autoComplete="new-password"
           spellCheck={false}
@@ -122,7 +160,7 @@ export function CredentialField({
           <>
             <Button
               type="button"
-              disabled={disabled || busy !== null || !value.trim()}
+              disabled={disabled || busy !== null}
               onClick={() => void save()}
               data-testid="credential-save"
             >
@@ -131,7 +169,7 @@ export function CredentialField({
             <Button
               type="button"
               variant="outline"
-              disabled={disabled || busy !== null || (!value.trim() && !credentialHint)}
+              disabled={disabled || busy !== null}
               onClick={() => void test()}
               data-testid="credential-test"
             >
@@ -140,6 +178,12 @@ export function CredentialField({
           </>
         )}
       </div>
+      {shapeProblem && (
+        <p className="flex items-start gap-1.5 text-xs text-destructive" data-testid="credential-shape-problem">
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+          {i18n._(shapeProblem)}
+        </p>
+      )}
       <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
         {credentialHint ? (
           <span className="flex items-center gap-1.5" data-testid="credential-hint">

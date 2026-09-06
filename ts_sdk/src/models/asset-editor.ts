@@ -25,6 +25,11 @@ export enum AssetEditor {
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey', // guided onboarding — overview + Start, opens the journey tray
   MCP = 'mcp', // an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
+  // A hub LLM budget, rendered READ-ONLY: what this person may spend, which
+  // models it lets through, and a Test button. Entity-backed but never
+  // file-backed — the row is a projection of hub state with no local record, so
+  // the router resolves it from the box listing instead of an FSRef.
+  LLM_ENDPOINT = 'llm_endpoint',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -114,6 +119,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],
   [AssetEditor.MCP]: [RecordType.MCP],
+  [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],
@@ -127,11 +133,28 @@ export function isFileOnlyEditor(editor: AssetEditor): boolean {
   return EDITOR_TYPES[editor].length === 0;
 }
 
+
+/**
+ * The other direction: editors whose asset has a record type but NO FILE — and, for the one
+ * member so far, no local row either. `llm_endpoint` is a read-only projection of hub state
+ * (`flow_sdk/builtin/llm_endpoint.py`), so there is nothing on disk for an agent to open,
+ * diff or edit.
+ *
+ * The distinction earns its keep in `isContentAssetDock`: an asset-editor dock normally means
+ * "a single file is the subject", which is what puts a work-context chat beside it. For a
+ * fileless one that chat would be offering to work on a path that does not exist, so these
+ * docks stay ordinary browser surfaces — tab strip, navigator tree, no chat.
+ */
+export const FILELESS_EDITORS: ReadonlySet<AssetEditor> = new Set([AssetEditor.LLM_ENDPOINT]);
+
+export function isFilelessEditor(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && FILELESS_EDITORS.has(editor);
+}
+
 /** Derived inverse of the STATIC table: record type → the editor that edits it. */
+
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
-  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) =>
-    types.map((t) => [t as string, editor as AssetEditor]),
-  ),
+  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) => types.map((t) => [t as string, editor as AssetEditor])),
 );
 
 /**

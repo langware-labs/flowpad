@@ -20,9 +20,13 @@ export interface FiltersEditorProps {
   value: FiltersForm;
   onChange: (next: FiltersForm) => void;
   disabled?: boolean;
+  /** Hide the allowed-models box. The budgets page edits that list inline on every row
+   *  (`EndpointControls`), so its "Advanced" dialog omits it rather than showing the same list in
+   *  two places with two different save paths. */
+  omitModelsAllow?: boolean;
 }
 
-export function FiltersEditor({ value, onChange, disabled }: FiltersEditorProps) {
+export function FiltersEditor({ value, onChange, disabled, omitModelsAllow }: FiltersEditorProps) {
   const { t } = useLingui();
   const set = <K extends keyof FiltersForm>(key: K, v: FiltersForm[K]) => onChange({ ...value, [key]: v });
 
@@ -57,33 +61,35 @@ export function FiltersEditor({ value, onChange, disabled }: FiltersEditorProps)
   return (
     <div className="space-y-3" data-testid="filters-editor">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="llm-f-models_allow">
-            <Trans>Models allowed (globs)</Trans>
-          </Label>
-          <Textarea
-            id="llm-f-models_allow"
-            rows={3}
-            value={value.models_allow}
-            disabled={disabled}
-            placeholder={MODELS_ALLOW_DEFAULT}
-            onChange={(e) => set('models_allow', e.target.value)}
-          />
-          <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <Trans>One per line. Empty means everything the sources allow.</Trans>
-            {value.models_allow === '' && !disabled && (
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto p-0 text-xs"
-                data-testid="models-allow-use-default"
-                onClick={() => set('models_allow', MODELS_ALLOW_DEFAULT)}
-              >
-                <Trans>Use defaults</Trans>
-              </Button>
-            )}
-          </p>
-        </div>
+        {!omitModelsAllow && (
+          <div className="space-y-1">
+            <Label htmlFor="llm-f-models_allow">
+              <Trans>Models allowed (globs)</Trans>
+            </Label>
+            <Textarea
+              id="llm-f-models_allow"
+              rows={3}
+              value={value.models_allow}
+              disabled={disabled}
+              placeholder={MODELS_ALLOW_DEFAULT}
+              onChange={(e) => set('models_allow', e.target.value)}
+            />
+            <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <Trans>One per line. Empty means everything the sources allow.</Trans>
+              {value.models_allow === '' && !disabled && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0 text-xs"
+                  data-testid="models-allow-use-default"
+                  onClick={() => set('models_allow', MODELS_ALLOW_DEFAULT)}
+                >
+                  <Trans>Use defaults</Trans>
+                </Button>
+              )}
+            </p>
+          </div>
+        )}
         <div className="space-y-1">
           <Label htmlFor="llm-f-models_deny">
             <Trans>Models denied (globs)</Trans>

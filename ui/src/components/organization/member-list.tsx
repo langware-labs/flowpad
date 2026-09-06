@@ -113,7 +113,9 @@ export function MemberRow({
           {initials}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-sm">
+      {/* Truncated, so the full label is in a tooltip -- an address is exactly the thing a
+          narrow column cuts and a reader needs whole. */}
+      <span className="min-w-0 flex-1 truncate text-sm" title={label}>
         {label}
         {isSelf && (
           <span className="text-muted-foreground">

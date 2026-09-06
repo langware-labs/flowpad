@@ -2,7 +2,9 @@ import { capabilityManager, CapabilityKinds } from '@sdk';
 import { useCapability } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import { ViewMode } from '@src/contexts/view-mode-context';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -30,19 +32,38 @@ function CapabilityHarnessRow({
   kind,
   selected,
   onSelected,
+  onClose,
 }: {
   kind: string;
   selected: boolean;
   onSelected: () => void;
+  onClose: () => void;
 }) {
   const { capability, available, result, isLoading, test } = useCapability(kind);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
 
   const title = capability?.name ?? kind;
   const description = capability?.description ?? '';
   const homepage = capability?.homepage_url ?? HOMEPAGE_FALLBACKS[kind] ?? null;
+  // The backend resolved this for THIS machine's platform, or left it null
+  // because the harness has no unattended installer here (see
+  // `CapabilitySpec.install_commands`). Never offered for something already
+  // installed — the row's job is then to be selected, not re-installed.
+  const installCommand = available ? null : (capability?.install_command ?? null);
+
+  // Open a terminal on the raw-xterm surface and TYPE the command there,
+  // unsubmitted. The user reads the line, sees exactly what is about to run,
+  // and presses Enter — piping a remote install script into a shell is their
+  // keystroke to make, not ours. Everything after the click is ordinary
+  // navigation: the mounted terminal consumes `prefillCommand` on attach.
+  const onTryAutoInstall = () => {
+    if (!installCommand) return;
+    onClose();
+    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+  };
 
   const onUse = async () => {
     setSaving(true);
@@ -73,6 +94,17 @@ function CapabilityHarnessRow({
         {description && <div className="mt-1 text-xs text-muted-foreground">{description}</div>}
         {(message ?? result?.message) && (
           <div className="mt-1 text-xs text-amber-600 dark:text-amber-500">{message ?? result?.message}</div>
+        )}
+        {installCommand && (
+          <Button
+            variant="link"
+            className="mt-1 h-auto gap-1.5 p-0 text-xs"
+            onClick={onTryAutoInstall}
+            data-testid={`install-one-of-auto-${kind}`}
+          >
+            <Terminal className="h-3 w-3" />
+            <Trans>Try auto install</Trans>
+          </Button>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
@@ -137,7 +169,13 @@ export function AskInstallOneOfDialog({ kinds, onClose }: Props) {
         </DialogHeader>
         <div className="flex flex-col gap-2">
           {(kinds ?? []).map((kind) => (
-            <CapabilityHarnessRow key={kind} kind={kind} selected={selectedKind === kind} onSelected={onClose} />
+            <CapabilityHarnessRow
+              key={kind}
+              kind={kind}
+              selected={selectedKind === kind}
+              onSelected={onClose}
+              onClose={onClose}
+            />
           ))}
         </div>
       </DialogContent>

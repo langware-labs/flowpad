@@ -66,11 +66,11 @@ export function useSetLifetimeCap() {
 
 /** Make the org the paying entity on its own key; the caller sets the key afterward with
  *  `llmEndpointsService.setCredential` on the returned `endpoint_id`. */
-export function useSetupOrgRoot() {
+export function useSetPayingProvider() {
   const invalidate = useInvalidateBudgets();
   return useMutation({
     mutationFn: ({ orgId, provider, baseUrl }: { orgId: string; provider: string; baseUrl?: string }) =>
-      budgetsService.setupOrgRoot(orgId, { provider, base_url: baseUrl }),
+      budgetsService.setPayingProvider(orgId, { provider, base_url: baseUrl }),
     onSuccess: () => invalidate(),
   });
 }
@@ -90,13 +90,15 @@ export function useAddPeople() {
   return useMutation({
     mutationFn: ({
       poolId,
+      teamId,
       drafts,
       existing,
     }: {
       poolId: string;
+      teamId: string;
       drafts: readonly PersonDraft[];
       existing: readonly MemberBudget[];
-    }) => addPeopleToTeam(poolId, drafts, existing),
+    }) => addPeopleToTeam(poolId, teamId, drafts, existing),
     onSuccess: () => invalidate(),
   });
 }
