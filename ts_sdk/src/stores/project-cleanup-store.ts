@@ -12,10 +12,15 @@
  *
  * Lives in the SDK rather than the app because `useWarnings` is an SDK hook and
  * cannot reach into `ui/src`.
+ *
+ * FRAMEWORK-FREE, and it has to stay that way: this module is re-exported from
+ * the SDK barrel, which is built into `/sdk/flowpad-sdk.js` and served to plain
+ * static pages. One `import … from 'react'` here puts a bare specifier in that
+ * bundle and every such page fails to boot. The React binding lives in
+ * `react/hooks/use-cleanup-summary`.
  */
 
 import type { CleanupSummary } from '../entities/compute-node/system-profile';
-import { useSyncExternalStore } from 'react';
 
 let summary: CleanupSummary | null = null;
 const listeners = new Set<() => void>();
@@ -72,15 +77,4 @@ export function shouldWarnAboutEmptyProjects(next: CleanupSummary | null): boole
 export function __resetCleanupStoreForTest(): void {
   summary = null;
   listeners.clear();
-}
-
-/**
- * The last counts, re-rendering when a scan updates them.
- *
- * `useSyncExternalStore` rather than a `useState` + `useEffect` pair, matching
- * every sibling store (`activity-store`, `pending-actions-store`): it is one
- * call instead of two hooks, and it cannot tear during a concurrent render.
- */
-export function useCleanupSummary(): CleanupSummary | null {
-  return useSyncExternalStore(subscribeToCleanupSummary, getCleanupSummary, getCleanupSummary);
 }

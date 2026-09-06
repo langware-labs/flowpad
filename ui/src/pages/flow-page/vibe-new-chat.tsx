@@ -6,7 +6,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
+import { VibeModelSelect, useVibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
 
 /**
@@ -22,7 +22,7 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
+  const [model, setModel] = useVibeModelTier();
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 

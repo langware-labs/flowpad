@@ -1,4 +1,5 @@
-import { capabilityManager, WorkerModelTier } from '@sdk';
+import { capabilityManager, PrefKey, WorkerModelTier } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import {
   Select,
   SelectContent,
@@ -35,9 +36,15 @@ export function normalizeVibeModelTier(value: unknown): VibeModelTier {
   return VIBE_MODEL_DEFAULT;
 }
 
+/** What the picker can emit: one of the three tiers, or a custom model NAME from
+ *  the harness's `Capability.model_map`. Typing this as `VibeModelTier` alone was
+ *  a lie the component papered over with a cast — a custom name is a legal value
+ *  and flows through to `cli_config.model`, which the backend resolves. */
+export type VibeModelChoice = VibeModelTier | (string & {});
+
 interface VibeModelSelectProps {
   value: unknown;
-  onChange: (value: VibeModelTier) => void | Promise<void>;
+  onChange: (value: VibeModelChoice) => void | Promise<void>;
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
@@ -45,23 +52,34 @@ interface VibeModelSelectProps {
 }
 
 /** Custom named model options defined for the default harness (its
- *  Capability.model_map, union of non-tier keys across providers). Read from the
- *  cached capability snapshot; empty until capabilities are loaded, in which case
- *  the selector behaves exactly as the tier-only version. */
+ *  Capability.model_map, union of non-tier keys across providers).
+ *
+ *  SUBSCRIBED, not read once: capabilities load asynchronously, and on a cold
+ *  surface (the Vibe home hero) the snapshot is still empty at mount, so a
+ *  read-once effect with `[]` deps returned `resolvedKind === null` and never
+ *  ran again — the custom options were permanently invisible there. Recompute
+ *  whenever the manager says something changed. */
 function useCustomModelOptions(): string[] {
   const [options, setOptions] = useState<string[]>([]);
   useEffect(() => {
-    const kind = capabilityManager.getSnapshot('harness').resolvedKind;
-    if (!kind) return;
-    const map = capabilityManager.getSnapshot(kind).capability?.model_map ?? {};
-    const tiers = VIBE_MODEL_TIERS as readonly string[];
-    const names = new Set<string>();
-    for (const perProvider of Object.values(map)) {
-      for (const name of Object.keys(perProvider ?? {})) {
-        if (!tiers.includes(name)) names.add(name);
+    const recompute = () => {
+      const kind = capabilityManager.getSnapshot('harness').resolvedKind;
+      if (!kind) return;
+      const map = capabilityManager.getSnapshot(kind).capability?.model_map ?? {};
+      const tiers = VIBE_MODEL_TIERS as readonly string[];
+      const names = new Set<string>();
+      for (const perProvider of Object.values(map)) {
+        for (const name of Object.keys(perProvider ?? {})) {
+          if (!tiers.includes(name)) names.add(name);
+        }
       }
-    }
-    setOptions([...names]);
+      // Same contents => same array, so this cannot loop through the subscription.
+      setOptions((prev) =>
+        prev.length === names.size && prev.every((n) => names.has(n)) ? prev : [...names],
+      );
+    };
+    recompute();
+    return capabilityManager.subscribe(recompute);
   }, []);
   return options;
 }
@@ -91,7 +109,7 @@ export function VibeModelSelect({
   return (
     <Select
       value={selected}
-      onValueChange={(next) => void onChange(resolveValue(next) as VibeModelTier)}
+      onValueChange={(next) => void onChange(resolveValue(next))}
       disabled={disabled}
     >
       <SelectTrigger
@@ -123,4 +141,22 @@ export function VibeModelSelect({
       </SelectContent>
     </Select>
   );
+}
+
+/**
+ * The Vibe build tier, persisted.
+ *
+ * One owner for a value three surfaces need (both hero composers and, in time,
+ * the workspace chat pane). It is a `usePreference` rather than `useState`
+ * because picking *Fast* is usually a COST decision, and a preference that
+ * silently reverts to the expensive default on the next mount is worse than
+ * none — a user who chose Fast then got billed for Balanced would be right to
+ * call that a bug.
+ */
+export function useVibeModelTier(): [VibeModelChoice, (next: VibeModelChoice) => void] {
+  const [stored, setStored] = usePreference<string>(PrefKey.VIBE_MODEL_TIER);
+  // A custom model name passes through untouched; anything unrecognised (an
+  // absent pref, a tier that no longer exists) normalizes to the default.
+  const value: VibeModelChoice = typeof stored === 'string' && stored ? stored : VIBE_MODEL_DEFAULT;
+  return [value, (next) => setStored(next)];
 }

@@ -201,6 +201,26 @@ Read the matching reference before making that kind of change:
 - **Deploying to Vercel + Supabase, Claude Code GitHub Action** →
   [references/deploy.md](references/deploy.md)
 
+## Before you show it: prove the page BOOTS
+
+An HTTP 200 is not a working app. A dev server answers 200 while the page throws
+on load — a missing component, a module the browser cannot resolve — and the
+user gets a blank or half-rendered pane while you report success. Two real runs
+ended that way: one imported `@/components/ui/input` that did not exist, the
+other hit a module the page could not resolve. Both returned 200 the whole time.
+
+So before `flow show webapp`, load the page and check it is free of errors:
+
+```bash
+# The check that matters: no console errors, and the app's own markup rendered.
+uv run --with playwright python "$SKILL_DIR/../web-tester/runner.py" --url http://localhost:<fe-port>
+```
+
+If the runner is unavailable, `curl` the page and grep the served HTML for the
+element your app actually renders — never settle for the status code alone.
+Fix what you find and re-check BEFORE presenting. Report a failure you could not
+fix; do not present a broken app as done.
+
 ## IMPORTANT: show the running app to the user
 
 When running inside FlowPad, as soon as the frontend dev server is up, present
