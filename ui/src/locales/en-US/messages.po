@@ -4423,8 +4423,8 @@ msgid "Copy as log"
 msgstr "Copy as log"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#~ msgid "Copy attachment id"
-#~ msgstr "Copy attachment id"
+msgid "Copy attachment id"
+msgstr "Copy attachment id"
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -14971,8 +14971,8 @@ msgid "Reconnected."
 msgstr "Reconnected."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#~ msgid "Record updated"
-#~ msgstr "Record updated"
+msgid "Record updated"
+msgstr "Record updated"
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
