@@ -106,10 +106,14 @@ async def resolve_display_target(
             entity = await Entity.get_by_asset_ref(lookup)
             if entity is not None and getattr(entity, "id", None):
                 return {**_entity_payload(entity), "path": resolved}
-        if discover:
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+
+        if discover and _SR.type_for(resolved, placed_only=True):
             # Fresh asset (created seconds ago, not yet indexed): resolve and
             # index just this one so the bespoke editor renders instead of a
-            # raw file view.
+            # raw file view. Only for a path whose NAME or declared MOUNT says
+            # what it is — a scratch ``.md`` in a working directory is a file
+            # the walk would never index, and showing it must not mint a row.
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
             try:

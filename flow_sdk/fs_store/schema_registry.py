@@ -1061,7 +1061,7 @@ class SchemaRegistry:
         return str(declared).strip() if declared else None
 
     @classmethod
-    def type_for(cls, path: "Path | str") -> str | None:
+    def type_for(cls, path: "Path | str", *, placed_only: bool = False) -> str | None:
         """THE registry-wide path → type classifier (name + placement + stat;
         no walk roots). Precedence:
 
@@ -1084,6 +1084,14 @@ class SchemaRegistry:
         A name shared by two types at one tier is ``None``, never registration
         order. Every tier is read off the declarations (``shape``, ``asset_class``
         / ``harness`` / ``family``); there is no hand-written path table.
+
+        ``placed_only`` drops the last two tiers — the ones that answer from the
+        EXTENSION alone, wherever the file sits. What is left is the confident
+        half: a path whose name or declared mount says what it is. A caller
+        that MINTS on the answer wants this, because "every ``.md`` is a
+        markdown asset" is true of the type system and false of the walk, which
+        only indexes a loose ``.md`` under a declared mount. ``flow show`` on a
+        scratch file must leave it a plain file, not mint a row for it.
         """
         p = Path(path)
         tables = cls._shape_tables()
@@ -1113,8 +1121,25 @@ class SchemaRegistry:
             return placed[0].type_name
         if placed:
             declared = cls._declared_type(p)
-            if declared in {info.type_name for info in placed}:
+            names = {info.type_name for info in placed}
+            if declared in names:
                 return declared
+            # Several types share the mount and the document declares nothing
+            # (``docs`` is both markdown and markdown_index). The one that does
+            # NOT need a declaration is the answer — the same type the
+            # extension tier would give — so a plain ``docs/guide.md`` is a
+            # markdown here too, not an ambiguity that falls through.
+            fallback = cls._by_extension(suffix, tables)
+            if fallback in names:
+                return fallback
+        if placed_only:
+            return None
+        return cls._by_extension(suffix, tables)
+
+    @classmethod
+    def _by_extension(cls, suffix: str, tables: "_ShapeTables") -> str | None:
+        """The type an extension names on its own, wherever the file sits: a
+        unique walked declaration, else ``markdown`` for ``.md``."""
         if suffix != ".md":
             by = tables.by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
