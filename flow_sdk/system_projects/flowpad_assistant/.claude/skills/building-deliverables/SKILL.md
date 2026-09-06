@@ -61,9 +61,34 @@ small game, a chart page) → fast path, NOT the full template:
    **html-builder** skill — it owns no-build static pages and loads **frontend-design**
    for the aesthetic direction, which is what stops this coming out as bare unstyled text.
 2. Get a port and serve on it — never pick a number yourself (other builds are serving
-   on this machine too). One Bash call:
-   `PORT=$(flow app free-dev-port --bare); (cd <dir> && python3 -m http.server $PORT >/dev/null 2>&1 &); echo $PORT`
-3. `flow show webapp --port <the port it echoed>`
+   on this machine too). **Resolve the interpreter, start, then PROVE it answers** — a
+   background-launch receipt reports the SHELL starting, not the server listening, so a
+   dead interpreter is indistinguishable from a live server until something fetches a page.
+   Never name `python3`: on stock Windows it is a dangling Store alias that fails to launch
+   and leaves `$LASTEXITCODE` stale, i.e. an inherited success.
+
+   POSIX (bash/zsh):
+   ```bash
+   PORT=$(flow app free-dev-port --bare)
+   (cd <dir> && "$(command -v python3 || command -v python)" -m http.server $PORT >/dev/null 2>&1 &)
+   curl -fsS "http://localhost:$PORT/index.html" > /dev/null && echo "up on $PORT"
+   ```
+
+   Windows (PowerShell — `&&`, `>/dev/null 2>&1 &`, `head` and `curl -s` do NOT work here):
+   ```powershell
+   $PORT = flow app free-dev-port --bare
+   py -3 --version                                    # resolve BEFORE use; must exit 0
+   Start-Process -FilePath "py" -ArgumentList "-3","-m","http.server",$PORT,"--directory","<dir>" `
+                 -WindowStyle Hidden -PassThru        # keep the PID it returns
+   (Invoke-WebRequest -Uri "http://localhost:$PORT/index.html" -UseBasicParsing).StatusCode
+   ```
+3. Only once that fetch returned 200 / the page body: `flow show webapp --port <that port>`.
+   If it did not, STOP and report the failure — do not retry blind, and do not call
+   `flow show`. The real error is in `~/.flow/app-open-logs/`; read it.
+
+**Never kill processes by name.** `pkill -f python` / `Get-Process python | Stop-Process -Force`
+takes down Flowpad's own Python backend along with everything else, and every `flow` command
+fails from that moment on. Kill only a PID you started and recorded.
 
 **Image deliverable** ("find/search an image of X and show it", "download this picture",
 a generated diagram/screenshot) → get the image file into the project directory, then
