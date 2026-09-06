@@ -197,25 +197,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
     }
   })();
 
-  // ONE init flow: a caller that does not know to run the optional half gets no
-  // live channel at all -- `watchQuery` registers a watch and nothing ever opens
-  // the socket that pushes to it. Scheduled, never awaited: awaiting would
-  // serialise it into the critical path. A caller that wants it sooner still
-  // calls `asyncSdkInit()` -- `asyncInitPromise ??=` makes that the same single
-  // invocation.
-  void initPromise.then(scheduleAsyncSdkInit);
-
   return initPromise;
-}
-
-/** Run `asyncSdkInit` once the caller is idle, so it lands after first paint. */
-function scheduleAsyncSdkInit(): void {
-  const run = () => {
-    void asyncSdkInit();
-  };
-  const idle = (globalThis as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-  if (typeof idle === 'function') idle(run);
-  else setTimeout(run, 0);
 }
 
 /** Optional services. The mounted UI calls this after paint; never await it in a loader. */

@@ -1553,6 +1553,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       throw new Error('QueryRequest must have a callback for watchQuery');
     }
 
+    // A watch is push-only: the fetch below seeds it, and every LATER change
+    // arrives over the WebSocket. Registering one without a socket is the silent
+    // failure this guards -- the caller gets an unsubscribe handle, the list
+    // renders once, and it never updates again. Served micro-apps hit exactly
+    // that: `initSdk` starts no subscriptions, so nothing opened the channel.
+    //
+    // Asked for HERE, by the thing that needs it, rather than at boot: `connect`
+    // short-circuits on OPEN/CONNECTING so repeat calls are free, a page that
+    // never watches anything still opens no socket, and it cannot be defeated by
+    // init ordering. Not awaited -- the seed fetch must not wait on a handshake.
+    void ConnectionManager.getInstance().connect();
+
     // Check if a WatchedQuery exists
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     let queryResult: U[];
