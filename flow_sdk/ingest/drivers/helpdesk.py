@@ -30,6 +30,7 @@ from typing import Any
 
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.transport.hub_http import rows_of
 from flow_sdk.ingest.driver import (
     FetchResult,
     IngestDriver,
@@ -40,6 +41,7 @@ from flow_sdk.ingest.driver import (
     identity_stamped,
     stamp_identity,
 )
+from flow_sdk.ingest.drivers._watermark import Watermark
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
 from flow_sdk.schema.types import EntityType
@@ -62,6 +64,13 @@ class HelpdeskDriver(IngestDriver):
     #: Chat-grade while watched, like telegram.
     attention_poll_seconds = 5
 
+    def __init__(self) -> None:
+        #: Per source, the pool's `(message_count, updated_at)` per ticket as
+        #: of the last `segments` call — `fetch` skips a ticket whose pair has
+        #: not moved, so a watched desk costs one GET per tick, not one per
+        #: ticket. Memory only: the pool is re-read every pass anyway.
+        self._pool_stamps: dict[str, dict[str, str]] = {}
+
     def channel_for(self, source) -> str:
         return CHANNEL
 
@@ -79,12 +88,15 @@ class HelpdeskDriver(IngestDriver):
         desk = self._desk(source)
         rows = await self._hub_get(EntityType.PROJECT, desk, "helpdesk_conversations")
         refs: list[SegmentRef] = []
-        for row in _rows(rows):
+        stamps: dict[str, str] = {}
+        for row in rows_of(rows):
             conv_id = str(row.get("conversation_id") or "").strip()
             if not conv_id:
                 continue
             label = str(row.get("title") or row.get("preview") or "").strip()[:80] or conv_id
             refs.append(SegmentRef(key=conv_id, label=label))
+            stamps[conv_id] = f"{row.get('message_count') or 0}:{row.get('updated_at') or ''}"
+        self._pool_stamps[str(source.id)] = stamps
         return refs
 
     # ── fetch: one ticket's messages ─────────────────────────────────────────
@@ -100,62 +112,51 @@ class HelpdeskDriver(IngestDriver):
         """
         await self._ensure_identity(source)
         state = dict(cursor.state or {})
-        floor = str(state.get("high_water") or "")
-        seen_at_floor = set(state.get("boundary_ids") or [])
-
         conv_id = cursor.segment_key
+
+        # The pool row already says whether the ticket moved; a ticket that
+        # did not is one GET saved.
+        pool_stamp = self._pool_stamps.get(str(source.id), {}).get(conv_id, "")
+        if pool_stamp and pool_stamp == state.get("pool_stamp"):
+            return FetchResult(items=[], next_state=state, high_water=state.get("high_water"), unchanged=True)
+
+        mark = Watermark.from_state(state)
         children = await self._hub_get(EntityType.CONVERSATION, conv_id, "flow_message")
-
         items: list[SourceItemSpec] = []
-        high_water = floor
-        boundary_ids: list[str] = list(seen_at_floor) if floor else []
-        for fm in sorted(_rows(children), key=_stamp_of):
+        for fm in sorted(rows_of(children), key=_stamp_of):
             fm_id = str(fm.get("id") or "").strip()
-            if not fm_id:
-                continue
             stamp = _stamp_of(fm)
-            if floor and stamp:
-                if stamp < floor:
-                    continue
-                if stamp == floor and fm_id in seen_at_floor:
-                    continue
-            items.append(self._to_item(source, conv_id, cursor, fm))
-            if stamp > high_water:
-                high_water, boundary_ids = stamp, [fm_id]
-            elif stamp == high_water:
-                boundary_ids.append(fm_id)
+            if not fm_id or not mark.is_new(stamp, fm_id):
+                continue
+            items.append(self._to_item(source, conv_id, fm_id, fm))
+            mark.advance(stamp, fm_id)
 
-        if high_water:
-            state["high_water"] = high_water
-            state["boundary_ids"] = boundary_ids
-        return FetchResult(items=items, next_state=state, high_water=high_water or None, unchanged=not items)
+        if pool_stamp:
+            state["pool_stamp"] = pool_stamp
+        return FetchResult(items=items, next_state=mark.into(state), high_water=mark.high_water or None, unchanged=not items)
 
-    def _to_item(self, source, conv_id: str, cursor: SegmentCursorView, fm: dict) -> SourceItemSpec:
-        """One hub FlowMessage → the shared envelope, with the adoption hints."""
+    def _to_item(self, source, conv_id: str, fm_id: str, fm: dict) -> SourceItemSpec:
+        """One hub FlowMessage → the shared envelope, with the adoption hints.
+        The ticket's hub id is the thread key: a uuid, unique across desks, so
+        `(channel, thread_key, owner)` needs no desk prefix."""
         sender_id = str(fm.get("sender_id") or "").strip()
         return SourceItemSpec(
             data_source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
             segment_key=conv_id,
-            segment_label=_segment_label(cursor, conv_id),
-            external_id=str(fm.get("id") or ""),
+            segment_label=conv_id,
+            external_id=fm_id,
             name="",
             body=str(fm.get("text") or ""),
             occurred_at=str(fm.get("created_date") or "") or None,
             author_external_id=sender_id or None,
             author_display=str(fm.get("sender_name") or "") or (sender_id or None),
-            thread_key=self._thread_key(source, conv_id),
+            thread_key=conv_id,
             conversation_id=conv_id,
-            message_id=str(fm.get("id") or ""),
+            message_id=fm_id,
             raw=fm,
         )
-
-    @classmethod
-    def _thread_key(cls, source, conv_id: str) -> str:
-        """The ticket, SCOPED TO THE DESK. `(channel, thread_key, owner)` is the
-        thread's natural key and every desk reports the same channel."""
-        return f"{cls._desk(source)}:{conv_id}"
 
     # ── send: pick up, then answer ───────────────────────────────────────────
 
@@ -170,27 +171,23 @@ class HelpdeskDriver(IngestDriver):
         conversation_id: str = "",
         in_reply_to: str = "",
     ) -> SendOutcome:
-        """Answer a ticket. Joins it first when this identity is not yet a
-        participant — the hub fans a ticket's messages out to participants
-        only, so pickup is what makes the answer (and the guest's next word)
-        reach this machine.
+        """Answer a ticket: pick it up, then post. The hub fans a ticket's
+        messages out to participants only, so pickup is what makes the answer
+        (and the guest's next word) reach this machine. Pickup is idempotent
+        on the hub — a participant picking up again is a no-op — so it is
+        simply always sent rather than paid for with a read first.
 
         MUST NOT raise `SourceError` — that health parks the DataSource, and
         one failed reply must never stop the desk polling. A `HubError`
         propagates to the outbound logger instead.
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_get, hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
         ticket = (to or conversation_id or "").strip()
         if not ticket:
             raise ValueError("a help-desk reply needs the ticket's conversation id")
 
-        me = _hub_user_id()
-        conv = await hub_get(EntityType.CONVERSATION, ticket) or {}
-        participants = {str(p.get("user_id") or "") for p in (conv.get("participants") or []) if isinstance(p, dict)}
-        if me and me not in participants:
-            await hub_post(EntityType.CONVERSATION, {}, ticket, "pickup")
-
+        await hub_post(EntityType.CONVERSATION, {}, ticket, "pickup")
         data = await hub_post(EntityType.CONVERSATION, {"text": text, "conversation_id": ticket}, ticket, "add_message")
         # `recorded=False`: the hub files the reply into the ticket and the next
         # poll ingests it through the ordinary path, onto the hub's own id.
@@ -203,11 +200,11 @@ class HelpdeskDriver(IngestDriver):
         every desk adopted into a local project. Typing an id still works."""
         if field != "desk_project_id":
             return []
-        from flow_sdk.app.actions.flow_message_action import _hub_default_helpdesk  # noqa: PLC0415
+        from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
         from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
 
         out: list[Choice] = []
-        default = await _hub_default_helpdesk()
+        default = await resolve_helpdesk()
         if default is not None:
             out.append(Choice(id=default.project_id, name="Flowpad Support", detail="the deployment's default desk"))
         try:
@@ -252,34 +249,18 @@ class HelpdeskDriver(IngestDriver):
 
 
 def _hub_user_id() -> str:
-    """The logged-in hub user, or "" when signed out."""
+    """The logged-in hub user, or "" when signed out — the instance config's
+    user pointer, the same read `load_credentials` starts from."""
     try:
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
 
-        creds = load_credentials()
-        return str(((creds.user or {}) if creds else {}).get("id") or "")
+        return str((get_user() or {}).get("id") or "")
     except Exception:  # noqa: BLE001
         return ""
 
 
-def _rows(payload: Any) -> list[dict]:
-    """The hub answers a list, or a dict wrapping one — the same tolerance
-    `_fetch_conversation_messages` has."""
-    if isinstance(payload, list):
-        rows = payload
-    elif isinstance(payload, dict):
-        rows = next((v for k in ("data", "items", "results") if isinstance((v := payload.get(k)), list)), [])
-    else:
-        rows = []
-    return [r for r in rows if isinstance(r, dict)]
-
-
 def _stamp_of(fm: dict) -> str:
     return str(fm.get("updated_date") or fm.get("created_date") or "")
-
-
-def _segment_label(cursor: SegmentCursorView, conv_id: str) -> str:
-    return str(getattr(cursor, "label", "") or "") or conv_id
 
 
 def _as_source_error(exc: HubError) -> SourceError:
@@ -291,9 +272,7 @@ def _as_source_error(exc: HubError) -> SourceError:
     the two answers a desk gives a person: 401 log in, 403 you are not a member.
     """
     if exc.status_code == 0:
-        if "not configured" in (exc.reason or ""):
-            return SourceError.config("hub_not_configured", exc.reason)
-        return SourceError.transient("network", exc.reason)
+        return SourceError.for_no_status(exc.reason, not_configured_code="hub_not_configured")
     if exc.status_code in (401, 403):
         # The hub's authorizer answers 401 "Forbidden access" to a caller with
         # no role on the target — deliberately not distinguishing "no such

@@ -68,16 +68,29 @@ export async function hubLogin(email: string, password: string): Promise<HubLogi
   return { token, user: body.data.user ?? {} };
 }
 
+/** One authenticated hub call, unwrapped to its `data`. `path` is below
+ *  `/api/v1`; a `body` makes it a POST. Throws on a non-2xx with the hub's
+ *  answer in the message, so a failing setup step names itself. */
+export async function hubJson(token: string, path: string, body?: unknown, method?: string): Promise<any> {
+  const r = await fetch(`${HUB_URL}/api/v1${path}`, {
+    method: method ?? (body === undefined ? 'GET' : 'POST'),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const parsed = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`${method ?? 'GET/POST'} ${path} → ${r.status}: ${JSON.stringify(parsed).slice(0, 200)}`);
+  return parsed.data;
+}
+
 /** Read a shared conversation's title straight from the hub (authenticated GET).
  *  Used by the reflection-proxy tests to verify a reflected rename landed on the
  *  hub, independent of any backend↔backend fan-out. Returns null on non-200. */
 export async function hubConversationTitle(token: string, convId: string): Promise<string | null> {
-  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) return null;
-  const body = (await r.json()) as { data?: { title?: string } };
-  return body.data?.title ?? null;
+  try {
+    return (await hubJson(token, `/graph/conversation/${convId}`))?.title ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Read the hub's watcher list for a conversation (the GET side of the `watch`
@@ -85,12 +98,29 @@ export async function hubConversationTitle(token: string, convId: string): Promi
  *  registered a hub watch (e.g. via BrowserContextWatch). Returns null on
  *  non-200, else the (possibly empty) list. */
 export async function hubConversationWatchers(token: string, convId: string): Promise<unknown[] | null> {
-  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/watch`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) return null;
-  const body = (await r.json()) as { data?: unknown[] };
-  return Array.isArray(body.data) ? body.data : null;
+  try {
+    const data = await hubJson(token, `/graph/conversation/${convId}/watch`);
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A help desk owned by `token`'s user for one test run: a fresh project with
+ *  `enable_helpdesk` (what stamps the guest role). `dispose` deletes it and
+ *  throws on a leak, so a stranded desk is loud. */
+export async function createDesk(token: string, displayName: string): Promise<{ deskId: string; dispose: () => Promise<void> }> {
+  const project = await hubJson(token, '/graph/project', { name: `desk-${Date.now()}` });
+  const deskId: string = project.id;
+  await hubJson(token, `/graph/project/${deskId}/enable_helpdesk`, { enabled: true, display_name: displayName, mode: 'human' });
+  return {
+    deskId,
+    dispose: async () => {
+      await hubJson(token, `/graph/project/${deskId}`, {}, 'DELETE').catch((e) => {
+        throw new Error(`LEAKED desk project ${deskId}: ${String(e)}`);
+      });
+    },
+  };
 }
 
 export function getAliceCreds(): Promise<{ email: string; password: string } | null> {

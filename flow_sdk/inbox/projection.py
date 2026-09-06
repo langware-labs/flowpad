@@ -52,6 +52,16 @@ def _thread_lock():
     return loop_lock(_thread_locks)
 
 
+async def find_thread(channel: str, key: str, owner):
+    """The thread on this natural key, read-only: the owner's row, else the
+    pre-owner row a legacy install wrote (`resolve_thread` adopts that one;
+    a reader just answers from it)."""
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner)
+    return thread if thread is not None else await MessageThread.find_unowned(channel, key)
+
+
 async def resolve_thread(channel: str, key: str, owner, *, title: str, conversation_id: str = ""):
     """The thread for ``(owner, channel, key)`` — found, adopted, or minted.
 
@@ -77,14 +87,12 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str, conversat
     if thread is not None:
         return thread
     async with _thread_lock():
-        thread = await MessageThread.find_existing(channel, key, owner)
+        thread = await find_thread(channel, key, owner)
         if thread is not None:
+            if not thread.owner:
+                thread.owner = owner
+                await thread.save(notify=False)
             return thread
-        legacy = await MessageThread.find_unowned(channel, key)
-        if legacy is not None:
-            legacy.owner = owner
-            await legacy.save(notify=False)
-            return legacy
         # Both ids are ordinary uuid4s, minted here at birth and looked up ever
         # after. `conversation_id` is authoritative from this moment: a merge
         # repoints it, which is the whole reason nothing re-derives it from the
@@ -230,7 +238,6 @@ async def project_source_item(
     """
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -273,10 +280,10 @@ async def project_source_item(
     # reconcile sweep's bulk proof) skips only the unlocked pre-check —
     # inside the lock the row is always re-asked, because any proof taken
     # before the lock is stale by definition.
-    existing_fm = None if known_unplaced else await _placed_message(item, FlowMessage)
+    existing_fm = None if known_unplaced else await _placed_message(item)
     if existing_fm is None:
         async with _thread_lock():
-            existing_fm = await _placed_message(item, FlowMessage)
+            existing_fm = await _placed_message(item)
             if existing_fm is None:
                 # First placement stays UNDER the lock — the birth is the race.
                 return await _place_message(
@@ -312,16 +319,17 @@ def _origins(item, source, channel: str, key: str):
     return origin, origin_local
 
 
-async def _placed_message(item, FlowMessage):
-    """The row this item already landed on, if any: by its reference column,
-    else — for a record carrying a `message_id` hint — the hub-mirrored row of
-    that id, which the mirror may have written first. Either way the caller
-    re-projects onto it; a mirrored row is CLAIMED below (`_place_message`
-    heals the projection-owned fields it lacks)."""
-    row = await FlowMessage.get_one({"source_item_id": str(item.id)})
-    if row is None and getattr(item, "message_id", None):
-        row = await FlowMessage.get_one({"id": str(item.message_id)})
-    return row
+async def _placed_message(item):
+    """The row this item already landed on, if any. A record carrying a
+    `message_id` hint can only ever be on the row of that id — `_place_message`
+    mints with it, and the hub mirror may have written it first — so that is
+    the one query; anything else is found by its reference column. Either way
+    the caller re-projects onto it; a mirrored row is CLAIMED below
+    (`_place_message` heals the projection-owned fields it lacks)."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    hinted = str(getattr(item, "message_id", "") or "")
+    return await FlowMessage.get_one({"id": hinted} if hinted else {"source_item_id": str(item.id)})
 
 
 async def _place_message(

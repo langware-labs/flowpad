@@ -21,7 +21,7 @@
  * depends on HELPDESK_STAFF_EMAILS or the deployment's canonical desk.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { getAliceCreds, getBobCreds, hubAvailable, hubLogin, HUB_URL } from './_hub';
+import { createDesk, getAliceCreds, getBobCreds, hubAvailable, hubJson, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as GUEST_INSTANCE,
@@ -41,15 +41,7 @@ let staffToken = '';
 let staffUserId = '';
 let guestToken = '';
 let deskId = '';
-
-const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
-
-async function hubJson(path: string, init: RequestInit = {}): Promise<any> {
-  const r = await fetch(`${HUB_URL}/api/v1${path}`, init);
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`${init.method ?? 'GET'} ${path} → ${r.status}: ${JSON.stringify(body).slice(0, 200)}`);
-  return body.data;
-}
+let disposeDesk: () => Promise<void> = async () => {};
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -70,28 +62,10 @@ beforeAll(async () => {
   guestToken = guestAuth.token;
 
   // Staff's own desk for this run.
-  const project = await hubJson('/graph/project', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...auth(staffToken) },
-    body: JSON.stringify({ name: `desk-source-${Date.now()}` }),
-  });
-  deskId = project.id;
-  await hubJson(`/graph/project/${deskId}/enable_helpdesk`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...auth(staffToken) },
-    body: JSON.stringify({ enabled: true, display_name: DISPLAY_NAME, mode: 'human' }),
-  });
+  ({ deskId, dispose: disposeDesk } = await createDesk(staffToken, DISPLAY_NAME));
 }, 30_000);
 
-afterAll(async () => {
-  if (!deskId) return;
-  const r = await fetch(`${HUB_URL}/api/v1/graph/project/${deskId}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', ...auth(staffToken) },
-    body: '{}',
-  });
-  expect(r.status, `LEAKED desk project ${deskId}`).toBeLessThan(400);
-});
+afterAll(() => disposeDesk());
 
 beforeEach((context: any) => {
   if (skipReason) context.skip();
@@ -117,11 +91,7 @@ describe('help desk as a message source', () => {
 
     try {
       // 2. The guest opens a ticket over the hub, as a requester's app does.
-      const ticket = await hubJson(`/graph/project/${deskId}/start_guest_conversation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...auth(guestToken) },
-        body: JSON.stringify({ text: `my printer is broken ${ts}` }),
-      });
+      const ticket = await hubJson(guestToken, `/graph/project/${deskId}/start_guest_conversation`, { text: `my printer is broken ${ts}` });
       const convId: string = ticket.id;
       expect(convId).toBeTruthy();
 
@@ -150,7 +120,7 @@ describe('help desk as a message source', () => {
       expect(sent.status, JSON.stringify(sent).slice(0, 200)).toBe('SUCCESS');
       const reply: any = await pollUntil(
         async () => {
-          const msgs: any[] = await hubJson(`/graph/conversation/${convId}/flow_message`, { headers: auth(staffToken) });
+          const msgs: any[] = await hubJson(staffToken, `/graph/conversation/${convId}/flow_message`);
           return msgs.find((m) => m.text === replyText) ?? null;
         },
         10_000,
@@ -158,7 +128,7 @@ describe('help desk as a message source', () => {
       );
       expect(reply.sender_id).toBe(staffUserId);
       expect(reply.sender_name).toBe(DISPLAY_NAME);
-      const pool: any[] = await hubJson(`/graph/project/${deskId}/helpdesk_conversations`, { headers: auth(staffToken) });
+      const pool: any[] = await hubJson(staffToken, `/graph/project/${deskId}/helpdesk_conversations`);
       expect(pool.find((r) => r.conversation_id === convId)?.picked_up).toBe(true);
 
       // 4. The sent copy ingests onto the hub's id — no twin.
