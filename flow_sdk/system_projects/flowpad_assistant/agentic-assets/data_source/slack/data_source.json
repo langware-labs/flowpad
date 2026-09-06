@@ -17,6 +17,13 @@
       "placeholder": "C0123456789",
       "pattern": "^[CGD][A-Z0-9]{6,}$",
       "hint": "Pick from the channels this workspace has, or type IDs one per line. The ID is what is stored \u2014 a renamed channel keeps its ID, and keying on the name would fork its history."
+    },
+    "allowed_senders": {
+      "type": "lines",
+      "required": false,
+      "label": "Allowed senders",
+      "placeholder": "U0123456789",
+      "hint": "Who may drive the owning agent from this channel \u2014 Slack member IDs, one per line. Empty allows nobody."
     }
   }
 }
