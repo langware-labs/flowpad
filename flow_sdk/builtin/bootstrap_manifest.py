@@ -21,6 +21,15 @@ it stays a link to the vendor's repo rather than a copy inside the customer's.
 ``helpdesks`` remains supported as the legacy URL-only spelling. New manifests
 should use ``content_projects`` so they can pin the branch and context scope.
 
+Not every field is one-shot, and the file is misread as template-only. The
+setup-time reading above is one of TWO patterns here: ``content_projects`` is
+re-read by ``reconcile-bootstrap`` and ``autolaunch_journey`` by the journey
+opener, both long after setup, from a clone that KEPT its remote.
+``always_use_skills`` is of that second kind — a standing declaration read live
+on the tracked checkout, not an instruction consumed once. That is the whole
+reason it lives here rather than in local settings or on the Project row: it has
+to reach whoever receives the project over git, and only the repo travels.
+
 Read defensively — this file comes from a third-party repo, and a malformed or
 hostile manifest must degrade to "declares nothing" rather than fail the
 project setup that is already half done. It is a *claim*, never a
@@ -43,6 +52,9 @@ BOOTSTRAP_FILENAME = "bootstrap.json"
 # unbounded series of clones.
 MAX_HELPDESKS = 8
 MAX_CONTENT_PROJECTS = 8
+# A project whose every prompt must carry a dozen skills has not chosen; it has
+# listed. Bounded so a manifest cannot bloat every system prompt in the project.
+MAX_ALWAYS_USE_SKILLS = 8
 
 
 @dataclass(frozen=True)
@@ -61,9 +73,50 @@ class BootstrapManifest:
     helpdesks: tuple[str, ...] = ()
     content_projects: tuple[BootstrapContentProject, ...] = ()
     autolaunch_journey: Optional[str] = None
+    #: Skills every session in this project should apply without being asked.
+    #:
+    #: A project's skills are otherwise only OFFERED to the worker — their name
+    #: and description are listed in context, and the model decides. For a
+    #: project whose whole point IS the skill (a help desk, a triage flow), that
+    #: is the wrong default: the author wants it applied, and telling every
+    #: recipient "remember to say `use triage-ticket`" does not survive being
+    #: shared. Declaring it here travels with the repo, which is the only thing
+    #: that reaches someone who received the project over git.
+    always_use_skills: tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
-        return bool(self.helpdesks or self.content_projects or self.autolaunch_journey)
+        return bool(
+            self.helpdesks or self.content_projects or self.autolaunch_journey or self.always_use_skills
+        )
+
+
+def _capped_string_list(raw: dict, key: str, cap: int) -> tuple[str, ...]:
+    """A manifest's list-of-strings field: stripped, de-duplicated, capped.
+
+    Shared by the two string-list declarations because the DEFENSIVE part is
+    what matters and must not diverge between them. In particular the
+    ``isinstance(list)`` guard: a string is iterable, so a bare
+    ``"triage-ticket"`` would otherwise be read as thirteen one-character
+    entries rather than rejected. Anything that is not a list of strings
+    declares nothing.
+
+    ``content_projects`` deliberately keeps its own loop — its entries are
+    objects with a multi-field identity, and folding that in here would add
+    parameters instead of removing duplication.
+    """
+    out: list[str] = []
+    declared = raw.get(key)
+    for entry in declared if isinstance(declared, list) else []:
+        if not isinstance(entry, str):
+            continue
+        value = entry.strip()
+        # De-duplicated so a repeat cannot produce a repeated effect; validity is
+        # the consuming path's job, not ours.
+        if value and value not in out:
+            out.append(value)
+        if len(out) >= cap:
+            break
+    return tuple(out)
 
 
 def bootstrap_manifest_path(repo_root: Path) -> Path:
@@ -84,21 +137,7 @@ def read_bootstrap_manifest(repo_root: Path) -> BootstrapManifest:
     if not isinstance(raw, dict):
         return BootstrapManifest()
 
-    desks: list[str] = []
-    # `isinstance(list)` rather than a bare truthiness check: a string is
-    # iterable, so `"https://x"` would otherwise be read as nine one-character
-    # "URLs" instead of being rejected.
-    declared = raw.get("helpdesks")
-    for entry in declared if isinstance(declared, list) else []:
-        if not isinstance(entry, str):
-            continue
-        url = entry.strip()
-        # De-duplicated so a repeated URL doesn't produce a repeated prompt;
-        # validity is the attach path's job, not ours.
-        if url and url not in desks:
-            desks.append(url)
-        if len(desks) >= MAX_HELPDESKS:
-            break
+    desks = _capped_string_list(raw, "helpdesks", MAX_HELPDESKS)
 
     content_projects: list[BootstrapContentProject] = []
     seen_declarations: set[tuple[str, str, str]] = set()
@@ -132,7 +171,8 @@ def read_bootstrap_manifest(repo_root: Path) -> BootstrapManifest:
     journey = journey.strip() if isinstance(journey, str) and journey.strip() else None
 
     return BootstrapManifest(
-        helpdesks=tuple(desks),
+        helpdesks=desks,
         content_projects=tuple(content_projects),
         autolaunch_journey=journey,
+        always_use_skills=_capped_string_list(raw, "always_use_skills", MAX_ALWAYS_USE_SKILLS),
     )
