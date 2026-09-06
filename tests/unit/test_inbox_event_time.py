@@ -6,8 +6,11 @@ year-old Slack backfill read "11h ago" in the inbox. The fence:
 
 * ``FlowMessage.sent_at`` — projection-owned event time, stamped from the
   item's ``occurred_at`` on every (re)projection;
-* ONE read rule — ``event_time = sent_at or updated_date or created_date`` —
-  and every derivation (pointer ts, conversation recency, order) reads it;
+* TWO read rules, one per question — ``occurred_at = sent_at or created_date``
+  drives pointer ts and order (WHERE a message sits), while
+  ``event_time = sent_at or updated_date or created_date`` drives conversation
+  recency (WHEN it last changed). ``sent_at`` leads both, which is why a
+  projected item pins every derivation to its event time;
 * convergence — re-projecting a placed item heals a missing/drifted stamp,
   and the reconcile sweep re-projects placed-but-unstamped rows, so a plain
   reindex fixes bad data "as is", today's and any future corruption alike.
@@ -81,7 +84,8 @@ class TestEventTimeSurvivesEveryLayer:
         fm = await FlowMessage.get_by_id(fm_id)
         want = iso_to_utc(YEAR_OLD)
         assert iso_to_utc(fm.sent_at) == want, "the row carries EVENT time"
-        assert iso_to_utc(fm.event_time) == want, "the one read rule pins to it"
+        assert iso_to_utc(fm.occurred_at) == want, "the order/bubble clock pins to it"
+        assert iso_to_utc(fm.event_time) == want, "the recency clock pins to it too"
 
         conv = await _conv_for(thread_id)
         ptrs = _pointers(conv)
@@ -90,7 +94,7 @@ class TestEventTimeSurvivesEveryLayer:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
-    async def test_conversation_order_is_event_time_not_ingest_order(self):
+    async def test_conversation_order_is_occurred_at_not_ingest_order(self):
         # Ingest NEWEST first — exactly what providers hand back — and demand
         # the conversation still reads oldest-first by event time.
         src = await _source()
@@ -155,12 +159,13 @@ class TestTheOtherLanesAreUntouched:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_an_authored_message_falls_through_to_its_own_clocks(self):
-        # No sent_at → event_time is updated/created — an authored chat
-        # message behaves exactly as before (an edit still bumps recency).
+        # No sent_at → the two clocks part company exactly as intended: an
+        # edit still bumps recency, while the message's place stays put.
         fm = FlowMessage(text="typed by a person")
         await fm.save(notify=False)
         assert fm.sent_at is None
         assert iso_to_utc(fm.event_time) == iso_to_utc(fm.updated_date or fm.created_date)
+        assert iso_to_utc(fm.occurred_at) == iso_to_utc(fm.created_date)
 
 
 class TestEdgeNormalization:
