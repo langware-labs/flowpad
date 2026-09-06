@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { FlowMessage, TypeId } from '@sdk';
-import { AttachmentType, isAttachmentMissing } from '@sdk/entities/flow-message';
+import { AttachmentType, BodyStatus, isAttachmentMissing } from '@sdk/entities/flow-message';
 import { AttachmentDownloadWarning } from '@src/components/conversation/AttachmentDownloadWarning';
 import { buildSharedEntities } from '@src/components/conversation/conversation-context-aggregation';
 
@@ -13,6 +13,15 @@ const available = {
   attachment_type: AttachmentType.TYPE_ID,
   data: 'skill-22222222-2222-4222-8222-222222222222',
 };
+
+/** Mirrors the popover's own absolute-clock format. */
+const TIME_PARTS = {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+} as const;
 
 afterEach(cleanup);
 
@@ -96,5 +105,39 @@ describe('partial attachment downloads', () => {
     expect((await screen.findByRole('dialog')).textContent).toContain('Body download failed');
     fireEvent.click(screen.getByRole('button', { name: 'Download again' }));
     expect(downloads).toBe(1);
+  });
+
+  it('reports the timings and the failed request behind a short download', async () => {
+    const sentAt = new Date('2026-09-06T10:00:00Z');
+    render(
+      <AttachmentDownloadWarning
+        attachments={[missing]}
+        error={{
+          method: 'GET',
+          path: '/flow_message/11111111-1111-4111-8111-111111111111/download_body',
+          statusCode: 404,
+          message: 'Not found',
+          ts: new Date('2026-09-06T10:05:00Z').getTime(),
+        }}
+        info={{
+          messageTime: sentAt,
+          lastAttemptAt: new Date('2026-09-06T10:04:00Z').getTime(),
+          attemptCount: 2,
+          bodyStatus: BodyStatus.READY,
+          downloaded: true,
+          messageId: '11111111-1111-4111-8111-111111111111',
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Could not download' }));
+    const text = (await screen.findByRole('dialog')).textContent ?? '';
+    // The failure's own clock wins over the attempt clock (10:05, not 10:04).
+    expect(text).toContain(sentAt.toLocaleString(undefined, TIME_PARTS));
+    expect(text).toContain(new Date('2026-09-06T10:05:00Z').toLocaleString(undefined, TIME_PARTS));
+    expect(text).not.toContain(new Date('2026-09-06T10:04:00Z').toLocaleString(undefined, TIME_PARTS));
+    expect(text).toContain('404');
+    expect(text).toContain('GET /flow_message/11111111-1111-4111-8111-111111111111/download_body');
+    expect(text).toContain('2 this session');
+    expect(text).toContain('pulled, but arrived short');
   });
 });

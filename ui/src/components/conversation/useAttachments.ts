@@ -55,6 +55,18 @@ export interface AttachmentTypeChipView {
   count: number;
 }
 
+/** Session-local record of the pulls this device attempted for one message. */
+export interface DownloadAttempts {
+  /** Epoch ms of the last `download()` invocation, or null if none this session. */
+  lastAttemptAt: number | null;
+  /** Epoch ms of the last invocation that completed without throwing. */
+  lastSuccessAt: number | null;
+  /** How many pulls ran this session. */
+  count: number;
+}
+
+const NO_ATTEMPTS: DownloadAttempts = { lastAttemptAt: null, lastSuccessAt: null, count: 0 };
+
 export interface UseAttachments {
   /** FILE attachments. */
   items: AttachmentView[];
@@ -81,6 +93,14 @@ export interface UseAttachments {
   dismissError: () => void;
   /** True while a body pull triggered via `download()` is in flight. */
   downloading: boolean;
+  /** Body lifecycle on the hub — `na` means no bundle was ever uploaded, so a
+   *  retry cannot succeed. Surfaced in the missing-attachment diagnostics. */
+  bodyStatus: BodyStatus;
+  /** Session-local pull history: when `download()` was last invoked, when it
+   *  last returned without throwing, and how many times it ran. Not persisted
+   *  (no backend field records a per-device pull) — it resets on refresh, and
+   *  the diagnostics label says so. */
+  attempts: DownloadAttempts;
   /** The single download entrypoint — pulls + unpacks the body via
    *  `FlowMessage.downloadAttachments()`, which is a no-op unless body_status
    *  is READY. Chips call this; they never build a download URL themselves.
@@ -170,6 +190,7 @@ function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): Attac
  */
 export function useAttachments(fm: FlowMessage | null | undefined, messageId: string): UseAttachments {
   const [downloading, setDownloading] = useState(false);
+  const [attempts, setAttempts] = useState<DownloadAttempts>(NO_ATTEMPTS);
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
 
@@ -189,11 +210,13 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   const download = useCallback(async () => {
     if (!fm || downloading) return;
     setDownloading(true);
+    setAttempts((prev) => ({ ...prev, lastAttemptAt: Date.now(), count: prev.count + 1 }));
     try {
       // No-op unless body_status === READY (frontend gate #1). On success an
       // entity UPDATE fans out and the chips re-render as Downloaded; on failure
       // the error surfaces via useFlowMessageDownloadError, so swallow here.
       await fm.downloadAttachments();
+      setAttempts((prev) => ({ ...prev, lastSuccessAt: Date.now() }));
       dismiss();
     } catch {
       /* surfaced inline via the download-error hook */
@@ -215,6 +238,8 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
     error,
     dismissError: dismiss,
     downloading,
+    bodyStatus: fm?.body_status ?? BodyStatus.NA,
+    attempts,
     download,
   };
 }

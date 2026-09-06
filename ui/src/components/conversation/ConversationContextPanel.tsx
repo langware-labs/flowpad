@@ -406,6 +406,7 @@ function SharedContextSection({
                 isHighlighted={isRowHighlighted(rowKey, entry.originMessageIds)}
                 needsDownload={!!entry.downloadable && !entry.downloaded}
                 missing={entry.missing}
+                downloadOriginMessageId={entry.downloadOriginMessageId}
                 onDownload={
                   onDownloadEntity && entry.downloadOriginMessageId
                     ? () => onDownloadEntity(entry.downloadOriginMessageId!)
@@ -462,6 +463,9 @@ interface SharedEntityRowProps {
    *  transcript bubble's state (both read the message's `body_downloaded`). */
   needsDownload?: boolean;
   missing?: boolean;
+  /** The message whose bundle carries this entity — named in the
+   *  missing-attachment diagnostics so the row points at a message. */
+  downloadOriginMessageId?: string | null;
   /** Pull the originating message's bundle. */
   onDownload?: () => void;
 }
@@ -474,6 +478,7 @@ function SharedEntityRow({
   onOpen,
   needsDownload,
   missing,
+  downloadOriginMessageId,
   onDownload,
 }: SharedEntityRowProps) {
   const { t } = useLingui();
@@ -515,6 +520,7 @@ function SharedEntityRow({
       {missing ? (
         <AttachmentDownloadWarning
           attachments={[{ attachment_type: AttachmentType.TYPE_ID, data: typeId.toString() }]}
+          info={{ messageId: downloadOriginMessageId }}
           onDownload={onDownload}
         />
       ) : needsDownload && onDownload ? (

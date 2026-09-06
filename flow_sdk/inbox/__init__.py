@@ -36,9 +36,9 @@ from typing import TYPE_CHECKING, Optional
 from flow_sdk.inbox._locks import loop_lock, new_registry
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.inbox_manager import InboxManager
     from flow_sdk.builtin.invitation import Invitation
+    from flow_sdk.fs_store.type_id import TypeId
 
 logger = logging.getLogger(__name__)
 

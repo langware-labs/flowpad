@@ -20,10 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 import uuid
-from pathlib import Path
 
 import httpx
 import pytest
@@ -33,47 +31,11 @@ from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAct
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from tests.hub_tests._assignment import assert_auto_assigned
+from tests.hub_tests._guest import completions, guest_login
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
-REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 PROMPTS_PER_SESSION = 10
-
-
-def _read_env_local(repo: Path) -> dict[str, str]:
-    out: dict[str, str] = {}
-    path = repo / ".env.local"
-    if not path.exists():
-        return out
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        out[k.strip()] = v.strip().strip('"').strip("'")
-    return out
-
-
-async def _bob(hub_base_url: str) -> tuple[dict, str, str]:
-    app_env = _read_env_local(REPO_APP)
-    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
-    if not bob_email or not bob_pw:
-        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
-    async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})
-        r.raise_for_status()
-        data = r.json()["data"]
-    token = data.get("api_key") or data["token"]
-    return ({"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, bob_email, (data.get("user") or {})["id"])
-
-
-def _completions(fms: list[FlowMessage]) -> list[FlowMessage]:
-    return [
-        m for m in fms
-        if any(a.attachment_type == AttachmentType.TYPE_ID and (a.data or "").startswith("prompt_completion-")
-               for a in (m.attachment or []))
-    ]
 
 
 @pytest.mark.asyncio
@@ -88,7 +50,7 @@ async def test_twenty_prompts_two_sessions_one_host(
 
     caplog.set_level(logging.WARNING)
     login_as(hub_login_payload)
-    headers_b, bob_email, bob_id = await _bob(hub_base_url)
+    bob = await guest_login(hub_base_url)
 
     # ── fast fake worker: the turn engine is real, the LLM is not ──────────
     prompts_seen: list[str] = []
@@ -111,22 +73,21 @@ async def test_twenty_prompts_two_sessions_one_host(
     await local_project.save(notify=False)
     conv = Conversation(title=f"live-session-stress-{int(time.time())}-{uuid.uuid4().hex[:6]}",
                         project_id=local_project.id)
-    await conv.share(recipients=[bob_email])
+    await conv.share(recipients=[bob.email])
     assert conv.remote is True
     await conv.save(notify=False)
-    token_b = headers_b["Authorization"].removeprefix("Bearer ")
-    await assert_auto_assigned(hub_base_url, token_b, entity_type="conversation", entity_id=conv.id,
-                               user_id=bob_id, expected_role="member")
+    await assert_auto_assigned(hub_base_url, bob.token, entity_type="conversation", entity_id=conv.id,
+                               user_id=bob.user_id, expected_role="member")
     alice_key = hub_login_payload.get("api_key") or hub_login_payload.get("token")
     headers_a = {"Authorization": f"Bearer {alice_key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
         # Both sides must be PARTICIPANTS: the hub fans a message out only to
         # them, and alice's bridge is what routes bob's prompts to the gate.
-        for hdrs in (headers_a, headers_b):
+        for hdrs in (headers_a, bob.headers):
             r = await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=hdrs, json={})
             assert r.status_code < 300, r.text
 
-    grant = ContactPermission(contact_user_id=bob_id, project_id=None,
+    grant = ContactPermission(contact_user_id=bob.user_id, project_id=None,
                               allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value])
     await grant.save(notify=False)
 
@@ -150,7 +111,7 @@ async def test_twenty_prompts_two_sessions_one_host(
                 expected[sid].append(line)
                 r = await h.post(
                     f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/add_message",
-                    headers=headers_b,
+                    headers=bob.headers,
                     json={
                         "text": line,
                         "remote_worker_session_id": sid,
@@ -165,7 +126,7 @@ async def test_twenty_prompts_two_sessions_one_host(
         done: list[FlowMessage] = []
         while time.monotonic() < deadline:
             fms = await FlowMessage.get_all({"conversation_id": conv.id})
-            done = _completions(fms)
+            done = completions(fms)
             if len(done) >= PROMPTS_PER_SESSION * 2:
                 break
             await asyncio.sleep(0.2)

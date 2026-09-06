@@ -391,10 +391,9 @@ msgstr ""
 msgid "{0} messages"
 msgstr "{0} رسالة"
 
-#. placeholder {0}: ticket.message_count
 #: src/components/inbox-view/InboxView.tsx
-msgid "{0} msg"
-msgstr "{0} رسالة"
+#~ msgid "{0} msg"
+#~ msgstr "{0} رسالة"
 
 #. placeholder {0}: item.messageCount
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -466,6 +465,11 @@ msgstr ""
 #: src/components/connections-manager.tsx
 msgid "{0} test failed"
 msgstr "فشل اختبار {0}"
+
+#. placeholder {0}: info.attemptCount
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "{0} this session"
+msgstr ""
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -653,14 +657,6 @@ msgstr ""
 msgid "{pct}% of your token budget used {windowText}"
 msgstr ">>>>>>> origin/release/v0.2"
 
-#: src/components/conversation/SessionCard.tsx
-msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
-msgstr ""
-
-#: src/components/conversation/SessionCard.tsx
-#~ msgid "{promptCount} prompts · {replyCount} replies"
-#~ msgstr "{promptCount} سؤال · {replyCount} رد"
-
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 msgstr ""
@@ -669,9 +665,13 @@ msgstr ""
 msgid "{projectName} shared"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
+msgstr ""
+
 #: src/components/conversation/LiveSessionGroup.tsx
-msgid "{promptCount} prompts · {replyCount} replies"
-msgstr "{promptCount} سؤال · {replyCount} رد"
+#~ msgid "{promptCount} prompts · {replyCount} replies"
+#~ msgstr "{promptCount} سؤال · {replyCount} رد"
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -2382,6 +2382,10 @@ msgstr "فشل رفع المرفق"
 msgid "Attachments"
 msgstr "المرفقات"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Attempts"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Attribution"
 msgstr "الإسناد"
@@ -2492,6 +2496,10 @@ msgstr "النماذج المتاحة"
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "Available on cloud"
 msgstr "متاح على السحابة"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "available to pull"
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Awaiting {host}"
@@ -2648,6 +2656,10 @@ msgstr "تعطّل: "
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "bm25 / (1 + days × k)"
 msgstr "bm25 / (1 + days × k)"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Body status"
+msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Bold"
@@ -5903,6 +5915,7 @@ msgstr "حذف المشروع نهائي: يؤدي إلى إزالة مجلد ا
 msgid "Deleting…"
 msgstr "جاري الحذف…"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delivered"
 msgstr "تم التسليم"
@@ -6886,6 +6899,7 @@ msgstr "وقت النهاية"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Ended"
+msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Endpoint id"
@@ -8746,8 +8760,8 @@ msgid "Help desk"
 msgstr "مكتب المساعدة"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Help Desk"
-msgstr "مكتب المساعدة"
+#~ msgid "Help Desk"
+#~ msgstr "مكتب المساعدة"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Help desk files removed"
@@ -9022,6 +9036,10 @@ msgstr "منفذ وكيل HTTP"
 #: src/components/settings-view/settings-utils.ts
 msgid "HTTP proxy URL for network requests"
 msgstr "عنوان URL وكيل HTTP لطلبات الشبكة"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "HTTP status"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "HTTPS Proxy"
@@ -9684,8 +9702,8 @@ msgid "Join this support ticket so you can reply"
 msgstr "يمكنك الانضمام إلى تذكرة الدعم هذه للرد"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Joined"
-msgstr "تم الانضمام"
+#~ msgid "Joined"
+#~ msgstr "تم الانضمام"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Joining…"
@@ -9844,6 +9862,10 @@ msgstr "آخر {0}"
 msgid "Last {0}"
 msgstr "آخر {0}"
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Last attempt"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last Indexed"
 msgstr "آخر فهرسة"
@@ -9864,6 +9886,10 @@ msgstr "آخر تسجيل دخول:"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Last message"
 msgstr "آخر رسالة"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Last success"
+msgstr ""
 
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
@@ -10518,7 +10544,6 @@ msgstr "جاري التحميل..."
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -10951,6 +10976,7 @@ msgid "Merge conflicts"
 msgstr "تعارضات الدمج"
 
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Message"
 msgstr "رسالة"
@@ -10973,6 +10999,10 @@ msgstr "تعذر إدراج الرسالة في الطابور"
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not sent"
 msgstr "تعذر إرسال الرسالة"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Message sent"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Message Suggest"
@@ -11652,11 +11682,16 @@ msgstr ""
 msgid "No budget set"
 msgstr ""
 
-#: src/components/capabilities-view/CapabilitiesView.tsx
-msgid "No capabilities available"
-
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
+msgstr ""
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "no bundle was ever uploaded"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "No capabilities available"
 msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
@@ -11892,8 +11927,8 @@ msgid "No help desk in this repository"
 msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "No help desk tickets"
-msgstr "لا توجد تذاكر دعم"
+#~ msgid "No help desk tickets"
+#~ msgstr "لا توجد تذاكر دعم"
 
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "No high-level calls in this session."
@@ -12939,7 +12974,6 @@ msgstr "توجد هنا إدخالات Harness فقط — يمكن تفعيل \"
 #: src/components/conversation/SessionCard.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -13891,7 +13925,6 @@ msgid "Pick the local project folder this conversation should run in. We'll use 
 msgstr "يُرجى اختيار مجلد المشروع المحلي الذي يجب أن تعمل فيه هذه المحادثة. سيُستخدم كمجلد العمل لجلسات Claude Code."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/inbox-view/InboxView.tsx
 msgid "Pick up"
 msgstr "استلام"
 
@@ -13900,7 +13933,6 @@ msgid "Pick what to do with this invitation."
 msgstr "يُرجى تحديد الإجراء المطلوب لهذه الدعوة."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/inbox-view/InboxView.tsx
 msgid "Picking up…"
 msgstr "جاري الاستلام…"
 
@@ -14607,6 +14639,10 @@ msgstr ""
 msgid "Pull failed."
 msgstr "فشل السحب."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "pulled, but arrived short"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pulling…"
 msgstr "جاري السحب…"
@@ -14939,7 +14975,6 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/git/RepoPicker.tsx
 #: src/components/graph-view/GraphView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -14996,8 +15031,8 @@ msgid "Refresh from the tag index"
 msgstr "تحديث من فهرس الوسوم"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Refresh help desk tickets"
-msgstr "تحديث تذاكر الدعم الفني"
+#~ msgid "Refresh help desk tickets"
+#~ msgstr "تحديث تذاكر الدعم الفني"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Refresh index"
@@ -15371,6 +15406,10 @@ msgstr "عنوان المستودع"
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Repository URL:"
 msgstr "رابط المستودع:"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Request"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
@@ -15959,7 +15998,6 @@ msgstr "مقاييس البيئة المعزولة"
 msgid "Sandbox started without cloud sign-in"
 msgstr "تم تشغيل Sandbox من دون تسجيل الدخول إلى السحابة"
 
-#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox unavailable"
 msgstr "الصندوق غير متاح"
@@ -17365,8 +17403,7 @@ msgstr ""
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "تسجيل الدخول عبر {account} يسمح لـ {name} بكتابة الأكواد وتشغيلها نيابةً عنك. تُفتح نافذة متصفح لتسجيل الدخول — لا يطّلع FlowPad على كلمة مرورك أبدًا."
 
-#: src/pages/hub-home/LaunchSandboxDialog.tsx
-#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/AutoLoginField.tsx
 msgid "Sign me in automatically — this sandbox belongs to one person."
 msgstr "يمكن تسجيل الدخول تلقائيًا — الصندوق الرملي هذا مخصص لشخص واحد."
 
@@ -18168,8 +18205,8 @@ msgid "Support room"
 msgstr "غرفة الدعم"
 
 #: src/components/inbox-view/InboxView.tsx
-msgid "Support ticket"
-msgstr "تذكرة الدعم الفني"
+#~ msgid "Support ticket"
+#~ msgstr "تذكرة الدعم الفني"
 
 #: src/components/drag-drop-overlay.tsx
 msgid "Supported: Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)"
@@ -18659,6 +18696,7 @@ msgstr "الدعم الفني غير متاح حالياً. يُرجى المح�
 
 #: src/components/conversation/SessionCard.tsx
 msgid "the host"
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
@@ -18708,11 +18746,12 @@ msgstr ""
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "تم إنشاء مهام الأعضاء؛ {messageFailures} رسالة إشعار لم تصل."
 
-#: src/components/conversation/MessageComposer.tsx
-msgid "the other participant"
-
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "the other participant"
 msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -18774,6 +18813,10 @@ msgstr "الكيان المحدد ليس له اسم بعد. يُرجى اختي
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "The selected project has no folder on this machine."
 msgstr "المشروع المختار لا يحتوي على مجلد على هذا الجهاز."
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "the sender is still staging it"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -19003,6 +19046,10 @@ msgstr "لا يمكن مشاركة هذا المجلد بعد"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "هذا الأصل المستند إلى مجلد لا يحتوي على بيانات وصفية للملف الرئيسي."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "This hub isn't configured to run sandboxes"
+msgstr ""
 
 #: src/lib/content-install.ts
 msgid "This install link has an invalid content branch."
@@ -20773,6 +20820,10 @@ msgstr "النافذة الزمنية (أيام)"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "يمسح صفوف قاعدة البيانات وإدخالات الفهرسة النصية الكاملة (FTS) الخاصة بكل نوع قابل للفهرسة. يصبح الفهرس فارغاً إلى أن يُعاد ملؤه. الملفات على القرص <0>لا</0> تتأثر. بعد المسح، يمكن النقر على <1>سريع</1> لإعادة فهرسة الإدخالات المتغيّرة، أو <2>كامل</2> لإعادة فهرسة كل شيء."
+
+#: src/pages/hub-home/AutoLoginField.tsx
+msgid "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."
+msgstr ""
 
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard"
