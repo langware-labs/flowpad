@@ -301,6 +301,15 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
     Codex stores rollouts as ``rollout-<ts>-<thread_id>.jsonl`` so a suffix
     scan is O(N) over rollout files. Pass ``date_path="YYYY/MM/DD"`` for an
     O(1) lookup when the date is known.
+
+    Like ``get_claude_session``, this is a path/envelope resolver, never a
+    content reader: it extracts with ``include_content=False`` so it never runs
+    the full ``worker_summary_log`` transcript parse. Its only caller
+    (``_resolve_session_record``, behind ``terminals/get_by_worker_id``) reads
+    ``cwd``/``name``/existence and never touches ``.content``, while the parse
+    it was paying for dominated the call — 205ms with it, 10ms without, on a
+    256KB rollout. A caller that genuinely wants ``content`` should reach for
+    ``extract_codex_session_from_path`` directly.
     """
     sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
@@ -315,7 +324,7 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
                     if is_subagent_rollout(p):
                         return None
                     try:
-                        return extract_codex_session_from_path(p)
+                        return extract_codex_session_from_path(p, include_content=False)
                     except (json.JSONDecodeError, OSError):
                         return None
 
@@ -327,7 +336,7 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
             if is_subagent_rollout(p):
                 return None
             try:
-                return extract_codex_session_from_path(p)
+                return extract_codex_session_from_path(p, include_content=False)
             except (json.JSONDecodeError, OSError):
                 continue
     return None
