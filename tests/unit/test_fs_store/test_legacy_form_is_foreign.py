@@ -80,7 +80,7 @@ def test_the_walk_records_a_foreign_id_issue_naming_the_migration(tmp_path: Path
     answered = reconcile(info, layout, None, None, write=True)
 
     assert answered != OLD, "the retired id is not adopted"
-    assert answered == str(uuid.uuid5(uuid.NAMESPACE_URL, str(layout.ref.resolve())))
+    assert answered == str(uuid.uuid5(uuid.NAMESPACE_URL, str(layout.root.resolve())))
     after = {p: p.read_bytes() for p in path.rglob("*") if p.is_file()} if path.is_dir() else path.read_bytes()
     assert after == before, "a foreign carrier is never rewritten"
 

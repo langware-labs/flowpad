@@ -9,7 +9,7 @@ from flow_sdk.schema.layout import File, Folder, LayoutKind
 def test_file_locates_by_extension_only(tmp_path: Path) -> None:
     shape = File(ext=".md")
     doc = tmp_path / "a.md"
-    assert shape.locate(doc).kind is LayoutKind.FILE and shape.locate(doc).ref == doc
+    assert shape.locate(doc).kind is LayoutKind.FILE and shape.locate(doc).root == doc
     assert shape.locate(tmp_path / "a.py").kind is LayoutKind.NONE
     assert shape.locate(doc, verify=True).kind is LayoutKind.NONE, "verify demands the file exist"
     doc.write_text("x", encoding="utf-8")
@@ -29,13 +29,13 @@ def test_folder_locates_the_folder_or_its_main_document(tmp_path: Path) -> None:
     assert shape.locate(folder / "notes.md").root == folder / "notes.md", "a sibling is not the main"
 
 
-def test_folder_ref_is_the_folder_and_root_of_accepts_the_retired_spelling(tmp_path: Path) -> None:
+def test_folder_root_is_the_folder_and_root_of_accepts_the_retired_spelling(tmp_path: Path) -> None:
     folder = tmp_path / "a"
     shape = Folder(main="agent.md")
-    assert shape.ref_for(folder) == folder
+
     assert shape.root_of(folder / "agent.md") == folder, "a row from before the unification"
     assert shape.root_of(folder) == folder
-    assert shape.locate(folder).ref == folder and shape.locate(folder / "agent.md").ref == folder
+    assert shape.locate(folder).root == folder and shape.locate(folder / "agent.md").root == folder
 
 
 def test_file_ext_is_normalized_to_a_lowercase_suffix() -> None:

@@ -494,7 +494,8 @@ async def reflect_refs(
         # and silently drop the re-parse.
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        target = SchemaRegistry.ref_for(known.type, placed)
+        info = SchemaRegistry.get(known.type)
+        target = str(info.storage_root_for(Path(placed)) if info is not None else placed)
         _retire_stale_placement(source, known, target)
         try:
             resolved = await resolve_asset(target, write=write, type_name=known.type, owner_id=str(known.id))

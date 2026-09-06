@@ -811,7 +811,7 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-    asset_path = info.layout_of(body_path).ref
+    asset_path = info.layout_of(body_path).root
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
     return info.stamp_id(ref, entry_id)
 

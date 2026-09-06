@@ -47,14 +47,19 @@ from flow_sdk.fs_store.indexer._frontmatter import (
 )
 from flow_sdk.schema.layout import Layout
 
-#: A derived reader returns the raw value it computed for a path.
-IdentityReader = Callable[[Any], object | None]
-
 #: Source prefix of a RETIRED id form; the scan issue names the migration.
 RETIRED = "retired:"
 RETIRED_FORM_MIGRATION = "migration_2026_09_identity_live_forms"
-_CAPSULE_MARKER = "<!-- flowpad:capsule identity"
 _FLOW_ID = Path(".flow") / "id"
+
+
+def _has_identity_capsule(text: str) -> bool:
+    """The retired HTML-comment ``identity`` capsule, asked of the capsule
+    parser rather than of a marker literal this module would have to keep in
+    step with ``flow_sdk.capsules``."""
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    return strip_capsule_blocks(text, names={"identity"}) != text
 
 
 def foreign_detail(found: "Foreign") -> str:
@@ -65,7 +70,7 @@ def foreign_detail(found: "Foreign") -> str:
     return detail
 
 
-def _retired_flow_id(folder: Path) -> "Foreign | None":
+def retired_flow_id(folder: Path) -> "Foreign | None":
     """The retired ``<folder>/.flow/id`` line, never adopted."""
     try:
         raw = (folder / _FLOW_ID).read_text(encoding="utf-8").strip()
@@ -123,10 +128,9 @@ class UnclaimedPath(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Found:
-    """The source names a valid v4/v5 id; ``source`` says which reader answered."""
+    """The source names a valid v4/v5 id."""
 
     id: str
-    source: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,12 +156,12 @@ CarrierRead = Found | Foreign | Absent
 
 
 def _outcome(value: object | None, source: str) -> CarrierRead:
+    """A raw carrier value as one of the three outcomes; ``source`` names the
+    reader and rides only on a ``Foreign``, where the scan issue reports it."""
     if value is None:
         return ABSENT
-    if isinstance(value, (Found, Foreign, Absent)):
-        return value
     if is_valid_entity_id(value):
-        return Found(str(value), source)
+        return Found(str(value))
     return Foreign(value, source)
 
 
@@ -240,9 +244,9 @@ class Frontmatter:
         # The retired forms are present-but-unusable, never adopted.
         if "asset_id" in fields:
             return Foreign(fields.get("asset_id"), RETIRED + "asset_id")
-        if _CAPSULE_MARKER in text:
+        if _has_identity_capsule(text):
             return Foreign("identity capsule", RETIRED + "capsule")
-        return _retired_flow_id(where.parent) or ABSENT
+        return retired_flow_id(where.parent) or ABSENT
 
     def stamp(self, where: Path, entity_id: str) -> str:
         if not self.accepts(where):
@@ -278,7 +282,7 @@ class Sidecar:
         if not where.is_dir():
             return ABSENT
         found = _read_identity_capsule(FolderCapsule(where), where)
-        return found if found is not ABSENT else (_retired_flow_id(where) or ABSENT)
+        return found if found is not ABSENT else (retired_flow_id(where) or ABSENT)
 
     def stamp(self, where: Path, entity_id: str) -> str:
         if not self.accepts(where):
@@ -337,7 +341,7 @@ class JsonRoot:
 class Derived:
     """Nothing is written; ``reader`` (if any) computes the id from the source."""
 
-    reader: IdentityReader | None = None
+    reader: "Callable[[Any], object | None] | None" = None
 
     writable: ClassVar[bool] = False
 
@@ -354,7 +358,7 @@ class Derived:
             value = self.reader(where)
         except Exception as exc:  # noqa: BLE001
             raise MalformedCarrier(f"derived identity for {where}: {exc}") from exc
-        return Found(str(value), "derived") if is_valid_entity_id(value) else ABSENT
+        return Found(str(value)) if is_valid_entity_id(value) else ABSENT
 
     def stamp(self, where: Path, entity_id: str) -> str:
         raise NotWritable(f"a derived identity is never written ({where})")

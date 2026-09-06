@@ -1,3 +1,4 @@
+import { isFolderShape, type TypeShape } from '../FlowSync/schema';
 import { RecordType } from '../resource_management/fs_records/record-types';
 import { IMAGE_EXTENSIONS } from '../utils/utils';
 
@@ -35,20 +36,17 @@ export enum AssetEditor {
 }
 
 /**
- * The slice of the bootstrap `TypeInfo` this module reads. Declared here (not
- * imported from `FlowSync/schema`) so the model layer has no dependency on the
- * store — the store BINDS its registry into this module at bootstrap.
+ * The slice of the bootstrap `TypeInfo` this module reads. The store BINDS its
+ * registry into this module at bootstrap; only the SHAPE is shared, from the
+ * one declaration of it (`FlowSync/schema`), so a backend shape change lands in
+ * one place instead of two that silently drift.
  */
 export interface EditorTypeInfo {
   type_name: string;
   /** Backend-declared editor for the type (`'markdown'`, `'skill'`, …). */
   editor?: string | null;
-  /** Backend-declared on-disk shape. `also` lists secondary file extensions
-   *  a file-shaped type accepts (`.markdown` next to `.md`). */
-  shape?:
-    | { kind: 'folder'; main: string | null }
-    | { kind: 'file'; ext: string; also?: string[] }
-    | null;
+  /** Backend-declared on-disk shape. */
+  shape?: TypeShape | null;
 }
 
 /** Read-side of the registry: a type lookup and the full list. */
@@ -253,6 +251,6 @@ export function editorForPath(path: string): AssetEditor {
  */
 export function mainFileForType(type: string, fallback: string | null = null): string | null {
   const shape = registryEntry(type)?.shape;
-  if (shape?.kind === 'folder' && shape.main) return shape.main;
+  if (isFolderShape(shape) && shape.main) return shape.main;
   return fallback;
 }

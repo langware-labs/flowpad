@@ -129,10 +129,13 @@ async def reindex_paths(
         return await index_one(resolved, notify=True, scope=entity.scope, project_id=entity.project_id)
 
     # A brand-new file with no owning entity: the registry names its type (an
-    # ambiguous ``.json`` is never guessed at) and the asset is indexed.
+    # ambiguous ``.json`` is never guessed at) and the asset is indexed. The
+    # lookup above already proved the asset unowned — its exact match covers
+    # the path and its containment pass every ancestor, which is where a
+    # folder asset's root would be — so ``resolve_asset`` must not repeat it.
     async def _mint(path: str) -> bool:
         try:
-            resolved = await resolve_asset(path, write=write, strict=True)
+            resolved = await resolve_asset(path, write=write, known_unowned=True)
         except NotAnAsset:
             return False
         return await index_one(resolved, notify=True) is not None

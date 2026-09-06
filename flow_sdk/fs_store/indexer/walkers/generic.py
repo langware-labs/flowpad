@@ -110,8 +110,8 @@ def layout_walker(info: "TypeInfo") -> IndexerFunc:
         layout = shape.locate(path, verify=True)
         if layout.kind is LayoutKind.NONE:
             return False
-        if first_seen(seen, layout.ref, resolve=resolve):
-            out.append(FSRef(layout.ref, record_type=record_type, parent=node))
+        if first_seen(seen, layout.root, resolve=resolve):
+            out.append(FSRef(layout.root, record_type=record_type, parent=node, layout=layout))
         return True
 
     def walk_anywhere(node: FSRef, out: list[FSRef], seen: set[str]) -> None:

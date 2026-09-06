@@ -152,19 +152,21 @@ def _valid(value: Any) -> str | None:
 
 
 def _flow_id(folder: Path) -> str | None:
-    try:
-        return _valid((folder / ".flow" / "id").read_text(encoding="utf-8").strip())
-    except OSError:
-        return None
+    """The retired ``<folder>/.flow/id`` line, through the carrier's own reader."""
+    from flow_sdk.fs_store.identity_carrier import retired_flow_id
+
+    found = retired_flow_id(folder)
+    return _valid(found.raw) if found is not None else None
 
 
 def _folder_json_id(folder: Path) -> str | None:
-    from flow_sdk.capsules.folder import FolderCapsule
+    """The folder's identity capsule, read through the LIVE carrier so it is
+    held to the same validation (version 1, exactly the ``id`` key): a corrupt
+    capsule raises ``MalformedCarrier`` and is reported, never adopted."""
+    from flow_sdk.fs_store.identity_carrier import Found, Sidecar
 
-    if not (folder / ".flow" / "capsules" / "identity.json").exists():
-        return None
-    data = FolderCapsule(folder).read("identity")
-    return _valid(data.data.get("id")) if data is not None else None
+    found = Sidecar().read(folder)
+    return found.id if isinstance(found, Found) else None
 
 
 def _manifest_id(folder: Path) -> str | None:
@@ -180,38 +182,57 @@ def _manifest_id(folder: Path) -> str | None:
     return None
 
 
-def _retired_read(info: Any, ref: Any) -> tuple[str, str] | None:
-    """``(form, id)`` when the source carries its id only in a retired form."""
+def _comment_capsule_id(doc: Path) -> str | None:
+    """The retired HTML-comment ``identity`` capsule of a markdown document."""
     from flow_sdk.capsules import AssetCapsule
-    from flow_sdk.fs_store.identity_carrier import Found, Frontmatter, Sidecar
+
+    data = AssetCapsule.from_path(doc).read("identity")
+    return _valid(data.data.get("id")) if data is not None else None
+
+
+#: The retired source the CARRIER named -> (this report's form, its reader).
+#: Precedence is the carrier's; re-deciding it here is how the two drift.
+_RETIRED_FORMS: dict[str, tuple[str, Any]] = {
+    "asset_id": ("frontmatter_asset_id", lambda where: _valid(_read_frontmatter(where).get("asset_id"))),
+    "capsule": ("capsule", _comment_capsule_id),
+    "flow-id": ("folder_capsule_id", lambda where: _flow_id(where if where.is_dir() else where.parent)),
+}
+
+
+def _read_frontmatter(doc: Path) -> dict:
     from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+
+    try:
+        header = _extract_frontmatter(doc.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+    return (_yaml_load(header) or {}) if header else {}
+
+
+def _retired_read(info: Any, ref: Any) -> tuple[str, str] | None:
+    """``(form, id)`` when the source carries its id only in a retired form.
+
+    The CARRIER decides: its read already tells a live id from a retired one,
+    so this only maps that verdict to a reader. The two forms it does not look
+    at — a folder capsule beside a markdown main document, a manifest id — are
+    asked afterwards, when the carrier came back empty."""
+    from flow_sdk.fs_store.identity_carrier import RETIRED, Foreign, Found, Frontmatter, Sidecar
 
     carrier = info.carrier
     where = carrier.locate(info.layout_for(ref))
-    if isinstance(carrier.read(where), Found):
+    found = carrier.read(where)
+    if isinstance(found, Found):
         return None   # already live
-    if isinstance(carrier, Frontmatter):
-        try:
-            text = where.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        header = _extract_frontmatter(text)
-        fields = (_yaml_load(header) or {}) if header else {}
-        data = AssetCapsule.from_path(where).read("identity")
-        if data is not None and (found := _valid(data.data.get("id"))):
-            return "capsule", found
-        if (found := _valid(fields.get("asset_id"))) is not None:
-            return "frontmatter_asset_id", found
-        if (found := _folder_json_id(where.parent)) is not None:
-            return "folder-json", found
-        if (found := _flow_id(where.parent)) is not None:
-            return "folder_capsule_id", found
+    if isinstance(found, Foreign) and found.source.startswith(RETIRED):
+        form = _RETIRED_FORMS.get(found.source[len(RETIRED):])
+        if form is not None and (entity_id := form[1](where)) is not None:
+            return form[0], entity_id
         return None
-    if isinstance(carrier, Sidecar):
-        if (found := _flow_id(where)) is not None:
-            return "folder_capsule_id", found
-        if (found := _manifest_id(where)) is not None:
-            return "manifest_id", found
+    if isinstance(carrier, Frontmatter):
+        if (found_id := _folder_json_id(where.parent)) is not None:
+            return "folder-json", found_id
+    elif isinstance(carrier, Sidecar) and (found_id := _manifest_id(where)) is not None:
+        return "manifest_id", found_id
     return None
 
 

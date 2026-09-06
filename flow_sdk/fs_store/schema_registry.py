@@ -84,11 +84,6 @@ _MERGE = {"merge": True}
 _DEFAULT_SHAPE = File(ext=".md")
 
 
-def _may_write(ref: Any) -> bool:
-    """Carrier writes are allowed for ``ref``: it is not read-only."""
-    return not bool(getattr(ref, "read_only", False))
-
-
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -350,6 +345,15 @@ class TypeInfo:
         kind = getattr(origin, "kind", None) or self.default_origin_kind
         return get_serializer(kind, self)
 
+    @property
+    def keyed_by_ref(self) -> bool:
+        """The type's stable key reads MORE off its ref than the path — a
+        ``json_path`` fragment, the walk's scope (``needs_ref``). From a bare
+        path its key, and so its v5, is a different one, so only a walk ref may
+        identify it: ``resolve_asset`` refuses these types."""
+        key_fn = self.id_stable_key_fn or self.identity_key_fn
+        return bool(getattr(key_fn, "needs_ref", False))
+
     def stable_key_for(self, ref) -> str | None:
         """The v5 key text for *ref*, or None when this type has no stable key.
         ``identity_key_fn`` yields ``<type>:<natural key>``; ``id_stable_key_fn``
@@ -359,6 +363,18 @@ class TypeInfo:
         if self.identity_key_fn is not None:
             return f"{self.type_name}:{self.identity_key_fn(ref)}"
         return None
+
+    def keyed_id(self, layout: "Layout", ref: Any = None) -> "tuple[str | None, str]":
+        """``(key, id)``: the v5 this type's stable key derives, or
+        ``(None, <fresh v4>)`` when it has none. THE one place a keyed asset id
+        is derived — ``mint`` and ``reconcile``'s fallback both come here."""
+        key = self.stable_key_for(ref if ref is not None else layout.root)
+        return key, mint_uuid(key or None, namespace=self.id_namespace)
+
+    def path_id(self, layout: "Layout", where: Path) -> str:
+        """The path-derived v5 — the one deterministic answer for a KEYLESS
+        type whose mint cannot be written (read-only source, failed write)."""
+        return mint_uuid(str(Path(layout.root or where).resolve()), namespace=self.id_namespace)
 
     # --- SCAN declarations ---
 
@@ -390,10 +406,12 @@ class TypeInfo:
         path is the file itself (mcp_server declares ``.json`` but also
         derives from ``.toml`` and settings entries)."""
         path = Path(getattr(ref, "_path", ref))
-        layout = self.layout_of(path)
+        # A walker's ref carries the layout its walk already verified;
+        # locating it again would stat the same path for the same answer.
+        layout = getattr(ref, "layout", None) or self.layout_of(path)
         if self.carrier.writable and (reason := self._refusal(path, layout)) is not None:
             raise UnclaimedPath(self.type_name, path, reason)
-        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path, path)
+        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path)
 
     def claims(self, path: Path) -> "str | None":
         """Why this type does NOT claim ``path`` — or ``None`` when it does."""
@@ -447,8 +465,7 @@ class TypeInfo:
             return found.id
         if not isinstance(found, Absent):
             raise ForeignId(where, found.raw)
-        key = self.stable_key_for(ref if ref is not None else layout.ref)
-        new_id = mint_uuid(key or None, namespace=self.id_namespace)
+        key, new_id = self.keyed_id(layout, ref)
         if not write:
             if key:
                 return new_id
@@ -481,7 +498,7 @@ class TypeInfo:
             raise ValueError("proposed entity id must be a UUID v4 or v5")
         carrier = self.carrier
         where = carrier.locate(layout)
-        write = carrier.writable and _may_write(ref)
+        write = carrier.writable and not getattr(ref, "read_only", False)
         if write and not self._stampable(layout, where):
             raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
         found = carrier.read(where)
@@ -1102,15 +1119,6 @@ class SchemaRegistry:
             by = tables.by_ext.get(suffix, ())
             return by[0].type_name if len(by) == 1 else None
         return "markdown" if "markdown" in cls._types else None
-
-    @classmethod
-    def ref_for(cls, type_name: str, path: "Path | str") -> str:
-        """The ``asset_ref`` spelling of the asset at ``path`` for ``type_name``
-        — a folder asset's DIRECTORY when handed its inner main file; ``path``
-        itself when the type is unknown or does not shape it."""
-        info = cls.get(type_name)
-        ref = info.layout_of(Path(path)).ref if info is not None else None
-        return str(ref) if ref is not None else str(path)
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:

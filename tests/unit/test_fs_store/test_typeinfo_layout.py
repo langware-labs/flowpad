@@ -15,9 +15,9 @@ def test_folder_types_classify_folder_and_inner_main_file(tmp_path: Path):
     (folder / "SKILL.md").write_text("x")
     assert SKILL.layout_of(folder).kind is LayoutKind.FOLDER
     inner = SKILL.layout_of(folder / "SKILL.md")
-    assert (inner.kind, inner.root, inner.body, inner.ref) == (LayoutKind.MAIN_FILE, folder, folder / "SKILL.md", folder)
+    assert (inner.kind, inner.root, inner.body) == (LayoutKind.MAIN_FILE, folder, folder / "SKILL.md")
     spec = SPEC.layout_of(folder / "spec.md")
-    assert (spec.kind, spec.root, spec.ref) == (LayoutKind.MAIN_FILE, folder, folder)
+    assert (spec.kind, spec.root) == (LayoutKind.MAIN_FILE, folder)
 
 
 def test_names_compare_case_insensitively_and_the_id_lands_in_the_main_document(tmp_path: Path):
