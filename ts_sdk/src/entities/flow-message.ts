@@ -92,15 +92,28 @@ export interface Attachment {
   data: string;
   /** Absolute filesystem path — populated server-side for FILE / PROMPT-file attachments, null for others. */
   local_path?: string | null;
-  /** Prompt attachments (legacy PROMPT or prompt-entity TYPE_ID): the user who suggested the prompt. */
-  proposer_id?: string | null;
-  /** Prompt attachments: set when the other party approves. */
-  approved_by?: string | null;
   /** Prompt-entity TYPE_ID attachments: inline copy of the prompt text so receivers
-   *  can preview/execute before the body bundle is downloaded. NOTE: this field (and
-   *  proposer_id/approved_by) must also exist on the HUB's Attachment model — the hub
-   *  silently drops unknown fields on the round-trip. */
+   *  can preview before the body bundle is downloaded. On a session carrier it holds
+   *  the session marker JSON instead. NOTE: this field must also exist on the HUB's
+   *  Attachment model — the hub silently drops unknown fields on the round-trip.
+   *  Consent is a property of the session, never stamped per attachment. */
   prompt_preview?: string | null;
+}
+
+export type AttachmentReference = Pick<Attachment, 'attachment_type' | 'data'>;
+
+/** Read the backend's missing-asset result; pending downloads are not warnings. */
+export function isAttachmentMissing(
+  fm: Pick<IFlowMessage, 'body_downloaded' | 'body_missing_attachments'>,
+  attachment: AttachmentReference,
+): boolean {
+  const data = attachmentDataString(attachment);
+  return (
+    !!fm.body_downloaded &&
+    (fm.body_missing_attachments ?? []).some(
+      (missing) => missing.attachment_type === attachment.attachment_type && attachmentDataString(missing) === data,
+    )
+  );
 }
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
@@ -171,13 +184,12 @@ export interface IFlowMessage extends IEntity {
    *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
    *  when the hub stripped the header field. */
   remote_worker_session_id?: string | null;
-  /** Transient, server-derived (API responses only — never stored). True once
-   *  this message has a body AND that body has been pulled + unpacked locally,
-   *  i.e. every renderable body attachment is on disk (files materialized,
-   *  TYPE_ID entity assets have a local record). The UI switches the whole
-   *  message between a single Download button and rendered chips off this one
-   *  flag, so the transcript and the context panel share download state. */
+  /** Transient, server-derived. True when the bundle is unpacked, or all its
+   *  assets are already local. A downloaded bundle can have missing assets. */
   body_downloaded?: boolean;
+  /** Transient, server-derived references whose bytes are unavailable locally.
+   *  With body_downloaded=true these are missing assets, not pending downloads. */
+  body_missing_attachments?: AttachmentReference[];
   /** Transient, server-derived. True when the bundle's extracted tree persists
    *  under the message's staging dir — staged attachments are reviewable (and
    *  MessageAttachment rows exist) even though nothing is installed/indexed. */
@@ -230,6 +242,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
   body_downloaded?: boolean;
+  body_missing_attachments?: AttachmentReference[];
   body_unpacked?: boolean;
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
@@ -262,6 +275,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_downloaded = entity.body_downloaded ?? false;
+    this.body_missing_attachments = entity.body_missing_attachments ?? [];
     this.body_unpacked = entity.body_unpacked ?? false;
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
@@ -271,19 +285,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
-  }
-
-  /**
-   * Store merge hook (see `DataManager.castAndDeepAssign`). A reference row
-   * (`source_item_id` set) stores no body server-side: reads arrive hydrated,
-   * but write-path UPDATE broadcasts (an `is_read` toggle re-emitting the
-   * stored row) carry `text: ""`. Dropping the empty field before the merge
-   * keeps the body we already hold instead of blanking the open conversation.
-   */
-  onEntityUpdate(source: Partial<IFlowMessage>): void {
-    if (source.source_item_id && !source.text && this.text) {
-      delete source.text;
-    }
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -351,9 +352,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Download + unpack this message's body via the local backend.
    *  Throws BodyNotReadyError when body_status != READY.
    *  POSTs /api/v1/graph/flow_message/<id>/download_body. */
-  async downloadBody(
-    _opts: { onProgress?: (pct: number) => void; overwrite?: boolean } = {},
-  ): Promise<this> {
+  async downloadBody(_opts: { onProgress?: (pct: number) => void; overwrite?: boolean } = {}): Promise<this> {
     if (this.body_status !== BodyStatus.READY) {
       throw new BodyNotReadyError(this.body_status);
     }
@@ -495,7 +494,7 @@ export type CreateTaskBundleParams = {
   task_title?: string;
   message?: string | null;
   team_space_id?: string | null;
-}
+};
 
 export interface CreateTaskBundleResult {
   flow_message_id: string;
@@ -513,19 +512,11 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
 
 /** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */
 export function localFlowMessageBundleUrl(flowMessageId: string): string {
-  return new ActionInfo(
-    'create-and-download-local-flowmsg',
-    FlowMessage.type,
-    flowMessageId,
-    'GET',
-  ).fullActionUrl;
+  return new ActionInfo('create-and-download-local-flowmsg', FlowMessage.type, flowMessageId, 'GET').fullActionUrl;
 }
 
 /** URL for streaming one file from a FlowMessage's embedded VFS storage. */
-export function flowMessageAttachmentDownloadUrl(
-  flowMessageId: string,
-  vfsPath: string,
-): string {
+export function flowMessageAttachmentDownloadUrl(flowMessageId: string, vfsPath: string): string {
   const action = new ActionInfo('fs', FlowMessage.type, flowMessageId, 'GET');
   action.subpath = `download/${vfsPath}`;
   return action.fullActionUrl;
@@ -550,10 +541,7 @@ export interface ForwardMessageResult {
  * same pipeline as a fresh send — hub header + body upload included.
  * POSTs /api/v1/graph/flow_message/<id>/forward.
  */
-export async function forwardMessage(
-  flowMessageId: string,
-  conversationId: string,
-): Promise<ForwardMessageResult> {
+export async function forwardMessage(flowMessageId: string, conversationId: string): Promise<ForwardMessageResult> {
   const action = new ActionInfo('forward', FlowMessage.type, flowMessageId, 'POST');
   action.bodyParameters = { conversation_id: conversationId };
   const res = await dataManager.callAction<{ conversation_id: string }, ForwardMessageResult>(action);

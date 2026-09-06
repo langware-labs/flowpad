@@ -25,7 +25,7 @@ import { X, CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { VIBE_MODEL_DEFAULT, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
+import { VibeModelSelect, useVibeModelTier } from '@src/pages/flow-page/vibe-model-select';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -42,7 +42,7 @@ export function HomeLanding() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
-  useProjects();
+  useProjects({ priority: 'demand' });
 
   // Incoming task dialog — driven by URL params (email deep-link) or WS events.
   // Deep link shape:
@@ -76,7 +76,7 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const vibeModel: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const [vibeModel, setVibeModel] = useVibeModelTier();
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => {
@@ -151,6 +151,7 @@ export function HomeLanding() {
                     value={draftPrompt}
                     onChange={setDraftPrompt}
                     allowAttachments
+                    footerSlot={<VibeModelSelect value={vibeModel} onChange={setVibeModel} />}
                     onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel)}
                   />
                 </div>

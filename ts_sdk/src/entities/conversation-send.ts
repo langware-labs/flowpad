@@ -139,11 +139,26 @@ export async function createConversationForShare(
       const gate = await opts.ensureCloudLogin();
       if (!gate.ok) throw new Error(gate.error);
     }
-    const emails = params.participants
-      .map((p) => normalizeEmail(p.email) || '')
-      .filter((e): e is string => !!e && e.includes('@'));
-    if (emails.length === 0) {
-      throw new Error('At least one recipient email is required');
+    // Two ways to admit someone, because the address book knows people two
+    // ways. A contact learned from a conversation roster carries a hub user_id
+    // and no email (the hub does not disclose other people's addresses), and
+    // ContactPicker deliberately offers those contacts — so requiring an email
+    // here made every one of them pickable but unsendable. An email wins when a
+    // participant has both: it is the path that also works for someone without
+    // an account yet.
+    const emails: string[] = [];
+    const recipientUserIds: string[] = [];
+    for (const p of params.participants) {
+      const email = normalizeEmail(p.email) || '';
+      if (email.includes('@')) {
+        emails.push(email);
+        continue;
+      }
+      const userId = (p.user_id || '').trim();
+      if (userId) recipientUserIds.push(userId);
+    }
+    if (emails.length === 0 && recipientUserIds.length === 0) {
+      throw new Error('At least one recipient email or hub contact is required');
     }
 
     const conv =
@@ -166,7 +181,7 @@ export async function createConversationForShare(
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
-    await conv.share(emails);
+    await conv.share(emails, recipientUserIds);
     conversationId = conv.id;
   } else {
     if (!params.project_id) {

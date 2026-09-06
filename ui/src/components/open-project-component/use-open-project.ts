@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
 import { projectScope } from '@src/lib/scope-filter';
@@ -6,7 +7,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications';
-import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project, QueryRequest } from '@sdk';
+import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project } from '@sdk';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
@@ -137,9 +138,7 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
       if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
 
       const pathKey = canonicalPath(normalizedPath);
-      const freshProjects = await Project.query(
-        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'open-project-dedup' }),
-      );
+      const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
       let targetProject =
         freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || p.name || '') === pathKey) || null;
       const openedExisting = !!targetProject;

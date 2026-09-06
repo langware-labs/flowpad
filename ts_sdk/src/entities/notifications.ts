@@ -22,6 +22,9 @@ export interface SendReplyExtras {
    *  auto-appends the authoritative `remote_worker_session-<id>` TYPE_ID
    *  carrier attachment (the hub drops unknown header fields). */
   remoteWorkerSessionId?: string;
+  /** Session settings, honored only on the prompt that OPENS a session
+   *  (a prompt send without `remoteWorkerSessionId`). */
+  replyPolicy?: 'auto' | 'review';
 }
 
 /** Serialize shareConfig to the backend's snake_case share_config shape.
@@ -80,6 +83,7 @@ export async function sendReply(
     if (extras?.remoteWorkerSessionId) {
       form.append('remote_worker_session_id', extras.remoteWorkerSessionId);
     }
+    if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
     await dataManager.callAction(action);
@@ -89,6 +93,7 @@ export async function sendReply(
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;
+    if (extras?.replyPolicy) body.reply_policy = extras.replyPolicy;
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.

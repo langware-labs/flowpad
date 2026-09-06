@@ -12,7 +12,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 
-vi.mock('@sdk', () => ({ Task: class {} }));
+vi.mock('@sdk', async (importOriginal) => ({ ...(await importOriginal<typeof import('@sdk')>()), Task: class {} }));
 
 import { TaskDescription } from '@src/components/assets/editor/task/TaskDescription';
 

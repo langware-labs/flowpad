@@ -51,7 +51,7 @@ def test_raw_never_reaches_the_payload_but_every_header_field_reaches_the_row():
     full = dict(
         _HEADER, name="t", body="b", occurred_at="2026-01-01T00:00:00Z", author_external_id="a",
         author_display="A", permalink="https://x", thread_key="th", reply_to_external_id="r",
-        segment_label="L", raw={"volatile": 1},
+        segment_label="L", conversation_id="c", message_id="m", raw={"volatile": 1},
     )
     row = SourceItem(**full)
     assert "raw" not in row.metadata_payload()

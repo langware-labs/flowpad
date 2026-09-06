@@ -7,7 +7,7 @@ Endpoints covered (defined in flow_sdk/server/routes/cloud.py):
   - POST /api/v1/cloud/logout            -> {cloud_logout_url}
   - GET  /auth/login_callback            -> success/error HTML page
   - GET  /api/v1/cloud/logout_callback   -> success HTML page
-  - GET  /api/v1/graph/bootstrap         -> desktop_info.cloud_login_available
+  - GET  /api/v1/graph/info              -> desktop_info.cloud_login_available
 
 Mocked targets (existing module paths still in use after the refactor):
   - flow_sdk.cli.auth.hub_login.{is_logged_in, validate_api_key_async}
@@ -386,26 +386,24 @@ async def test_logout_callback_returns_success_html(client):
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap exposes cloud_login_available
+# Deferred info exposes cloud_login_available
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_cloud_login_available_true(bootstrapped_client):
-    """Bootstrap exposes desktop_info.cloud_login_available=True when the hub is reachable."""
+async def test_info_cloud_login_available_true(bootstrapped_client):
+    """Deferred info reports cloud availability without delaying bootstrap."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
-    bootstrap_mod._bootstrap_cache = None
+    bootstrap_mod.invalidate_bootstrap_cache()
     with patch(
         "flow_sdk.server.routes.bootstrap.is_cloud_login_available",
         new=AsyncMock(return_value=True),
     ):
-        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+        response = await bootstrapped_client.get("/api/v1/graph/info")
 
     assert response.status_code == 200
-    payload = response.json()
-    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
-    assert desktop_info is not None, f"desktop_info missing from bootstrap: {list(payload.keys())}"
+    desktop_info = response.json()["data"]["desktop_info"]
     assert desktop_info.get("cloud_login_available") is True
 
 
@@ -429,7 +427,6 @@ async def test_bootstrap_carries_the_cloud_identity(bootstrapped_client):
     bootstrap_mod._bootstrap_cache = None
     user = {"id": "b0b00000-0000-4000-8000-000000000001", "type": "user", "email": "bob@local.test"}
     with (
-        patch("flow_sdk.server.routes.bootstrap.is_cloud_login_available", new=AsyncMock(return_value=True)),
         patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
         patch("flow_sdk.cli.app_config.get_user", return_value=user),
     ):
@@ -455,10 +452,7 @@ async def test_bootstrap_says_logged_out_when_it_is(bootstrapped_client):
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
     bootstrap_mod._bootstrap_cache = None
-    with (
-        patch("flow_sdk.server.routes.bootstrap.is_cloud_login_available", new=AsyncMock(return_value=False)),
-        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False),
-    ):
+    with patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False):
         response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
 
     payload = response.json()
@@ -470,21 +464,19 @@ async def test_bootstrap_says_logged_out_when_it_is(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_cloud_login_available_false(bootstrapped_client):
-    """Bootstrap exposes desktop_info.cloud_login_available=False when the hub is unreachable."""
+async def test_info_cloud_login_available_false(bootstrapped_client):
+    """Deferred info reports an unavailable hub without delaying bootstrap."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
-    bootstrap_mod._bootstrap_cache = None
+    bootstrap_mod.invalidate_bootstrap_cache()
     with patch(
         "flow_sdk.server.routes.bootstrap.is_cloud_login_available",
         new=AsyncMock(return_value=False),
     ):
-        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+        response = await bootstrapped_client.get("/api/v1/graph/info")
 
     assert response.status_code == 200
-    payload = response.json()
-    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
-    assert desktop_info is not None
+    desktop_info = response.json()["data"]["desktop_info"]
     assert desktop_info.get("cloud_login_available") is False
 
 

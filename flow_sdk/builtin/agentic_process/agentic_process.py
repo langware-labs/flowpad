@@ -642,6 +642,18 @@ async def scan_path_asset_descriptors(
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
+_PROMPT_TASKS: dict[str, asyncio.Task] = {}
+
+
+def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
+    """Retain the turn until its final writes finish, so exit can join it."""
+    _PROMPT_TASKS[process_id] = task
+
+    def finished(done: asyncio.Task) -> None:
+        if _PROMPT_TASKS.get(process_id) is done:
+            _PROMPT_TASKS.pop(process_id)
+
+    task.add_done_callback(finished)
 
 
 def prompt_lock_locked(process_id: str) -> bool:
@@ -1979,6 +1991,23 @@ class AgenticProcess(Entity):
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
+        worker = _PROMPT_WORKERS.get(self.id)
+        turn = _PROMPT_TASKS.get(self.id)
+        if worker is not None or turn is not None:
+            # A completion must not launch another queued turn during teardown.
+            if self.queue.exists():
+                self.queue.clear(source="exit")
+            if worker is not None:
+                await worker.close_session()
+            if turn is not None and turn is not asyncio.current_task():
+                turn.cancel()
+                await asyncio.gather(turn, return_exceptions=True)
+            if worker is not None:
+                unregister_prompt_worker(self.id, worker)
+            if not self.shell_id:
+                self.status = ProcessStatus.STOPPED.value
+                await self.save()
+                return ApiSuccessResponse(data={"status": "stopped"})
         if not self.shell_id:
             return ApiFailResponse(message="No active shell session")
 
@@ -3916,6 +3945,7 @@ class AgenticProcess(Entity):
 
         try:
             turn_task = asyncio.create_task(_run_turn())
+            register_prompt_task(self.id, turn_task)
         except BaseException:
             unregister_prompt_worker(self.id, worker)
             raise
@@ -6985,8 +7015,11 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
-    async def delete(self):  # noqa: D401
+    async def delete(self, *, delete_chats: bool = True):  # noqa: D401
         """Tombstone the on-disk session transcript, then delete the entity.
+
+        Project deletion can pass ``delete_chats=False`` to discard only the
+        index row while keeping the native chat available for rediscovery.
 
         The AgenticProcess DB row is only an index. Both on-disk read paths —
         ``worker_history``'s Claude/Codex/Copilot collectors (the Chats
@@ -7005,7 +7038,8 @@ class AgenticProcess(Entity):
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
-        self._tombstone_session_transcript()
+        if delete_chats:
+            self._tombstone_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
@@ -7504,7 +7538,68 @@ class AgenticProcess(Entity):
         """
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         summary = (await self.resolve_context_summary()) or ""
-        return "\n\n".join(p for p in (explicit, summary) if p) or None
+        always = self._resolve_always_use_skills_block()
+        return "\n\n".join(p for p in (explicit, summary, always) if p) or None
+
+    def _resolve_always_use_skills_block(self) -> str:
+        """The project's ``always_use_skills`` as a system-prompt directive.
+
+        A project's skills are otherwise only OFFERED — their name and
+        description are listed in context and the model decides whether to
+        invoke one. Measured on a freshly cloned help-desk project: a prompt
+        that did not name the skill produced ZERO ``Skill`` invocations and an
+        improvised answer that merely *looked* like the skill's schema, because
+        the description alone is enough to fake the shape. Naming the skill in
+        the prompt invoked it properly. So "the skill is available" and "the
+        skill is applied" are two different things, and only the second is what
+        a project author sharing a help desk actually means.
+
+        Read from the repo's own ``.flowpad/bootstrap.json`` rather than from
+        local settings, because the declaration has to survive the trip: someone
+        who received the project over git gets the author's intent with it.
+
+        Best-effort by construction — no workdir, no manifest, or a manifest that
+        declares nothing all mean "no directive", never a failed launch.
+
+        Cached in ``context_data`` for the same reason as
+        :meth:`resolve_context_summary`, and it is not an optimization worth
+        skipping: this resolves on EVERY headless/print turn, not once per
+        launch, so an uncached read re-opens and re-parses the manifest on every
+        message the worker receives. The manifest is a file in the project the
+        process is already pinned to; it does not change under a running
+        session. ``""`` is cached as readily as a directive — "this project
+        declares nothing" is an answer, and re-deriving it per turn is the same
+        waste.
+        """
+        data = self.context_data or {}
+        cached = data.get("always_use_skills_block")
+        if cached is not None:
+            return cached
+        block = self._read_always_use_skills_block()
+        self.context_data = {**data, "always_use_skills_block": block}
+        return block
+
+    def _read_always_use_skills_block(self) -> str:
+        """The uncached read behind :meth:`_resolve_always_use_skills_block`."""
+        workdir = (self.workdir or "").strip()
+        if not workdir:
+            return ""
+        try:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+
+            skills = read_bootstrap_manifest(_Path(workdir)).always_use_skills
+        except Exception:  # noqa: BLE001 -- a manifest must never fail a launch
+            return ""
+        if not skills:
+            return ""
+        listed = ", ".join(f"`{name}`" for name in skills)
+        return (
+            f"This project declares that the following skill(s) apply to every request: {listed}. "
+            "Use them without being asked — treat each turn as though the user had named them. "
+            "Follow the skill's own instructions rather than inferring its shape from its description."
+        )
 
     async def resolve_context_summary(self) -> str:
         """The bound context as a system-prompt block — resolved at launch.

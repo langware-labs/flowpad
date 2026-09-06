@@ -48,7 +48,7 @@ The template ships `button` and `card`. Add more shadcn/ui components with the
 CLI (the template includes `components.json`, so it lands in the right place):
 
 ```bash
-cd frontend && npx shadcn@latest add dialog table input form
+cd frontend && npx shadcn@latest add dialog table select form
 ```
 
 Components arrive in `frontend/components/ui/` as editable source — restyle

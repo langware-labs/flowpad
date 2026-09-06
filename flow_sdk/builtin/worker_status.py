@@ -372,8 +372,8 @@ class ApiErrorTimeoutError(TimeoutError):
     """Raised by stream_transcript when it times out while the process is in API_ERROR state.
 
     This means the Anthropic API returned repeated errors (e.g. HTTP 529 overloaded)
-    and Claude was still retrying when the timeout expired. This is an infrastructure
-    issue, not a logic failure — tests should skip rather than fail on this exception.
+    and Claude was still retrying when the timeout expired. Tests retain the failure
+    and its API_ERROR context for diagnosis.
     """
 
 

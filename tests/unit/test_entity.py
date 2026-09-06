@@ -6,7 +6,7 @@ Only the tests that don't require database operations are included.
 Skipped tests (require DB/cloud infra):
 - test_instance_json_updated (needs TEntity from cloud test_models)
 - test_duplicated_id (needs entity.create())
-- test_get_all_relationships (needs Neo4j)
+- test_get_all_relationships (needs the SQLite DB harness)
 - test_update (needs async_context + entity.save/update)
 - test_save_relationship (needs entity.save)
 """

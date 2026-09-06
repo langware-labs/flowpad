@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
@@ -114,7 +114,7 @@ function isValidFolderName(name: string): boolean {
  */
 export function useAssetsModel() {
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes, isLoading: typesLoading } = useAssetTypes({ vibeAsStandard: true });
+  const { types: allTypes, isLoading: typesLoading, error: typesError, reload: reloadTypes } = useAssetTypes({ vibeAsStandard: true });
   const { indexType } = useSystemTools();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
@@ -196,7 +196,7 @@ export function useAssetsModel() {
     return { ...assetFilter, scope };
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
-  const { stats: assetStats, isLoading: statsLoading } = useAssetStats(effectiveFilter.scope);
+  const { stats: assetStats, isLoading: statsLoading, error: statsError, reload: reloadStats } = useAssetStats(effectiveFilter.scope);
 
   // The scoped project's server-computed menu: per-type counts for the project
   // AND, nested under it, for every context folder (recursively). Backs both the
@@ -274,15 +274,8 @@ export function useAssetsModel() {
   // (react-query `isLoading` is first-load-only, so scope refetches with a warm
   // cache don't re-flash it). Dev mode never gates on counts.
   const menuLoading = typesLoading || (!isDev && statsLoading);
-  {
-    const w = window as any;
-    w.__DBG_RENDER = (w.__DBG_RENDER || 0) + 1;
-    w.__DBG_ASSET_LOAD = { typesLoading, statsLoading, isDev, menuLoading, renders: w.__DBG_RENDER, t: Date.now() };
-  }
-  useEffect(() => {
-    const w = window as any;
-    w.__DBG_MOUNTS = (w.__DBG_MOUNTS || 0) + 1;
-  }, []);
+  const menuError = typesError ?? (!isDev ? statsError : null);
+  const reloadMenu = () => { void Promise.all([reloadTypes(), reloadStats()]).catch(() => {}); };
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
   // scanned entity arrives as a `data_op`; this re-fetches the affected root
@@ -779,6 +772,8 @@ export function useAssetsModel() {
     treeActiveResourcePointer,
     openAssetId,
     menuLoading,
+    menuError,
+    reloadMenu,
     typeCounts,
     isProjectView,
     // scope bar

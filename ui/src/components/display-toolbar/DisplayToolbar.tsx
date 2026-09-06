@@ -47,15 +47,21 @@ export function DisplayToolbar({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div hidden={hideStrip} className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
-        <div className="flex items-center gap-2">{perType}</div>
-        <GenericDisplayToolbar
-          externalUrl={externalUrl}
-          onOpenInTab={onOpenInTab}
-          onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
-          historySlot={historySlot}
-        />
-      </div>
+      {/* Conditional STRIP, unconditional wrapper: the viewer below keeps its
+          slot (and the dirty editor its buffer) either way. Not the `hidden`
+          attribute — Tailwind's `.flex` utility outranks preflight's
+          `[hidden]{display:none}` in the cascade, so that never hid anything. */}
+      {!hideStrip && (
+        <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
+          <div className="flex items-center gap-2">{perType}</div>
+          <GenericDisplayToolbar
+            externalUrl={externalUrl}
+            onOpenInTab={onOpenInTab}
+            onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
+            historySlot={historySlot}
+          />
+        </div>
+      )}
       <div ref={contentRef} className="relative min-h-0 flex-1">{children}</div>
     </div>
   );

@@ -185,6 +185,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_prompt_queue_integration",
         "test_process_status_report_stream",
         "test_process_hooks_multi_vendor",
+        "test_project_delete_chats",
         "test_relaunch_kills_session_orphan",
         "test_agent",
         "test_debug_log_records",
@@ -238,7 +239,6 @@ def _real_home_for_cli_subprocess_tests(request):
         yield
 
 
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
 from tests.api.conftest import (  # noqa: F401, E402
     _rebind_session_db_driver,
     bootstrap_payload,
@@ -248,23 +248,6 @@ from tests.api.conftest import (  # noqa: F401, E402
     drain_background_tasks,
     reset_db_for_testclient,
 )
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    """Convert TimeoutError / ApiErrorTimeoutError failures to skips.
-
-    pytest-asyncio 0.24 uses finalizers, so try/yield/except fixtures do not
-    catch exceptions from async tests.  This hook intercepts the report after
-    the call phase and downgrades the result when the failure is an external
-    infrastructure problem (API slow or unreachable), not a logic error.
-    """
-    outcome = yield
-    rep = outcome.get_result()
-    if rep.when == "call" and rep.failed and call.excinfo is not None:
-        if issubclass(call.excinfo.type, (ApiErrorTimeoutError, TimeoutError)):
-            rep.outcome = "skipped"
-            rep.longrepr = ("", 0, f"Skipped: Anthropic API issue — {call.excinfo.value}")
 
 
 @pytest.fixture()

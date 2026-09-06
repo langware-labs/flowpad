@@ -6,9 +6,6 @@ import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
-import { Project } from '@sdk';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
@@ -23,8 +20,10 @@ import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
  * column, mounted once in `FlowPage`.
  *
  * It is a browser navigation bar in the literal sense: history controls, then a
- * chip saying which machine is serving this UI, then an address (a breadcrumb
- * of where the current entity lives), then the actions for it.
+ * chip saying which machine is serving this UI and which project you are in
+ * (its name opens the project's home, its chevron the project list), then an
+ * address (a breadcrumb of where the current entity lives), then the actions
+ * for it.
  *
  * The root is a `div`, not a button: it holds many independent controls, and a
  * button inside a button is invalid HTML that React warns about and screen
@@ -35,7 +34,7 @@ export function TopNavBar() {
   const [searching, setSearching] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
   const { runtimeKind, project } = useContext();
-  const { canGoBack, canGoForward, goBack, goForward, reload, hardReload, reloading } = useHistoryNav();
+  const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
 
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
@@ -66,16 +65,9 @@ export function TopNavBar() {
         mirrorInRtl
         testId="top-nav-forward"
       />
-      <NavIconButton
-        icon={RefreshCw}
-        label={t`Reload`}
-        // Soft by default — re-runs the route loaders. A modifier click gives
-        // the browser's hard-reload gesture, for when the runtime itself is
-        // wedged rather than the data being stale.
-        onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? hardReload() : reload())}
-        spinning={reloading}
-        testId="top-nav-reload"
-      />
+      {/* A full window reload, the same as the browser's own — no modifier
+          gesture and no soft variant. Anything less does not reload. */}
+      <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
       <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
@@ -85,21 +77,7 @@ export function TopNavBar() {
         onClick={() => navigation.openTab(ViewType.EXPLORER)}
         testId="top-nav-files"
       />
-      {/* The project itself — the destination the old rail briefcase and the
-          footer's project name both led to. Its glyph comes from the type
-          registry, never a literal, so a TypeInfo change reaches it too. Hidden
-          with no project: it addresses one by id, and without it the project
-          page renders "not found". */}
-      {project && (
-        <NavIconButton
-          icon={iconForType(Project.type)}
-          label={t`Project home`}
-          onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-          testId="top-nav-project"
-        />
-      )}
-
-      <RuntimeChip kind={runtimeKind} />
+      <RuntimeChip kind={runtimeKind} project={project} />
       {/* One slot, two modes — the address is where you are, and search is
           where you'd rather be. Same pill, same width, so the row doesn't
           reflow when it flips; the magnifier that flips it sits on the pill's
@@ -122,15 +100,13 @@ function NavIconButton({
   label,
   onClick,
   disabled = false,
-  spinning = false,
   mirrorInRtl = false,
   testId,
 }: {
   icon: LucideIcon;
   label: string;
-  onClick: (e: React.MouseEvent) => void;
+  onClick: () => void;
   disabled?: boolean;
-  spinning?: boolean;
   /** Mirror the glyph in RTL. For an arrow that means a DIRECTION rather than a
    *  fixed shape: "back" points against the reading flow, so it faces left in
    *  English and right in Hebrew. A house or a folder is the same shape in every
@@ -154,7 +130,7 @@ function NavIconButton({
             aria-label={label}
             data-testid={testId}
           >
-            <Icon className={cn(spinning && 'animate-spin', mirrorInRtl && 'rtl:-scale-x-100')} />
+            <Icon className={cn(mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>
         </span>
       </TooltipTrigger>

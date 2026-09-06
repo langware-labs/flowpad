@@ -4,6 +4,77 @@ id: 848f6599-1d14-4999-9fff-4b40359eb22b
 
 # Action: message
 
+Two halves: **read** (below) and **send** (further down). Triggered for reading by
+"X sent me a message", "what did Y send me", "check my messages from Z", "did anyone
+message me about …". **A message the user says they received is a Flowpad conversation
+message — never go to Slack, Gmail or another connector unless the user names it.**
+
+## Read — Step 0: resolve the backend port, then check cloud login
+
+```bash
+PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); print(json.load(open(pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'))['port'])")
+BASE="http://localhost:$PORT/api/v1"
+curl -s --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
+```
+
+Inbound messages only reach the local DB while the backend is cloud-logged-in and the
+hub websocket is connected. If `logged_in` is not `True`, **stop**: tell the user that
+messages cannot be checked while logged out and ask them to sign in (Flowpad UI cloud
+sign-in, or `flow auth login`). Do not conclude "nothing was sent" from an empty result
+while logged out — the message may simply not have been fetched yet.
+
+## Read — Step 1: find the message by sender
+
+`conversation.participants` is usually empty on the local row, so do not resolve the
+sender through it. Filter `flow_message` by the sender's display name instead (the
+`filter` param is JSON — see `search.md`), and sort by date yourself:
+
+```bash
+curl -sG --max-time 15 "$BASE/graph/flow_message"   --data-urlencode 'limit=50'   --data-urlencode 'filter={"match":{"sender_name":"<Display Name>"}}' | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)['data']
+for m in sorted(rows, key=lambda r: r.get('created_date') or '', reverse=True)[:10]:
+    print(m['created_date'], m['conversation_id'], m['id'], '|', (m.get('text') or '')[:80],
+          '| att:', [a.get('data') for a in m.get('attachment') or []])
+"
+```
+
+- Match `sender_name` on the full display name as Flowpad shows it (e.g. `Gadi Tunes`); a
+  first name alone will not match. If unsure, list the user's conversations with
+  `flow conversation list` and grep the JSON for the name/email, or search by topic
+  words with `flow record search` (it indexes conversation titles, not message bodies).
+- "The latest message from X" → the max `created_date` among the matches.
+
+Then print the whole conversation in order, with senders:
+
+```bash
+flow conversation summary <conversation-uuid>
+```
+
+## Read — Step 2: open the attachment body
+
+Most inbound messages carry their payload as an attachment (`claude_session-<uuid>`,
+`prompt-<uuid>`, a file, …), and the text is just `Please run the following prompt:`.
+Those entities are usually **not** in the local graph (`GET /graph/claude_session/<id>`
+returns 404) — read them from the unpacked message body on disk instead:
+
+```
+~/.flow/instances/<instance>/records_data/flow_message/<message-uuid>/unpacked/
+  flow_message.json                     # the message row as sent
+  attachment/<type>-<uuid>/…            # one folder per attachment
+  attachment/claude_session-<uuid>/agentic-assets/claude_session/<uuid>.jsonl
+```
+
+`body_downloaded: true` / `body_status: ready` on the row means the folder is complete.
+If it is missing, the body has not been pulled yet (logged out, or hub still uploading) —
+report that, do not guess the content. A `.jsonl` transcript is Claude Code session
+format: print the `type == "user"` text turns for the questions asked and the
+`type == "assistant"` text blocks for the conclusions.
+
+---
+
+# Send
+
 Send a message — optionally with file attachments, entity references, or a runnable prompt —
 into a Flowpad conversation, on behalf of the user. Triggered by "send X to my conversation
 with Y", "attach this doc to the Z conversation", "message Y the report", "send them a prompt

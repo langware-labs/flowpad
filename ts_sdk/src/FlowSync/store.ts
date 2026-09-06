@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
@@ -6,7 +7,7 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
-import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
+import { ActionInfo, BootstrapInfo, DeferredInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
@@ -228,6 +229,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  private readScope: string | undefined;
+  private queryEpoch = 0;
+
+  /** Do not let a previous identity's pending query populate the new identity's entity store. */
+  public adoptReadScope(scope: string): void {
+    if (scope === this.readScope) return;
+    this.queryEpoch++;
+    this.watchedQueries = new WatchQueryMap<T>();
+    if (this.readScope !== undefined) void this.clearCache();
+    this.readScope = scope;
+  }
+
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
   private editMarker: EntityEditMarker;
@@ -366,7 +379,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       return;
     }
     try {
-      const raw = await apiClient.get<any>('/graph/compute_node/@local/fs-records/index-status');
+      const raw = await lazyAssets.refresh(LazyAsset.IndexStatus);
       this.setScanInfo({
         total_indexed: raw?.per_type?.reduce((s: number, t: any) => s + (t.entity_count ?? 0), 0) ?? 0,
         last_indexed_at: raw?.last_indexed_at ?? null,
@@ -411,6 +424,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // Re-throw all errors so they can be handled by initSdk and displayed to the user
       throw error;
     }
+  }
+
+  /** Seed optional index status only if no newer status arrived during discovery. */
+  public async info(): Promise<DeferredInfo> {
+    const scanBeforeRequest = this.scanInfo;
+    const info = await this.callAction<null, DeferredInfo>(new ActionInfo('info'));
+    if (info.scan_info && this.scanInfo === scanBeforeRequest) this.setScanInfo(info.scan_info);
+    return info;
   }
 
   get schemaLoaded() {
@@ -673,6 +694,42 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         await this.save(entityRef.entity.typeId);
       }
     }
+  }
+
+  /**
+   * Re-pull everything this client is currently showing, from the server.
+   *
+   * The data layer is PUSH-ONLY after its seeding fetch (see `watchQuery`): a
+   * live query is seeded once and every later change is expected to arrive over
+   * the WebSocket. So a client that missed a message — a laptop that slept, a
+   * socket that dropped and re-registered its watches without replaying the gap
+   * — or one looking at state nothing pushes at all, has no way back to the
+   * truth short of reloading the document. This is that way back, and it is the
+   * only pull path in the client.
+   *
+   * Re-runs every live query and re-fetches every cached entity, then notifies
+   * subscribers exactly the way an arriving data-op does, so React repaints from
+   * server state. Best-effort per item: one entity that 404s (deleted while we
+   * held it) must not abandon the rest of the refresh.
+   */
+  public async refreshAll(): Promise<void> {
+    const requests = this.watchedQueries.getAllWatchedQueries().map((watched) => watched.request);
+    const typeIds = Array.from(this.entities.keys());
+
+    await Promise.all([
+      ...requests.map((request) =>
+        this._query(request)
+          .then((results) => this.watchedQueries.updateQueryResults(request, results))
+          .catch(() => undefined),
+      ),
+      ...typeIds.map((typeId) =>
+        this.refreshByTypeId(typeId)
+          .then((entity) => {
+            if (entity) this._notifyAllAliases(typeId, entity, entity);
+          })
+          .catch(() => undefined),
+      ),
+    ]);
   }
 
   public async clearCache() {
@@ -1280,7 +1337,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!entity) {
       throw new Error('Can not create, Empty ref entity');
     }
-    const entityType = entity.typeId.type;
+    // Optional: a null typeId used to surface as a raw TypeError from inside a
+    // function whose whole point is to name the unusable part of the ref.
+    const entityType = entity.typeId?.type;
     if (!entityType) {
       throw new Error('Can not create, Entity type not found');
     }
@@ -1532,6 +1591,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       throw new Error('QueryRequest must have a callback for watchQuery');
     }
 
+    // A watch is push-only: the fetch below seeds it, and every LATER change
+    // arrives over the WebSocket. Registering one without a socket is the silent
+    // failure this guards -- the caller gets an unsubscribe handle, the list
+    // renders once, and it never updates again. Served micro-apps hit exactly
+    // that: `initSdk` starts no subscriptions, so nothing opened the channel.
+    //
+    // Asked for HERE, by the thing that needs it, rather than at boot: `connect`
+    // short-circuits on OPEN/CONNECTING so repeat calls are free, a page that
+    // never watches anything still opens no socket, and it cannot be defeated by
+    // init ordering. Not awaited -- the seed fetch must not wait on a handshake.
+    // `.catch`, not `void`: unawaited by design, but a rejected promise nobody
+    // observes is an unhandled rejection. A failed handshake here is already
+    // reported by the connection status; it must not take the process down.
+    ConnectionManager.getInstance().connect().catch(() => undefined);
+
     // Check if a WatchedQuery exists
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     let queryResult: U[];
@@ -1581,6 +1655,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private async _query<U extends T>(request: QueryRequest): Promise<U[]> {
     const { type, query, scope } = request;
+    const epoch = this.queryEpoch;
 
     // Check if WatchedQuery with pending promise already exists (another call beat us to it)
     const existingWatchedQuery = this.watchedQueries.getWatchedQuery(request);
@@ -1634,6 +1709,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const entitiesJson: IEntity[] = (await apiClient.get<IEntity[]>(endpoint, {
         params: apiQuery,
       })) as unknown as IEntity[];
+      if (epoch !== this.queryEpoch) throw new Error('SDK scope changed');
       const queryResult: U[] = [];
       for (const entityJson of entitiesJson) {
         if (!entityJson['type'] || !entityJson['id']) {
@@ -1672,7 +1748,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // Update the WatchedQuery with final results and clear pending promise
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
-      if (watchedQuery) {
+      if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.results = results;
         watchedQuery.pendingPromise = undefined;
       }
@@ -1680,7 +1756,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     } catch (error) {
       // Clear pending promise on error
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
-      if (watchedQuery) {
+      if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.pendingPromise = undefined;
       }
       throw error;

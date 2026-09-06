@@ -12,6 +12,7 @@ import { DisplayChrome } from './display-chrome';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { VibeChatPane } from './vibe-chat-pane';
+import { VibeNoProcessPane } from './vibe-no-process-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 
@@ -226,7 +227,9 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
             isVibe ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0',
           ].join(' ')}
         >
-          {isVibe ? <VibeChatPane process={process} workContext={workContext} /> : null}
+          {isVibe ? (
+            session ? <VibeChatPane process={process} workContext={workContext} /> : <VibeNoProcessPane />
+          ) : null}
         </div>
       </ResizablePanel>
       <ResizableHandle
@@ -242,21 +245,12 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       <ResizablePanel id="asset-vibe-content" order={2} defaultSize={isVibe ? 64 : 100} minSize={45}>
         <div className="flex h-full flex-col">
           <div className={isVibe ? 'block' : 'hidden'}>
-            {session ? (
+            {session && (
               <WorkspaceChildStrip
                 processTab={session.processTab}
                 processDock={session.processDock}
                 projectId={project?.id ?? null}
               />
-            ) : (
-              <div
-                data-testid="workspace-child-strip"
-                aria-busy="true"
-                className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-muted/20 px-2"
-              >
-                <span className="h-4 w-8 animate-pulse rounded bg-muted-foreground/15" />
-                <span className="h-4 w-24 animate-pulse rounded bg-muted-foreground/10" />
-              </div>
             )}
           </div>
           <div className="min-h-0 flex-1">
@@ -266,7 +260,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
             {/* Unconditional: ContentPanel's ancestry must not change across a
                 mode toggle, or the dirty editor beneath it remounts and loses its
                 buffer. The chrome hides itself instead. */}
-            <DisplayChrome process={persistedProcess ?? process} latestShown={latestShown} active={isVibe}>
+            <DisplayChrome process={persistedProcess ?? process} latestShown={latestShown} active={isVibe && !!session}>
               <ContentPanel minimalChrome={isVibe} contentEpoch={showNonce} />
             </DisplayChrome>
           </div>
