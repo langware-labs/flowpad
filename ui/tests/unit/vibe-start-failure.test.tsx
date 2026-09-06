@@ -43,7 +43,12 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
-    capabilityManager: { test: h.test, getSnapshot: h.getSnapshot },
+    capabilityManager: {
+      test: h.test,
+      getSnapshot: h.getSnapshot,
+      // The dialog reads its install command from the summary, not the row.
+      getCachedSummary: () => null,
+    },
     ComputeNode: { ...actual.ComputeNode, getById: () => Promise.resolve({ createProcess: h.launch }) },
   };
 });

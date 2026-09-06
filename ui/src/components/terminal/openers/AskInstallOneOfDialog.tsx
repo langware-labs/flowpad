@@ -4,6 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -46,13 +47,27 @@ function CapabilityHarnessRow({
   const { navigation } = useDockNavigation();
 
   const title = capability?.name ?? kind;
-  const description = capability?.description ?? '';
   const homepage = capability?.homepage_url ?? HOMEPAGE_FALLBACKS[kind] ?? null;
-  // The backend resolved this for THIS machine's platform, or left it null
-  // because the harness has no unattended installer here (see
-  // `CapabilitySpec.install_commands`). Never offered for something already
-  // installed — the row's job is then to be selected, not re-installed.
-  const installCommand = available ? null : (capability?.install_command ?? null);
+
+  // The vendor mark, resolved from the kind's middle segment
+  // (`harness.<vendor>.cli`) through the same table the terminal strip uses —
+  // so a row is recognisable at a glance instead of being four lines of text
+  // that differ only in a word.
+  const vendor = kind.split('.')[1] as keyof typeof PROVIDER_META | undefined;
+  const brand = vendor && vendor in PROVIDER_META ? PROVIDER_META[vendor] : null;
+
+  // Read from the SUMMARY, not the capability row.
+  //
+  // `install_command` is derived from the spec for this platform on every
+  // request, so the summary cannot be stale and cannot be missing. The entity
+  // row can be both: a row seeded before the field existed carries null, and a
+  // DB holding DUPLICATE rows for one kind (seen on a dev instance) can hand
+  // `useCapability` the empty one — either way the button silently vanished on
+  // exactly the machines that needed it.
+  const access = capabilityManager.getCachedSummary()?.capabilities.find((a) => a.kind === kind) ?? null;
+  // Never offered for something already installed — the row's job is then to be
+  // selected, not re-installed.
+  const installCommand = available ? null : (access?.install_command ?? null);
 
   // Open a terminal on the raw-xterm surface and TYPE the command there,
   // unsubmitted. The user reads the line, sees exactly what is about to run,
@@ -80,6 +95,7 @@ function CapabilityHarnessRow({
 
   return (
     <div className="flex items-start gap-3 rounded-md border p-3" data-testid={`install-one-of-row-${kind}`}>
+      {brand && <brand.Icon className={`mt-0.5 h-5 w-5 shrink-0 ${brand.iconClassName}`} />}
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <div className="truncate text-sm font-medium">{title}</div>
@@ -90,10 +106,22 @@ function CapabilityHarnessRow({
             </span>
           )}
         </div>
-        <div className="truncate text-xs text-muted-foreground">{kind}</div>
-        {description && <div className="mt-1 text-xs text-muted-foreground">{description}</div>}
+        {/* The kind (`harness.claude.cli`) and the spec's description used to sit
+            here. Neither is actionable and neither distinguishes one row from
+            another to a reader choosing an assistant — the name and the verdict
+            do. Dropping them leaves the verdict as the row's second line, where
+            it is actually read. */}
         {(message ?? result?.message) && (
-          <div className="mt-1 text-xs text-amber-600 dark:text-amber-500">{message ?? result?.message}</div>
+          // Amber is a WARNING colour and was worn by every row alike, so a
+          // harness that passed its check looked like one that had failed.
+          // The line reports a verdict; it should carry that verdict's colour.
+          <div
+            className={`mt-1 text-xs ${
+              available && !message ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'
+            }`}
+          >
+            {message ?? result?.message}
+          </div>
         )}
         {installCommand && (
           <Button
