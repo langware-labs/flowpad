@@ -20,8 +20,24 @@ RUN apt-get update \
 # with "command not found: claude".
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
- && npm install -g @anthropic-ai/claude-code \
  && rm -rf /var/lib/apt/lists/*
+
+# All four agentic harnesses, so a scenario can be run across every worker in the
+# same container rather than proving one and assuming the rest. Binary names are
+# what the drivers shell out to: claude / codex / copilot / opencode
+# (``flow_sdk/flowpad_types/vendors.py``).
+#
+# claude is PINNED. Its releases have broken worker spawning before (2.1.209),
+# and an unpinned harness turns "we changed the model" into "we changed the model
+# and the CLI" — 2.1.197 is the build this rig's earlier runs were validated on.
+# The other three float: there is no validated baseline for them here, so latest
+# is the honest starting point.
+RUN npm install -g \
+      @anthropic-ai/claude-code@2.1.197 \
+      @openai/codex \
+      @github/copilot \
+      opencode-ai \
+ && claude --version && codex --version && copilot --version && opencode --version
 
 # Install uv for fast deps install (already used on the host).
 RUN pip install --no-cache-dir uv
