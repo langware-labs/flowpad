@@ -153,3 +153,28 @@ async def test_a_read_state_toggle_does_not_persist_the_hydrated_body():
     raw = (await FlowMessage.get_all({"id": fm.id}, hydrate=False))[0]
     assert raw.text == "", "the toggle save must not resurrect the copy"
     assert raw.is_read is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_the_announced_op_carries_the_hydrated_body(monkeypatch):
+    """The socket frame is serialized the moment the op is announced. A
+    reference row is announced AFTER its body is restored, so a live viewer
+    never receives the stored (blank) shape — that frame blanked every
+    requester line in an open ticket until a reload."""
+    seen: list = []
+
+    async def capture(op_message, notify_immediately=False):
+        seen.append((op_message.op, op_message.data.text))
+
+    monkeypatch.setattr(FlowMessage, "add_entity_op_notification", staticmethod(capture))
+    fm = _fm(source_item_id=str(uuid.uuid4()))
+    await fm.save()
+    assert seen and seen[-1][1] == "a body that must not be persisted", seen
+    assert str(seen[-1][0]).lower().endswith("create")
+    stored = await FlowMessage.get_one({"id": fm.id})
+    assert stored.text == "", "the persisted row still carries no body"
+
+    fm.is_read = True
+    await fm.save()
+    assert seen[-1][1] == "a body that must not be persisted" and str(seen[-1][0]).lower().endswith("update")

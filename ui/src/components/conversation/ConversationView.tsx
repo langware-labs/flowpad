@@ -403,6 +403,7 @@ export function ConversationView({
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
           isHelpdesk={isHelpdeskConversation}
+          viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
           showEmailHeaders={!!agentId}

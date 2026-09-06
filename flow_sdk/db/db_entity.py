@@ -442,18 +442,30 @@ class DBEntity(DBBaseRecord):
 
         # Must notify after the entity is saved to the DB and the children are saved
         if notify:
-            if notify_created:
-                op = OperationType.CREATE
-            else:
-                op = OperationType.UPDATE
-            # from_entity = the save's owner — rides the notification so the
-            # unified-bus adapter can stamp containment scope (phase 3).
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
-            await self.add_entity_op_notification(self_op)
-            self._notify_observers(self_op)
+            await self.notify_saved(owner, created=notify_created)
         self._dirty = False
 
         return self
+
+    async def notify_saved(self, owner: Union[DBEntity, TypeId, str, None] = None, *, created: bool) -> None:
+        """Announce a completed save — the CREATE/UPDATE op every watcher gets.
+
+        Split out of ``save`` so a subclass that must persist a DIFFERENT shape
+        from the one it holds (``FlowMessage``: a reference row stores no body)
+        can save with ``notify=False`` and announce afterwards, once the
+        in-memory row is the read shape again. The op is serialized on the
+        spot, so what the row looks like at this call is what the socket sees.
+        """
+        if isinstance(owner, DBEntity):
+            owner = owner.typeid
+        elif isinstance(owner, str) and owner:
+            owner = TypeId(owner)
+        op = OperationType.CREATE if created else OperationType.UPDATE
+        # from_entity = the save's owner — rides the notification so the
+        # unified-bus adapter can stamp containment scope (phase 3).
+        self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
+        await self.add_entity_op_notification(self_op)
+        self._notify_observers(self_op)
 
     async def notify_updated(self):
         change = DataOpMessage(data=self, op=OperationType.UPDATE, to_entity=self.typeid)

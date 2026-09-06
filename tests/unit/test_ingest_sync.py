@@ -363,6 +363,16 @@ async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_
     await sync_source(src, now=NOW + timedelta(seconds=120), budget=1)
     assert driver.calls == [moved], f"the moved stream goes before the never-attempted one, got {driver.calls}"
 
+    # With room to spare the backlog only trickles: one never-attempted stream
+    # rides along with the news, however large the budget.
+    for i in range(3):
+        driver.stamps[f"https://old{i}.test/f"] = f"1:o{i}"
+        driver._behaviour[f"https://old{i}.test/f"] = FetchResult(items=[], next_state={})
+    driver.stamps[moved] = "4:t4"
+    driver.calls.clear()
+    await sync_source(src, now=NOW + timedelta(seconds=180), budget=5)
+    assert driver.calls[0] == moved and len(driver.calls) == 2, f"news plus one backlog stream, got {driver.calls}"
+
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval

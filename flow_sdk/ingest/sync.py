@@ -243,9 +243,13 @@ def _round_robin(
     whose token MOVED goes first of all, ahead of the never-attempted ones: a
     new source on a busy desk backfills dozens of old tickets a few per pass,
     and the one ticket a person is answering right now must not wait behind
-    that backlog. Never-attempted streams keep the driver's listing order. A
-    stream that last FAILED stays a candidate whatever its token says: the
-    retry is the point.
+    that backlog. And while anything has moved, the backlog only TRICKLES —
+    one stream per pass beside the news — because a pass is one unit of
+    latency: the next round cannot start until this one ends, and five old
+    tickets' histories ingested and projected is what made a live reply take
+    twenty seconds to land. Never-attempted streams keep the driver's listing
+    order. A stream that last FAILED stays a candidate whatever its token
+    says: the retry is the point.
 
     A ``config_error`` stream is not a candidate at all. It is parked until a
     person fixes it (``health.py``: that state stops polling for ITS scope), so
@@ -264,11 +268,13 @@ def _round_robin(
         token = stamps.get(c.segment_key, "")
         return bool(token) and bool(c.segment_stamp) and c.segment_stamp != token
 
-    ordered = sorted(
-        (c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value and not _idle(c)),
-        key=lambda c: (not _moved(c), c.last_attempted_at is not None, c.last_attempted_at or datetime.min),
-    )
-    return ordered[:budget]
+    candidates = [c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value and not _idle(c)]
+    by_age = sorted(candidates, key=lambda c: (c.last_attempted_at is not None, c.last_attempted_at or datetime.min))
+    moved = [c for c in by_age if _moved(c)]
+    rest = [c for c in by_age if not _moved(c)]
+    if not moved:
+        return rest[:budget]
+    return (moved + rest[:1])[:budget]
 
 
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:

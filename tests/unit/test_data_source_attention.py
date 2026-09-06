@@ -205,6 +205,12 @@ class TestAttentionFastLane:
 
         real_sleep = asyncio.sleep
         monkeypatch.setattr(poller.asyncio, "sleep", lambda s: real_sleep(min(s, 0.01)))
+        # The lane re-checks a source when its NEXT round is due; the first
+        # round already ran on arming, so the next one is a cadence (5s) away.
+        # Make it due now — the mechanism under test is the re-check, not the
+        # cadence, and racing a 5s cadence against a 5s wait is how this test
+        # failed on a loaded machine.
+        poller._attention[str(src.id)]["next"] = 0
         import time as _time
 
         t0 = _time.monotonic()
