@@ -106,7 +106,7 @@ export function buildConversationItems(
   return items;
 }
 
-export function messageHasPromptCompletion(fm: FlowMessage): boolean {
+function messageHasPromptCompletion(fm: FlowMessage): boolean {
   return (fm.attachment ?? []).some(
     (a) =>
       a?.attachment_type === AttachmentType.TYPE_ID &&
@@ -127,13 +127,6 @@ function itemFlowMessage(
  *  not synced its `starting_message_id` yet). Built from the conversation's
  *  RemoteWorkerSession rows by `useConversationSessions`. */
 export type SessionAnchorIndex = ReadonlyMap<string, string | null>;
-
-/** True for every session message that is NOT the one that opened the
- *  session — a follow-up prompt, a reply, a lifecycle line. These render in
- *  the session view only. */
-export function isSessionFollowUp(fm: FlowMessage, startingMessageId: string | null | undefined): boolean {
-  return !!fm.remote_worker_session_id && fm.id !== startingMessageId;
-}
 
 /**
  * Pin every live session to the message that opened it.

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@sdk/entities/notifications', () => ({ sendReply: vi.fn(), sendToChannel: vi.fn() }));
-vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => async () => ({ ok: true }) }));
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
 vi.mock('@src/components/conversation/useLocalUser', () => ({ useLocalUser: () => ({ localUser: { id: 'me', name: 'Me' }, updateName: vi.fn() }) }));
 vi.mock('@src/components/asset-manager/AssetManagerPopover', () => ({ AssetManagerPopover: ({ trigger }: { trigger: React.ReactNode }) => <>{trigger}</> }));
 vi.mock('@src/components/conversation/EmojiPicker', () => ({ EmojiPicker: ({ trigger }: { trigger: React.ReactNode }) => <>{trigger}</> }));
@@ -10,7 +10,7 @@ vi.mock('@src/components/conversation/AttachMenu', () => ({
   AssetRefChips: () => null,
   useAssetRefSelection: () => ({ selectedTypeIds: [] }),
 }));
-vi.mock('@src/components/image-annotator/annotate-files', () => ({ annotateImageFiles: async (f: File[]) => f }));
+vi.mock('@src/components/image-annotator/annotate-files', () => ({ annotateImageFiles: (f: File[]) => Promise.resolve(f) }));
 
 import { sendReply } from '@sdk/entities/notifications';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';

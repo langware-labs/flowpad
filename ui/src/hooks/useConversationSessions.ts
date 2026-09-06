@@ -29,12 +29,7 @@ export function useConversationSessions(conversationId: string | null | undefine
         type: RemoteWorkerSession.type,
         scope: [],
         name: `useConversationSessions:${conversationId ?? 'none'}`,
-        query: new QueryFilter({
-          match: {
-            op: '$AND',
-            operands: [{ op: '$EQ', operands: ['conversation_id', conversationId ?? ''] }],
-          } as Record<string, unknown>,
-        }),
+        query: new QueryFilter({ match: { conversation_id: conversationId ?? '' } }),
       }),
     [conversationId],
   );

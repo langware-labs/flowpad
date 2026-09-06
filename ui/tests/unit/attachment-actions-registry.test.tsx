@@ -40,7 +40,6 @@ function actionsFor(
   handlers: AttachmentActionHandlers,
   opts: {
     isFromOther?: boolean;
-    isComposerPreview?: boolean;
     hasPlanSession?: boolean;
   } = {},
 ) {
@@ -49,7 +48,6 @@ function actionsFor(
       fm,
       messageId: fm?.id,
       isFromOther: opts.isFromOther ?? true,
-      isComposerPreview: opts.isComposerPreview ?? false,
       hasPlanSession: opts.hasPlanSession ?? false,
       handlers,
     }),
@@ -115,7 +113,7 @@ describe('attachment-action registry visibility', () => {
   });
 
   it('composer preview tolerates fm == null and renders nothing', () => {
-    const { actions } = actionsFor(null, fullHandlers, { isFromOther: false, isComposerPreview: true });
+    const { actions } = actionsFor(null, fullHandlers, { isFromOther: false });
     expect(actions).toHaveLength(0);
   });
 

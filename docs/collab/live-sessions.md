@@ -64,8 +64,9 @@ the Home-feed session-approval card; UI: `ExecutePromptDialog`,
 ## Phase 1 — Backend model  ✅
 
 `remote_worker_session.py`: `ReplyPolicy`, the four fields, snapshot whitelist,
-`decide_inbound_prompt`, `approve_session`, `settings` action, `approve {remember}`.
-`flow_message.py`: `SESSION_START_MARKER_KEY`, `SessionStartSettings(DataSpec)`,
+`decide_inbound_prompt`, `approve()` + `remember_guest()`, `settings` action, `approve {remember}`.
+`flow_message.py`: `SESSION_START_MARKER_KEY`,
+`data_spec/session_spec.py`: `SessionStartSettings(DataSpec)` (kind `session.start`);
 `session_start_settings(fm)`; approval stamps removed. `contact_permission.py`:
 single action + legacy read-side mapper.
 
@@ -94,7 +95,7 @@ draft send uploads the body; `hub_bridge.py` renamed callee.
 ## Phase 3 — Backend tests  ✅
 
 `test_session_gate.py`, `test_session_actions.py`, `test_run_session_turn.py`,
-`test_send_draft_session_reply.py`, `test_session_start_marker.py`;
+`test_session_start_marker.py`;
 `test_live_session_loop.py` extended with park → approve;
 `test_live_session_stress.py` (20 prompts, 2 sessions, fake worker).
 

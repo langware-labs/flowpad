@@ -10,7 +10,6 @@ import {
   anchorSessionItems,
   buildConversationItems,
   ConversationItemKind,
-  isSessionFollowUp,
   type SessionAnchorItem,
 } from '@src/components/conversation/conversation-items';
 
@@ -24,8 +23,8 @@ function fm(over: Partial<FlowMessage> = {}): FlowMessage {
 }
 
 function pointerItems(messages: FlowMessage[]) {
-  const pointers = messages.map((m, i) => ({ id: m.id!, ts: new Date(2026, 0, 1, 0, i).toISOString() }));
-  const byId = new Map(messages.map((m) => [m.id!, m]));
+  const pointers = messages.map((m, i) => ({ id: m.id, ts: new Date(2026, 0, 1, 0, i).toISOString() }));
+  const byId = new Map(messages.map((m) => [m.id, m]));
   const items = buildConversationItems(pointers, []);
   return { items, getFm: (id: string) => byId.get(id) ?? null };
 }
@@ -46,7 +45,7 @@ describe('anchorSessionItems', () => {
       fm(),
     ];
     const { items, getFm } = pointerItems(messages);
-    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id!]]));
+    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id]]));
     expect(out.map((g) => g.kind)).toEqual([
       ConversationItemKind.POINTER,
       ConversationItemKind.SESSION_ANCHOR,
@@ -82,7 +81,7 @@ describe('anchorSessionItems', () => {
     const start = sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>);
     const messages = [start, fm(), sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>), fm()];
     const { items, getFm } = pointerItems(messages);
-    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id!]]));
+    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id]]));
     expect(out.map((g) => g.kind)).toEqual([
       ConversationItemKind.SESSION_ANCHOR,
       ConversationItemKind.POINTER,
@@ -96,7 +95,7 @@ describe('anchorSessionItems', () => {
     const b = sess(SID_B, { attachment: [promptAtt] } as Partial<FlowMessage>);
     const messages = [a, sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>), b, sess(SID_B, { attachment: [resultAtt] } as Partial<FlowMessage>)];
     const { items, getFm } = pointerItems(messages);
-    const out = anchorSessionItems(items, getFm, new Map([[SID_A, a.id!], [SID_B, b.id!]]));
+    const out = anchorSessionItems(items, getFm, new Map([[SID_A, a.id], [SID_B, b.id]]));
     expect(out.map((g) => (g as SessionAnchorItem).sessionId)).toEqual([SID_A, SID_B]);
     expect(out.map((g) => (g as SessionAnchorItem).replyCount)).toEqual([1, 1]);
   });
@@ -104,7 +103,7 @@ describe('anchorSessionItems', () => {
   it('leaves unresolved bodies and session-less messages flat', () => {
     const messages = [sess(SID_A), fm()];
     const { items } = pointerItems(messages);
-    const out = anchorSessionItems(items, () => null, new Map([[SID_A, messages[0].id!]]));
+    const out = anchorSessionItems(items, () => null, new Map([[SID_A, messages[0].id]]));
     expect(out.map((g) => g.kind)).toEqual([ConversationItemKind.POINTER, ConversationItemKind.POINTER]);
   });
 
@@ -113,7 +112,7 @@ describe('anchorSessionItems', () => {
     const draft = sess(SID_A, { is_draft: true, attachment: [resultAtt] } as Partial<FlowMessage>);
     const { items: pointerOnly, getFm } = pointerItems([start]);
     const items = [...pointerOnly, ...buildConversationItems([], [draft])];
-    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id!]]));
+    const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id]]));
     expect(out).toHaveLength(1);
     expect((out[0] as SessionAnchorItem).replyCount).toBe(1);
   });
@@ -122,19 +121,5 @@ describe('anchorSessionItems', () => {
     const messages = [sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>)];
     const { items, getFm } = pointerItems(messages);
     expect(anchorSessionItems(items, getFm)).toEqual([]);
-  });
-});
-
-describe('isSessionFollowUp', () => {
-  const start = sess(SID_A);
-  const next = sess(SID_A);
-  const plain = fm();
-  it.each([
-    [start, start.id!, false],
-    [next, start.id!, true],
-    [next, null, true],
-    [plain, start.id!, false],
-  ])('%#: session message vs starting id', (message, startingId, expected) => {
-    expect(isSessionFollowUp(message, startingId)).toBe(expected);
   });
 });

@@ -13,7 +13,6 @@ export interface UseAttachmentActionsArgs {
   /** Sender-perspective gate, computed by the bubble (roster/local-user aware). */
   isFromOther: boolean;
   handlers: AttachmentActionHandlers;
-  isComposerPreview?: boolean;
   hasPlanSession?: boolean;
 }
 
@@ -36,7 +35,6 @@ export function useAttachmentActions({
   messageId,
   isFromOther,
   handlers,
-  isComposerPreview = false,
   hasPlanSession = false,
 }: UseAttachmentActionsArgs): UseAttachmentActionsResult {
   return useMemo(() => {
@@ -45,7 +43,6 @@ export function useAttachmentActions({
       fm: resolvedFm,
       messageId,
       isFromOther,
-      isComposerPreview,
       specOrPlanTypeId: flowMessageSpecOrPlanTypeId(resolvedFm),
       promptEntityTypeId: flowMessagePromptEntityTypeId(resolvedFm),
       hasPlanSession,
@@ -59,5 +56,5 @@ export function useAttachmentActions({
     };
     // handlers is rebuilt per render by the bubble — memo on its fields' identities
     // would be noise; the bubble's own memoization keeps this cheap enough.
-  }, [fm, messageId, isFromOther, isComposerPreview, hasPlanSession, handlers]);
+  }, [fm, messageId, isFromOther, hasPlanSession, handlers]);
 }

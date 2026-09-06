@@ -18,7 +18,6 @@ export interface AttachmentActionContext {
   fm: FlowMessage | null;
   messageId?: string;
   isFromOther: boolean;
-  isComposerPreview: boolean;
   /** Resolved spec OR plan TypeId on this message (spec wins), or null. A
    *  shared plan (the `.claude/plans` plan-mode artifact) rides the same
    *  View / Open Spec / session affordances as a spec, so descriptors read

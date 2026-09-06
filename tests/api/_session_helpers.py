@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import json
 
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+from flow_sdk.builtin.flow_message import (
+    LIVE_SESSION_EVENT_MARKER_KEY,
+    Attachment,
+    AttachmentType,
+    FlowMessage,
+    _carrier_marker,
+)
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 
 
@@ -31,13 +37,7 @@ async def session_messages(conv_id: str, *, kind: str | None = None) -> list[Flo
 
 
 def event_marker(fm: FlowMessage) -> str | None:
-    for a in fm.attachment or []:
-        if a.attachment_type == AttachmentType.TYPE_ID and (a.data or "").startswith("remote_worker_session-"):
-            try:
-                return (json.loads(a.prompt_preview or "") or {}).get("live_session_event")
-            except (ValueError, TypeError):
-                return None
-    return None
+    return (_carrier_marker(fm) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY)
 
 
 async def make_session(conv_id: str, status: str, session_id: str | None = None, **extra) -> RemoteWorkerSession:

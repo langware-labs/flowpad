@@ -532,6 +532,7 @@ async def resolve_or_mint_session(
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
         sid = session.id if session else mint_uuid()
     start = session_start_settings(fm)
+    changed = session is None
     if session is None:
         session = RemoteWorkerSession(
             id=sid,
@@ -546,19 +547,28 @@ async def resolve_or_mint_session(
             reply_policy=(start.reply_policy if start else None),
         )
     else:
+        # Fill-only: an existing row keeps what it has; save only when a field
+        # actually moved (a follow-up turn on a settled session writes nothing).
+        def _fill(field: str, value) -> None:
+            nonlocal changed
+            if not getattr(session, field, None) and value:
+                setattr(session, field, value)
+                changed = True
+
         if session.status == RemoteWorkerSessionStatus.DRAFT:
             session.status = RemoteWorkerSessionStatus.PENDING
-        if not session.starting_message_id and start is not None:
-            session.starting_message_id = fm.id
-        if not session.reply_policy and start is not None:
-            session.reply_policy = start.reply_policy
-        session.guest_user_id = session.guest_user_id or getattr(fm, "sender_id", None)
-        session.guest_name = session.guest_name or getattr(fm, "sender_name", None)
-        session.host_user_id = session.host_user_id or host_user_id
-        session.host_name = session.host_name or host_name
-        session.project_id = session.project_id or getattr(conv, "project_id", None)
-        session.conversation_id = session.conversation_id or conv.id
-    await session.save()
+            changed = True
+        if start is not None:
+            _fill("starting_message_id", fm.id)
+            _fill("reply_policy", start.reply_policy)
+        _fill("guest_user_id", getattr(fm, "sender_id", None))
+        _fill("guest_name", getattr(fm, "sender_name", None))
+        _fill("host_user_id", host_user_id)
+        _fill("host_name", host_name)
+        _fill("project_id", getattr(conv, "project_id", None))
+        _fill("conversation_id", conv.id)
+    if changed:
+        await session.save()
     if fm.remote_worker_session_id != session.id:
         fm.remote_worker_session_id = session.id
         await fm.save()
@@ -606,7 +616,7 @@ async def run_session_turn(
     Consent is the caller's business (the gate); this only runs. Never raises
     — a failed run marks the session ERROR and returns ``ApiFailResponse`` so
     it can't crash the receive pipeline. ``_locked`` is for the queue drain,
-    which already holds the session lock.
+    which already holds the per-conversation lock.
     """
     import contextlib  # noqa: PLC0415
 
@@ -729,9 +739,14 @@ async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str])
     return queued
 
 
-async def redrive_session_prompts(session: "RemoteWorkerSession") -> None:
+async def redrive_session_prompts(
+    session: "RemoteWorkerSession",
+    *,
+    conv: Optional["Conversation"] = None,
+    local_user=None,
+) -> None:
     """Drain the session's queue: run every unconsumed inbound prompt in
-    arrival order, under the session lock, re-selecting after each turn so a
+    arrival order, under the per-conversation lock, re-selecting after each turn so a
     prompt that lands mid-drain is picked up in its place. THE way a turn
     runs from the gate: concurrent deliveries each call this; the first holds
     the lock and drains, the rest find nothing left. Selection happens under
@@ -741,10 +756,12 @@ async def redrive_session_prompts(session: "RemoteWorkerSession") -> None:
 
     if not session.conversation_id:
         return
-    conv = await Conversation.get_one({"id": session.conversation_id})
+    if conv is None:
+        conv = await Conversation.get_one({"id": session.conversation_id})
     if not conv:
         return
-    local_user = await get_or_create_local_user()
+    if local_user is None:
+        local_user = await get_or_create_local_user()
     local_id = local_user.id if local_user else None
     someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
     async with _session_lock(session):
@@ -796,23 +813,20 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
 
         someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
         # The host's identity on the session is the CLOUD user id — the id the
-        # guest's roster carries and the UI compares against (`isHost`). The
-        # local user id is a different id space and would never match.
-        from flow_sdk.cli.app_config import get_user as _get_cloud_user
+        # guest's roster carries and the UI compares against (`isHost`); the
+        # local user is the fallback. One resolver for that chain.
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
 
-        cloud_user = _get_cloud_user() or {}
-        host_id = cloud_user.get("id") or local_id
-        host_name = (
-            cloud_user.get("name")
-            or cloud_user.get("email")
-            or (getattr(local_user, "name", None) if local_user else None)
-        )
+        who = await User.current_sender_participant()
+        host_id = who.get("user_id") or local_id
+        host_name = who.get("name") or None
         session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=host_name)
 
         needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
         standing = False
         if needs_consent:
-            _peer_id, _peer_name, contact_email = _peer_of(conv, local_id)
+            # Roster ids are CLOUD ids — exclude the host's cloud id, not the local one.
+            _peer_id, _peer_name, contact_email = _peer_of(conv, host_id)
             rows = await ContactPermission.get_all()
             standing = _grants(
                 rows,
@@ -843,6 +857,6 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if needs_consent:
             if not await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid):
                 return
-        await redrive_session_prompts(session)
+        await redrive_session_prompts(session, conv=conv, local_user=local_user)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_inbound_prompt failed: %s", e, exc_info=True)

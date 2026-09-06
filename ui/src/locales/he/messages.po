@@ -1685,6 +1685,10 @@ msgstr "אפשור קשירה לפורטים מקומיים"
 msgid "Allow commands to run outside sandbox"
 msgstr "אפשור הרצת פקודות מחוץ לארגז החול"
 
+#: src/components/conversation/ContactPermissionsDialog.tsx
+msgid "Allow live sessions without asking"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "אפשור קשירה מקומית"

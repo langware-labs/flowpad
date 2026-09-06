@@ -1685,6 +1685,10 @@ msgstr "Allow binding to local ports"
 msgid "Allow commands to run outside sandbox"
 msgstr "Allow commands to run outside sandbox"
 
+#: src/components/conversation/ContactPermissionsDialog.tsx
+msgid "Allow live sessions without asking"
+msgstr "Allow live sessions without asking"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "Allow Local Binding"

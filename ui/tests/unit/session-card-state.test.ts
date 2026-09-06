@@ -16,6 +16,6 @@ describe('sessionCardState', () => {
     [RemoteWorkerSessionStatus.ERROR, 'error'],
     ['garbage', 'requesting'],
   ])('%s → %s', (status, expected) => {
-    expect(sessionCardState(status as string | null | undefined)).toBe(expected);
+    expect(sessionCardState(status)).toBe(expected);
   });
 });
