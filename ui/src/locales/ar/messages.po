@@ -1521,6 +1521,10 @@ msgstr ""
 msgid "Agent enabled"
 msgstr ""
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Agent funding"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
@@ -2480,6 +2484,10 @@ msgstr ""
 msgid "Auto-updates check hourly."
 msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Automatic"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3240,6 +3248,10 @@ msgstr "جارٍ التحقق من ملفات مكتب المساعدة"
 msgid "Checking the tag index…"
 msgstr "جاري التحقق من فهرس الوسوم…"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Checking what funds {harnessLabel}…"
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
 msgstr "جارٍ التحقق من جاهزية {folderName} للمشاركة."
@@ -3311,6 +3323,10 @@ msgstr "تحديد المشاريع المراد التصفية بها. مرتب
 
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Choose…"
+msgstr ""
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "chosen by you"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -3730,6 +3746,10 @@ msgstr "إغلاق علامة التبويب"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Close terminal"
 msgstr "إغلاق الطرفية"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Close ticket"
+msgstr ""
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close to the Right"
@@ -4401,6 +4421,10 @@ msgstr "نسخ الكل"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Copy as log"
 msgstr "نسخ كسجل"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Copy attachment id"
+msgstr ""
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -5567,6 +5591,7 @@ msgstr "افتراضي"
 msgid "Default ({defaultDbPath})"
 msgstr "الافتراضي ({defaultDbPath})"
 
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Default assistant"
 msgstr "المساعد الافتراضي"
@@ -8324,6 +8349,22 @@ msgstr "الثقة الكاملة"
 msgid "Fullscreen"
 msgstr "ملء الشاشة"
 
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by a hub endpoint"
+msgstr ""
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by a stored API key"
+msgstr ""
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "Funded by your vendor subscription"
+msgstr ""
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Funding for"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
 msgstr "مهملات"
@@ -10243,6 +10284,7 @@ msgid "LLM keys"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -10738,6 +10780,10 @@ msgstr "تحديد الكل كمقروء"
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
 msgstr "تحديد هذه المهمة كمكتملة؟"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Mark this ticket answered and take it off the desk's queue"
+msgstr ""
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -12011,6 +12057,10 @@ msgstr "لم يتم تحديد جلسة مباشرة"
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No LLM index for this folder yet."
 msgstr "لا يوجد فهرس LLM لهذا المجلد بعد."
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "No LLM source funds this harness"
+msgstr ""
 
 #: src/components/project-home/BindSecretDialog.tsx
 #~ msgid "No local app secrets"
@@ -14235,6 +14285,10 @@ msgstr "مشكلة"
 msgid "Problems found"
 msgstr "تم العثور على مشاكل"
 
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "process"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -14277,6 +14331,10 @@ msgstr "صورة الملف الشخصي:"
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "Progress"
 msgstr "التقدم"
+
+#: src/components/funding-chip/funding-chip-visuals.ts
+msgid "project"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14912,6 +14970,10 @@ msgstr "تم إعادة الاتصال"
 msgid "Reconnected."
 msgstr "تم إعادة الاتصال."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Record updated"
+msgstr ""
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
 #~ msgstr "تسجيل مصدر {lockedEnvVar}"
@@ -15283,9 +15345,14 @@ msgstr "إعادة تسمية المجلد"
 msgid "Rename this budget"
 msgstr ""
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "إعادة فتح"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Reopen this ticket"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
