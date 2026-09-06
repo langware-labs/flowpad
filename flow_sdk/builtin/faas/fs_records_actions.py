@@ -1544,19 +1544,20 @@ class FsRecordsActionsMixin:
         # ``index_one`` still stamps an already-known owning project through
         # its targeted project-mount lookup.
         #
-        # ``?type=`` FILTERS the answer, it does not classify: the registry
-        # classifies the path as the walk would, so a client naming another
-        # type gets nothing rather than a row minted for a file that type does
-        # not own (``?type=mcp_server`` on a settings.json).
+        # ``?type=`` names the type, and it has to: the bespoke-walked types
+        # this endpoint exists to index (a session transcript, a workflow run)
+        # share an extension with each other, so the registry classifies them
+        # to nothing from a bare path. ``resolve_asset`` still refuses a type
+        # that does not claim the file, and refuses a FRAGMENT type outright
+        # (``?type=mcp_server`` on a settings.json), which is the case a
+        # caller-named type could otherwise mint a bogus row for.
         if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
             _t_direct = time.perf_counter()
             try:
                 try:
-                    resolved = await resolve_asset(_p, write=True)
-                    if resolved.type_name != filter_type:
-                        raise NotAnAsset(f"{_p} is a {resolved.type_name}, not a {filter_type}")
+                    resolved = await resolve_asset(_p, write=True, type_name=filter_type)
                     found = await index_one(resolved)
                 except NotAnAsset as reason:
                     logging.debug("[fs-records] index %s: %s", filter_type, reason)

@@ -92,10 +92,12 @@ async def resolve_asset(
 ) -> Resolved:
     """The ``(type, id, layout)`` of the asset at ``path``.
 
-    ``type_name`` + ``owner_id`` are the type and id of the ROW being
-    re-parsed; without them the registry classifies the path. Either way the
-    type must claim the path and the asset must exist on disk, else
-    ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
+    ``type_name`` names the type when the caller knows it — a row being
+    re-parsed, or the bespoke-walked types (the session transcripts,
+    ``workflow_run``) that share an extension and so classify to nothing from a
+    bare path. Without it the registry classifies. Either way the type must
+    claim the path, must not be keyed on its walk ref, and the asset must exist
+    on disk, else ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
     reading as "unowned" (pass it whenever a miss leads to a write);
     ``known_unowned`` says the caller has ALREADY proved no row owns this
     asset, so the lookup is skipped rather than repeated.
@@ -104,17 +106,16 @@ async def resolve_asset(
     if not p.is_absolute():
         p = Path("/") / p
     p = p.resolve()
-    named = type_name
     if type_name is None:
         type_name = SchemaRegistry.type_for(p)
     info = SchemaRegistry.get(type_name) if type_name else None
     if info is None:
         raise NotAnAsset(f"{p} is not an asset")
-    if named is not None and owner_id is None and not info.walk:
-        # And `claims` cannot refuse it: the bespoke `.json` types all
-        # declare `File(".json")`.
-        raise NotAnAsset(f"{p}: {named} is walked bespoke; a caller-named type is not a classification")
     if info.keyed_by_ref:
+        # A fragment type (an mcp server inside a settings.json, a hook inside a
+        # hooks tree) is identified by its position in the file, which a bare
+        # path does not carry. Naming one for a whole file would mint a row for
+        # a file that type does not own, so it is refused however it was named.
         raise NotAnAsset(f"{p}: a {type_name} is keyed on its walk ref, which a path does not carry")
     if (refusal := info.claims(p)) is not None:
         raise NotAnAsset(f"{p} is not a {type_name}: {refusal}")
