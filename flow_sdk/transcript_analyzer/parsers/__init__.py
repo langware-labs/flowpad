@@ -21,7 +21,14 @@ _REGISTRY: dict[str, type[Parser]] = {
 
 # A format-specific parser, when the format names one (a format belongs to one
 # vendor by construction); a bare worker_type resolves through ``_REGISTRY``.
+#
+# CLAUDE_JSONL belongs here for the same reason as the rest, and its absence was
+# a real defect: a descriptor that already NAMES its format fell through to the
+# worker-name registry, so any worker not literally called ``claude`` — a test's
+# MockDriver, a harness wrapping the claude wire shape — failed lookup and the
+# caller's blanket ``except`` turned that into an empty reply.
 _BY_FORMAT: dict[TranscriptFormat, type[Parser]] = {
+    TranscriptFormat.CLAUDE_JSONL: ClaudeParser,
     TranscriptFormat.CODEX_ROLLOUT: CodexRolloutParser,
     TranscriptFormat.CODEX_STREAM: CodexStreamParser,
     TranscriptFormat.COPILOT_EVENTS: CopilotEventsParser,

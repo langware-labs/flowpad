@@ -624,8 +624,9 @@ export function FlowMessageBubble({
               attachments={missingAttachments}
               error={downloadError}
               info={{
-                messageTime: fm?.eventTime,
+                messageTime: fm?.sent_at ?? timestamp,
                 deliveredAt: fm?.delivered_at,
+                updatedAt: fm?.updated_date,
                 lastAttemptAt: downloadAttempts.lastAttemptAt,
                 lastSuccessAt: downloadAttempts.lastSuccessAt,
                 attemptCount: downloadAttempts.count,

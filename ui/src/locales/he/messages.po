@@ -3747,6 +3747,10 @@ msgstr "סגור כרטיסייה"
 msgid "Close terminal"
 msgstr "סגור טרמינל"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Close ticket"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close to the Right"
 msgstr "סגור לימין"
@@ -4417,6 +4421,10 @@ msgstr "העתק הכל"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Copy as log"
 msgstr "העתק כיומן"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Copy attachment id"
+msgstr ""
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -10774,6 +10782,10 @@ msgstr "סמן הכל כנקרא"
 msgid "Mark this task as Done?"
 msgstr "לסמן את המשימה הזו כהושלמה?"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Mark this ticket answered and take it off the desk's queue"
+msgstr ""
+
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
 msgid "Markdown"
@@ -14959,6 +14971,10 @@ msgstr "התחברת מחדש"
 msgid "Reconnected."
 msgstr "החיבור חודש."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Record updated"
+msgstr ""
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
 #~ msgstr "תעדו מאיפה {lockedEnvVar} מגיע"
@@ -15330,9 +15346,14 @@ msgstr "שינוי שם תיקייה"
 msgid "Rename this budget"
 msgstr ""
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "פתח מחדש"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Reopen this ticket"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
@@ -16149,6 +16170,7 @@ msgid "Saving..."
 msgstr "שמירה..."
 
 #: src/components/account/secrets-section.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx

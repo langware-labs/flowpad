@@ -899,8 +899,9 @@ async def handle_add_message(
     cannot reach the cloud right now — cloud login is required but unavailable.
     Instead of refusing, persist the message locally stamped
     ``delivery_status=pending_send`` with NO hub push; it stays in the
-    conversation.jsonl outbox and is flushed by ``_deliver_pending_messages``
-    when the conversation next becomes remote (manual re-send for v1).
+    conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
+    pushes it, from ``share()`` or from the hub-session transition in
+    ``flow_sdk.inbox.catchup`` (see that module's docstring).
     """
     conversation_id = (body.get("conversation_id") or "").strip()
     # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;
