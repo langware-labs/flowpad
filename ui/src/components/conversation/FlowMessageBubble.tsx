@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { isViewer } from './conversation-category';
 import {
   Agent,
   APIEntity,
@@ -375,34 +376,36 @@ export function FlowMessageBubble({
     );
   }
 
-  const isCurrentUser = !!(
-    fm.sender_id &&
-    ((localUser?.id && fm.sender_id === localUser.id) || (viewerCloudUserId && fm.sender_id === viewerCloudUserId))
-  );
+  const isCurrentUser = isViewer(fm.sender_id, {
+    email: '',
+    cloudUserId: viewerCloudUserId,
+    localUserId: localUser?.id ?? null,
+  });
   const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
   //   1. local self-edit override (always wins)
-  //   2. roster lookup by sender_id (canonical hub-authoritative label)
-  //   3. it's me → my local profile name
-  //   4. wire-stamped sender_name — soft cushion only; legitimate for
+  //   2. the desk brand on a help desk ticket — the hub masks `sender_name`
+  //      to it, and that masking is the contract the requester is shown; the
+  //      roster may still resolve the responder once they picked the ticket
+  //      up, so the brand has to outrank it. INTERIM: the guest's roster
+  //      should carry the brand hub-side.
+  //   3. roster lookup by sender_id (canonical hub-authoritative label)
+  //   4. it's me → my local profile name
+  //   5. wire-stamped sender_name — soft cushion only; legitimate for
   //      messages from senders who left the roster or are on a different
   //      instance (bundle import). Not trusted as identity but better than
   //      blank for users.
-  //   5. creator entity name (for invitation placeholders, system msgs)
-  //   6a. UNRESOLVED — ONLY when sender_id is set AND the roster has
+  //   6. creator entity name (for invitation placeholders, system msgs)
+  //   7a. UNRESOLVED — ONLY when sender_id is set AND the roster has
   //      confirmed loaded (rosterReady) AND none of the cushions matched.
   //      That's the "the hub roster says no, no other signal" case worth
   //      alerting on.
-  //   6b. otherwise the benign 'unknown' string (roster still loading, no
+  //   7b. otherwise the benign 'unknown' string (roster still loading, no
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
-  // On a help desk ticket the hub stamps every staff reply with the desk's
-  // brand — that masking is the contract the requester is shown. The roster
-  // may still resolve the responder's real id once they picked the ticket up,
-  // so here the wire name beats the roster for anyone who is not me.
   const deskBrand = isHelpdesk && !isCurrentUser ? wireSenderName : null;
   let displayName: string;
   if (overrideName) {
