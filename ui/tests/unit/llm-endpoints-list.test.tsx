@@ -41,6 +41,11 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     dataManager: { ...(actual.dataManager as object), delete: h.deleteEntity },
+    // This screen exists only on the hub, and `TestEndpointButton` picks its transport off
+    // that: on a hub it addresses the `test` action directly, on a box it goes through the
+    // `llm-endpoint` box action (the type has no local rows there). Declaring the runtime
+    // is what keeps `testEndpoint` the call under test.
+    isHubOnly: () => true,
     llmEndpointsService: {
       ...(actual.llmEndpointsService as object),
       getUsage: h.getUsage,
@@ -205,7 +210,10 @@ describe('LlmEndpointsList', () => {
 
     await userEvent.click(screen.getByTestId(`llm-test-${CHAIN}`));
     expect(h.testEndpoint).toHaveBeenCalledWith(CHAIN);
-    expect((await screen.findByTestId(`llm-test-verdict-${CHAIN}`)).textContent).toBe('412ms');
+    // The model is on the face of the button, not only in the tooltip: an endpoint's allowed list
+    // is walked cheapest-first, so a bare tick does not say which one answered.
+    expect((await screen.findByTestId(`llm-test-model-${CHAIN}`)).textContent).toBe('claude-haiku-4-5');
+    expect((await screen.findByTestId(`llm-test-verdict-${CHAIN}`)).textContent).toContain('412ms');
     // Testing a row must not open it.
     expect(h.openPage).not.toHaveBeenCalled();
     // A reader's row carries the probe even though it carries no edit/delete.
@@ -225,6 +233,8 @@ describe('LlmEndpointsList', () => {
 
     await userEvent.click(screen.getByTestId(`llm-test-${ROOT}`));
     expect((await screen.findByTestId(`llm-test-verdict-${ROOT}`)).textContent).toBe('429');
+    // A refusal never reached a model, so there is no model chip to leave hanging beside the code.
+    expect(screen.queryByTestId(`llm-test-model-${ROOT}`)).toBeNull();
     expect(screen.getByTestId(`llm-test-${ROOT}`).getAttribute('title')).toContain('cost_usd_total');
   });
 

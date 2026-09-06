@@ -1,11 +1,7 @@
 import { TypeId, VFSPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
-import {
-  AssetMode,
-  AssetRoutingMethod,
-  LOCAL_COMPUTE_NODE,
-} from './asset-doc-types';
+import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor } from './asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 
 export interface ContentAssetTarget {
@@ -47,11 +43,19 @@ function rawFilePath(pointer: string): VFSPath {
   return VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, normalizeRel(pointer));
 }
 
-/** Grammar-first classification for single asset/file content surfaces. */
+/** Grammar-first classification for single asset/file content surfaces.
+ *
+ *  A FILELESS editor is not one of them, and that exclusion is what keeps the assets tree
+ *  beside it: this predicate is what routes a dock into `AssetVibeWorkspace` (a work-context
+ *  chat plus a chrome-less content pane). That arrangement assumes the dock names a file an
+ *  agent could work on — an LLM endpoint names a hub budget with nothing on disk, so it stays
+ *  an ordinary browser surface instead of being handed a chat about a path that never
+ *  existed. See `FILELESS_EDITORS`. */
 export function isContentAssetDock(dock: DockPointer): boolean {
   if (dock.viewType === ViewType.EDITOR) return !!dock.pointer?.trim();
   const pointer = assetPointerForDock(dock);
-  return pointer?.mode === AssetMode.EDITOR || pointer?.mode === AssetMode.WIKI;
+  if (pointer?.mode === AssetMode.EDITOR) return !isFilelessEditor(pointer.editor);
+  return pointer?.mode === AssetMode.WIKI;
 }
 
 /**
@@ -65,8 +69,7 @@ export function contentAssetTargetForDock(
 ): ContentAssetTarget | null {
   if (!isContentAssetDock(dock)) return null;
 
-  const resolved =
-    typeof resolvedTypeId === 'string' ? resolvedTypeId : resolvedTypeId?.toString();
+  const resolved = typeof resolvedTypeId === 'string' ? resolvedTypeId : resolvedTypeId?.toString();
   if (resolved) {
     return {
       targetVfsPath: resolved,

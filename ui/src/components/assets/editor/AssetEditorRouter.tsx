@@ -1,4 +1,25 @@
-import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Mcp, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, type AnyEntity } from '@sdk';
+import {
+  Agent,
+  SubAgent,
+  AgentTrace,
+  APIEntity,
+  AssetCleanupReport,
+  dataManager,
+  Deck,
+  DeckTemplate,
+  DynamicWorkflow,
+  FSRef,
+  Journey,
+  Mcp,
+  Skill,
+  Spreadsheet,
+  Task,
+  TypeId,
+  UsageReport,
+  VFSPath,
+  Whiteboard,
+  type AnyEntity,
+} from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { isFolderShape } from '@sdk/FlowSync/schema';
 import { lazy, Suspense, useMemo } from 'react';
@@ -31,6 +52,7 @@ import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAs
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
+import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
@@ -95,8 +117,16 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   })();
 
   // Hooks must run unconditionally — resolve the typeid entity (null otherwise).
+  // `llm_endpoint` is excluded alongside `code` on purpose: it is entity-backed but has
+  // no LOCAL row (the type is a projection of hub state), so resolving it here would fire
+  // a GET this box always 404s. Its view reads the box listing instead.
   const typeId =
-    ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID ? new TypeId(ptr.value) : null;
+    ptr &&
+    ptr.editor !== AssetEditor.CODE &&
+    ptr.editor !== AssetEditor.LLM_ENDPOINT &&
+    ptr.method === AssetRoutingMethod.TYPEID
+      ? new TypeId(ptr.value)
+      : null;
   const {
     data: typeIdEntity,
     isLoading: entityLoading,
@@ -202,6 +232,11 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   if (ptr.editor === AssetEditor.PDF) {
     // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
     return <PdfViewer path={ptr.value} />;
+  }
+  // Entity-backed but file-less: an LLM budget has no FSRef to derive, so it returns here
+  // rather than falling through to the record/mainRef machinery below.
+  if (ptr.editor === AssetEditor.LLM_ENDPOINT) {
+    return <LlmEndpointAssetView value={ptr.value} />;
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /

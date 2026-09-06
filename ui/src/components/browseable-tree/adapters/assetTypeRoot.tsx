@@ -20,6 +20,7 @@ import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
+import { llmEndpointListChildren } from './llmEndpointRoot';
 import { tagListChildren } from './tagRoot';
 import { config, dataManager } from '@sdk';
 import { isFolderShape } from '@sdk/FlowSync/schema';
@@ -427,6 +428,12 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     // merges blessed Tag entities with bus-observed anonymous names instead.
     if (type.type_name === 'tag') {
       return tagListChildren(rootId);
+    }
+    // LLM endpoints are row-only for a different reason: there is no local record at
+    // all. They are read through the box's `llm-endpoint` action, which already answers
+    // with exactly the budgets this person may spend.
+    if (type.type_name === 'llm_endpoint') {
+      return llmEndpointListChildren();
     }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     // Tasks nest: a group/parent task's member (child) tasks render indented
