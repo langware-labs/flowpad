@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import { Agent, DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
   AssetRow,
@@ -14,6 +14,7 @@ import {
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useStagedAssets } from './useStagedAssets';
@@ -86,6 +87,18 @@ export function AgentResourcesBody() {
   // not a file the project-level path scan could find.
   const { data: sources = NO_SOURCES, isLoading: sourcesLoading } = useEntitiesQuery<DataSource>(sourcesQuery);
 
+  // The agent open in the adjacent editor pane, when there is one — read from
+  // context rather than re-resolved from the URL: `load-asset.ts` (URL-first
+  // navigation, see this repo's own doctrine) already writes it there before
+  // this pane renders. A source created here is that agent's, the same way
+  // `AttachedChannelsBar` stamps `owner` for a channel added from the agent's
+  // Inbox view; before this, `owner` was never set at all and every source
+  // created from this panel came back unowned regardless of which agent's
+  // editor it was opened from.
+  const { activeEntityTypeId } = useContext();
+  const editingAgentId = activeEntityTypeId?.type === Agent.type ? activeEntityTypeId : null;
+  const editingAgentKey = editingAgentId?.toString() ?? null;
+
   const { navigation } = useDockNavigation();
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
@@ -114,9 +127,19 @@ export function AgentResourcesBody() {
     [navigation, t],
   );
 
+  // Scoped to the agent this panel is open for — the same field `bind_channel`
+  // and this panel's own `owner={editingAgentId}` (above) stamp. Without an
+  // agent open there is no owner to match, so the list is empty rather than
+  // every source on the instance: an unscoped list here contradicted the
+  // section's own claim to show "what an agent here can actually read from".
+  const ownedSources = useMemo(
+    () => (editingAgentKey ? sources.filter((s) => s.owner === editingAgentKey) : NO_SOURCES),
+    [sources, editingAgentKey],
+  );
+
   const sourceRows = useMemo(
     () =>
-      [...sources]
+      [...ownedSources]
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         .map((source) => {
           const typeid = source.typeId.toString();
@@ -195,8 +218,10 @@ export function AgentResourcesBody() {
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so
-          the pane never loses the agent being edited. */}
-      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
+          the pane never loses the agent being edited. `owner` stamps the
+          created source onto the agent this panel is open for, same as
+          `AttachedChannelsBar`'s call one view over. */}
+      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} owner={editingAgentId} />
 
       {/* The project's OWN `mcp` assets, and nothing else. This used to also
           list the servers configured in the selected worker's vendor files
