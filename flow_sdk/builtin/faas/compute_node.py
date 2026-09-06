@@ -803,13 +803,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # resolver was handed an id the store had never seen and always 404'd.
         prefix = "get_by_worker_id/"
         if raw_sub_path.lower().startswith(prefix):
-            worker_id = raw_sub_path[len(prefix):]
+            worker_id = raw_sub_path[len(prefix) :]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
-        return ApiFailResponse(
-            message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400
-        )
+        return ApiFailResponse(message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400)
 
     @action.post(action_name="tabs")
     async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
@@ -1102,7 +1100,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         token = await _get_github_token_for_current_user()
         try:
-            await get_origin_driver(git_origin.kind).materialize(git_origin, preferred_root=Path(target_dir), token=token)
+            await get_origin_driver(git_origin.kind).materialize(
+                git_origin, preferred_root=Path(target_dir), token=token
+            )
         except RuntimeError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
@@ -1371,8 +1371,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
             HubEndpointBindError,
             bind_hub_llm_endpoint,
+            chain_hub_llm_endpoint,
             hub_llm_endpoint_status,
             select_llm_source,
+            test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
         )
 
@@ -1380,14 +1382,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         method = (request_info.request.method if request_info and request_info.request else "GET").upper()
         try:
             if method == "GET":
+                sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+                # ``chain/<id>`` is a READ of the hub's resolved chain -- which hops a call
+                # travels and whose key it ends up spending. A GET because it is a report,
+                # unlike ``test``, which spends money.
+                if sub_path.startswith("chain/"):
+                    return ApiSuccessResponse(data=await chain_hub_llm_endpoint(sub_path[len("chain/") :]))
                 return ApiSuccessResponse(data=await hub_llm_endpoint_status())
             if method == "POST":
                 body = (await request_info.get_post_data() if request_info else {}) or {}
                 # ``select`` is the USER picking a source; the bare POST is the HUB binding this
                 # box and 409s without a hub key. Keeping them apart is what lets someone choose
                 # their own OpenRouter key on a box that has never talked to a hub.
-                if (request_info.sub_path or "").strip("/") == "select":
+                sub_path = (request_info.sub_path or "").strip("/")
+                if sub_path == "select":
                     return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``test`` is a pass-through to the hub's own verdict. It lives here for the
+                # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
+                # desktop screen has no other way to reach that action.
+                if sub_path == "test":
+                    return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
@@ -1405,6 +1419,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         repo attach to a clone they already have instead of re-cloning it.
         """
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
+
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         try:

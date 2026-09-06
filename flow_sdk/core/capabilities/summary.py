@@ -51,6 +51,8 @@ class CapabilityAccess(BaseModel):
     installable: bool = False
     worker_type: str | None = None
     homepage_url: str | None = None
+    # Install one-liner for this machine, or None. See CapabilitySpec.
+    install_command: str | None = None
     reference_kind: str | None = None
     dependencies: list[CapabilityDependency] = Field(default_factory=list)
     value: object | None = None
@@ -125,11 +127,7 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
             logger.exception("compute_capabilities_summary: discovery failed")
 
     registry = get_capability_registry()
-    rows = {
-        row.kind: row
-        for row in await Capability.get_all()
-        if row.scope_type is None and row.scope_id is None
-    }
+    rows = {row.kind: row for row in await Capability.get_all() if row.scope_type is None and row.scope_id is None}
 
     accesses: list[CapabilityAccess] = []
     for kind in registry.kinds():
@@ -138,27 +136,24 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
         intent = kind.split(".")[0]
 
         latest = (
-            row.last_test if row is not None else None
-        ) or (row.last_setup if row is not None else None) or (row.last_check if row is not None else None)
+            (row.last_test if row is not None else None)
+            or (row.last_setup if row is not None else None)
+            or (row.last_check if row is not None else None)
+        )
         deps = [
             CapabilityDependency(
                 kind=dep_kind,
-                available=rows.get(dep_kind) is not None
-                and rows[dep_kind].state == "available",
+                available=rows.get(dep_kind) is not None and rows[dep_kind].state == "available",
             )
             for dep_kind in spec.dependent_capability_kinds
         ]
         value = get_capability_value(kind)
-        reference_kind = (
-            (row.reference_kind if row is not None else None) or spec.reference_kind
-        )
+        reference_kind = (row.reference_kind if row is not None else None) or spec.reference_kind
         # Installable = something the install / intent flow can actually act on:
         # CLI harnesses + the harness reference (value_type "folder") and runnable
         # MCP connectors. Status/probe-only capabilities (browsing) are not.
         installable = spec.runnable and (
-            spec.value_type is not None
-            or is_mcp_capability_kind(kind)
-            or reference_kind is not None
+            spec.value_type is not None or is_mcp_capability_kind(kind) or reference_kind is not None
         )
 
         accesses.append(
@@ -173,11 +168,7 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                 # Row state is authoritative (it encodes "never tried"); fall
                 # back to deriving from this fresh check for rows not yet
                 # stamped (derive without a row can't promote to NOT_AVAILABLE).
-                state=(
-                    row.state
-                    if row is not None
-                    else "none"
-                ),
+                state=(row.state if row is not None else "none"),
                 runnable=spec.runnable,
                 installable=installable,
                 worker_type=_worker_type_for(
@@ -186,6 +177,7 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                     reference_kind=reference_kind,
                 ),
                 homepage_url=spec.homepage_url,
+                install_command=spec.install_command,
                 reference_kind=reference_kind,
                 dependencies=deps,
                 value=value.value if value is not None else None,
@@ -201,9 +193,7 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
     for access in accesses:
         group = intents.get(access.intent)
         if group is None:
-            group = CapabilityIntent(
-                intent=access.intent, label=_intent_label(access.intent)
-            )
+            group = CapabilityIntent(intent=access.intent, label=_intent_label(access.intent))
             intents[access.intent] = group
         group.capabilities.append(access)
         # An intent is available if any runnable leaf under it is available.

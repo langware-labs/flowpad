@@ -1,7 +1,7 @@
 import { TypeId } from '@sdk';
 import type { EntityMember } from '@sdk';
 import { Building2, Loader2, Plus, UserPlus, Users } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 import { Button } from '@src/components/ui/button';
@@ -14,7 +14,7 @@ import {
   memberPrincipalId,
   type MemberActions,
 } from '@src/components/organization/member-list';
-import { BudgetSection } from '@src/components/organization/budgets/BudgetSection';
+import { InviteRow } from '@src/components/organization/invite-row';
 import { useCreateChildTeamForm } from '@src/components/organization/use-create-child-team';
 import { notify } from '@src/notifications';
 
@@ -114,6 +114,7 @@ export function OrgDetailPanel({
       {inviteOpen && mayManage && (
         <InviteRow
           entityTypeId={typeId}
+          me={me}
           onInvited={() => {
             setInviteOpen(false);
             void refresh();
@@ -155,11 +156,6 @@ export function OrgDetailPanel({
           })
         }
       />
-
-      {/* Who may spend how much of the money. Gated on the same `mayManage` as the roster controls:
-          the hub refuses the read below admin anyway, so rendering it for a member would only
-          produce a box explaining it cannot be seen. */}
-      {mayManage && <BudgetSection nodeType={nodeType} nodeId={nodeId} nodeLabel={nodeLabel} />}
     </section>
   );
 }
@@ -205,74 +201,6 @@ function Group({
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-function InviteRow({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvited: () => void }) {
-  const { t } = useLingui();
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('member');
-  const [busy, setBusy] = useState(false);
-
-  const submit = useCallback(async () => {
-    const trimmed = email.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
-    try {
-      const { dataManager } = await import('@sdk');
-      const entity = await dataManager.getByTypeId<never>(entityTypeId);
-      await (entity as unknown as { inviteMember: (e: string, r: string) => Promise<void> }).inviteMember(
-        trimmed,
-        role,
-      );
-      setEmail('');
-      notify.success({ title: t`Invitation sent`, message: t`Invited ${trimmed}.`, id: 'org-invite' });
-      onInvited();
-    } catch (err) {
-      notify.error({
-        title: t`Invite failed`,
-        message: err instanceof Error ? err.message : t`Unknown error.`,
-        id: 'org-invite',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, email, entityTypeId, onInvited, role, t]);
-
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-border p-2">
-      <input
-        autoFocus
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
-        }}
-        placeholder={t`name@example.com`}
-        data-testid="org-invite-email"
-        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm"
-      />
-      {/* The role is chosen at invite time rather than defaulted silently — the
-          person doing the inviting is the one who knows what the invitee is for. */}
-      <select
-        value={role}
-        onChange={(e) => setRole(e.target.value)}
-        data-testid="org-invite-role"
-        aria-label={t`Role`}
-        className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-      >
-        {['admin', 'editor', 'member', 'reader'].map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
-      <Button size="sm" disabled={busy || !email.trim()} onClick={() => void submit()} data-testid="org-invite-submit">
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-        <Trans>Send</Trans>
-      </Button>
     </div>
   );
 }

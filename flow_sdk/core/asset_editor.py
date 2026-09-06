@@ -50,6 +50,10 @@ class AssetEditor(StrEnum):
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     JOURNEY = "journey"
     MCP = "mcp"  # an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
+    # A hub LLM budget, rendered read-only. Entity-backed but never file-backed:
+    # there is no local row at all (see flow_sdk/builtin/llm_endpoint.py), so the
+    # view reads the box listing rather than an asset file.
+    LLM_ENDPOINT = "llm_endpoint"
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -88,6 +92,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.ASSET_CLEANUP_REPORT: [EntityType.ASSET_CLEANUP_REPORT],
     AssetEditor.JOURNEY: [EntityType.JOURNEY],
     AssetEditor.MCP: [EntityType.MCP],
+    AssetEditor.LLM_ENDPOINT: [EntityType.LLM_ENDPOINT],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],

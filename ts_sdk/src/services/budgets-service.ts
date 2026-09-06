@@ -14,7 +14,7 @@
  *   `GET /api/v1/graph/team/<id>/budgets`
  *
  * These are READS. A scope with no pool answers `endpoint_id: null` rather than creating one —
- * setting a budget up is `tokenPlanService.setupOrg()` / `setupTeam()`, a separate decision.
+ * setting a budget up is `tokenPlanService.setupOrg(orgId)` / `setupTeam(teamId)`, a separate decision.
  * Writing a budget is a plain `LLMEndpoint` entity update (`limits.cost_usd_total`); handing one
  * out is `llmEndpointsService.allocate()`. No budgets action does any of that.
  */
@@ -32,15 +32,41 @@ export interface ScopeBudget {
   /** The pool's lifetime cap (`limits.cost_usd_total`); null = uncapped. */
   limit_usd: number | null;
   spent_usd: number;
+  /** Lifetime tokens billed against this pool, off the same report as `spent_usd` — the two
+   *  numbers can never disagree with each other. */
+  spent_tokens: number;
   /**
    * Sum of the CHILDREN's caps, and `null` where the call did not read them — the org view totals
    * its teams, the team view totals its people, and a team row inside the ORG view leaves it null
    * rather than fanning out over every person for a number that screen does not show.
    *
    * It may legitimately exceed `limit_usd`: a pool is allowed to promise more than it holds, and
-   * the excess is caught when the money is spent, not when it is promised.
+   * the excess is caught when the money is spent, not when it is promised. The PAGE nonetheless
+   * refuses to create such an overspend at the point of typing — see `available-to-allocate.ts`.
    */
   allocated_usd: number | null;
+  /**
+   * May the caller change what this pool itself holds — its total, its name, its per-window
+   * ceilings? Answered by the hub, as the same `update` policy question the resulting request will
+   * be judged by, so a control the page offers always works and one it hides would always have
+   * been refused. Never re-derive it here from a role string: an org admin's standing on a budget
+   * row is DERIVED from the scope it hangs under, and only the hub can resolve that.
+   */
+  can_configure: boolean;
+  /**
+   * May the caller hand a share of this pool downward (`allocate`)? What "Add people" needs on a
+   * team's pool. False on an organization's own pool, and that is not a gap: people are funded
+   * from their team's pool, never straight off the org's.
+   */
+  can_allocate: boolean;
+  /**
+   * May the caller rename or delete this team/organization — the `update` question on the SCOPE
+   * ENTITY, not on its pool. Different entity, different answer: a shared org's admin renames its
+   * teams freely and the organization itself not at all.
+   */
+  can_manage: boolean;
+  /** May the caller add a team here? Adding one is a scoped `create` on the organization. */
+  can_add_child: boolean;
 }
 
 /**
@@ -55,6 +81,20 @@ export interface OrgScopeBudget extends ScopeBudget {
   provider: string | null;
   /** `****last4` when a root has a stored key, `''` otherwise. Never the key itself. */
   credential_hint: string;
+  /** May the caller set or replace the provider key the organization pays with? Owner-only today. */
+  can_set_credential: boolean;
+  /**
+   * May the caller give this organization a budget at all? Separate from `can_set_credential`,
+   * which is asked of the POOL and therefore answers `false` for everyone — the owner included —
+   * while the organization still has none. This one is asked of the organization.
+   */
+  can_set_up_budget: boolean;
+  /**
+   * May the caller share this organization — invite people, re-role them, remove them? Admin and
+   * above, and so deliberately WIDER than everything else on this row: running the people is what
+   * an organization is shared for.
+   */
+  can_invite: boolean;
 }
 
 /** One person's allowance under a team pool. */
@@ -66,12 +106,15 @@ export interface MemberBudget {
   user_id: string | null;
   limit_usd: number | null;
   spent_usd: number;
+  spent_tokens: number;
   /**
    * True for the hub's own per-user default. Its cap is editable like any other, but deleting it
    * is pointless — the token plan mints it again on that user's next read — so the screen offers
    * no remove on these.
    */
   system_default: boolean;
+  /** May the caller change this person's allowance? The `update` question, asked of one allowance. */
+  can_configure: boolean;
 }
 
 export interface OrgBudgets {
@@ -103,8 +146,8 @@ export class BudgetsService {
    * surfaced as a thrown error) if the org already draws from a shared pool, since converting a
    * chain into a root in place is not offered.
    */
-  setupOrgRoot(orgId: string, body: { provider: string; base_url?: string }): Promise<TokenPlanSetupResult> {
-    const info = hubAction('root', 'organization', orgId, 'POST');
+  setPayingProvider(orgId: string, body: { provider: string; base_url?: string }): Promise<TokenPlanSetupResult> {
+    const info = hubAction('set-paying-provider', 'organization', orgId, 'POST');
     info.bodyParameters = { provider: body.provider, base_url: body.base_url ?? '' };
     return dataManager.callAction<undefined, TokenPlanSetupResult>(info);
   }

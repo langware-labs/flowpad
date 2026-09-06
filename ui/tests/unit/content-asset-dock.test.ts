@@ -1,10 +1,7 @@
 import { Layout, TypeId } from '@sdk';
 import { describe, expect, it } from 'vitest';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import {
-  contentAssetTargetForDock,
-  isContentAssetDock,
-} from '@src/navigation/content-asset-dock';
+import { contentAssetTargetForDock, isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
@@ -13,14 +10,8 @@ const ID = '30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROJECT_ID = '66c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 describe('content asset dock classification', () => {
-  const typeIdDock = AssetDocPointer.forTypeId(
-    AssetEditor.MARKDOWN,
-    new TypeId('markdown', ID),
-  ).toDockPointer();
-  const vfsDock = AssetDocPointer.forVfs(
-    AssetEditor.IMAGE,
-    '/Users/a/project/image.png',
-  ).toDockPointer();
+  const typeIdDock = AssetDocPointer.forTypeId(AssetEditor.MARKDOWN, new TypeId('markdown', ID)).toDockPointer();
+  const vfsDock = AssetDocPointer.forVfs(AssetEditor.IMAGE, '/Users/a/project/image.png').toDockPointer();
   const wikiDock = DockPointer.forWiki('Design Notes');
 
   it.each([
@@ -28,14 +19,8 @@ describe('content asset dock classification', () => {
     ['file-only asset viewer', vfsDock],
     ['wiki', wikiDock],
     ['raw editor', DockPointer.forFile('/Users/a/project/main.ts')],
-    [
-      'project-rebased asset',
-      DockPointer.rebaseAssetsOntoProject(typeIdDock, PROJECT_ID),
-    ],
-    [
-      'project-rebased wiki',
-      DockPointer.rebaseAssetsOntoProject(wikiDock, PROJECT_ID),
-    ],
+    ['project-rebased asset', DockPointer.rebaseAssetsOntoProject(typeIdDock, PROJECT_ID)],
+    ['project-rebased wiki', DockPointer.rebaseAssetsOntoProject(wikiDock, PROJECT_ID)],
   ])('accepts %s', (_name, dock) => {
     expect(isContentAssetDock(dock)).toBe(true);
   });
@@ -46,23 +31,27 @@ describe('content asset dock classification', () => {
     ['asset folder', DockPointer.forAssetFolder('all', 'compute_node-@local')],
     ['project home', DockPointer.forAssetProjectHome()],
     ['project', DockPointer.forProject(PROJECT_ID)],
+    ['graph targeting an asset', new DockPointer(ViewType.GRAPH, `markdown/${ID}`)],
+    ['lens targeting an asset', new DockPointer(ViewType.LENS, `markdown/item/${ID}`)],
+    // A FILELESS editor: entity-backed, but there is no file (and for an LLM endpoint, no
+    // local row either — it is a projection of hub state). Accepting it would hand the page
+    // a work-context chat offering to edit a path that never existed, and take the assets
+    // tree away to make room for it.
     [
-      'graph targeting an asset',
-      new DockPointer(ViewType.GRAPH, `markdown/${ID}`),
-    ],
-    [
-      'lens targeting an asset',
-      new DockPointer(ViewType.LENS, `markdown/item/${ID}`),
+      'fileless editor (llm endpoint)',
+      AssetDocPointer.forTypeId(AssetEditor.LLM_ENDPOINT, new TypeId('llm_endpoint', ID)).toDockPointer(),
     ],
   ])('rejects %s', (_name, dock) => {
     expect(isContentAssetDock(dock)).toBe(false);
   });
 
+  it('offers no process target for a fileless editor', () => {
+    const dock = AssetDocPointer.forTypeId(AssetEditor.LLM_ENDPOINT, new TypeId('llm_endpoint', ID)).toDockPointer();
+    expect(contentAssetTargetForDock(dock)).toBeNull();
+  });
+
   it('prefers a resolved entity TypeId as the process target', () => {
-    const target = contentAssetTargetForDock(
-      vfsDock,
-      new TypeId('markdown', ID),
-    );
+    const target = contentAssetTargetForDock(vfsDock, new TypeId('markdown', ID));
     expect(target).toMatchObject({
       targetVfsPath: `markdown-${ID}`,
       typeId: `markdown-${ID}`,
@@ -71,12 +60,7 @@ describe('content asset dock classification', () => {
 
   it('normalizes raw files to a compute-node VFS target', () => {
     const target = contentAssetTargetForDock(
-      new DockPointer(
-        ViewType.EDITOR,
-        '/Users/a/project/main.ts',
-        { line: '12', column: '3' },
-        Layout.DOCK,
-      ),
+      new DockPointer(ViewType.EDITOR, '/Users/a/project/main.ts', { line: '12', column: '3' }, Layout.DOCK),
     );
     expect(target).toMatchObject({
       targetVfsPath: 'compute_node-@local/Users/a/project/main.ts',

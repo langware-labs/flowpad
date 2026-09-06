@@ -132,7 +132,9 @@ class LLMEndpoint(Entity):
     #: Read by ``share_action``: there is no local row to fetch, so a share of this type is an
     #: invitation to something that already exists on the hub rather than a push of local state.
     _hub_only: ClassVar[bool] = True
-    _icon: ClassVar[str | None] = "BrainCircuit"
+    #: Icon, browse tier and label live in ``schema/type_info/llm_endpoint_type_info.py`` --
+    #: a registered TypeMetadata wins over this ClassVar, so declaring it twice would leave a
+    #: value here that reads as authoritative and is never used.
 
     type: str = APIField(default="llm_endpoint")
     name: str = APIField(default="")

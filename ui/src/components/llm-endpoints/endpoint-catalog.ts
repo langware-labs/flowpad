@@ -50,15 +50,86 @@ export { ENDPOINT_TYPE, endpointIdFromTypeId, endpointTypeId } from './llm-endpo
 export interface ProviderSpec {
   id: LLMEndpointProvider;
   label: MessageDescriptor;
+  /** The brand, as a plain string. A brand name is not translated, and a `MessageDescriptor`
+   *  cannot be interpolated into another one without an `i18n` instance this pure module has no
+   *  business holding — so key-shape messages name the provider from here. */
+  brand: string;
   defaultBaseUrl: string;
   keyPlaceholder: string;
+  /** What every key from this provider starts with. `sk-` is OpenAI's and is also a PREFIX of the
+   *  other two, so it cannot identify a key on its own — see `keyShapeProblem`. */
+  keyPrefix: string;
 }
 
 export const PROVIDERS: readonly ProviderSpec[] = [
-  { id: 'openrouter', label: msg`OpenRouter`, defaultBaseUrl: 'https://openrouter.ai/api', keyPlaceholder: 'sk-or-…' },
-  { id: 'anthropic', label: msg`Anthropic`, defaultBaseUrl: 'https://api.anthropic.com', keyPlaceholder: 'sk-ant-…' },
-  { id: 'openai', label: msg`OpenAI`, defaultBaseUrl: 'https://api.openai.com', keyPlaceholder: 'sk-…' },
+  {
+    id: 'openrouter',
+    label: msg`OpenRouter`,
+    brand: 'OpenRouter',
+    defaultBaseUrl: 'https://openrouter.ai/api',
+    keyPlaceholder: 'sk-or-…',
+    keyPrefix: 'sk-or-',
+  },
+  {
+    id: 'anthropic',
+    label: msg`Anthropic`,
+    brand: 'Anthropic',
+    defaultBaseUrl: 'https://api.anthropic.com',
+    keyPlaceholder: 'sk-ant-…',
+    keyPrefix: 'sk-ant-',
+  },
+  {
+    id: 'openai',
+    label: msg`OpenAI`,
+    brand: 'OpenAI',
+    defaultBaseUrl: 'https://api.openai.com',
+    keyPlaceholder: 'sk-…',
+    keyPrefix: 'sk-',
+  },
 ];
+
+/** The shortest a real provider key runs. Well under every provider's actual length — this catches
+ *  a half-selected paste, not a key one character shy of some exact format. */
+const MIN_KEY_LENGTH = 20;
+
+/**
+ * What is visibly wrong with this key BEFORE it is sent, or `null` when nothing is.
+ *
+ * Deliberately a prefix-and-shape check, never a full-format regex. Providers lengthen and re-shape
+ * the random part of their keys without notice, so a strict pattern would eventually reject valid
+ * keys — a far worse failure than the one it prevents, because the owner cannot argue with it. What
+ * IS stable is the prefix each provider brands its keys with, and that is exactly what catches the
+ * common mistake: pasting one provider's key into another provider's root.
+ *
+ * Without this the wrong key stored happily, and the first sign of trouble was a much later
+ * "no model is available through this endpoint" from the model probe — a message about the
+ * endpoint, describing a problem with the key, at a moment far from the paste that caused it.
+ *
+ * An empty key is NOT reported here; "you typed nothing" belongs to the caller, which distinguishes
+ * an untouched field from a wrong one.
+ */
+export function keyShapeProblem(provider: string | null | undefined, key: string): MessageDescriptor | null {
+  const spec = providerSpec(provider);
+  const trimmed = key.trim();
+  if (!spec || !trimmed) return null;
+
+  if (/\s/.test(trimmed)) {
+    return msg`This key contains a space or line break. It was probably copied along with the text around it.`;
+  }
+  // Checked BEFORE the expected-prefix rule: OpenAI's `sk-` also prefixes the other two, so an
+  // OpenRouter key pasted into an OpenAI root passes that rule and must be caught by this one.
+  const foreign = PROVIDERS.find((p) => p.id !== spec.id && p.keyPrefix !== 'sk-' && trimmed.startsWith(p.keyPrefix));
+  if (foreign) {
+    return msg`That looks like an ${foreign.brand} key. This endpoint calls ${spec.brand}, whose keys start with ${spec.keyPrefix}.`;
+  }
+  if (!trimmed.startsWith(spec.keyPrefix)) {
+    return msg`${spec.brand} keys start with ${spec.keyPrefix} — this one does not.`;
+  }
+  if (trimmed.length < MIN_KEY_LENGTH) {
+    return msg`This key looks cut short. Check the whole value was copied.`;
+  }
+  return null;
+}
 
 export function providerSpec(id: string | undefined | null): ProviderSpec | undefined {
   return PROVIDERS.find((p) => p.id === id);

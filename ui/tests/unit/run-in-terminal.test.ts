@@ -13,11 +13,7 @@
 import { Shell } from '@sdk';
 import { PtyConnection } from '@sdk/services/shell/ptyConnection';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  runInTerminal,
-  sentinelCommand,
-  SENTINEL_PREFIX,
-} from '@src/terminal/run-in-terminal';
+import { prefillInTerminal, runInTerminal, sentinelCommand, SENTINEL_PREFIX } from '@src/terminal/run-in-terminal';
 
 function b64(s: string): string {
   return Buffer.from(s, 'utf-8').toString('base64');
@@ -135,5 +131,25 @@ describe('sentinel grammar', () => {
     // flow_sdk/builtin/shell.py — pinned on both sides so they cannot drift.
     expect(SENTINEL_PREFIX).toBe('__flow_');
     expect(sentinelCommand('ls -la', '__flow_abc123')).toBe('ls -la; echo "__flow_abc123_$?"');
+  });
+});
+
+describe('prefillInTerminal', () => {
+  it('types the command and does NOT press Enter', async () => {
+    const { sent } = makeShell();
+    const install = 'curl -fsSL https://claude.ai/install.sh | bash';
+
+    await expect(prefillInTerminal('sh1', install)).resolves.toBe(true);
+
+    // The absent `\r` is the whole feature: the line sits at the prompt so the
+    // user reads what is about to run and presses Enter themselves. Piping a
+    // remote script into a shell is their keystroke to make, not Flowpad's.
+    expect(sent).toEqual([install]);
+  });
+
+  it('reports failure instead of throwing when the shell is gone', async () => {
+    vi.spyOn(Shell, 'getById').mockResolvedValue(null);
+
+    await expect(prefillInTerminal('missing', 'echo hi')).resolves.toBe(false);
   });
 });

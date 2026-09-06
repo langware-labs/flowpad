@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -121,6 +122,23 @@ class CapabilitySpec(BaseModel):
     # Prompt the install agentic process runs with. None → the registry's
     # DEFAULT_INSTALL_PROMPT.
     install_prompt: str | None = None
+    # One-liner that installs this capability from nothing, keyed by
+    # ``sys.platform`` ("darwin" / "linux" / "win32"). TYPED INTO a Flowpad
+    # terminal for the user to press Enter on — never run on their behalf, which
+    # is why it is a display string and not an argv. Assume a bare machine: no
+    # node, no npm, no package manager. Empty for capabilities with no
+    # unattended installer, and the UI's "try auto install" affordance is absent
+    # exactly then.
+    #
+    # The ``win32`` entry is POWERSHELL, because that is what the built-in
+    # terminal spawns there (``compute/providers/desktop/provider.py`` tries
+    # pwsh, then powershell, and only reaches cmd.exe when neither exists).
+    install_commands: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def install_command(self) -> str | None:
+        """The install one-liner for THIS machine, or None if there isn't one."""
+        return self.install_commands.get(sys.platform)
 
     def matches(self, query_kind: str) -> bool:
         return capability_kind_matches(query_kind, self.kind)
