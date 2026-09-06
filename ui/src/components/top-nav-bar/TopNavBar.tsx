@@ -34,7 +34,7 @@ export function TopNavBar() {
   const [searching, setSearching] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
   const { runtimeKind, project } = useContext();
-  const { canGoBack, canGoForward, goBack, goForward, reload, hardReload, reloading } = useHistoryNav();
+  const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
 
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
@@ -65,16 +65,9 @@ export function TopNavBar() {
         mirrorInRtl
         testId="top-nav-forward"
       />
-      <NavIconButton
-        icon={RefreshCw}
-        label={t`Reload`}
-        // Soft by default — re-runs the route loaders. A modifier click gives
-        // the browser's hard-reload gesture, for when the runtime itself is
-        // wedged rather than the data being stale.
-        onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? hardReload() : reload())}
-        spinning={reloading}
-        testId="top-nav-reload"
-      />
+      {/* A full window reload, the same as the browser's own — no modifier
+          gesture and no soft variant. Anything less does not reload. */}
+      <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
       <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
@@ -107,15 +100,13 @@ function NavIconButton({
   label,
   onClick,
   disabled = false,
-  spinning = false,
   mirrorInRtl = false,
   testId,
 }: {
   icon: LucideIcon;
   label: string;
-  onClick: (e: React.MouseEvent) => void;
+  onClick: () => void;
   disabled?: boolean;
-  spinning?: boolean;
   /** Mirror the glyph in RTL. For an arrow that means a DIRECTION rather than a
    *  fixed shape: "back" points against the reading flow, so it faces left in
    *  English and right in Hebrew. A house or a folder is the same shape in every
@@ -139,7 +130,7 @@ function NavIconButton({
             aria-label={label}
             data-testid={testId}
           >
-            <Icon className={cn(spinning && 'animate-spin', mirrorInRtl && 'rtl:-scale-x-100')} />
+            <Icon className={cn(mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>
         </span>
       </TooltipTrigger>

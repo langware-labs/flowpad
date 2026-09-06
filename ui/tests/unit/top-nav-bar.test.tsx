@@ -18,8 +18,6 @@ const nav = vi.hoisted(() => ({
   goBack: vi.fn(),
   goForward: vi.fn(),
   reload: vi.fn(),
-  hardReload: vi.fn(),
-  reloading: false,
 }));
 // Literal, not `RuntimeKind.SANDBOX`: vi.mock factories are hoisted above the
 // imports, so referencing the enum here is a TDZ error.
@@ -327,18 +325,12 @@ describe('the navigation bar', () => {
     await waitFor(() => expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull());
   });
 
-  it('reloads softly, and hard only on a modifier click', async () => {
+  it('reloads the window on click', async () => {
     const user = userEvent.setup();
     renderBar();
 
     await user.click(screen.getByTestId('top-nav-reload'));
     expect(nav.reload).toHaveBeenCalledTimes(1);
-    expect(nav.hardReload).not.toHaveBeenCalled();
-
-    await user.keyboard('{Meta>}');
-    await user.click(screen.getByTestId('top-nav-reload'));
-    await user.keyboard('{/Meta}');
-    expect(nav.hardReload).toHaveBeenCalledTimes(1);
   });
 
   it('navigates by URL alone when a crumb is clicked', async () => {
