@@ -159,17 +159,27 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     below backfills first and re-reads; a converged conversation pays one set
     comparison and writes nothing.
 
-    TWO CLOCKS, one read rule. A message has an EVENT time (when the human
-    sent it) and PROCESSING times (when our row was written/edited); rendering
-    the second as the first is how a year-old Slack backfill once read "11h
-    ago". Every timestamp derived here — the pointer ``ts`` and the recency —
-    therefore reads ``FlowMessage.event_time`` (``sent_at or updated_date or
-    created_date``), never a bookkeeping clock directly: a channel-projected
-    message is pinned to its ``sent_at``; an authored message keeps behaving
-    as before (an edit bumps recency via ``updated_date``, and
-    ``FlowMessage.is_stale`` keeps bare touches from advancing that clock); a
-    hub-synced copy uses its adopted hub ``created_date``. With NO messages
-    there is no max to take — see the empty-case comment below.
+    TWO CLOCKS, and they answer different questions — so this reads BOTH,
+    never one for both jobs. A message has an EVENT time (when the human sent
+    it) and PROCESSING times (when a row was written/edited); rendering the
+    second as the first is how a year-old Slack backfill once read "11h ago".
+
+    * ORDER and the pointer ``ts`` — where a message sits in the feed and the
+      time on its bubble — read ``FlowMessage.occurred_at``
+      (``sent_at or created_date``). A message's place is fixed when it is
+      sent; no later bookkeeping may move it.
+    * RECENCY — the conversation's ``updated_date``, the inbox's "Xm ago" —
+      reads ``FlowMessage.event_time``, which DOES include ``updated_date``,
+      because a genuine edit is new activity and should float the
+      conversation. ``FlowMessage.is_stale`` keeps a bare touch from
+      advancing it.
+
+    Collapsing the two (both reading ``event_time``) is what let a delivery
+    receipt reorder a conversation: the hub re-saves its row on ack, the next
+    sync adopts that ``updated_date``, and a received message — which has no
+    ``sent_at`` — slid forward past replies already written. See
+    ``occurred_at``. With NO messages there is no max to take — see the
+    empty-case comment below.
     """
     from datetime import datetime
 
@@ -198,7 +208,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         _min = datetime.min.replace(tzinfo=UTC)
 
         def _event_key(m: FlowMessage):
-            ts = Conversation._as_datetime(m.event_time)
+            ts = Conversation._as_datetime(m.occurred_at)
             return (ts is None, ts or _min)
 
         out.sort(key=_event_key)
@@ -218,7 +228,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
             [
                 Pointer(
                     TypeId(type=Pointer.DEFAULT_MESSAGE_TYPE, id=m.id),
-                    (m.event_time.isoformat() if m.event_time is not None else ""),
+                    (m.occurred_at.isoformat() if m.occurred_at is not None else ""),
                 ).to_dict()
                 for m in messages
             ]
