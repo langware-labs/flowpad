@@ -83,6 +83,7 @@ from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -459,16 +460,16 @@ def disk_asset_descriptors(
     indexed listed nothing at all despite having real ``.claude/skills``
     folders on disk.
 
-    Discovery is DELEGATED to the indexer's own walkers (``skill_fn`` /
-    ``subagent_fn``) rather than re-deriving where assets live, so this pass
-    cannot drift from the indexer: a new harness dot-dir in ``WORKER_PREFIX``
-    or a new skill marker file is picked up here for free. Both walkers ignore
-    their options argument, so one throwaway ``IndexerOptions`` serves all of
-    them, and they key off ``node.path`` alone.
+    Discovery is DELEGATED to the indexer's own walkers (the declared
+    ``walk`` of skill / subagent, run by ``layout_walker``) rather than
+    re-deriving where assets live, so this pass cannot drift from the indexer:
+    a new harness dot-dir in ``WORKER_PREFIX`` is picked up here for free. The
+    walkers ignore their options argument, so one throwaway ``IndexerOptions``
+    serves all of them; they key off ``node.path`` and ``node.record_type``.
 
     Strictly read-only. Ids come from the peek seams (``skill_id`` /
-    ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
-    or frontmatter id rather than minting one, so a later index converges on
+    ``subagent_peek_entity_id``), which ADOPT an existing frontmatter id
+    rather than minting one, so a later index converges on
     the same id instead of creating a second row for the same file.
 
     ``seen_paths`` carries the paths the DB pass already considered; a path is
@@ -484,15 +485,15 @@ def disk_asset_descriptors(
     from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
         parse_skill_yaml_from_dir,
         resolve_skill_name,
-        skill_fn,
         skill_id,
     )
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.walkers.generic import walker_for  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     opts = IndexerOptions()
+    skill_fn, subagent_fn = walker_for("skill"), walker_for("subagent")
     out: list[AssetDescriptor] = []
 
     def claim(path: Path) -> str | None:
@@ -507,8 +508,8 @@ def disk_asset_descriptors(
         return key
 
     for src_dir, source in ranked:
-        # The walkers read ``node.path`` and nothing else; the record type only
-        # has to be one they are registered under.
+        # The walkers serve the walks declared on this root kind; a project
+        # root is one both types name.
         nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
         if "skill" in types:
             for ref in skill_fn(nodes, opts):
@@ -5073,14 +5074,17 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+            from flow_sdk.fs_store.indexer.reconcile import reconcile
             from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
             # extract_markdown requires a resolved id (capsule refactor 4f94fb92
-            # made it a positional arg). Resolve it READ-ONLY via markdown_id
-            # (adopted frontmatter id, else the stable uuid5(path)) — the plan
-            # file is a transient Claude transcript artifact we must not mutate
-            # with an identity-capsule write.
-            rec = SchemaRegistry.get("markdown").record_for(_FSRef(Path(plan_file_path), read_only=True))
+            # made it a positional arg). Resolve it READ-ONLY (adopted
+            # frontmatter id, else the stable uuid5(path)) — the plan file is a
+            # transient Claude transcript artifact we must not mutate with an
+            # identity write.
+            info = SchemaRegistry.get("markdown")
+            ref = _FSRef(Path(plan_file_path), read_only=True)
+            rec = info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=False, ref=ref))
             if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
             await rec.sync_to_db()
@@ -6120,7 +6124,7 @@ class AgenticProcess(Entity):
                 continue
             type_name = descriptor.typeid.split("-", 1)[0]
             type_info = SchemaRegistry.get(type_name)
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             for entry, read_path in reads:
                 if read_path != asset_path and not (
                     folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
@@ -6190,7 +6194,7 @@ class AgenticProcess(Entity):
                 continue
             asset_path = canonical_posix_path(asset_ref)
             type_info = SchemaRegistry.get(entity.type or entity.get_type())
-            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
             if read_path == asset_path or (folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")):
                 return entity
         return None

@@ -11,6 +11,7 @@ from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
+from flow_sdk.schema.layout import File, Folder
 
 PORTABLE_ASSET_CONTRACT_VERSION = 1
 
@@ -44,11 +45,11 @@ def layout_for_origin(info: TypeInfo, origin: PortableGitOrigin) -> PortableAsse
     rel = PurePosixPath(origin.rel_path)
     if rel.as_posix() == ".":
         raise ValueError("an asset origin requires a concrete file or folder path")
-    if info.main_layout == "file":
+    if isinstance(info.shape, File):
         parent = rel.parent.as_posix()
         return PortableAssetLayout(asset_rel_root=parent, main_ref=rel.name)
-    if info.main_layout == "folder" and info.main_file:
-        return PortableAssetLayout(asset_rel_root=rel.as_posix(), main_ref=info.main_file)
+    if isinstance(info.shape, Folder) and info.shape.main:
+        return PortableAssetLayout(asset_rel_root=rel.as_posix(), main_ref=info.shape.main)
     raise ValueError(f"type {info.type_name!r} has no portable asset layout")
 
 
@@ -149,9 +150,9 @@ def project_asset_tree(
         raise ValueError("asset path escapes the checkout")
     layout = info.layout_of(resolved_asset, verify=True)
     if layout.kind is LayoutKind.NONE:
-        raise ValueError(f"asset origin does not resolve to a {info.main_layout}-layout asset")
+        raise ValueError(f"asset origin does not resolve to a {info.type_name} asset ({info.shape.to_dict()['kind']} shape)")
 
-    parser_path = layout.ref
+    parser_path = layout.root
     parser_ref = FSRef(parser_path, record_type=entity_type, read_only=True)
     observed_id = info.read_id(parser_ref)
     if observed_id != expected_id:

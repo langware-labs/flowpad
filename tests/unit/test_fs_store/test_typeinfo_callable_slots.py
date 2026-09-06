@@ -6,7 +6,7 @@ registered next to their definitions in ``fs_store/indexer/functions/<type>``.
 These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
-from flow_sdk.fs_store.identity_carrier import DerivedCarrier
+from flow_sdk.fs_store.identity_carrier import Derived
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -18,7 +18,7 @@ def test_slots_excluded_from_schema_hash():
     with_slots = TypeInfo(
         **base,
         from_disk_fn=lambda ref, resolved_id: [],
-        identity_carrier=DerivedCarrier(),
+        identity_carrier=Derived(),
         id_stable_key_fn=lambda ref: "key",
         asset_hash_fn=lambda ref: 1.0,
     )
@@ -29,7 +29,7 @@ def test_register_merge_fills_but_never_clobbers():
     """Re-register fills an unset slot but never overwrites a set one with None."""
     t = "_slot_merge_probe"
     fn_a = lambda ref: ["a"]  # noqa: E731
-    backend = DerivedCarrier()
+    backend = Derived()
 
     # First registration sets from_disk_fn only.
     SchemaRegistry.register(TypeInfo(type_name=t, from_disk_fn=fn_a))

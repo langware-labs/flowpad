@@ -63,7 +63,7 @@ Handler `_handle_fs_records_invalidate` (`fs_records_actions.py:1945`) →
 `reindex_paths(paths, deleted_paths=..., mint=True)` (`flow_sdk/fs_store/reindex.py:143`).
 `mint=False` makes the call resolution-only (a path with no owning entity is
 left alone) — the `fs/write` resync passes it, because minting there would
-stamp an identity capsule into a file the user just wrote. Per changed path,
+stamp an id into a file the user just wrote. Per changed path,
 `reindex_paths`:
 
 1. resolves the path to its owning entity via
@@ -71,7 +71,7 @@ stamp an identity capsule into a file the user just wrote. Per changed path,
    folder-backed asset (a file under a skill/task/deck folder) resolves to the
    **owning folder entity**, not a per-file entity;
 2. **force re-parses from disk** via
-   `discover_record_by_path(type, entity.asset_ref, notify=True)` — NOT
+   `resolve_asset(entity.asset_ref, type_name=entity.type, owner_id=entity.id)` + `index_one(notify=True)` (`fs_store/resolve.py`) — NOT
    `get_record()+sync_to_db()`: the shadow `metadata.json` holds a **stale**
    `body`/`content`, so only a fresh `from_disk_fn` parse reflects the new bytes.
    It re-parses the **entity's own** `asset_ref` (the folder path for folder
@@ -164,7 +164,7 @@ The token is threaded through the editor wrappers:
   re-parse regardless of the sentinel, so they still refresh.
 - **Force re-parse, not `sync_to_db` on a loaded record.** The shadow metadata
   body is stale; always route a forced re-index through
-  `discover_record_by_path(..., notify=True)`.
+  `resolve_asset` + `index_one(..., notify=True)`.
 - **Dirty-guard drops external changes while editing** — intentional. The user's
   save wins; don't remove the guard to "always refresh".
 
@@ -173,7 +173,8 @@ The token is threaded through the editor wrappers:
 | File | Role |
 |------|------|
 | `flow_sdk/fs_store/reindex.py` | `reindex_paths()` — resolve → force re-parse → broadcast; mint/orphan |
-| `flow_sdk/builtin/faas/fs_records_actions.py` | `_handle_fs_records_invalidate` (route), `discover_record_by_path(..., notify=)` |
+| `flow_sdk/builtin/faas/fs_records_actions.py` | `_handle_fs_records_invalidate` (route) |
+| `flow_sdk/fs_store/resolve.py` | `resolve_asset` + `index_one` — the one-path resolve the route composes |
 | `flow_sdk/builtin/agentic_process/agentic_process.py` | `_schedule_turn_end_reindex`, `_collect_touched_from_transcript_tail`, `_iter_touched_paths`, the three turn-end seams |
 | `flow_sdk/core/entity/entity_model.py` | `_asset_updated_epoch`, `from_record` `updated_date` stamp, `check_and_refresh_record` |
 | `flow_sdk/app/actions/graph_crud_actions.py` | `handle_get_by_id` → GET-time refresh |

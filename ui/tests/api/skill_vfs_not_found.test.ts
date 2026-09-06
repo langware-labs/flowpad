@@ -7,11 +7,11 @@
  * The editor chain is:
  *   AssetEditorRouter (vfs branch) → FSRef(vfs.entitySubPath, vfs.typeId)
  *     → EntityResolutionGate<Skill> → useEntityByPath(Skill.type, fsRef)
- *       → bulk /graph/skill match on asset_ref, else systemTools.discoverByPath.
- * Only a discover 404 (or an orphan row) makes the gate render MissingAssetCard
+ *       → exact /assets/entity match on asset_ref, else systemTools.resolveByPath.
+ * Only a resolve 404 (or an orphan row) makes the gate render MissingAssetCard
  * ("not available"). This test proves the data layer does NOT 404 for a real
  * on-disk skill — via the relative entitySubPath the router actually passes AND
- * the absolute machinePath — so the "not available" symptom is NOT a discover
+ * the absolute machinePath — so the "not available" symptom is NOT a resolve
  * miss. Real backend, no mocks.
  *
  * The original report carried one developer's absolute path
@@ -71,11 +71,11 @@ describe('skill vfs editor resolution (the "not available" path)', () => {
     expect(vfs.machinePath).toBe(skillDir);
 
     // The router-passed RELATIVE path resolves (this is what useEntityByPath sends).
-    const viaRelative = await systemTools.discoverByPath(Skill.type, vfs.entitySubPath);
+    const viaRelative = await systemTools.resolveByPath(vfs.entitySubPath);
     expect(viaRelative?.type).toBe('skill');
 
     // The absolute path resolves too — neither form 404s, so no MissingAssetCard.
-    const viaAbsolute = await systemTools.discoverByPath(Skill.type, vfs.machinePath);
+    const viaAbsolute = await systemTools.resolveByPath(vfs.machinePath);
     expect(viaAbsolute?.type).toBe('skill');
   }, 15000);
 });

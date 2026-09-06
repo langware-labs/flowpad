@@ -2,6 +2,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
+import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
@@ -82,7 +83,7 @@ export class Agent extends APIEntity<Agent> {
 
   // ── lifecycle ──────────────────────────────────────────────────────────
   enabled: boolean;
-  /** Absolute on-disk path to `agent.md`. */
+  /** Absolute on-disk path to the agent's folder (`agent.md` sits inside). */
   asset_ref?: string;
 
   constructor(entity: Partial<Agent> = {}) {
@@ -139,19 +140,22 @@ export class Agent extends APIEntity<Agent> {
    */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
-    if (!typeId || !this.asset_ref) return null;
-    // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
-    // splits on `/` only — same normalization `bundleDirectory` already applies.
-    return new FrontMatterFsRef(this.asset_ref.replace(/\\/g, '/'), typeId);
+    const directory = this.bundleDirectory;
+    if (!typeId || !directory) return null;
+    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.md')}`, typeId);
   }
 
-  /** Directory containing the portable Agent bundle. */
+  /** Directory containing the portable Agent bundle: `asset_ref` (a row from
+   *  before the unification may still name the inner `agent.md`). */
   get bundleDirectory(): string | null {
+    // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
+    // splits on `/` only.
     const normalized = this.asset_ref?.replace(/\\/g, '/').replace(/\/+$/, '');
     if (!normalized) return null;
-    if (normalized === 'agent.md') return '.';
-    if (!normalized.endsWith('/agent.md')) return null;
-    return normalized.slice(0, -'/agent.md'.length) || '/';
+    const main = mainFileForType(Agent.type, 'agent.md') as string;
+    if (normalized === main) return '.';
+    if (normalized.endsWith(`/${main}`)) return normalized.slice(0, -(main.length + 1)) || '/';
+    return normalized;
   }
 
   /** Resolved carrier path for the canonical portable avatar reference. */
