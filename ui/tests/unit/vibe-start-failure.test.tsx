@@ -23,6 +23,7 @@ const { PROJECT, ...h } = vi.hoisted(() => ({
   PROJECT: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01',
   launch: vi.fn(),
   test: vi.fn(),
+  getSnapshot: vi.fn(),
   notifyError: vi.fn(),
 }));
 
@@ -42,7 +43,7 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
-    capabilityManager: { test: h.test },
+    capabilityManager: { test: h.test, getSnapshot: h.getSnapshot },
     ComputeNode: { ...actual.ComputeNode, getById: () => Promise.resolve({ createProcess: h.launch }) },
   };
 });
@@ -68,6 +69,8 @@ function mountVibe() {
   };
 }
 
+const CLAUDE = 'harness.claude.cli';
+
 /** What the backend actually sends for a refused launch. */
 function refusal(message: string) {
   return Object.assign(new Error('Request failed with status code 400'), {
@@ -79,6 +82,8 @@ describe('vibe chat start failure', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
+    // The umbrella resolves to the default assistant — what a launch would use.
+    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE });
   });
 
   it('offers the install dialog when the harness really is missing', async () => {
@@ -88,7 +93,7 @@ describe('vibe chat start failure', () => {
     const { submit, dialog } = mountVibe();
     submit();
 
-    await waitFor(() => expect(h.test).toHaveBeenCalledWith(CapabilityKinds.Harness));
+    await waitFor(() => expect(h.test).toHaveBeenCalledWith(CLAUDE));
     await waitFor(() => expect(dialog()).toBeTruthy());
     // No toast: the dialog IS the response, and a generic error beside it would
     // just be noise.
@@ -122,5 +127,23 @@ describe('vibe chat start failure', () => {
     await waitFor(() => expect(h.notifyError).toHaveBeenCalled());
     const { message } = h.notifyError.mock.calls[0][0] as { message: string };
     expect(message).not.toContain('status code');
+  });
+
+  it('probes the assistant the launch would use, not the umbrella', async () => {
+    // The Windows report. `getSnapshot('harness').available` is a `.some()` over
+    // every harness row, so a machine with Codex installed and Claude missing
+    // answers "available" to the umbrella — and the dialog never appeared even
+    // though the launch failed for the harness that IS missing. Asking about the
+    // RESOLVED kind is what makes the answer about the right assistant.
+    h.launch.mockRejectedValue(refusal('Claude CLI is not installed on this machine.'));
+    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE });
+    h.test.mockResolvedValue({ available: false });
+
+    const { submit, dialog } = mountVibe();
+    submit();
+
+    await waitFor(() => expect(h.test).toHaveBeenCalledWith(CLAUDE));
+    expect(h.test).not.toHaveBeenCalledWith(CapabilityKinds.Harness);
+    await waitFor(() => expect(dialog()).toBeTruthy());
   });
 });
