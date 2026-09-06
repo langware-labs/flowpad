@@ -75,20 +75,34 @@ async def _conversation_id_for(item, source) -> Optional[str]:
     return str(getattr(thread, "conversation_id", "") or "") or None
 
 
-def _admits(source, inbox, author: str) -> bool:
+def _admits(source, author: str) -> bool:
     """Whether `author` may drive the agent through this source.
 
-    The allowlist is the rule; `open_inbound` is a driver's declaration that
+    Answered from the SOURCE alone — its status and its cached allowlist —
+    not from an `EmailInbox` built out of it: that constructor needs a mailbox's
+    `agent_id`, which a desk or a chat channel does not carry, and a gate that
+    raises inside the bus handler reads as "the agent never answered". The
+    folding is `normalize_email`, the funnel every address comparison uses, so
+    this keeps agreeing with `is_self_address`; a non-email handle passes
+    through it unchanged.
+
+    The allowlist is the rule. `open_inbound` is a driver's declaration that
     strangers are the point of its channel (a help desk), under which an EMPTY
-    list admits everyone. A non-empty list restricts either way, and a paused
+    list admits everyone; a non-empty list restricts either way, and a paused
     source admits nobody either way.
     """
-    if inbox.allowed(author):
-        return True
+    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
+    if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
+        return False
+    allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
+    candidate = normalize_email(author or "")
+    if candidate and any(candidate == normalize_email(str(a)) for a in allowlist):
+        return True
     driver = get_driver(getattr(source, "provider", "") or "")
-    return bool(driver is not None and driver.open_inbound and inbox.is_active and not inbox.allowed_senders)
+    return bool(driver is not None and driver.open_inbound and not allowlist)
 
 
 def _is_own_outgoing(item, source) -> bool:
@@ -177,7 +191,6 @@ async def handle_inbound(item) -> bool:
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.email_inbox import EmailInbox  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
@@ -193,13 +206,9 @@ async def handle_inbound(item) -> bool:
     agent = await _agent_for(source)
     if agent is None:
         return False
-    # The mailbox owns the gate, and it answers from the source alone: the config
-    # carries the Hub identity and the row carries the cached allowlist.
-    # `from_source` is deliberately the local constructor — this runs per message,
-    # so a Hub round trip here would put the network on the path of every piece of
-    # mail, including the ones we are about to ignore.
-    inbox = EmailInbox.from_source(source)
-    if not _admits(source, inbox, item.author_external_id or ""):
+    # The gate answers from the source alone — the row carries its status and
+    # the cached allowlist — so this per-message path never touches the Hub.
+    if not _admits(source, item.author_external_id or ""):
         logger.info("[agent-mail] ignoring mail to %s from unlisted sender", agent.name or agent.id)
         return False
 
