@@ -5,7 +5,7 @@ import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { PrimaryContentProvider, PrimaryContentRegion, usePrimaryContentPending } from '@sdk/react/primary-content';
 
 const start = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-vi.mock('@sdk', () => ({ asyncSdkInit: start }));
+vi.mock('@sdk', async (importOriginal) => ({ ...(await importOriginal<typeof import('@sdk')>()), asyncSdkInit: start }));
 afterEach(() => { vi.restoreAllMocks(); start.mockClear(); });
 
 function paints() {
