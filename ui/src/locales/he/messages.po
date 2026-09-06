@@ -10423,6 +10423,7 @@ msgstr "טוען..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -12797,8 +12798,8 @@ msgid "Only a sandbox's owner can start one. If you share it as it is, they'll g
 msgstr "רק הבעלים של סנדבוקס יכול להפעיל אותו. אם תשתפו אותו כמו שהוא, הם יקבלו את הקישור אך לא יוכלו לפתוח אותו — ותוצג להם הודעה לבקש מכם להפעיל אותו קודם."
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Only an admin of this organization can see its budgets."
-msgstr ""
+#~ msgid "Only an admin of this organization can see its budgets."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -20654,6 +20655,14 @@ msgstr "אתמול"
 msgid "You"
 msgstr "אתה"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "you are {role}"
+msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "You are not in any team in this organization yet."
+msgstr ""
+
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr ""
@@ -20818,6 +20827,10 @@ msgstr "השאלות שלך"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready"
 msgstr "ארגז החול שלך מוכן"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Your teams"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

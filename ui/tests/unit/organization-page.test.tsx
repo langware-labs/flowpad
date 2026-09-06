@@ -41,6 +41,7 @@ const h = vi.hoisted(() => ({
   createOrganization: vi.fn(),
   createChildTeam: vi.fn(),
   orgBudgets: vi.fn(),
+  orgStanding: vi.fn(),
 }));
 vi.mock('@src/components/organization/create-organization', () => ({
   createOrganization: (...args: unknown[]) => h.createOrganization(...args),
@@ -53,6 +54,7 @@ vi.mock('@src/components/organization/create-child-team', () => ({
 // stubbed, the same way `budget-section.test.tsx` does for `OrgUnit` in isolation.
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useOrgBudgets: (...args: unknown[]) => h.orgBudgets(...args),
+  useOrgStanding: (...args: unknown[]) => h.orgStanding(...args),
   useTeamBudgets: () => ({ data: undefined, isLoading: false, error: null }),
   useSetLifetimeCap: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveAllowance: () => ({ mutate: vi.fn(), isPending: false }),
@@ -123,10 +125,26 @@ describe('OrganizationPage', () => {
     expect(orgsMock.mock.calls.length).toBeLessThan(callsAfterFirst + 10);
   });
 
-  it('says so plainly, per organization, when the caller may not see its budgets', () => {
+  it('gives an organization the caller only BELONGS to their own standing in it', () => {
+    // The invited member's landing: the budgets read refuses them (401), so the card carries the
+    // name, their role and their teams -- and none of the money, nor any control they could not
+    // press. The page still lists the organization; it just says something true to this reader.
     h.orgBudgets.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
+    h.orgStanding.mockReturnValue({
+      data: {
+        id: 'org-1',
+        name: 'Springfield High',
+        role: 'member',
+        teams: [{ id: 'team-1', name: 'Class A', role: 'member' }],
+      },
+      isLoading: false,
+    });
     render(<OrganizationPage />);
-    expect(screen.getByText(/only an admin/i)).toBeTruthy();
+
+    expect(screen.getByTestId('org-standing-name').textContent).toBe('Springfield High');
+    expect(screen.getByTestId('org-standing-role').textContent).toMatch(/member/i);
+    expect(screen.getByText('Class A')).toBeTruthy();
+    expect(screen.queryByText(/only an admin/i)).toBeNull();
     expect(screen.queryByTestId('org-create-team')).toBeNull();
   });
 
