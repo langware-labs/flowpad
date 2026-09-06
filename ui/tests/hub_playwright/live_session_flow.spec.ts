@@ -31,49 +31,13 @@
  */
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 
-import {
-  ALICE,
-  BOB,
-  assertPreconditions,
-  gotoConversation,
-  gotoHome,
-  openInstance,
-  startConversationViaUi,
-} from './helpers';
-
-const BOB_EMAIL = process.env.BOB_CLOUD_EMAIL || 'bob@local.test';
-const HOST_PROJECT_ID = process.env.HOST_PROJECT_ID || '';
+import { assertPreconditions } from './helpers';
+import { HOST_PROJECT_ID, sessionCards as sessionCard, sendOpeningPrompt, setupLiveConversation } from './_live_session_setup';
 
 // Authored budget for a spec whose one slow leg is a real LLM turn.
 // do not increase timeout without approval
 const SPEC_BUDGET_MS = 90_000;
 const TURN_BUDGET_MS = 60_000;
-
-/** The same write the host's project picker performs: ``conv.project_id = X; conv.save()``. */
-async function mapHostConversation(convId: string) {
-  const url = `${BOB.backendUrl}/api/v1/graph/conversation/${convId}`;
-  let conv: Record<string, unknown> | null = null;
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    const r = await fetch(url);
-    if (r.ok) {
-      const body = (await r.json()) as { data?: Record<string, unknown> };
-      if (body.data?.id) { conv = body.data; break; }
-    }
-    await new Promise((res) => setTimeout(res, 200));
-  }
-  if (!conv) throw new Error(`bob never materialized conversation ${convId}`);
-  const r = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...conv, project_id: HOST_PROJECT_ID }),
-  });
-  if (!r.ok) throw new Error(`mapping bob's conversation failed: ${r.status} ${await r.text()}`);
-}
-
-function sessionCard(page: Page) {
-  return page.locator('[data-testid="session-card"]');
-}
 
 async function expectNoSessionRowsInThread(page: Page, startingText: string) {
   // Rule 3 + 4: nothing of the session but its starting message is a thread row.
@@ -92,49 +56,17 @@ test('live session: alice prompts → bob approves → reply only in the session
 
   const browser: Browser = await chromium.launch();
   try {
-    const alice = await openInstance(browser, ALICE);
-    const bob = await openInstance(browser, BOB);
-
-    // 1. conversation via the existing invitation flow
-    await gotoHome(bob.page);
-    // The hub assigns bob's membership directly (no pending invitation); his
-    // backend materializes the conversation on fan-out — mapHostConversation
-    // polls for that row before mapping it.
-    const convId = await startConversationViaUi(alice.page, BOB_EMAIL, `live-setup-${Date.now()}`);
-
-    // 2. host mapping — the gate only runs project-mapped conversations
-    await mapHostConversation(convId);
-
-    await gotoConversation(bob.page, convId);
-    await gotoConversation(alice.page, convId);
+    // 1-2. conversation via the existing invitation flow, mapped on bob's side
+    //      (the gate only runs project-mapped conversations), both threads open.
+    const { alice, bob } = await setupLiveConversation(browser);
 
     // 3. alice opens a session from the composer
     const marker = `LIVE-${Date.now()}`;
     const promptText = `Reply with exactly the text ${marker} and nothing else.`;
-    await alice.page.getByTestId('composer-session-toggle').click();
-    const textarea = alice.page.locator('textarea[placeholder^="Prompt to run on"]');
-    await textarea.fill(promptText);
-    const sendBtn = alice.page.locator('button[title="Send"]:not([data-testid])');
-    await expect(sendBtn).toBeEnabled({ timeout: 1_000 });
     const tSent = Date.now();
-    await sendBtn.click();
+    await sendOpeningPrompt(alice.page, promptText);
 
-    try {
-      await expect(sessionCard(alice.page).first()).toHaveAttribute('data-status', /pending|requesting/, { timeout: 2_000 });
-    } catch (e) {
-      // RCA dump: what did alice's page and backend hold when the card failed to show?
-      const bubbles = await alice.page.locator('[data-testid^="message-bubble-"]').allInnerTexts();
-      const anchors = await alice.page.locator('[data-testid="session-anchor"]').count();
-      const sessions = await fetch(`${ALICE.backendUrl}/api/v1/graph/remote_worker_session`).then((r) => r.json()).catch(() => null);
-      const mine = ((sessions?.data ?? []) as Array<Record<string, unknown>>).filter((x) => x.conversation_id === convId);
-      const fms = await fetch(`${ALICE.backendUrl}/api/v1/graph/conversation/${convId}/messages`).then((r) => r.json()).catch(() => null);
-      console.log('[rca] alice url:', alice.page.url(), 'convId:', convId);
-      console.log('[rca] alice text:', (await alice.page.locator('body').innerText()).replace(/\n+/g, ' | ').slice(0, 500));
-      console.log('[rca] alice bubbles:', JSON.stringify(bubbles).slice(0, 400));
-      console.log('[rca] alice anchors:', anchors, 'sessions for conv:', JSON.stringify(mine.map((x) => [x.id, x.status, x.starting_message_id])));
-      console.log('[rca] alice fms:', JSON.stringify(((fms?.data ?? []) as Array<Record<string, unknown>>).map((m) => [String(m.id).slice(0, 8), m.remote_worker_session_id, (m.attachment as unknown[] | undefined)?.length])));
-      throw e;
-    }
+    await expect(sessionCard(alice.page).first()).toHaveAttribute('data-status', /pending|requesting/, { timeout: 2_000 });
 
     // 4. bob sees the pending card and approves
     const bobCard = sessionCard(bob.page).first();

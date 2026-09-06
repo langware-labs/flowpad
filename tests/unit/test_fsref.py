@@ -6,7 +6,9 @@ Direct disk validation via Path on every mutating op.
 
 import pytest
 
+from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef, JSONFsRef, TextFsRef
+from flow_sdk.schema.types import EntityType
 
 
 @pytest.fixture
@@ -222,20 +224,35 @@ class TestToDict:
 # ---------------------------------------------------------------------------
 
 class TestMainRef:
-    def test_base_record_main_ref_no_path_returns_none(self):
-        # Record class slated for deletion; FSRecord.main_ref is asset_ref.
-        import pytest
-        pytest.skip("Record.main_ref tests pending FSRecord rewrite")
+    def test_fsrecord_main_ref_without_asset_returns_none(self):
+        assert FSRecord().main_ref is None
 
-    def test_base_record_main_ref_with_path_returns_json_fsref(self, tmp_path):
-        import pytest
-        pytest.skip("Record.main_ref tests pending FSRecord rewrite")
+    @pytest.mark.parametrize("record_type", ["", "unregistered-main-ref-type"])
+    def test_fsrecord_main_ref_without_layout_preserves_asset_ref(self, tmp_path, record_type):
+        asset_ref = JSONFsRef(tmp_path / "data.json", read_only=True)
+        main_ref = FSRecord(type=record_type, asset_ref=asset_ref).main_ref
+        assert main_ref is asset_ref
+        assert isinstance(main_ref, JSONFsRef)
+        assert main_ref.path == str(tmp_path / "data.json")
+        assert main_ref.read_only
 
-    def test_skill_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
-        # SkillRecord subclass deleted — main_ref FrontMatterFsRef dispatch
-        # was per-subclass behavior. Skip until per-type main_ref hook lands.
-        import pytest
-        pytest.skip("Skill main_ref dispatch moves to entity in a later phase")
+    def test_skill_main_ref_resolves_main_content_and_inherits_access(self, tmp_path):
+        folder = tmp_path / "skill"
+        folder.mkdir()
+        skill_md = folder / "SKILL.md"
+        content = "---\nname: test-skill\n---\n# Skill content\n"
+        skill_md.write_text(content, encoding="utf-8")
+        asset_ref = FSRef(folder, read_only=True, scope="user")
+
+        main_ref = FSRecord(type=EntityType.SKILL, asset_ref=asset_ref).main_ref
+        assert type(main_ref) is FSRef
+        assert main_ref.path == str(skill_md)
+        assert main_ref.read_only
+        assert main_ref.scope == "user"
+        assert main_ref.read() == content
+        with pytest.raises(IOError, match="read-only"):
+            main_ref.write("changed")
+        assert skill_md.read_text(encoding="utf-8") == content
 
     def test_agent_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
         from flow_sdk.fs_store.operations.subagent import extract_subagent_from_path

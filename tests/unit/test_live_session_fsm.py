@@ -24,7 +24,6 @@ from flow_sdk.builtin.remote_worker_session import (
     TERMINAL_STATUSES,
     RemoteWorkerSession,
     can_transition,
-    is_active,
     is_terminal,
 )
 from flow_sdk.builtin.remote_worker_session import (
@@ -81,8 +80,6 @@ def test_unknown_current_adopts_any_state():
 
 def test_status_predicates():
     assert ACTIVE_STATUSES == {S.IDLE, S.RUNNING}
-    assert is_active(S.IDLE) and is_active(S.RUNNING)
-    assert not is_active(S.PAUSED) and not is_active(None)
     assert is_terminal(S.ENDED) and is_terminal(S.DECLINED)
     assert not is_terminal(S.PAUSED) and not is_terminal(None)
 
@@ -254,10 +251,8 @@ def test_no_carrier_is_a_noop():
 
 # ── the inbound gate (pure) ──────────────────────────────────────────────────
 
-from flow_sdk.builtin.remote_worker_session import (  # noqa: E402
+from flow_sdk.builtin.remote_worker_session import (  # noqa: E402, I001
     InboundDecision as D,
-)
-from flow_sdk.builtin.remote_worker_session import (
     ReplyPolicy,
     decide_inbound_prompt,
 )

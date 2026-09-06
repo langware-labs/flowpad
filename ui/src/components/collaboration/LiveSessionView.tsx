@@ -30,6 +30,7 @@ import {
 } from '@src/hooks/use-contact-permissions';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { truncate } from '@src/components/hooks/event-summaries';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -47,7 +48,7 @@ export function useLiveSession(sessionId: string) {
   return useEntity<RemoteWorkerSession>(sessionTypeId, { watch: true });
 }
 
-export function promptTextOf(fm: FlowMessage): string {
+function promptTextOf(fm: FlowMessage): string {
   for (const a of fm.attachment ?? []) {
     if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt-') && a.prompt_preview) {
       return a.prompt_preview;
@@ -93,8 +94,7 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
 
 /** Truncate the opening prompt to a one-line title. */
 export function sessionTitle(prompt: string, max = 80): string {
-  const line = prompt.trim().split('\n')[0] ?? '';
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return truncate(prompt.trim().split('\n')[0] ?? '', max - 1);
 }
 
 /** Host-only standing grant: future sessions from this guest start approved,
@@ -188,6 +188,14 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     enabled: !!sessionId,
   });
 
+  // The session is named after the prompt that opened it. Memoized: the
+  // fallback scans every message's attachments, on a list that grows.
+  const startingMessageId = session?.starting_message_id;
+  const starting = useMemo(
+    () => messages.find((m) => m.id === startingMessageId) ?? messages.find((m) => !!promptTextOf(m)),
+    [messages, startingMessageId],
+  );
+
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
       setBusy(verb);
@@ -216,8 +224,6 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
 
-  // The session is named after the prompt that opened it.
-  const starting = messages.find((m) => m.id === session.starting_message_id) ?? messages.find((m) => !!promptTextOf(m));
   const title = starting ? sessionTitle(promptTextOf(starting)) : (session.getDisplayName() ?? '');
 
   const onSent = () => void refetch?.();

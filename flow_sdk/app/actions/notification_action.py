@@ -1432,6 +1432,7 @@ async def _stamp_session_snapshot(fm: "FlowMessage", session_id: str) -> None:
     from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
         SESSION_SNAPSHOT_MARKER_KEY,
         AttachmentType,
+        _carrier_marker,
     )
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
 
@@ -1442,14 +1443,7 @@ async def _stamp_session_snapshot(fm: "FlowMessage", session_id: str) -> None:
     out = []
     for a in fm.attachment or []:
         if a.attachment_type == AttachmentType.TYPE_ID and a.data == carrier_data:
-            marker: dict = {}
-            if a.prompt_preview:
-                try:
-                    loaded = _json.loads(a.prompt_preview)
-                    marker = loaded if isinstance(loaded, dict) else {}
-                except (ValueError, TypeError):
-                    marker = {}
-            marker[SESSION_SNAPSHOT_MARKER_KEY] = rws.snapshot()
+            marker: dict = {**(_carrier_marker(fm) or {}), SESSION_SNAPSHOT_MARKER_KEY: rws.snapshot()}
             a = a.model_copy(update={"prompt_preview": _json.dumps(marker)})
         out.append(a)
     fm.attachment = out

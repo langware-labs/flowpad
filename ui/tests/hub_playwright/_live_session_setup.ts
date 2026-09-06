@@ -100,7 +100,7 @@ export async function revokeAliceGrantsOnBob(): Promise<number> {
   const id = await aliceCloudId().catch(() => null);
   const rows = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`).then((r) => r.json()).catch(() => null);
   const mine = ((rows?.data ?? []) as Array<Record<string, unknown>>).filter((r) => !id || r.contact_user_id === id);
-  for (const r of mine) await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
+  for (const r of mine) await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${String(r.id)}`, { method: 'DELETE' }).catch(() => undefined);
   return mine.length;
 }
 

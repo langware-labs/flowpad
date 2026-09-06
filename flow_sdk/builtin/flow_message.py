@@ -208,23 +208,34 @@ LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
 SESSION_START_MARKER_KEY = "session_start"
 
 
-def _carrier_marker(fm: "FlowMessage") -> "dict | None":
-    """The JSON object in the session carrier's ``prompt_preview``, if any."""
+def carrier_marker(attachments) -> "dict | None":
+    """The JSON object in the session carrier's ``prompt_preview``, if any.
+    THE parser of that marker — ``attachments`` may be ``Attachment`` models
+    or the raw dicts a hub payload carries."""
     import json as _json  # noqa: PLC0415
 
-    for a in fm.attachment or []:
-        if a.attachment_type != AttachmentType.TYPE_ID:
+    def _get(a, key):
+        return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
+
+    for a in attachments or []:
+        if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
             continue
-        if not (a.data or "").startswith("remote_worker_session-"):
+        if not str(_get(a, "data") or "").startswith("remote_worker_session-"):
             continue
-        if not a.prompt_preview:
+        preview = _get(a, "prompt_preview")
+        if not preview:
             return None
         try:
-            marker = _json.loads(a.prompt_preview)
+            marker = _json.loads(preview)
         except (ValueError, TypeError):
             return None
         return marker if isinstance(marker, dict) else None
     return None
+
+
+def _carrier_marker(fm: "FlowMessage") -> "dict | None":
+    """``carrier_marker`` over a message's attachments."""
+    return carrier_marker(fm.attachment)
 
 
 # Marker key carrying the session's wire snapshot on ANY session message's

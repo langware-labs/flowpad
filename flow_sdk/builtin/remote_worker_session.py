@@ -102,11 +102,6 @@ _TRANSITIONS: dict[str, frozenset] = {
 }
 
 
-def is_active(status: str | None) -> bool:
-    """True when the session is approved and accepting prompts (IDLE/RUNNING)."""
-    return status in ACTIVE_STATUSES
-
-
 def is_terminal(status: str | None) -> bool:
     """True for the absorbing states (ENDED/DECLINED)."""
     return status in TERMINAL_STATUSES
@@ -309,18 +304,21 @@ class RemoteWorkerSession(Entity):
             (existing is not None and getattr(existing, "host_process_id", None))
             or (cloud_uid and snap.get("host_user_id") == cloud_uid)
         )
+        before = None if existing is None else existing.snapshot()
         rws = cls.apply_snapshot(existing, {**snap, "id": sid}, local_is_host=local_is_host)
-        await rws.save(someone_typeid) if someone_typeid else await rws.save()
+        # The header fast path and the bundle both adopt the same snapshot:
+        # the second pass must not write (and broadcast) an unchanged row.
+        if before is None or rws.snapshot() != before:
+            await rws.save(someone_typeid)
         return rws
 
     def snapshot(self) -> dict[str, Any]:
         """The wire snapshot (``SNAPSHOT_FIELDS`` only — never host-local paths).
         ``skip_api_serializer``: the API serializer would add its ``expand``
         envelope, which is not session state."""
-        data = self.model_dump(
+        return self.model_dump(
             mode="json", include=set(self.SNAPSHOT_FIELDS), context={"skip_api_serializer": True},
         )
-        return {k: v for k, v in data.items() if k in self.SNAPSHOT_FIELDS}
 
     @classmethod
     async def resolve_state(cls, session_id: str) -> Optional["RemoteWorkerSession"]:

@@ -94,22 +94,12 @@ def _is_session_traffic(payload: dict) -> bool:
     The prompt that OPENS a session is thread traffic (its card asks the host
     to approve), so it keeps its notification: it is the one session message
     whose carrier carries the ``session_start`` marker."""
-    import json as _json  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY, carrier_marker  # noqa: PLC0415
 
     atts = payload.get("attachment") or []
-    carrier = next(
-        (a for a in atts if isinstance(a, dict) and a.get("attachment_type") == "type_id"
-         and str(a.get("data") or "").startswith("remote_worker_session-")),
-        None,
-    )
-    if carrier is None and not payload.get("remote_worker_session_id"):
+    if not _has_session_carrier_attachment(atts) and not payload.get("remote_worker_session_id"):
         return False
-    preview = (carrier or {}).get("prompt_preview") or ""
-    try:
-        marker = _json.loads(preview) if preview else {}
-    except (ValueError, TypeError):
-        marker = {}
-    return not (isinstance(marker, dict) and "session_start" in marker)
+    return SESSION_START_MARKER_KEY not in (carrier_marker(atts) or {})
 
 
 def _has_prompt_attachment(attachments: Any) -> bool:

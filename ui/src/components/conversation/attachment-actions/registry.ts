@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { ExternalLink, Eye, Play } from 'lucide-react';
-import type { AttachmentActionContext, AttachmentActionDescriptor } from './types';
+import type { AttachmentActionDescriptor } from './types';
 
 /**
  * The attachment-action registry: every CTA a conversation message can carry,
