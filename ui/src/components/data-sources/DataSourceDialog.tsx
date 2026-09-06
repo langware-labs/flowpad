@@ -119,17 +119,15 @@ export function DataSourceDialog({
   /** Who the new source belongs to (a user or an agent). Omitted → the backend
    *  stamps the local user, so every existing caller is unchanged. */
   owner?: TypeId | null;
-  /** Narrow the provider tiles. Never to nothing: a backend that predates the
-   *  flag a filter reads answers false for every spec, and an empty picker
-   *  reads as a broken dialog — so the full list is the fallback. */
+  /** Narrow the provider tiles — the channels line offers only specs that
+   *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataSourceSpec) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
-  const narrowed = only ? installed.filter(only) : installed;
-  const specs = narrowed.length ? narrowed : installed;
+  const specs = only ? installed.filter(only) : installed;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -274,6 +272,11 @@ export function DataSourceDialog({
         <div className="space-y-4">
           {!editing && (
             <TileSection title={<Trans>Provider</Trans>}>
+              {specs.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  <Trans>No installed provider can carry a channel.</Trans>
+                </p>
+              )}
               {specs.map((p) => {
                 // Through the one source→glyph rule, so the tile a person picks and the
                 // card it becomes cannot disagree. No channel here: a provider is being

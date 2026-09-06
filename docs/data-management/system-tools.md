@@ -18,9 +18,11 @@ actions on that compute node are used:
 | `/graph/compute_node/@local/desktop-db/<sub>` | `flow_sdk/app/actions/desktop_db.py` (`@action.all("desktop-db")`) | `paths`, `stats`, `db-settings` (GET); `backup`, `archive`, `restore`, `clear`, `clear-index`, `db-settings`, `open-backup` / `open-db` / `open-logs` folders (POST) |
 | `/graph/compute_node/@local/fs-records/<sub>` | `FsRecordsActionsMixin` (see `compute-node-fs-records.md`) | `scan` (GET), `index` (POST, also with `?type=`, `?path=`, `?projects=`, `?force=`), `index-sessions` (POST), `index-status` (GET), `activity-status` (GET) |
 
-On construction the service immediately calls `refreshActivityStatus()` so an
-in-flight scan/index is picked up again after a page reload, and subscribes to
-`dataManager.onScanInfoChange` to mirror `scanInfo`.
+Construction subscribes to live progress and `dataManager.onScanInfoChange`
+without issuing an HTTP read. Initial scan/index hydration uses the shared
+`LazyAsset.IndexActivity` entry after primary content readiness, through
+`asyncSdkInit()` and the background `useSystemTools()` adapter. Multiple
+consumers join the same read. See [the lazy resource contract](../boot.md#7-shared-lazy-resources-ts_sdksrclazy).
 
 ---
 
@@ -90,9 +92,12 @@ The subscription is `connectionManager.on('on_flow_data', ...)` filtered on
 | Completion timer | 2 s after a `text: "complete"` snapshot | Drops `currentActivity` to null and refreshes `scanInfo` — unless a later phase's `_setActivity(...)` cancelled it first, which is how `resetAndRescan`'s archive→clear→scan→index hand-off avoids blinking to idle between phases. |
 | Idle watchdog | 5 s without a WS event while an activity is set | Calls `refreshActivityStatus()` (`GET /fs-records/activity-status`) to settle; re-seeds the table and phase when the backend says the job is still running, else clears. This is the safety net for a dropped final completion event. |
 
-`refreshActivityStatus()` treats a `null` payload from the backend as "idle" and
-a payload as "running with this table"; it is also what the constructor calls
-on page load.
+`refreshActivityStatus()` refreshes the shared entry and returns the current
+activity. Passing `false` reuses a fresh or pending read, as startup does.
+The registry loader `fetchActivityStatus()` treats a `null` payload as "idle"
+and a payload as "running with this table". A WebSocket update received during
+the HTTP request wins over that older snapshot; a result from an earlier
+authentication scope is rejected. Hub-only runtimes skip the desktop route.
 
 ```json
 {
@@ -174,9 +179,10 @@ const {
 } = useSystemTools();
 ```
 
-The hook is a `useSyncExternalStore` over the singleton's `'state_changed'`
-event with a shallow-equal snapshot, so a component re-renders only when one of
-the five snapshot fields actually changes.
+The hook requests background `LazyAsset.IndexActivity` hydration and reads a
+`useSyncExternalStore` over the singleton's `'state_changed'` event with a
+shallow-equal snapshot. Live progress remains owned by the singleton; fetching
+the initial snapshot never gates the surrounding page.
 
 > The hook does **not** expose `fastScan` / `fastScanProject` /
 > `hardRefreshProject` / `projectNeverIndexed` / `discoverByPath` /

@@ -312,6 +312,7 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
+        # Signal only — this can run inside the WS task tree; see request_stop.
         hub_ws_manager.request_stop()
     except Exception:
         pass

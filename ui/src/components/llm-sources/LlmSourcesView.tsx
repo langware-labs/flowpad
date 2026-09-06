@@ -29,21 +29,14 @@ import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-poi
 import { TONE } from '@src/components/llm-endpoints/tone';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
-import { WORKER_LABELS, type WorkerType } from '@src/hooks/useWorkerHistory';
 import { errorMessage } from '@src/lib/error-message';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
 import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
-import { harnessKinds, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
+import { harnessKinds, labelForWorker, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
 import { visibleSources } from './visible-sources';
-
-/** Vendor label from the ONE table, falling back to the raw worker so a harness added to the
- *  capability registry renders as itself rather than not at all. */
-function labelFor(worker: string): string {
-  return WORKER_LABELS[worker as WorkerType] ?? worker;
-}
 
 function SourceRow({
   source,
@@ -245,7 +238,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
               }`}
               data-testid={`llm-sources-chip-${chipWorker}`}
             >
-              <div className="font-medium">{labelFor(chipWorker)}</div>
+              <div className="font-medium">{labelForWorker(chipWorker)}</div>
               {/* The backend owns this sentence too: `sources` is the un-overlaid offer list, so a
                   preference nothing can satisfy shows up here rather than on the rows. */}
               <div className="text-muted-foreground">

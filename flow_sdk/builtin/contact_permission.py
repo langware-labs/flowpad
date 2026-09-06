@@ -1,9 +1,10 @@
-"""Per-contact, per-project prompt permissions — the receiver's LOCAL policy.
+"""Per-contact, per-project standing grant — the host's LOCAL policy.
 
-A ``ContactPermission`` records what a remote contact is allowed to do with the
-prompts they send into a shared conversation: auto-run them
-(``execute_prompt``) and/or have the captured reply auto-sent (``auto_reply``,
-otherwise the reply is saved as a draft for review).
+A ``ContactPermission`` records that a remote contact's NEW live sessions in a
+shared conversation are approved without asking (``auto_approve_session``).
+Everything else about a session — pause, reply policy, disconnect — is decided
+on the session itself; this row only answers "does a session from this person
+start approved?".
 
 Keyed by the contact (``contact_user_id`` — the cross-machine-stable key, since
 ``FlowMessage.sender_id`` is always a user id — with ``contact_email`` as a
@@ -26,8 +27,14 @@ from flow_sdk.core import Entity
 class PermissionAction(StrEnum):
     """Capability strings stored in ``ContactPermission.allowed_actions``."""
 
-    EXECUTE_PROMPT = "execute_prompt"  # auto-run a received prompt
-    AUTO_REPLY = "auto_reply"          # send the captured reply (else draft it)
+    AUTO_APPROVE_SESSION = "auto_approve_session"  # new sessions from this contact start approved
+
+
+# Read-side mapping for rows written before sessions were the only unit of
+# consent: ``execute_prompt`` meant "run without asking" (→ auto-approve the
+# session); ``auto_reply`` was a separate reply-mode grant that no longer
+# exists (reply policy lives on the session) and is dropped.
+_LEGACY_ACTIONS = {"execute_prompt": PermissionAction.AUTO_APPROVE_SESSION.value}
 
 
 def _contact_matches(
@@ -59,6 +66,20 @@ class ContactPermission(Entity):
         if v is None or isinstance(v, str):
             return normalize_email(v)
         return v
+
+    @field_validator("allowed_actions", mode="before")
+    @classmethod
+    def _lift_legacy_actions(cls, v):
+        """Map pre-session action names on read; unknown names are dropped."""
+        if not isinstance(v, list):
+            return v
+        known = {a.value for a in PermissionAction}
+        out: list[str] = []
+        for raw in v:
+            name = _LEGACY_ACTIONS.get(raw, raw)
+            if name in known and name not in out:
+                out.append(name)
+        return out
 
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "ShieldCheck"

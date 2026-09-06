@@ -350,6 +350,7 @@ async def test_get_by_worker_id_claude(bootstrapped_client, tmp_path):
 
 
 @requires_codex
+@pytest.mark.usefixtures("usable_codex_source")
 @pytest.mark.asyncio
 async def test_get_by_worker_id_codex(bootstrapped_client, tmp_path):
     """terminals/get_by_worker_id auto-discovers a Codex thread and upserts an AP."""

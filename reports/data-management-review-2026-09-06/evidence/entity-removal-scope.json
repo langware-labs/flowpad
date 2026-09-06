@@ -1,0 +1,573 @@
+{
+  "head": "0f66f2ae8dc5283c97af635008131f967dd9d2c5",
+  "scope": "Six current Python source files, including uncommitted contents; not a net deletion estimate",
+  "sloc_definition": "Physical code lines excluding blanks, comments and Python docstrings; runtime strings count",
+  "files": [
+    {
+      "file": "flow_sdk/core/entity/entity_model.py",
+      "sloc": 2114,
+      "sha256": "564af6772b0e275c706bbb998fbde0dd56473950776d838ab7132bbed14a0b8d"
+    },
+    {
+      "file": "flow_sdk/db/db_entity.py",
+      "sloc": 939,
+      "sha256": "e4c7e03e71e589827e49e9c6eff10095783497ac3ef99d869f1cb21992ee511f"
+    },
+    {
+      "file": "flow_sdk/fs_store/fs_record.py",
+      "sloc": 626,
+      "sha256": "810ba7b52ba22abe215dc78dae47812c21d9497bb4be20111cdae5c3dc4debb4"
+    },
+    {
+      "file": "flow_sdk/fs_store/serializer/record.py",
+      "sloc": 48,
+      "sha256": "960048c55d36fa661b5d31b7038b293ae3640b2c042e55f2923c992bf48c7351"
+    },
+    {
+      "file": "flow_sdk/fs_store/record_list.py",
+      "sloc": 53,
+      "sha256": "9053c06bdb755a3210c0f9230e3d51d9faedd1de933a377c076fd790fa0db31a"
+    },
+    {
+      "file": "flow_sdk/fs_store/record_query.py",
+      "sloc": 108,
+      "sha256": "abc5f6604f4bc2085f2c468e79382fc60453b6619e10cde0f11d4a70b46d328f"
+    }
+  ],
+  "total_sloc": 3888,
+  "supporting_files": [
+    {
+      "file": "flow_sdk/db/drivers/db_base_record.py",
+      "sloc": 308,
+      "sha256": "a07f51fb186dd51a51e5b6b5891416adcceb9f95a049f8529b0e23aec45f23f4"
+    },
+    {
+      "file": "flow_sdk/fs_store/serializer/db.py",
+      "sloc": 87,
+      "sha256": "087bbae48812aac3625180623205e92382da50b3b18118a5a7829120008d8e37"
+    }
+  ],
+  "combined_total_sloc": 4283,
+  "inventory_caveat": "Static named-base/direct-import inventory, includes benchmark fixtures; not all registered types or consumers",
+  "direct_entity_subclasses": [
+    {
+      "file": "flow_sdk/builtin/agent.py",
+      "line": 132,
+      "class": "Agent"
+    },
+    {
+      "file": "flow_sdk/builtin/agent_hook.py",
+      "line": 49,
+      "class": "AgentHook"
+    },
+    {
+      "file": "flow_sdk/builtin/agent_trace.py",
+      "line": 46,
+      "class": "AgentTrace"
+    },
+    {
+      "file": "flow_sdk/builtin/agentic_process/agentic_process.py",
+      "line": 958,
+      "class": "AgenticProcess"
+    },
+    {
+      "file": "flow_sdk/builtin/annotation.py",
+      "line": 7,
+      "class": "Annotation"
+    },
+    {
+      "file": "flow_sdk/builtin/api_key.py",
+      "line": 53,
+      "class": "ApiKey"
+    },
+    {
+      "file": "flow_sdk/builtin/artifact.py",
+      "line": 28,
+      "class": "Artifact"
+    },
+    {
+      "file": "flow_sdk/builtin/asset_cleanup_report.py",
+      "line": 35,
+      "class": "AssetCleanupReport"
+    },
+    {
+      "file": "flow_sdk/builtin/bookmark.py",
+      "line": 47,
+      "class": "Bookmark"
+    },
+    {
+      "file": "flow_sdk/builtin/capability.py",
+      "line": 53,
+      "class": "Capability"
+    },
+    {
+      "file": "flow_sdk/builtin/claude_memory_entities.py",
+      "line": 78,
+      "class": "Markdown"
+    },
+    {
+      "file": "flow_sdk/builtin/claude_session.py",
+      "line": 15,
+      "class": "ClaudeSession"
+    },
+    {
+      "file": "flow_sdk/builtin/codex_session.py",
+      "line": 17,
+      "class": "CodexSession"
+    },
+    {
+      "file": "flow_sdk/builtin/collaboration_room.py",
+      "line": 35,
+      "class": "CollaborationRoom"
+    },
+    {
+      "file": "flow_sdk/builtin/command.py",
+      "line": 15,
+      "class": "Command"
+    },
+    {
+      "file": "flow_sdk/builtin/comment.py",
+      "line": 9,
+      "class": "Comment"
+    },
+    {
+      "file": "flow_sdk/builtin/consumer_position.py",
+      "line": 57,
+      "class": "ConsumerPosition"
+    },
+    {
+      "file": "flow_sdk/builtin/contact_permission.py",
+      "line": 47,
+      "class": "ContactPermission"
+    },
+    {
+      "file": "flow_sdk/builtin/contacts_group.py",
+      "line": 22,
+      "class": "ContactsGroup"
+    },
+    {
+      "file": "flow_sdk/builtin/conversation.py",
+      "line": 129,
+      "class": "Conversation"
+    },
+    {
+      "file": "flow_sdk/builtin/copilot_session.py",
+      "line": 16,
+      "class": "CopilotSession"
+    },
+    {
+      "file": "flow_sdk/builtin/credential_spec.py",
+      "line": 292,
+      "class": "CredentialSpec"
+    },
+    {
+      "file": "flow_sdk/builtin/cron_event.py",
+      "line": 70,
+      "class": "CronEvent"
+    },
+    {
+      "file": "flow_sdk/builtin/data_source.py",
+      "line": 102,
+      "class": "DataSource"
+    },
+    {
+      "file": "flow_sdk/builtin/data_source_cursor.py",
+      "line": 32,
+      "class": "DataSourceCursor"
+    },
+    {
+      "file": "flow_sdk/builtin/data_source_spec.py",
+      "line": 297,
+      "class": "DataSourceSpec"
+    },
+    {
+      "file": "flow_sdk/builtin/dataset.py",
+      "line": 117,
+      "class": "Dataset"
+    },
+    {
+      "file": "flow_sdk/builtin/deck.py",
+      "line": 25,
+      "class": "Deck"
+    },
+    {
+      "file": "flow_sdk/builtin/deck_template.py",
+      "line": 33,
+      "class": "DeckTemplate"
+    },
+    {
+      "file": "flow_sdk/builtin/deployment.py",
+      "line": 70,
+      "class": "Deployment"
+    },
+    {
+      "file": "flow_sdk/builtin/dynamic_workflow.py",
+      "line": 21,
+      "class": "DynamicWorkflow"
+    },
+    {
+      "file": "flow_sdk/builtin/email_inbox.py",
+      "line": 99,
+      "class": "EmailInbox"
+    },
+    {
+      "file": "flow_sdk/builtin/faas/compute_node.py",
+      "line": 81,
+      "class": "ComputeNode"
+    },
+    {
+      "file": "flow_sdk/builtin/faas/job.py",
+      "line": 34,
+      "class": "Job"
+    },
+    {
+      "file": "flow_sdk/builtin/faas/job_execution.py",
+      "line": 11,
+      "class": "JobExecution"
+    },
+    {
+      "file": "flow_sdk/builtin/faas/micro_app.py",
+      "line": 64,
+      "class": "MicroApp"
+    },
+    {
+      "file": "flow_sdk/builtin/faas/web_domain.py",
+      "line": 18,
+      "class": "WebDomain"
+    },
+    {
+      "file": "flow_sdk/builtin/feed_entry.py",
+      "line": 23,
+      "class": "FeedEntry"
+    },
+    {
+      "file": "flow_sdk/builtin/file.py",
+      "line": 30,
+      "class": "File"
+    },
+    {
+      "file": "flow_sdk/builtin/flow_message.py",
+      "line": 326,
+      "class": "FlowMessage"
+    },
+    {
+      "file": "flow_sdk/builtin/flowpad_diagnosis.py",
+      "line": 20,
+      "class": "FlowpadDiagnosis"
+    },
+    {
+      "file": "flow_sdk/builtin/folder.py",
+      "line": 41,
+      "class": "Folder"
+    },
+    {
+      "file": "flow_sdk/builtin/graph_context.py",
+      "line": 24,
+      "class": "GraphContext"
+    },
+    {
+      "file": "flow_sdk/builtin/graph_workflow.py",
+      "line": 44,
+      "class": "GraphWorkflow"
+    },
+    {
+      "file": "flow_sdk/builtin/graph_workflow_node.py",
+      "line": 26,
+      "class": "GraphWorkflowNode"
+    },
+    {
+      "file": "flow_sdk/builtin/graph_workflow_run.py",
+      "line": 28,
+      "class": "GraphWorkflowRun"
+    },
+    {
+      "file": "flow_sdk/builtin/group.py",
+      "line": 31,
+      "class": "Group"
+    },
+    {
+      "file": "flow_sdk/builtin/helpdesk.py",
+      "line": 40,
+      "class": "Helpdesk"
+    },
+    {
+      "file": "flow_sdk/builtin/inbox_manager.py",
+      "line": 28,
+      "class": "InboxManager"
+    },
+    {
+      "file": "flow_sdk/builtin/invitation.py",
+      "line": 41,
+      "class": "Invitation"
+    },
+    {
+      "file": "flow_sdk/builtin/journey.py",
+      "line": 98,
+      "class": "Journey"
+    },
+    {
+      "file": "flow_sdk/builtin/journey_journal.py",
+      "line": 43,
+      "class": "JourneyJournal"
+    },
+    {
+      "file": "flow_sdk/builtin/knowledge_base/knowledge_base.py",
+      "line": 150,
+      "class": "KnowledgeBase"
+    },
+    {
+      "file": "flow_sdk/builtin/llm_endpoint.py",
+      "line": 129,
+      "class": "LLMEndpoint"
+    },
+    {
+      "file": "flow_sdk/builtin/mcp.py",
+      "line": 141,
+      "class": "Mcp"
+    },
+    {
+      "file": "flow_sdk/builtin/mention.py",
+      "line": 15,
+      "class": "Mention"
+    },
+    {
+      "file": "flow_sdk/builtin/message_attachment.py",
+      "line": 35,
+      "class": "MessageAttachment"
+    },
+    {
+      "file": "flow_sdk/builtin/message_suggest.py",
+      "line": 9,
+      "class": "MessageSuggest"
+    },
+    {
+      "file": "flow_sdk/builtin/message_thread.py",
+      "line": 40,
+      "class": "MessageThread"
+    },
+    {
+      "file": "flow_sdk/builtin/organization.py",
+      "line": 10,
+      "class": "Organization"
+    },
+    {
+      "file": "flow_sdk/builtin/process_result.py",
+      "line": 10,
+      "class": "ProcessResult"
+    },
+    {
+      "file": "flow_sdk/builtin/project.py",
+      "line": 191,
+      "class": "Project"
+    },
+    {
+      "file": "flow_sdk/builtin/prompt.py",
+      "line": 64,
+      "class": "Prompt"
+    },
+    {
+      "file": "flow_sdk/builtin/prompt_completion.py",
+      "line": 18,
+      "class": "PromptCompletion"
+    },
+    {
+      "file": "flow_sdk/builtin/question.py",
+      "line": 20,
+      "class": "Question"
+    },
+    {
+      "file": "flow_sdk/builtin/rag_index.py",
+      "line": 67,
+      "class": "RagIndex"
+    },
+    {
+      "file": "flow_sdk/builtin/remote_worker_session.py",
+      "line": 106,
+      "class": "RemoteWorkerSession"
+    },
+    {
+      "file": "flow_sdk/builtin/secret_origin.py",
+      "line": 68,
+      "class": "SecretOrigin"
+    },
+    {
+      "file": "flow_sdk/builtin/shell.py",
+      "line": 167,
+      "class": "Shell"
+    },
+    {
+      "file": "flow_sdk/builtin/skill.py",
+      "line": 29,
+      "class": "Skill"
+    },
+    {
+      "file": "flow_sdk/builtin/source_change.py",
+      "line": 36,
+      "class": "SourceChange"
+    },
+    {
+      "file": "flow_sdk/builtin/source_item.py",
+      "line": 199,
+      "class": "SourceItem"
+    },
+    {
+      "file": "flow_sdk/builtin/spec.py",
+      "line": 29,
+      "class": "Spec"
+    },
+    {
+      "file": "flow_sdk/builtin/spreadsheet.py",
+      "line": 26,
+      "class": "Spreadsheet"
+    },
+    {
+      "file": "flow_sdk/builtin/subagent.py",
+      "line": 55,
+      "class": "SubAgent"
+    },
+    {
+      "file": "flow_sdk/builtin/tab.py",
+      "line": 248,
+      "class": "Tab"
+    },
+    {
+      "file": "flow_sdk/builtin/tag.py",
+      "line": 36,
+      "class": "Tag"
+    },
+    {
+      "file": "flow_sdk/builtin/task.py",
+      "line": 86,
+      "class": "Task"
+    },
+    {
+      "file": "flow_sdk/builtin/team.py",
+      "line": 11,
+      "class": "Team"
+    },
+    {
+      "file": "flow_sdk/builtin/trigger.py",
+      "line": 246,
+      "class": "Trigger"
+    },
+    {
+      "file": "flow_sdk/builtin/usage_report.py",
+      "line": 50,
+      "class": "UsageReport"
+    },
+    {
+      "file": "flow_sdk/builtin/user.py",
+      "line": 47,
+      "class": "User"
+    },
+    {
+      "file": "flow_sdk/builtin/user_note.py",
+      "line": 9,
+      "class": "UserNote"
+    },
+    {
+      "file": "flow_sdk/builtin/visitor.py",
+      "line": 18,
+      "class": "Visitor"
+    },
+    {
+      "file": "flow_sdk/builtin/whiteboard.py",
+      "line": 24,
+      "class": "Whiteboard"
+    },
+    {
+      "file": "flow_sdk/builtin/wiki.py",
+      "line": 11,
+      "class": "Wiki"
+    },
+    {
+      "file": "flow_sdk/builtin/wiki.py",
+      "line": 41,
+      "class": "WikiEntry"
+    },
+    {
+      "file": "flow_sdk/builtin/workflow_run.py",
+      "line": 13,
+      "class": "WorkflowRun"
+    },
+    {
+      "file": "flow_sdk/builtin/workspace.py",
+      "line": 14,
+      "class": "Workspace"
+    },
+    {
+      "file": "flow_sdk/core/network/connection.py",
+      "line": 18,
+      "class": "Notification"
+    },
+    {
+      "file": "flow_sdk/core/network/connection.py",
+      "line": 61,
+      "class": "Connection"
+    },
+    {
+      "file": "flow_sdk/db/drivers/sqlite/benchmark.py",
+      "line": 40,
+      "class": "BenchmarkEntity"
+    }
+  ],
+  "direct_entity_subclass_count": 92,
+  "direct_entity_import_files": [
+    "flow_sdk/app/actions/context_share_action.py",
+    "flow_sdk/app/actions/env_var.py",
+    "flow_sdk/app/actions/graph_crud_actions.py",
+    "flow_sdk/app/actions/members_action.py",
+    "flow_sdk/app/actions/membership_sync.py",
+    "flow_sdk/app/actions/oauth_attachment.py",
+    "flow_sdk/app/actions/share_action.py",
+    "flow_sdk/app/actions/wiki_action.py",
+    "flow_sdk/assets/projection.py",
+    "flow_sdk/assets/share_orchestrator.py",
+    "flow_sdk/blocks/delivery.py",
+    "flow_sdk/builtin/agent_hook.py",
+    "flow_sdk/builtin/agentic_process/agentic_process.py",
+    "flow_sdk/builtin/asset_menu.py",
+    "flow_sdk/builtin/consumer_position.py",
+    "flow_sdk/builtin/cron_event.py",
+    "flow_sdk/builtin/faas/fs_records_actions.py",
+    "flow_sdk/builtin/faas/pty_actions.py",
+    "flow_sdk/builtin/faas/web_domain.py",
+    "flow_sdk/builtin/inbox_manager.py",
+    "flow_sdk/builtin/invitation.py",
+    "flow_sdk/builtin/knowledge_base/knowledge_base.py",
+    "flow_sdk/builtin/shell.py",
+    "flow_sdk/builtin/subagent.py",
+    "flow_sdk/builtin/trigger.py",
+    "flow_sdk/builtin/user.py",
+    "flow_sdk/builtin/visitor.py",
+    "flow_sdk/cloud_client/context_watch.py",
+    "flow_sdk/cloud_client/wiki_cache.py",
+    "flow_sdk/core/__init__.py",
+    "flow_sdk/core/display_target.py",
+    "flow_sdk/core/entity/__init__.py",
+    "flow_sdk/core/entity/cross_link.py",
+    "flow_sdk/core/entity/frontmatter_accessor.py",
+    "flow_sdk/core/entity/parent_share.py",
+    "flow_sdk/core/network/resource_tracker.py",
+    "flow_sdk/core/schema.py",
+    "flow_sdk/db/drivers/sqlite/benchmark.py",
+    "flow_sdk/db/drivers/sqlite/sqlite_driver.py",
+    "flow_sdk/fs_store/fs_record.py",
+    "flow_sdk/fs_store/origin_identity.py",
+    "flow_sdk/fs_store/reindex.py",
+    "flow_sdk/fs_store/serializer/disk.py",
+    "flow_sdk/inbox/hub_clock.py",
+    "flow_sdk/ingest/reflect.py",
+    "flow_sdk/request_context/methods.py",
+    "flow_sdk/semantic_lock/runner.py",
+    "flow_sdk/server/routes/_hub_reflect.py",
+    "flow_sdk/server/routes/assets.py",
+    "flow_sdk/server/routes/bootstrap.py",
+    "flow_sdk/server/routes/favorites.py",
+    "flow_sdk/server/routes/graph.py",
+    "flow_sdk/server/routes/navigate.py",
+    "flow_sdk/server/routes/search.py",
+    "flow_sdk/wiki/service.py"
+  ],
+  "direct_entity_import_file_count": 55
+}

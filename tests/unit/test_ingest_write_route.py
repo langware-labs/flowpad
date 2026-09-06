@@ -16,9 +16,8 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
 from flow_sdk.ingest.ingestor import ingest_items
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.models import IngestMode
 from flow_sdk.server.routes.ingest import MAX_ITEMS_PER_REQUEST, _to_item
 
@@ -127,7 +126,7 @@ async def test_a_large_batch_selects_backfill_so_it_cannot_storm():
                    segment_key="INBOX", external_id=f"m-{n}", name=f"mail {n}")
         for n in range(40)
     ]
-    assert IngestMode.for_run(first_run=False, item_count=len(many)) is IngestMode.BACKFILL
+    assert IngestMode.for_run(item_count=len(many)) is IngestMode.BACKFILL
 
     report = await ingest_items(many, mode=IngestMode.BACKFILL)
     assert report.created == 40

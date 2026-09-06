@@ -48,7 +48,14 @@ export function AssetsNavigator() {
         />
       ),
     },
-    wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>{tree}</AssetTypeCountsContext.Provider>,
+    wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>
+      {m.menuError && <div role="alert">
+        <button type="button" onClick={m.reloadMenu} className="p-2 text-xs text-destructive">
+          {t`Assets unavailable. Retry`}
+        </button>
+      </div>}
+      {tree}
+    </AssetTypeCountsContext.Provider>,
   };
 
   return (

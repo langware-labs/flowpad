@@ -72,11 +72,14 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
         assert refreshed.health == SourceHealth.OK.value
         assert refreshed.next_poll_at is not None
 
-        # a first run backfills quietly: boundary events only, no per-item storm
+        # SIZE decides how loudly a run announces itself, not whether it is the
+        # first: two entries are under the storm cap, so each one is announced
+        # — a support ticket's opening line places on arrival for exactly this
+        # reason — while a run over the cap reports once (IngestMode.for_run).
         assert "ingest.rss.sync.started" in fired
         assert "ingest.rss.sync.completed" in fired
-        assert "ingest.rss.item.created" not in fired, (
-            "the first run emitted per-item events; a backfill must report once"
+        assert fired.count("ingest.rss.item.created") == 2, (
+            "a small first run announces each item; only a run over the cap is silent"
         )
 
         # ── second run, identical feed ─────────────────────────────────────

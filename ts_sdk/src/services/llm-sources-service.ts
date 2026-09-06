@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * The box's funding picture: which `LLMSource`s could pay for each harness, which one wins,
  * and how to choose a different one.
@@ -92,7 +93,7 @@ export interface LLMFundingStatus {
 export class LlmSourcesService {
   private readonly base: string;
 
-  constructor(nodeTypeId: { type: string; id: string }) {
+  constructor(private readonly nodeTypeId: { type: string; id: string }) {
     this.base = `/graph/${nodeTypeId.type}/${nodeTypeId.id}/${ACTION}`;
   }
 
@@ -102,9 +103,23 @@ export class LlmSourcesService {
    *  box that genuinely has nothing, so the screen renders a bare header instead of saying it is
    *  desktop-only — and every field added to `LLMFundingStatus` would have to be mirrored into
    *  that constant forever. */
-  status(): Promise<LLMFundingStatus | null> {
+  status(projectId?: string): Promise<LLMFundingStatus | null> {
+    return lazyAssets.load(LazyAsset.LlmFunding, { nodeTypeId: this.nodeTypeId, projectId });
+  }
+
+  /**
+   * `projectId` narrows `resolved` to the verdict a spawn IN THAT PROJECT gets.
+   *
+   * A project may pin an endpoint (`Project.llm_endpoint_typeid`), and that pin outranks the
+   * user's own preference. Asked without one the backend answers the box-wide question and a
+   * pin is simply invisible — which is what it always did, and why the picker could report a
+   * different source than the one a process actually spent. `sources` is unaffected: an offer
+   * is judged on its own credential, never on someone else's constraint.
+   */
+  fetchStatus(projectId?: string): Promise<LLMFundingStatus | null> {
     if (isHubOnly()) return Promise.resolve(null);
-    return apiClient.get(this.base);
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+    return apiClient.get(`${this.base}${query}`);
   }
 
   /**

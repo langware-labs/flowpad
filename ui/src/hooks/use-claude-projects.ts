@@ -1,282 +1,39 @@
 import { useAgentContext } from '@src/contexts/agent-context';
-import {
-  fetchAllSkillsFromComputeNode,
-  fsManager,
-  listProjectsFromComputeNode,
-  scanProjectFromComputeNode,
-  type ListProjectsResponse,
-  type ProjectListItem,
-  type ScanProjectResponse,
-  type SkillItem,
-} from '@sdk';
-import { ingestCleanupSummary } from '@sdk/stores/project-cleanup-store';
-import { useCallback, useEffect, useRef, useState } from 'react';
-
-/** Stable empty result. A fresh `[]` per render is a new identity, which breaks
- *  every downstream memo keyed on `projects` — and a disabled hook never has
- *  data, so that is the permanent case, not the rare one. */
+import { fsManager, type ProjectListItem, type SkillItem } from '@sdk';
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
+import { useCallback, useEffect } from 'react';
 const NO_PROJECTS: ProjectListItem[] = [];
+const NO_SKILLS: SkillItem[] = [];
 
-/** Cache TTL in milliseconds (2 minutes for project list, longer since it changes less often) */
-const PROJECT_LIST_CACHE_TTL = 120000;
-
-/** Cache TTL for per-project resources (1 minute) */
-const PROJECT_RESOURCES_CACHE_TTL = 60000;
-
-interface ProjectResourcesCache {
-  data: ScanProjectResponse;
-  timestamp: number;
-}
-
-interface UseProjectListOptions {
-  enabled?: boolean;
-}
-
-interface ProjectListCache {
-  data: ListProjectsResponse;
-  timestamp: number;
-}
-
-const projectListCache = new Map<string, ProjectListCache>();
-const projectResourcesCache = new Map<string, ProjectResourcesCache>();
-
-/**
- * Hook for fast project list enumeration.
- * The backend merges Claude, Codex, Copilot, and persisted Project entities.
- * Returns just the project list (~50ms) without loading all resources.
- */
-export function useProjectList(options: UseProjectListOptions = {}) {
+export function useProjectList(options: { enabled?: boolean } = {}) {
   const { computeNode } = useAgentContext();
-  const { enabled = true } = options;
-
-  // Initialize from module-level cache to avoid flash on remount
-  const [data, setData] = useState<ListProjectsResponse | null>(() => {
-    if (!computeNode?.id) return null;
-    const cached = projectListCache.get(computeNode.id);
-    if (cached && Date.now() - cached.timestamp < PROJECT_LIST_CACHE_TTL) {
-      return cached.data;
-    }
-    return null;
+  const result = useLazyAsset(LazyAsset.DiscoveredProjects, { nodeId: computeNode?.id ?? '' }, {
+    enabled: options.enabled !== false && !!computeNode?.id,
   });
-  const [isLoading, setIsLoading] = useState(() => {
-    if (!enabled) return false;
-    if (!computeNode?.id) return true;
-    const cached = projectListCache.get(computeNode.id);
-    return !cached || Date.now() - cached.timestamp >= PROJECT_LIST_CACHE_TTL;
-  });
-  const [error, setError] = useState<string | null>(null);
-  const requestRef = useRef<AbortController | null>(null);
-
-  const fetchData = useCallback(
-    async (forceRefresh = false) => {
-      if (!enabled) {
-        setIsLoading(false);
-        return;
-      }
-
-      if (!computeNode?.id) {
-        setIsLoading(false);
-        setError('No compute node available');
-        return;
-      }
-
-      const cacheKey = computeNode.id;
-
-      // Check cache
-      if (!forceRefresh) {
-        const cached = projectListCache.get(cacheKey);
-        const age = cached ? Date.now() - cached.timestamp : Number.POSITIVE_INFINITY;
-        if (age < PROJECT_LIST_CACHE_TTL) {
-          setData(cached!.data);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      setError(null);
-      requestRef.current?.abort();
-      const controller = new AbortController();
-      requestRef.current = controller;
-
-      try {
-        const result = await listProjectsFromComputeNode(computeNode.id, controller.signal);
-        if (controller.signal.aborted || requestRef.current !== controller) return;
-        setData(result);
-        // The scan counted cleanup candidates while it was walking anyway; hand
-        // them to the store so the footer warning needs no call of its own. The
-        // scan is the only writer — nothing here decides whether to warn.
-        ingestCleanupSummary(result.cleanup);
-        projectListCache.set(cacheKey, { data: result, timestamp: Date.now() });
-      } catch (err) {
-        if (controller.signal.aborted || requestRef.current !== controller) return;
-        console.error('Failed to list projects:', err);
-        setError(err instanceof Error ? err.message : 'Failed to list projects');
-      } finally {
-        if (requestRef.current === controller) {
-          requestRef.current = null;
-          setIsLoading(false);
-        }
-      }
-    },
-    [computeNode?.id, enabled],
-  );
-
-  useEffect(() => {
-    if (!enabled) {
-      setIsLoading(false);
-      return;
-    }
-    void fetchData();
-    return () => {
-      requestRef.current?.abort();
-      requestRef.current = null;
-    };
-  }, [enabled, fetchData]);
-
-  return {
-    projects: data?.projects ?? NO_PROJECTS,
-    totalCount: data?.total_count ?? 0,
-    isLoading,
-    error,
-    refetch: () => fetchData(true),
-  };
+  return { projects: result.data?.projects ?? NO_PROJECTS, totalCount: result.data?.total_count ?? 0,
+    isLoading: result.isLoading, error: result.error?.message ?? null, refetch: result.reload };
 }
-
-/** @deprecated Use useProjectList. */
 export const useClaudeProjectList = useProjectList;
 
-/**
- * Hook for loading resources for a specific Claude Code project.
- * Only loads when a project is selected (lazy loading).
- */
-interface UseClaudeProjectResourcesOptions {
-  includeSessions?: boolean;
-  enabled?: boolean;
-  /** Auto-refresh interval in milliseconds (0 = disabled) */
-  pollInterval?: number;
-}
-
-export function useClaudeProjectResources(
-  projectEncodedName: string | null,
-  options: UseClaudeProjectResourcesOptions = {},
-) {
+interface UseClaudeProjectResourcesOptions { includeSessions?: boolean; enabled?: boolean; pollInterval?: number }
+export function useClaudeProjectResources(projectEncodedName: string | null, options: UseClaudeProjectResourcesOptions = {}) {
   const { computeNode } = useAgentContext();
   const { includeSessions = true, enabled = true, pollInterval = 0 } = options;
-
-  // Initialize state from module-level cache to avoid flash on remount
-  const [data, setData] = useState<ScanProjectResponse | null>(() => {
-    if (!computeNode?.id || !projectEncodedName) return null;
-    const sessionsKey = includeSessions ? 'with_sessions' : 'without_sessions';
-    const cacheKey = `${computeNode.id}:${projectEncodedName}:${sessionsKey}`;
-    const cached = projectResourcesCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < PROJECT_RESOURCES_CACHE_TTL) {
-      return cached.data;
-    }
-    return null;
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Per-project cache
-  const cacheRef = useRef<Map<string, ProjectResourcesCache>>(new Map());
-  const requestRef = useRef<AbortController | null>(null);
-
-  const fetchData = useCallback(
-    async (forceRefresh = false) => {
-      if (!enabled) {
-        setIsLoading(false);
-        return;
-      }
-
-      if (!computeNode?.id || !projectEncodedName) {
-        setIsLoading(false);
-        setData(null);
-        return;
-      }
-
-      const sessionsKey = includeSessions ? 'with_sessions' : 'without_sessions';
-      const cacheKey = `${computeNode.id}:${projectEncodedName}:${sessionsKey}`;
-      const cacheRefKey = `${projectEncodedName}:${sessionsKey}`;
-
-      // Check cache
-      if (!forceRefresh) {
-        const cached = projectResourcesCache.get(cacheKey) || cacheRef.current.get(cacheRefKey);
-        if (cached) {
-          const age = Date.now() - cached.timestamp;
-          if (age < PROJECT_RESOURCES_CACHE_TTL) {
-            setData(cached.data);
-            setIsLoading(false);
-            return;
-          }
-        }
-      }
-
-      setIsLoading(true);
-      setError(null);
-      requestRef.current?.abort();
-      const controller = new AbortController();
-      requestRef.current = controller;
-
-      try {
-        const result = await scanProjectFromComputeNode(
-          computeNode.id,
-          projectEncodedName,
-          100,
-          includeSessions,
-          controller.signal,
-        );
-        if (controller.signal.aborted || requestRef.current !== controller) return;
-        setData(result);
-        projectResourcesCache.set(cacheKey, { data: result, timestamp: Date.now() });
-        cacheRef.current.set(cacheRefKey, { data: result, timestamp: Date.now() });
-      } catch (err) {
-        if (controller.signal.aborted || requestRef.current !== controller) return;
-        console.error('Failed to scan Claude project:', err);
-        setError(err instanceof Error ? err.message : 'Failed to scan project');
-      } finally {
-        if (requestRef.current === controller) {
-          requestRef.current = null;
-          setIsLoading(false);
-        }
-      }
-    },
-    [computeNode?.id, enabled, includeSessions, projectEncodedName],
-  );
-
+  const params = { nodeId: computeNode?.id ?? '', encodedName: projectEncodedName ?? '', includeSessions };
+  const active = enabled && !!computeNode?.id && !!projectEncodedName;
+  const result = useLazyAsset(LazyAsset.ProjectResources, params, { enabled: active });
+  const reload = result.reload;
   useEffect(() => {
-    if (!enabled) {
-      setIsLoading(false);
-      return;
-    }
-    void fetchData();
-    return () => {
-      requestRef.current?.abort();
-      requestRef.current = null;
-    };
-  }, [enabled, fetchData]);
-
-  // Auto-refresh polling
-  useEffect(() => {
-    if (!enabled || !pollInterval || pollInterval <= 0) return;
-    const id = setInterval(() => void fetchData(true), pollInterval);
+    if (!active || pollInterval <= 0) return;
+    const id = setInterval(() => { void reload().catch(() => {}); }, pollInterval);
     return () => clearInterval(id);
-  }, [enabled, pollInterval, fetchData]);
-
-  return {
-    data,
-    isLoading,
-    error,
-    refetch: () => fetchData(true),
-    invalidate: () => {
-      if (projectEncodedName) {
-        const sessionsKey = includeSessions ? 'with_sessions' : 'without_sessions';
-        if (computeNode?.id) {
-          projectResourcesCache.delete(`${computeNode.id}:${projectEncodedName}:${sessionsKey}`);
-        }
-        cacheRef.current.delete(`${projectEncodedName}:${sessionsKey}`);
-      }
-    },
+  }, [active, pollInterval, reload]);
+  return { data: result.data ?? null, isLoading: result.isLoading, error: result.error?.message ?? null,
+    refetch: result.reload,
+    invalidate: () => { void lazyAssets.client.invalidateQueries({
+      queryKey: lazyAssets.key(LazyAsset.ProjectResources, params), exact: true, refetchType: 'none',
+    }); },
   };
 }
 
@@ -307,56 +64,22 @@ export function useClaudeProjects(selectedProjectEncodedName: string | null = nu
 
 /**
  * Hook to fetch all skills across user-level and all projects.
- * Uses the scan-item?type=skills endpoint. No cache — the scan is fast (~100ms).
+ * Shares the node-scoped scan-item?type=skills read through LazyAsset.Skills.
  */
 export function useAllSkills(options: { enabled?: boolean } = {}) {
   const { computeNode } = useAgentContext();
-  const { enabled = true } = options;
-  const [data, setData] = useState<SkillItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    if (!enabled || !computeNode?.id) {
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const result = await fetchAllSkillsFromComputeNode(computeNode.id);
-      setData(result);
-    } catch (err) {
-      console.error('Failed to fetch all skills:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [computeNode?.id, enabled]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    void fetchData();
-  }, [enabled, fetchData]);
-
-  const deleteSkill = useCallback(
-    async (skill: SkillItem) => {
-      const folder = skill.path || skill.source_file;
-      if (!folder || !computeNode?.typeId) return;
-      // Optimistic: remove from UI immediately
-      if (skill.id) setData((prev) => prev.filter((s) => s.id !== skill.id));
-      // Resolve parent folder (path may point to skill.md inside the folder)
-      const dir = folder.replace(/\/[^/]+\.(md|yaml|yml)$/i, '');
-      await fsManager.delete(computeNode.typeId, dir);
-      await fetchData();
-    },
-    [computeNode?.typeId, fetchData],
-  );
-
-  return {
-    skills: data,
-    isLoading,
-    refetch: fetchData,
-    deleteSkill,
-  };
+  const result = useLazyAsset(LazyAsset.Skills, { nodeId: computeNode?.id ?? '' }, {
+    enabled: options.enabled !== false && !!computeNode?.id,
+  });
+  const reload = result.reload;
+  const deleteSkill = useCallback(async (skill: SkillItem) => {
+    const folder = skill.path || skill.source_file;
+    if (!folder || !computeNode?.typeId) return;
+    await fsManager.delete(computeNode.typeId, folder.replace(/\/[^/]+\.(md|yaml|yml)$/i, ''));
+    await reload();
+  }, [computeNode?.typeId, reload]);
+  return { skills: result.data ?? NO_SKILLS, isLoading: result.isLoading, error: result.error,
+    refetch: result.reload, deleteSkill };
 }
 
 /**

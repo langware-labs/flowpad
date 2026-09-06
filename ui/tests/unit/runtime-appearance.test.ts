@@ -1,5 +1,5 @@
 /**
- * The runtime→color table worn by the nav bar's runtime chip.
+ * The per-runtime appearance table worn by the nav bar's runtime chip.
  *
  * This is a safety signal — on a cloud sandbox or an agent's box the color is
  * how you know whose machine you are looking at — so the table must cover every
@@ -10,12 +10,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { RuntimeKind } from '@sdk';
-import { RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
+import { RUNTIME_APPEARANCE, RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
 
-describe('the runtime color table', () => {
-  it('covers every runtime kind', () => {
+describe('the runtime appearance table', () => {
+  it('covers every runtime kind with a color, a glyph and a wiki heading', () => {
     for (const kind of Object.values(RuntimeKind)) {
-      expect(RUNTIME_CLASS[kind], `no color for ${kind}`).toBeTruthy();
+      const a = RUNTIME_APPEARANCE[kind];
+      expect(a?.className, `no color for ${kind}`).toBeTruthy();
+      expect(a?.base, `no glyph for ${kind}`).toBeTruthy();
+      expect(a?.heading, `no wiki heading for ${kind}`).toBeTruthy();
+      expect(RUNTIME_CLASS[kind]).toBe(a.className);
     }
   });
 

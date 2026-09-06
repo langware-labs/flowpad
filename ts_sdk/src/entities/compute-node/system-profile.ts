@@ -847,7 +847,6 @@ export interface CleanupSummary {
   empty_count: number;
   orphaned_count: number;
   stale_count: number;
-  empty_size_bytes: number;
   threshold: number;
 }
 
@@ -859,15 +858,16 @@ export interface HarnessUse {
   harness: string;
   session_count: number;
   last_session_at: string | null;
-  /** Exactly what "remove from harness" would delete. Empty ⇒ the action is refused. */
-  state_paths: string[];
 }
 
 export interface GitInfo {
   has_repo: boolean;
-  /** Null until resolved — the bulk report carries `has_repo` only. */
   remote: string | null;
   dirty: boolean | null;
+  /** Whether `remote`/`dirty` were looked up. False on the bulk report, which
+   *  fills only `has_repo` — without this a reader cannot tell "no remote" from
+   *  "not asked yet", and every repo renders as clean. */
+  resolved: boolean;
 }
 
 /** One project as the cleanup screen sees it. Mirrors `ProjectCleanupSpec`. */
@@ -890,7 +890,6 @@ export interface ProjectCleanupItem {
 export interface ProjectCleanupReport {
   projects: ProjectCleanupItem[];
   total_count: number;
-  cleanup: CleanupSummary;
 }
 
 /** Per-project outcome. A refusal on one row says nothing about the others. */
@@ -901,6 +900,8 @@ export interface CleanupResult {
   cwd?: string;
   removed_paths?: string[];
   trashed?: boolean;
+  /** Child records and bundles removed alongside the project. */
+  deleted_children?: number;
   /** `trash` (send2trash) or `trash_fallback` (a move into ~/.Trash). */
   mechanism?: string | null;
   codex_config_entry_removed?: boolean;
@@ -928,13 +929,6 @@ export async function getProjectCleanupReport(
     (await dataManager.callAction<undefined, ProjectCleanupReport>(actionInfo)) || {
       projects: [],
       total_count: 0,
-      cleanup: {
-        empty_count: 0,
-        orphaned_count: 0,
-        stale_count: 0,
-        empty_size_bytes: 0,
-        threshold: 10,
-      },
     }
   );
 }
@@ -951,6 +945,7 @@ export async function getProjectGitDetail(
       has_repo: false,
       remote: null,
       dirty: null,
+      resolved: true,
     }
   );
 }
