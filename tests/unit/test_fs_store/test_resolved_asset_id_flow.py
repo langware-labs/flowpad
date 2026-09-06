@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-import shutil
 from pathlib import Path
 
 import pytest
@@ -15,12 +13,7 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from tests.unit.test_fs_store._md_harness import (
-    MD_OPTS,
-    md_indexer,
-    md_sources,
-    seed_one_md,
-)
+from tests.unit.test_fs_store._md_harness import MD_OPTS, md_indexer, md_sources
 
 CANONICAL_ID = "1743cb5d-f670-4e26-b6f6-c62b65522f7c"
 LEGACY_ID = "a80e0616-ef1a-4dd7-a986-c7ce1ae18bdb"
@@ -64,52 +57,6 @@ async def test_targeted_discover_mints_then_passes_same_id(tmp_path: Path) -> No
     assert set(await md_sources()) == {record.id}
 
 
-@pytest.mark.asyncio
-async def test_targeted_discover_only_normalizes_resolved_id_sources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from datetime import datetime, timezone
-
-    from flow_sdk.fs_store import asset_occurrences as occurrence_module
-
-    driver = get_db_driver()
-    await driver.delete_entities_by_type("markdown")
-    path = tmp_path / "target.md"
-    path.write_text(f"---\nid: {CANONICAL_ID}\n---\n# target\n", encoding="utf-8")
-    unrelated = tmp_path / "unrelated.md"
-    unrelated.write_text(f"---\nid: {LEGACY_ID}\n---\n# unrelated\n", encoding="utf-8")
-    created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-
-    async def stored_sources(record_type: str):
-        assert record_type == "markdown"
-        return {
-            CANONICAL_ID: (str(path), None, None, None, created_at),
-            LEGACY_ID: (str(unrelated), None, None, None, created_at),
-        }
-
-    observed: dict[str, object] = {}
-    real_resolver = occurrence_module.resolve_asset_collisions
-
-    def capture_resolver(candidates, stored, identity_reader, git_probe, now):
-        observed["keys"] = set(stored)
-        observed["synthetic_keys"] = set(stored.synthetic_keys)
-        observed["occurrences"] = tuple(stored[("markdown", CANONICAL_ID)])
-        return real_resolver(candidates, stored, identity_reader, git_probe, now)
-
-    monkeypatch.setattr(driver, "list_entity_sources_by_type", stored_sources)
-    monkeypatch.setattr(
-        occurrence_module, "resolve_asset_collisions", capture_resolver,
-    )
-
-    record = await discover_record_by_path("markdown", str(path))
-
-    assert record is not None
-    assert record.id == CANONICAL_ID
-    assert observed["keys"] == {("markdown", CANONICAL_ID)}
-    assert observed["synthetic_keys"] == {("markdown", CANONICAL_ID)}
-    assert [item.path for item in observed["occurrences"]] == [str(path.resolve())]
-
-
 def test_db_free_loader_passes_resolved_id_to_parser(tmp_path: Path) -> None:
     path = _conflicting_markdown(tmp_path)
 
@@ -117,25 +64,3 @@ def test_db_free_loader_passes_resolved_id_to_parser(tmp_path: Path) -> None:
 
     assert loaded is not None
     assert loaded.id == CANONICAL_ID
-
-
-@pytest.mark.asyncio
-async def test_targeted_discover_warns_and_skips_live_duplicate(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
-) -> None:
-    _idx, incumbent, asset_id = await seed_one_md(tmp_path)
-    duplicate = incumbent.with_name("duplicate.md")
-    shutil.copyfile(incumbent, duplicate)
-
-    with caplog.at_level(logging.WARNING):
-        record = await discover_record_by_path("markdown", str(duplicate))
-
-    assert record is None
-    assert _resolved_id(duplicate) == asset_id
-    sources = await md_sources()
-    assert set(sources) == {asset_id}
-    assert [item["path"] for item in sources[asset_id][3]] == [
-        str(incumbent.resolve()),
-        str(duplicate.resolve()),
-    ]
-    assert "duplicate asset id" in caplog.text

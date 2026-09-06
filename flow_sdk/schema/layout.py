@@ -78,7 +78,7 @@ class File:
         return root
 
     def to_dict(self) -> dict:
-        return {"kind": "file", "ext": self.ext}
+        return {"kind": "file", "ext": self.ext, "also": list(self.also), "names": list(self.names)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +128,7 @@ def shape_from_dict(data: dict | None) -> Shape | None:
         return None
     if data.get("kind") == "folder":
         return Folder(main=data.get("main"), ref_is_main=bool(data.get("ref_is_main")))
-    return File(ext=data.get("ext") or ".md")
+    return File(ext=data.get("ext") or ".md", also=tuple(data.get("also") or ()), names=tuple(data.get("names") or ()))
 
 
 @dataclass(frozen=True, slots=True)

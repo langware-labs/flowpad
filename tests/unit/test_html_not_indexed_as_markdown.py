@@ -2,7 +2,7 @@
 
 When the vibe sub-agent is asked to open an existing ``public/open-me.html``, one
 observed failure ran ``flow record index <file>.html --types markdown``. That
-routes to ``discover_record_by_path("markdown", …)`` → ``extract_markdown``,
+routes to ``discover_record_by_path("markdown", …) → resolve_asset`` → ``extract_markdown``,
 which reads any UTF-8 text file and emits a MARKDOWN record — with no check that
 the file is actually ``.md``. The HTML page is minted as a ``markdown-<uuid5>``
 entity and opened as raw source in a code editor instead of rendering via the

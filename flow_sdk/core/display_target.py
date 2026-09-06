@@ -106,23 +106,19 @@ async def resolve_display_target(
             entity = await Entity.get_by_asset_ref(lookup)
             if entity is not None and getattr(entity, "id", None):
                 return {**_entity_payload(entity), "path": resolved}
-        rec_type, rec_path = _typed_asset_shape(resolved)
-        if rec_type and discover:
-            # Fresh asset (created seconds ago, not yet indexed): recover it
-            # with the targeted single-file discovery — no tree walks — so the
-            # bespoke editor renders instead of a raw file view.
-            from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
+        if discover:
+            # Fresh asset (created seconds ago, not yet indexed): resolve and
+            # index just this one so the bespoke editor renders instead of a
+            # raw file view.
+            from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
-            rec = await discover_record_by_path(rec_type, rec_path)
+            try:
+                rec = await index_one(await resolve_asset(resolved, write=True))
+            except NotAnAsset:
+                rec = None
             if rec is not None and getattr(rec, "id", None):
-                return {
-                    "kind": DisplayTargetKind.ENTITY,
-                    "typeid": f"{rec_type}-{rec.id}",
-                    "type": rec_type,
-                    "id": str(rec.id),
-                    "name": getattr(rec, "name", None) or getattr(rec, "title", None) or None,
-                    "path": resolved,
-                }
+                name = getattr(rec, "name", None) or getattr(rec, "title", None) or None
+                return {**entity_target(str(rec.type), str(rec.id), name=name), "path": resolved}
         return {"kind": DisplayTargetKind.VFS, "path": resolved}
 
     if artifact_id:
@@ -216,18 +212,6 @@ def _asset_lookup_paths(resolved: str) -> list[str]:
     if SchemaRegistry.main_file_owners(p):
         return [resolved, str(p.parent)]
     return [resolved]
-
-
-def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
-    """``(record_type, discovery_path)`` for a path, or ``(None, path)``:
-    ``SchemaRegistry.type_for`` names the type, ``ref_for`` spells the asset
-    root the targeted discovery wants (a skill's FOLDER for its ``SKILL.md``)."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    rec_type = SchemaRegistry.type_for(resolved)
-    if rec_type is None:
-        return None, resolved
-    return rec_type, SchemaRegistry.ref_for(rec_type, resolved)
 
 
 def entity_target(type_name: str, entity_id: str, *, name: str | None = None) -> dict:

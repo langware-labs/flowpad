@@ -194,8 +194,9 @@ of which may be absent. Say which one you mean.
 
 | Ours | One place | Notes |
 |---|---|---|
-| `identity_carrier` (`FrontmatterCarrier`, `FolderMdCarrier`, `FolderJsonCarrier`, `NativeJsonCarrier`, `DerivedCarrier`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `read` / `write_if_absent` / `convert` — validation and minting stay in `TypeInfo`. |
-| `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `carrier_path_for` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write. `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
+| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `read` / `stamp` / `convert` — validation and minting stay in `TypeInfo`. |
+| `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write (`indexer/reconcile.py`). `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
+| `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. `discover_record_by_path` composes the first two. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier. For markdown identity it is **legacy**: read, stripped from bodies, converted in place. Still the live carrier for `tag` blocks in source files and for folder-json identity. |
 
 ## Activity (2026-09-03)

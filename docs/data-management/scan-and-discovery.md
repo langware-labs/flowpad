@@ -384,7 +384,11 @@ automatic run can never delete records.
 | `GET` | `/fs-records/index-status[?user=&projects=]` | `_handle_fs_records_index_status` | Read-only status (no walk) |
 | `GET` | `/fs-records/asset-stats[?user=&projects=]` | `_handle_fs_records_asset_stats` | Live per-type asset counts for a scope (`AssetStats`; counts only, no freshness) |
 | `DELETE` | `/fs-records/index` | `_handle_fs_records_index_clear` | Clear the index |
-| `POST` | `/fs-records/{type}/discover?path=<P>` | `_handle_fs_records_discover_by_path` | Single-path index for one type |
+| `POST` | `/fs-records/{type}/discover?path=<P>` | `_handle_fs_records_discover_by_path` | **Deprecated alias** (one release) of `GET /api/v1/assets/resolve?path=`: resolves the path on its own and answers 404 unless the resolved type is `{type}`. Never walks. |
+
+### Resolve — one path, one asset
+
+`GET /api/v1/assets/resolve?path=<abs path>` (`flow_sdk/server/routes/assets.py`) is THE interactive path → asset resolver; the client sends a path and nothing else. `resolve_asset(path, *, write, type_name=None, owner_id=None, strict=False)` in `flow_sdk/fs_store/resolve.py` classifies the path (`SchemaRegistry.type_for`, or the type the caller already knows), locates root/body/ref (`TypeInfo.layout_of(path, verify=True)`), asks which row owns the ref (`Entity.get_by_asset_ref`) and settles the id through the indexer's `reconcile`; a path no type claims raises `NotAnAsset` (HTTP 404). `index_one(resolved, notify=, scope=, project_id=)` parses that one asset and syncs its row; `ensure_entity` returns the row, indexing on a miss, so the envelope `{type, id, root, body, editor, entity}` always names a row that exists. A miss NEVER triggers a full index run. `discover_record_by_path(type, path, ...)` is the `resolve_asset` + `index_one` composition used by `reindex_paths` and `reflect`; `flow show`/`resolve_display_target(discover=True)` go through the same two calls.
 
 Both scan and index emit `progress_report` FlowData events via the shared indexer's `on_progress` callback. Scope is taken from the canonical wire format `?user=true&projects=A,B`; absent params resolve to an explicit "everything known" filter via `get_all_scope_filter()`. The legacy `?project_id=<id>` shim is ignored (logged as a warning).
 

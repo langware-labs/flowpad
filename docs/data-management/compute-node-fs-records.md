@@ -109,7 +109,7 @@ Several reserved first segments are dispatched to dedicated handlers ahead of th
 | `GET` | `/fs-records/asset-stats` | `_handle_fs_records_asset_stats` |
 | `GET` | `/fs-records/activity-status` | `_handle_fs_records_activity_status` |
 | `DELETE` | `/fs-records/index[?type=X&user=&projects=]` | `_handle_fs_records_index_clear` |
-| `POST` | `/fs-records/{type}/discover?path=...` | `_handle_fs_records_discover_by_path` — find-or-recover by path |
+| `POST` | `/fs-records/{type}/discover?path=...` | `_handle_fs_records_discover_by_path` — deprecated alias of `GET /api/v1/assets/resolve?path=`; 404 unless the path resolves to `{type}` |
 
 The `file` segment is matched first, before any other dispatch. If the first path segment equals `"file"`, the request is dispatched to `_handle_path_based_source_file` unconditionally. The reserved segments are then matched in the order listed above (each is gated on its HTTP method, so e.g. `GET /fs-records/index` falls through to the generic type lookup and fails with "Unknown record type 'index'"). After the reserved segments, a bare `GET /fs-records` lists the registered types, then the `{type}/discover` POST is matched, and finally the generic type-based CRUD path.
 

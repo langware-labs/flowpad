@@ -12,10 +12,10 @@ Key correctness points:
   under a skill folder) resolves to the owning folder entity, and the re-parse
   runs on the *folder's* asset_ref — never the raw inner path (which
   ``extract_skill`` would mis-name).
-- The re-parse goes through ``discover_record_by_path(..., notify=True)`` rather
-  than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds STALE
-  ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects the new
-  bytes in FTS/wiki/entity fields.
+- The re-parse goes through ``resolve_asset`` + ``index_one(notify=True)``
+  rather than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds
+  STALE ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects
+  the new bytes in FTS/wiki/entity fields.
 - Best-effort per path: one bad path never sinks the batch.
 """
 from __future__ import annotations
@@ -83,20 +83,6 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
-def _mint_candidate(path: str) -> tuple[str, str] | None:
-    """``(type, asset_ref)`` for a brand-new file with no owning entity, or
-    None when ``SchemaRegistry.type_for`` cannot name its type (an ambiguous
-    ``.json`` is never guessed at). The target is the type's ``ref`` spelling:
-    a folder asset's DIRECTORY, which is what ``discover_record_by_path`` needs.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    type_name = SchemaRegistry.type_for(path)
-    if type_name is None:
-        return None
-    return type_name, SchemaRegistry.ref_for(type_name, path)
-
-
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
@@ -115,38 +101,41 @@ async def reindex_paths(
     never an asset. New-file discovery belongs to the indexer, which owns root
     scoping and consent.
     """
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
     result = ReindexResult()
+    # A source that does not own its bytes (a git working tree under ``reflect``)
+    # resolves without stamping.
+    write = not carrier_writes_are_suppressed()
 
     # Force-reparse an entity's OWN asset_ref (folder path for folder types), not
     # the raw touched path — extract_skill et al. would mis-name a raw inner path.
+    # The row's id, scope and project_id are authoritative: the id keeps a
+    # portable asset whose carrier was wiped on the SAME entity, and the labels
+    # keep an asset in a workspace project from being relabelled ``user``.
     async def _resync(entity, fallback: str):
         target = str(getattr(entity, "asset_ref", None) or fallback)
-        # Thread the already-resolved entity id so a portable asset whose in-file
-        # identity capsule was wiped by a full-content overwrite re-stamps the
-        # ORIGINAL id (same entity updates) instead of forking a fresh v4. Only
-        # consulted on a capsule miss; folder/carrier-intact types ignore it.
-        entity_id = getattr(entity, "id", None)
-        # Thread the row's OWN scope/project_id too. Without them
-        # ``discover_record_by_path`` falls back to ``classify_path(path)``, which
-        # knows only three roots (system / user_home / cwd) and calls anything under
-        # the user's home ``user`` — so resyncing an asset in a project stored at
-        # ``~/Flowpad workspace/<proj>`` relabels it ``scope='user'`` and
-        # ``apply_scope_filter`` then hides it from its own project. This is a
-        # resync of an entity we ALREADY resolved: its stored labels are
-        # authoritative and a path guess must not overwrite them.
-        return await discover_record_by_path(
-            entity.type,
-            target,
-            notify=True,
-            proposed_id=str(entity_id) if entity_id else None,
-            scope=entity.scope,
-            project_id=entity.project_id,
-        )
+        try:
+            resolved = await resolve_asset(
+                target, write=write, type_name=entity.type, owner_id=str(entity.id) if entity.id else None
+            )
+        except NotAnAsset as reason:
+            logger.debug("reindex resync %s: %s", target, reason)
+            return None
+        return await index_one(resolved, notify=True, scope=entity.scope, project_id=entity.project_id)
+
+    # A brand-new file with no owning entity: the registry names its type (an
+    # ambiguous ``.json`` is never guessed at) and the asset is indexed.
+    async def _mint(path: str) -> bool:
+        try:
+            resolved = await resolve_asset(path, write=write, strict=True)
+        except NotAnAsset:
+            return False
+        return await index_one(resolved, notify=True) is not None
 
     # De-dupe while preserving order.
     changed = list(dict.fromkeys(_norm(x) for x in paths))
@@ -164,14 +153,7 @@ async def reindex_paths(
             if not mint:
                 result.skipped.append(path)
                 continue
-            minted = False
-            if (candidate := _mint_candidate(path)) is not None:
-                cand, target = candidate
-                try:
-                    minted = await discover_record_by_path(cand, target, notify=True, strict_owner=True) is not None
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("reindex mint %s as %s failed: %s", path, cand, exc)
-            (result.minted if minted else result.skipped).append(path)
+            (result.minted if await _mint(path) else result.skipped).append(path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("reindex_paths: %s failed: %s", path, exc)
             result.skipped.append(path)

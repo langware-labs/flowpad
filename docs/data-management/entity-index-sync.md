@@ -139,7 +139,7 @@ There is no `Record.deindex()` method. De-indexing is done by the caller: the fs
 | Indexer scan/index pass | `FSIndexer.index()` / `.scan()` (`flow_sdk/fs_store/indexer/index_function.py`) | Walk roots, index per-type via registered indexer functions |
 | Discover-or-recover by path | `FsRecordsActionsMixin._handle_fs_records_discover_by_path()` | `sync_to_db()` after recovering a record by path |
 | GET-time freshness refresh | `Entity.check_and_refresh_record()` (via `handle_get_by_id`) | Re-sync iff `index_required`; then stamps the sentinel |
-| Push invalidate / agent turn-end | `reindex_paths()` → `discover_record_by_path(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
+| Push invalidate / agent turn-end | `reindex_paths()` → `resolve_asset` + `index_one(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
 | Explicit application code | anywhere | `await record.sync_to_db()` |
 | `Entity.get_all()` / `get_one()` | (none) | NOT triggered -- performance |
 
