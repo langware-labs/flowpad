@@ -16,9 +16,9 @@ import pytest
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentRef, register_driver
-from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentRef, register_driver
+from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.sync import sync_source
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
@@ -60,13 +60,17 @@ class _FakeDriver(IngestDriver):
     kind = "datasource.feed.faketest"
     record_kind = "content.feed.item"
 
-    def __init__(self, streams, behaviour):
+    def __init__(self, streams, behaviour, stamps: dict[str, str] | None = None):
         self._streams = streams
         self._behaviour = behaviour
+        #: Per-stream listing token (``SegmentRef.stamp``); empty = the driver
+        #: cannot say whether the stream moved.
+        self.stamps: dict[str, str] = stamps or {}
         self.calls: list[str] = []
 
     async def segments(self, source):
-        return [SegmentRef(key=k, label=k) for k in self._streams]
+        keys = self._streams or list(self.stamps)
+        return [SegmentRef(key=k, label=k, stamp=self.stamps.get(k, "")) for k in keys]
 
     async def fetch(self, source, cursor):
         self.calls.append(cursor.segment_key)
@@ -319,3 +323,60 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "roll-up must still run"
     assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_budgeted():
+    """The listing already said nothing changed: no request, and the budget
+    slot goes to a stream that DID move — a busy desk's live ticket must not
+    queue behind dozens of idle ones."""
+    src = await _source()
+    idle, moved = "https://idle.test/f", "https://moved.test/f"
+    behaviour = {k: FetchResult(items=[], next_state={}) for k in (idle, moved)}
+    driver = _FakeDriver([], behaviour, stamps={idle: "3:t1", moved: "1:t1"})
+    register_driver(driver)
+
+    await sync_source(src, now=NOW, budget=2)
+    assert sorted(driver.calls) == sorted([idle, moved]), "first sight: both fetched"
+    idle_cursor = await DataSourceCursor.get_one({"data_source_id": src.id, "segment_key": idle})
+    assert idle_cursor.segment_stamp == "3:t1", "the token is recorded on a good fetch"
+
+    driver.stamps[moved] = "2:t2"
+    driver.calls.clear()
+    await sync_source(src, now=NOW + timedelta(seconds=60), budget=1)
+    assert driver.calls == [moved], f"only the moved stream is due, got {driver.calls}"
+
+    # A moved stream outranks the never-attempted backlog: a busy desk's live
+    # ticket is answered before its old tickets are backfilled.
+    fresh = "https://fresh.test/f"
+    driver.stamps[fresh] = "9:t9"
+    driver.stamps[moved] = "3:t3"
+    driver._behaviour[fresh] = FetchResult(items=[], next_state={})
+    driver.calls.clear()
+    await sync_source(src, now=NOW + timedelta(seconds=120), budget=1)
+    assert driver.calls == [moved], f"the moved stream goes before the never-attempted one, got {driver.calls}"
+
+    # With room to spare the backlog only trickles: one never-attempted stream
+    # rides along with the news, however large the budget.
+    for i in range(3):
+        driver.stamps[f"https://old{i}.test/f"] = f"1:o{i}"
+        driver._behaviour[f"https://old{i}.test/f"] = FetchResult(items=[], next_state={})
+    driver.stamps[moved] = "4:t4"
+    driver.calls.clear()
+    await sync_source(src, now=NOW + timedelta(seconds=180), budget=5)
+    assert driver.calls[0] == moved and len(driver.calls) == 2, f"news plus one backlog stream, got {driver.calls}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_failed_stream_is_retried_whatever_its_listing_token_says():
+    src = await _source()
+    key = "https://flaky.test/f"
+    driver = _FakeDriver([], {key: SourceError.transient("network", "boom")}, stamps={key: "1:t1"})
+    register_driver(driver)
+
+    await sync_source(src, now=NOW, budget=1)
+    driver.calls.clear()
+    await sync_source(src, now=NOW + timedelta(seconds=60), budget=1)
+    assert driver.calls == [key], "an unchanged token does not excuse a stream that never succeeded"

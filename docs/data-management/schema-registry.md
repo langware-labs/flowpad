@@ -163,7 +163,7 @@ After the merge, if the final entry has an `asset_spec`, no `from_disk_fn`, and 
 
 ## Persistence
 
-The `TypeInfo` registry is **rebuilt in-memory on every startup** from `register_all()` + Entity `__init_subclass__`; it is **not** persisted to disk. `TypeInfo` exposes `to_dict()` / `from_dict()` and a `schema_hash` property, but there is no code that writes a per-type `type_info.json`, and there is no `load_persisted()` method. (The module docstring at `schema_registry.py:6` still mentions a `type_info.json` file — that is stale.)
+The `TypeInfo` registry is **rebuilt in-memory on every startup** from `register_all()` + Entity `__init_subclass__`; it is **not** persisted to disk. `TypeInfo` exposes `to_dict()` / `from_dict()` and a `schema_hash` property, but there is no code that writes a per-type `type_info.json`, and there is no `load_persisted()` method.
 
 What *is* written under `~/.flow/schema/` is the scan/index **run-history JSONL** logs (see below), not type metadata.
 

@@ -1,3 +1,4 @@
+import { PrimaryContentRegion, PrimaryContentFallback } from '@sdk/react/primary-content';
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
@@ -25,7 +26,7 @@ import { HubProjectPage } from '@src/pages/hub-project/HubProjectPage';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { dataContext, PageId } from '@sdk';
+import { PageId } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
@@ -141,7 +142,11 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
-export function ContentPanel({
+export function ContentPanel(props: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
+  return <PrimaryContentRegion><ContentPanelBody {...props} /></PrimaryContentRegion>;
+}
+
+function ContentPanelBody({
   minimalChrome = false,
   contentEpoch,
 }: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
@@ -245,7 +250,7 @@ export function ContentPanel({
     switch (vt) {
       case ViewType.WORLDVIEW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <WorldView />
           </Suspense>
         );
@@ -266,13 +271,13 @@ export function ContentPanel({
         return <CredentialsView />;
       case ViewType.LLM_ENDPOINTS:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <LlmEndpointsView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.TOKEN_PLAN:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <TokenPlanView pointer={currentDock?.pointer} />
           </Suspense>
         );
@@ -342,7 +347,7 @@ export function ContentPanel({
         return <MarkdownViewer />;
       case ViewType.SURVEY:
         return activeSurveyData && onSurveyComplete ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
           </Suspense>
         ) : (
@@ -357,7 +362,7 @@ export function ContentPanel({
       // DESK only: every fact it renders is a box fact, and its box action 404s on the hub.
       case ViewType.LLM_SOURCES:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <LlmSourcesView pointer={currentDock?.pointer} />
           </Suspense>
         );
@@ -391,7 +396,7 @@ export function ContentPanel({
       case ViewType.SIGNALS:
       case ViewType.CRON:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <EventsView />
           </Suspense>
         );
@@ -399,67 +404,67 @@ export function ContentPanel({
         return <CapabilitiesView />;
       case ViewType.SHOW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <ShowView />
           </Suspense>
         );
       case ViewType.APPS:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <AppHost />
           </Suspense>
         );
       case ViewType.GRAPH:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <GraphView />
           </Suspense>
         );
       case ViewType.WORLDVIEW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <WorldView />
           </Suspense>
         );
       case ViewType.TAG:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <TagGraphView />
           </Suspense>
         );
       case ViewType.SUBGRAPH:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <GenericSubgraphView />
           </Suspense>
         );
       case ViewType.GRAPH_WORKFLOWS:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <GraphWorkflowsView />
           </Suspense>
         );
       case ViewType.DATA_SOURCES:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <DataSourcesView />
           </Suspense>
         );
       case ViewType.RAG:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <RagView />
           </Suspense>
         );
       case ViewType.PROCESS_RUNS:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <RunsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <DocsGraphView />
           </Suspense>
         );

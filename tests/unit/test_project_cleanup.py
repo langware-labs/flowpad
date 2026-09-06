@@ -166,12 +166,15 @@ def test_summary_counts_each_verdict(tmp_path: Path) -> None:
     assert (summary.empty_count, summary.stale_count, summary.orphaned_count) == (2, 1, 1)
 
 
-def test_summary_threshold_gates_the_warning(tmp_path: Path) -> None:
-    """Ten is not "more than ten" — the boundary is the whole point of a threshold."""
-    rows = [_row(_project(tmp_path, f"e{i}")) for i in range(10)]
-    assert summarize(rows).should_warn is False
-    rows.append(_row(_project(tmp_path, "e10")))
-    assert summarize(rows).should_warn is True
+def test_summary_carries_the_threshold_rather_than_the_verdict(tmp_path: Path) -> None:
+    """The backend ships the policy; the frontend applies it.
+
+    Keeping a `should_warn` here as well would be a second copy of a number the
+    payload exists to carry — the two would drift the first time one moved.
+    """
+    rows = [_row(_project(tmp_path, f"e{i}")) for i in range(11)]
+    summary = summarize(rows)
+    assert (summary.empty_count, summary.threshold) == (11, 10)
 
 
 def test_assess_normalizes_epoch_ms_activity(tmp_path: Path) -> None:
@@ -190,7 +193,8 @@ def test_assess_all_puts_candidates_first(tmp_path: Path) -> None:
         _row(_project(tmp_path, "a-empty")),
         _row(tmp_path / "orphan"),
     ]
-    verdicts = [spec.verdict for spec in assess_all(rows)]
+    specs, _summary = assess_all(rows)
+    verdicts = [spec.verdict for spec in specs]
     assert verdicts == [
         CleanupVerdict.ORPHANED,
         CleanupVerdict.EMPTY,
@@ -206,16 +210,22 @@ def test_empty_verdict_never_carries_files(tmp_path: Path) -> None:
         _row(_project(tmp_path, "one", files=1)),
         _row(_project(tmp_path, "many", files=30)),
     ]
-    for spec in assess_all(rows):
+    specs, summary = assess_all(rows)
+    for spec in specs:
         if spec.verdict is CleanupVerdict.EMPTY:
             assert spec.file_count == 0
+    # The summary is derived from these verdicts, not recomputed by a second pass.
+    assert summary.empty_count == sum(1 for s in specs if s.verdict is CleanupVerdict.EMPTY)
 
 
-def test_orphaned_row_reports_no_harness_state(tmp_path: Path) -> None:
+def test_orphaned_row_needs_no_special_case(tmp_path: Path) -> None:
+    """A missing directory answers zero on its own — the walk finds nothing and
+    `.git` does not exist — so the assessment carries no branch for it."""
     spec = assess(_row(tmp_path / "gone"))
     assert spec.verdict is CleanupVerdict.ORPHANED
-    assert spec.has_harness_state is False
-    assert spec.removable is True
+    assert (spec.file_count, spec.size_bytes) == (0, 0)
+    assert spec.git is not None and spec.git.has_repo is False
+    assert spec.harnesses == []
 
 
 def test_now_is_injectable_so_age_is_testable(tmp_path: Path) -> None:

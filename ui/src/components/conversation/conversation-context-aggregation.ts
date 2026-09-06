@@ -18,7 +18,7 @@
  */
 
 import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
-import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import { AttachmentType, attachmentDataString, isAttachmentMissing, type Attachment } from '@sdk/entities/flow-message';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Row shapes
@@ -44,11 +44,10 @@ export interface SharedEntityAgg extends OriginSet {
    *  get the "Download <type>" affordance; cross-links / conversation-level
    *  shares keep their resolve-or-open behavior. */
   downloadable?: boolean;
-  /** Mirrors the origin message's backend-derived `body_downloaded`: true once
-   *  the bundle was pulled and this entity is materialized locally. Shared with
-   *  the transcript bubble so both surfaces flip together. Always true for
-   *  non-downloadable entries (nothing to pull). */
+  /** At least one origin bundle was downloaded. Availability is separate. */
   downloaded?: boolean;
+  /** Downloaded, but absent from every downloaded origin's available assets. */
+  missing?: boolean;
   /** The earliest message that contributed this entity as an attachment — the
    *  one whose `downloadAttachments()` the panel triggers. */
   downloadOriginMessageId?: string;
@@ -155,7 +154,7 @@ export function buildSharedEntities(
     t: TypeId | null,
     originMessageId: string | null,
     sourceWithSidecar: { getContextEntryData?: (t: TypeId) => Record<string, unknown> | undefined } | null,
-    fromAttachment?: { downloaded: boolean },
+    fromAttachment?: { downloaded: boolean; missing: boolean },
   ) => {
     if (!t) return;
     const key = t.toString();
@@ -172,9 +171,10 @@ export function buildSharedEntities(
       entry.originMessageIds.push(originMessageId);
     }
     if (fromAttachment) {
-      // Materialized once at least one contributing message's bundle is pulled.
-      // First attachment contribution replaces the default `true`; later ones OR in.
-      entry.downloaded = entry.downloadable ? entry.downloaded || fromAttachment.downloaded : fromAttachment.downloaded;
+      const wasDownloaded = !!entry.downloadable && !!entry.downloaded;
+      const available = (wasDownloaded && !entry.missing) || (fromAttachment.downloaded && !fromAttachment.missing);
+      entry.downloaded = wasDownloaded || fromAttachment.downloaded;
+      entry.missing = entry.downloaded && !available;
       entry.downloadable = true;
       if (!entry.downloadOriginMessageId && originMessageId) {
         entry.downloadOriginMessageId = originMessageId;
@@ -194,7 +194,10 @@ export function buildSharedEntities(
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
-        pushTypeId(new TypeId(a.data), fm.id, fm, { downloaded: fm.body_downloaded ?? false });
+        pushTypeId(new TypeId(attachmentDataString(a)), fm.id, fm, {
+          downloaded: fm.body_downloaded ?? false,
+          missing: isAttachmentMissing(fm, a),
+        });
       } catch {
         /* malformed — skip */
       }

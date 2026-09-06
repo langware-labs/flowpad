@@ -19,7 +19,7 @@ const conversationsQuery = new QueryRequest({ type: Conversation.type });
  * (project). A collaboration is simply a Conversation whose `project_id` matches
  * — the collaborate share stamps it on the new conversation. Returns the most
  * recent match so the vibe header can flip the "Collaborate" icon to an
- * "open conversation" icon. Mirrors {@link useRemoteWorkerSessionForConversation}.
+ * "open conversation" icon. Mirrors {@link useConversationSessions}.
  */
 export function useCollaborationForProject(
   projectId: string | null | undefined,

@@ -35,7 +35,7 @@ export function SourceStreams({ cursors }: { cursors: readonly DataSourceCursor[
             {/* A failing stream is the reason a healthy-looking source returns
                 nothing, so the count is worth its own chip. */}
             {cursor.consecutive_failures > 0 && (
-              <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] text-destructive">
+              <span className="rounded bg-red-500/10 px-1 py-0.5 text-[10px] text-red-700 dark:text-red-300">
                 {cursor.consecutive_failures}×
               </span>
             )}

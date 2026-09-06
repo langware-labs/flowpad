@@ -196,6 +196,18 @@ def listing_supersedes_binding() -> bool:
     return cached[0] > _bound_at.get(name, 0.0)
 
 
+def _can_administer(row: dict) -> bool | None:
+    """Whether the caller may CHANGE this endpoint, out of the hub's permission expansion.
+
+    ``None`` when the row carries no expansion at all -- an older hub, or a read that did not ask
+    for one. Unknown is not "no": a caller that treated it as "no" would read every row on an
+    admin's screen as a wallet handed to them.
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
+    return ("update" in actions) if isinstance(actions, list) else None
+
+
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
     """Every ``LLMEndpoint`` the signed-in hub user may spend, as the hub serializes them.
 
@@ -252,9 +264,17 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
         data = body.get("data") if isinstance(body, dict) else None
         return data if isinstance(data, list) else []
 
-    rows = _rows(await hub_get("llm_endpoint"))
+    # ``expand=permissions`` on the SCOPED listing only, and the asymmetry is the point. It answers
+    # "may this person change this budget", which is the one thing that separates a wallet handed TO
+    # them from one they administer FOR somebody else -- ``allocate`` stamps no ``principal_typeid``,
+    # so on the wire those two are otherwise identical rows. The catalog is deliberately asked
+    # WITHOUT it: those rows reach every signed-in user through a stamp rather than a role edge, and
+    # a "cannot change it" there would read as "it was given to me", turning the shared pool into
+    # everybody's personal wallet.
+    rows = _rows(await hub_get("llm_endpoint", params={"expand": "permissions"}))
     if rows is None:
         return stale
+    held = {str(row.get("id") or "") for row in rows if isinstance(row, dict)}
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
     rows = list(rows) + list(_rows(await hub_get("llm_endpoint", action="catalog")) or [])
@@ -276,6 +296,8 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             # budget. Forcing it means a hub that one day ships a field of the same name with a
             # different meaning cannot turn a hub endpoint into a local one.
             payload["kind"] = LLMEndpointKind.HUB
+            # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
+            payload["can_administer"] = _can_administer(row) if row_id in held else None
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

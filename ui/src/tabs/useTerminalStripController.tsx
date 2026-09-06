@@ -1,3 +1,5 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
 /**
  * useTerminalStripController — the terminal-strip CHROME (docs/tab-management.md
  * Part 3 §6). After the Tab-entity cutover the strip itself is the shared
@@ -39,6 +41,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { Cloud, History, SquareTerminal } from 'lucide-react';
 import { FlowIcon } from '@sdk/react/FlowIcon';
+import { useContext } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -102,6 +105,8 @@ export function useTerminalStripController({
 }: TerminalStripControllerOptions = {}): TerminalStripController {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  useRuntimeInfo();
+  const { sandboxComputeNode } = useContext();
   const isAdvanced = useIsAdvanced();
   // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
   // Memoized so it stays referentially stable and doesn't churn the openers /
@@ -239,7 +244,8 @@ export function useTerminalStripController({
     navigation.openDock(DockPointer.forGraphContext(gc.typeId.id));
   }, [navigation]);
 
-  const handleStartSandbox = useCallback(() => {
+  const handleStartSandbox = useCallback(async () => {
+    await lazyAssets.load(LazyAsset.RuntimeInfo);
     const sandboxNode = dataContext.sandboxComputeNode;
     if (!sandboxNode) return;
     return startTerminalTab(sandboxNode);
@@ -256,7 +262,7 @@ export function useTerminalStripController({
   const isCopilotCreationPending = pendingTabCreation === 'copilot';
   const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
-  const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
+  const sandboxAvailable = !!sandboxComputeNode;
   const claudeWarning = harnessWarning(claudeCapability);
   const codexWarning = harnessWarning(codexCapability);
   const copilotWarning = harnessWarning(copilotCapability);

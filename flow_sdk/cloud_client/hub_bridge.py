@@ -87,6 +87,21 @@ def _has_session_carrier_attachment(attachments: Any) -> bool:
     return False
 
 
+def _is_session_traffic(payload: dict) -> bool:
+    """True for a live-session message that lives ONLY in the session view —
+    follow-up prompts, replies, lifecycle lines. Those must not raise the
+    thread's "new message" desktop notification (they are not thread rows).
+    The prompt that OPENS a session is thread traffic (its card asks the host
+    to approve), so it keeps its notification: it is the one session message
+    whose carrier carries the ``session_start`` marker."""
+    from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY, carrier_marker  # noqa: PLC0415
+
+    atts = payload.get("attachment") or []
+    if not _has_session_carrier_attachment(atts) and not payload.get("remote_worker_session_id"):
+        return False
+    return SESSION_START_MARKER_KEY not in (carrier_marker(atts) or {})
+
+
 def _has_prompt_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a runnable prompt — a legacy inline/file
     PROMPT attachment or a ``prompt-<id>`` TYPE_ID reference.
@@ -564,7 +579,10 @@ class HubWsBridge:
                     # own messages (self-sends the hub echoes back — same guard as
                     # the auto-ack below). Own try/except so a notify hiccup is
                     # never mistaken for a persist failure.
-                    if local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id:
+                    if (
+                        local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id
+                        and not _is_session_traffic(payload)
+                    ):
                         try:
                             from flow_sdk.notifications import notify_desktop
 
@@ -593,10 +611,10 @@ class HubWsBridge:
                                 _notify_err,
                             )
 
-                    # Auto-run a permitted contact's prompt (the receiver's local
-                    # ContactPermission policy decides). Cheap pre-check on the raw
-                    # payload so a plain text message never spawns the task (and its
-                    # DB fetch). Detached so a slow/failed run never blocks persist
+                    # Route a contact's prompt through the session gate (the
+                    # session's state — and a standing grant — decide). Cheap
+                    # pre-check on the raw payload so a plain text message never
+                    # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
                     #
                     # But a body-bearing prompt (image/file attached) must NOT run
@@ -615,9 +633,9 @@ class HubWsBridge:
                                 fm_id,
                             )
                         else:
-                            from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                            from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
-                            asyncio.create_task(process_inbound_message(fm_id, conversation_id))
+                            asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
                         "[bridge] inbound persist failed fm=%s (non-fatal): %s",
@@ -736,14 +754,14 @@ class HubWsBridge:
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
                 # attachment to an absolute path. Idempotent via prompt_auto_handled
-                # (and re-checked inside the hook: drafts, our own sends, missing
-                # permission all no-op), so this is safe for prompts already run or
-                # never ours to run.
+                # (and re-checked inside the gate: drafts, our own sends, a parked
+                # or terminal session all no-op), so this is safe for prompts
+                # already run or never ours to run.
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
                 if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
-                    from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                    from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
-                    asyncio.create_task(process_inbound_message(fm_id, conv_id))
+                    asyncio.create_task(process_inbound_prompt(fm_id, conv_id))
             return
 
         if op == "delete":
@@ -857,7 +875,11 @@ class HubWsBridge:
             "remote_project_name",
             "shared_context_entities",
         ):
-            if field in clean:
+            # A hub ``None`` is "the hub has nothing", not "clear it": a guest
+            # ticket carries no title on the hub while the local row titles it
+            # from the opening line. Same rule as the HTTP twin
+            # (``_upsert_hub_conversation_metadata``'s update path).
+            if field in clean and clean[field] is not None:
                 setattr(existing, field, clean[field])
         existing.remote = True
         # Adopt the hub's owner when it carries one — keeps the local mirror

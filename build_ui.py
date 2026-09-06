@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 import platform
 import shutil
 import subprocess
@@ -104,6 +105,42 @@ def build_skill_uis():
         subprocess.run(["npm", "run", "build"], cwd=ui_dir, check=True, shell=_IS_WINDOWS)
 
 
+#: Anything the ES bundle imports that is not a path. A served app loads this file
+#: from a plain ``<script type="module">`` with no bundler and no import map, so a
+#: bare name is unresolvable there and the page dies before it runs a line.
+_BARE_SPECIFIER = re.compile(r"""(?:^|[;\s])(?:import|export)[^;'"]*?from\s*['"]([^'".][^'"]*)['"]""")
+
+
+def assert_no_bare_specifiers(bundle: Path) -> None:
+    """Fail the build if the served SDK imports anything it cannot resolve.
+
+    ``vite.sdk.config.ts`` marks react (and friends) ``external``, which is right
+    for the app -- it imports ts_sdk's SOURCE -- but means ANY react import reachable
+    from ``ts_sdk/src/index.ts`` is emitted verbatim into this bundle as a bare
+    specifier. That shipped once: ``stores/project-cleanup-store`` exported one hook,
+    and every static app built from ``template-flowpad`` (whose README tells it to
+    import this exact URL unbundled) failed with "Failed to resolve module specifier
+    react" before running a line.
+
+    ``src/index.ts`` states the rule in prose, but prose does not fail a build and
+    the breakage only surfaces at RUNTIME in a served micro-app. This is the
+    enforcement, and it is deliberately about the SHAPE rather than about react:
+    the next thing someone externalizes breaks the same way.
+    """
+    text = bundle.read_text(encoding="utf-8")
+    bare = sorted({m.group(1) for m in _BARE_SPECIFIER.finditer(text) if not m.group(1).startswith((".", "/"))})
+    if not bare:
+        return
+    print(
+        f"ERROR: {bundle.name} imports {', '.join(bare)} as bare specifier(s).\n"
+        "       A served page has no bundler and no import map, so it cannot resolve them.\n"
+        "       Keep ts_sdk/src/index.ts's graph free of these imports (see the note there);\n"
+        "       React-only code belongs under ts_sdk/src/react/, which the barrel does not re-export.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def build_sdk():
     """Build the ts_sdk library and place it at ``server/static/sdk/``.
 
@@ -134,6 +171,7 @@ def build_sdk():
     if not src.exists():
         print(f"ERROR: SDK build output not found at {src}", file=sys.stderr)
         sys.exit(1)
+    assert_no_bare_specifiers(src / "flowpad-sdk.js")
     dest = get_dist_dir() / "sdk"
     dest.mkdir(parents=True, exist_ok=True)
     for item in src.iterdir():

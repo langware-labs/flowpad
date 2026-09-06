@@ -734,6 +734,30 @@ export class NavigationActions {
     return shell;
   }
 
+  /** Start through the existing Vibe launcher, keeping an open file as a child. */
+  async startVibeSession(projectId: string, workdir?: string): Promise<void> {
+    const here = this.here;
+    const contentDock = here && isContentAssetDock(here) ? here : null;
+    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+    await createVibeProcessForProject({
+      projectId,
+      workdir,
+      navigation: {
+        openShellProcess: (processId) => {
+          if (contentDock) {
+            this.openDock(
+              DockPointer.rebaseAssetsOntoProject(contentDock, projectId)
+                .withHost(new TypeId(AgenticProcess.type, processId).toString())
+                .withViewMode(ViewMode.Vibe),
+            );
+          } else {
+            void this.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          }
+        },
+      },
+    });
+  }
+
   async openShellProcess(
     agenticProcessId: string,
     options?: { t?: string; windows?: string; activeWindow?: string; viewMode?: string },

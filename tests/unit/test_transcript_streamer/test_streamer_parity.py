@@ -84,7 +84,8 @@ def _sample(files: list[Path], n: int) -> list[Path]:
 
 def _discover_jsonl_files() -> list[_ParityCandidate]:
     """Sample of JSONL files across both worker dirs. Deterministic via seed."""
-    home = Path.home()
+    # The preserved home is read-only collection input; tests use owned copies.
+    home = Path(os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or Path.home())
     claude = _all_under(home / ".claude" / "projects")
     codex = _all_under(home / ".codex" / "sessions")
     if _RUN_ALL:

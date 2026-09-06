@@ -20,8 +20,8 @@ Requires:
   - the worker's CLI on PATH and authenticated (real ``$HOME`` — this module is
     in ``_REAL_HOME_TEST_MODULES`` in conftest so the CLI inherits credentials).
 
-LLM compliance is non-deterministic; an Anthropic/worker API timeout is
-downgraded to a skip by the conftest report hook.
+LLM compliance is non-deterministic. Worker API timeouts remain failures
+under the existing test deadline.
 """
 
 import asyncio

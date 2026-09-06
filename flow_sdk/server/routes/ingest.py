@@ -50,9 +50,9 @@ def _to_item(raw: dict[str, Any]):
 async def ingest_items_route(request: Request):
     """Ingest a batch through the same path the poller uses.
 
-    Body: ``{"items": [ {<SourceItemSpec>}, … ], "first_run"?: bool}``.
-    ``first_run`` lets a caller that knows it is backfilling say so; otherwise
-    the batch size decides, exactly as it does for a driver.
+    Body: ``{"items": [ {<SourceItemSpec>}, … ]}``. The batch's SIZE decides
+    how loudly it announces itself, exactly as it does for a driver
+    (``IngestMode.for_run``).
     """
     from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
     from flow_sdk.ingest.models import IngestMode  # noqa: PLC0415
@@ -77,9 +77,7 @@ async def ingest_items_route(request: Request):
     except (TypeError, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
 
-    mode = IngestMode.for_run(
-        first_run=bool(body.get("first_run")), item_count=len(items)
-    )
+    mode = IngestMode.for_run(item_count=len(items))
     try:
         report = await ingest_items(items, mode=mode)
     except Exception as exc:  # noqa: BLE001 — a bad payload must not 500 the server

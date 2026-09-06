@@ -77,6 +77,10 @@ skill, …) are anchored to the conversation and recursively auto-share.
    materialize pipeline, conversation-list reconcile/staleness, and the
    URL-first conversation loader cascade. (Supersedes the old root
    [`DESIGN_loadConversation.md`](../historical/DESIGN_loadConversation.md).)
+7. **[Live Sessions](./live-sessions.md)** — the unified prompt-session
+   model: every prompt is a session, the session-start marker and turn
+   markers, the session gate and snapshot header, and the delivery ledger
+   of what is built phase by phase.
 
 ## Glossary
 

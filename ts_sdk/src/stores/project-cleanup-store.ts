@@ -12,6 +12,12 @@
  *
  * Lives in the SDK rather than the app because `useWarnings` is an SDK hook and
  * cannot reach into `ui/src`.
+ *
+ * FRAMEWORK-FREE, and it has to stay that way: this module is re-exported from
+ * the SDK barrel, which is built into `/sdk/flowpad-sdk.js` and served to plain
+ * static pages. One `import … from 'react'` here puts a bare specifier in that
+ * bundle and every such page fails to boot. The React binding lives in
+ * `react/hooks/use-cleanup-summary`.
  */
 
 import type { CleanupSummary } from '../entities/compute-node/system-profile';
@@ -48,6 +54,8 @@ export function ingestCleanupSummary(next: CleanupSummary | null | undefined): v
   ) {
     return;
   }
+  // The held reference is replaced only on a real change, which is what makes
+  // it safe as a `useSyncExternalStore` snapshot.
   summary = next;
   for (const listener of listeners) listener();
 }

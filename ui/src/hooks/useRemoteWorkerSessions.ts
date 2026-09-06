@@ -17,8 +17,7 @@ const sessionsQuery = new QueryRequest({
 });
 
 /** Newest-activity-first comparator for RemoteWorkerSessions (last_activity_at,
- *  falling back to started_at). Shared with
- *  {@link useRemoteWorkerSessionForConversation} so the ordering can't drift. */
+ *  falling back to started_at). */
 export function byWorkerSessionActivityDesc(
   a: RemoteWorkerSession,
   b: RemoteWorkerSession,

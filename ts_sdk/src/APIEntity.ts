@@ -986,11 +986,24 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * is a Conversation, each recipient is invited via the standard
    * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
    * per recipient). See ``Conversation.share`` on the Python side.
+   *
+   * ``recipientUserIds`` (hub user ids) is the same invitation addressed by hub
+   * id, for a contact the address book knows only by ``user_id`` — the hub never
+   * discloses other people's emails, so those contacts have no address to
+   * invite. Pass either, or both.
    */
-  public async share(recipients?: string[]): Promise<T> {
+  public async share(recipients?: string[], recipientUserIds?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     const cleaned = recipients?.map((r) => normalizeEmail(r)).filter((r): r is string => !!r);
-    info.bodyParameters = cleaned?.length ? { ...this.toJSON(), recipients: cleaned } : {};
+    const byId = recipientUserIds?.map((id) => id.trim()).filter((id) => !!id);
+    info.bodyParameters =
+      cleaned?.length || byId?.length
+        ? {
+            ...this.toJSON(),
+            ...(cleaned?.length ? { recipients: cleaned } : {}),
+            ...(byId?.length ? { recipient_user_ids: byId } : {}),
+          }
+        : {};
     const response = await dataManager.callAction<unknown, unknown>(info);
     if (
       response &&

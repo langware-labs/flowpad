@@ -567,10 +567,9 @@ class DataSource(Entity):
 
         Clears the normalized high-water mark AND the provider-opaque ``state``
         (ETags, update pointers), so the next poll re-reads the whole window.
-        Cursor rows are kept rather than deleted: deleting them would also reset
-        ``last_synced_at``, flipping the next run to ``first_run`` and therefore
-        to BACKFILL — which suppresses per-item events, making a deliberate
-        re-fetch silent.
+        Cursor rows are kept rather than deleted: the row carries the stream's
+        health and attempt history, and a reset forgets the POSITION, not that
+        the stream has ever run.
         """
         streams = await self.reset_cursors()
         return ApiSuccessResponse(data={

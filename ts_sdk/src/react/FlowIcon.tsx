@@ -1,7 +1,8 @@
 import { createElement, useEffect, useMemo, useState, type ComponentType, type ReactElement, type ReactNode } from 'react';
+import { useIconPacks } from './hooks/useIconPacks';
 import { bundleIcon } from '../icons/bundle';
 import { ensureIconStyles, resolveForRender, withRole } from '../icons/element';
-import { getIconFallback, getIconPacks, onIconPacksChanged } from '../icons/registry';
+import { getIconFallback, getIconPacks } from '../icons/registry';
 import { resolveIcon } from '../icons/resolve';
 import type { IconResolution } from '../icons/types';
 
@@ -350,10 +351,10 @@ export function flowIconComponent(icon: string | null | undefined): FlowIconComp
 
 /** Resolve against the loaded packs, re-resolving if they arrive after mount. */
 function useResolution(tag: string, badge?: string, ownFallback = false): IconResolution {
-  const [, bump] = useState(0);
-  useEffect(() => onIconPacksChanged(() => bump((v) => v + 1)), []);
+  // The packs are a dependency, not a side read: they arrive after mount on
+  // any page that renders before the bootstrap lands.
+  const packs = useIconPacks();
   return useMemo(() => {
-    const packs = getIconPacks();
     // `resolveForRender` applies the unknown-icon fallback, so a missing icon
     // renders the generic glyph rather than vanishing — the rule `lucideByName`
     // already follows. A caller with its OWN fallback needs the honest `none`
@@ -362,7 +363,7 @@ function useResolution(tag: string, badge?: string, ownFallback = false): IconRe
     if (!badge || (base.kind !== 'asset' && base.kind !== 'bundle')) return base;
     const sub = resolveIcon(badge, packs, false);
     return sub.kind === 'none' ? base : { ...base, badge: sub };
-  }, [tag, badge, ownFallback]);
+  }, [tag, badge, ownFallback, packs]);
 }
 
 export function FlowIcon({

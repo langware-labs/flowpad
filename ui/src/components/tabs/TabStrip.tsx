@@ -28,6 +28,8 @@ import {
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { animateGlow } from '@src/lib/animate-glow';
+import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
 import { ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -156,6 +158,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const highlights = useTabHighlights();
+
+  useEffect(() => {
+    for (const [key, token] of highlights) {
+      const chip = tabRefs.current[key];
+      if (!chip) continue;
+      animateGlow(chip, TAB_HIGHLIGHT_MS);
+      consumeTabHighlight(key, token);
+    }
+  }, [highlights, items]);
 
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');

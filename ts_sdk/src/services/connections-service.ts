@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * Every connection this box has, in one read.
  *
@@ -18,7 +19,7 @@ const ACTION = 'connections';
 export class ConnectionsService {
   private readonly base: string;
 
-  constructor(nodeTypeId: { type: string; id: string }) {
+  constructor(private readonly nodeTypeId: { type: string; id: string }) {
     this.base = `/graph/${nodeTypeId.type}/${nodeTypeId.id}/${ACTION}`;
   }
 
@@ -28,6 +29,10 @@ export class ConnectionsService {
    * and the server has no notion of "the selected project" — that lives here.
    */
   async list(projectId?: string): Promise<ConnectionSpec[] | null> {
+    return lazyAssets.load(LazyAsset.Connections, { projectId, nodeTypeId: this.nodeTypeId });
+  }
+
+  async fetchList(projectId?: string): Promise<ConnectionSpec[] | null> {
     if (isHubOnly()) return null;
     const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
     const data = await apiClient.get<{ connections?: ConnectionSpec[] }>(`${this.base}${query}`);

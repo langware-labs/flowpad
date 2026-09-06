@@ -392,10 +392,16 @@ function ensureProjectLocaleSync(): void {
   if (_projectLocaleSyncInstalled) return;
   _projectLocaleSyncInstalled = true;
   dataContext.on(ContextEventType.CONTEXT_CHANGED, () => void onCurrentProjectChanged());
+  // Same reason, same seam: these two used to subscribe at module import, so any
+  // unit test whose partial `@sdk` mock omits `instancePreferences` died on
+  // import of a module that merely pulls this one in transitively — and because
+  // the mock leaks per worker, WHICH file blew up moved with the schedule.
+  // Installed here instead, then reconciled once for a preference that loaded
+  // before the subscription existed.
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, () => void onPrefLocaleChanged());
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void onPrefLocaleChanged());
+  void onPrefLocaleChanged();
 }
-
-instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, () => void onPrefLocaleChanged());
-instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void onPrefLocaleChanged());
 
 defineGlobal('setLocale', setLocale);
 defineGlobal('getLocale', getLocale);

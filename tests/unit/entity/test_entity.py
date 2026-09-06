@@ -4,12 +4,12 @@ import pytest
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.loaders import is_new_instance
 from tests.conftest import async_context
 from tests.unit.entity.test_models import TEntity, TRelationship
-from tests.unit.entity.test_settings import isNeo4jDriver
 
 # TODO fix execution context
 
@@ -63,20 +63,22 @@ async def test_duplicated_id():
         await existing_entity.create()
 
 
-@pytest.mark.skipif(not isNeo4jDriver, reason="requires Neo4j")
-async def test_get_all_relationships(simple_alice_user):
+async def test_get_all_relationships():
+    user = User(name="relationship-query-owner")
+    await user.save(notify=False)
+
     # First, create an entity to fetch later
     existing_data_1 = {
         "test_data": "42",
     }
     existing_entity_1 = TEntity.model_validate(existing_data_1)
-    await existing_entity_1.save(owner=simple_alice_user)
+    await existing_entity_1.save(owner=user)
 
     existing_data_2 = {
         "test_data": "42",
     }
     existing_entity_2 = TEntity.model_validate(existing_data_2)
-    await existing_entity_2.save(owner=simple_alice_user)
+    await existing_entity_2.save(owner=user)
 
     # Create a relationship between the two entities
     relationship_data = {
