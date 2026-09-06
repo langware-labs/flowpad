@@ -1112,6 +1112,27 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # The sanctioned one-shot scan, not a banned auto-walk: the user asked
         # for this clone, and it has to be searchable when they land in it.
         await _index_additional_dir(target_dir)
+
+        # Converge what the repo DECLARES, not just what it contains.
+        #
+        # A repo's `.flowpad/bootstrap.json` can name live content projects — the
+        # help desk that answers its tickets, a skills repo its agents rely on.
+        # Without this the manifest was honoured on exactly one path
+        # (`setup-from-bootstrap-git`, which SEVERS the git link and is for
+        # templates), so a plain "Open from git" cloned a project whose declared
+        # desk and agents simply never arrived: the user landed in a project
+        # whose own task file told them to ask an agent that was not there, with
+        # nothing reporting a failure. A tracked clone is the case that most
+        # needs the declaration, because it is the one that keeps updating.
+        #
+        # Best-effort: the manifest is third-party content and a clone the user
+        # already paid for must not fail because a declared dependency is
+        # unreachable or malformed. `reconcile_bootstrap` is idempotent (a thin
+        # composition over `add_context_dir_from_git`), so re-opening converges.
+        try:
+            await project.reconcile_bootstrap()
+        except Exception as exc:  # noqa: BLE001 -- a declaration must not fail the open
+            logging.warning("create-project-from-git: bootstrap reconcile skipped: %s", exc)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
     @staticmethod
