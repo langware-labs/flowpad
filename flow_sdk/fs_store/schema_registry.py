@@ -533,25 +533,9 @@ class TypeInfo:
     def _carrier_write_is_safe(self, target: Path) -> bool:
         """May this type's carrier WRITE at ``target`` without damaging it?
 
-        A write question, never a read one: ``read_id`` must keep reading
-        wherever the carrier points, or a provider that embeds its own id (a
-        ``DerivedCarrier`` over ``.jsonl``) stops being adopted. Only the two
-        carriers that write bytes they do not parse can do damage:
-
-        * ``FrontmatterCarrier`` prepends a YAML header to whatever is there —
-          legal in this type's own document, corruption in anything else. This
-          is FLOWPAD-2083: ``mcp/crm-mcp/server.py``, reached under a type whose
-          editor URL said ``markdown``, came back as ``---\\nid: …\\n---`` on top
-          of Python and stopped importing.
-        * ``FolderJsonCarrier`` is built to drop ``.flow/capsules/identity.json``
-          beside a FOLDER; handed a regular file, ``AssetCapsule.from_path``
-          degrades to an inline comment capsule written INTO it — the same bug
-          without the SyntaxError, because comments still parse.
-
-        A format-aware carrier (``NativeJsonCarrier``) and a read-only one are
-        unaffected. A directory, or a target whose bytes do not exist yet, stays
-        writable: ``_commit_identity`` mints against asset_refs that land moments
-        later, which is why ``layout_of``'s projections are total.
+        Only ``FrontmatterCarrier``/``FolderJsonCarrier`` can corrupt a foreign
+        file (FLOWPAD-2083); a format-aware or read-only carrier is unaffected,
+        and a not-yet-created target is always writable.
         """
         if not target.is_file():
             return True   # a directory (folder capsule) or a not-yet-created save target
