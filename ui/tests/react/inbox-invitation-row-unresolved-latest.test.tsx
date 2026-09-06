@@ -107,6 +107,10 @@ function renderRow(conv: Conversation, onVisibilityChange = vi.fn()) {
         onRequestDelete={vi.fn()}
         cloudUserId="me-id"
         onVisibilityChange={onVisibilityChange}
+        // Required by the row since the channels line landed; InboxView supplies it
+        // from useChannelAttribution. These cases assert invitation/subject rendering,
+        // not attribution, so "nothing resolved" is the honest value.
+        attributionFor={() => null}
         refSetter={() => {}}
       />
     </TooltipProvider>,
