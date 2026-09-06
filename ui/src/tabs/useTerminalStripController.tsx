@@ -24,7 +24,6 @@ import {
   ContextEntitiesEnum,
   dataContext,
   GraphContext,
-  HARNESS_CAPABILITY_KINDS,
   ViewType,
   type ComputeNode,
 } from '@sdk';
@@ -47,7 +46,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
+import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
 import { HARNESS_CAPABILITY_BY_WORKER, type WorkerType } from '@src/components/workers/worker-types';
@@ -118,9 +117,9 @@ export function useTerminalStripController({
     : (dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null);
 
   const tabCreationLockRef = useRef(false);
-  const [pendingTabCreation, setPendingTabCreation] = useState<'claude' | 'codex' | 'copilot' | 'opencode' | 'terminal' | null>(
-    null,
-  );
+  const [pendingTabCreation, setPendingTabCreation] = useState<
+    'claude' | 'codex' | 'copilot' | 'opencode' | 'terminal' | null
+  >(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   const {
@@ -129,8 +128,9 @@ export function useTerminalStripController({
     copilot: copilotCapability,
     opencode: opencodeCapability,
   } = useHarnessCapabilities();
-  const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
-  const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
+  // Shared with the vibe chat's first prompt — the other route that discovers a
+  // missing harness (see use-harness-install-prompt).
+  const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
   const { resumeInTerminal } = useResumeInTerminal();
 
   const clearPending = useCallback(() => {
@@ -148,7 +148,7 @@ export function useTerminalStripController({
       // binary is reported against the vendor the user actually clicked
       // rather than against whatever the generic `harness` default resolves to.
       const requiredKind = workerType
-        ? HARNESS_CAPABILITY_BY_WORKER[workerType] ?? CapabilityKinds.Harness
+        ? (HARNESS_CAPABILITY_BY_WORKER[workerType] ?? CapabilityKinds.Harness)
         : CapabilityKinds.Harness;
       // The lock is released in `finally` and NOWHERE else: an unhandled throw
       // used to strand it set, which left a permanent spinner on the opener and
@@ -157,7 +157,7 @@ export function useTerminalStripController({
         try {
           const harness = await capabilityManager.ensureChecked(requiredKind);
           if (harness.checked && !harness.available) {
-            askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
+            promptToInstall();
             return;
           }
         } catch {
@@ -171,18 +171,30 @@ export function useTerminalStripController({
           ...(workerType ? { workerType } : {}),
         });
       } catch {
-        // The spawn failed — overwhelmingly because the harness this capability
-        // row still calls available is gone from disk (uninstalled since the
-        // last discovery sweep, which only runs at backend start). Show the
-        // Capabilities view for THIS kind rather than an error: its arrival
-        // re-probe corrects the stale row and offers install / switch harness,
-        // which is the thing the user actually needs to do next.
-        navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind });
+        // The spawn failed. The overwhelming cause is a harness that is gone
+        // from disk while its capability row still calls it available — the
+        // pre-flight above reads that same row, which is why it let us through.
+        //
+        // ASK, don't assume. `test` re-runs discovery for this kind, which both
+        // answers the question and rewrites the stale row; the pre-flight's
+        // `ensureChecked` cannot, because it returns early the moment any
+        // verdict exists. Paying for one probe HERE is the point: it costs a
+        // subprocess only on a path that has already failed, so the common case
+        // stays free.
+        //
+        // A confirmed-missing harness gets the install dialog — the same one
+        // the pre-flight would have shown, and the thing the user needs. Any
+        // other failure is NOT a missing harness, so it keeps the Capabilities
+        // view for this kind rather than being mislabelled as one: the previous
+        // code sent every failure there and called it "uninstalled".
+        confirmMissingThen(requiredKind, () =>
+          navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind }),
+        );
       } finally {
         clearPending();
       }
     },
-    [askInstallOneOf, clearPending, navigation, spawnProjectId],
+    [confirmMissingThen, promptToInstall, clearPending, navigation, spawnProjectId],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
@@ -428,7 +440,7 @@ export function useTerminalStripController({
 
   const modals = (
     <>
-      <AskInstallOneOfDialog kinds={installChoiceKinds} onClose={() => setInstallChoiceKinds(null)} />
+      {installDialog}
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}

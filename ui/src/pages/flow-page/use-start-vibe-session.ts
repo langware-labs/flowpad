@@ -3,6 +3,7 @@ import {
   AgentKind,
   AgenticProcess,
   apiClient,
+  CapabilityKinds,
   ComputeNode,
   dataContext,
   ProcessKind,
@@ -12,12 +13,15 @@ import {
   TypeId,
 } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
+import { HARNESS_CAPABILITY_BY_WORKER } from '@src/components/workers/worker-types';
+import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
+import { errorDetail } from '@src/lib/error-message';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { appendUploadedFileRefs } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { VIBE_MODEL_DEFAULT, type VibeModelChoice } from './vibe-model-select';
@@ -232,17 +236,23 @@ export async function continueVibeSessionForProject(opts: {
  * {@link launchVibeSessionForProject} that resolves the active project + its
  * workdir and surfaces errors as toasts.
  */
-export function useStartVibeSession(): (
-  message: string,
-  files?: File[],
-  model?: VibeModelChoice,
-  workerType?: WorkerType,
-) => void {
+export interface StartVibeSession {
+  /** Submit the first prompt and open the session. */
+  start: (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => void;
+  /**
+   * The "install a harness" dialog, which a failed start may raise. Render it
+   * — a caller that drops it silently loses the only recovery this failure has.
+   */
+  installDialog: ReactNode;
+}
+
+export function useStartVibeSession(): StartVibeSession {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
+  const { confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
 
-  return useCallback(
+  const start = useCallback(
     (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => {
       if (!project?.id) {
         // forceToast: this is the ONLY feedback the submit produces — without it
@@ -270,11 +280,36 @@ export function useStartVibeSession(): (
             title: t`Attachment upload failed`,
             message: t`Starting the session without the attached files.`,
           }),
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         console.error('[Vibe] Failed to start vibe session:', error);
-        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+        // The backend explains itself here — `createProcess` refuses a missing
+        // harness with "<name> is not installed on this machine."
+        // (flow_sdk/builtin/faas/scan_actions.py). That sentence used to be
+        // replaced by a fixed "Failed to start the build session", so the one
+        // thing the user could act on reached the console and nowhere else.
+        //
+        // A missing harness is not a message problem though — it is a thing to
+        // FIX, so it raises the install dialog (with its "Try auto install")
+        // exactly as the terminal strip's openers do. `confirmMissingThen`
+        // re-probes rather than trusting the stale capability row, so anything
+        // that failed for another reason falls through to its real message
+        // instead of being mislabelled as an uninstalled harness.
+        const kind = workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : CapabilityKinds.Harness;
+        confirmMissingThen(kind ?? CapabilityKinds.Harness, () =>
+          notify.error({
+            title: t`Could not start`,
+            // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
+            // whose own message is the boilerplate "Request failed with status
+            // code 4xx". Taking the envelope ONLY means a failure the server did
+            // not explain falls back to our wording instead of putting a status
+            // line in front of the user as if it were an explanation.
+            message: errorDetail(error) || t`Failed to start the build session.`,
+          }),
+        );
       });
     },
-    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t],
+    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t, confirmMissingThen],
   );
+
+  return { start, installDialog };
 }
