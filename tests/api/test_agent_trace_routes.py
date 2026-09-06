@@ -1,6 +1,7 @@
 """Worker agent-trace routes: GET trace-skeleton + POST agent-trace (create record)."""
 
 import json
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -119,7 +120,9 @@ async def test_create_agent_trace_preserves_by_asset(client, session_on_disk):
     assert r.status_code == 200, r.text
     body = r.json()["data"]
 
-    with open(body["asset_ref"], encoding="utf-8") as f:
+    # ``asset_ref`` is the asset ROOT (the folder); the document inside it is
+    # the type's main file.
+    with open(Path(body["asset_ref"]) / "trace.json", encoding="utf-8") as f:
         doc = json.load(f)
     bucket = doc["annotations"]["by_asset"][key]
     assert bucket["typeid"] == "agent-abc"
