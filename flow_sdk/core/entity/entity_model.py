@@ -479,6 +479,33 @@ class Entity(DBEntity):
         ),
     )
 
+    def apply_field_updates(self, fields: dict):
+        """A client PUT may ADD context links, never silently drop them.
+
+        Same hazard as the filesystem re-parse guarded at ``from_record``, from
+        the other direction: a client holds a copy of the entity from BEFORE a
+        server-side link was made, and a full-entity PUT then writes its stale
+        (empty) buckets back over it. That is how "Open from git" lost the
+        content projects its manifest had just attached — the frontend
+        pre-creates the Project, the clone action stamps the per-entry sidecar,
+        and the client's PUT lands last and blanks it. The link survived in
+        ``shared_context_entities`` while its sidecar path did not, so
+        ``include_dirs`` (and with it ``context_roots``) came back empty and the
+        agents the desk supplied were invisible.
+
+        Union, don't replace — the rule ``_union_context_bucket`` already states
+        for the carrier path. Removing a link stays an explicit operation
+        (``remove_*_context_entities``), never a side effect of saving a stale
+        copy.
+        """
+        if fields:
+            fields = {
+                k: (_union_context_bucket(getattr(self, k, None), v) if k in _CONTEXT_BUCKET_FIELDS else v)
+                for k, v in fields.items()
+            }
+        return super().apply_field_updates(fields)
+
+
     # Display label. BOTH are declared on the base and BOTH are optional, so
     # every entity type carries the same two slots on both sides of the hub
     # boundary — a payload that arrives under the "other" key is stored, not
@@ -2475,6 +2502,40 @@ class Entity(DBEntity):
         merged["fetched_at"] = datetime.now(timezone.utc)
         return merged
 
+
+    async def _merge_stored_context_links(self) -> None:
+        """Never let a save NARROW the context link projection.
+
+        The buckets are DB-owned link state written by ``cross_link_entities``
+        and ``add_context_dir`` — they are not authored by whoever happens to be
+        saving. Any caller holding an instance loaded BEFORE a link was made
+        writes its stale (empty) buckets back over it on the next ``save()``,
+        and the link is gone with nothing logged.
+
+        That is what made "Open from git" unreliable: the manifest attached the
+        declared content project, and the next unrelated save of the same
+        Project — from a copy read moments earlier — dropped it, so
+        ``include_dirs`` and ``context_roots`` came back empty and the agents the
+        desk supplied vanished from the project home.
+
+        ``from_record`` already applies exactly this rule to the carrier path and
+        ``apply_field_updates`` to the client path; both are partial views of the
+        same hazard. Doing it here covers every writer, including the plain
+        ``entity.save()`` that reaches neither. Union only — an explicit removal
+        goes through ``remove_*_context_entities``, which operates on a freshly
+        read instance.
+        """
+        try:
+            stored = await type(self).get_by_id(self.id)
+        except Exception:  # noqa: BLE001 -- a save must not fail on a read-back
+            return
+        if stored is None:
+            return
+        for field in _CONTEXT_BUCKET_FIELDS:
+            merged = _union_context_bucket(getattr(self, field, None), getattr(stored, field, None))
+            if merged is not None:
+                object.__setattr__(self, field, merged)
+
     async def save(
         self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True
     ) -> EntityType:
@@ -2491,6 +2552,13 @@ class Entity(DBEntity):
         # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
+        # Unconditional, NOT gated on `was_create`: the write that actually loses
+        # links believes it is a create. The frontend re-POSTs a project for a
+        # folder it already has, which lands on the stored row and blanks it —
+        # so "am I creating?" is the caller's belief, while "is there a row?" is
+        # the fact. The helper reads the row and no-ops when there genuinely
+        # isn't one.
+        await self._merge_stored_context_links()
         create_target = await self._prepare_for_storage()
         suppress_store = _SUPPRESS_STORE.get()
 
