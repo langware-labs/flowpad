@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 #: its driver; the loop then round-robins by ``last_attempted_at`` so every
 #: stream still converges, just over more ticks.
 DEFAULT_SEGMENT_BUDGET = 5
+#: While any stream has NEWS (its listing token moved), one pass takes the
+#: news plus this many never-attempted streams. A pass is serial — the next
+#: round cannot start until this one ends — so a live message waits behind
+#: whatever backfill precedes it; this bounds that wait.
+BACKLOG_PER_PASS_WHILE_MOVING = 1
 
 
 async def sync_source(
@@ -229,9 +234,7 @@ async def _sync_stream(
         await cursor.save()
     return report
 
-def _round_robin(
-    cursors: list[DataSourceCursor], budget: int, stamps: Optional[dict[str, str]] = None
-) -> list[DataSourceCursor]:
+def _round_robin(cursors: list[DataSourceCursor], budget: int, stamps: dict[str, str]) -> list[DataSourceCursor]:
     """The ``budget`` streams that have waited longest.
 
     Never-attempted streams sort first, so a newly added feed is picked up on
@@ -243,13 +246,10 @@ def _round_robin(
     whose token MOVED goes first of all, ahead of the never-attempted ones: a
     new source on a busy desk backfills dozens of old tickets a few per pass,
     and the one ticket a person is answering right now must not wait behind
-    that backlog. And while anything has moved, the backlog only TRICKLES —
-    one stream per pass beside the news — because a pass is one unit of
-    latency: the next round cannot start until this one ends, and five old
-    tickets' histories ingested and projected is what made a live reply take
-    twenty seconds to land. Never-attempted streams keep the driver's listing
-    order. A stream that last FAILED stays a candidate whatever its token
-    says: the retry is the point.
+    that backlog, which only trickles while the news flows
+    (``BACKLOG_PER_PASS_WHILE_MOVING``). Never-attempted streams keep the
+    driver's listing order. A stream that last FAILED stays a candidate
+    whatever its token says: the retry is the point.
 
     A ``config_error`` stream is not a candidate at all. It is parked until a
     person fixes it (``health.py``: that state stops polling for ITS scope), so
@@ -258,7 +258,6 @@ def _round_robin(
     """
     if budget <= 0:
         return []
-    stamps = stamps or {}
 
     def _idle(c: DataSourceCursor) -> bool:
         token = stamps.get(c.segment_key, "")
@@ -270,11 +269,13 @@ def _round_robin(
 
     candidates = [c for c in cursors if c.health != SourceHealth.CONFIG_ERROR.value and not _idle(c)]
     by_age = sorted(candidates, key=lambda c: (c.last_attempted_at is not None, c.last_attempted_at or datetime.min))
-    moved = [c for c in by_age if _moved(c)]
-    rest = [c for c in by_age if not _moved(c)]
+    moved: list[DataSourceCursor] = []
+    rest: list[DataSourceCursor] = []
+    for cursor in by_age:
+        (moved if _moved(cursor) else rest).append(cursor)
     if not moved:
         return rest[:budget]
-    return (moved + rest[:1])[:budget]
+    return (moved + rest[:BACKLOG_PER_PASS_WHILE_MOVING])[:budget]
 
 
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:

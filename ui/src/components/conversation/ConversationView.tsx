@@ -18,6 +18,7 @@ import {
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
+import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel, sourceForOrigin } from './channel-attribution';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
@@ -547,8 +548,7 @@ export function ConversationView({
       const latestId = latestPointer(pointers)?.id;
       const latest = latestId ? messagesById.get(latestId) : undefined;
       if (!latest?.id || latest.is_read) return;
-      const senderId = latest.sender_id ?? null;
-      if (senderId && (senderId === cloudUserId || senderId === localUser?.id)) return;
+      if (isViewer(latest.sender_id, { email: '', cloudUserId, localUserId: localUser?.id ?? null })) return;
       const key = `${conversationId}:${latest.id}`;
       if (readMarkedRef.current === key) return;
       readMarkedRef.current = key;

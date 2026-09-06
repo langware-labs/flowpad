@@ -17,6 +17,7 @@ import uuid
 
 import pytest
 
+from flow_sdk.api.api_types.messages import OperationType
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 
@@ -170,11 +171,10 @@ async def test_the_announced_op_carries_the_hydrated_body(monkeypatch):
     monkeypatch.setattr(FlowMessage, "add_entity_op_notification", staticmethod(capture))
     fm = _fm(source_item_id=str(uuid.uuid4()))
     await fm.save()
-    assert seen and seen[-1][1] == "a body that must not be persisted", seen
-    assert str(seen[-1][0]).lower().endswith("create")
+    assert seen[-1] == (OperationType.CREATE.value, "a body that must not be persisted"), seen
     stored = await FlowMessage.get_one({"id": fm.id})
     assert stored.text == "", "the persisted row still carries no body"
 
     fm.is_read = True
     await fm.save()
-    assert seen[-1][1] == "a body that must not be persisted" and str(seen[-1][0]).lower().endswith("update")
+    assert seen[-1] == (OperationType.UPDATE.value, "a body that must not be persisted"), seen

@@ -26,7 +26,15 @@
  * browser afterwards.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { getAliceCreds, getBobCreds, hubAvailable, hubJson, hubLogin, HUB_URL } from './_hub';
+import {
+  getAliceCreds,
+  getBobCreds,
+  HELPDESK_DISPLAY_NAME,
+  hubAvailable,
+  hubDefaultDeskId,
+  hubJson,
+  hubLogin,
+} from './_hub';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as REQUESTER_INSTANCE,
@@ -34,11 +42,10 @@ import {
   getInstance,
   instanceAvailable,
   postApi,
+  queryConversationMessages,
   type ResolvedInstance,
 } from './_instances';
 
-// Must equal the hub's HELPDESK_DISPLAY_NAME (flowpad/config.py).
-const DISPLAY_NAME = 'Flowpad Support';
 const TURNS = 10;
 const KEEP = process.env.HELPDESK_KEEP === '1';
 
@@ -92,8 +99,7 @@ beforeAll(async () => {
   helperUserId = helperAuth.user.id;
   requesterUserId = (await hubLogin(requester.email, requesterCreds.password)).user.id;
 
-  const version = await fetch(`${HUB_URL}/api/v1/health/version`).then((r) => r.json());
-  deskId = version?.data?.helpdesk_project_id ?? '';
+  deskId = (await hubDefaultDeskId()) ?? '';
   if (!deskId) return void (skipReason = 'the hub advertises no help desk');
   // The helper must be desk staff: the pool route is members-only.
   await hubJson(helperToken, `/graph/project/${deskId}/helpdesk_conversations`).catch(() => {
@@ -105,9 +111,7 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-/** An instance's rows for a conversation, read fresh (cache bypassed). */
-const rowsOf = (inst: ResolvedInstance, convId: string): Promise<any[]> =>
-  inst.sdk.FlowMessage.query(new inst.sdk.QueryRequest({ query: { conversation_id: convId }, scope: [] }), true);
+const rowsOf = queryConversationMessages;
 
 const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/flow_message`);
 
@@ -174,7 +178,7 @@ describe('a ten-turn support conversation', () => {
         `turn ${turn}: the answer reached the hub`,
       );
       expect(onHub.sender_id).toBe(helperUserId);
-      expect(onHub.sender_name).toBe(DISPLAY_NAME);
+      expect(onHub.sender_name).toBe(HELPDESK_DISPLAY_NAME);
 
       // Requester sees the answer under the brand, not the helper's name.
       const seen: any = await pollUntil(
@@ -185,7 +189,7 @@ describe('a ten-turn support conversation', () => {
         15_000,
         `turn ${turn}: the answer reached the requester`,
       );
-      expect(seen.sender_name).toBe(DISPLAY_NAME);
+      expect(seen.sender_name).toBe(HELPDESK_DISPLAY_NAME);
     });
   }
 
@@ -195,15 +199,15 @@ describe('a ten-turn support conversation', () => {
     expect(hubIds).toHaveLength(TURNS * 2);
 
     await postApi(helper.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
-    const helperIds = await pollUntil(
+    const helperRows: any[] = await pollUntil(
       async () => {
-        const ids = (await rowsOf(helper, convId)).map((m) => m.id).sort();
-        return ids.length === hubIds.length ? ids : null;
+        const rows = await rowsOf(helper, convId);
+        return rows.length === hubIds.length ? rows : null;
       },
       15_000,
       "the helper's inbox holds every hub message",
     );
-    expect(helperIds).toEqual(hubIds);
+    expect(helperRows.map((m) => m.id).sort()).toEqual(hubIds);
 
     const requesterIds = await pollUntil(
       async () => {
@@ -216,8 +220,7 @@ describe('a ten-turn support conversation', () => {
     );
     expect(requesterIds).toEqual(hubIds);
 
-    // The helper's rows: ten channel messages from the requester.
-    const helperRows = await rowsOf(helper, convId);
+    // …and ten of them are the requester's, arrived through the channel.
     expect(helperRows.filter((m) => m.origin?.kind === 'helpdesk' && fromRequester(m))).toHaveLength(TURNS);
     if (KEEP) console.log(`[helpdesk_ten_turns] kept: conversation ${convId}, source ${source.id}`);
   });

@@ -25,7 +25,7 @@
  * help desk project at seed); missing staff authorization is a real failure.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { getAliceCreds, getBobCreds, hubAvailable, hubLogin, HUB_URL } from './_hub';
+import { getAliceCreds, getBobCreds, hubAvailable, hubDefaultDeskId, HELPDESK_DISPLAY_NAME, hubLogin, HUB_URL } from './_hub';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as GUEST_INSTANCE,
@@ -35,26 +35,12 @@ import {
   type ResolvedInstance,
 } from './_instances';
 
-// Must equal the hub's HELPDESK_DISPLAY_NAME (flowpad/config.py).
-const HELPDESK_DISPLAY_NAME = 'Flowpad Support';
-
 let skipReason: string | null = null;
 let guest: ResolvedInstance;
 let staff: ResolvedInstance;
 let guestPassword = '';
 let staffPassword = '';
 let helpdeskProjectId: string | null = null;
-
-async function fetchHelpdeskProjectId(): Promise<string | null> {
-  try {
-    const r = await fetch(`${HUB_URL}/api/v1/health/version`);
-    if (!r.ok) return null;
-    const body = (await r.json()) as { data?: { helpdesk_project_id?: string } };
-    return body.data?.helpdesk_project_id ?? null;
-  } catch {
-    return null;
-  }
-}
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -73,7 +59,7 @@ beforeAll(async () => {
   }
   guestPassword = guestCreds.password;
   staffPassword = staffCreds.password;
-  helpdeskProjectId = await fetchHelpdeskProjectId();
+  helpdeskProjectId = await hubDefaultDeskId();
   if (!helpdeskProjectId) {
     skipReason = 'hub /version did not return helpdesk_project_id (restart hub from source)';
     return;

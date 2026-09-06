@@ -93,8 +93,18 @@ async def _attention_loop() -> None:
             if lease["next"] > now or source_id in _inflight:
                 continue
             lease["next"] = now + lease["cadence"]
-            source = await DataSource.get_by_id(source_id)
-            if source is None or source.poll_refusal():
+            # One source must never take the lane down with it. A read that
+            # raises (a row deleted under us, a DB torn down while a lease was
+            # still held) used to escape this loop and end the task — every
+            # OTHER leased source then stopped being polled, silently, until
+            # something re-armed the lane.
+            try:
+                source = await DataSource.get_by_id(source_id)
+                refused = source is None or source.poll_refusal()
+            except Exception:  # noqa: BLE001 — classified as "drop the lease"
+                logger.exception("[ingest] attention lane: dropping %s", source_id)
+                refused = True
+            if refused:
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
             if not _claim(source_id):

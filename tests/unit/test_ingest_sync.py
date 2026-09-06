@@ -60,13 +60,17 @@ class _FakeDriver(IngestDriver):
     kind = "datasource.feed.faketest"
     record_kind = "content.feed.item"
 
-    def __init__(self, streams, behaviour):
+    def __init__(self, streams, behaviour, stamps: dict[str, str] | None = None):
         self._streams = streams
         self._behaviour = behaviour
+        #: Per-stream listing token (``SegmentRef.stamp``); empty = the driver
+        #: cannot say whether the stream moved.
+        self.stamps: dict[str, str] = stamps or {}
         self.calls: list[str] = []
 
     async def segments(self, source):
-        return [SegmentRef(key=k, label=k) for k in self._streams]
+        keys = self._streams or list(self.stamps)
+        return [SegmentRef(key=k, label=k, stamp=self.stamps.get(k, "")) for k in keys]
 
     async def fetch(self, source, cursor):
         self.calls.append(cursor.segment_key)
@@ -321,17 +325,6 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))
 
 
-class _StampedDriver(_FakeDriver):
-    """A listing that carries a change token per stream."""
-
-    def __init__(self, stamps: dict[str, str], behaviour):
-        super().__init__(list(stamps), behaviour)
-        self.stamps = stamps
-
-    async def segments(self, source):
-        return [SegmentRef(key=k, label=k, stamp=v) for k, v in self.stamps.items()]
-
-
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_budgeted():
@@ -340,7 +333,8 @@ async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_
     queue behind dozens of idle ones."""
     src = await _source()
     idle, moved = "https://idle.test/f", "https://moved.test/f"
-    driver = _StampedDriver({idle: "3:t1", moved: "1:t1"}, {k: FetchResult(items=[], next_state={}) for k in (idle, moved)})
+    behaviour = {k: FetchResult(items=[], next_state={}) for k in (idle, moved)}
+    driver = _FakeDriver([], behaviour, stamps={idle: "3:t1", moved: "1:t1"})
     register_driver(driver)
 
     await sync_source(src, now=NOW, budget=2)
@@ -379,7 +373,7 @@ async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_
 async def test_a_failed_stream_is_retried_whatever_its_listing_token_says():
     src = await _source()
     key = "https://flaky.test/f"
-    driver = _StampedDriver({key: "1:t1"}, {key: SourceError.transient("network", "boom")})
+    driver = _FakeDriver([], {key: SourceError.transient("network", "boom")}, stamps={key: "1:t1"})
     register_driver(driver)
 
     await sync_source(src, now=NOW, budget=1)

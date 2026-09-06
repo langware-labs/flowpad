@@ -1613,7 +1613,7 @@ async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[
         return None
 
 
-async def _adopt_opening_line(conv_id: str, conv_data: dict, text: str, someone_typeid: str) -> None:
+async def _adopt_opening_line(conv_id: str, conv_data: dict, text: str) -> None:
     """Land the ticket's opening line — the guest's own words — locally.
 
     The hub fans a message out to every participant BUT its sender, and a
@@ -1629,38 +1629,32 @@ async def _adopt_opening_line(conv_id: str, conv_data: dict, text: str, someone_
     opening line is found by what only its author knows: my id, my exact
     text, written no earlier than the ticket. Idempotent: a row already here
     (a member requester whose listing succeeded) is left alone.
+    ``_process_single_hub_message`` files the row under the ticket and
+    appends its pointer; nothing here repeats that.
     """
-    if await FlowMessage.get_one({"conversation_id": conv_id}) is not None:
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    if await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv_id}, limit=1), hydrate=False):
         return
     raw = conv_data.get("first_message")
     if not isinstance(raw, dict) or not raw.get("id"):
         me = await _current_cloud_user_id()
         since = str(conv_data.get("created_date") or "")
-        mine = [
-            r
-            for r in rows_of(await hub_get(BuiltinEntityType.FLOW_MESSAGE))
-            if str(r.get("sender_id") or "") == (me or "")
-            and str(r.get("text") or "").strip() == text.strip()
-            and str(r.get("created_date") or "") >= since
-        ]
-        mine.sort(key=lambda r: str(r.get("created_date") or ""))
-        raw = mine[0] if mine else None
+        raw = min(
+            (
+                r
+                for r in (await _fetch_raw_messages_from_hub(since or None) or [])
+                if str(r.get("sender_id") or "") == (me or "")
+                and str(r.get("text") or "").strip() == text.strip()
+                and str(r.get("created_date") or "") >= since
+            ),
+            key=lambda r: str(r.get("created_date") or ""),
+            default=None,
+        )
     if not raw:
         logger.warning("[helpdesk-start-ticket] %s: opening line not found on the hub", conv_id[:8])
         return
-    raw = dict(raw)
-    raw.setdefault("conversation_id", conv_id)
-    fm_id = await _process_single_hub_message(raw)
-    if not fm_id:
-        return
-    from flow_sdk.app.actions.notification_action import _append_message_to_conversation  # noqa: PLC0415
-
-    conv = await Conversation.get_one({"id": conv_id})
-    if conv is None:
-        return
-    pointed = {str(p.get("typeid") or "") for p in _json.loads(conv.message_ids or "[]") if isinstance(p, dict)}
-    if f"flow_message-{fm_id}" not in pointed:
-        await _append_message_to_conversation(conv=conv, fm_id=fm_id, someone_typeid=someone_typeid)
+    await _process_single_hub_message({**raw, "conversation_id": raw.get("conversation_id") or conv_id})
 
 
 @action.post(action_name="helpdesk-start-ticket", types=None)
@@ -1764,17 +1758,12 @@ async def helpdesk_start_ticket() -> ApiResponse:
             await _fetch_conversation_messages(conv_id, someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[helpdesk-start-ticket] message sync failed (non-fatal): %s", e)
-        await _adopt_opening_line(conv_id, conv_data, hub_body["text"], someone_typeid)
+        await _adopt_opening_line(conv_id, conv_data, hub_body["text"])
 
         conv = await Conversation.get_one({"id": conv_id})
         if conv:
             conv.kind = ConversationKind.HELPDESK
             conv.remote = True
-            # The title is ours (the hub ticket has none) and the hub's own
-            # push of the new ticket races the materialization above — when
-            # it lands second it re-creates the row without it. Last write.
-            if not (conv.title or "").strip():
-                conv.title = title
             # Carry the hub owner VERBATIM when present; never mask a genuinely
             # null hub owner with a stale local value. Reflection keeps the
             # save from re-stamping updated_by with the local user.

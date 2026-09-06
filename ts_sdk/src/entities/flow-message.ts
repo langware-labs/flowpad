@@ -287,19 +287,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.source_item_id = entity.source_item_id ?? null;
   }
 
-  /**
-   * Store merge hook (see `DataManager.castAndDeepAssign`). A reference row
-   * (`source_item_id` set) stores no body server-side: reads arrive hydrated,
-   * but write-path UPDATE broadcasts (an `is_read` toggle re-emitting the
-   * stored row) carry `text: ""`. Dropping the empty field before the merge
-   * keeps the body we already hold instead of blanking the open conversation.
-   */
-  onEntityUpdate(source: Partial<IFlowMessage>): void {
-    if (source.source_item_id && !source.text && this.text) {
-      delete source.text;
-    }
-  }
-
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
   async sendDraft(): Promise<{ flow_message_id: string; conversation_id: string; message_count: number }> {
     const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');

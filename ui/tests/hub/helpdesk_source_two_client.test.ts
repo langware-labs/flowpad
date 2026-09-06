@@ -29,6 +29,7 @@ import {
   getInstance,
   instanceAvailable,
   postApi,
+  queryConversationMessages,
   type ResolvedInstance,
 } from './_instances';
 
@@ -71,10 +72,7 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-/** The staff instance's rows for a conversation, read fresh (cache bypassed). */
-const messagesOf = (convId: string): Promise<any[]> =>
-  staff.sdk.FlowMessage.query(new staff.sdk.QueryRequest({ query: { conversation_id: convId }, scope: [] }), true);
-
+const messagesOf = (convId: string): Promise<any[]> => queryConversationMessages(staff, convId);
 describe('help desk as a message source', () => {
   it('a guest ticket lands in the staff inbox as a conversation; the composer reply comes back masked', async () => {
     const ts = Date.now();
