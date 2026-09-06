@@ -1,12 +1,16 @@
-"""RESOLVE classifies by PATH — a caller never names the type.
+"""What a caller may name, and what only the walk can know.
 
 ``resolve_asset`` is reachable from a client route (``?type=`` on the
-fs-records index, ``GET /assets/resolve``). A client-supplied type would be a
-classification the registry never made: ``claims`` cannot refuse it for a
-``.json``, because mcp_server / claude_hook / plugin all declare ``File(".json")``
-and are told apart by where their bespoke WALK found them. And those three key
-their id off the walk ref (``json_path``, scope), so an id resolved from a bare
-path is a DIFFERENT v5 than the walk's — a second row for the same asset.
+fs-records index, ``GET /assets/resolve``). A FRAGMENT type — mcp_server,
+claude_hook, plugin — is refused however it was named: all three declare
+``File(".json")`` so ``claims`` cannot tell them apart from any settings file,
+and all three key their id off the walk ref (``json_path``, scope), so an id
+resolved from a bare path is a DIFFERENT v5 than the walk's — a second row for
+the same asset.
+
+A WHOLE-FILE type may be named, and has to be: the session transcripts share
+``.jsonl`` with each other, so the registry classifies them to nothing from a
+bare path, and the targeted index exists to index exactly those.
 """
 from __future__ import annotations
 
@@ -83,3 +87,34 @@ async def test_walk_and_resolve_agree_for_a_path_keyed_type(tmp_path: Path) -> N
 
     assert resolved.type_name == "markdown"
     assert resolve_id(info, FSRef(doc), write=False) == resolved.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("type_name", ["claude_session", "codex_session", "copilot_session"])
+async def test_a_whole_file_type_may_be_named_by_the_caller(tmp_path: Path, type_name: str) -> None:
+    """The transcripts share ``.jsonl``, so the registry cannot classify one on
+    its own — and the targeted index (``?type=claude_session&path=…``) is the
+    endpoint that re-stamps a session after its transcript changes. Refusing a
+    caller-named type here made that index a silent no-op."""
+    transcript = tmp_path / "projects" / "-Users-me-work" / "11111111-2222-4333-8444-555555555555.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text('{"type":"user","sessionId":"11111111-2222-4333-8444-555555555555"}\n', encoding="utf-8")
+
+    assert SchemaRegistry.type_for(transcript) is None, "precondition: ambiguous by extension alone"
+
+    resolved = await resolve_asset(transcript, write=False, type_name=type_name, known_unowned=True)
+
+    assert resolved.type_name == type_name
+    assert resolved.root == transcript
+
+
+@pytest.mark.asyncio
+async def test_a_named_type_that_does_not_claim_the_path_is_still_refused(tmp_path: Path) -> None:
+    """Naming a type is not a licence to mint: the shape still has to match."""
+    script = tmp_path / "server.py"
+    script.write_text("x = 1\n", encoding="utf-8")
+
+    with pytest.raises(NotAnAsset):
+        await resolve_asset(script, write=False, type_name="claude_session", known_unowned=True)
+
+    assert script.read_text(encoding="utf-8") == "x = 1\n"
