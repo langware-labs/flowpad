@@ -29,21 +29,25 @@ class IngestMode(StrEnum):
     Raising the caps is not an option (see AGENTS.md on timeouts and budgets).
     """
 
-    #: First sync, or any run over the per-run item threshold. Saves without
-    #: notifying and emits no per-item events.
+    #: Any run over the per-run item threshold. Saves without notifying and
+    #: emits no per-item events.
     BACKFILL = "backfill"
     #: Steady state — a handful of items. Per-item events, normal notification.
     INCREMENTAL = "incremental"
 
     @classmethod
-    def for_run(cls, *, first_run: bool, item_count: int) -> "IngestMode":
-        """The mode decision, in one place.
+    def for_run(cls, *, item_count: int) -> "IngestMode":
+        """The mode decision, in one place: SIZE, and only size.
 
-        Both halves matter. A first sync is obviously a backfill, but so is any
-        later run that returns more items than the storm caps admit — emitting
-        40 events into a 30/min cap pays for all of them and delivers 30.
+        A run that returns more items than the storm caps admit is a backfill
+        — emitting 40 events into a 30/min cap pays for all of them and
+        delivers 30. Whether it is the stream's first run is not the question:
+        a first run over the cap is caught by the cap, and a first run under
+        it (a support ticket's opening line, a new feed with two entries) is
+        exactly the kind of arrival that must announce itself now rather than
+        wait for the reconcile sweep to reach it behind a desk's backlog.
         """
-        if first_run or item_count > STORM_CAP_PER_MINUTE:
+        if item_count > STORM_CAP_PER_MINUTE:
             return cls.BACKFILL
         return cls.INCREMENTAL
 

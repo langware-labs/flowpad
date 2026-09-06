@@ -1,15 +1,16 @@
+import { prefetchStartupAssets } from './lazy/startup';
+import { lazyAssets, LazyAsset } from './lazy';
 import axios from 'axios';
 import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
 import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
-import { AgentHook } from './entities/agent-hook';
 import { loadIconPacks } from './icons/registry';
 import type { IconPackSpec } from './icons/types';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
-import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
 import { RuntimeKind } from './utils/runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
@@ -20,6 +21,7 @@ import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
+import type { BootstrapInfo } from './models/BootstrapInfo';
 
 declare global {
   interface Window {
@@ -31,11 +33,16 @@ declare global {
 }
 
 let initPromise: Promise<void> | null = null;
+let asyncInitPromise: Promise<void> | null = null;
+let initialized: BootstrapInfo | undefined;
+let setupWorkspace = false;
 
 export async function initSdk(params?: { agentId?: string; setupWorkspace?: boolean }): Promise<void> {
   if (initPromise) {
     return initPromise;
   }
+  setupWorkspace = params?.setupWorkspace === true;
+  performance.mark?.('sdk:init:start');
   initPromise = (async () => {
     try {
       // Check if API port is properly configured
@@ -62,21 +69,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // dataContext into entities — see utils/hub-runtime.ts).
       setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
-      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl.
-      // Hub identity comes directly from this bootstrap response and must be ready
-      // before the initial route renders. Keep the desktop bootstrap fire-and-forget
-      // so its existing startup timing is unchanged.
-      const cloudBootstrap = cloudManager.bootstrap(bootstrapInfo);
-      if (isHubOnly()) await cloudBootstrap;
-      else void cloudBootstrap;
+      // Known identity and privacy are required for the first render. No probes
+      // or subscriptions run here; asyncSdkInit owns those after UI paint.
+      await cloudManager.seedBootstrap(bootstrapInfo);
+      privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
 
-      // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
-      // and listens for live mode changes over WS.
-      void privacyManager.bootstrap(bootstrapInfo.privacy_mode);
-
-      // Seed the capabilities summary so the Capabilities view paints without a
-      // second round-trip (it can still refresh via getSummary(true)).
-      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
 
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)
@@ -106,30 +103,23 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // is applied, so callers that read localStorage directly don't issue requests against
       // a dead UUID.
       if (bootstrapInfo.default_compute_node) {
+        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
+        // Constructors register in cache. Evict old aliases BEFORE adopting the seed.
+        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
+        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         const computeNode = new ComputeNode(bootstrapInfo.default_compute_node as any);
         computeNode.markAsExpanded();
-        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
         if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
           setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
         }
-        // Evict cached compute_node entities so getById('@local') re-fetches the fresh
-        // UUID. Without this, a prior expanded ComputeNode keyed under the @local alias
-        // survives bootstrap and createProcess posts to a dead UUID → 404.
-        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
-        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 
-      // Register the bootstrap project in cache, but only set it as current
-      // if the user doesn't already have a project selected in localStorage.
-      const userPersistedProject = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentProjectTypeId);
+      // Route loaders own active-project selection; retain the full default in
+      // cache so a URL or remembered/default fallback needs no extra request.
       if (bootstrapInfo.default_project) {
         const project = new Project(bootstrapInfo.default_project);
         project.markAsExpanded();
-        if (!userPersistedProject) {
-          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-          dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
-        }
       }
 
       // Set agent in context from params or default agent from bootstrap
@@ -149,12 +139,6 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-        // Startup does not block rendering on the WebSocket handshake, but the
-        // background promise still needs an owner. In particular, disposing an
-        // isolated SDK realm can intentionally close a still-CONNECTING socket;
-        // observing that rejection prevents it from escaping as an unhandled
-        // promise while the connection manager handles reconnect/reporting.
-        void ConnectionManager.getInstance().connect().catch(() => undefined);
       }
 
       // Set default workspace in context if present (after user is set)
@@ -163,19 +147,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         workspace.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId, workspace.typeId);
       }
-      // Register sniffer hook in cache so flow-data messages find it by UUID
-      if (bootstrapInfo.sniffer_hook) {
-        const snifferHook = new AgentHook(bootstrapInfo.sniffer_hook);
-        snifferHook.markAsExpanded();
-        await snifferManager.attach(snifferHook);
-      }
-      dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
-      // The settings file is the truth about whether hooks actually fire —
-      // another instance may have installed them without an entity here.
-      dataContext.setSnifferInstalled(!!bootstrapInfo.sniffer_installed);
-
       await authManager.init(user);
-      await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
+      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
+      await dataContext.initContext();
       //await acceptInvitation(url); // TODO Handle this
       // Expose introspection hooks for manual_regression specs (and for
       // hands-on debugging). ``window.context`` mirrors the dataContext
@@ -190,6 +164,8 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       } catch {
         // ignore — non-browser env
       }
+      initialized = bootstrapInfo;
+      performance.mark?.('sdk:init:ready');
       window['appReady'] = true;
     } catch (error: any) {
       console.error('initSdk error:', error);
@@ -222,6 +198,46 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
   })();
 
   return initPromise;
+}
+
+/** Optional services. The mounted UI calls this after paint; never await it in a loader. */
+export function asyncSdkInit(): Promise<void> {
+  return asyncInitPromise ??= (async () => {
+    await initSdk();
+    if (!initialized) {
+      asyncInitPromise = null;
+      return;
+    }
+    performance.mark?.('sdk:async:start');
+    const run = async (name: string, job: () => Promise<unknown>) => {
+      performance.mark?.(`sdk:async:${name}:start`);
+      try {
+        await job();
+      } catch (error) {
+        console.warn(`[asyncSdkInit] ${name} unavailable`, error);
+      } finally {
+        performance.mark?.(`sdk:async:${name}:settled`);
+      }
+    };
+    await Promise.all([
+      run('info', () => lazyAssets.load(LazyAsset.RuntimeInfo)),
+      run('cloud-status', () => lazyAssets.load(LazyAsset.CloudStatus)),
+      run('assets', prefetchStartupAssets),
+      run('index-activity', async () => {
+        const { systemTools } = await import('./services/system-tools-service');
+        await systemTools.refreshActivityStatus(false);
+      }),
+      run('live', async () => {
+        await Promise.all([
+          run('cloud-listeners', () => cloudManager.startSubscriptions()),
+          run('privacy-listeners', () => privacyManager.startSubscriptions()),
+        ]);
+        if (dataContext.user) await ConnectionManager.getInstance().connect();
+      }),
+      ...(setupWorkspace ? [run('workspace', () => dataContext.setupWorkspace())] : []),
+    ]);
+    performance.mark?.('sdk:async:settled');
+  })();
 }
 
 // @ts-ignore - Intentionally unused, reserved for future use

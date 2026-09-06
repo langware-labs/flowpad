@@ -5,9 +5,10 @@ description: >-
   Drives the Flowpad app on behalf of the user: reads the current context (project,
   process, workspace) so other actions compose without needing an id; creates and
   indexes records (tasks, skills, agents, workflows); searches local assets via FTS;
-  restarts the calling agentic-process; and sends messages with attachments into a
-  conversation. Use for "the current X" / "this X", "create a task / skill / agent",
-  "find or look up X", "restart this session", or "send X to my conversation with Y".
+  restarts the calling agentic-process; reads messages the user received ("X sent me
+  a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
+  "find or look up X", "restart this session", "what did X send me", or "send X to my
+  conversation with Y".
   NOT for showing or opening something in the UI (flowpad-navigation), building a
   web app (web-app-builder), or a slide deck (decker).
 tags:
@@ -114,7 +115,7 @@ For any action other than `context`, open the matching file in this skill direct
 | records  | [`records.md`](records.md) |
 | search   | [`search.md`](search.md) |
 | process  | [`process.md`](process.md) |
-| message  | [`message.md`](message.md) |
+| message  | [`message.md`](message.md) — read what someone sent (Flowpad conversations, never Slack/Gmail unprompted; needs cloud login) or send |
 
 When composing two actions in this skill (e.g. `search` then `records`), read both
 files end-to-end before you start running commands.

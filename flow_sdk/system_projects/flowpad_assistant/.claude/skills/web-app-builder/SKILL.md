@@ -201,6 +201,29 @@ Read the matching reference before making that kind of change:
 - **Deploying to Vercel + Supabase, Claude Code GitHub Action** →
   [references/deploy.md](references/deploy.md)
 
+## Need a UI component the template does not ship?
+
+`components/ui/` carries `button`, `card`, and native lookalikes for `input`,
+`label` and `checkbox`. For anything else — dialog, table, select, form — run:
+
+```bash
+cd frontend && npx shadcn@latest add dialog table select form
+```
+
+Do NOT hand-write one and do NOT import `@/components/ui/<x>` before it exists:
+the dev server answers 200 while the page throws on the missing module, which is
+how three separate builds shipped a blank pane.
+
+## Before you show it: prove the page BOOTS
+
+An HTTP 200 is not a working app: a dev server answers 200 while the page throws
+on load, and the user gets a blank pane while you report success. Before
+`flow show webapp`, load the page in a real browser and confirm it renders with
+no console errors — the **`web-tester`** skill is the tool for that, so follow it
+rather than hand-rolling a check here. If it cannot run, at minimum fetch the
+page and grep for markup your app actually renders; never settle for the status
+code. Fix what you find and re-check before presenting.
+
 ## IMPORTANT: show the running app to the user
 
 When running inside FlowPad, as soon as the frontend dev server is up, present

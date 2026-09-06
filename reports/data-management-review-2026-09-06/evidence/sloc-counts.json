@@ -1,0 +1,157 @@
+{
+  "backend_search": {
+    "sloc": 369,
+    "sources": [
+      {
+        "file": "flow_sdk/server/routes/search.py",
+        "selector": "whole file",
+        "sloc": 236
+      },
+      {
+        "file": "flow_sdk/builtin/faas/fs_records_actions.py",
+        "selector": "_handle_fs_records_search",
+        "sloc": 133
+      }
+    ]
+  },
+  "scan_projection": {
+    "sloc": 527,
+    "sources": [
+      {
+        "file": "flow_sdk/builtin/faas/scan_indexer.py",
+        "selector": "whole file",
+        "sloc": 326
+      },
+      {
+        "file": "flow_sdk/builtin/faas/fs_records_actions.py",
+        "selector": "_ref_id",
+        "sloc": 10
+      },
+      {
+        "file": "flow_sdk/builtin/faas/fs_records_actions.py",
+        "selector": "_project_fs_records_scan",
+        "sloc": 191
+      }
+    ]
+  },
+  "record_crud_normalization": {
+    "sloc": 460,
+    "sources": [
+      {
+        "file": "flow_sdk/fs_store/record_list.py",
+        "selector": "whole file",
+        "sloc": 53
+      },
+      {
+        "file": "flow_sdk/fs_store/record_query.py",
+        "selector": "whole file",
+        "sloc": 108
+      },
+      {
+        "file": "flow_sdk/core/entity/entity_model.py",
+        "selector": "from_record",
+        "sloc": 105
+      },
+      {
+        "file": "flow_sdk/core/entity/entity_model.py",
+        "selector": "_build_from_fs_record",
+        "sloc": 17
+      },
+      {
+        "file": "flow_sdk/builtin/faas/fs_records_actions.py",
+        "selector": "_fs_records_action",
+        "sloc": 150
+      },
+      {
+        "file": "flow_sdk/builtin/faas/fs_records_actions.py",
+        "selector": "_parse_record_query",
+        "sloc": 27
+      }
+    ]
+  },
+  "schema_declarations": {
+    "sloc": 118,
+    "sources": [
+      {
+        "file": "flow_sdk/schema/type_info/__init__.py",
+        "selector": "TypeMetadata",
+        "sloc": 63
+      },
+      {
+        "file": "flow_sdk/fs_store/schema_registry.py",
+        "selector": "TypeInfo.fields",
+        "sloc": 55
+      }
+    ]
+  },
+  "llm_sidecar": {
+    "sloc": 210,
+    "sources": [
+      {
+        "file": "flow_sdk/llm_index/index_document.py",
+        "selector": "whole file",
+        "sloc": 112
+      },
+      {
+        "file": "flow_sdk/fs_store/operations/markdown_index_render.py",
+        "selector": "whole file",
+        "sloc": 98
+      }
+    ]
+  },
+  "atomic_writer": {
+    "sloc": 61,
+    "sources": [
+      {
+        "file": "flow_sdk/capsules/atomic.py",
+        "selector": "whole file",
+        "sloc": 37
+      },
+      {
+        "file": "flow_sdk/fs_store/indexer/_frontmatter.py",
+        "selector": "_atomic_write_text",
+        "sloc": 24
+      }
+    ]
+  },
+  "frontend_search": {
+    "sloc": 229,
+    "sources": [
+      {
+        "file": "ui/src/hooks/use-record-search.ts",
+        "selector": "whole file",
+        "sloc": 145
+      },
+      {
+        "file": "ui/src/hooks/use-asset-search.ts",
+        "selector": "whole file",
+        "sloc": 84
+      }
+    ]
+  },
+  "sdk_query_lifecycle": {
+    "sloc": 518,
+    "sources": [
+      {
+        "file": "ts_sdk/src/FlowSync/map.ts",
+        "selector": "whole file",
+        "sloc": 162
+      },
+      {
+        "file": "ts_sdk/src/FlowSync/query.ts",
+        "selector": "whole file",
+        "sloc": 356
+      }
+    ]
+  },
+  "_total": {
+    "sloc": 2492,
+    "unique_files": 16
+  },
+  "_snapshot": {
+    "head": "abb4a1274d50b4bc9435cfb6845616cfe594ff8c",
+    "date": "2026-09-06",
+    "unit": "physical nonblank source lines excluding comments and Python docstrings; runtime strings and type declarations included",
+    "scope": "non-overlapping selected source blocks in 16 files; not the entire subsystem"
+  }
+}

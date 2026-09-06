@@ -55,11 +55,11 @@ export interface AppPaths {
  */
 export interface LmInfo {
   /** Available LLM providers (Anthropic, OpenAI, etc.) */
-  llm_providers: string[];
+  llm_providers?: string[];
   /** Installed agent applications (Claude Code, Cursor, etc.) */
-  installed_agents: string[];
+  installed_agents?: string[];
   /** Whether cloud login is available (valid cloud token exists) */
-  cloud_login_available: boolean;
+  cloud_login_available?: boolean;
   /** Cloud (FLOWPAD_HUB_URL) base URL — shown in login button tooltip */
   cloud_url?: string | null;
   /** Hub browser application origin; unlike cloud_url this has no /api/v1 suffix. */
@@ -111,6 +111,8 @@ export interface BootstrapNotice {
 }
 
 export interface BootstrapInfo {
+  /** Optional discovery is served by a detached GET graph/info request. */
+  info_available?: boolean;
   // Complete type registry: TypeInfo (icon/browseable_by/creatable/fields) +
   // nested JSON schema, one entry per registered type. Loaded into the
   // frontend SchemaRegistry (dataManager.typeInfos) at startup.
@@ -180,6 +182,23 @@ export interface BootstrapInfo {
   privacy_mode?: 'local' | 'connected';
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
+}
+
+/** Optional runtime discovery; absent/null fields remain unknown. */
+export interface DeferredInfo {
+  desktop_info?: {
+    llm_providers?: string[] | null;
+    installed_agents?: string[] | null;
+    cloud_login_available?: boolean | null;
+  } | null;
+  scan_info?: ScanInfo | null;
+  harness_state?: HarnessBootstrapState | null;
+  capabilities_summary?: CapabilitiesSummary | null;
+  sandbox_available?: boolean | null;
+  sandbox_compute_node?: ComputeNode | null;
+  sniffer_hook?: AgentHook | null;
+  sniffer_installed?: boolean | null;
+  notice?: BootstrapNotice | null;
 }
 
 /** A document-translation target language. Mirrors the backend descriptor in

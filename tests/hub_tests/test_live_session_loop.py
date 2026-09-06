@@ -41,6 +41,7 @@ from flow_sdk.builtin.flow_message import (
     FlowMessage,
     FlowMessageKind,
     derive_session_fields,
+    session_start_settings,
 )
 from flow_sdk.builtin.flow_message_bundle import unpack_bundle
 from flow_sdk.builtin.remote_worker_session import (
@@ -134,7 +135,15 @@ async def test_live_session_transport_loop(
     bob_id = headers_b.pop("X-Bob-Id")
 
     # ── 1. share the conversation (assignment → join) ────────────────────
-    conv = Conversation(title=f"live-session-loop-{int(time.time())}-{uuid.uuid4().hex[:6]}")
+    from flow_sdk.builtin.project import Project
+
+    # project-mapped: the host gate only runs for conversations with a workdir
+    host_root = tmp_path / "host-project"
+    host_root.mkdir()
+    local_project = Project(name="live-session-host", fs_storage_mount_path=str(host_root))
+    await local_project.save(notify=False)
+    conv = Conversation(title=f"live-session-loop-{int(time.time())}-{uuid.uuid4().hex[:6]}",
+                        project_id=local_project.id)
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
     await conv.save(notify=False)  # persist remote=True for the local send path
@@ -154,7 +163,8 @@ async def test_live_session_transport_loop(
                 "remote_worker_session_id": sid,  # header field — may be dropped (F1)
                 "attachment": [
                     {"attachment_type": AttachmentType.PROMPT.value, "data": "run the tests"},
-                    {"attachment_type": AttachmentType.TYPE_ID.value, "data": carrier},
+                    {"attachment_type": AttachmentType.TYPE_ID.value, "data": carrier,
+                     "prompt_preview": json.dumps({"session_start": {"reply_policy": "review"}})},
                 ],
             },
         )
@@ -179,6 +189,24 @@ async def test_live_session_transport_loop(
     assert inbound.remote_worker_session_id == sid
     att_data = [a.data for a in inbound.attachment or []]
     assert carrier in att_data, f"carrier attachment stripped by hub: {att_data}"
+    assert session_start_settings(inbound).reply_policy == "review"  # the guest's opening proposal survived
+
+    # ── 2b. HOST gate: no standing grant → the session parks at PENDING with
+    #        the proposal adopted; approve flips it and announces ─────────────
+    from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
+
+    inbound.conversation_id = conv.id
+    await inbound.save(notify=False)
+    await process_inbound_prompt(inbound.id, conv.id)
+    parked = await RemoteWorkerSession.get_one({"id": sid})
+    assert parked is not None and parked.status == S.PENDING.value
+    assert parked.starting_message_id == inbound.id
+    assert parked.reply_policy == "review"
+    assert parked.guest_user_id == bob_id
+    assert (await FlowMessage.get_one({"id": inbound.id})).prompt_auto_handled is False
+    assert await parked.approve() is True
+    assert parked.status == S.IDLE.value and parked.approved_via == "manual"
+    await parked.delete()
 
     # ── 3. HOST → GUEST: SESSION_EVENT + snapshot through the blob store ────
     host_session = RemoteWorkerSession(
@@ -189,6 +217,9 @@ async def test_live_session_transport_loop(
         guest_name="Bob",
         status=S.IDLE.value,
         last_activity_at="2026-07-14T10:00:00+00:00",
+        starting_message_id=bob_fm_id,
+        reply_policy="review",
+        approved_via="manual",
         host_process_id="ap-host-local",  # host-local — must NOT travel
         project_id="proj-host-local",
     )
@@ -240,6 +271,9 @@ async def test_live_session_transport_loop(
         snap = json.loads(zf.read(header_name))
     assert snap["id"] == sid
     assert snap["status"] == S.IDLE.value
+    assert snap["starting_message_id"] == bob_fm_id
+    assert snap["reply_policy"] == "review"
+    assert snap["approved_via"] == "manual"
     assert "host_process_id" not in snap
     assert "project_id" not in snap
 
@@ -251,6 +285,8 @@ async def test_live_session_transport_loop(
     assert restored is not None
     assert restored.status == S.IDLE.value
     assert restored.host_name == "Alice"
+    assert restored.starting_message_id == bob_fm_id
+    assert restored.reply_policy == "review"
     assert not restored.host_process_id  # never crosses machines
 
     await restored.delete()

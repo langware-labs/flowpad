@@ -52,7 +52,17 @@ def _thread_lock():
     return loop_lock(_thread_locks)
 
 
-async def resolve_thread(channel: str, key: str, owner, *, title: str):
+async def find_thread(channel: str, key: str, owner):
+    """The thread on this natural key, read-only: the owner's row, else the
+    pre-owner row a legacy install wrote (`resolve_thread` adopts that one;
+    a reader just answers from it)."""
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner)
+    return thread if thread is not None else await MessageThread.find_unowned(channel, key)
+
+
+async def resolve_thread(channel: str, key: str, owner, *, title: str, conversation_id: str = ""):
     """The thread for ``(owner, channel, key)`` — found, adopted, or minted.
 
     Resolve-or-create, double-checked: the derived id used to absorb this race
@@ -65,6 +75,10 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str):
     rather than be forked by a fresh one — the conversation it points at is
     the one the user has been reading. Scoped to ``owner IS NULL``, never
     "any owner", so a second owner on the same key mints its own thread.
+
+    ``conversation_id`` ADOPTS an existing conversation at birth instead of
+    minting one — a channel whose threads already exist locally as hub-mirrored
+    rows (the help desk) hands it over so both writers converge on one row.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
@@ -73,14 +87,12 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str):
     if thread is not None:
         return thread
     async with _thread_lock():
-        thread = await MessageThread.find_existing(channel, key, owner)
+        thread = await find_thread(channel, key, owner)
         if thread is not None:
+            if not thread.owner:
+                thread.owner = owner
+                await thread.save(notify=False)
             return thread
-        legacy = await MessageThread.find_unowned(channel, key)
-        if legacy is not None:
-            legacy.owner = owner
-            await legacy.save(notify=False)
-            return legacy
         # Both ids are ordinary uuid4s, minted here at birth and looked up ever
         # after. `conversation_id` is authoritative from this moment: a merge
         # repoints it, which is the whole reason nothing re-derives it from the
@@ -93,7 +105,7 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str):
             channel=channel,
             thread_key=key,
             owner=owner,
-            conversation_id=mint_uuid(),
+            conversation_id=conversation_id or mint_uuid(),
             title=title,
             name=title,
         )
@@ -226,7 +238,6 @@ async def project_source_item(
     """
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -241,7 +252,11 @@ async def project_source_item(
     key = thread_key_for(item, subject)
     owner = await owner_of(source)
 
-    thread = await resolve_thread(channel, key, owner, title=subject or _thread_title(item) or key)
+    thread = await resolve_thread(
+        channel, key, owner,
+        title=subject or _thread_title(item) or key,
+        conversation_id=str(getattr(item, "conversation_id", "") or ""),
+    )
     thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
@@ -265,12 +280,10 @@ async def project_source_item(
     # reconcile sweep's bulk proof) skips only the unlocked pre-check —
     # inside the lock the row is always re-asked, because any proof taken
     # before the lock is stale by definition.
-    existing_fm = None if known_unplaced else await FlowMessage.get_one(
-        {"source_item_id": str(item.id)}
-    )
+    existing_fm = None if known_unplaced else await _placed_message(item)
     if existing_fm is None:
         async with _thread_lock():
-            existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+            existing_fm = await _placed_message(item)
             if existing_fm is None:
                 # First placement stays UNDER the lock — the birth is the race.
                 return await _place_message(
@@ -284,6 +297,39 @@ async def project_source_item(
         conversation_id, sender_id, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce,
     )
+
+
+def _origins(item, source, channel: str, key: str):
+    """The two halves of a projected message's provenance. `origin` travels
+    with the message (the channel chip, "open in Gmail"); `origin_local` is
+    PRIVATE and carries the row ids that only resolve here."""
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
+
+    origin = CloudOrigin(
+        kind=channel,
+        provider=str(getattr(source, "provider", "") or ""),
+        external_id=item.external_id or "",
+        # The connector's link when it gives one; otherwise the channel's own
+        # address formula, so "Open in Gmail" works for records whose provider
+        # never supplied a URL.
+        url=item.permalink or permalink_for(channel, item.external_id or "", key),
+    )
+    origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
+    return origin, origin_local
+
+
+async def _placed_message(item):
+    """The row this item already landed on, if any. A record carrying a
+    `message_id` hint can only ever be on the row of that id — `_place_message`
+    mints with it, and the hub mirror may have written it first — so that is
+    the one query; anything else is found by its reference column. Either way
+    the caller re-projects onto it; a mirrored row is CLAIMED below
+    (`_place_message` heals the projection-owned fields it lacks)."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    hinted = str(getattr(item, "message_id", "") or "")
+    return await FlowMessage.get_one({"id": hinted} if hinted else {"source_item_id": str(item.id)})
 
 
 async def _place_message(
@@ -314,20 +360,37 @@ async def _place_message(
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
         have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
+        dirty = False
         if want is not None and have != want:
             existing_fm.sent_at = want
+            dirty = True
+        # CLAIM: a row the hub mirror wrote first (or refreshed since) carries
+        # none of the projection-owned fields — no source reference, no origin,
+        # no thread. The projection is the one writer of those, so it stamps
+        # them here; without this the composer never sees a channel to reply
+        # through and the row re-projects on every pass.
+        if str(existing_fm.source_item_id or "") != str(item.id):
+            existing_fm.source_item_id = str(item.id)
+            dirty = True
+        if existing_fm.thread_id != thread_id:
+            existing_fm.thread_id = thread_id
+            dirty = True
+        if existing_fm.origin is None:
+            existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
+            dirty = True
+        if dirty:
             try:
                 await existing_fm.save(notify=False)
             except Exception:  # noqa: BLE001 — healing must not break placement
-                logger.exception("[inbox] sent_at heal failed for %s", fm_id)
+                logger.exception("[inbox] projection heal failed for %s", fm_id)
     else:
-        fm_id = mint_uuid()
+        # A record that names the hub's own message id lands on it, so the
+        # mirror's later copy of the same message updates this row.
+        fm_id = str(getattr(item, "message_id", "") or "") or mint_uuid()
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
-
+    origin, origin_local = _origins(item, source, channel, key)
     payload: dict[str, Any] = {
         "id": fm_id,
         # The HYDRATED body: the in-memory row (and therefore every live emit
@@ -343,22 +406,8 @@ async def _place_message(
         "sender_id": sender_id,
         "sender_name": sender_name,
         "thread_id": thread_id,
-        "origin": CloudOrigin(
-            kind=channel,
-            provider=str(getattr(source, "provider", "") or ""),
-            external_id=item.external_id or "",
-            # The connector's link when it gives one; otherwise the channel's
-            # own address formula, so "Open in Gmail" works for records whose
-            # provider never supplied a URL.
-            url=item.permalink or permalink_for(channel, item.external_id or "", key),
-        ).model_dump(),
-        # The half that stays home. Written alongside, refreshed alongside, but
-        # carried by a PRIVATE field so a shared message does not ship row ids
-        # that only resolve here.
-        "origin_local": CloudOriginLocal(
-            data_source_id=item.data_source_id or "",
-            source_item_id=item.id or "",
-        ).model_dump(),
+        "origin": origin.model_dump(),
+        "origin_local": origin_local.model_dump(),
     }
     if item.reply_to_external_id:
         # Two lookups, no derivation: the parent item by its natural key, then

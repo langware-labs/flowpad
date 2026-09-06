@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -83,6 +84,32 @@ def configure_desktop_hub(hub_base_url):
     default_service_config.flowpad_hub_url = hub_base_url
     yield
     default_service_config.flowpad_hub_url = old
+
+
+@pytest.fixture(autouse=True)
+async def _cancel_background_tasks_before_loop_close():
+    """Cancel every task the test left running BEFORE its event loop closes.
+
+    ``asyncio_mode = auto`` gives each test its own loop and closes it with
+    the test's detached work still pending — the login catch-up, the unread
+    reconcile behind a conversation list, a bundle upload. pytest-asyncio does
+    not cancel those; the loop just stops driving them, and they die whenever
+    the GC finds them ("Task was destroyed but it is pending!"). A task killed
+    that way never runs its ``finally``: one that was inside a writer session
+    keeps its ``BEGIN IMMEDIATE`` connection open, and every later writer in
+    the process waits out ``busy_timeout`` and fails with ``database is
+    locked`` — a cascade that starts in the session fixtures and lands on
+    whichever tests follow. Cancelling here, while the loop is alive, lets each
+    task unwind and release the lock; the tier is then order-independent.
+    """
+    yield
+    loop = asyncio.get_running_loop()
+    me = asyncio.current_task(loop)
+    pending = [t for t in asyncio.all_tasks(loop) if t is not me and not t.done()]
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 @pytest.fixture(autouse=True)

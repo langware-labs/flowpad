@@ -623,7 +623,7 @@ class Capability(Entity):
                 auth_mode="api",
                 message=source.reason or f"Using {source.name}",
                 details={
-                    "provider": source.provider,
+                    "provider": endpoint.provider,
                     "hub_endpoint": source.endpoint_typeid or None,
                     "llm_source": source.model_dump(mode="json"),
                     "device_login": probe.status.value,

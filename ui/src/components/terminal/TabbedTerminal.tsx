@@ -142,7 +142,14 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
         message: t`Terminal may be unresponsive until the connection recovers.`,
       });
     }
-    await process.start({ visible: true, cols, rows });
+    // A user opening a session IS an explicit retry: mounting this terminal is
+    // a deliberate human action, not an automatic loader/watchdog poll. Pass
+    // retry:true so a process left in a start_failure latch (e.g. a prior
+    // worker instant-exit) relaunches instead of surfacing "use Retry to
+    // relaunch" — opening a session should open it. The gate still protects the
+    // genuinely-automatic callers, which pass retry=false (the recovery
+    // watchdog) or never call start at all (the route loader).
+    await process.start({ visible: true, cols, rows, retry: true });
   })().finally(() => {
     if (processStarts.get(process.id) === pending) processStarts.delete(process.id);
   });

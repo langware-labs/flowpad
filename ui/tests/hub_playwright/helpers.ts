@@ -84,10 +84,15 @@ export async function openInstance(browser: Browser, inst: InstanceConfig): Prom
   return { ctx, page };
 }
 
-/** Navigate to home-landing and wait for the "Start conversation" button. */
+/**
+ * Navigate to the STANDARD home landing and wait for the conversations strip.
+ * A fresh instance defaults to vibe mode, whose home has no conversations
+ * strip; the strip's footer "New" button is the only way to start a
+ * conversation from the UI now (it replaced the old "Start conversation" CTA).
+ */
 export async function gotoHome(page: Page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Start conversation' }).waitFor({ state: 'visible' });
+  await page.goto('/?viewMode=standard');
+  await page.getByTestId('new-conversation-footer-button').waitFor({ state: 'visible' });
 }
 
 /**
@@ -96,7 +101,7 @@ export async function gotoHome(page: Page) {
  * parsed from the URL after Create succeeds.
  *
  * The flow exercised is exactly the pure-UI path the human would walk:
- *   1. click "Start conversation"
+ *   1. click the conversations strip's "New" footer button
  *   2. type bob's email into the participants input, press Enter to add
  *   3. type the initial message
  *   4. click "Create"
@@ -108,7 +113,7 @@ export async function startConversationViaUi(
   initialMessage: string,
 ): Promise<string> {
   await gotoHome(alicePage);
-  await alicePage.getByRole('button', { name: 'Start conversation' }).click();
+  await alicePage.getByTestId('new-conversation-footer-button').click();
 
   const dialog = alicePage.getByTestId('new-conversation-dialog');
   await dialog.waitFor({ state: 'visible' });
@@ -178,8 +183,16 @@ export async function waitForReceipt(
   return Date.now();
 }
 
-/** Navigate a page to /dock/conversation/<id> and wait until the composer is mounted. */
+/**
+ * Navigate a page to /dock/conversation/<id> and wait until the composer is
+ * mounted AND the feed has rendered its first bubble. The composer appears
+ * while the dev build's boot burst is still in flight; the feed rendering a
+ * message proves the conversation's messages loaded, which is what every
+ * later step reads. (Network-idle is not a usable signal here: the page keeps
+ * watch requests alive.)
+ */
 export async function gotoConversation(page: Page, convId: string) {
   await page.goto(`/dock/conversation/${convId}`);
   await page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
+  await page.locator('[data-testid^="message-bubble-"]').first().waitFor({ state: 'visible' });
 }

@@ -173,9 +173,12 @@ emit_live_create=True, remote=True)`. The history here matters: the bridge once
 pre-emitted the CREATE for latency and called materialize with `notify=False` —
 but `notify=False` *also* suppressed the Conversation UPDATE, so an already-open
 view never re-rendered. Correctness won: **both** events go through materialize
-(`hub_bridge.py:480-485`). A body-bearing prompt that is still `UPLOADING` is
-deferred — its auto-run waits for the `body_status → READY` UPDATE, kept
-idempotent by a `prompt_auto_handled` marker (`hub_bridge.py:510-527`).
+(`hub_bridge.py:480-485`). A prompt is routed to the session gate
+(`process_inbound_prompt`, see [`./live-sessions.md`](./live-sessions.md)); a
+body-bearing one that is still `UPLOADING` is deferred — the gate runs on the
+`body_status → READY` UPDATE instead, kept idempotent by the
+`prompt_auto_handled` marker (the two trigger points in `hub_bridge.py`
+`_handle_flow_message_op`).
 
 **Eager bundle pull (`hub_bridge.py:540-546`).** Only when `body_status` is
 already `ready` at CREATE time (sender uploaded before our bridge saw the

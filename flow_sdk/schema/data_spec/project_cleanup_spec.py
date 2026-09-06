@@ -32,10 +32,6 @@ STALE_AFTER_DAYS = 7
 #: or "a lot" — and the cap is what keeps the walk affordable over ~1,200 rows.
 FILE_COUNT_CAP = 500
 
-#: Directories skipped by the file walk. They are large, uninteresting, and
-#: their presence says nothing about whether a person has work in the folder.
-WALK_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "__pycache__", ".next", "dist"})
-
 
 class CleanupVerdict(StrEnum):
     """What the classifier concluded about one project.
@@ -59,12 +55,12 @@ class CleanupVerdict(StrEnum):
 
 
 class HarnessUseSpec(DataSpec):
-    """One harness's relationship to a project.
+    """One harness's relationship to a project: does it know it, and how much.
 
-    ``state_paths`` is the whole point: it is exactly what "remove from harness"
-    would delete, resolved by the same readers the project list uses. Showing it
-    means the destructive action can be inspected before it is taken rather than
-    described in prose and hoped about.
+    Deliberately counts only. The PATHS this harness would delete are resolved
+    from a ``HarnessIndex`` at the moment something is about to be removed —
+    carrying them on every row of a listing meant reading three harness stores
+    per project to fill a field nothing displayed.
     """
 
     spec_kind: ClassVar[str] = "project.harness_use"
@@ -73,9 +69,6 @@ class HarnessUseSpec(DataSpec):
     harness: str
     session_count: int = 0
     last_session_at: Optional[str] = None
-    #: Absolute paths this harness keeps for the project. Empty means the
-    #: harness does not know it, which is why "remove from harness" is refused.
-    state_paths: list[str] = []
 
 
 class GitInfoSpec(DataSpec):
@@ -89,10 +82,14 @@ class GitInfoSpec(DataSpec):
     spec_kind: ClassVar[str] = "project.git_info"
 
     has_repo: bool = False
-    #: First configured remote URL, or None when there is none / not yet resolved.
+    #: First configured remote URL, or None when there is none.
     remote: Optional[str] = None
-    #: True when the working tree has uncommitted changes. None means not resolved.
+    #: True when the working tree has uncommitted changes.
     dirty: Optional[bool] = None
+    #: Whether ``remote``/``dirty`` were actually looked up. The bulk pass leaves
+    #: this False and fills only ``has_repo``; without it a reader cannot tell
+    #: "no remote" from "not asked yet", and every repo renders as clean.
+    resolved: bool = False
 
 
 class ProjectCleanupSpec(DataSpec):
@@ -127,26 +124,6 @@ class ProjectCleanupSpec(DataSpec):
     harnesses: list[HarnessUseSpec] = []
     git: Optional[GitInfoSpec] = None
 
-    @property
-    def session_count(self) -> int:
-        """Sessions across every harness — the number the verdict turns on."""
-        return sum(use.session_count for use in self.harnesses)
-
-    @property
-    def has_harness_state(self) -> bool:
-        """Whether "remove from harness" would delete anything.
-
-        False for every empty workspace folder: a directory a harness ran in but
-        never opened a session in leaves no state behind, so the action is
-        refused rather than silently doing nothing.
-        """
-        return any(use.state_paths for use in self.harnesses)
-
-    @property
-    def removable(self) -> bool:
-        """Whether this is a cleanup candidate at all."""
-        return self.verdict in (CleanupVerdict.EMPTY, CleanupVerdict.ORPHANED)
-
 
 class CleanupSummarySpec(DataSpec):
     """The counts the footer warning is drawn from.
@@ -162,21 +139,15 @@ class CleanupSummarySpec(DataSpec):
     orphaned_count: int = 0
     #: Empty by session signals but still holding files, or too recent to sweep.
     stale_count: int = 0
-    #: Bytes held by the ``empty`` set — what cleaning up would return.
-    empty_size_bytes: int = 0
     #: Warn above this many. Carried in the payload so the backend stays the
-    #: single writer of the policy and the frontend has no threshold of its own.
+    #: single writer of the policy and the frontend keeps no threshold of its
+    #: own to drift from it.
     threshold: int = 10
-
-    @property
-    def should_warn(self) -> bool:
-        return self.empty_count > self.threshold
 
 
 __all__ = [
     "FILE_COUNT_CAP",
     "STALE_AFTER_DAYS",
-    "WALK_SKIP_DIRS",
     "CleanupSummarySpec",
     "CleanupVerdict",
     "GitInfoSpec",
