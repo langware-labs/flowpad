@@ -29,25 +29,17 @@ def _row(text: str, created: str, sender: str = ME) -> dict:
 @pytest.fixture
 def rig(monkeypatch):
     processed: list[dict] = []
-    appended: list[str] = []
 
     async def fake_process(raw: dict):
         processed.append(raw)
         return raw["id"]
 
-    async def fake_append(*, conv, fm_id, someone_typeid):
-        appended.append(fm_id)
-        return conv
-
     async def me():
         return ME
 
-    from flow_sdk.app.actions import notification_action
-
     monkeypatch.setattr(fma, "_process_single_hub_message", fake_process)
     monkeypatch.setattr(fma, "_current_cloud_user_id", me)
-    monkeypatch.setattr(notification_action, "_append_message_to_conversation", fake_append)
-    return processed, appended
+    return processed
 
 
 async def _conversation() -> Conversation:
@@ -57,7 +49,7 @@ async def _conversation() -> Conversation:
 
 
 async def test_the_opening_line_is_found_by_author_text_and_time(rig, monkeypatch):
-    processed, appended = rig
+    processed = rig
     conv = await _conversation()
     older = _row(TEXT, "2026-09-06T09:00:00Z")  # an identical ticket I opened earlier
     theirs = _row(TEXT, "2026-09-06T10:00:01Z", sender="someone-else")
@@ -67,35 +59,36 @@ async def test_the_opening_line_is_found_by_author_text_and_time(rig, monkeypatc
     async def fake_hub_get(*_a, **_k):
         return [theirs, other_text, mine, older]
 
-    monkeypatch.setattr(fma, "hub_get", fake_hub_get)
-    await fma._adopt_opening_line(conv.id, {"created_date": "2026-09-06T10:00:00Z"}, TEXT, "user-local")
+    monkeypatch.setattr(fma, "_fetch_raw_messages_from_hub", fake_hub_get)
+    await fma._adopt_opening_line(conv.id, {"created_date": "2026-09-06T10:00:00Z"}, TEXT)
 
     assert [p["id"] for p in processed] == [mine["id"]]
-    assert processed[0]["conversation_id"] == conv.id, "the row is filed under the ticket"
-    assert appended == [mine["id"]], "and pointed at from the conversation"
+    assert processed[0]["conversation_id"] == conv.id, (
+        "filed under the ticket — _process_single_hub_message appends the pointer from there"
+    )
 
 
 async def test_the_hubs_own_answer_wins_when_it_carries_the_message(rig, monkeypatch):
-    processed, appended = rig
+    processed = rig
     conv = await _conversation()
     first = _row(TEXT, "2026-09-06T10:00:01Z")
 
     async def never(*_a, **_k):
         raise AssertionError("the class list is not consulted when the hub answered")
 
-    monkeypatch.setattr(fma, "hub_get", never)
-    await fma._adopt_opening_line(conv.id, {"first_message": first}, TEXT, "user-local")
-    assert [p["id"] for p in processed] == [first["id"]] and appended == [first["id"]]
+    monkeypatch.setattr(fma, "_fetch_raw_messages_from_hub", never)
+    await fma._adopt_opening_line(conv.id, {"first_message": first}, TEXT)
+    assert [p["id"] for p in processed] == [first["id"]]
 
 
 async def test_a_ticket_that_already_has_rows_is_left_alone(rig, monkeypatch):
-    processed, appended = rig
+    processed = rig
     conv = await _conversation()
     await FlowMessage(id=str(uuid.uuid4()), conversation_id=conv.id, text="already here").save(notify=False)
 
     async def never(*_a, **_k):
         raise AssertionError("nothing to look up")
 
-    monkeypatch.setattr(fma, "hub_get", never)
-    await fma._adopt_opening_line(conv.id, {}, TEXT, "user-local")
-    assert processed == [] and appended == []
+    monkeypatch.setattr(fma, "_fetch_raw_messages_from_hub", never)
+    await fma._adopt_opening_line(conv.id, {}, TEXT)
+    assert processed == []

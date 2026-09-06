@@ -106,6 +106,23 @@ export async function hubConversationWatchers(token: string, convId: string): Pr
   }
 }
 
+/** The brand the hub masks every staff reply to. Must equal the hub's
+ *  HELPDESK_DISPLAY_NAME (flowpad/config.py). */
+export const HELPDESK_DISPLAY_NAME = 'Flowpad Support';
+
+/** The deployment's own desk, from `/health/version`. Null when this hub
+ *  advertises none — the caller skips rather than guessing an id. */
+export async function hubDefaultDeskId(): Promise<string | null> {
+  try {
+    const r = await fetch(`${HUB_URL}/api/v1/health/version`);
+    if (!r.ok) return null;
+    const body = (await r.json()) as { data?: { helpdesk_project_id?: string } };
+    return body.data?.helpdesk_project_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** A help desk owned by `token`'s user for one test run: a fresh project with
  *  `enable_helpdesk` (what stamps the guest role). `dispose` deletes it and
  *  throws on a leak, so a stranded desk is loud. */

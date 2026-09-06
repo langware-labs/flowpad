@@ -435,37 +435,37 @@ class DBEntity(DBBaseRecord):
         if not self.dirty:
             return self
 
-        if not self.exist_in_db:
-            await self._db.save(self, owner)
-        else:
-            await self._db.update(self, owner)
+        try:
+            if not self.exist_in_db:
+                await self._db.save(self, owner)
+            else:
+                await self._db.update(self, owner)
+        finally:
+            self._after_persist()
 
         # Must notify after the entity is saved to the DB and the children are saved
         if notify:
-            await self.notify_saved(owner, created=notify_created)
+            if notify_created:
+                op = OperationType.CREATE
+            else:
+                op = OperationType.UPDATE
+            # from_entity = the save's owner — rides the notification so the
+            # unified-bus adapter can stamp containment scope (phase 3).
+            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
+            await self.add_entity_op_notification(self_op)
+            self._notify_observers(self_op)
         self._dirty = False
 
         return self
 
-    async def notify_saved(self, owner: Union[DBEntity, TypeId, str, None] = None, *, created: bool) -> None:
-        """Announce a completed save — the CREATE/UPDATE op every watcher gets.
+    def _after_persist(self) -> None:
+        """The seam between the write and its announcement.
 
-        Split out of ``save`` so a subclass that must persist a DIFFERENT shape
-        from the one it holds (``FlowMessage``: a reference row stores no body)
-        can save with ``notify=False`` and announce afterwards, once the
-        in-memory row is the read shape again. The op is serialized on the
-        spot, so what the row looks like at this call is what the socket sees.
+        A subclass that persists a DIFFERENT shape from the one it holds
+        (``FlowMessage``: a reference row stores no body) puts the read shape
+        back here. The announcement below serializes the row on the spot, so
+        what the row looks like after this hook is what every socket sees.
         """
-        if isinstance(owner, DBEntity):
-            owner = owner.typeid
-        elif isinstance(owner, str) and owner:
-            owner = TypeId(owner)
-        op = OperationType.CREATE if created else OperationType.UPDATE
-        # from_entity = the save's owner — rides the notification so the
-        # unified-bus adapter can stamp containment scope (phase 3).
-        self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
-        await self.add_entity_op_notification(self_op)
-        self._notify_observers(self_op)
 
     async def notify_updated(self):
         change = DataOpMessage(data=self, op=OperationType.UPDATE, to_entity=self.typeid)

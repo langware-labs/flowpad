@@ -597,15 +597,6 @@ def create_record(
             help="Path to a JSON file, or '-' for stdin. One object, or an array to batch.",
         ),
     ] = None,
-    first_run: Annotated[
-        bool,
-        typer.Option(
-            "--first-run",
-            help="Declare this a backfill: saves quietly and emits one summary "
-            "event instead of one per item (the storm caps make that the "
-            "only safe shape for a large first sync).",
-        ),
-    ] = False,
 ) -> None:
     type_name = (type_name or "").strip()
     route = _INGESTED_TYPES.get(type_name)
@@ -637,7 +628,7 @@ def create_record(
     def _on_error(status_code: int, body: dict) -> None:
         _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", body.get("message") or f"Create failed (HTTP {status_code})")
 
-    data = _post_graph_json(url, {"items": items, "first_run": first_run}, on_error=_on_error)
+    data = _post_graph_json(url, {"items": items}, on_error=_on_error)
     _ok({"type": type_name, **data})
 
 

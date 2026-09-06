@@ -531,6 +531,8 @@ class FlowMessage(Entity):
     # hub refresh. A parked prompt (session PENDING) stays False until approve
     # re-drives it.
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    #: The body held across a reference row's write — see ``save``.
+    _hydrated_text: Optional[str] = None
     _api_visible: ClassVar[bool] = True
 
     @classmethod
@@ -906,25 +908,29 @@ class FlowMessage(Entity):
         chokepoint, is what makes hydration safe everywhere else.
 
         Blank-around, not blank-forever: the in-memory instance gets its text
-        back after the write, so a caller that goes on to render or emit the
-        row (materialize's live CREATE, a child-edge announce) is holding the
-        read shape, not the stored one. The save's own announcement is made
-        AFTER the restore, for the same reason: the socket frame is serialized
-        the moment it is emitted, and a frame carrying the stored shape blanked
-        every requester line in an open ticket until a reload re-hydrated it.
+        back the moment the write is done — ``_after_persist``, the base save's
+        seam between persisting and announcing. That ORDER is the point: a
+        socket frame is serialized as it is emitted, so a save that announced
+        while the field was blank shipped the stored shape to every open
+        viewer, and an open ticket lost its lines until a reload re-hydrated
+        them. A caller that goes on to render or emit the row (materialize's
+        live CREATE, a child-edge announce) holds the read shape too.
         """
         if not self.source_item_id:
             return await super().save(owner, notify=notify)
-        created, announce = not self.exist_in_db, notify and self.dirty
-        hydrated = self.text
+        self._hydrated_text = self.text
         self.text = ""
         try:
-            saved = await super().save(owner, notify=False)
+            return await super().save(owner, notify=notify)
         finally:
-            self.text = hydrated
-        if announce:
-            await self.notify_saved(owner, created=created)
-        return saved
+            # Belt: the base returns early — without persisting, so without
+            # reaching the seam — when the row is not dirty.
+            self._after_persist()
+
+    def _after_persist(self) -> None:
+        held, self._hydrated_text = self._hydrated_text, None
+        if held is not None:
+            self.text = held
 
     # ── read-time hydration — the other half of the reference model ────────
     #

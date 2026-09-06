@@ -115,7 +115,7 @@ with the ids to fan out on. Subscribing to `item.*` is opting into the per-item
 lane and its 30/min ceiling.
 
 **The write route.** `POST /api/v1/ingest/items` (`server/routes/ingest.py`,
-body `{"items": [<SourceItemSpec>…], "first_run"?: bool}`, at most 500 items)
+body `{"items": [<SourceItemSpec>…]}`, at most 500 items)
 exposes the same `ingest_items` chokepoint to anything that is not the
 poller — `flow record create source_item`, an agent worker, a test — so a
 record written from outside converges with what the poller writes instead of

@@ -71,8 +71,7 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   // the conversation look unread to the sender himself (there is nothing for
   // him to read). Invitation rows always carry an actionable CTA, so they
   // count as unread.
-  const senderId = latestMessage?.sender_id ?? null;
-  const isSelfSent = !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
+  const isSelfSent = isViewer(latestMessage?.sender_id ?? null, viewer);
   const isUnread = isInvitation ? true : latestMessage ? !latestMessage.is_read && !isSelfSent : false;
 
   return { kind, isInvitation, isArchived, isUnread };
@@ -106,6 +105,14 @@ export interface ChipSpec {
 
 const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+
+/** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
+ *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
+ *  and the same person owns both — a message of mine that came back through the
+ *  hub must not read as somebody else's. */
+export function isViewer(senderId: string | null | undefined, viewer: ConversationFacetInput['viewer']): boolean {
+  return !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
+}
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];

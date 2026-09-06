@@ -875,7 +875,11 @@ class HubWsBridge:
             "remote_project_name",
             "shared_context_entities",
         ):
-            if field in clean:
+            # A hub ``None`` is "the hub has nothing", not "clear it": a guest
+            # ticket carries no title on the hub while the local row titles it
+            # from the opening line. Same rule as the HTTP twin
+            # (``_upsert_hub_conversation_metadata``'s update path).
+            if field in clean and clean[field] is not None:
                 setattr(existing, field, clean[field])
         existing.remote = True
         # Adopt the hub's owner when it carries one — keeps the local mirror
