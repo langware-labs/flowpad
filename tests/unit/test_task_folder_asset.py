@@ -53,8 +53,8 @@ def test_indexer_round_trips_task_md(tmp_path):
 
     ref = FSRef(folder)
     # New identity is stored beside the folder, not in task.md frontmatter.
-    assert SchemaRegistry.get("task").mint_entity_id(
-        ref, proposed_id=str(t.id)
+    assert SchemaRegistry.get("task").stamp_id(
+        ref, str(t.id)
     ) == str(t.id)
 
     rec = SchemaRegistry.get("task").from_disk_fn(ref, str(t.id))[0]

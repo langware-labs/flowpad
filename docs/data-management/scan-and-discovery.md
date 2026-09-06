@@ -115,7 +115,7 @@ Notable structural facts:
 - **There is no project-cwd walker** (the unregistered `real_project_cwd_fn` was deleted). Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
 - **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
 - **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias that no walker emits, so it is not in `indexable_types()`.
-- **Repo assets have exactly one walker.** `repo_assets_fn` (`functions/repo_assets.py`) recurses the `agentic-assets/<type>/<name>` hierarchy (children nest in an asset's own `agentic-assets/` subfolder) and is the ONLY discovery path for every flowpad-native asset — `task`, `spec`, `deck`, `deck_template`, `dataset`, `data_source_spec`, `whiteboard`, `spreadsheet`, `journey`, `graph_workflow`, `agent`, `agent_trace`, `prompt`, `plan`, `mcp`, `micro_app`, `helpdesk`, the two report types, and installed (received) `claude_session` / `codex_session` / `copilot_session` transcripts. A new repo type enrolls by declaring `asset_class="repo"` on its `TypeMetadata`; nothing in `build_default_indexer()` changes. Its output set is `SchemaRegistry.get_repo_types()`, so typed scans stay prunable.
+- **Repo assets have exactly one walker.** `repo_assets_fn` (`functions/repo_assets.py`) recurses the `agentic-assets/<type>/<name>` hierarchy (children nest in an asset's own `agentic-assets/` subfolder) and is the ONLY discovery path for every flowpad-native asset — `task`, `spec`, `deck`, `deck_template`, `dataset`, `data_source_spec`, `whiteboard`, `spreadsheet`, `journey`, `graph_workflow`, `agent`, `agent_trace`, `prompt`, `plan`, `mcp`, `micro_app`, `helpdesk`, the two report types, and installed (received) `claude_session` / `codex_session` / `copilot_session` transcripts. A new repo type enrolls by declaring `asset_class="repo"` on its `TypeInfo`; nothing in `build_default_indexer()` changes. Its output set is `SchemaRegistry.get_repo_types()`, so typed scans stay prunable.
 
 ### Type-gating the dispatch
 
@@ -150,16 +150,16 @@ The mode is resolved by `selected_scan_mode()` (`builtin.py`): env `FLOWPAD_INDE
 
 ## Per-type Dispatch Slots: parsing, identity, and freshness
 
-**Source:** `flow_sdk/schema/type_info/__init__.py` (`TypeMetadata`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
+**Source:** `flow_sdk/schema/type_info/<type>_info.py` (`TypeInfo` declarations; `flow_sdk/schema/type_info/__init__.py` holds `register_all()`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
 
-Per-type metadata is authored as a `TypeMetadata` instance in `flow_sdk/schema/type_info/<type>_info.py`. `register_all()` imports every sibling module and registers each into `SchemaRegistry`. (Per `project_typeinfo_registration_chokepoint.md`, `build_default_indexer()` is the chokepoint that guarantees the registry is fully populated — it imports `indexer.registrations`, which calls `register_all()`.)
+Per-type metadata is authored as a `TypeInfo` instance in `flow_sdk/schema/type_info/<type>_info.py`. `register_all()` imports every sibling module and registers each into `SchemaRegistry`. (Per `project_typeinfo_registration_chokepoint.md`, `build_default_indexer()` is the chokepoint that guarantees the registry is fully populated — it imports `indexer.registrations`, which calls `register_all()`.)
 
 The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
 | `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. Defaults to the generic `spec_extractor(type_name)` for any type with an `asset_spec` that is not `db_only` (`SchemaRegistry.register` fills it post-merge). |
-| `capsules` / `identity_carrier` | `tuple[CapsuleSpec, ...]`, carrier | Declare named capsules and WHERE the id lives (frontmatter / folder json / native json / derived); legacy carriers are read and converted. |
+| `identity_carrier` | `Frontmatter` / `Sidecar` / `JsonRoot` / `Derived` | WHERE the id lives (markdown frontmatter `id:` / `<folder>/.flow/capsules/identity.json` / a report's JSON root / derived from the source). The carrier only locates, reads and stamps. |
 | `identity_key_fn` / `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `(FSRef) -> str`, `UUID` | Optional deterministic v5 identity. `identity_key_fn` is the preferred form — the key text becomes `f"{type}:{identity_key_fn(ref)}"`; `id_stable_key_fn` is the escape hatch for a different key shape and wins when both are set (`TypeInfo.stable_key_for`). `id_namespace` defaults to `NAMESPACE_URL`. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
@@ -168,18 +168,17 @@ The dispatch callables:
 Example (`flow_sdk/schema/type_info/skill_type_info.py`):
 
 ```python
-SKILL = TypeMetadata(
-    type=EntityType.SKILL,
-    icon="FileBadge", displayName="Skills",
+SKILL = TypeInfo(
+    type_name=EntityType.SKILL,
+    icon="FileBadge", display_name="Skills",
     browseable_by=ViewMode.STANDARD, creatable=True,
     indexed_by_default=True, api_visible=True,
     cloud_file_transport="git",
     index_fields=["description"],
     asset_class="shared", family="skills",          # placement axis; main_subdir is DERIVED
-    main_layout="folder", main_file="SKILL.md", hub_main_file="SKILL.md",
+    shape=Folder(main="SKILL.md"), editor="skill", hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
-    capsules=(IDENTITY_CAPSULE,),
-    identity_carrier=folder_md_identity(skill_id_from_folder),
+    identity_carrier=Frontmatter(),
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,                           # from_disk_fn defaults to spec_extractor
     derive_fields_fn=derive_skill,
@@ -191,7 +190,7 @@ SKILL = TypeMetadata(
 
 For each visited ref of a type that has a `from_disk_fn`:
 
-1. **Resolve id** via `TypeInfo.mint_entity_id(ref, owner_id=..., live_ids=...)` — ONE call, never a read-then-mint pair (`owner_id` comes from the `PathOwnerIndex` built off the same per-type preload that feeds skip-fresh; `live_ids` is that type's preloaded DB id set). The order is carrier → the row that already owns this path (`owner_id`, supplied from the walk's preload) → derive. A read-then-mint pair forks the entity whenever a full-content rewrite has wiped the carrier, so it is banned by an AST lint. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
+1. **Resolve id** via `reconcile(info, layout, owner_row, live_ids, write=...)` (`flow_sdk/fs_store/indexer/reconcile.py`) — ONE call, never a read-then-mint pair (`owner_row` comes from the `PathOwnerIndex` built off the same per-type preload that feeds skip-fresh; `live_ids` is that type's preloaded DB id set; `write` is `False` for a read-only root or a git-tracked source). The order is carrier → the row that already owns this path → `TypeInfo.mint`. A read-then-mint pair forks the entity whenever a full-content rewrite has wiped the carrier, so it is banned by an AST lint. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and stamped; deterministic/provider types mint configured v5 identities. A foreign id (invalid v4/v5, or a retired form left for `migration_2026_09_identity_live_forms.py`) is not adoptable: it is logged as a `foreign_id` scan issue and the asset indexes under a stable v5 per the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
 2. **Resolve live occurrences** across the complete candidate set before parsing. `resolve_asset_collisions()` groups canonical filesystem paths by `type+id` and chooses one primary deterministically: earliest Git introduction commit, then trusted filesystem birth time (`st_birthtime`, never `ctime`), then persisted `first_seen_at`, then canonical path. Git is probed only for groups with multiple live paths and failures fall through to the next rank. Every losing path is warned and skipped; no source bytes, capsules, or ids are rewritten.
 3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
 4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
@@ -316,10 +315,10 @@ recent = q.apply(all_sessions)
 
 **Source:** `flow_sdk/fs_store/schema_registry.py`
 
-`SchemaRegistry` is the single source of truth for types: every type name registers there (via `TypeMetadata.register()` / `Entity.__init_subclass__`). It does **not** orchestrate the walk anymore — there is no `SchemaRegistry.discover()` / `incremental()` / `rebuild_index()`. The walk is `FSIndexer`. The registry's surviving roles:
+`SchemaRegistry` is the single source of truth for types: every type name registers there (via `register_all()` / `Entity.__init_subclass__`). It does **not** orchestrate the walk anymore — there is no `SchemaRegistry.discover()` / `incremental()` / `rebuild_index()`. The walk is `FSIndexer`. The registry's surviving roles:
 
 - **Type metadata lookup:** `get(type)`, `get_icon`, `is_browseable`, `is_creatable`, `is_api_visible`, `is_indexed_by_default`, `get_entity_cls`, `get_subtypes`, etc.
-- **Default index types:** `get_default_index_types()` returns the types registered with `indexed_by_default=True` (accumulated in `_default_index_types` as `TypeMetadata` instances register), falling back to the hardcoded `_BUILTIN_DEFAULT_TYPES` only when that list is empty:
+- **Default index types:** `get_default_index_types()` returns the types registered with `indexed_by_default=True` (accumulated in `_default_index_types` as declared `TypeInfo`s register), falling back to the hardcoded `_BUILTIN_DEFAULT_TYPES` only when that list is empty:
 
   ```python
   _BUILTIN_DEFAULT_TYPES = [
@@ -329,7 +328,7 @@ recent = q.apply(all_sessions)
   ```
 
   This list is only the bootstrap fallback; `tests/unit/test_indexable_types.py` asserts every default-indexed type is in the derived `indexable_types()` set. Runtime-only types (`BOOKMARK`, `ANNOTATION`, `AGENTIC_PROCESS`, `RECORD_ERROR`, `CLAUDE_ERROR`) are intentionally excluded.
-- **Scan/index logging:** `append_scan(...)`, `append_index(...)`, `get_last_scan_at(type)`, `get_last_index_at(type)`.
+- **Scan/index logging** (`flow_sdk/fs_store/indexer/index_log.py`, not the registry): `append_scan(...)`, `append_index(...)`, `get_last_scan_at(type)`, `get_last_index_at(type)`.
 - **Index status:** `await get_index_status(...)` → `IndexStatus` (`never_indexed`, `last_indexed_at`, `stale`, `per_type` with entity counts).
 - **Index clearing:** `await clear_index(types)` deletes FTS entries + entities for the given types (or all).
 
@@ -384,7 +383,10 @@ automatic run can never delete records.
 | `GET` | `/fs-records/index-status[?user=&projects=]` | `_handle_fs_records_index_status` | Read-only status (no walk) |
 | `GET` | `/fs-records/asset-stats[?user=&projects=]` | `_handle_fs_records_asset_stats` | Live per-type asset counts for a scope (`AssetStats`; counts only, no freshness) |
 | `DELETE` | `/fs-records/index` | `_handle_fs_records_index_clear` | Clear the index |
-| `POST` | `/fs-records/{type}/discover?path=<P>` | `_handle_fs_records_discover_by_path` | Single-path index for one type |
+
+### Resolve — one path, one asset
+
+`GET /api/v1/assets/resolve?path=<abs path>` (`flow_sdk/server/routes/assets.py`) is THE interactive path → asset resolver; the client sends a path and nothing else. `resolve_asset(path, *, write, type_name=None, owner_id=None, strict=False)` in `flow_sdk/fs_store/resolve.py` classifies the path (`SchemaRegistry.type_for`, or the type the caller already knows), locates root/body/ref (`TypeInfo.layout_of(path, verify=True)`), asks which row owns the ref (`Entity.get_by_asset_ref`) and settles the id through the indexer's `reconcile`; a path no type claims raises `NotAnAsset` (HTTP 404). `index_one(resolved, notify=, scope=, project_id=)` parses that one asset and syncs its row; `ensure_entity` returns the row, indexing on a miss, so the envelope `{type, id, root, body, editor, entity}` always names a row that exists. A miss NEVER triggers a full index run. `reindex_paths`, `reflect` and `flow show`/`resolve_display_target(discover=True)` go through the same two calls.
 
 Both scan and index emit `progress_report` FlowData events via the shared indexer's `on_progress` callback. Scope is taken from the canonical wire format `?user=true&projects=A,B`; absent params resolve to an explicit "everything known" filter via `get_all_scope_filter()`. The legacy `?project_id=<id>` shim is ignored (logged as a warning).
 
@@ -400,7 +402,7 @@ Both scan and index emit `progress_report` FlowData events via the shared indexe
 
 ### Bootstrap `scan_info`
 
-`GET /api/v1/graph/bootstrap` includes a `scan_info` field from `get_scan_info()` (`flow_sdk/system_tools.py`), which reads `SchemaRegistry.get_index_status()` and sums `per_type.entity_count`:
+`GET /api/v1/graph/bootstrap` includes a `scan_info` field from `get_scan_info()` (`flow_sdk/system_tools.py`), which reads `index_log.get_index_status()` and sums `per_type.entity_count`:
 
 ```json
 {
@@ -425,7 +427,7 @@ Both scan and index emit `progress_report` FlowData events via the shared indexe
 
 **Source:** `flow_sdk/fs_store/operations/claude_error.py`, `flow_sdk/fs_store/operations/claude_debug_log.py`
 
-Error records (`record_error`, `claude_error`) are registered via `flow_sdk/fs_store/indexer/registrations.py` (operations modules) but have **no FSIndexer walker** — they are runtime-only and excluded from `_BUILTIN_DEFAULT_TYPES` / orphan detection. `claude_error` records carry fingerprint-based dedup (SHA256 of normalized error text) and triage statuses (`open`, `ignored`, `ignored_until`, `task_created`), parsing `~/.claude/debug/*.txt`. Their cleanup is wired into `SchemaRegistry.clear_index()`.
+Error records (`record_error`, `claude_error`) are registered via `flow_sdk/fs_store/indexer/registrations.py` (operations modules) but have **no FSIndexer walker** — they are runtime-only and excluded from `_BUILTIN_DEFAULT_TYPES` / orphan detection. `claude_error` records carry fingerprint-based dedup (SHA256 of normalized error text) and triage statuses (`open`, `ignored`, `ignored_until`, `task_created`), parsing `~/.claude/debug/*.txt`. Their cleanup is wired into `index_log.clear_index()`.
 
 ---
 
@@ -438,7 +440,7 @@ Error records (`record_error`, `claude_error`) are registered via `flow_sdk/fs_s
 | `get_claude_session(uid, project=...)` | O(L) | One JSONL read, L = lines |
 | `get_claude_session(uid)` (no project) | O(P) until match | P = project dirs scanned |
 | `RecordQuery.apply()` | O(N log N) | Dominated by the sort |
-| `SchemaRegistry.get_index_status()` | O(T) | Reads per-type log timestamps; T = types |
+| `index_log.get_index_status()` | O(T) | Reads per-type log timestamps; T = types |
 
 ---
 

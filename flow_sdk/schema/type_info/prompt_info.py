@@ -1,18 +1,19 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
 from flow_sdk.builtin.prompt import PromptSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    IDENTITY_CAPSULE,
     frontmatter_identity,
     resolved_path_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-PROMPT = TypeMetadata(
-    type=EntityType.PROMPT,
+PROMPT = TypeInfo(
+    type_name=EntityType.PROMPT,
+    shape=File(ext=".md"),
+    editor="markdown",
     fts_content=("text",),
-    capsules=(IDENTITY_CAPSULE,),
     identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,

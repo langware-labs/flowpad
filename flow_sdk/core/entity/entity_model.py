@@ -53,6 +53,7 @@ from pydantic import (
 
 import flow_sdk.service_log as service_log
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
+from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.config import StorageProvider
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
@@ -62,7 +63,6 @@ from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, Qu
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
-from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -808,7 +808,7 @@ class Entity(DBEntity):
         exact-match contract existing callers rely on): when the exact match
         misses, a file INSIDE a folder-backed asset resolves to its owning
         entity — the path's ancestor directories are matched (one
-        ``asset_ref IN (...)`` query per ``folder_backed`` type) and the
+        ``asset_ref IN (...)`` query per folder-shaped type) and the
         deepest hit wins, e.g. any file under ``.claude/skills/foo/`` resolves
         to the ``foo`` Skill. Exact match always wins over containment.
         Returns ``None`` when no entity owns the path.
@@ -904,16 +904,17 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.fs_store.path_utils import ancestors_of
+        from flow_sdk.schema.layout import Folder  # noqa: PLC0415
 
         ancestors = ancestors_of(path_str)
         if not ancestors:
             return None
 
-        def _folder_backed(ecls: type) -> bool:
+        def _folder_shaped(ecls: type) -> bool:
             info = SchemaRegistry.get(ecls.get_type())
-            return info is not None and info.folder_backed
+            return info is not None and isinstance(info.shape, Folder)
 
-        folder_types = [ecls for ecls in candidates if _folder_backed(ecls)]
+        folder_types = [ecls for ecls in candidates if _folder_shaped(ecls)]
 
         async def _hits(ecls: type) -> "list[Entity]":
             try:
@@ -933,7 +934,7 @@ class Entity(DBEntity):
     def allocate_id(cls, data: dict) -> str:
         """The id for a ROW-ONLY entity — one with no file behind it.
 
-        The row-side counterpart of ``TypeInfo.mint_entity_id``: same v4/v5
+        The row-side counterpart of ``TypeInfo.mint``: same v4/v5
         policy, different input (a creation dict, not an ``FSRef``). It lives
         here rather than on the registry because the types that need it most —
         ``flow_message``, ``conversation`` — have no ``TypeInfo`` at all, and
@@ -990,7 +991,7 @@ class Entity(DBEntity):
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
         # Tripwire on the universal FS→DB path. An asset-backed record arrives
-        # here already resolved by ``TypeInfo.mint_entity_id``; if it ever does
+        # here already resolved through the type's carrier; if it ever does
         # not, ``allocate_id`` would mint a SECOND id for a path the seam
         # already owns — silently forking the entity. A no-op today (the id is
         # always valid by this point), a permanent guard against the regression.
@@ -1000,7 +1001,7 @@ class Entity(DBEntity):
         if asset_ref and not is_valid_entity_id(str(rid or "")):
             logging.warning(
                 "[asset-id] %s for %s has no seam-resolved id (%r) — identity must come "
-                "from TypeInfo.mint_entity_id, not allocate_id.",
+                "through the type's carrier (reconcile), not allocate_id.",
                 record_type, asset_ref, rid,
             )
         entity_uuid = entity_cls.allocate_id(data)
@@ -1092,7 +1093,7 @@ class Entity(DBEntity):
                     continue
                 # Context buckets are a LOCAL, DB-owned link projection written
                 # by cross_link_entities — never authored on the carrier. A
-                # re-parse of the file (reindex_paths → discover_record_by_path
+                # re-parse of the file (reindex_paths → resolve_asset/index_one
                 # → sync_to_db) hands us the carrier's copy, which for a file
                 # the agent just wrote is EMPTY; setting it here blanks a link
                 # that was committed moments earlier. That is how the file-op
@@ -1180,19 +1181,26 @@ class Entity(DBEntity):
             return None
         info = SchemaRegistry.get(rt)
         # DB-FREE by contract, so no owner lookup: with no owning row to consult
-        # this degrades to the historic carrier-or-mint.
-        record = info.record_for(ref) if info is not None else None
+        # this degrades to the carrier, else a mint.
+        from flow_sdk.fs_store.identity_carrier import UnclaimedPath  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
+        try:
+            record = (
+                info.record_for(ref, reconcile(info, info.layout_for(ref), None, None, write=not ref.read_only, ref=ref))
+                if info is not None
+                else None
+            )
+        except UnclaimedPath:
+            return None   # the caller named a type this path is not shaped as
         return Entity._build_from_fs_record(record, fallback_cls=cls) if record is not None else None
 
     @classmethod
     def _resolve_fs_ref_type(cls, ref: "FSRef", record_type) -> "str | None":
-        """Resolve the record-type string for an ``FSRef``.
-
-        Precedence: explicit ``record_type`` arg → ``ref.record_type`` → the
-        concrete subclass's own declared ``type`` default (so
-        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` even for a
-        bare folder ref). Base ``Entity`` with no hint yields ``None``.
-        """
+        """The record-type string for an ``FSRef``: the explicit
+        ``record_type`` → ``ref.record_type`` → a concrete subclass's own
+        ``type`` default (``Dataset.from_fs_ref(ref)`` IS a dataset) → for
+        bare ``Entity``, the registry classifier on the path, else None."""
         if record_type is not None:
             return str(record_type)
         if ref.record_type is not None:
@@ -1200,9 +1208,8 @@ class Entity(DBEntity):
         if cls is not Entity:
             type_field = cls.model_fields.get("type")
             default = getattr(type_field, "default", None) if type_field else None
-            if isinstance(default, str) and default:
-                return default
-        return None
+            return default if isinstance(default, str) and default else None
+        return SchemaRegistry.type_for(getattr(ref, "_path", ref))
 
     @staticmethod
     def _build_from_fs_record(record: "FSRecord", fallback_cls: "type | None" = None) -> "Entity":
@@ -1509,8 +1516,10 @@ class Entity(DBEntity):
         pinfo = SchemaRegistry.get(parent.get_type())
         if pinfo is None or pinfo.asset_class != AssetClass.REPO:
             return None
+        from flow_sdk.schema.layout import Folder as _FolderShape  # noqa: PLC0415
+
         par_ref = getattr(parent, "asset_ref", None)
-        if not par_ref or pinfo.main_layout != "folder":
+        if not par_ref or not isinstance(pinfo.shape, _FolderShape):
             return None  # a repo child can only nest inside a folder-backed parent
         # The parent's asset FOLDER owns where the child's agentic-assets/ goes.
         return pinfo.storage_root_for(Path(par_ref))

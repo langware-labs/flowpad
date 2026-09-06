@@ -12,10 +12,10 @@ Key correctness points:
   under a skill folder) resolves to the owning folder entity, and the re-parse
   runs on the *folder's* asset_ref — never the raw inner path (which
   ``extract_skill`` would mis-name).
-- The re-parse goes through ``discover_record_by_path(..., notify=True)`` rather
-  than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds STALE
-  ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects the new
-  bytes in FTS/wiki/entity fields.
+- The re-parse goes through ``resolve_asset`` + ``index_one(notify=True)``
+  rather than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds
+  STALE ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects
+  the new bytes in FTS/wiki/entity fields.
 - Best-effort per path: one bad path never sinks the batch.
 """
 from __future__ import annotations
@@ -26,17 +26,6 @@ from pathlib import Path
 from typing import Iterable
 
 logger = logging.getLogger(__name__)
-
-# New-file mint inference. A brand-new file with no owning entity is minted only
-# for types whose discovery unambiguously matches by extension — never guessed,
-# to avoid minting the wrong type (e.g. a folder-asset sentinel as a markdown).
-# Editing an EXISTING file never hits this path (it resolves via its entity).
-_EXT_MINT_CANDIDATES: dict[str, tuple[str, ...]] = {
-    ".md": ("markdown",),
-    ".csv": ("spreadsheet",),
-    ".xlsx": ("spreadsheet",),
-}
-
 
 async def owning_asset_for_removed_path(path: str):
     """``(row, root_gone)`` for a path a source reports as gone.
@@ -77,23 +66,6 @@ async def owning_asset_for_removed_path(path: str):
     return row, (not alive and not source_unreachable(root))
 
 
-def asset_target_for(record_type: str, path: str) -> str:
-    """The path ``discover_record_by_path`` must be handed for ``record_type``.
-
-    A folder-layout asset's root is its DIRECTORY; handed the inner ``main_file``
-    it resolves nothing and returns None, and the caller silently loses the
-    re-parse. The registry already answers this (``TypeInfo.layout_of().ref``),
-    so ask it instead of passing the raw touched path through.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(record_type)
-    if info is None:
-        return path
-    ref = info.layout_of(Path(path)).ref
-    return str(ref) if ref is not None else path
-
-
 @dataclass
 class ReindexResult:
     reindexed: list[str] = field(default_factory=list)
@@ -111,40 +83,12 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
-def _mint_candidates(path: str) -> tuple[tuple[str, str], ...]:
-    """``(type, target path)`` pairs to try, most specific first.
-
-    A folder-layout type names its carrier with a FIXED ``main_file``
-    (``SKILL.md``), so a name match identifies the type unambiguously — exactly
-    the property the extension map lacks and the reason it stays restricted. Ask
-    the registry's own classifier (``TypeInfo.layout_of``) rather than guessing
-    from the suffix, and hand back the layout's ``ref``: a folder asset's root is
-    its DIRECTORY, and ``discover_record_by_path`` cannot mint one from the inner
-    file path. Without this the incremental path mints ``SKILL.md`` as a plain
-    markdown whose asset_ref is the FILE, and every sibling written into that
-    folder then fails to resolve to an owner and fragments into its own entity.
-    """
-    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
-
-    p = Path(path)
-    out: list[tuple[str, str]] = []
-    for type_name in SchemaRegistry.get_all_types():
-        info = SchemaRegistry.get(type_name)
-        if info is None or info.main_layout != "folder" or not info.main_file:
-            continue
-        layout = info.layout_of(p, verify=True)
-        if layout.kind is LayoutKind.NONE or layout.ref is None:
-            continue
-        out.append((type_name, str(layout.ref)))
-    out.extend((cand, path) for cand in _EXT_MINT_CANDIDATES.get(p.suffix.lower(), ()))
-    return tuple(out)
-
-
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
     *,
     mint: bool = True,
+    write: bool = True,
 ) -> ReindexResult:
     """Force-reindex ``paths`` (changed/created) and reconcile ``deleted_paths``.
 
@@ -157,39 +101,44 @@ async def reindex_paths(
     INTO the bytes the caller just saved, mutating arbitrary markdown that was
     never an asset. New-file discovery belongs to the indexer, which owns root
     scoping and consent.
+
+    ``write=False`` resolves identity without stamping it into the source (a
+    source that does not own its bytes — a git working tree under ``reflect``).
     """
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
     result = ReindexResult()
 
     # Force-reparse an entity's OWN asset_ref (folder path for folder types), not
     # the raw touched path — extract_skill et al. would mis-name a raw inner path.
+    # The row's id, scope and project_id are authoritative: the id keeps a
+    # portable asset whose carrier was wiped on the SAME entity, and the labels
+    # keep an asset in a workspace project from being relabelled ``user``.
     async def _resync(entity, fallback: str):
         target = str(getattr(entity, "asset_ref", None) or fallback)
-        # Thread the already-resolved entity id so a portable asset whose in-file
-        # identity capsule was wiped by a full-content overwrite re-stamps the
-        # ORIGINAL id (same entity updates) instead of forking a fresh v4. Only
-        # consulted on a capsule miss; folder/carrier-intact types ignore it.
-        entity_id = getattr(entity, "id", None)
-        # Thread the row's OWN scope/project_id too. Without them
-        # ``discover_record_by_path`` falls back to ``classify_path(path)``, which
-        # knows only three roots (system / user_home / cwd) and calls anything under
-        # the user's home ``user`` — so resyncing an asset in a project stored at
-        # ``~/Flowpad workspace/<proj>`` relabels it ``scope='user'`` and
-        # ``apply_scope_filter`` then hides it from its own project. This is a
-        # resync of an entity we ALREADY resolved: its stored labels are
-        # authoritative and a path guess must not overwrite them.
-        return await discover_record_by_path(
-            entity.type,
-            target,
-            notify=True,
-            proposed_id=str(entity_id) if entity_id else None,
-            scope=entity.scope,
-            project_id=entity.project_id,
-        )
+        try:
+            resolved = await resolve_asset(
+                target, write=write, type_name=entity.type, owner_id=str(entity.id) if entity.id else None
+            )
+        except NotAnAsset as reason:
+            logger.debug("reindex resync %s: %s", target, reason)
+            return None
+        return await index_one(resolved, notify=True, scope=entity.scope, project_id=entity.project_id)
+
+    # A brand-new file with no owning entity: the registry names its type (an
+    # ambiguous ``.json`` is never guessed at) and the asset is indexed. The
+    # lookup above already proved the asset unowned — its exact match covers
+    # the path and its containment pass every ancestor, which is where a
+    # folder asset's root would be — so ``resolve_asset`` must not repeat it.
+    async def _mint(path: str) -> bool:
+        try:
+            resolved = await resolve_asset(path, write=write, known_unowned=True)
+        except NotAnAsset:
+            return False
+        return await index_one(resolved, notify=True) is not None
 
     # De-dupe while preserving order.
     changed = list(dict.fromkeys(_norm(x) for x in paths))
@@ -207,17 +156,7 @@ async def reindex_paths(
             if not mint:
                 result.skipped.append(path)
                 continue
-            minted = False
-            for cand, target in _mint_candidates(path):
-                try:
-                    if await discover_record_by_path(cand, target, notify=True, strict_owner=True) is not None:
-                        result.minted.append(path)
-                        minted = True
-                        break
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("reindex mint %s as %s failed: %s", path, cand, exc)
-            if not minted:
-                result.skipped.append(path)
+            (result.minted if await _mint(path) else result.skipped).append(path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("reindex_paths: %s failed: %s", path, exc)
             result.skipped.append(path)

@@ -21,6 +21,7 @@ import {
   type AnyEntity,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { isFolderShape } from '@sdk/FlowSync/schema';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
@@ -30,10 +31,11 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
   AssetEditor,
   AssetRoutingMethod,
-  EDITOR_TYPES,
   editorForType,
   isFileOnlyEditor,
+  primaryTypeForEditor,
 } from '@src/navigation/asset-doc-types';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
@@ -152,6 +154,21 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   // which a backend-scan WS flood turns into a per-frame reload (the "flicker").
   const mainRef = entityRecord?.mainRef ?? null;
   const computeNodeKey = computeNode?.typeId?.toString() ?? null;
+
+  // vfs route: the pointer carries a PATH and an editor, never a record type.
+  // The BACKEND names the type (`GET /assets/resolve?path=…` via
+  // `useEntityByPath`); this component only renders what it is told. The
+  // FSRef is memoized on the pointer string so the resolve query key is stable.
+  // File-only editors (code/html/media) have no entity and never resolve.
+  const vfsResolveRef = useMemo<FSRef | null>(() => {
+    if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
+    if (ptr.method !== AssetRoutingMethod.VFS) return null;
+    const vfs = VFSPath.parse(ptr.value);
+    return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointer]);
+  const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(null, vfsResolveRef);
+
   const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
     if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
     if (ptr.method === AssetRoutingMethod.TYPEID) {
@@ -160,27 +177,28 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
       // entity storage without a compute-node or sender-local asset_ref.
       if (!mainRef) return null;
       return {
-        fsRef: recordContentRef(mainRef, !!dataManager.getTypeInfo(typeId!.type)?.folder_backed),
+        fsRef: recordContentRef(mainRef, isFolderShape(dataManager.getTypeInfo(typeId!.type)?.shape)),
         assetType: typeId!.type,
         mainFileRef: mainRef,
       };
     }
-    const vfs = VFSPath.parse(ptr.value);
-    if (!vfs.typeId) return null;
-    const vfsRef = new FSRef(vfs.entitySubPath, vfs.typeId);
+    if (!vfsResolveRef) return null;
     return {
-      fsRef: vfsRef,
-      // vfs lost the precise record type; fall back to the editor's primary type.
-      assetType: (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor,
+      fsRef: vfsResolveRef,
+      // The record type is the backend's answer for this path. Until it lands
+      // (or when the path is not an asset) the registry's declared type for
+      // the editor stands in — the registry's word, never a client-side table;
+      // an empty registry (hub) leaves the editor name, which is only a label.
+      assetType: vfsResolvedType ?? primaryTypeForEditor(ptr.editor) ?? ptr.editor,
       // record/refs is TYPEID-only, so `mainRef` is null on this route. A vfs
       // pointer names the asset's own file, so it IS the main ref — editors
       // that write the main file (agent.md) must use this, not `mainRef`.
-      mainFileRef: vfsRef,
+      mainFileRef: vfsResolveRef,
     };
     // ptr/typeId are derived deterministically from `pointer`; keying on the
     // stable strings keeps the memo from re-minting the FSRef every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointer, mainRef, computeNodeKey]);
+  }, [pointer, mainRef, computeNodeKey, vfsResolveRef, vfsResolvedType]);
 
   if (!ptr || !ptr.editor) {
     return (

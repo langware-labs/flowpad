@@ -12,6 +12,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 from tests.unit._disk import store_main
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -60,16 +61,15 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
     # 1. Create writes agentic-assets/agent_trace/<name>/trace.json with the payload
     #    and the entity id injected.
     store_main(rec, entity)
-    doc = ar._path
-    assert doc.name == "trace.json", f"expected inner trace.json, got {doc}"
-    assert doc.parent.parent.name == "agent_trace"
+    assert ar._path.parent.name == "agent_trace", f"expected agentic-assets/agent_trace/<name>, got {ar._path}"
+    doc = ar._path / "trace.json"
     written = json.loads(doc.read_text(encoding="utf-8"))
     assert written["id"] == TRACE_ID
     assert written["summary"]["verdict"] == "mixed"
 
     # 2. Extraction reads summary fields only — payload stays out of FTS.
     ref = FSRef(doc)
-    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, SchemaRegistry.get("agent_trace").mint_entity_id(ref))
+    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, resolve_id(SchemaRegistry.get("agent_trace"), ref))
     assert len(recs) == 1
     out = recs[0]
     assert out.id == TRACE_ID

@@ -8,7 +8,8 @@ from flow_sdk.fs_store.indexer.functions.dynamic_workflows import (
     dynamic_workflow_identity_key,
     extract_dynamic_workflow,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -18,8 +19,8 @@ class DynamicWorkflowMeta(BaseMeta):
     description: Optional[str] = None
 
 
-DYNAMIC_WORKFLOW = TypeMetadata(
-    type=EntityType.DYNAMIC_WORKFLOW,
+DYNAMIC_WORKFLOW = TypeInfo(
+    type_name=EntityType.DYNAMIC_WORKFLOW,
     icon="Boxes",
     browseable_by=ViewMode.ADVANCED,
     creatable=True,
@@ -29,7 +30,12 @@ DYNAMIC_WORKFLOW = TypeMetadata(
     asset_class="harness",
     harness="claude",
     family="workflows",
-    main_ext=".js",
+    shape=File(ext=".js"),
+    editor="dynamic_workflow",
+    # ``.claude/workflows/*.js`` plus the skill-bundled ``.claude/skills/<name>/*.js``
+    # (the documented "pack a workflow as a skill" layout) — the second mount
+    # is a glob, so it is spelled out rather than derived.
+    walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root"), mounts=(".claude/workflows", ".claude/skills/*")),
     from_disk_fn=extract_dynamic_workflow,
     identity_carrier=derived_identity(dynamic_workflow_id_from_file),
     id_stable_key_fn=dynamic_workflow_identity_key,
