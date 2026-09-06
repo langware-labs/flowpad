@@ -59,6 +59,14 @@ class ConversationKind(StrEnum):
     HELPDESK = "helpdesk"
 
 
+class ConversationStatus(StrEnum):
+    """Whether a ticket is still awaiting an answer. Mirrors the hub's field of
+    the same name, which is authoritative and enforces the same two values."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
 
@@ -179,6 +187,11 @@ class Conversation(ProjectedFields, Entity):
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
+    # Settlement state, mirrored from the hub by ``conversation-settle`` and by
+    # ``_upsert_hub_conversation_metadata``. The requester's portal reads this
+    # LOCAL row, so without the mirror a ticket they just closed keeps
+    # presenting as open on the surface they closed it from.
+    status: ConversationStatus = APIField(default=ConversationStatus.OPEN)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
     # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
     # and used by ``handle_conversation_delete_archived`` to classify each
