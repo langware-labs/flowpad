@@ -51,9 +51,15 @@ export interface LLMEndpointOffer {
   /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
   limits: LLMEndpointLimits;
   /** Whose pot this is — `organization-`/`team-`/`user-<uuid>`, or null for a root or an
-   *  allocation. The one field that says whether a budget is a person's own or a pool they
-   *  merely draw through, which is what the user-scoped asset view filters on. */
+   *  allocation. Says whether a budget is a person's own or a pool they merely draw through —
+   *  but NOT whether an untagged one was handed to them; `can_administer` answers that. */
   principal_typeid: string | null;
+  /** May this person CHANGE this budget (the hub's own `update` permission)? Three states:
+   *  `true` they administer it, `false` they hold it and may only spend it — which is what a
+   *  beneficiary is, since `allocate` grants `reader` and stamps no principal — and `null` when
+   *  they hold no role on it at all (the catalog's shared root), or the hub answered no
+   *  expansion. Unknown is never "it was given to me". */
+  can_administer: boolean | null;
 }
 
 export interface LLMFundingStatus {
