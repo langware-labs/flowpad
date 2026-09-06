@@ -8,14 +8,18 @@ the hub and the conversation were all healthy — only the queued one was
 stranded, silently, with the UI showing it in the thread as though it had been
 sent.
 
-Why: ``_deliver_pending_messages`` is the only flush there is, and its ONLY
-caller is ``Conversation.share()`` (flow_sdk/builtin/conversation.py:420), in
-the branch that creates the hub row. A conversation that is ALREADY remote --
-the recipient shared it, or you shared it before going offline -- never takes
-that branch again, so nothing re-attempts the message. Login does not flush it
-either: no login path references pending messages at all. ``handle_add_message``
-documents the queue as flushed "when the conversation next becomes remote",
-which for an already-remote conversation is never.
+Why it happened: ``deliver_pending_messages`` was the only flush there is, and
+its ONLY caller was ``Conversation.share()``, in the branch that creates the hub
+row. A conversation that is ALREADY remote -- the recipient shared it, or you
+shared it before going offline -- never takes that branch again, so nothing
+re-attempted the message, and no login path referenced pending messages at all.
+``handle_add_message`` documented the queue as flushed "when the conversation
+next becomes remote", which for an already-remote conversation is never.
+
+Fixed by ``flow_sdk.inbox.catchup.flush_pending_outbox``, which runs on the same
+"no hub session -> hub session" transition the backlog pull already runs on --
+the two are halves of one thing: what we missed while away, and what we queued
+while away.
 
 Nothing here is mocked. The instance really logs out (``clear_cloud_credentials``),
 the message is really queued by the handler the gate calls, login really runs
@@ -55,7 +59,7 @@ async def _drain_catchup_tasks() -> None:
 
     Login must not block on a hub round-trip, so its catch-up runs as a named
     task. Awaiting the task is deterministic and leaves no polling budget to
-    tune; if a fix flushes the outbox from here, this is where it lands.
+    tune -- and it is the task the outbox flush now runs in.
     """
     for task in [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("inbox-catchup:")]:
         await task
@@ -94,9 +98,9 @@ async def test_message_queued_while_logged_out_reaches_the_hub_after_login(
     api_key = login_as(hub_login_payload)
     someone = (await get_or_create_local_user()).typeid
 
-    # 1. A conversation that is ALREADY on the hub — the shape the bug needs.
-    #    Sharing it now is what makes a later re-share a no-op, so nothing will
-    #    ever call the flush again.
+    # 1. A conversation that is ALREADY on the hub — the shape the bug needed.
+    #    Sharing it now is what makes a later re-share a no-op, so share() will
+    #    never flush it again; only the login transition can.
     conv = Conversation(title=f"pending-flush-{uuid.uuid4().hex[:8]}")
     await conv.share(recipients=[])
     assert conv.remote is True, "precondition: the conversation must be hub-backed"
@@ -138,12 +142,12 @@ async def test_message_queued_while_logged_out_reaches_the_hub_after_login(
         f"test says nothing about the queued message. Hub holds {texts!r}."
     )
 
-    # 6. The symptom: the later message is on the hub and the queued one is not.
-    #    The user sees the queued one sitting in the thread as though it were
-    #    sent, the recipient never receives it, and nothing reports an error.
+    # 6. What the bug got wrong: the later message reached the hub and the
+    #    queued one did not, so the user saw it sitting in the thread as though
+    #    it were sent while the recipient never received it — silently.
     assert queued_text in texts, (
         f"a message queued while signed out never reached the hub after login, though a "
-        f"message sent moments later did; hub holds {texts!r}. Nothing retries it: "
-        f"_deliver_pending_messages is only called from Conversation.share() when the hub "
-        f"row is first created, and an already-shared conversation never takes that branch."
+        f"message sent moments later did; hub holds {texts!r}. The login transition must "
+        f"flush the outbox (inbox.catchup.flush_pending_outbox) -- share() alone only "
+        f"covers a conversation the moment its hub row is first created."
     )
