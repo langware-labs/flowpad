@@ -20,10 +20,10 @@ from flow_sdk.fs_store.indexer import (
     FSIndexer,
     IndexProgressTable,
     TypeProgressRow,
+    index_log,
     reset_shared_indexer,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 class FakeQueryParams:
@@ -261,7 +261,7 @@ async def test_typed_scan_projects_and_diffs_only_terminal_type(
         staticmethod(discover),
     )
 
-    def append_scan(cls, **kwargs):
+    def append_scan(**kwargs):
         captured["scan_log"] = kwargs
         captured["activity_alive"] = (
             handler._activity is not None and not handler._activity.is_complete
@@ -272,7 +272,7 @@ async def test_typed_scan_projects_and_diffs_only_terminal_type(
         )
         return "now"
 
-    monkeypatch.setattr(SchemaRegistry, "append_scan", classmethod(append_scan))
+    monkeypatch.setattr(index_log, "append_scan", append_scan)
 
     response = await handler._handle_fs_records_scan(
         FakeRequestInfo({"type": "skill", "user": None, "projects": None})
@@ -315,11 +315,7 @@ def test_typed_non_indexable_scan_is_projected_but_not_diffed(
         "_discover_records_dir_ids",
         staticmethod(discover),
     )
-    monkeypatch.setattr(
-        SchemaRegistry,
-        "append_scan",
-        classmethod(lambda cls, **kwargs: "now"),
-    )
+    monkeypatch.setattr(index_log, "append_scan", lambda **kwargs: "now")
 
     response = handler._project_fs_records_scan(
         nodes=[FSRef(folder, record_type=RecordType.FOLDER)],

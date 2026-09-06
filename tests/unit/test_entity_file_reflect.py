@@ -349,12 +349,13 @@ class _FolderBackedEntity(_RecordBackedEntity):
 
 
 def _register_hub_layout_probes() -> None:
-    """Hub layout is ``TypeInfo``'s (``main_layout`` / ``main_file``) — the same
-    facts the disk serializer reads — so the probes declare it there."""
+    """Hub layout is ``TypeInfo``'s shape — the same facts the disk serializer
+    reads — so the probes declare it there."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+    from flow_sdk.schema.layout import Folder
 
-    SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", main_layout="file", hub_main_file="document.md"))
-    SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", main_layout="folder", main_file="SKILL.md", hub_main_file="SKILL.md"))
+    SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", hub_main_file="document.md"))
+    SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", shape=Folder(main="SKILL.md"), hub_main_file="SKILL.md"))
 
 
 _register_hub_layout_probes()

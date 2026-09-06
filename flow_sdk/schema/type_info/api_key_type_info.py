@@ -1,5 +1,5 @@
 """Type metadata for API_KEY."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-API_KEY = TypeMetadata(type=EntityType.API_KEY, api_visible=True)
+API_KEY = TypeInfo(type_name=EntityType.API_KEY, api_visible=True)

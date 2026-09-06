@@ -5,7 +5,7 @@ Covers the slot functions end-to-end:
   a ``deck.json`` build record.
 - ``extract_deck`` denormalizes num_slides / html_file and resolves the
   ``template_ref`` provenance edge from the sibling template's ``.flow/id`` capsule.
-- ``TypeInfo.mint_id`` adopts a valid manifest id else mints via the capsule.
+- the json capsule carries the id (a manifest id is not a carrier).
 - ``deck_asset_hash`` tracks deck.json + the assembled HTML.
 
 Pure-sync; the walker/slot functions are called directly. Modeled on
@@ -20,9 +20,10 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.capsules import CapsuleData
+from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.deck import (
     deck_asset_hash,
     extract_deck,
@@ -30,10 +31,11 @@ from flow_sdk.fs_store.indexer.functions.deck import (
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("deck").mint_entity_id(ref)
+    return resolve_id(SchemaRegistry.get("deck"), ref)
 
 
 def _extract(ref: FSRef):
@@ -62,7 +64,7 @@ def _seed_template(project: Path, slug: str, *, capsule_id: str | None = None) -
     (tpl / "layouts").mkdir(parents=True)
     (tpl / "template.json").write_text(json.dumps({"metadata": {"title": slug}, "data": {}}), encoding="utf-8")
     if capsule_id:
-        write_folder_capsule_id(tpl, capsule_id)
+        FolderCapsule(tpl).write("identity", CapsuleData(1, {"id": capsule_id}))
     return tpl
 
 
@@ -87,12 +89,6 @@ def test_walker_no_decks_dir(tmp_path: Path) -> None:
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
-
-def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
-    valid = str(uuid.uuid4())
-    deck = _seed_deck(tmp_path, "adopt", manifest={"id": valid, "title": "A", "slides": []})
-    assert _mint(FSRef(deck)) == valid
-
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "mint")

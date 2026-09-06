@@ -28,6 +28,7 @@ from flow_sdk.fs_store.indexer.functions.dataset import (
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.dataset_spec import FolderSpec
+from tests.fixtures.identity import resolve_id
 from tests.unit.test_fs_store._dataset_tree import (
     is_file as _is_file,
 )
@@ -49,7 +50,7 @@ pytestmark = pytest.mark.timeout(5)
 
 
 def _extract(ref: FSRef):
-    return SchemaRegistry.get("dataset").from_disk_fn(ref, SchemaRegistry.get("dataset").mint_entity_id(ref))
+    return SchemaRegistry.get("dataset").from_disk_fn(ref, resolve_id(SchemaRegistry.get("dataset"), ref))
 
 # A real v4 uuid for manifest-id adoption tests.
 VALID_V4 = "a3f1c2d4-5b6e-4f7a-8c9d-0e1f2a3b4c5d"
@@ -121,11 +122,11 @@ def _seed_io_dataset(
 def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(ds_path)
-    # gen_id stamps the `.flow/id` capsule first — the production index order
+    # the resolve stamps the json capsule first — the production index order
     # (TypeInfo resolves identity before the extractor). The loader + cold-path extractor
     # then adopt that same capsule id (a fresh v4 when the dataset carries no id).
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    gen = SchemaRegistry.get("dataset").mint_entity_id(ref)
+    gen = resolve_id(SchemaRegistry.get("dataset"), ref)
     loaded = Dataset.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real dataset"
     assert isinstance(loaded, Dataset)
@@ -473,7 +474,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
     loaded = _assert_indexer_compatible(ds)
 
     # every Dataset field
-    assert loaded.id == VALID_V4  # manifest id adopted
+    assert loaded.id == SchemaRegistry.get("dataset").read_id(FSRef(ds))  # the carrier's id; a manifest id is not a carrier
     assert loaded.title == "Full"
     assert loaded.description == "every field"
     assert loaded.data_layout == "io_folder"

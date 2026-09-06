@@ -1,7 +1,8 @@
-"""Walker + extractor + id mint for SPEC records.
+"""Extractor + id mint for SPEC records.
 
-Specs live at ``<project>/agentic-assets/spec/<name>/spec.md`` (markdown + YAML frontmatter).
-Replaces the deleted ``SpecRecord`` subclass. Registration at module bottom.
+Specs live at ``<project>/agentic-assets/spec/<name>/spec.md`` (markdown + YAML
+frontmatter) and are discovered by the repo-assets walker. Replaces the deleted
+``SpecRecord`` subclass.
 """
 
 from __future__ import annotations
@@ -9,36 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_frontmatter,
-    _yaml_load,
-)
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-
-
-def spec_project_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        specs_root = Path(node.path) / "specs"
-        if not specs_root.is_dir():
-            continue
-        for spec_dir in sorted(specs_root.iterdir()):
-            md = spec_dir / "spec.md"
-            if not md.is_file():
-                continue
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                FSRef(md, record_type=RecordType.SPEC, parent=node)
-            )
-    return out
+from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
 
 
 def _spec_id_from_path(path: Path) -> str:
@@ -48,18 +20,9 @@ def _spec_id_from_path(path: Path) -> str:
 
 
 def _read_spec_frontmatter_id(path: Path) -> str | None:
-    """Return ``id`` (or legacy ``asset_id``) from frontmatter, or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
+    """The valid frontmatter ``id``, or None — the carrier's own read."""
+    found = Frontmatter().read(path)
+    return found.id if isinstance(found, Found) else None
 
 
 def spec_id(ref: FSRef) -> str:

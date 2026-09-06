@@ -16,8 +16,7 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.skill import skill_fn
-from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 
 pytestmark = pytest.mark.asyncio
@@ -53,8 +52,8 @@ def _write_agent(root: Path, name: str, aid: str) -> Path:
 async def _index(root: Path, scope: str, project_id: str | None = None) -> None:
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope=scope, project_id=project_id))
-    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.USER_HOME_FOLDER, subagent_fn, RecordType.SUBAGENT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("skill"), RecordType.SKILL)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("subagent"), RecordType.SUBAGENT)
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.SKILL, RecordType.SUBAGENT]))
 
 
@@ -140,7 +139,7 @@ async def test_exact_match_wins_over_containing_folder(bootstrapped_client, tmp_
         encoding="utf-8",
     )
     await _index(tmp_path, "user")
-    # Index the agent under the skill folder too (subagent_fn scans .claude/agents
+    # Index the agent under the skill folder too (the subagent walk scans .claude/agents
     # under the root; the skill folder acts as a second root for this case).
     await _index(folder, "user")
 

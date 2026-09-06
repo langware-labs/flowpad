@@ -12,7 +12,7 @@ exact one:
 
 ``test_resync_propagates_new_metadata_key`` exercises hop 2 directly.
 ``test_full_index_flow_propagates_eval`` exercises both through the real
-``FSIndexer`` + ``skill_fn`` path — the closest reproduction of the UI scan.
+``FSIndexer`` + skill-walk path — the closest reproduction of the UI scan.
 
 All ≤5s, real FSRecord/FSIndexer + SQLite, no mocks.
 """
@@ -30,7 +30,7 @@ from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 
 # `sync_db` fixture + `register_all()` come from the package conftest.
@@ -96,7 +96,7 @@ async def test_full_index_flow_propagates_eval(sync_db, tmp_path):
 
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("skill"), RecordType.SKILL)
 
     await _index_skills(idx)
     e1 = await Skill.get_one({"id": SKILL_ID})

@@ -28,6 +28,7 @@ from flow_sdk.fs_store.placement import (
     untyped_rel_subdir,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 ALL_CLASSES = list(AssetClass)
 ALL_HARNESSES = list(HarnessType)
@@ -351,7 +352,7 @@ def test_agent_main_ref_uses_backend_slug_and_bundle_layout(tmp_path):
     ref = FSRecord(type="agent").compute_asset_ref(tmp_path, Agent(name="Q"))
 
     assert ref is not None
-    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q" / "agent.md"
+    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q"
 
 
 def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
@@ -389,8 +390,8 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
     bundle.mkdir(parents=True)
     (bundle / "agent.md").write_text("# Q\n")
     info = SchemaRegistry.get("agent")
-    info.mint_entity_id(FSRef(bundle / "agent.md"), proposed_id=mine)
-    assert info.mint_entity_id(FSRef(bundle / "agent.md")) == mine
+    info.stamp_id(FSRef(bundle / "agent.md"), mine)
+    assert resolve_id(info, FSRef(bundle / "agent.md")) == mine
 
     # Same entity → adopted, no raise.
     assert_create_target_available(
@@ -410,10 +411,10 @@ def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
     # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a
     # transiently-registered fixture type so PR-1 doesn't depend on a migrated type.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+    from flow_sdk.schema.layout import Folder
 
     SchemaRegistry.register(
-        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture",
-                 main_layout="folder")
+        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture", shape=Folder())
     )
     try:
         dest = resolve_destination(

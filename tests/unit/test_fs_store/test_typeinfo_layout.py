@@ -2,10 +2,11 @@
 from pathlib import Path
 
 from flow_sdk.fs_store.schema_registry import LayoutKind, TypeInfo
+from flow_sdk.schema.layout import File, Folder
 
-SKILL = TypeInfo(type_name="t_skill", main_layout="folder", main_file="SKILL.md")                       # skill-style
-SPEC = TypeInfo(type_name="t_spec", main_layout="folder", main_file="spec.md", main_file_is_asset_ref=True)
-DOC = TypeInfo(type_name="t_doc", main_layout="file", main_ext=".md")
+SKILL = TypeInfo(type_name="t_skill", shape=Folder(main="SKILL.md"))   # skill-style
+SPEC = TypeInfo(type_name="t_spec", shape=Folder(main="spec.md"))
+DOC = TypeInfo(type_name="t_doc", shape=File(ext=".md"))
 
 
 def test_folder_types_classify_folder_and_inner_main_file(tmp_path: Path):
@@ -14,19 +15,19 @@ def test_folder_types_classify_folder_and_inner_main_file(tmp_path: Path):
     (folder / "SKILL.md").write_text("x")
     assert SKILL.layout_of(folder).kind is LayoutKind.FOLDER
     inner = SKILL.layout_of(folder / "SKILL.md")
-    assert (inner.kind, inner.root, inner.body, inner.ref) == (LayoutKind.MAIN_FILE, folder, folder / "SKILL.md", folder)
+    assert (inner.kind, inner.root, inner.body) == (LayoutKind.MAIN_FILE, folder, folder / "SKILL.md")
     spec = SPEC.layout_of(folder / "spec.md")
-    assert (spec.kind, spec.root, spec.ref) == (LayoutKind.MAIN_FILE, folder, folder / "spec.md")
+    assert (spec.kind, spec.root) == (LayoutKind.MAIN_FILE, folder)
 
 
-def test_names_compare_case_insensitively_and_the_capsule_lands_on_the_folder(tmp_path: Path):
+def test_names_compare_case_insensitively_and_the_id_lands_in_the_main_document(tmp_path: Path):
     folder = tmp_path / "agent"
     folder.mkdir()
     (folder / "AGENT.MD").write_text("x")
-    info = TypeInfo(type_name="t_agent", main_layout="folder", main_file="agent.md", main_file_is_asset_ref=True)
+    info = TypeInfo(type_name="t_agent", shape=Folder(main="agent.md"))
     assert info.layout_of(folder / "AGENT.MD").kind is LayoutKind.MAIN_FILE
     assert info.storage_root_for(folder / "AGENT.MD") == folder
-    assert SKILL.carrier_path_for(folder / "SKILL.MD") == folder
+    assert SKILL.layout_of(folder / "SKILL.MD").body == folder / "SKILL.md"
 
 
 def test_verify_requires_the_bytes_and_projections_stay_total(tmp_path: Path):

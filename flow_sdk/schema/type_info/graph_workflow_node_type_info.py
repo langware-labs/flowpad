@@ -1,5 +1,5 @@
 """Type metadata for GRAPH_WORKFLOW_NODE — flow-graph station (DB-only, no disk record)."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-GRAPH_WORKFLOW_NODE = TypeMetadata(type=EntityType.GRAPH_WORKFLOW_NODE, api_visible=True, icon="Workflow")
+GRAPH_WORKFLOW_NODE = TypeInfo(type_name=EntityType.GRAPH_WORKFLOW_NODE, api_visible=True, icon="Workflow")

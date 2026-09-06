@@ -1,11 +1,11 @@
 """Type metadata for the DB-only WikiEntry binding."""
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-WIKI_ENTRY = TypeMetadata(
-    type=EntityType.WIKI_ENTRY,
+WIKI_ENTRY = TypeInfo(
+    type_name=EntityType.WIKI_ENTRY,
     icon="Link",
-    displayName="Wiki Entries",
+    display_name="Wiki Entries",
     api_visible=True,
 )

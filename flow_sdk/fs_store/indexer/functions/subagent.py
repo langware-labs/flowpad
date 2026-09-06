@@ -1,9 +1,11 @@
-"""Walker + extractor + helpers for AGENT records.
+"""Extractor + helpers for AGENT records.
 
 An agent is a flat ``.md`` file under ``<root>/<harness-dot-dir>/agents/`` — most
 often ``.claude/agents/``, but the type is ``asset_class="shared"``, so placement
 writes it under whichever dot-dir the machine's harness declares (``.agents`` for
-codex, ``.github`` for copilot). The walker scans all of them. YAML frontmatter
+codex, ``.github`` for copilot). Discovery is the type's declared ``walk``
+(``subagent_type_info.py``), whose mounts derive from that same placement, so
+the read side agrees with wherever a copy may be written. YAML frontmatter
 carries the ``--agents`` CLI spec; the markdown body is the system prompt.
 
 Replaces the parse/extract behaviour of the deleted ``AgentRecord`` subclass.
@@ -24,12 +26,12 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 # Mapping from snake_case _data keys to camelCase --agents JSON keys
@@ -41,60 +43,13 @@ KEY_TO_JSON = {
 }
 
 
-# ── Walker ───────────────────────────────────────────────────────────────────
-
-
-def subagent_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Discover agent ``.md`` files under EVERY harness dot-dir, not just ``.claude``.
-
-    AGENT is ``asset_class="shared"``, so ``family_subdir`` picks the dot-dir from
-    the machine's ``default_worker`` (``placement.effective_harness``): the entity
-    save path writes a codex-default machine's agents to ``.agents/agents/``. A
-    walker that only scanned ``.claude/agents`` therefore never indexed them —
-    written, then invisible. Scanning the whole ``WORKER_PREFIX`` set keeps the
-    read side in agreement with wherever placement is allowed to write.
-    """
-    from flow_sdk.fs_store.placement import WORKER_PREFIX  # noqa: PLC0415
-
-    # dict values repeat (github/copilot both map to ``.github``); dedupe and
-    # order them so discovery is deterministic across machines.
-    prefixes = sorted(set(WORKER_PREFIX.values()))
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        for prefix in prefixes:
-            agents = Path(node.path) / prefix / "agents"
-            if not agents.is_dir():
-                continue
-            for md in sorted(agents.glob("*.md")):
-                key = str(md.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append(FSRef(md, record_type=RecordType.SUBAGENT, parent=node))
-    return out
-
-
 # ── id helpers ───────────────────────────────────────────────────────────────
 
 
 def _read_frontmatter_id(path: Path) -> str | None:
-    """Return frontmatter `id` (or legacy `asset_id`), or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
+    """The valid frontmatter ``id:``, or None — the carrier's own read."""
+    found = Frontmatter().read(path)
+    return found.id if isinstance(found, Found) else None
 
 
 def _read_frontmatter_name(path: Path) -> str | None:
@@ -112,8 +67,7 @@ def _read_frontmatter_name(path: Path) -> str | None:
 
 
 def agent_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter `id` (or `asset_id`); else frontmatter `name`;
-    else filename stem."""
+    """Cheap id: frontmatter ``id``; else frontmatter ``name``; else filename stem."""
     existing = _read_frontmatter_id(ref._path)
     if existing:
         return existing
@@ -130,7 +84,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
     probe form of the seam (``derive=False, overwrite=False``), which never
     stamps a missing capsule onto a read-only mount.
 
-    Carrier reads go through ``TypeInfo.mint_entity_id``. The miss path does NOT:
+    Carrier reads go through the type's carrier (``read_id``). The miss path does NOT:
     it derives ``uuid5(DNS, "subagent:<name-or-stem>")`` while the seam would
     derive ``uuid5(URL, <resolved path>)``. **These disagree**, and the value is
     kept as-is deliberately — converging it would move the id of every
@@ -153,7 +107,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
         fields = (_yaml_load(fm) if fm else None) or {}
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
-        adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
+        adopted = adopt_entity_id(fields.get("id"))
         if adopted:
             return adopted
         name = fields.get("name")
@@ -178,7 +132,7 @@ def parse_subagent_markdown(text: str, name: str | None = None) -> dict[str, Any
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
 
-    raw_id = fields.pop("id", None) or fields.pop("asset_id", None)
+    raw_id = fields.pop("id", None)
     from flow_sdk.builtin.subagent import SubAgentSpec  # noqa: PLC0415
 
     header = SubAgentSpec.model_validate(fields)

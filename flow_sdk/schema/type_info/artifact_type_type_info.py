@@ -1,12 +1,12 @@
 """Type metadata for ARTIFACT."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-ARTIFACT = TypeMetadata(
-    type=EntityType.ARTIFACT,
+ARTIFACT = TypeInfo(
+    type_name=EntityType.ARTIFACT,
     api_visible=True,
     icon="Package",
-    displayName="Artifacts",
+    display_name="Artifacts",
     # On receive, an artifact is set up (cloned/served/built + shown in Vibe) by
     # the built-in ``artifact-setup`` skill running in a headless Vibe session.
     setup_skill="artifact-setup",

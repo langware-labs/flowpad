@@ -14,13 +14,12 @@ import type { SearchResult } from '@src/hooks/use-asset-search';
 
 const AGENT_TYPEID = 'agent-bb5cf2b1-c7ff-47cd-8df4-149fe5bba3c6';
 
-// The registry answers "can this type own assets?" from `main_layout`. `agent`
-// is folder-LAYOUT but not folder-BACKED (its asset_ref is the inner agent.md) —
-// the exact pair that makes `folder_backed` the wrong gate for ownership.
+// The registry answers "can this type own assets?" from `shape.kind`: a folder
+// shape can own nested assets under its own `agentic-assets/`.
 const TYPE_INFOS = [
-  { type_name: 'agent', main_layout: 'folder', folder_backed: false },
-  { type_name: 'mcp', main_layout: 'folder', folder_backed: true },
-  { type_name: 'markdown', main_layout: 'file', folder_backed: false },
+  { type_name: 'agent', shape: { kind: 'folder', main: 'agent.md' } },
+  { type_name: 'mcp', shape: { kind: 'folder', main: 'mcp.json' } },
+  { type_name: 'markdown', shape: { kind: 'file', ext: '.md' } },
 ];
 
 const getMock = vi.fn();
@@ -77,11 +76,10 @@ beforeEach(() => getMock.mockReset());
 afterEach(() => vi.restoreAllMocks());
 
 describe('assets owned by another asset', () => {
-  it('gives a folder-layout row a chevron even when it is not folder-backed', () => {
+  it('gives a folder-shaped row a chevron even when its file tree is not browsable', () => {
     const node = buildAssetChild('agent', agentRow, false, 'asset-type:agent');
-    // `false` here is folder_backed — an agent has no browsable folder asset_ref,
-    // so before this change the row had `hasChildren: false` and no way to show
-    // the Mcps it owns.
+    // `false` here is the browsable-folder flag — before this change the row had
+    // `hasChildren: false` and no way to show the Mcps it owns.
     expect(node.hasChildren).toBe('unknown');
     expect(node.listChildren).toBeTypeOf('function');
   });

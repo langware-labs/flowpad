@@ -143,13 +143,13 @@ def get_database_paths() -> DatabasePathsResult:
 async def clear_index(types: list[str] | None = None) -> ClearIndexResult:
     """Clear FTS index + record-backed entities. Optionally scoped to specific types.
 
-    ``SchemaRegistry.clear_index`` is the authoritative implementation and is
+    ``index_log.clear_index`` is the authoritative implementation and is
     careful to delete only schema-registered record types (not arbitrary
     anonymous entities like user-created projects/workspaces).
     """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
-    result = await SchemaRegistry.clear_index(types)
+    result = await index_log.clear_index(types)
     return ClearIndexResult(
         fts_cleared=result.fts_cleared,
         entities_cleared=result.entities_cleared,
@@ -749,10 +749,10 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 
 async def get_scan_info() -> dict:
     """Return current index status. Reads JSONL bookkeeping + queries the DB
-    for live entity counts (single chokepoint via SchemaRegistry.get_index_status)."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    for live entity counts (single chokepoint via index_log.get_index_status)."""
+    from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
-    status = await SchemaRegistry.get_index_status()
+    status = await index_log.get_index_status()
     total_indexed = sum(t.entity_count for t in status.per_type)
     return {
         "total_indexed": total_indexed,

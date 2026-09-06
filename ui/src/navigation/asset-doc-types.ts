@@ -20,6 +20,7 @@ export {
   isAssetEditor,
   isFileOnlyEditor,
   isFilelessEditor,
+  primaryTypeForEditor,
 } from '@sdk';
 
 /** How `<value>` identifies the asset — the `<method>` URL segment (editor mode only). */
