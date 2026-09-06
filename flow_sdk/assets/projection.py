@@ -152,7 +152,7 @@ def project_asset_tree(
     if layout.kind is LayoutKind.NONE:
         raise ValueError(f"asset origin does not resolve to a {info.type_name} asset ({info.shape.to_dict()['kind']} shape)")
 
-    parser_path = layout.ref
+    parser_path = layout.root
     parser_ref = FSRef(parser_path, record_type=entity_type, read_only=True)
     observed_id = info.read_id(parser_ref)
     if observed_id != expected_id:

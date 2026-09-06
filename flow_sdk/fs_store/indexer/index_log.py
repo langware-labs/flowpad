@@ -154,13 +154,11 @@ class AssetStats:
 
 ScanIssueKind = Literal[
     "unclassified_in_family_dir",  # a file in a typed family dir no TypeInfo claimed
-    "shape_mismatch",  # the path matched a type but its layout/shape did not
     "foreign_id",  # a carrier value that is not an accepted id, or a retired form (ignored, v5 minted)
     "malformed_carrier",  # the carrier (frontmatter / sidecar) could not be parsed
 ]
 
 UNCLASSIFIED_IN_FAMILY_DIR: ScanIssueKind = "unclassified_in_family_dir"
-SHAPE_MISMATCH: ScanIssueKind = "shape_mismatch"
 FOREIGN_ID: ScanIssueKind = "foreign_id"
 MALFORMED_CARRIER: ScanIssueKind = "malformed_carrier"
 

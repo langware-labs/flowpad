@@ -51,8 +51,8 @@ def _main_doc(info: Any, root: Path) -> Optional[Path]:
 
 
 def _asset_ref(info: Any, root: Path) -> Path:
-    """The ref the type's identity backend is registered for (``Layout.ref``)."""
-    return info.layout_of(root).ref or root
+    """The ref the type's identity backend is registered for — the asset ROOT."""
+    return info.layout_of(root).root or root
 
 
 def _sub_target(root: Path, name: str, sub_cls: type) -> Path:

@@ -1,5 +1,5 @@
 import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
-import type { TypeShape } from '@sdk/FlowSync/schema';
+import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 
 /**
  * Resolve a descriptor's typeid string to the cached entity's `displayName`.
@@ -105,6 +105,6 @@ export function improvableMainFile(
   const { type } = parseTypeid(descriptor.typeid);
   const ti = typeInfoByName.get(type);
   const shape = ti?.shape;
-  const file = shape?.kind === 'folder' ? (shape.main ?? '') : basename(assetPath);
+  const file = isFolderShape(shape) ? (shape.main ?? '') : basename(assetPath);
   return file || null;
 }

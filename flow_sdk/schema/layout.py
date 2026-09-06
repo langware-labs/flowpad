@@ -3,8 +3,9 @@
 A type is either a ``File`` (one file, told apart by its extension) or a
 ``Folder`` (a directory, told apart by the main document it holds).
 ``locate`` is the per-type half of the SCAN step: given a path, is it this
-shape, and if so what is its root, body and asset_ref? The registry-wide half
-(``SchemaRegistry.type_for``) asks every declared shape in precedence order.
+shape, and if so what is its root (the ``asset_ref``) and body? The
+registry-wide half (``SchemaRegistry.type_for``) asks every declared shape in
+precedence order.
 """
 from __future__ import annotations
 
@@ -24,12 +25,13 @@ class LayoutKind(StrEnum):
 @dataclass(frozen=True)
 class Layout:
     kind: LayoutKind
-    root: Path | None      # the asset's storage root (folder or file); None iff NONE
+    root: Path | None      # the asset's storage root (folder or file); None iff NONE.
+                           # ALSO the ``asset_ref`` spelling — they are the same path
+                           # for every shape, so there is one field, not two.
     body: Path | None      # the writable main document, when there is one
-    ref: Path | None       # the asset_ref spelling of this asset
 
 
-NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
+NO_LAYOUT = Layout(LayoutKind.NONE, None, None)
 
 
 def _norm_ext(ext: str) -> str:
@@ -69,13 +71,10 @@ class File:
         shaped = self.names_file(path) if self.names else path.suffix.lower() in self.exts
         if not shaped or (verify and not path.is_file()):
             return NO_LAYOUT
-        return Layout(LayoutKind.FILE, path, path, path)
+        return Layout(LayoutKind.FILE, path, path)
 
     def root_of(self, ref: Path) -> Path:
         return ref
-
-    def ref_for(self, root: Path) -> Path:
-        return root
 
     def to_dict(self) -> dict:
         return {"kind": "file", "ext": self.ext, "also": list(self.also), "names": list(self.names)}
@@ -106,7 +105,7 @@ class Folder:
             if verify and not (path.is_dir() and self.main and (path / self.main).is_file()):
                 return NO_LAYOUT
         body = root / self.main if self.main else None
-        return Layout(kind, root, body, self.ref_for(root))
+        return Layout(kind, root, body)
 
     def root_of(self, ref: PurePath) -> PurePath:
         """The folder for either ``asset_ref`` spelling — the folder, or the
@@ -116,10 +115,6 @@ class Folder:
         if self.main and ref.name.lower() == self.main.lower() and not (isinstance(ref, Path) and ref.is_dir()):
             return ref.parent
         return ref
-
-    def ref_for(self, root: Path) -> Path:
-        """Where ``asset_ref`` points for the asset rooted at ``root``: the root."""
-        return root
 
     def to_dict(self) -> dict:
         return {"kind": "folder", "main": self.main}

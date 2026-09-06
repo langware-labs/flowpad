@@ -45,11 +45,14 @@ export interface JSONSchemaProperty {
  * is the single source of truth for the lucide icon name (backend-owned).
  */
 export type TypeShape =
-  | { kind: 'folder'; main: string | null }
+  | FolderShape
   | { kind: 'file'; ext: string; also?: string[]; names?: string[] };
 
-/** True when an asset of this shape IS a directory (skill/task/mcp). */
-export function isFolderShape(shape: TypeShape | null | undefined): boolean {
+export type FolderShape = { kind: 'folder'; main: string | null };
+
+/** True when an asset of this shape IS a directory (skill/task/mcp). Narrows,
+ *  so a caller reads `main` off the shape without re-testing `kind`. */
+export function isFolderShape(shape: TypeShape | null | undefined): shape is FolderShape {
   return shape?.kind === 'folder';
 }
 

@@ -24,10 +24,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Container
-from pathlib import Path
 from typing import Any
 
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.identity_carrier import Foreign, Found, Unstamped, foreign_detail
 from flow_sdk.fs_store.indexer.index_log import FOREIGN_ID, ScanIssue, append_scan_issue
 from flow_sdk.schema.layout import Layout
@@ -51,8 +49,8 @@ def reconcile(
     found = carrier.read(where)
 
     def _fallback() -> str:
-        key = info.stable_key_for(ref if ref is not None else layout.ref)
-        return mint_uuid(key or str(Path(layout.ref or where).resolve()), namespace=info.id_namespace)
+        key, keyed = info.keyed_id(layout, ref)
+        return keyed if key else info.path_id(layout, where)
 
     if isinstance(found, Found):
         live = owner_row is None or found.id == owner_row or live_ids is None or found.id in live_ids

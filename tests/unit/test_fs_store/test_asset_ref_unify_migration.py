@@ -62,9 +62,9 @@ def test_every_folder_type_refs_its_folder() -> None:
     for name in ("agent", "spec", "agent_trace", "usage_report", "asset_cleanup_report", "skill", "task"):
         info = SchemaRegistry.get(name)
         folder = Path("/w/x")
-        assert info.layout_of(folder).ref == folder, name
+        assert info.layout_of(folder).root == folder, name
         assert isinstance(info.shape, Folder), name
-        assert info.layout_of(folder / info.shape.main).ref == folder, name
+        assert info.layout_of(folder / info.shape.main).root == folder, name
 
 
 @pytest.mark.asyncio

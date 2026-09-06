@@ -1543,13 +1543,21 @@ class FsRecordsActionsMixin:
         # before any global scope/project inventory or custom-root work.
         # ``index_one`` still stamps an already-known owning project through
         # its targeted project-mount lookup.
+        #
+        # ``?type=`` FILTERS the answer, it does not classify: the registry
+        # classifies the path as the walk would, so a client naming another
+        # type gets nothing rather than a row minted for a file that type does
+        # not own (``?type=mcp_server`` on a settings.json).
         if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
             _t_direct = time.perf_counter()
             try:
                 try:
-                    found = await index_one(await resolve_asset(_p, write=True, type_name=filter_type))
+                    resolved = await resolve_asset(_p, write=True)
+                    if resolved.type_name != filter_type:
+                        raise NotAnAsset(f"{_p} is a {resolved.type_name}, not a {filter_type}")
+                    found = await index_one(resolved)
                 except NotAnAsset as reason:
                     logging.debug("[fs-records] index %s: %s", filter_type, reason)
                     found = None

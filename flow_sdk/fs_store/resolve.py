@@ -3,12 +3,18 @@
 The interactive counterpart of the index walk. A client hands over a path
 (a click, ``flow show``, a watcher event) and needs the ``(type, id)`` the
 walk would have assigned, without a walk: classify the path
-(``SchemaRegistry.type_for`` — or the type the caller already knows),
-locate the asset's root/body/ref (``TypeInfo.layout_of``), ask which row owns
-that ref (``Entity.get_by_asset_ref``), and settle the id through the same
-``reconcile`` the walk uses. ``index_one`` then parses the asset and syncs
-the row, which is what the discover routes and the change-driven re-parse
-(``reindex_paths``) need.
+(``SchemaRegistry.type_for``), locate the asset's root/body
+(``TypeInfo.layout_of``), ask which row owns that root, and settle the id
+through the same ``reconcile`` the walk uses. ``index_one`` then parses the
+asset and syncs the row, which is what the discover routes and the
+change-driven re-parse (``reindex_paths``) need.
+
+THE PATH IS THE CLASSIFICATION. ``type_name`` is the type of a ROW being
+re-parsed (with that row's ``owner_id``), never a client's opinion about what a
+file is: a bespoke-walked type is told apart by where the WALK found it, so
+naming one would mint a row for a path it does not own. A type keyed on its
+walk ref (``TypeInfo.keyed_by_ref``) is refused outright — from a bare path its
+v5 is a different one.
 
 ``write`` is decided by the caller: it says whether identity may be stamped
 into the source bytes. A git-tracked or read-only root passes ``False``.
@@ -16,7 +22,7 @@ into the source bytes. A git-tracked or read-only root passes ``False``.
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -36,21 +42,43 @@ class Resolved:
     root: Path
     body: Path | None
     editor: str | None
+    #: The VERIFIED layout this was decided on — carried so no consumer
+    #: re-derives (and re-stats) what is already settled.
+    layout: Layout = field(repr=False, compare=False, default=None)  # type: ignore[assignment]
+    #: The row the owner lookup fetched, if any: ``ensure_entity``'s answer
+    #: whenever it IS the resolved id.
+    owner: Any = field(repr=False, compare=False, default=None)
 
     @property
     def info(self) -> TypeInfo:
         return SchemaRegistry.get(self.type_name)
 
-    @property
-    def layout(self) -> Layout:
-        return self.info.layout_of(self.root)
-
     def to_dict(self) -> dict:
-        data = asdict(self)
-        data["type"] = data.pop("type_name")
-        data["root"] = str(self.root)
-        data["body"] = str(self.body) if self.body else None
-        return data
+        """The wire shape ``GET /api/v1/assets/resolve`` answers with."""
+        return {
+            "type": self.type_name,
+            "id": self.id,
+            "root": str(self.root),
+            "body": str(self.body) if self.body else None,
+            "editor": self.editor,
+        }
+
+
+async def _owner_row(info: TypeInfo, root: Path, *, strict: bool) -> Any:
+    """The row of THIS TYPE whose ``asset_ref`` is ``root`` — one query, not
+    ``Entity.get_by_asset_ref``'s ~25-type fan-out: the owner is fed to a
+    per-type ``reconcile``, so another type's row would be the wrong answer."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
+
+    entity_cls = info.entity_cls
+    if entity_cls is None or "asset_ref" not in getattr(entity_cls, "model_fields", {}):
+        return None
+    if not getattr(entity_cls, "owns_asset_ref", True):
+        return None
+    return await Entity.first_across_asset_owners(
+        "asset_ref", asset_ref_spellings(str(root)), strict=strict, candidates=[entity_cls]
+    )
 
 
 async def resolve_asset(
@@ -60,37 +88,45 @@ async def resolve_asset(
     type_name: str | None = None,
     owner_id: str | None = None,
     strict: bool = False,
+    known_unowned: bool = False,
 ) -> Resolved:
     """The ``(type, id, layout)`` of the asset at ``path``.
 
-    ``type_name`` is the type the caller already knows (a row being re-parsed);
-    without it the registry classifies the path. Either way the type must
-    claim the path and the asset must exist on disk, else ``NotAnAsset``.
-    ``owner_id`` is the row the caller already resolved, which skips the owner
-    lookup; ``strict`` makes a failed owner lookup raise instead of reading as
-    "unowned" (pass it whenever a miss leads to a write).
+    ``type_name`` + ``owner_id`` are the type and id of the ROW being
+    re-parsed; without them the registry classifies the path. Either way the
+    type must claim the path and the asset must exist on disk, else
+    ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
+    reading as "unowned" (pass it whenever a miss leads to a write);
+    ``known_unowned`` says the caller has ALREADY proved no row owns this
+    asset, so the lookup is skipped rather than repeated.
     """
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = Path("/") / p
     p = p.resolve()
+    named = type_name
     if type_name is None:
         type_name = SchemaRegistry.type_for(p)
     info = SchemaRegistry.get(type_name) if type_name else None
     if info is None:
         raise NotAnAsset(f"{p} is not an asset")
-    if info.claims(p) is not None:
-        raise NotAnAsset(f"{p} is not a {type_name}: {info.claims(p)}")
+    if named is not None and owner_id is None and not info.walk:
+        # And `claims` cannot refuse it: the bespoke `.json` types all
+        # declare `File(".json")`.
+        raise NotAnAsset(f"{p}: {named} is walked bespoke; a caller-named type is not a classification")
+    if info.keyed_by_ref:
+        raise NotAnAsset(f"{p}: a {type_name} is keyed on its walk ref, which a path does not carry")
+    if (refusal := info.claims(p)) is not None:
+        raise NotAnAsset(f"{p} is not a {type_name}: {refusal}")
     layout = info.layout_of(p, verify=True)
     if layout.kind is LayoutKind.NONE:
         raise NotAnAsset(f"{p} is not shaped as a {type_name}")
-    if owner_id is None:
-        owner = await Entity.get_by_asset_ref(layout.ref, strict=strict)
+    owner = None
+    if owner_id is None and not known_unowned:
+        owner = await _owner_row(info, layout.root, strict=strict)
         owner_id = str(owner.id) if owner is not None and getattr(owner, "id", None) else None
     entity_id = reconcile(info, layout, owner_id, None, write=write)
-    return Resolved(type_name, entity_id, layout.root, layout.body, info.editor)
+    return Resolved(type_name, entity_id, layout.root, layout.body, info.editor, layout=layout, owner=owner)
 
 
 async def index_one(
@@ -115,10 +151,11 @@ async def index_one(
 
     info = resolved.info
     ref = FSRef(
-        resolved.layout.ref,
+        resolved.root,
         record_type=RecordType(resolved.type_name),
         scope=scope or classify_path(resolved.root),
         project_id=project_id,
+        layout=resolved.layout,
     )
     record = info.record_for(ref, resolved.id)
     if record is None:
@@ -139,6 +176,10 @@ async def ensure_entity(resolved: Resolved) -> Any:
     cannot be parsed or the sync did not produce a row."""
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
+    owner = resolved.owner
+    if owner is not None and str(getattr(owner, "id", "")) == resolved.id:
+        # The owner lookup already fetched this very row.
+        return owner
     driver = get_db_driver()
     entity = await driver.get_by_id(resolved.id, resolved.type_name)
     if entity is not None:

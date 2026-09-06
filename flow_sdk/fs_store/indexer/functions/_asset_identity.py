@@ -16,8 +16,17 @@ __all__ = [
     "folder_json_identity",
     "frontmatter_identity",
     "native_json_identity",
+    "needs_ref",
     "resolved_path_key",
 ]
+
+
+def needs_ref(fn):
+    """Mark a stable-key function that reads MORE off its ref than the path —
+    a ``json_path`` fragment, the walk's scope. Handed a bare path such a type
+    keys a DIFFERENT v5, so ``resolve_asset`` refuses it (``keyed_by_ref``)."""
+    fn.needs_ref = True
+    return fn
 
 
 def resolved_path_key(ref: Any) -> str:

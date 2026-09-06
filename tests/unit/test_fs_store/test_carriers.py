@@ -26,7 +26,7 @@ def test_frontmatter_roundtrip(tmp_path: Path) -> None:
     carrier = Frontmatter()
     assert carrier.read(doc) is ABSENT
     assert carrier.stamp(doc, V4) == V4
-    assert carrier.read(doc) == Found(V4, "frontmatter")
+    assert carrier.read(doc) == Found(V4)
     assert doc.read_text(encoding="utf-8").startswith(f"---\nid: {V4}\ntitle: T\n---")
     assert carrier.stamp(doc, "99999999-8888-4777-8666-555555555555") == V4, "a Found id wins"
 
@@ -51,7 +51,7 @@ def test_sidecar_refuses_a_file_and_writes_the_folder_json(tmp_path: Path) -> No
     assert Sidecar().read(folder) is ABSENT
     assert Sidecar().stamp(folder, V4) == V4
     assert json.loads((folder / ".flow" / "capsules" / "identity.json").read_text())["data"]["id"] == V4
-    assert Sidecar().read(folder) == Found(V4, "folder-json")
+    assert Sidecar().read(folder) == Found(V4)
 
 
 def test_jsonroot_reports_a_foreign_id(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_derived_is_pure_and_never_writes(tmp_path: Path) -> None:
     src = tmp_path / "session.jsonl"
     src.write_text("{}\n", encoding="utf-8")
     assert Derived().read(src) is ABSENT
-    assert Derived(reader=lambda p: V4).read(src) == Found(V4, "derived")
+    assert Derived(reader=lambda p: V4).read(src) == Found(V4)
     assert Derived(reader=lambda p: "slug").read(src) is ABSENT
     with pytest.raises(NotWritable):
         Derived().stamp(src, V4)
