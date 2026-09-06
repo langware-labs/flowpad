@@ -256,3 +256,84 @@ async def test_an_explicit_test_clears_a_recorded_refusal(monkeypatch) -> None:
     assert capability.login_state == DeviceLoginState.AUTHENTICATED, (
         "an explicit user-invoked Test found a working login but the capability stayed signed out"
     )
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.harness_login_state.rules: FAILING? auth-status no longer re-probes
+#       the DEVICE login of a harness a hub endpoint funds - read this tag's rules before
+#       touching auth_status_action's api branch
+# flowpad:endcapsule tag
+@pytest.mark.parametrize("endpoint_eligible", [True, False])
+@pytest.mark.asyncio
+async def test_a_hub_funded_harness_still_reports_its_own_device_login(monkeypatch, endpoint_eligible: bool) -> None:
+    """A budget funding the where harness must not answer for the vendor's OAuth session.
+
+    Two failures lived in this one branch, and the user met them as one thing: the
+    LLM-sources screen calling a signed-in ``claude`` "signed out", and a Sign in button
+    standing where the Use button belongs -- the one control that switches funding back
+    to the device login.
+
+    * ``source.provider`` does not exist (``LLMSource`` NAMES an endpoint and mirrors none
+      of its fields), so the action 500'd for exactly the harnesses a key or a hub endpoint
+      funds. ``login_state`` then froze at whatever the last sweep saw, and a user who
+      signed in afterwards had no surface that would notice.
+    * the synthesized api-mode result -- ``logged_in`` iff the ENDPOINT is eligible -- was
+      mirrored back onto ``login_state``, so a judgement about a hub budget overwrote the
+      field that means "is this device login signed in".
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source as llm_source_mod
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource
+
+    await run_discovery([CLAUDE_KIND])
+    capability = await Capability.get_by_kind(CLAUDE_KIND)
+    assert capability is not None
+
+    endpoint = LLMEndpoint.projection(
+        LLMEndpointKind.HUB, "llm_endpoint-test-budget", name="Gadi +20", provider="openrouter"
+    )
+    verdict = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name="Gadi +20",
+        eligible=endpoint_eligible,
+        reason="" if endpoint_eligible else "this budget is exhausted",
+    )
+
+    async def fake_resolve(worker_type: str):
+        return llm_source_mod.Candidate(endpoint, verdict)
+
+    monkeypatch.setattr(llm_source_mod, "resolve_box_llm_endpoint", fake_resolve)
+
+    # The vendor CLI is signed in. That is the answer the whole action exists to carry,
+    # and it must survive whatever the budget's own verdict says.
+    async def signed_in_probe():
+        return WorkerAuthResult(
+            status=WorkerAuthStatus.LOGGED_IN,
+            verified=False,
+            message="claude CLI has stored credentials (not validated).",
+            identity="gadi@langware.ai",
+            plan="max",
+        )
+
+    monkeypatch.setattr(type(get_driver("claude")), "auth_probe", lambda self: signed_in_probe())
+
+    response = await capability.auth_status_action()
+    data = response.data or {}
+    assert data.get("auth_mode") == "api", f"a hub-funded harness should report api mode, got {data!r}"
+    assert data.get("details", {}).get("provider") == "openrouter", (
+        "the ENDPOINT's provider belongs in the details -- reading it off the verdict raised "
+        "AttributeError and 500'd the action"
+    )
+    assert data.get("details", {}).get("device_login") == WorkerAuthStatus.LOGGED_IN.value
+
+    assert capability.login_state == DeviceLoginState.AUTHENTICATED, (
+        f"the vendor CLI is signed in, but a verdict about the hub budget "
+        f"(eligible={endpoint_eligible}) left login_state={capability.login_state!r} -- the "
+        f"LLM-sources screen renders anything but 'authenticated' as 'claude is signed out' "
+        f"and offers Sign in where it should offer Use"
+    )

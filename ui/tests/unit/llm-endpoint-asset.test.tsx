@@ -76,6 +76,7 @@ function offer(over: Partial<LLMEndpointOffer> = {}): LLMEndpointOffer {
     invocable: true,
     base_url: '',
     principal_typeid: 'user-abc',
+    can_administer: null,
     filters: {
       models_allow: ['anthropic/claude-haiku-4.5'],
       models_deny: [],
@@ -107,26 +108,41 @@ function offer(over: Partial<LLMEndpointOffer> = {}): LLMEndpointOffer {
 describe('myEndpoints', () => {
   const ME = 'user-abc';
 
-  it('lists only what was allocated to this person', () => {
+  it('lists what is stamped with this person AND what was handed to them', () => {
     const mine = offer({ id: 'mine', name: 'Mine', principal_typeid: ME });
     const alsoMine = offer({ id: 'also', name: 'Also mine', principal_typeid: 'user:abc' });
+    // Handed over by an admin: `allocate` stamps no principal and grants `reader`, so the ONLY
+    // thing saying it is theirs is that they cannot change it. This is the row that used to
+    // vanish — a person's entire Assets tree showed no LLM Endpoints at all.
+    const givenToMe = offer({ id: 'given', name: 'Gadi +20', principal_typeid: null, can_administer: false });
     // Everything below is visible to an OWNER and is still not their budget.
     const someoneElse = offer({ id: 'theirs', name: 'Bob +5', principal_typeid: 'user-bob' });
-    const unattributed = offer({ id: 'loose', name: 'Gadi +1', principal_typeid: null });
+    const iAdminister = offer({ id: 'admin', name: 'Gadi +1', principal_typeid: null, can_administer: true });
+    const sharedRoot = offer({ id: 'root', name: 'Global root', principal_typeid: null, can_administer: null });
     const org = offer({ id: 'org', name: 'Acme', principal_typeid: 'organization-1' });
     const team = offer({ id: 'team', name: 'Platform', principal_typeid: 'team-9' });
 
     const kept = myEndpoints({
-      available: [org, mine, team, someoneElse, unattributed, alsoMine],
+      available: [org, mine, team, someoneElse, iAdminister, sharedRoot, givenToMe, alsoMine],
       hub_user_typeid: ME,
     } as never);
 
     // Sorted by name; the colon spelling of the same id counts as mine.
-    expect(kept.map((e) => e.id)).toEqual(['also', 'mine']);
+    expect(kept.map((e) => e.id)).toEqual(['also', 'given', 'mine']);
     expect(isAllocatedToUser(someoneElse, ME)).toBe(false);
-    expect(isAllocatedToUser(unattributed, ME)).toBe(false);
+    expect(isAllocatedToUser(iAdminister, ME)).toBe(false);
+    // Unknown is not a gift: the shared root reaches everyone without a role edge, and counting
+    // it would put the company pool in every personal list.
+    expect(isAllocatedToUser(sharedRoot, ME)).toBe(false);
     expect(isAllocatedToUser(org, ME)).toBe(false);
     expect(isAllocatedToUser(team, ME)).toBe(false);
+  });
+
+  it('keeps a stamped wallet whatever the caller may do to it', () => {
+    // An admin CAN change their own default; the stamp is what makes it theirs, so the role
+    // question is never asked of a tagged row.
+    const mineAndEditable = offer({ principal_typeid: ME, can_administer: true });
+    expect(isAllocatedToUser(mineAndEditable, ME)).toBe(true);
   });
 
   it('claims nothing when the box cannot say who this person is', () => {
