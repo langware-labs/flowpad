@@ -696,6 +696,42 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
+  /**
+   * Re-pull everything this client is currently showing, from the server.
+   *
+   * The data layer is PUSH-ONLY after its seeding fetch (see `watchQuery`): a
+   * live query is seeded once and every later change is expected to arrive over
+   * the WebSocket. So a client that missed a message — a laptop that slept, a
+   * socket that dropped and re-registered its watches without replaying the gap
+   * — or one looking at state nothing pushes at all, has no way back to the
+   * truth short of reloading the document. This is that way back, and it is the
+   * only pull path in the client.
+   *
+   * Re-runs every live query and re-fetches every cached entity, then notifies
+   * subscribers exactly the way an arriving data-op does, so React repaints from
+   * server state. Best-effort per item: one entity that 404s (deleted while we
+   * held it) must not abandon the rest of the refresh.
+   */
+  public async refreshAll(): Promise<void> {
+    const requests = this.watchedQueries.getAllWatchedQueries().map((watched) => watched.request);
+    const typeIds = Array.from(this.entities.keys());
+
+    await Promise.all([
+      ...requests.map((request) =>
+        this._query(request)
+          .then((results) => this.watchedQueries.updateQueryResults(request, results))
+          .catch(() => undefined),
+      ),
+      ...typeIds.map((typeId) =>
+        this.refreshByTypeId(typeId)
+          .then((entity) => {
+            if (entity) this._notifyAllAliases(typeId, entity, entity);
+          })
+          .catch(() => undefined),
+      ),
+    ]);
+  }
+
   public async clearCache() {
     for (const typeId of this.entities.keys()) {
       this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
@@ -1301,10 +1337,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!entity) {
       throw new Error('Can not create, Empty ref entity');
     }
-    // `typeId` is checked too, not just the entity and the type either side of it:
-    // without this a null typeId surfaced as a raw
-    // `TypeError: Cannot read properties of null (reading 'type')` from inside a
-    // function whose whole point is to say WHICH part of the ref was unusable.
+    // Optional: a null typeId used to surface as a raw TypeError from inside a
+    // function whose whole point is to name the unusable part of the ref.
     const entityType = entity.typeId?.type;
     if (!entityType) {
       throw new Error('Can not create, Entity type not found');
