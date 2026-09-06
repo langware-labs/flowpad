@@ -203,6 +203,7 @@ export function ConversationListRow({
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId: currentUser?.id ?? null },
   });
+  const attribution = attributionFor(latestMessage?.origin);
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -390,10 +391,12 @@ export function ConversationListRow({
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
-        <CategoryChips facets={facets} className="me-1" />
         {/* Channel conversations carry exactly one compact source chip; hub
-            rows have no origin and render none — absence means "ours". */}
-        <SourceChip attribution={attributionFor(latestMessage?.origin)} className="me-1" />
+            rows have no origin and render none — absence means "ours". A
+            source-backed ticket wears the source chip alone: the kind chip is
+            for the requester's side, where no source exists. */}
+        <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
+        <SourceChip attribution={attribution} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>

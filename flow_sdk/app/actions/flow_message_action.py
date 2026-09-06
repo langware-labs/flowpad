@@ -27,6 +27,7 @@ from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
+from flow_sdk.cloud_client.transport.hub_http import rows_of
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -3194,15 +3195,7 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
     # hub row and served only on request — without this the pull materializes
     # children with EMPTY bodies (the live-push path carries them; catch-up must too).
     children = await hub_get(parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"})
-    child_list: list[dict] = []
-    if isinstance(children, list):
-        child_list = children
-    elif isinstance(children, dict):
-        for k in ("data", "items", "results"):
-            v = children.get(k)
-            if isinstance(v, list):
-                child_list = v
-                break
+    child_list = rows_of(children)
     parent_ref = f"{parent_tid.type}-{parent_tid.id}"
     hub_ids: set[str] = set()
     for raw in child_list:
@@ -3433,16 +3426,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             if children is None:
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
                 return False
-            child_list: list[dict] = []
-            if isinstance(children, list):
-                child_list = children
-            elif isinstance(children, dict):
-                for k in ("data", "items", "results"):
-                    v = children.get(k)
-                    if isinstance(v, list):
-                        child_list = v
-                        break
-            child_list = [m for m in child_list if isinstance(m, dict) and m.get("id")]
+            child_list = [m for m in rows_of(children) if m.get("id")]
             child_list = fetch_order(child_list)
             synced = 0
             for raw_fm in child_list:

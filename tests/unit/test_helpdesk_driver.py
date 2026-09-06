@@ -50,7 +50,7 @@ def _source(**config):
 
 
 def _cursor(state=None):
-    return SimpleNamespace(segment_key=TICKET, state=state or {}, window_start=None, first_run=not state, label="")
+    return SimpleNamespace(segment_key=TICKET, state=state or {}, window_start=None, first_run=not state)
 
 
 def _hub(monkeypatch, *, pool=None, messages=None, error=None, calls=None, participants=(), user=ME):
@@ -105,10 +105,10 @@ class TestItIsAPluggableDriver:
         assert "traits" not in manifest, "a builtin never declares traits"
 
     def test_replies_target_the_ticket(self):
-        item = SimpleNamespace(segment_key=TICKET, thread_key=f"{DESK}:{TICKET}", external_id=MSG["id"])
+        item = SimpleNamespace(segment_key=TICKET, thread_key=TICKET, external_id=MSG["id"])
         spec = HelpdeskDriver.outbound_spec(_source()).reply_to(item, body="try restarting it")
         assert isinstance(spec, HelpdeskMessageSpec)
-        assert spec.to == [TICKET] and spec.thread_key == f"{DESK}:{TICKET}"
+        assert spec.to == [TICKET] and spec.thread_key == TICKET
 
 
 class TestThePool:
@@ -135,7 +135,7 @@ class TestMapping:
         assert item.external_id == MSG["id"]
         assert item.message_id == MSG["id"], "the projection must mint the FlowMessage with the hub's id"
         assert item.conversation_id == TICKET, "the projection must adopt the hub conversation"
-        assert item.thread_key == f"{DESK}:{TICKET}", "scoped to the desk — every desk reports one channel"
+        assert item.thread_key == TICKET, "the ticket id IS the thread key"
         assert item.segment_key == TICKET
         assert item.body == "my printer is broken"
         assert item.author_external_id == GUEST and item.author_display == "Guest"
@@ -179,7 +179,7 @@ class TestSend:
     async def test_it_picks_the_ticket_up_before_answering(self, monkeypatch):
         calls = []
         _hub(monkeypatch, calls=calls, participants=(GUEST,))
-        out = await HelpdeskDriver().send(_source(), thread_key=f"{DESK}:{TICKET}", to=TICKET, text="try restarting it")
+        out = await HelpdeskDriver().send(_source(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in calls if c[0] == "post"] == [
             ("post", "conversation", TICKET, "pickup"),
             ("post", "conversation", TICKET, "add_message"),
@@ -188,11 +188,14 @@ class TestSend:
         assert out.external_id == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
     @pytest.mark.asyncio
-    async def test_no_pickup_when_already_a_participant(self, monkeypatch):
+    async def test_pickup_is_sent_every_time_because_the_hub_makes_it_a_no_op(self, monkeypatch):
+        """Already a participant: no read to find that out — the hub's pickup
+        is idempotent, so the reply is two writes and never a read."""
         calls = []
         _hub(monkeypatch, calls=calls, participants=(GUEST, ME))
         await HelpdeskDriver().send(_source(), thread_key="", to=TICKET, text="still broken?")
-        assert [c[3] for c in calls if c[0] == "post"] == ["add_message"]
+        assert [c[0] for c in calls] == ["post", "post"]
+        assert [c[3] for c in calls] == ["pickup", "add_message"]
 
     @pytest.mark.asyncio
     async def test_a_failed_reply_never_parks_the_source(self, monkeypatch):

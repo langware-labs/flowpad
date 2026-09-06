@@ -414,8 +414,14 @@ class FlowMessage(Entity):
     # Where the real record lives when this message is a CACHE of one (a Gmail
     # message, a Slack post). None means the message is ours — which is exactly
     # the rule the UI needs: no origin, no channel badge, no "open in origin".
+    # HUB_WRITE: the projection writes it and a peer renders from it, but a
+    # hub payload never carries it — letting its absence blank it would strip
+    # a projected message of its channel the moment the mirror refreshes the
+    # row (the help desk's rows are written by both).
     origin: Optional[CloudOrigin] = APIField(
-        None, description="The cloud record this message caches; None = Flowpad-native"
+        None,
+        sharing=Sharing.HUB_WRITE,
+        description="The cloud record this message caches; None = Flowpad-native",
     )
     # SHARED above, PRIVATE here, deliberately. `origin` is transportable — the
     # receiver renders the badge and the "Open in ..." link from it. These two are
@@ -470,11 +476,16 @@ class FlowMessage(Entity):
 
     # The MessageThread this belongs to. None = ungrouped, which is how every
     # existing message renders — flat, exactly as before.
-    thread_id: Optional[str] = APIField(None, description="MessageThread id; None = flat (no thread grouping)")
+    # Both HUB_WRITE for the same reason as `origin`: the projection owns them.
+    thread_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="MessageThread id; None = flat (no thread grouping)"
+    )
     # The local FlowMessage this replies to. Provenance for quoting and reply
     # nesting — deliberately NOT how threading is decided (every channel worth
     # supporting ships a native thread id; see MessageThread).
-    reply_to_id: Optional[str] = APIField(None, description="Local id of the message this one replies to")
+    reply_to_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="Local id of the message this one replies to"
+    )
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -521,16 +532,6 @@ class FlowMessage(Entity):
     # re-drives it.
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     _api_visible: ClassVar[bool] = True
-
-    #: Written by the inbox projection, never by the hub: a hub payload never
-    #: carries them, and letting its absence blank them would strip a projected
-    #: message of its channel (`origin`) and its thread the moment the mirror
-    #: refreshes it — the help desk's rows are written by both.
-    PROJECTION_OWNED: ClassVar[frozenset[str]] = frozenset({"origin", "thread_id", "reply_to_id"})
-
-    @classmethod
-    def fields_not_accepted_from_hub(cls) -> frozenset[str]:
-        return super().fields_not_accepted_from_hub() | cls.PROJECTION_OWNED
 
     @classmethod
     def is_stale(cls, local, hub_payload):  # type: ignore[override]

@@ -96,6 +96,20 @@ def _inbox_id_from(config: Mapping[str, Any]) -> str:
         return ""
 
 
+def sender_allowed(allowlist, address: str) -> bool:
+    """Whether ``address`` is on ``allowlist`` — THE allowlist fold.
+
+    Case- and whitespace-insensitive through ``normalize_email``, the funnel
+    every address comparison uses, so this keeps agreeing with
+    ``is_self_address``; a non-email handle passes through it unchanged. An
+    empty list admits nobody.
+    """
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+    candidate = normalize_email(address or "")
+    return bool(candidate) and any(candidate == normalize_email(str(a)) for a in allowlist or [])
+
+
 class EmailInbox(Entity):
     """One Agent's mailbox: Hub-owned identity, SDK-owned behaviour."""
 
@@ -178,14 +192,7 @@ class EmailInbox(Entity):
         and must beat a populated list. An empty allowlist admits nobody — see
         :attr:`allowed_senders`.
         """
-        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
-
-        if not self.is_active:
-            return False
-        candidate = normalize_email(address)
-        if not candidate:
-            return False
-        return any(candidate == normalize_email(a) for a in self.allowed_senders)
+        return self.is_active and sender_allowed(self.allowed_senders, address)
 
     # ── constructors ──────────────────────────────────────────────────────
 

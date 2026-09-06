@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Any
 
 import httpx
 import pytest
@@ -49,6 +50,14 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _hub(base: str, token: str, method: str, path: str, json: Any = None) -> Any:
+    """One hub call below `/api/v1`, asserted 200 and unwrapped to `data`."""
+    async with httpx.AsyncClient(timeout=10) as h:
+        r = await h.request(method, f"{base}/api/v1{path}", headers=_auth(token), json=json)
+    assert r.status_code == 200, f"{method} {path}: {r.text[:200]}"
+    return r.json().get("data")
+
+
 @pytest.fixture
 async def desk(hub_session):
     """A desk project owned by alice, deleted after — asserted, so a leak is loud."""
@@ -74,28 +83,15 @@ async def desk(hub_session):
 
 
 async def _open_ticket(base: str, guest_token: str, desk_id: str, text: str) -> str:
-    async with httpx.AsyncClient(timeout=10) as h:
-        r = await h.post(
-            f"{base}/api/v1/graph/project/{desk_id}/start_guest_conversation",
-            headers=_auth(guest_token),
-            json={"text": text},
-        )
-        assert r.status_code == 200, r.text
-        return r.json()["data"]["id"]
+    return (await _hub(base, guest_token, "POST", f"/graph/project/{desk_id}/start_guest_conversation", {"text": text}))["id"]
 
 
 async def _hub_messages(base: str, token: str, conv_id: str) -> list[dict]:
-    async with httpx.AsyncClient(timeout=10) as h:
-        r = await h.get(f"{base}/api/v1/graph/conversation/{conv_id}/flow_message", headers=_auth(token))
-        assert r.status_code == 200, r.text
-        return list(r.json().get("data") or [])
+    return list(await _hub(base, token, "GET", f"/graph/conversation/{conv_id}/flow_message") or [])
 
 
 async def _pool(base: str, token: str, desk_id: str) -> list[dict]:
-    async with httpx.AsyncClient(timeout=10) as h:
-        r = await h.get(f"{base}/api/v1/graph/project/{desk_id}/helpdesk_conversations", headers=_auth(token))
-        assert r.status_code == 200, r.text
-        return list(r.json().get("data") or [])
+    return list(await _hub(base, token, "GET", f"/graph/project/{desk_id}/helpdesk_conversations") or [])
 
 
 async def _await_hub_message(base, token, conv_id, *, containing: str, not_from: str = "") -> dict | None:
@@ -116,8 +112,7 @@ async def _poll(source: DataSource) -> None:
     projection's reconcile sweep (the lane a first, BACKFILL sync relies on —
     pytest never starts the bus lanes, so the sweep is called directly)."""
     await sync_source(source)
-    placed = await reconcile_source(str(source.id))
-    assert placed >= 0
+    await reconcile_source(str(source.id))
 
 
 async def _desk_source(desk_id: str) -> DataSource:
@@ -146,7 +141,7 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
 
         item = await SourceItem.find_existing(source.id, ticket, first["id"])
         assert item is not None and item.conversation_id == ticket and item.message_id == first["id"]
-        threads = [t for t in await MessageThread.get_all({"channel": "helpdesk"}) if t.thread_key == f"{desk}:{ticket}"]
+        threads = [t for t in await MessageThread.get_all({"channel": "helpdesk"}) if t.thread_key == ticket]
         assert len(threads) == 1 and threads[0].conversation_id == ticket, "the thread adopted the hub conversation"
         assert await Conversation.get_one({"id": ticket}) is not None
         fm = await FlowMessage.get_one({"id": first["id"]})

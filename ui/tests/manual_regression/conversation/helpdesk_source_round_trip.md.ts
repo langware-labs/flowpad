@@ -11,7 +11,9 @@
  * QA_STAFF_API_URL (the staff instance backend), and QA_STAFF_* / QA_GUEST_*
  * credentials; skips when the staff backend is not named.
  */
-import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { test, expect, request as pwRequest } from '@playwright/test';
+import { pollUntil } from '../../hub/_matrix';
+import { auth, hubLogin } from '../_shared/hub';
 
 const HUB = process.env.QA_HUB_URL || '';
 const STAFF_API = process.env.QA_STAFF_API_URL || '';
@@ -21,28 +23,11 @@ const GUEST_EMAIL = process.env.QA_GUEST_EMAIL || 'dev-1@local.test';
 const GUEST_PW = process.env.QA_GUEST_PW || 'dev-1-pw-1234';
 const DISPLAY_NAME = 'Manual Support';
 
-async function hubLogin(rq: APIRequestContext, email: string, pw: string): Promise<{ token: string; id: string }> {
-  const res = await rq.post(`${HUB}/api/v1/login`, { data: { email, password: pw } });
-  expect(res.status(), `hub login ${email}`).toBe(200);
-  const d = (await res.json()).data;
-  return { token: d.token ?? d.api_key, id: d.user.id };
-}
-
 /** A conversation's pointers are `{typeid: "flow_message-<id>", ts}`; the ids alone, sorted. */
 const pointerIds = (raw: unknown): string[] =>
   JSON.parse((raw as string) || '[]').map((p: any) => String(p.typeid || '').replace(/^flow_message-/, '')).sort();
 
-const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
-
-async function until<T>(fn: () => Promise<T | null>, label: string, ms = 15_000): Promise<T> {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    const v = await fn();
-    if (v) return v;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`timed out: ${label}`);
-}
+const until = <T>(fn: () => Promise<T | null>, label: string): Promise<T> => pollUntil(fn, 15_000, label);
 
 test('binding criterion: a guest ticket answered from the staff inbox through the desk source', async () => {
   test.skip(!STAFF_API, 'set QA_STAFF_API_URL to the staff instance backend (e.g. http://localhost:6002) to run.');
@@ -51,8 +36,8 @@ test('binding criterion: a guest ticket answered from the staff inbox through th
   // Each identity owns its own cookie jar (the hub accepts JWT cookies too).
   const staffRq = await pwRequest.newContext();
   const guestRq = await pwRequest.newContext();
-  const staff = await hubLogin(staffRq, STAFF_EMAIL, STAFF_PW);
-  const guest = await hubLogin(guestRq, GUEST_EMAIL, GUEST_PW);
+  const staff = await hubLogin(staffRq, HUB, STAFF_EMAIL, STAFF_PW);
+  const guest = await hubLogin(guestRq, HUB, GUEST_EMAIL, GUEST_PW);
   const ts = Date.now();
 
   // Setup: the desk is staff's own project for this run.
