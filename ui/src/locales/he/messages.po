@@ -1521,6 +1521,10 @@ msgstr ""
 msgid "Agent enabled"
 msgstr ""
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Agent funding"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "הוק סוכן"
@@ -2480,6 +2484,10 @@ msgstr ""
 msgid "Auto-updates check hourly."
 msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Automatic"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3240,6 +3248,10 @@ msgstr "בודק את קבצי מרכז העזרה"
 msgid "Checking the tag index…"
 msgstr "בודק את אינדקס התגיות…"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Checking what funds {harnessLabel}…"
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
 msgstr "בודקים אם {folderName} מוכן לשיתוף"
@@ -3311,6 +3323,10 @@ msgstr "בחר אילו פרויקטים לסנן לפיהם. ממוין לפי 
 
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Choose…"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "chosen by you"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -5567,6 +5583,7 @@ msgstr "ברירת מחדל"
 msgid "Default ({defaultDbPath})"
 msgstr "ברירת מחדל ({defaultDbPath})"
 
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Default assistant"
 msgstr "עוזר ברירת מחדל"
@@ -8324,6 +8341,22 @@ msgstr "אמון מלא"
 msgid "Fullscreen"
 msgstr "מסך מלא"
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by a hub endpoint"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by a stored API key"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by your vendor subscription"
+msgstr ""
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Funding for"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
 msgstr "פסולת"
@@ -10243,6 +10276,7 @@ msgid "LLM keys"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -10548,6 +10582,7 @@ msgstr "טוען..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -12012,6 +12047,10 @@ msgstr "לא צוין סשן חי"
 msgid "No LLM index for this folder yet."
 msgstr "אין אינדקס LLM לתיקייה זו עדיין."
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "No LLM source funds this harness"
+msgstr ""
+
 #: src/components/project-home/BindSecretDialog.tsx
 #~ msgid "No local app secrets"
 #~ msgstr "אין סודות אפליקציה מקומיים"
@@ -12959,8 +12998,8 @@ msgid "Only a sandbox's owner can start one. If you share it as it is, they'll g
 msgstr "רק הבעלים של סנדבוקס יכול להפעיל אותו. אם תשתפו אותו כמו שהוא, הם יקבלו את הקישור אך לא יוכלו לפתוח אותו — ותוצג להם הודעה לבקש מכם להפעיל אותו קודם."
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Only an admin of this organization can see its budgets."
-msgstr ""
+#~ msgid "Only an admin of this organization can see its budgets."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -14235,6 +14274,10 @@ msgstr "בעיה"
 msgid "Problems found"
 msgstr "בעיות שנמצאו"
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "process"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -14277,6 +14320,10 @@ msgstr "תמונת פרופיל:"
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "Progress"
 msgstr "התקדמות"
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "project"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -18536,6 +18583,10 @@ msgstr "בדוק טריגר"
 msgid "That agent is no longer in your workspace."
 msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלך"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "That change could not be applied."
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
 #~ msgstr ""
@@ -20946,6 +20997,14 @@ msgstr "אתמול"
 msgid "You"
 msgstr "אתה"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "you are {role}"
+msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "You are not in any team in this organization yet."
+msgstr ""
+
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr ""
@@ -21114,6 +21173,10 @@ msgstr "השאלות שלך"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready"
 msgstr "ארגז החול שלך מוכן"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Your teams"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

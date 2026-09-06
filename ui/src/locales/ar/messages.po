@@ -1521,6 +1521,10 @@ msgstr ""
 msgid "Agent enabled"
 msgstr ""
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Agent funding"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
@@ -2480,6 +2484,10 @@ msgstr ""
 msgid "Auto-updates check hourly."
 msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Automatic"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3240,6 +3248,10 @@ msgstr "جارٍ التحقق من ملفات مكتب المساعدة"
 msgid "Checking the tag index…"
 msgstr "جاري التحقق من فهرس الوسوم…"
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Checking what funds {harnessLabel}…"
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
 msgstr "جارٍ التحقق من جاهزية {folderName} للمشاركة."
@@ -3311,6 +3323,10 @@ msgstr "تحديد المشاريع المراد التصفية بها. مرتب
 
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Choose…"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "chosen by you"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -5567,6 +5583,7 @@ msgstr "افتراضي"
 msgid "Default ({defaultDbPath})"
 msgstr "الافتراضي ({defaultDbPath})"
 
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Default assistant"
 msgstr "المساعد الافتراضي"
@@ -8324,6 +8341,22 @@ msgstr "الثقة الكاملة"
 msgid "Fullscreen"
 msgstr "ملء الشاشة"
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by a hub endpoint"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by a stored API key"
+msgstr ""
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "Funded by your vendor subscription"
+msgstr ""
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "Funding for"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
 msgstr "مهملات"
@@ -10243,6 +10276,7 @@ msgid "LLM keys"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -10548,6 +10582,7 @@ msgstr "جاري التحميل..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -12012,6 +12047,10 @@ msgstr "لم يتم تحديد جلسة مباشرة"
 msgid "No LLM index for this folder yet."
 msgstr "لا يوجد فهرس LLM لهذا المجلد بعد."
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "No LLM source funds this harness"
+msgstr ""
+
 #: src/components/project-home/BindSecretDialog.tsx
 #~ msgid "No local app secrets"
 #~ msgstr "لا توجد أسرار تطبيق محلية"
@@ -12959,8 +12998,8 @@ msgid "Only a sandbox's owner can start one. If you share it as it is, they'll g
 msgstr "يمكن لمالك الرمل فقط تشغيله. عند مشاركته بصيغته الحالية، سيحصل المستلم على الرابط لكن لن يتمكن من فتحه — إذ سيُطلب منه أن يطلب منك تشغيله أولاً."
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Only an admin of this organization can see its budgets."
-msgstr ""
+#~ msgid "Only an admin of this organization can see its budgets."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -14235,6 +14274,10 @@ msgstr "مشكلة"
 msgid "Problems found"
 msgstr "تم العثور على مشاكل"
 
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "process"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -14277,6 +14320,10 @@ msgstr "صورة الملف الشخصي:"
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "Progress"
 msgstr "التقدم"
+
+#: src/components/llm-sources/llm-source-visuals.ts
+msgid "project"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -18536,6 +18583,10 @@ msgstr "اختبار المحفز"
 msgid "That agent is no longer in your workspace."
 msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك."
 
+#: src/components/funding-chip/FundingChip.tsx
+msgid "That change could not be applied."
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
 #~ msgstr ""
@@ -20946,6 +20997,14 @@ msgstr "أمس"
 msgid "You"
 msgstr "أنت"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "you are {role}"
+msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "You are not in any team in this organization yet."
+msgstr ""
+
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr ""
@@ -21114,6 +21173,10 @@ msgstr "أسئلتك"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready"
 msgstr "الصندوق الرملي جاهز"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+msgid "Your teams"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
