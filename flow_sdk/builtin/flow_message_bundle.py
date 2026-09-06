@@ -1030,14 +1030,19 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
             # uses. Walking the whole project root for one received file held
             # the DB writer session for 16–18 s per message on a 780-file
             # project, and every live-session turn ships one prompt asset.
-            # A single-file project asset (prompt, markdown — no ``main_file``,
+            # A single-file project asset (prompt, markdown — a ``File`` shape,
             # so no folder of nested children) is re-rooted at its family
             # folder. Folder assets (task, spec, agent …) and user-scope
             # placements keep the wide walk: their nested children and
             # entities.json enclosures live outside one family folder.
+            #
+            # The shape is the test, NOT the legacy ``main_file`` projection:
+            # since the scan → classify → mint refactor that field is None for
+            # every type, folder ones included, so reading it narrowed the walk
+            # for a folder asset too and its nested children were never indexed.
             walk_root = item.root
             info = SchemaRegistry.get(item.asset_type)
-            if item.scope == AttachmentScope.PROJECT.value and info is not None and not getattr(info, "main_file", None):
+            if item.scope == AttachmentScope.PROJECT.value and info is not None and not isinstance(info.shape, Folder):
                 sub = getattr(info, "main_subdir", None)
                 family_root = item.root / PurePosixPath(str(sub).replace("\\", "/")) if sub else None
                 if family_root is not None and family_root.is_dir():
