@@ -265,68 +265,10 @@ means slow code — fix the code).
 
 ### 8. One spelling for an absolute path
 
-**Rule:** an absolute path that is stored, compared, or used as a key has
-exactly one spelling: pathlib-native `str(Path(p).resolve())` — what `FSRef`
-(the actual carrier) already produces, and what the indexer's per-type
-functions already write (`rec.asset_ref = FSRef(path.resolve())`).
-`canonical_posix_path()` is a deliberate exception the entity DB reaches for
-only to make its lex-range folder-prefix trick sort correctly — it is not a
-second general-purpose spelling to reach for at a comparison site.
-`as_posix()` on a **relative** path (a git rel\_path, a zip entry name, a
-portable bundle layout) is a separate, correct use and must stay — that's the
-right portable form there.
-
-**Why invisible in CI:** `Path(p).resolve()` and
-`Path(p).resolve().as_posix()` are the SAME string on Linux/macOS (already
-forward-slashed) and DIFFERENT strings on Windows (`C:\Users\x\a.md` vs
-`C:/Users/x/a.md`). A comparison that mixes the two spellings silently treats
-a real row as unowned — on Windows only. A green run on Linux/macOS CI is not
-evidence the comparison is correct.
-
-```python
-# Writer stores native ...
-self._path = Path(path).resolve()          # -> C:\Users\x\agent.md
-
-# ... reader looks up POSIX. On Linux these are identical, so CI is green.
-entity = await Entity.get_by_asset_ref(canonical_posix_path(path))   # -> C:/Users/x/agent.md
-```
-
-A second, related mistake is string-anchoring instead of letting `pathlib`
-resolve the path:
-
-```python
-# A POSIX-only assumption: on Windows "/" + "Users\x" is rooted but DRIVE-LESS,
-# so is_absolute() is still False and it can never match a stored "C:/Users/x".
-expanded = "/" + path
-```
-
-* Not slick (real, live in this codebase): `agentic_process.py`'s
-  `_entity_for_transcript_read` canonicalizes before the lookup
-  (`canonical_posix_path(path)` → `Entity.get_by_asset_ref(...)`, ~L4739),
-  but its sibling cross-link call thousands of lines down feeds the same
-  method a transcript entry's raw, un-canonicalized path
-  (`Entity.get_by_asset_ref(path)`, ~L6469) — same lookup, two spellings
-  going in, and the miss only reproduces on Windows.
-
-* Also not slick: `fs_records_actions.py`'s
-  `_handle_fs_records_discover_by_path` anchors a still-relative VFS path
-  with `expanded = "/" + expanded` — exactly the string-anchoring mistake
-  above, and the real FLOWPAD-2063/2064 bug class (a VFS-form path 404'd on
-  Windows while its absolute equivalent resolved fine).
-
-* Slick: normalize once, at the seam the value is looked up through — not ad
-  hoc at whichever call site remembers to. `Entity.get_by_asset_ref` is that
-  seam: canonicalizing inside it, so every caller gets the same spelling for
-  free, is the principle-2a fix; a `canonical_posix_path(...)` sprinkled at
-  one call site and not the next is the stopgap that drifts again the moment
-  someone adds a third caller.
-
-* Correct and must stay: `as_posix()` on a genuinely relative path —
-  `flow_sdk/builtin/git_origin.py`'s rel\_path,
-  `flow_sdk/builtin/faas/compute_node.py`'s zip entry names,
-  `flow_sdk/builtin/flow_message_bundle.py`'s portable metadata layout. None
-  of those is a lookup key into `asset_ref`; they're names inside a relative
-  tree, where forward slashes are the actual portability contract.
+**Rule:** an absolute path that's stored, compared, or used as a key has exactly one spelling — pathlib-native `str(Path(p).resolve())` (what `FSRef` and the indexer write), never `canonical_posix_path()` (an entity-DB-only lex-range exception) or raw `"/" + path` anchoring at a comparison site; `as_posix()` on a genuinely relative path (git rel\_path, zip entry, bundle layout) is separate and correct.
+**Why it hides in CI:** both non-relative spellings collapse to the same string on Linux/macOS, so a comparison mixing them passes CI and only drops a real row as "unowned" on Windows.
+**Live examples:** `agentic_process.py`'s `_entity_for_transcript_read` (FLOWPAD-2065) and `fs_records_actions.py`'s `expanded = "/" + expanded` (FLOWPAD-2063/2064).
+**Slick:** normalize once, at the seam the value is looked up through (`Entity.get_by_asset_ref`) — not sprinkled at whichever call site remembers to, which drifts the moment a new caller is added.
 
 ## The "where does this go?" checklist
 
