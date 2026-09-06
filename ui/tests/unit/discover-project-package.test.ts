@@ -14,7 +14,7 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get } }));
 
 const state = vi.hoisted(() => ({ project: null as unknown }));
-vi.mock('@sdk', () => ({ get dataContext() { return { project: state.project }; } }));
+vi.mock('@sdk', async (importOriginal) => ({ ...(await importOriginal<typeof import('@sdk')>()), get dataContext() { return { project: state.project }; } }));
 
 import { useProjectPackage, PACKAGE_ASSET_TYPES } from '@src/pages/discover-page/useProjectPackage';
 
