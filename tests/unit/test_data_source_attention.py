@@ -206,17 +206,65 @@ class TestAttentionFastLane:
         real_sleep = asyncio.sleep
         monkeypatch.setattr(poller.asyncio, "sleep", lambda s: real_sleep(min(s, 0.01)))
         # The lane re-checks a source when its NEXT round is due; the first
-        # round already ran on arming, so the next one is a cadence (5s) away.
+        # round already ran on arming, so the next one is a cadence away.
         # Make it due now — the mechanism under test is the re-check, not the
-        # cadence, and racing a 5s cadence against a 5s wait is how this test
-        # failed on a loaded machine.
+        # cadence. Ring the doorbell after, exactly as every production writer
+        # of the schedule does: the loop reads the schedule once and then waits
+        # on that answer, so a change made while it waits is invisible until
+        # the bell returns it. Poking `next` without ringing is an incomplete
+        # simulation, and it raced the loop's own wait — which is how this
+        # test failed on a loaded machine.
         poller._attention[str(src.id)]["next"] = 0
+        poller.wake_attention_lane()
         import time as _time
 
         t0 = _time.monotonic()
         while str(src.id) in poller._attention and _time.monotonic() - t0 < 5:
             await real_sleep(0.02)
         assert str(src.id) not in poller._attention
+
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_a_source_armed_while_the_lane_waits_is_polled_at_once(self, monkeypatch):
+        """The lane's whole point is sub-tick responsiveness, so arming a
+        source must not wait out a nap that was scheduled before it existed.
+
+        The loop computes how long to wait from the schedule it can see; a
+        source armed a moment later is not in it. Waiting blind meant that
+        source sat unpolled for up to a full clamp — longer than the cadence
+        the lane advertises."""
+        import time as _time
+
+        import flow_sdk.ingest.drivers  # noqa: F401
+        from flow_sdk.ingest import poller
+
+        polled: list[str] = []
+
+        async def _fake_run_poll(source, now):
+            polled.append(str(source.id))
+            poller._inflight.discard(str(source.id))
+
+        monkeypatch.setattr(poller, "_run_poll", _fake_run_poll)
+        first = await _source(provider="telegram", config={"bot_token": "t"})
+        await first.request_poll_action()
+        # The loop has now read the schedule and is waiting on it: the only
+        # edge it knows is `first`'s next round, a full cadence away.
+        await asyncio.sleep(0.2)
+        assert polled == [str(first.id)], "the armed source is polled once up front"
+
+        second = await _source(provider="telegram", config={"bot_token": "t"})
+        t0 = _time.monotonic()
+        await second.request_poll_action()
+        while str(second.id) not in polled and _time.monotonic() - t0 < 5:
+            await asyncio.sleep(0.02)
+
+        waited = _time.monotonic() - t0
+        assert str(second.id) in polled, f"never polled; waited {waited:.2f}s"
+        assert waited < 1.0, (
+            f"took {waited:.2f}s to poll a freshly armed source — the lane waited out a "
+            "nap it scheduled before the source existed instead of being woken"
+        )
 
 
 class TestTickGridSchedule:
