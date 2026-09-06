@@ -1024,8 +1024,26 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     for item in attachments:
         if item.record_type is not None:
             types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
+            # Re-root the walk at the asset's OWN family folder
+            # (``<root>/<main_subdir>``, where ``_restore_file_backed_entry``
+            # just placed it) — the same re-rooting the git-origin nested scope
+            # uses. Walking the whole project root for one received file held
+            # the DB writer session for 16–18 s per message on a 780-file
+            # project, and every live-session turn ships one prompt asset.
+            # A single-file project asset (prompt, markdown — no ``main_file``,
+            # so no folder of nested children) is re-rooted at its family
+            # folder. Folder assets (task, spec, agent …) and user-scope
+            # placements keep the wide walk: their nested children and
+            # entities.json enclosures live outside one family folder.
+            walk_root = item.root
+            info = SchemaRegistry.get(item.asset_type)
+            if item.scope == AttachmentScope.PROJECT.value and info is not None and not getattr(info, "main_file", None):
+                sub = getattr(info, "main_subdir", None)
+                family_root = item.root / PurePosixPath(str(sub).replace("\\", "/")) if sub else None
+                if family_root is not None and family_root.is_dir():
+                    walk_root = family_root
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, types, project_id=project_id)
+                await _reindex_received_assets(walk_root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
         if item.origin:
@@ -2284,21 +2302,10 @@ async def _unpack_remote_worker_session_entry(entry_dir: Path, entry_id: str, ct
     rws_data = _read_entity_header(entry_dir)
     if rws_data is not None:
         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
-        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
 
-        rws_id = rws_data.get("id") or entry_id
-        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
-        cloud_uid = (_get_cloud_user() or {}).get("id")
-        local_is_host = bool(
-            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
-            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
+        await RemoteWorkerSession.adopt_snapshot(
+            {**rws_data, "id": rws_data.get("id") or entry_id}, someone_typeid=ctx.owner_typeid,
         )
-        rws = RemoteWorkerSession.apply_snapshot(
-            existing_rws,
-            {**rws_data, "id": rws_id},
-            local_is_host=local_is_host,
-        )
-        await rws.save(ctx.owner_typeid)
 
 
 async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> str | None:

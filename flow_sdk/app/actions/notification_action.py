@@ -81,6 +81,12 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
         "sender_id": dumped.get("sender_id"),
         "sender_name": dumped.get("sender_name"),
         "attachment": dumped.get("attachment") or [],
+        # Session fields ride the response too: the client renders the sent
+        # message from THIS object, and a prompt's session card keys on them —
+        # without them the card waited for the next entity refetch.
+        "remote_worker_session_id": dumped.get("remote_worker_session_id"),
+        "kind": dumped.get("kind"),
+        "is_draft": bool(dumped.get("is_draft")),
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": fm.id,
@@ -157,7 +163,6 @@ def _build_reply_flow_message(
 
 async def _attach_prompt(
     reply_fm: "FlowMessage",
-    proposer_id: Optional[str],
     prompt_text: str,
     prompt_files: list,
     *,
@@ -168,9 +173,8 @@ async def _attach_prompt(
     The typed text and each uploaded *text* prompt file's content are
     minted/reused as real Prompt entities via ``find_or_create_prompt`` (dedup by
     normalized text within the conversation's project scope) and attached as
-    TYPE_ID entries carrying ``proposer_id`` (approval lifecycle) and
-    ``prompt_preview`` (inline text so receivers can preview/execute before
-    the body bundle downloads). Image / binary prompt files instead keep their
+    TYPE_ID entries carrying ``prompt_preview`` (inline text so receivers can
+    preview the prompt before the body bundle downloads). Image / binary prompt files instead keep their
     raw bytes — stored under ``prompt/<name>`` and attached as
     ``AttachmentType.PROMPT`` files so the UI renders them inline as pictures
     rather than decoding the bytes into a garbage prompt. Prompts thus behave
@@ -213,7 +217,6 @@ async def _attach_prompt(
                 Attachment(
                     attachment_type=AttachmentType.PROMPT,
                     data=vfs_subpath,
-                    proposer_id=proposer_id,
                 )
             )
             continue
@@ -231,7 +234,6 @@ async def _attach_prompt(
             Attachment(
                 attachment_type=AttachmentType.TYPE_ID,
                 data=str(TypeId(type=Prompt.get_type(), id=prompt.id)),
-                proposer_id=proposer_id,
                 prompt_preview=text,
             )
         )
@@ -931,6 +933,34 @@ async def handle_add_message(
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
+    # Every prompt is a session turn. A prompt WITHOUT a session id opens a new
+    # session: the sender mints the id here (uuid4; the host validates-on-adopt)
+    # and the opening proposal (reply policy) rides the start marker on the
+    # carrier attachment. A prompt WITH a session id is a follow-up turn.
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
+
+    is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
+    start_settings: Optional[SessionStartSettings] = None
+    if is_prompt_send and not remote_worker_session_id:
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.remote_worker_session import ReplyPolicy  # noqa: PLC0415
+
+        raw_policy = (body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
+        try:
+            reply_policy = ReplyPolicy(raw_policy).value
+        except ValueError:
+            return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+        remote_worker_session_id = mint_uuid()
+        start_settings = SessionStartSettings(reply_policy=reply_policy)
+    elif remote_worker_session_id and is_prompt_send:
+        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, is_terminal  # noqa: PLC0415
+
+        existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
+        if existing_session is not None and is_terminal(existing_session.status):
+            return ApiFailResponse(
+                message="this live session has ended — send a new prompt to start another",
+                status_code=409,
+            )
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
@@ -994,6 +1024,31 @@ async def handle_add_message(
         kind=message_kind,
     )
 
+    if start_settings is not None:
+        # Guest-side row for the session this prompt opens. The host adopts the
+        # same id from the carrier; until its first snapshot lands, this row is
+        # what renders the card ("requesting" → PENDING).
+        from flow_sdk.app.actions.execute_prompt import _peer_of  # noqa: PLC0415
+        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+
+        peer_id, peer_name, _ = _peer_of(conv, sender_id)
+        guest_session = RemoteWorkerSession(
+            id=remote_worker_session_id,
+            conversation_id=conv.id,
+            starting_message_id=reply_fm.id,
+            guest_user_id=sender_id,
+            guest_name=sender_name or None,
+            host_user_id=peer_id,
+            host_name=peer_name,
+            reply_policy=start_settings.reply_policy,
+            status=RemoteWorkerSessionStatus.DRAFT if is_draft else RemoteWorkerSessionStatus.PENDING,
+        )
+        guest_session.mark_activity()
+        await guest_session.save(someone_typeid)
+
     uploaded_files = body.get("files") or []
     if not isinstance(uploaded_files, list):
         uploaded_files = [uploaded_files]
@@ -1045,14 +1100,13 @@ async def handle_add_message(
         _atts = list(reply_fm.attachment or [])
         for _a in raw_attachments:
             if isinstance(_a, dict) and _a.get("attachment_type") and _a.get("data") is not None:
-                # Preserve the preview/proposer fields so entity-backed attachments
-                # (prompt / prompt_completion) stay previewable before the body downloads.
+                # Preserve the preview so entity-backed attachments (prompt /
+                # prompt_completion) stay previewable before the body downloads.
                 _atts.append(
                     Attachment(
                         attachment_type=_a["attachment_type"],
                         data=_a["data"],
                         prompt_preview=_a.get("prompt_preview"),
-                        proposer_id=_a.get("proposer_id"),
                     )
                 )
         reply_fm.attachment = _atts
@@ -1066,7 +1120,6 @@ async def handle_add_message(
     if prompt_text or prompt_files:
         await _attach_prompt(
             reply_fm,
-            sender_id,
             prompt_text,
             prompt_files,
             project_id=getattr(conv, "project_id", None) or None,
@@ -1085,10 +1138,18 @@ async def handle_add_message(
             a.attachment_type == AttachmentType.TYPE_ID and a.data == session_att_data
             for a in (reply_fm.attachment or [])
         ):
+            marker = None
+            if start_settings is not None:
+                import json as _json  # noqa: PLC0415
+
+                from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
+
+                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump()})
             reply_fm.attachment = [
                 *(reply_fm.attachment or []),
-                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data),
+                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data, prompt_preview=marker),
             ]
+        await _stamp_session_snapshot(reply_fm, remote_worker_session_id)
 
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations
@@ -1360,6 +1421,40 @@ async def set_project_mapping() -> ApiResponse:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+async def _stamp_session_snapshot(fm: "FlowMessage", session_id: str) -> None:
+    """Put the session's wire snapshot on the carrier's ``prompt_preview``
+    (a hub-known field) so the other side flips state on fan-out — seconds
+    before the body bundle, which carries the same snapshot durably. Merges
+    into whatever marker is already there (``session_start`` /
+    ``live_session_event``). No local row → nothing to stamp."""
+    import json as _json  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
+        SESSION_SNAPSHOT_MARKER_KEY,
+        AttachmentType,
+    )
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+
+    rws = await RemoteWorkerSession.resolve_state(session_id)
+    if rws is None:
+        return
+    carrier_data = f"remote_worker_session-{session_id}"
+    out = []
+    for a in fm.attachment or []:
+        if a.attachment_type == AttachmentType.TYPE_ID and a.data == carrier_data:
+            marker: dict = {}
+            if a.prompt_preview:
+                try:
+                    loaded = _json.loads(a.prompt_preview)
+                    marker = loaded if isinstance(loaded, dict) else {}
+                except (ValueError, TypeError):
+                    marker = {}
+            marker[SESSION_SNAPSHOT_MARKER_KEY] = rws.snapshot()
+            a = a.model_copy(update={"prompt_preview": _json.dumps(marker)})
+        out.append(a)
+    fm.attachment = out
+
+
 def _is_prompt_attachment(a: Any) -> bool:
     """True for any prompt attachment kind: legacy inline/file ``PROMPT``,
     or an entity-backed TYPE_ID entry pointing at a ``prompt`` entity.
@@ -1377,91 +1472,6 @@ def _is_prompt_attachment(a: Any) -> bool:
         # (same convention as flow_message._type_id_record_materialized).
         return (a.data or "").split("-", 1)[0] == "prompt"
     return False
-
-
-async def _approve_prompt_attachments(
-    fm: "FlowMessage",
-    approver_id: Optional[str],
-    someone_typeid: str,
-    *,
-    attachment_index: Optional[int] = None,
-    approve_all: bool = True,
-) -> list[int]:
-    """Flip unapproved PROMPT attachments to ``approved_by=approver_id`` and save.
-
-    Returns the approved indices ([] when there was nothing to approve). Shared
-    by the ``approve-prompt`` action (FE manual path) and the backend execute
-    entrypoint (auto-run) so both stamp approval identically — and approval
-    doubles as the receive-hook's idempotency marker.
-    """
-    new_atts = list(fm.attachment or [])
-    approved: list[int] = []
-    if approve_all:
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
-                approved.append(i)
-    else:
-        target_idx: Optional[int] = None
-        if isinstance(attachment_index, int) and 0 <= attachment_index < len(new_atts):
-            if _is_prompt_attachment(new_atts[attachment_index]):
-                target_idx = attachment_index
-        if target_idx is None:
-            for i, a in enumerate(new_atts):
-                if _is_prompt_attachment(a) and not a.approved_by:
-                    target_idx = i
-                    break
-        if target_idx is not None:
-            new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
-            approved.append(target_idx)
-    if approved:
-        fm.attachment = new_atts
-        await fm.save(someone_typeid or "")
-    return approved
-
-
-@action.post(action_name="approve-prompt", types=["flow_message"])
-async def approve_prompt() -> ApiResponse:
-    """Mark prompt attachments on a FlowMessage as approved by the current user.
-
-    Covers both legacy ``AttachmentType.PROMPT`` entries and entity-backed
-    prompt TYPE_ID entries (``_is_prompt_attachment``). The frontend then runs
-    the prompt in a forked Claude session.
-    Body: { attachment_index?: number, approve_all?: bool }
-      - With approve_all=True (default for the conversation flow): every prompt
-        attachment on the message flips to approved in one shot, so the typed
-        text and any attached prompt files all execute as a single Claude turn.
-      - Without approve_all: only the targeted attachment_index (or the first
-        unapproved prompt) is approved.
-    """
-    from flow_sdk.builtin.flow_message import FlowMessage as FM
-
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        return ApiFailResponse(message="No request info found")
-    fm_id = str(request_info.target_entity_typeid.id)
-    fm = await FM.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    body = await request_info.get_post_data() or {}
-    idx = body.get("attachment_index")
-    approve_all = bool(body.get("approve_all"))
-    local_user = await User.get_one({"uname": "local"})
-    approver_id = local_user.id if local_user else None
-
-    approved = await _approve_prompt_attachments(
-        fm,
-        approver_id,
-        request_info.someone_typeid or "",
-        attachment_index=idx if isinstance(idx, int) else None,
-        approve_all=approve_all,
-    )
-    if not approved:
-        return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-    if approve_all:
-        return ApiSuccessResponse(data={"attachment_indices": approved, "approved_by": approver_id})
-    return ApiSuccessResponse(data={"attachment_index": approved[0], "approved_by": approver_id})
 
 
 @action.get(action_name="open", types=["notification"])

@@ -6,20 +6,25 @@ import {
   QueryRequest,
   RemoteWorkerSession,
   RemoteWorkerSessionStatus,
+  SessionReplyPolicy,
   TypeId,
   isSessionTerminal,
 } from '@sdk';
-import { Trans } from '@lingui/react/macro';
-import { CircleCheck, CircleX, Pause, Play, PlugZap, Radio } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { ArrowLeft, CircleCheck, CircleX, Pause, Play, PlugZap, Radio } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
-import { SessionEventLine } from '@src/components/conversation/LiveSessionGroup';
+import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 import {
   grantContactPermission,
   revokeContactPermission,
+  sessionGrantScope,
   useContactPermissions,
   type ContactKey,
 } from '@src/hooks/use-contact-permissions';
@@ -42,7 +47,7 @@ export function useLiveSession(sessionId: string) {
   return useEntity<RemoteWorkerSession>(sessionTypeId, { watch: true });
 }
 
-function promptTextOf(fm: FlowMessage): string {
+export function promptTextOf(fm: FlowMessage): string {
   for (const a of fm.attachment ?? []) {
     if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt-') && a.prompt_preview) {
       return a.prompt_preview;
@@ -68,7 +73,7 @@ function resultTextOf(fm: FlowMessage): string | null {
 function statusLine(status: string | undefined, hostName: string): ReactNode {
   switch (status) {
     case RemoteWorkerSessionStatus.DRAFT:
-      return <Trans>Not started — your first prompt will request access to {hostName}'s machine.</Trans>;
+      return <Trans>Requesting access to {hostName}'s machine…</Trans>;
     case RemoteWorkerSessionStatus.PENDING:
       return <Trans>Waiting for {hostName} to approve the live session…</Trans>;
     case RemoteWorkerSessionStatus.RUNNING:
@@ -86,32 +91,62 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
   }
 }
 
-/** Host permission toggle backed by a ContactPermission row. */
-function PermissionToggle({
-  contact,
-  projectId,
-  action,
-  label,
-}: {
-  contact: ContactKey;
-  projectId: string | null;
-  action: PermissionAction;
-  label: ReactNode;
-}) {
+/** Truncate the opening prompt to a one-line title. */
+export function sessionTitle(prompt: string, max = 80): string {
+  const line = prompt.trim().split('\n')[0] ?? '';
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** Host-only standing grant: future sessions from this guest start approved,
+ *  in this project or everywhere. Backed by ONE ContactPermission row. */
+function StandingGrantCheckbox({ contact, projectId, guestName }: { contact: ContactKey; projectId: string | null; guestName: string }) {
+  const { t } = useLingui();
   const { permissions, refetch } = useContactPermissions(contact);
-  const granted = permissions.some(
-    (r) => (r.project_id ?? null) === projectId && (r.allowed_actions ?? []).includes(action),
+  const scope = sessionGrantScope(permissions, projectId);
+  const [pendingScope, setPendingScope] = useState<'project' | 'everywhere'>(projectId ? 'project' : 'everywhere');
+  const effectiveScope: 'project' | 'everywhere' = scope === 'global' ? 'everywhere' : (scope ?? pendingScope);
+  const apply = useCallback(
+    async (on: boolean, which: 'project' | 'everywhere') => {
+      const target = which === 'project' ? projectId : null;
+      // one row at a time: moving scope revokes the other first
+      if (scope === 'project' && which !== 'project') await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
+      if (scope === 'global' && which !== 'everywhere') await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
+      if (on) await grantContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
+      else await revokeContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
+      await refetch?.();
+    },
+    [contact, projectId, scope, refetch],
   );
-  const toggle = useCallback(async () => {
-    if (granted) await revokeContactPermission(contact, projectId, action);
-    else await grantContactPermission(contact, projectId, action);
-    await refetch?.();
-  }, [granted, contact, projectId, action, refetch]);
   return (
-    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-      <Checkbox checked={granted} onCheckedChange={() => void toggle()} className="h-3.5 w-3.5" />
-      {label}
-    </label>
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <label className="flex cursor-pointer items-center gap-1.5">
+        <Checkbox
+          checked={scope !== null}
+          onCheckedChange={(v) => void apply(!!v, effectiveScope)}
+          className="h-3.5 w-3.5"
+          data-testid="live-session-standing-grant"
+        />
+        <Trans>Always allow sessions from {guestName}</Trans>
+      </label>
+      <select
+        value={effectiveScope}
+        onChange={(e) => {
+          const next = e.target.value as 'project' | 'everywhere';
+          setPendingScope(next);
+          if (scope !== null) void apply(true, next);
+        }}
+        aria-label={t`Standing grant scope`}
+        data-testid="live-session-standing-grant-scope"
+        className="rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+      >
+        {projectId && (
+          <option value="project">
+            {t`in this project`}
+          </option>
+        )}
+        <option value="everywhere">{t`everywhere`}</option>
+      </select>
+    </div>
   );
 }
 
@@ -126,7 +161,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // Host/guest ids are CLOUD ids (host_user_id is stamped from the roster /
   // sender cloud identity), so compare against cloudUser, not the local
   // bootstrap user — otherwise the host is misread as a guest.
+  const { t } = useLingui();
   const { cloudUser } = useAuth();
+  const { navigation: dockNavigation } = useDockNavigation();
   const { data: session, refetch } = useLiveSession(sessionId);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -179,18 +216,59 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
 
-  // Guest DRAFT → PENDING flips locally on the first send (host-authoritative
-  // afterwards; apply_snapshot's no-regress rules protect the optimistic flip).
-  const onSent = () => {
-    if (!isHost && session.status === RemoteWorkerSessionStatus.DRAFT) {
-      session.status = RemoteWorkerSessionStatus.PENDING;
-      void session.save();
-    }
-    void refetch?.();
-  };
+  // The session is named after the prompt that opened it.
+  const starting = messages.find((m) => m.id === session.starting_message_id) ?? messages.find((m) => !!promptTextOf(m));
+  const title = starting ? sessionTitle(promptTextOf(starting)) : (session.getDisplayName() ?? '');
+
+  const onSent = () => void refetch?.();
+
+  const replyPolicyControl = (
+    <Select
+      value={session.effectiveReplyPolicy}
+      onValueChange={(v) => void runAction('policy', () => session.setReplyPolicy(v as SessionReplyPolicy))}
+      disabled={terminal || !!busy}
+    >
+      <SelectTrigger className="h-6 w-auto gap-1 px-2 text-[11px]" data-testid="live-session-reply-policy">
+        <span className="text-muted-foreground">
+          <Trans>Replies:</Trans>
+        </span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SessionReplyPolicy.AUTO}>
+          <Trans>Auto-send</Trans>
+        </SelectItem>
+        <SelectItem value={SessionReplyPolicy.REVIEW}>
+          <Trans>{hostName} reviews</Trans>
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <div className="flex h-full flex-col" data-testid="live-session-view">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b px-4 py-1.5">
+        {conversationId && (
+          <button
+            type="button"
+            onClick={() =>
+              dockNavigation.openDock(
+                DockPointer.forConversation(conversationId, { messageId: session.starting_message_id ?? null }),
+              )
+            }
+            data-testid="live-session-back"
+            title={t`Back to the conversation message that started this session`}
+            className="inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            <Trans>Back</Trans>
+          </button>
+        )}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium" data-testid="live-session-title" title={title}>
+          {title}
+        </span>
+        {replyPolicyControl}
+      </div>
       {/* ── pinned header ─────────────────────────────────────────────── */}
       {isHost ? (
         <div className="sticky top-0 z-10 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2">
@@ -268,12 +346,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
           </div>
           {!terminal && (
             <div className="flex w-full items-center gap-4">
-              <PermissionToggle
-                contact={guestContact}
-                projectId={session.project_id ?? null}
-                action={PermissionAction.EXECUTE_PROMPT}
-                label={<Trans>Always auto-run {guestName}'s sessions here</Trans>}
-              />
+              <StandingGrantCheckbox contact={guestContact} projectId={session.project_id ?? null} guestName={guestName} />
             </div>
           )}
         </div>
@@ -300,8 +373,20 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               }
               const result = resultTextOf(fm);
               if (result !== null) {
+                if (fm.is_draft && isHost) {
+                  // Review policy: the reply waits as the host's draft — send
+                  // or discard it here, in the session, never in the thread.
+                  return (
+                    <div key={fm.id} className="flex flex-col gap-1" data-testid="live-session-review-draft">
+                      <span className="text-[11px] italic text-muted-foreground">
+                        <Trans>Reply awaiting your review</Trans>
+                      </span>
+                      <MessageComposer draft={fm} onSent={onSent} onAfterDiscard={onSent} />
+                    </div>
+                  );
+                }
                 return (
-                  <pre key={fm.id} className="whitespace-pre-wrap text-foreground/90">
+                  <pre key={fm.id} className="whitespace-pre-wrap text-foreground/90" data-testid="live-session-reply">
                     {result}
                   </pre>
                 );

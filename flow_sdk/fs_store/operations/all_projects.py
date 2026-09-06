@@ -6,6 +6,7 @@ record id as a compatibility alias for existing fs-record rows.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
@@ -242,10 +243,16 @@ async def get_all_projects(
             if worker and worker not in info.worker_types:
                 info.worker_types.append(worker)
 
-    _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
-    _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
-    _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
-    _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+    def _scan_all() -> None:
+        # Four filesystem walks (every historical worker cwd + the workspace).
+        # Seconds on a busy machine; kept OFF the event loop so a project
+        # picker cannot stall every other request behind it.
+        _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
+        _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
+        _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
+        _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+
+    await asyncio.to_thread(_scan_all)
 
     existing = await Project.get_all()
     by_cwd: dict[str, "Project"] = {}

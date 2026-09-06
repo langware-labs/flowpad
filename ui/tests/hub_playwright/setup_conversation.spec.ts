@@ -32,6 +32,7 @@ import {
   BOB,
   assertPreconditions,
   gotoConversation,
+  gotoHome,
   openInstance,
   sendReplyViaUi,
   startConversationViaUi,
@@ -51,8 +52,7 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     // Open bob's home-landing FIRST so his invitations strip is mounted by
     // the time alice fires the invite — keeps the test honest about realtime
     // perception.
-    await bob.page.goto('/');
-    await bob.page.getByRole('button', { name: 'Start conversation' }).waitFor({ state: 'visible' });
+    await gotoHome(bob.page);
 
     // 1. Alice drives the Start-conversation dialog.
     const initial = `setup-${Date.now()}`;

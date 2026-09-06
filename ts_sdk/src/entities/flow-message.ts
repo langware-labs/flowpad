@@ -92,14 +92,11 @@ export interface Attachment {
   data: string;
   /** Absolute filesystem path — populated server-side for FILE / PROMPT-file attachments, null for others. */
   local_path?: string | null;
-  /** Prompt attachments (legacy PROMPT or prompt-entity TYPE_ID): the user who suggested the prompt. */
-  proposer_id?: string | null;
-  /** Prompt attachments: set when the other party approves. */
-  approved_by?: string | null;
   /** Prompt-entity TYPE_ID attachments: inline copy of the prompt text so receivers
-   *  can preview/execute before the body bundle is downloaded. NOTE: this field (and
-   *  proposer_id/approved_by) must also exist on the HUB's Attachment model — the hub
-   *  silently drops unknown fields on the round-trip. */
+   *  can preview before the body bundle is downloaded. On a session carrier it holds
+   *  the session marker JSON instead. NOTE: this field must also exist on the HUB's
+   *  Attachment model — the hub silently drops unknown fields on the round-trip.
+   *  Consent is a property of the session, never stamped per attachment. */
   prompt_preview?: string | null;
 }
 

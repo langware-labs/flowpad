@@ -6,13 +6,9 @@ import type { FlowMessage, TypeId } from '@sdk';
  * the registry context. Descriptors never call hooks — they only invoke these.
  */
 export interface AttachmentActionHandlers {
-  /** Approve the message's prompt attachments and run them (message-level approve_all). */
-  approveAndExecute?: (attachmentIndex: number) => void;
   implementPlan?: () => void;
   openPlanSession?: () => void;
   viewPlan?: (specId: string) => void;
-  /** Composer preview only — reopen the prompt dialog. */
-  edit?: () => void;
 }
 
 /** Everything a descriptor's visible()/build() can read. Built once per
@@ -32,18 +28,11 @@ export interface AttachmentActionContext {
   promptEntityTypeId: TypeId | null;
   /** True when a plan-implementation session already exists for the thread. */
   hasPlanSession: boolean;
-  /** True when a worker session already exists for the conversation — flips the
-   *  Execute chip from "Run" to "<label> · new run". */
-  workerSessionExists: boolean;
-  /** User-facing session label (`<Host>'s session`), or null when none. */
-  workerSessionLabel: string | null;
-  /** True while the session's worker is mid-turn — drives the chip's soft pulse. */
-  workerSessionInFlight: boolean;
   handlers: AttachmentActionHandlers;
 }
 
 /** Visual style buckets — class table lives in AttachmentActionsRow. */
-export type AttachmentActionVariant = 'primary' | 'view' | 'link' | 'edit';
+export type AttachmentActionVariant = 'primary' | 'view' | 'link';
 
 /** A bound, renderable action (run closes over its context). */
 export interface AttachmentAction {
@@ -53,8 +42,6 @@ export interface AttachmentAction {
   variant: AttachmentActionVariant;
   title: string;
   testId?: string;
-  /** When true, the button's icon softly pulses (in-flight worker session). */
-  pulse?: boolean;
   run: () => void;
 }
 

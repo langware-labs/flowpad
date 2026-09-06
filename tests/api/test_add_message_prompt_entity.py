@@ -1,9 +1,9 @@
 """API tests for entity-backed conversation prompts: `add_message` with
 ``prompt_text`` mints a library Prompt entity and attaches it as TYPE_ID
-(carrying ``proposer_id`` + ``prompt_preview``); re-sends dedup by normalized
-text; ``approve-prompt`` flips ``approved_by`` on entity-prompt attachments
-(and still on legacy PROMPT ones). Sends use ``is_draft`` — the local-only
-path that skips the cloud-login gate while still exercising ``_attach_prompt``.
+(carrying ``prompt_preview``); re-sends dedup by normalized text; every prompt
+send without a session id OPENS a session (guest-minted id, start marker on the
+carrier, local PENDING/DRAFT row). Sends use ``is_draft`` — the local-only path
+that skips the cloud-login gate while still exercising ``_attach_prompt``.
 """
 from __future__ import annotations
 
@@ -65,8 +65,6 @@ async def test_send_prompt_creates_entity_attachment(bootstrapped_client, user):
     assert len(atts) == 1
     att = atts[0]
     assert att.prompt_preview == PROMPT_TEXT
-    assert att.proposer_id  # stamped from the sender
-    assert not att.approved_by
 
     prompt_id = att.data.split("-", 1)[1]
     prompt = await Prompt.get_by_id(prompt_id)
@@ -101,7 +99,6 @@ async def test_image_prompt_file_stays_a_picture_not_text(bootstrapped_client, u
     ]
     assert len(prompt_files) == 1
     assert prompt_files[0].data == "prompt/shot.png"
-    assert prompt_files[0].proposer_id  # rides the same approval lifecycle
 
     # Bytes were written verbatim to the FlowMessage VFS so the UI streams a picture.
     from flow_sdk.storage import get_entity_embedded_storage
@@ -163,94 +160,117 @@ async def test_resend_same_text_dedups_to_one_prompt(bootstrapped_client, user):
     assert att1.data == att2.data  # same Prompt entity, whitespace-normalized match
 
 
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_approve_prompt_flips_entity_attachment(bootstrapped_client, user):
-    client = bootstrapped_client
-    conv_id = await _make_conversation(client)
-
-    resp = await client.post(
-        f"/api/v1/graph/conversation/{conv_id}/add_message",
-        json={"message": "", "prompt_text": "approve me", "is_draft": True},
-    )
-    fm_id = resp.json()["data"]["flow_message_id"]
-
-    approve = await client.post(
-        f"/api/v1/graph/flow_message/{fm_id}/approve-prompt",
-        json={"approve_all": True},
-    )
-    assert approve.json().get("status") == "SUCCESS", approve.text
-    assert approve.json()["data"]["attachment_indices"]
-
-    fm = await FlowMessage.get_one({"id": fm_id})
-    [att] = _prompt_entity_attachments(fm)
-    assert att.approved_by
-
-
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_approve_prompt_still_flips_legacy_prompt(bootstrapped_client, user):
-    """Backward compat: a pre-existing message with AttachmentType.PROMPT
-    still approves through the generalized predicate."""
-    from flow_sdk.builtin.flow_message import Attachment
-
-    client = bootstrapped_client
-    conv_id = await _make_conversation(client)
-    resp = await client.post(
-        f"/api/v1/graph/conversation/{conv_id}/add_message",
-        json={"message": "legacy carrier", "is_draft": True},
-    )
-    fm_id = resp.json()["data"]["flow_message_id"]
-
-    # Retrofit a legacy PROMPT attachment (what an old sender would have written).
-    fm = await FlowMessage.get_one({"id": fm_id})
-    fm.attachment = [
-        *(fm.attachment or []),
-        Attachment(attachment_type=AttachmentType.PROMPT, data="legacy inline prompt", proposer_id="someone"),
+def _carrier(fm: FlowMessage, session_id: str):
+    return [
+        a for a in (fm.attachment or [])
+        if a.attachment_type == AttachmentType.TYPE_ID and a.data == f"remote_worker_session-{session_id}"
     ]
-    await fm.save()
-
-    approve = await client.post(
-        f"/api/v1/graph/flow_message/{fm_id}/approve-prompt",
-        json={"approve_all": True},
-    )
-    assert approve.json().get("status") == "SUCCESS", approve.text
-
-    fm = await FlowMessage.get_one({"id": fm_id})
-    legacy = [a for a in fm.attachment if a.attachment_type == AttachmentType.PROMPT]
-    assert legacy and legacy[0].approved_by
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_send_with_session_id_stamps_field_and_carrier(bootstrapped_client, user):
-    """[LIVE-SESSION] ``add_message`` with ``remote_worker_session_id`` stamps
-    the FlowMessage header field AND auto-appends the authoritative
-    ``remote_worker_session-<id>`` TYPE_ID carrier attachment (the hub drops
-    the header field until its schema mirrors it)."""
+async def test_main_thread_prompt_mints_a_session(bootstrapped_client, user):
+    """A prompt WITHOUT a session id opens one: uuid4 minted, header stamped,
+    carrier appended with the start marker, local row at DRAFT (drafted send)
+    keyed by the starting message."""
+    import json
+
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "", "prompt_text": PROMPT_TEXT, "is_draft": True},
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+    sid = fm.remote_worker_session_id
+    assert sid and is_valid_entity_id(sid)
+    [carrier] = _carrier(fm, sid)
+    marker = json.loads(carrier.prompt_preview)
+    assert marker["session_start"] == {"reply_policy": "auto"}
+    assert marker["snapshot"]["id"] == sid  # the wire snapshot rides beside the start marker
+    session = await RemoteWorkerSession.get_one({"id": sid})
+    assert session is not None
+    assert session.starting_message_id == fm.id
+    assert session.status == "draft"  # a drafted opening prompt; sending it flips to PENDING
+    assert session.reply_policy == "auto"
+    assert session.guest_user_id == fm.sender_id
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reply_policy_review_rides_the_start_marker(bootstrapped_client, user):
+    import json
+
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "", "prompt_text": "review me", "is_draft": True, "reply_policy": "review"},
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+    [carrier] = _carrier(fm, fm.remote_worker_session_id)
+    assert json.loads(carrier.prompt_preview)["session_start"]["reply_policy"] == "review"
+    assert (await RemoteWorkerSession.get_one({"id": fm.remote_worker_session_id})).reply_policy == "review"
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "", "prompt_text": "bad", "is_draft": True, "reply_policy": "loud"},
+    )
+    assert resp.json().get("status") != "SUCCESS"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_follow_up_with_session_id_does_not_mint(bootstrapped_client, user):
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     session_id = "a1a1a1a1-0000-4000-8000-0000000000f1"
-
     resp = await client.post(
         f"/api/v1/graph/conversation/{conv_id}/add_message",
-        json={
-            "message": "run this in my live session",
-            "prompt_text": PROMPT_TEXT,
-            "is_draft": True,
-            "remote_worker_session_id": session_id,
-        },
+        json={"message": "", "prompt_text": PROMPT_TEXT, "is_draft": True, "remote_worker_session_id": session_id},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
-    fm_id = resp.json()["data"]["flow_message_id"]
-
-    fm = await FlowMessage.get_one({"id": fm_id})
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
     assert fm.remote_worker_session_id == session_id
-    carriers = [
-        a for a in (fm.attachment or [])
-        if a.attachment_type == AttachmentType.TYPE_ID
-        and a.data == f"remote_worker_session-{session_id}"
-    ]
-    assert len(carriers) == 1
-    # kind is only settable to session_event explicitly; a plain send stays USER.
+    [carrier] = _carrier(fm, session_id)
+    assert carrier.prompt_preview is None  # a follow-up carries a bare carrier
     assert fm.kind == "user"
+    assert await RemoteWorkerSession.get_one({"id": session_id}) is None  # nothing minted locally
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_follow_up_into_an_ended_session_is_rejected(bootstrapped_client, user):
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    ended = RemoteWorkerSession(conversation_id=conv_id, status="ended")
+    await ended.save(notify=False)
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "", "prompt_text": "too late", "is_draft": True, "remote_worker_session_id": ended.id},
+    )
+    assert resp.json().get("status") != "SUCCESS"
+    assert resp.status_code == 409
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_plain_text_send_has_no_session(bootstrapped_client, user):
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "just chatting", "is_draft": True},
+    )
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+    assert fm.remote_worker_session_id is None
+    assert not [a for a in fm.attachment or [] if (a.data or "").startswith("remote_worker_session-")]
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -282,3 +302,28 @@ async def test_session_event_kind_honored_and_others_rejected(bootstrapped_clien
     assert resp.json().get("status") == "SUCCESS", resp.text
     fm2 = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
     assert fm2.kind == "user"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_prompts_sharing_an_auto_name_prefix_both_send(bootstrapped_client, user):
+    """Two DIFFERENT prompts whose first line truncates to the same auto-name
+    must both send: the name is the asset path, so the second one is suffixed
+    instead of colliding (this silently killed every second live-session
+    prompt of the same shape)."""
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    prefix = "Reply with exactly the text LIVE-1788652 and nothing else"
+    ids = []
+    for tail in ("-A", "-B"):
+        resp = await client.post(
+            f"/api/v1/graph/conversation/{conv_id}/add_message",
+            json={"message": "", "prompt_text": prefix + tail, "is_draft": True},
+        )
+        assert resp.json().get("status") == "SUCCESS", resp.text
+        fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+        [att] = _prompt_entity_attachments(fm)
+        ids.append(att.data.split("-", 1)[1])
+    assert ids[0] != ids[1]
+    names = [(await Prompt.get_by_id(i)).name for i in ids]
+    assert names[0] != names[1]
+    assert names[1].startswith(names[0].rstrip("…")[:10])
