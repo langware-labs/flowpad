@@ -637,6 +637,10 @@ msgstr ""
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקוב אחר מדריך ההתקנה המהיר ואז לחזור לכאן כדי להתחבר."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
 msgstr ""
@@ -19835,8 +19839,14 @@ msgstr "טריגרים"
 msgid "Try again"
 msgstr "נסה שוב"
 
+#: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Try auto install (types the command in a terminal)"
 msgstr ""
 
 #: src/components/preferences-view/PreferencesView.tsx

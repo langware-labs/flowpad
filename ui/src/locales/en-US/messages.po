@@ -637,6 +637,10 @@ msgstr "{name} avatar"
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+msgstr "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
 msgstr "{name} names no support queue"
@@ -19835,9 +19839,15 @@ msgstr "Triggers"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
 msgstr "Try auto install"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Try auto install (types the command in a terminal)"
+msgstr "Try auto install (types the command in a terminal)"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
