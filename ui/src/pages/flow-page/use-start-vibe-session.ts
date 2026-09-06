@@ -295,7 +295,7 @@ export function useStartVibeSession(): StartVibeSession {
         // that failed for another reason falls through to its real message
         // instead of being mislabelled as an uninstalled harness.
         const kind = workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : CapabilityKinds.Harness;
-        confirmMissingThen(kind ?? CapabilityKinds.Harness, () =>
+        confirmMissingThen(kind ?? CapabilityKinds.Harness, error, () =>
           notify.error({
             title: t`Could not start`,
             // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error

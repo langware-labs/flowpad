@@ -112,3 +112,27 @@ export function isMissingGitCredential(error: unknown): boolean {
     text.includes('authentication failed')
   );
 }
+
+/**
+ * Did the launch fail because the harness has nothing to RUN ON?
+ *
+ * `LLMSourceError` — "<worker> has no usable LLM source:" followed by each
+ * candidate's reason (`cli_drivers/llm_source.py`). It is emphatically NOT an
+ * install failure: the binary was found and resolved, and the CLI would have
+ * started. What is missing is a sign-in, a stored key, or a budget.
+ *
+ * Worth telling apart because the two failures have different repairs and
+ * different screens. Sending an unfunded harness to the Capabilities view — an
+ * inventory of what is INSTALLED — offers a person a re-check and an installer
+ * for something they already have, while the sign-in it actually needs is one
+ * modal away.
+ *
+ * Matched on the backend's own wording, like {@link isMissingGitCredential}:
+ * the error reaches the UI as a message with no code beside it, so the sentence
+ * is what there is. Both halves are required so a message merely containing the
+ * word "source" cannot pass.
+ */
+export function isUnfundedHarness(error: unknown): boolean {
+  const text = errorMessage(error, '').toLowerCase();
+  return text.includes('no usable llm source');
+}

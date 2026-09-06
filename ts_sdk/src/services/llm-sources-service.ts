@@ -88,6 +88,12 @@ export interface LLMFundingStatus {
   /** Per capability kind, why nothing funds it — `''` when something does. `sources` no longer
    *  carries the resolver's overlay, so this is the only place a stuck harness explains itself. */
   blocked: Record<string, string>;
+  /** Per capability kind, a stated preference that is NOT in force, and why — `''` when the
+   *  preference (if any) is being honoured. Distinct from `blocked`: something IS funding the
+   *  harness. A Flowpad preference on a box signed out of Flowpad is the case this exists for;
+   *  without it the screen shows "use Flowpad" selected while something else does the spending,
+   *  and nothing connects the two. */
+  notes: Record<string, string>;
   /** The endpoints those verdicts name, by typeid, deduplicated across harnesses. A verdict
    *  mirrors none of the row's fields, so anything renderable (kind, provider, models) is
    *  looked up here. */

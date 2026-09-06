@@ -34,9 +34,12 @@ def _windows_registry_path() -> str:
     install button would land its binary and the probe would keep saying "not
     installed".
 
-    So ask the system instead of reporting ourselves. No subprocess and no
-    wait: two key opens and two value reads, which is why this is the cheap
-    branch even though the unix one spawns a whole login shell.
+    So ask the system instead of reporting ourselves — and then UNION that with
+    what we already had, because a shell that launched the backend may have
+    added directories the registry never saw (an activated venv's Scripts dir is
+    the case that bit). No subprocess and no wait: two key opens and two value
+    reads, which is why this is the cheap branch even though the unix one spawns
+    a whole login shell.
 
     ``REG_EXPAND_SZ`` is the normal type here, so ``%SystemRoot%``-style
     references have to be expanded — Windows expands them itself when it builds
@@ -70,7 +73,31 @@ def _windows_registry_path() -> str:
         expanded = ntpath.expandvars(str(value)).strip()
         if expanded:
             parts.append(expanded)
-    return os.pathsep.join(parts)
+    if not parts:
+        return ""
+
+    # UNION with this process's PATH, never a replacement.
+    #
+    # The registry is the fresh half — it is where an installer writes, and the
+    # only reason this function exists. But it is not the whole truth: a shell
+    # that launched the backend can have added directories that were never
+    # persisted, and an activated venv's Scripts dir is exactly that. Returning
+    # registry-only silently un-discovered anything living in one, which is a
+    # regression this function introduced and this line removes.
+    #
+    # Adding can never hide a new install, so the union keeps the fix intact:
+    # registry first (fresh wins a tie), then whatever else we already had.
+    # ``ntpath.pathsep``, not ``os.pathsep``, for the same reason as
+    # ``expandvars`` above: identical on Windows, and it lets the composition be
+    # tested from a platform whose separator is ":" — which would otherwise cut
+    # every "C:\..." entry in half.
+    sep = ntpath.pathsep
+    seen = {entry.lower() for part in parts for entry in part.split(sep) if entry}
+    for entry in (os.environ.get("PATH") or "").split(sep):
+        if entry and entry.lower() not in seen:
+            seen.add(entry.lower())
+            parts.append(entry)
+    return sep.join(parts)
 
 
 def capture_terminal_path() -> str:

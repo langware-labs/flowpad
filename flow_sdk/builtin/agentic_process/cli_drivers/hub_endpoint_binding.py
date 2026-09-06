@@ -53,7 +53,7 @@ class HubEndpointBindError(Exception):
         self.status_code = status_code
 
 
-async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, dict, dict]:
+async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, dict, dict, dict]:
     """``(sources, resolved, blocked, endpoints)`` for every hub-capable harness.
 
     ``sources``, ``resolved`` and ``blocked`` are keyed by capability kind; ``endpoints`` is
@@ -83,6 +83,8 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     sources: dict[str, list] = {}
     resolved: dict[str, dict | None] = {}
     blocked: dict[str, str] = {}
+    # A stated preference that is not in force, and why — see PickerView.note.
+    notes: dict[str, str] = {}
     endpoints: dict[str, dict] = {}
     # ONCE, not per harness: the constraint is a project lookup and the project is the same
     # for all four, so resolving it inside the loop was the same ``Project.get_by_id`` four
@@ -94,9 +96,10 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
         sources[kind] = [c.source.model_dump(mode="json") for c in view.offers]
         resolved[kind] = view.chosen.source.model_dump(mode="json") if view.chosen else None
         blocked[kind] = view.blocked
+        notes[kind] = view.note
         for candidate in view.offers:
             endpoints.setdefault(candidate.source.endpoint_typeid, candidate.endpoint.to_wire())
-    return sources, resolved, blocked, endpoints
+    return sources, resolved, blocked, notes, endpoints
 
 
 def _hub_user_typeid() -> str | None:
@@ -138,7 +141,7 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
             logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
             clear_hub_llm_endpoint()
             bound = None
-    sources, resolved, blocked, endpoints = await _sources_by_kind(scope)
+    sources, resolved, blocked, notes, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {
         # Every endpoint this user could be pointed at, not just the one the hub pushed -- the
@@ -166,6 +169,8 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
         # nothing can satisfy no longer shows up on the rows; without this the screen could
         # only say "nothing eligible" and never why.
         "blocked": blocked,
+        # A stated preference that is not in force, and why (PickerView.note).
+        "notes": notes,
         # The rows the verdicts above name, deduplicated across harnesses. The verdict
         # carries only an ``endpoint_typeid``; everything renderable (provider, kind, model
         # slugs) lives here.
