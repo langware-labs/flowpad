@@ -98,10 +98,36 @@ const SOURCE_CHIP = cn(COMPACT, 'gap-1 border-border bg-muted ps-1 pe-1.5 py-px 
 /** The per-row source chip: icon + channel, only for channel conversations.
  *  Presentational: the LIST resolves attribution once (`useChannelAttribution`)
  *  and hands each row its answer, so 300 rows do not hold 600 query watchers.
- *  Hub-native rows have no attribution and render nothing — absence means "ours". */
-export function SourceChip({ attribution, className }: { attribution: ChannelAttribution | null; className?: string }) {
+ *  Hub-native rows have no attribution and render nothing — absence means "ours".
+ *
+ *  `iconOnly` drops the label for surfaces too narrow to spend a word on it
+ *  (the home brief strip) — same resolver, same glyph, label on hover. */
+export function SourceChip({
+  attribution,
+  className,
+  iconOnly,
+}: {
+  attribution: ChannelAttribution | null;
+  className?: string;
+  iconOnly?: boolean;
+}) {
   if (!attribution) return null;
   const Icon = attribution.icon;
+  if (iconOnly) {
+    // The tooltip lives on a WRAPPER, never as a child of the glyph: an icon
+    // resolved from a spec asset can render an <img>, and a void element may
+    // not take children (a nested <title> crashed the home strip).
+    return (
+      <span
+        className={cn('inline-flex shrink-0 items-center', className)}
+        data-chip-type="source"
+        title={attribution.label}
+        aria-label={attribution.label}
+      >
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+      </span>
+    );
+  }
   return (
     <Badge
       variant="outline"

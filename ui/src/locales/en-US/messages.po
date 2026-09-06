@@ -3751,6 +3751,10 @@ msgstr "Close tab"
 msgid "Close terminal"
 msgstr "Close terminal"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Close ticket"
+msgstr "Close ticket"
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close to the Right"
 msgstr "Close to the Right"
@@ -4421,6 +4425,10 @@ msgstr "Copy all"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Copy as log"
 msgstr "Copy as log"
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Copy attachment id"
+msgstr "Copy attachment id"
 
 #: src/components/markdown-view.tsx
 msgid "Copy code"
@@ -10783,6 +10791,10 @@ msgstr "Mark all read"
 msgid "Mark this task as Done?"
 msgstr "Mark this task as Done?"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Mark this ticket answered and take it off the desk's queue"
+msgstr "Mark this ticket answered and take it off the desk's queue"
+
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
 msgid "Markdown"
@@ -14968,6 +14980,10 @@ msgstr "Reconnected"
 msgid "Reconnected."
 msgstr "Reconnected."
 
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "Record updated"
+msgstr "Record updated"
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #~ msgid "Record where {lockedEnvVar} comes from"
 #~ msgstr "Record where {lockedEnvVar} comes from"
@@ -15339,9 +15355,14 @@ msgstr "Rename folder"
 msgid "Rename this budget"
 msgstr "Rename this budget"
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "Reopen"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Reopen this ticket"
+msgstr "Reopen this ticket"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
@@ -16158,6 +16179,7 @@ msgid "Saving..."
 msgstr "Saving..."
 
 #: src/components/account/secrets-section.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx

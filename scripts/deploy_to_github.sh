@@ -31,6 +31,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 VERSION_FILE="flow_sdk/_version.py"
+MIGRATIONS_DIR="flow_sdk/system_projects/flowpad_assistant/migrations"
 
 # Colors for output
 RED='\033[0;31m'
@@ -131,6 +132,63 @@ bump_version() {
 update_version_file() {
     local new_version="$1"
     echo "__version__ = \"${new_version}\"" > "$VERSION_FILE"
+}
+
+# Rotate the migration recipe slot. Args: <version being released>
+#
+# `run_if_needed` resolves a recipe under the RUNNING version's own directory,
+# so a migration is only ever reached by installs of the version it ships in.
+# That makes the directory named after the NEXT version the only reachable
+# place to write one — and a release consumes it. Two things must happen here,
+# in the bump's own commit, or the guard in
+# tests/unit/test_migration_recipes_ship_with_their_version.py goes red on
+# every branch cut afterwards:
+#
+#   * The slot being released is DELETED if it is still empty. An empty slot
+#     that ships is worse than no slot: `_recipe_versions()` lists directories,
+#     so a directory carrying no recipe reads as one its own wheel never
+#     carried — i.e. stranded. A slot that DID get a migration written into it
+#     is kept; it shipped, and it runs.
+#   * The next slot is opened, so the next migration has somewhere to live.
+rotate_migration_slot() {
+    local released="$1"
+    local released_dir="${MIGRATIONS_DIR}/${released}"
+
+    if [[ -d "$released_dir" ]] \
+       && [[ ! -f "${released_dir}/scripts/migrate.py" ]] \
+       && [[ ! -f "${released_dir}/skill/SKILL.md" ]]; then
+        echo -e "${YELLOW}Retiring empty migration slot ${released} (nothing was written into it)${NC}"
+        rm -rf "$released_dir"
+    fi
+
+    local next
+    next="$(bump_version "$released" patch)" || return 1
+    local next_dir="${MIGRATIONS_DIR}/${next}"
+    if [[ -d "$next_dir" ]]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}Opening migration slot ${next}${NC}"
+    mkdir -p "$next_dir"
+    cat > "${next_dir}/README.md" <<EOF
+# ${next} — the open slot
+
+This directory is the next UNRELEASED recipe version: the only place a new
+migration can be added and still be reached. It is created by the release
+script when ${released} is cut; do not hand-author it.
+
+\`run_if_needed\` resolves a recipe under the RUNNING version's own directory,
+so a recipe committed after its version was built is never found by any install
+— that version is gone, and every later release looks under its own directory.
+A migration written here ships in the ${next} wheel and runs on upgrade to it.
+
+Add one as \`scripts/migrate.py\` with a \`run()\` entry point, or as
+\`skill/SKILL.md\` for an agent-driven recipe. Until then \`_resolve_recipe\`
+returns None for this version — "nothing to do" — which is correct.
+
+If this slot is still empty when ${next} is released, the release script
+deletes it rather than shipping a directory with no recipe in it.
+EOF
 }
 
 echo -e "${GREEN}=== Flowpad Deployment ===${NC}"
@@ -351,6 +409,10 @@ fi
 # Update version file
 echo -e "${YELLOW}Updating version to ${NEW_VERSION}...${NC}"
 update_version_file "$NEW_VERSION"
+
+# Rotate the migration slot in the SAME commit as the bump — the release is
+# what consumes the slot, so the release is what must open the next one.
+rotate_migration_slot "$NEW_VERSION"
 
 # Stage and commit all changes
 echo -e "${YELLOW}Committing version bump...${NC}"

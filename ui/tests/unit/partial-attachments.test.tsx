@@ -136,8 +136,38 @@ describe('partial attachment downloads', () => {
     expect(text).toContain(new Date('2026-09-06T10:05:00Z').toLocaleString(undefined, TIME_PARTS));
     expect(text).not.toContain(new Date('2026-09-06T10:04:00Z').toLocaleString(undefined, TIME_PARTS));
     expect(text).toContain('404');
-    expect(text).toContain('GET /flow_message/11111111-1111-4111-8111-111111111111/download_body');
+    expect(text).toContain('GET');
+    expect(text).toContain('/flow_message/11111111-1111-4111-8111-111111111111/download_body');
     expect(text).toContain('2 this session');
     expect(text).toContain('pulled, but arrived short');
+  });
+
+  it('makes every id and path a copy button carrying the bare value', async () => {
+    const messageId = '11111111-1111-4111-8111-111111111111';
+    render(
+      <AttachmentDownloadWarning
+        attachments={[missing]}
+        error={{
+          method: 'GET',
+          path: `/flow_message/${messageId}/download_body`,
+          statusCode: 404,
+          message: 'Not found',
+          ts: Date.now(),
+        }}
+        info={{ messageId, bodyStatus: BodyStatus.READY }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Could not download' }));
+    await screen.findByRole('dialog');
+    // The attachment reference, the message id and the request path each get
+    // their own button; prose rows (Body status) stay plain text.
+    const buttons = [...screen.getByRole('dialog').querySelectorAll('button')];
+    const copyTargets = buttons.map((b) => b.textContent ?? '');
+    for (const value of [missing.data, messageId, `/flow_message/${messageId}/download_body`]) {
+      expect(copyTargets).toContain(value);
+    }
+    expect(copyTargets).not.toContain('ready — available to pull');
+    // The copied path drops the verb — you paste a path, not "GET /path".
+    expect(copyTargets.some((v) => v.startsWith('GET '))).toBe(false);
   });
 });
