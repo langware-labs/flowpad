@@ -10,7 +10,7 @@ nothing is registered in `flow_sdk` per source.
 
 ```
 agentic-assets/data_source/my-source/
-  data_source.json # main_file: the manifest
+  data_source.json # the folder's main document: the manifest
   README.md        # optional — human docs, never read by the runtime
   fetch.py         # optional — presence makes this a script source
   FETCH.md         # optional — presence makes this an agent source
@@ -244,7 +244,7 @@ channel, so a harness Gmail source and an API one resolve to one thread instead 
 forking every conversation. It is also what binds a source to its DataEmitter.
 
 **`owns_bytes: false`** says the bytes belong to someone else, so indexing must not
-stamp an identity capsule into them: in a git working tree that dirties the repo,
+stamp an id into them: in a git working tree that dirties the repo,
 gets committed, and reaches everyone who pulls. Not derivable from `reflect` — a
 folder `copy` is ours, a Drive `copy` is a cache the next download clobbers.
 

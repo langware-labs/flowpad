@@ -1,3 +1,4 @@
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { VFSPath } from '@sdk';
 import apiClient from '@sdk/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -289,6 +290,8 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     }, autoSaveMs);
     return () => clearTimeout(timer);
   }, [loaded, autoSave, autoSaveMs, dirty, content]);
+
+  usePrimaryContentPending(!!fsRef && !loaded && loadError === null && !isMissing);
 
   return {
     content,

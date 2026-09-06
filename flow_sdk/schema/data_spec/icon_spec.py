@@ -2,7 +2,7 @@
 
 One principle already holds across this codebase: **the backend names the glyph,
 the frontend resolves the name.** What was missing is anywhere that says which
-names exist. ``TypeMetadata.icon`` states the old position outright — *"Free
+names exist. ``TypeInfo.icon`` states the old position outright — *"Free
 string by design: the set of valid lucide names lives in the frontend's bundle,
 not here"* — and the cost is that a misspelling is invisible until a person looks
 at the screen and sees the generic document glyph.

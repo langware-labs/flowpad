@@ -24,9 +24,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-)
 from flow_sdk.fs_store.indexer.functions.skill import read_frontmatter_id_from_yaml
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -74,34 +71,14 @@ def _mint_task_id(key: str) -> str:
 
 
 def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
-    """`.flow/id` capsule (gen_id stamped it) → validated task.md frontmatter id →
-    folder-name-derived v5 (transitional). Matches TypeInfo reader precedence."""
-    cap = read_folder_capsule_id(task_dir)
-    if cap:
-        return cap
+    """The validated ``task.md`` frontmatter id, else the folder-name-derived v5
+    (transitional)."""
     fm_id = read_frontmatter_id_from_yaml(fields)
     if fm_id and is_valid_entity_id(fm_id):
         return fm_id
     return _mint_task_id(task_dir.name)
 
 
-# ---------------------------------------------------------------------------
-# Id helper
-# ---------------------------------------------------------------------------
-
-
-def task_id_from_folder(ref: FSRef | Path) -> object | None:
-    """Read the capsule, then ``task.md``, without writing/backfill."""
-    path = Path(getattr(ref, "_path", ref))
-    task_dir = path if path.is_dir() else path.parent
-    cap = read_folder_capsule_id(task_dir)
-    if cap:
-        return cap
-    fields = _read_task_md_fields(task_dir / "task.md")
-    for candidate in (fields.get("id"), fields.get("asset_id")):
-        if is_valid_entity_id(candidate):
-            return candidate
-    return None
 
 
 # ---------------------------------------------------------------------------

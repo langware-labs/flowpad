@@ -18,7 +18,8 @@
  * across two CHECKOUTS) are genuinely out of an instance_ctl two-instance rig
  * and are recorded as confirmed-skip in the result JSON, not encoded here.
  */
-import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { test, expect, request as pwRequest } from '@playwright/test';
+import { auth, hubLogin } from '../_shared/hub';
 
 // Hub origin — REQUIRED. This test intentionally targets a specific two-instance
 // hub rig, so there is no localhost fallback: set QA_HUB_URL explicitly.
@@ -31,17 +32,6 @@ const BOB_PW = process.env.QA_BOB_PW || 'qa-1-pw-1234';
 // skips when absent (single-instance run).
 const BOB_HUB_ID = process.env.QA_BOB_HUB_ID || '';
 
-async function hubLogin(rq: APIRequestContext, email: string, pw: string): Promise<{ token: string; id: string }> {
-  const res = await rq.post(`${HUB}/api/v1/login`, { data: { email, password: pw } });
-  expect(res.status(), `hub login ${email}`).toBe(200);
-  const d = (await res.json()).data;
-  expect(d?.token, `token for ${email}`).toBeTruthy();
-  return { token: d.token, id: d.user.id };
-}
-
-function auth(token: string) {
-  return { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } };
-}
 
 test('binding criterion: real alice↔bob conversation through the local hub', async () => {
   test.skip(
@@ -64,8 +54,8 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
   expect((await aliceRq.get(`${HUB}/api/v1/login/test`)).status()).toBe(200);
 
   // Two distinct hub users, each with their own JWT.
-  const alice = await hubLogin(aliceRq, ALICE_EMAIL, ALICE_PW);
-  const bob = await hubLogin(bobRq, BOB_EMAIL, BOB_PW);
+  const alice = await hubLogin(aliceRq, HUB, ALICE_EMAIL, ALICE_PW);
+  const bob = await hubLogin(bobRq, HUB, BOB_EMAIL, BOB_PW);
   expect(bob.id, 'bob id matches the provided QA_BOB_HUB_ID').toBe(BOB_HUB_ID);
   expect(alice.id).not.toBe(bob.id);
 

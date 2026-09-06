@@ -7,15 +7,17 @@ from flow_sdk.fs_store.indexer.functions.plugin import (
     plugin_id_from_file,
     plugin_identity_key,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-PLUGIN = TypeMetadata(
-    type=EntityType.PLUGIN,
+PLUGIN = TypeInfo(
+    type_name=EntityType.PLUGIN,
     icon="Plug",
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_plugin,
+    shape=File(ext=".json"),
     identity_carrier=derived_identity(plugin_id_from_file),
     identity_key_fn=plugin_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,

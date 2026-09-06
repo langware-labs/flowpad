@@ -8,11 +8,12 @@ from flow_sdk.fs_store.indexer.functions.copilot_sessions import (
     copilot_session_identity_key,
     extract_copilot_session,
 )
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
-COPILOT_SESSION = TypeMetadata(
-    type=EntityType.COPILOT_SESSION,
+COPILOT_SESSION = TypeInfo(
+    type_name=EntityType.COPILOT_SESSION,
     indexed_by_default=True,
     api_visible=True,  # see CLAUDE_SESSION
     icon="Copilot",  # see CLAUDE_SESSION
@@ -25,7 +26,6 @@ COPILOT_SESSION = TypeMetadata(
     # installed transcript lands in the repo hierarchy under its own type name.
     asset_class="repo",
     family="copilot_session",
-    main_layout="file",
-    main_ext=".jsonl",
+    shape=File(ext=".jsonl"),
     receive_row_overrides={"remote": False, "received": True},
 )

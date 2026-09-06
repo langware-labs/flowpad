@@ -32,10 +32,9 @@ interface MessageBubbleProps {
    *  parent's share dialog to pick the target conversation; the backend then
    *  clones the message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
-  onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
-   *  chip styled identically to Approve & Execute when the bubble's message
+   *  chip styled like the primary attachment action when the bubble's message
    *  carries a Spec TypeId and the local user is the recipient. */
   onImplementPlan?: () => void;
   /** When a plan-implementation session already exists for this conversation,
@@ -51,9 +50,6 @@ interface MessageBubbleProps {
   onViewPlan?: (specId: string) => void;
   /** Whether the conversation already has a worker session — flips the Execute
    *  chip from "Run" to "<Host>'s session · new run". */
-  workerSessionExists?: boolean;
-  workerSessionLabel?: string | null;
-  workerSessionInFlight?: boolean;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
   /** Visual selection — drives the Context tab. */
@@ -116,8 +112,8 @@ function formatTime(timestamp: string | undefined): string {
 }
 
 /**
- * Approve & Execute drafts are wrapped as ``Prompt response: "<reply>"`` by the
- * useApproveAndExecute hook so the bubble can render the quoted middle in
+ * Session replies are wrapped as ``Prompt response: "<reply>"`` by the
+ * backend turn engine so the bubble can render the quoted middle in
  * ``<em>``. Once the user edits the draft and breaks the pattern, this returns
  * ``null`` and the message falls through to plain rendering — the italic styling
  * only applies until the user has made the message their own.
@@ -167,13 +163,9 @@ export function MessageBubble({
   onEditName,
   onDeleteMessage,
   onForwardMessage,
-  onApproveAndExecute,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
-  workerSessionExists = false,
-  workerSessionLabel = null,
-  workerSessionInFlight = false,
   footer,
   isSelected,
   onSelect,
@@ -188,22 +180,18 @@ export function MessageBubble({
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
   const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
-  // Attachment-action pairs: every CTA (Approve & Execute, View/Implement
-  // Plan, …) comes from the registry — the bubble only assembles the context.
-  // The prompt PREVIEW renders for ANY message carrying a prompt attachment
-  // (sender sees what the receiver sees); CTAs gate on isFromOther/approval
-  // inside the descriptors. `hasPlanSession === !!onOpenPlanSession` (set on
+  // Attachment-action pairs: every CTA (View/Implement Plan, …) comes from
+  // the registry — the bubble only assembles the context. The prompt PREVIEW
+  // renders for ANY message carrying a prompt attachment (sender sees what
+  // the receiver sees); a prompt carries no CTA of its own — consent lives on
+  // the session card under the opening message. `hasPlanSession === !!onOpenPlanSession` (set on
   // every spec-bearing bubble once one session is live in the thread).
   const { actions, promptAttachments, promptEntityTypeId } = useAttachmentActions({
     fm: flowMessage,
     messageId: flowMessageId,
     isFromOther,
     hasPlanSession: !!onOpenPlanSession,
-    workerSessionExists,
-    workerSessionLabel,
-    workerSessionInFlight,
     handlers: {
-      approveAndExecute: onApproveAndExecute,
       implementPlan: onImplementPlan,
       openPlanSession: onOpenPlanSession,
       viewPlan: onViewPlan,
@@ -234,7 +222,7 @@ export function MessageBubble({
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
     // Ignore clicks that originated on interactive children (buttons, links,
-    // inputs) so name-edit / Approve & Execute / attachment downloads keep
+    // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, textarea, [role="menu"]')) return;

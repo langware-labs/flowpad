@@ -45,6 +45,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -777,13 +778,12 @@ async def _pack_file_backed_attachment(
         if text is None:
             return  # nothing renderable to ship
         safe = _safe_entity_name(ent)
-        if info.main_layout == "folder":
-            main_file = getattr(info, "main_file", None)
-            if not main_file:
+        if isinstance(info.shape, Folder):
+            if not info.shape.main:
                 return  # folder type without a main doc: nothing to ship
-            dest = subdir / safe / main_file
+            dest = subdir / safe / info.shape.main
         else:
-            dest = subdir / f"{safe}{info.main_ext}"
+            dest = subdir / f"{safe}{info.shape.ext}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
         _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
@@ -811,9 +811,9 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-    asset_path = info.layout_of(body_path).ref
+    asset_path = info.layout_of(body_path).root
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
-    return info.mint_entity_id(ref, proposed_id=entry_id)
+    return info.stamp_id(ref, entry_id)
 
 
 def _safe_entity_name(entity) -> str:
@@ -1024,8 +1024,31 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     for item in attachments:
         if item.record_type is not None:
             types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
+            # Re-root the walk at the asset's OWN family folder
+            # (``<root>/<main_subdir>``, where ``_restore_file_backed_entry``
+            # just placed it) — the same re-rooting the git-origin nested scope
+            # uses. Walking the whole project root for one received file held
+            # the DB writer session for 16–18 s per message on a 780-file
+            # project, and every live-session turn ships one prompt asset.
+            # A single-file project asset (prompt, markdown — a ``File`` shape,
+            # so no folder of nested children) is re-rooted at its family
+            # folder. Folder assets (task, spec, agent …) and user-scope
+            # placements keep the wide walk: their nested children and
+            # entities.json enclosures live outside one family folder.
+            #
+            # The shape is the test, NOT the legacy ``main_file`` projection:
+            # since the scan → classify → mint refactor that field is None for
+            # every type, folder ones included, so reading it narrowed the walk
+            # for a folder asset too and its nested children were never indexed.
+            walk_root = item.root
+            info = SchemaRegistry.get(item.asset_type)
+            if item.scope == AttachmentScope.PROJECT.value and info is not None and not isinstance(info.shape, Folder):
+                sub = getattr(info, "main_subdir", None)
+                family_root = item.root / PurePosixPath(str(sub).replace("\\", "/")) if sub else None
+                if family_root is not None and family_root.is_dir():
+                    walk_root = family_root
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, types, project_id=project_id)
+                await _reindex_received_assets(walk_root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
         if item.origin:
@@ -1051,10 +1074,7 @@ def _parse_entry_key(key: str) -> tuple[str, str] | None:
 def _asset_ref_for_git_origin(checkout_root: Path, rel_path: str, info) -> Path | None:
     from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
-    asset_root = safe_join(checkout_root, rel_path)
-    if asset_root is None:
-        return None
-    return info.asset_ref_for(asset_root) if info is not None else asset_root   # the type's ref convention, once
+    return safe_join(checkout_root, rel_path)
 
 
 def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
@@ -1829,7 +1849,7 @@ async def _collect_descendant_envelopes(entry_type: str, ent, entities: dict) ->
 
         info = SchemaRegistry.get(entry_type)
         ar = getattr(ent, "asset_ref", None)
-        if info is None or not ar or info.main_layout != "folder":
+        if info is None or not ar or not isinstance(info.shape, Folder):
             return
         folder = info.storage_root_for(Path(ar))
         if not folder.is_dir():
@@ -2284,21 +2304,10 @@ async def _unpack_remote_worker_session_entry(entry_dir: Path, entry_id: str, ct
     rws_data = _read_entity_header(entry_dir)
     if rws_data is not None:
         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
-        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
 
-        rws_id = rws_data.get("id") or entry_id
-        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
-        cloud_uid = (_get_cloud_user() or {}).get("id")
-        local_is_host = bool(
-            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
-            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
+        await RemoteWorkerSession.adopt_snapshot(
+            {**rws_data, "id": rws_data.get("id") or entry_id}, someone_typeid=ctx.owner_typeid,
         )
-        rws = RemoteWorkerSession.apply_snapshot(
-            existing_rws,
-            {**rws_data, "id": rws_id},
-            local_is_host=local_is_host,
-        )
-        await rws.save(ctx.owner_typeid)
 
 
 async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> str | None:
@@ -2802,7 +2811,7 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        target_conv_id = conversation_id or next(
+        target_conv_id = conversation_id or msg_data.get("conversation_id") or next(
             (
                 TypeId(c).id
                 for c in msg_data.get("shared_context_entities", [])
@@ -2831,7 +2840,12 @@ async def unpack_bundle(
                         msg_data["conversation_id"] = target_conv_id
                     break
         if top_fm_already_exists and not overwrite and not conversation_id:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+            # A body pull fills an already-received header. Header-only bundles
+            # need not include a Conversation payload to identify that same row.
+            # Keep the conflict for standalone imports or a different parent.
+            existing_top = await FlowMessage.get_one({"id": top_fm_id_check}) if target_conv_id else None
+            if existing_top is None or existing_top.conversation_id != target_conv_id:
+                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)

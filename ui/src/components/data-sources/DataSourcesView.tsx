@@ -28,15 +28,14 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { notify } from '@src/notifications';
-import { errorMessage } from '@src/lib/error-message';
-import { DataSourceCard } from './DataSourceCard';
+import { DataSourceRow, ROW_GRID } from './DataSourceRow';
+import { useSourceDelete } from './use-source-delete';
 import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { Sparkles } from 'lucide-react';
+import { cn } from '@src/lib/utils';
 import { DataSourceDialog } from './DataSourceDialog';
-import { DesktopTile, TILE_TIP_DELAY } from '@src/components/quick-create/QuickCreatePanel';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { Button } from '@src/components/ui/button';
 import { ReplayDialog } from './ReplayDialog';
 
 export function DataSourcesView() {
@@ -51,7 +50,6 @@ export function DataSourcesView() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [replaying, setReplaying] = useState<DataSource | null>(null);
-  const [deleting, setDeleting] = useState<DataSource | null>(null);
   const Icon = iconForType(DataSource.type);
 
   const openAdd = useCallback(() => {
@@ -64,27 +62,18 @@ export function DataSourcesView() {
     setEditorOpen(true);
   }, []);
 
-  const confirmDelete = useCallback(
-    async (source: DataSource) => {
-      try {
-        // `delete()`, not `destroy()` — the TS entity has no destroy, and the
-        // backend cascade hangs off `delete_by_id`, which is what this reaches.
-        await source.delete();
-        // A delete removes a row rather than changing one, and the live query
-        // watches for writes — so this is the one mutation needing a re-read.
-        void refetch();
-      } catch (error) {
-        notify.error({
-          title: t`Could not delete ${source.name || source.provider}`,
-          message: errorMessage(error, t`The source was not removed.`),
-        });
-      }
-    },
-    [refetch, t],
-  );
+  // A delete removes a row rather than changing one, and the live query
+  // watches for writes — so this is the one mutation needing a re-read.
+  const { deleting, setDeleting, remove, confirm } = useSourceDelete(() => void refetch());
 
+  // Newest first: the source you just added is the one you came to look at.
   const sorted = useMemo(
-    () => [...sources].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    () =>
+      [...sources].sort(
+        (a, b) =>
+          (b.created_date ? new Date(b.created_date).getTime() : 0) - (a.created_date ? new Date(a.created_date).getTime() : 0) ||
+          (a.name || '').localeCompare(b.name || ''),
+      ),
     [sources],
   );
 
@@ -100,6 +89,12 @@ export function DataSourcesView() {
             {sources.length}
           </span>
         )}
+        {/* The primary act of this screen, where every list screen keeps it:
+            top right, before any row — not trailing the grid as a tile. */}
+        <Button className="ms-auto gap-1.5" onClick={openAdd} data-testid="add-data-source">
+          <Plus className="size-4" />
+          <Trans>New source</Trans>
+        </Button>
       </header>
       <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
         <Trans>
@@ -107,57 +102,52 @@ export function DataSourcesView() {
           finds into records you can search, read and build flows on.
         </Trans>
       </p>
-      {sources.length === 0 && (
-        // The from-scratch entry: the data-integrations persona connects a source,
-        // shows a sample and agrees the output shape — the whole loop in one chat.
-        <button
-          type="button"
-          data-testid="data-sources-ask-agent"
-          onClick={() => startVibe(t`Connect a data source for me and help me define what I want out of each item.`)}
-          className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
-        >
-          <Sparkles className="size-4" />
-          <Trans>Ask the agent to connect one</Trans>
-        </button>
-      )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {sorted.map((source) => (
-          <DataSourceCard
-            key={source.id}
-            source={source}
-            spec={specFor(source.provider)}
-            onEdit={openEdit}
-            onReplay={setReplaying}
-            onDelete={setDeleting}
-          />
-        ))}
-
-        {/* Trails the grid rather than leading it, so the eye starts on real
-            sources — but it is still present when there are none, because this
-            screen is where the first one is created.
-
-            The desktop's own "New" tile, not a card-sized dashed panel: adding a
-            source is the same ACT as every other "new thing" in the app, and it
-            was the one place that said so in a different shape. The cell keeps
-            the grid's rhythm; the tile inside it keeps the desktop's. */}
-        <div className="flex min-h-[8rem] items-center justify-center">
-          <Tooltip delayDuration={TILE_TIP_DELAY}>
-            <TooltipTrigger asChild>
-              <DesktopTile
-                data-testid="add-data-source"
-                Icon={Plus}
-                label={t`New`}
-                onClick={openAdd}
-                className="border-dashed"
-              />
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <Trans>Add a data source</Trans>
-            </TooltipContent>
-          </Tooltip>
+      {sources.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            <Trans>No sources yet. Connect a feed, a mailbox or a channel and the poller takes it from there.</Trans>
+          </p>
+          <div className="flex items-center gap-2">
+            <Button className="gap-1.5" onClick={openAdd}>
+              <Plus className="size-4" />
+              <Trans>New source</Trans>
+            </Button>
+            {/* The from-scratch entry: the data-integrations persona connects a source,
+                shows a sample and agrees the output shape — the whole loop in one chat. */}
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              data-testid="data-sources-ask-agent"
+              onClick={() => startVibe(t`Connect a data source for me and help me define what I want out of each item.`)}
+            >
+              <Sparkles className="size-4" />
+              <Trans>Ask the agent to connect one</Trans>
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className={cn(ROW_GRID, 'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground')}>
+            <span><Trans>Source</Trans></span>
+            <span><Trans>Status</Trans></span>
+            <span><Trans>Streams</Trans></span>
+            <span><Trans>Synced</Trans></span>
+            <span><Trans>Next poll</Trans></span>
+            <span className="text-end"><Trans>Actions</Trans></span>
+          </div>
+          {sorted.map((source) => (
+            <DataSourceRow
+              key={source.id}
+              source={source}
+              spec={specFor(source.provider)}
+              onEdit={openEdit}
+              onReplay={setReplaying}
+              onDelete={setDeleting}
+            />
+          ))}
+        </div>
+      )}
 
       <DataSourceDialog open={editorOpen} onOpenChange={setEditorOpen} editing={editing} />
 
@@ -171,12 +161,8 @@ export function DataSourcesView() {
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
         variant="destructive"
-        title={t`Delete this data source?`}
-        // Say what else goes: nothing cascades by default, so the backend's
-        // delete override is the only reason these disappear together.
-        description={t`"${deleting?.name || deleting?.provider || ''}" will be removed along with its streams and every record it ingested. This cannot be undone.`}
-        confirmLabel={t`Delete`}
-        onConfirm={() => deleting && void confirmDelete(deleting)}
+        {...confirm}
+        onConfirm={() => deleting && void remove(deleting)}
       />
     </div>
   );

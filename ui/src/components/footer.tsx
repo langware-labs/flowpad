@@ -6,6 +6,7 @@ import { usePendingCompletionSound } from '@src/components/footer/usePendingComp
 import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
+import { FundingChip } from '@src/components/funding-chip/FundingChip';
 import { VersionPopover } from '@src/components/version-popover';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 import { AdvancedOnly, useIsVibe } from '@src/components/view-mode';
@@ -120,6 +121,10 @@ export function Footer({ className = '' }: FooterProps) {
               backend, so the popover's actions work there — and the label would
               print the DESK's version under the word "hub". */}
           {isHubOnly() && <HubReleaseLabel hubVersion={version} />}
+          {/* Who is paying for the next agent run. Beside the version because it answers the
+              same class of question — what am I actually running — and essential for the same
+              reason: a wrong funding source spends the wrong money silently. */}
+          {!isHubOnly() && <FundingChip />}
           {!isHubOnly() && version && <VersionPopover currentVersion={version} />}
           <PoweredBy className="cq-powered" />
           <LanguageSelector />

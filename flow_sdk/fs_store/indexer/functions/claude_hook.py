@@ -31,6 +31,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer.functions._asset_identity import needs_ref
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (  # RFC-6901 (shared)
@@ -220,6 +221,7 @@ def _hook_id(scope: str, frag: dict) -> str:
     return f"{scope}:{frag['event_type']}:{matcher_hash}"
 
 
+@needs_ref
 def claude_hook_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id for a single hook FSRef (json_path
     fragment). The natural key carries a ``:`` (illegal in a Windows folder

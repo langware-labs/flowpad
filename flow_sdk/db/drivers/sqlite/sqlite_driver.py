@@ -19,7 +19,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
+from flow_sdk.db.drivers.db_base_record import (
+    BuiltinEntityType,
+    DBBaseRecord,
+    DBBaseRelationship,
+    EntityChild,
+    EntityLocation,
+)
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
     DBConfig,
@@ -1811,6 +1817,25 @@ class SQLiteDBDriver(DBDriver):
             if not schema:
                 return None
             return self._schema_to_entity(schema)
+
+    async def get_entity_locations(self, entity_type: str, *, active_only: bool = False) -> list[EntityLocation]:
+        """Filter/sort in SQL, without constructing filesystem-backed entities."""
+        recency = func.json_extract(EntitySchema.data, "$.last_active_at")
+        query = select(
+            EntitySchema.id,
+            func.json_extract(EntitySchema.data, "$.name"),
+            EntitySchema.uname,
+            func.json_extract(EntitySchema.data, "$.fs_storage_mount_path"),
+            func.json_extract(EntitySchema.data, "$.system"),
+        ).where(EntitySchema.type == entity_type)
+        if active_only:
+            query = query.where(recency > 0).order_by(recency.desc())
+        async with self._session_ctx(write=False) as session:
+            rows = (await session.execute(query)).all()
+        return [
+            EntityLocation(id=row[0], name=row[1], uname=row[2], fs_storage_mount_path=row[3], system=bool(row[4]))
+            for row in rows
+        ]
 
     async def get_all(self, entities_filter: QueryFilter, source_entity: TypeId | None = None) -> List[DBBaseRecord]:
         """Get all entities matching the filter.

@@ -8,12 +8,12 @@ content searchable: ``Entity.save`` feeds FTS from the row (``FtsEntry.from_enti
 only in ``body`` is found.
 """
 from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.ingest.digest import DIGESTED_FIELDS
-from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
-SOURCE_ITEM = TypeMetadata(
-    type=EntityType.SOURCE_ITEM,
+SOURCE_ITEM = TypeInfo(
+    type_name=EntityType.SOURCE_ITEM,
     icon="Rss",
     api_visible=True,
     # Minted by the ingestor from a provider payload, never from a "new entity"

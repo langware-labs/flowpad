@@ -112,7 +112,9 @@ GET  /api/v1/graph/capability/<id>/auth-status          # cheap login probe (no 
 Live progress rides the entity's runtime-only `login_state` / `login_url` /
 `login_code` / `login_accepts_code` / `login_message` fields (`Persist.FALSE`,
 broadcast over WebSocket, never persisted). The frontend watches the entity and
-renders them — it never polls. `auth-status` is the startup gate's cheap check;
+renders them — it never polls. `auth-status` is the startup gate's cheap check,
+scheduled after primary content readiness; an explicitly opened login flow
+can probe immediately.
 `worker_type_for_kind(kind)` on the registry resolves a harness kind to its
 driver.
 
@@ -147,9 +149,19 @@ if (snapshot.available) {
 }
 ```
 
-`CapabilityManager` is the central frontend cache. It loads system capability
-entities once, resolves prefix queries, and de-duplicates in-flight checks so
-multiple callers do not repeatedly ask whether Claude or Codex is installed.
+`CapabilityManager` owns the live capability projection, prefix resolution and
+deduplication of checks/actions. Shared reads belong to the SDK lazy registry:
+`load()` delegates to `LazyAsset.Capabilities`, and `getSummary()` delegates to
+`LazyAsset.CapabilitySummary`. Their invalidating variants refresh the same
+entries, so SDK callers and React consumers join any pending read. Available
+bootstrap/info summaries seed that cache; a deferred seed cannot replace a
+newer summary or an active summary fetch.
+
+`useCapability(..., { autoCheck: false })` loads metadata in the background after
+primary content readiness. The default auto-check path demands metadata before
+checking. The capabilities view demands its summary and renders loading,
+failure/retry or an empty result locally. These reads never gate the router or
+remount an editor. See [the shared lazy resource contract](boot.md#7-shared-lazy-resources-ts_sdksrclazy).
 
 ## Adding A Capability
 

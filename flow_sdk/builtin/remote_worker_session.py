@@ -13,10 +13,9 @@ projection and reconstructs the turn stream from the exchange.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Optional
-
-import logging
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
@@ -43,8 +42,32 @@ class RemoteWorkerSessionStatus(StrEnum):
     DECLINED = "declined"
 
 
+class ReplyPolicy(StrEnum):
+    """What happens to a captured reply. Proposed by the guest on the opening
+    prompt, host-authoritative afterwards, editable in the session view."""
+    AUTO = "auto"      # send as soon as captured
+    REVIEW = "review"  # save as a host draft inside the session
+
+
+class ApprovedVia(StrEnum):
+    MANUAL = "manual"                  # the host clicked Approve
+    STANDING_GRANT = "standing_grant"  # a ContactPermission pre-approved it
+
+
+class InboundDecision(StrEnum):
+    """What the host does with an inbound prompt, given the session's state."""
+    IGNORE = "ignore"        # terminal session — nothing runs, marker untouched
+    PARK_PENDING = "park"    # no consent yet — stays queued until approve
+    BOUNCE_PAUSED = "bounce" # host paused — consumed with a system line
+    RUN = "run"              # active (or pre-approved) — run the turn
+
+
 # The two active sub-states a turn cycles between once the host approved.
 ACTIVE_STATUSES = frozenset({RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.RUNNING})
+# States a turn may run in: ACTIVE plus ERROR (the next turn is the retry).
+RUNNABLE_STATUSES = ACTIVE_STATUSES | {RemoteWorkerSessionStatus.ERROR}
+# States that mean "no consent yet" — a standing grant collapses these to RUN.
+UNAPPROVED_STATUSES = frozenset({RemoteWorkerSessionStatus.DRAFT, RemoteWorkerSessionStatus.PENDING})
 # Absorbing states — no transition leaves them.
 TERMINAL_STATUSES = frozenset({RemoteWorkerSessionStatus.ENDED, RemoteWorkerSessionStatus.DECLINED})
 
@@ -79,11 +102,6 @@ _TRANSITIONS: dict[str, frozenset] = {
 }
 
 
-def is_active(status: str | None) -> bool:
-    """True when the session is approved and accepting prompts (IDLE/RUNNING)."""
-    return status in ACTIVE_STATUSES
-
-
 def is_terminal(status: str | None) -> bool:
     """True for the absorbing states (ENDED/DECLINED)."""
     return status in TERMINAL_STATUSES
@@ -97,6 +115,23 @@ def can_transition(current: str | None, new: str) -> bool:
     if not current or current not in _TRANSITIONS:
         return True
     return new in _TRANSITIONS[current]
+
+
+def decide_inbound_prompt(*, status: str | None, standing_grant: bool) -> InboundDecision:
+    """THE inbound gate, as a pure function of session state.
+
+    terminal → IGNORE; PAUSED → BOUNCE; IDLE/RUNNING/ERROR → RUN;
+    PENDING/DRAFT/unknown → RUN when a standing grant pre-approves the
+    session, else PARK. No message-level concern lives here — draft / own-send
+    / already-consumed guards belong to the async wrapper that has the DB.
+    """
+    if is_terminal(status):
+        return InboundDecision.IGNORE
+    if status == RemoteWorkerSessionStatus.PAUSED:
+        return InboundDecision.BOUNCE_PAUSED
+    if status in RUNNABLE_STATUSES:
+        return InboundDecision.RUN
+    return InboundDecision.RUN if standing_grant else InboundDecision.PARK_PENDING
 
 
 def _now_iso() -> str:
@@ -139,6 +174,20 @@ class RemoteWorkerSession(Entity):
         default=None, description="Host project/workdir the worker runs in (host only)."
     )
 
+    # The main-thread prompt that OPENED this session. The thread renders the
+    # session card under it and hides every other message stamped with this
+    # session id. Guest stamps it at send; host fill-merges it from the carrier.
+    starting_message_id: Optional[str] = APIField(
+        default=None, description="FlowMessage that opened the session (the card's anchor)."
+    )
+    # Session settings. ``reply_policy`` None = auto. Host-authoritative once
+    # the session exists; the guest's proposal rides the start marker.
+    reply_policy: Optional[str] = APIField(
+        default=None, description="ReplyPolicy: auto (send replies) | review (host drafts)."
+    )
+    approved_at: Optional[str] = APIField(default=None, description="ISO-UTC when the host approved.")
+    approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual | standing_grant.")
+
     # Host-authoritative, synced projection so the guest can render live state.
     status: str = APIField(default=RemoteWorkerSessionStatus.IDLE)
     last_activity_at: Optional[str] = APIField(default=None)
@@ -153,6 +202,13 @@ class RemoteWorkerSession(Entity):
         """True when ``user_id`` is this session's host (the executor)."""
         return bool(self.host_user_id) and user_id == self.host_user_id
 
+    @property
+    def effective_reply_policy(self) -> ReplyPolicy:
+        try:
+            return ReplyPolicy(self.reply_policy) if self.reply_policy else ReplyPolicy.AUTO
+        except ValueError:
+            return ReplyPolicy.AUTO
+
     # Message-borne snapshot fields — the hub-optional wire contract. This is
     # the pack whitelist (flow_message_bundle) AND the merge surface below.
     # ``host_process_id`` / ``project_id`` are deliberately absent: host-local,
@@ -161,13 +217,22 @@ class RemoteWorkerSession(Entity):
         "id", "type", "conversation_id", "collaboration_room_id",
         "host_user_id", "guest_user_id", "host_name", "guest_name",
         "status", "last_activity_at", "started_at",
+        "starting_message_id", "reply_policy", "approved_at", "approved_via",
     })
     # Host-authoritative subset: adopted from a snapshot only on the guest,
     # and only when the snapshot's activity clock is fresher.
     _HOST_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "status", "last_activity_at", "host_user_id", "host_name",
-        "collaboration_room_id",
+        "collaboration_room_id", "reply_policy", "approved_at", "approved_via",
     })
+    # Identity the host row may be MISSING when it materialized from a guest
+    # carrier packed before the guest's roster resolved — filled once, never
+    # overwritten. ``starting_message_id`` / ``reply_policy`` are the guest's
+    # opening proposal, adopted the same fill-only way.
+    _HOST_FILL_FIELDS: ClassVar[tuple[str, ...]] = (
+        "guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name",
+        "starting_message_id", "reply_policy",
+    )
 
     @classmethod
     def apply_snapshot(
@@ -201,7 +266,7 @@ class RemoteWorkerSession(Entity):
             # host row materialized from it could otherwise never acquire its own
             # identity (isHost stays false, the Approve bar never renders). Fill
             # only when missing — the host row is never overwritten.
-            for field in ("guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name"):
+            for field in cls._HOST_FILL_FIELDS:
                 if not getattr(local, field, None) and data.get(field):
                     setattr(local, field, data[field])
             return local
@@ -218,6 +283,42 @@ class RemoteWorkerSession(Entity):
             elif not getattr(local, field, None):
                 setattr(local, field, value)
         return local
+
+    @classmethod
+    async def adopt_snapshot(
+        cls, snap: dict[str, Any], *, someone_typeid: str | None = None,
+    ) -> Optional["RemoteWorkerSession"]:
+        """Materialize/refresh the local row from a message-borne snapshot —
+        the ONE receive-side adopt path (bundle header AND carrier-preview fast
+        path). Host/guest is decided here: the local side is the host when it
+        already runs the worker or when the snapshot's ``host_user_id`` is our
+        cloud identity; ``apply_snapshot`` then enforces the merge discipline."""
+        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
+
+        sid = snap.get("id")
+        if not sid:
+            return None
+        existing = await cls.get_one({"id": sid})
+        cloud_uid = (_get_cloud_user() or {}).get("id")
+        local_is_host = bool(
+            (existing is not None and getattr(existing, "host_process_id", None))
+            or (cloud_uid and snap.get("host_user_id") == cloud_uid)
+        )
+        before = None if existing is None else existing.snapshot()
+        rws = cls.apply_snapshot(existing, {**snap, "id": sid}, local_is_host=local_is_host)
+        # The header fast path and the bundle both adopt the same snapshot:
+        # the second pass must not write (and broadcast) an unchanged row.
+        if before is None or rws.snapshot() != before:
+            await rws.save(someone_typeid)
+        return rws
+
+    def snapshot(self) -> dict[str, Any]:
+        """The wire snapshot (``SNAPSHOT_FIELDS`` only — never host-local paths).
+        ``skip_api_serializer``: the API serializer would add its ``expand``
+        envelope, which is not session state."""
+        return self.model_dump(
+            mode="json", include=set(self.SNAPSHOT_FIELDS), context={"skip_api_serializer": True},
+        )
 
     @classmethod
     async def resolve_state(cls, session_id: str) -> Optional["RemoteWorkerSession"]:
@@ -238,15 +339,22 @@ class RemoteWorkerSession(Entity):
         if status is not None:
             self.status = status
 
-    async def _emit_event(self, event: str, *, text: str | None = None) -> None:
+    async def _emit_event(self, event: str, *, text: str | None = None, someone_typeid: str | None = None) -> None:
         """Best-effort SESSION_EVENT system line into the bound conversation
         (which also ships a fresh snapshot to the other side — see
-        ``emit_session_event``). Never fails the action."""
+        ``emit_session_event``). Never fails the action. Outside a request
+        (the inbound gate) the caller passes the local user's typeid."""
         try:
             from flow_sdk.app.actions.execute_prompt import emit_session_event  # noqa: PLC0415
             from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
-            ri = get_current_request_info()
-            someone = (getattr(ri, "someone_typeid", None) or "") if ri else ""
+            someone = someone_typeid
+            if not someone:
+                ri = get_current_request_info()
+                someone = (getattr(ri, "someone_typeid", None) or "") if ri else ""
+            if not someone:
+                from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+                local = await get_or_create_local_user()
+                someone = str(local.typeid) if local else ""
             await emit_session_event(self, event, someone, text=text)
         except Exception as e:  # noqa: BLE001
             logger.warning("[remote_worker_session] %s event emit failed: %s", event, e)
@@ -265,18 +373,88 @@ class RemoteWorkerSession(Entity):
         await self._emit_event(event)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
+    async def approve(self, *, via: str = ApprovedVia.MANUAL, someone_typeid: str | None = None) -> bool:
+        """Consent: PENDING/DRAFT → IDLE with the approval stamped. Returns
+        False when the move is illegal (already terminal). Idempotent on an
+        already-active session. Announces with an ``approved`` line so the
+        guest's mirror flips. Shared by the Approve control and the
+        standing-grant path of the inbound gate."""
+        if self.status in ACTIVE_STATUSES:
+            return True
+        if not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
+            return False
+        self.approved_at = _now_iso()
+        self.approved_via = str(via)
+        self.mark_activity(RemoteWorkerSessionStatus.IDLE)
+        await self.save()
+        await self._emit_event("approved", someone_typeid=someone_typeid)
+        return True
+
+    async def remember_guest(self, scope: str) -> None:
+        """Standing grant: future sessions from this guest start approved.
+        ``scope``: ``project`` (this session's project) or ``everywhere``."""
+        from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction  # noqa: PLC0415
+
+        if not self.guest_user_id:
+            return
+        project_id = self.project_id if scope == "project" else None
+        rows = await ContactPermission.get_all({"contact_user_id": self.guest_user_id})
+        row = next((r for r in rows if r.project_id == project_id), None)
+        if row is None:
+            row = ContactPermission(contact_user_id=self.guest_user_id, project_id=project_id)
+        if PermissionAction.AUTO_APPROVE_SESSION.value not in (row.allowed_actions or []):
+            row.allowed_actions = [*(row.allowed_actions or []), PermissionAction.AUTO_APPROVE_SESSION.value]
+        await row.save()
+
     @action.post(action_name="approve")
     async def _http_approve(self) -> ApiResponse:
-        """Host approves a PENDING live session (PENDING→IDLE) and re-drives the
-        prompts that queued while awaiting approval — detached, so the click
-        returns immediately; ``prompt_auto_handled``-before-run keeps the
-        re-drive idempotent against concurrently arriving prompts."""
-        result = await self._transition_action(RemoteWorkerSessionStatus.IDLE, "approved")
-        if isinstance(result, ApiSuccessResponse):
-            import asyncio  # noqa: PLC0415
-            from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
-            asyncio.create_task(redrive_session_prompts(self))
-        return result
+        """Host approves a PENDING live session and re-drives the prompts that
+        queued while awaiting approval — detached, so the click returns
+        immediately; ``prompt_auto_handled``-before-run keeps the re-drive
+        idempotent against concurrently arriving prompts.
+
+        Body: ``{remember?: "project" | "everywhere"}`` also writes the
+        standing grant for this guest."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        ri = get_current_request_info()
+        body = (await ri.get_post_data() or {}) if ri else {}
+        remember = str(body.get("remember") or "").strip()
+        if remember and remember not in ("project", "everywhere"):
+            return ApiFailResponse(message="remember must be 'project' or 'everywhere'", status_code=400)
+        if not await self.approve(via=ApprovedVia.MANUAL):
+            return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
+        if remember:
+            await self.remember_guest(remember)
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
+        asyncio.create_task(redrive_session_prompts(self))
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="settings")
+    async def _http_settings(self) -> ApiResponse:
+        """Edit session settings. Body: ``{reply_policy: "auto" | "review"}``.
+        Host-authoritative: the change ships to the guest on the next carrier
+        (a ``settings_changed`` line is emitted so it ships now)."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        ri = get_current_request_info()
+        body = (await ri.get_post_data() or {}) if ri else {}
+        raw = body.get("reply_policy")
+        try:
+            policy = ReplyPolicy(str(raw))
+        except ValueError:
+            return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+        if is_terminal(self.status):
+            return ApiFailResponse(message="session has ended", status_code=409)
+        if self.reply_policy != policy.value:
+            self.reply_policy = policy.value
+            self.mark_activity()
+            await self.save()
+            label = "auto-send" if policy is ReplyPolicy.AUTO else "review before sending"
+            await self._emit_event("settings_changed", text=f"Replies: {label}")
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="decline")
     async def _http_decline(self) -> ApiResponse:

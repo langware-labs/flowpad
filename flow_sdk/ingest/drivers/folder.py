@@ -133,7 +133,7 @@ class FolderDriver(IngestDriver):
         if not raw:
             raise SourceError.config("no_root", "config.root is not set")
         # ``resolve()``, not just ``expanduser()``. On macOS ``/var`` is a
-        # symlink to ``/private/var``, and ``discover_record_by_path`` compares
+        # symlink to ``/private/var``, and ``resolve_asset`` compares
         # the caller's path against the one the parsed record carries — which is
         # resolved. Hand it an unresolved path and the comparison silently
         # fails, the targeted parse is discarded, and it falls back to a full

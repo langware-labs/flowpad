@@ -1,5 +1,5 @@
 """Type metadata for VISITOR."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-VISITOR = TypeMetadata(type=EntityType.VISITOR, api_visible=True)
+VISITOR = TypeInfo(type_name=EntityType.VISITOR, api_visible=True)

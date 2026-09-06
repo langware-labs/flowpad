@@ -1,4 +1,4 @@
-import { dataManager } from '@sdk';
+import { dataManager, lazyAssets } from '@sdk';
 import {
   useClaudeProjectResources,
   useProjectList,
@@ -11,6 +11,7 @@ vi.mock('@src/contexts/agent-context', () => ({
 }));
 
 afterEach(() => {
+  lazyAssets.setScope(Math.random().toString());
   vi.restoreAllMocks();
 });
 
@@ -28,7 +29,7 @@ function mockAbortableAction() {
 }
 
 describe('project hook request lifecycle', () => {
-  it('aborts project listing on unmount without logging an error', async () => {
+  it('keeps a shared project listing alive on unmount and aborts on identity change', async () => {
     const call = mockAbortableAction();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const hook = renderHook(() => useProjectList());
@@ -36,12 +37,14 @@ describe('project hook request lifecycle', () => {
     await waitFor(() => expect(call).toHaveBeenCalledOnce());
     const signal = call.mock.calls[0][0].abortSignal;
     hook.unmount();
+    expect(signal?.aborted).toBe(false);
+    lazyAssets.setScope(Math.random().toString());
     await waitFor(() => expect(signal?.aborted).toBe(true));
 
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it('aborts project resource scanning on unmount without logging an error', async () => {
+  it('keeps a shared project scan alive on unmount and aborts on identity change', async () => {
     const call = mockAbortableAction();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const hook = renderHook(() => useClaudeProjectResources('-work-flowpad'));
@@ -49,6 +52,8 @@ describe('project hook request lifecycle', () => {
     await waitFor(() => expect(call).toHaveBeenCalledOnce());
     const signal = call.mock.calls[0][0].abortSignal;
     hook.unmount();
+    expect(signal?.aborted).toBe(false);
+    lazyAssets.setScope(Math.random().toString());
     await waitFor(() => expect(signal?.aborted).toBe(true));
 
     expect(consoleError).not.toHaveBeenCalled();

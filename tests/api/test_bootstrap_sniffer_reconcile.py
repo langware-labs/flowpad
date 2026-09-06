@@ -1,4 +1,4 @@
-"""Bootstrap reconciles the sniffer install with what this instance owns.
+"""Deferred info reconciles the sniffer install with what this instance owns.
 
 "Disabled" has one meaning — no ``flowpad_sniffer`` commands in the harness
 settings file — and both roads to it must agree. The explicit toggle off
@@ -30,7 +30,7 @@ async def _install_orphan_sniffer() -> None:
     assert sniffer_installed_in_settings(HookScope.USER)
 
 
-async def test_bootstrap_purges_a_sniffer_no_entity_backs(client):
+async def test_info_purges_a_sniffer_no_entity_backs(client):
     """Gate off + no hook entity = disabled, so the stale commands must go."""
     # The API-test DB is session-shared, so an earlier test (e.g. the agent-hook
     # e2e) may have left an enabled sniffer entity — establish "no entity backs
@@ -42,6 +42,9 @@ async def test_bootstrap_purges_a_sniffer_no_entity_backs(client):
 
     response = await client.get("/api/v1/graph/bootstrap")
     assert response.status_code == 200, response.text
+    assert sniffer_installed_in_settings(HookScope.USER)
+    response = await client.get("/api/v1/graph/info")
+    assert response.status_code == 200, response.text
     data = response.json()["data"]
 
     assert not sniffer_installed_in_settings(HookScope.USER)
@@ -49,7 +52,7 @@ async def test_bootstrap_purges_a_sniffer_no_entity_backs(client):
     assert data["sniffer_hook"] is None
 
 
-async def test_bootstrap_keeps_a_sniffer_the_user_enabled(client):
+async def test_info_keeps_a_sniffer_the_user_enabled(client):
     """The instance gate defaults off, but an explicit enable owns an entity —
     that survives every restart. Without this the purge would revoke the user's
     own choice on the next boot."""
@@ -58,7 +61,7 @@ async def test_bootstrap_keeps_a_sniffer_the_user_enabled(client):
     assert enable.json()["data"]["enabled"] is True
     assert sniffer_installed_in_settings(HookScope.USER)
 
-    response = await client.get("/api/v1/graph/bootstrap")
+    response = await client.get("/api/v1/graph/info")
     assert response.status_code == 200, response.text
     data = response.json()["data"]
 

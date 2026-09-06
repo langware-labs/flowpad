@@ -12,6 +12,8 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
+from tests.fixtures.identity import resolve_id
+
 
 @pytest_asyncio.fixture(autouse=True)
 async def _isolate_record_state():
@@ -49,7 +51,7 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
     ):
         for md in sorted(tmp.rglob("*.md")):
             ref = _FSRef(md)
-            rec = SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref))[0]
+            rec = SchemaRegistry.get("markdown").from_disk_fn(ref, resolve_id(SchemaRegistry.get("markdown"), ref))[0]
             await rec.sync_to_db()
 
 

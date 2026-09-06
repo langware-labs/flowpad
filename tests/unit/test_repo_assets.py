@@ -15,6 +15,7 @@ import pytest
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR, AssetClass
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.layout import Folder
 
 REPO_TYPE = "repo_node"
 
@@ -27,8 +28,7 @@ def repo_type():
             type_name=REPO_TYPE,
             asset_class=AssetClass.REPO,
             family=REPO_TYPE,
-            main_layout="folder",
-            main_file="node.json",
+            shape=Folder(main="node.json"),
         )
     )
     try:
@@ -169,7 +169,7 @@ def test_repo_walker_emits_only_requested_type_but_traverses_other_parents(
         IndexerOptions(types=[EntityType.SPEC]),
     )
 
-    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec / "spec.md", EntityType.SPEC)]
+    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec, EntityType.SPEC)]
 
 
 def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):

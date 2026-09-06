@@ -211,8 +211,8 @@ class TestPackBundle:
 
     @pytest.mark.asyncio
     async def test_pack_spec_with_ondisk_asset_ref_ships_parent_folder(self, tmp_path):
-        """A real on-disk spec-style asset (asset_ref = inner spec.md,
-        main_file_is_asset_ref=True) ships its PARENT folder verbatim — both the
+        """A real on-disk spec asset (asset_ref = its folder) ships that
+        folder verbatim — both the
         main file and its siblings — using the real on-disk body (not
         default_body_fn). Existing-source bundles are copied byte-for-byte and
         do not retrofit an identity that was absent on the source."""

@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
 from flow_sdk.fs_store.indexer.functions.prompt import (
     _read_prompt_frontmatter_id,
 )
@@ -15,6 +14,7 @@ from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -23,7 +23,7 @@ V7_ID = "0190a0a0-aaaa-7bbb-8ccc-eeeeeeeeeeee"  # foreign version — must be re
 
 
 def _extract(ref: FSRef):
-    return SchemaRegistry.get("prompt").from_disk_fn(ref, SchemaRegistry.get("prompt").mint_entity_id(ref))
+    return SchemaRegistry.get("prompt").from_disk_fn(ref, resolve_id(SchemaRegistry.get("prompt"), ref))
 
 
 def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
@@ -90,10 +90,10 @@ def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
         frontmatter='name: Keeper\nicon: "🚀"\n',
     )
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    first = SchemaRegistry.get("prompt").mint_entity_id(FSRef(p))
-    second = SchemaRegistry.get("prompt").mint_entity_id(FSRef(p))
+    first = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
+    second = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
     assert first == second
-    assert _read_prompt_frontmatter_id(p) == first == read_frontmatter_id(p)
+    assert _read_prompt_frontmatter_id(p) == first == frontmatter_id(p)
     [rec] = _extract(FSRef(p))
     assert rec.name == "Keeper"
     assert rec.icon == "🚀"  # emoji round-trips through yaml quoting

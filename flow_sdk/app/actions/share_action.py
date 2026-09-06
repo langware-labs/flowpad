@@ -73,6 +73,15 @@ async def share_entity() -> ApiResponse:
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
+    # Optional ``recipient_user_ids`` (list of hub user ids): the same invitation,
+    # addressed by hub id, for a contact the address book knows only by
+    # ``user_id`` (the hub does not disclose other people's emails, so those
+    # contacts have no address to invite). Forwarded to the same members endpoint
+    # — see ``Conversation.share``.
+    recipient_user_ids = body.get("recipient_user_ids")
+    if recipient_user_ids is not None and not isinstance(recipient_user_ids, list):
+        raise HTTPException(status_code=400, detail="share: 'recipient_user_ids' must be a list")
+
     # Hub-only types have no local row to look up, and nothing to push: the entity already lives
     # on the hub and this endpoint's whole job for them is the invitation. Resolved BEFORE the
     # local fetch below, which would otherwise 404 every share of one. An ``LLMEndpoint`` is the
@@ -118,7 +127,7 @@ async def share_entity() -> ApiResponse:
 
     type_info = SchemaRegistry.get(target.type)
     if type_info is not None and type_info.git_publishable:
-        if recipients:
+        if recipients or recipient_user_ids:
             return ApiFailResponse(
                 status_code=400,
                 message="Invite members on the owning Project, not on an asset",
@@ -145,8 +154,14 @@ async def share_entity() -> ApiResponse:
 
     # Conversation and Project both implement a ``share(recipients=...)`` fan-out
     # (per-recipient MembershipRequest). Other types share without invites.
+    # ``recipient_user_ids`` is Conversation-only for now: Project.share() has no
+    # by-id addressing form, so passing it there would silently drop those people.
+    # Conversation needs no ``recipients`` guard — its share() treats two empty
+    # lists as the plain hub push, exactly like the bare ``share()`` below.
     try:
-        if recipients and isinstance(entity, (Conversation, Project)):
+        if isinstance(entity, Conversation):
+            await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
+        elif recipients and isinstance(entity, Project):
             await entity.share(recipients=recipients)
         else:
             await entity.share()
@@ -164,12 +179,22 @@ async def share_entity() -> ApiResponse:
     # shared entity type, not just conversations. A freshly-typed email carries no
     # user_id (expected); a conversation's existing roster carries user_id+email.
     # Non-fatal.
-    if recipients:
+    if recipients or recipient_user_ids:
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
             learn_entries: list[dict] = list(getattr(entity, "members", None) or [])
             learn_entries += [
-                {"email": r} for r in recipients if isinstance(r, str) and r.strip()
+                {"email": r} for r in (recipients or []) if isinstance(r, str) and r.strip()
+            ]
+            # A principal grantee is already a known contact (that is where the
+            # user_id came from), so this is a no-op refresh rather than a new
+            # row — but keeping both halves symmetric means the learner never
+            # has to care which path admitted someone.
+            from flow_sdk.builtin.conversation import _recipient_user_id  # noqa: PLC0415
+            learn_entries += [
+                {"user_id": user_id}
+                for user_id in map(_recipient_user_id, recipient_user_ids or [])
+                if user_id
             ]
             await _learn_address_book(learn_entries)
         except Exception as e:  # noqa: BLE001

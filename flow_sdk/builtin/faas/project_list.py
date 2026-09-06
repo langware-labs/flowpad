@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -78,7 +79,7 @@ def _project_id_for_cwd(cwd: str) -> str:
     return mint_uuid(f"project:{canonical_posix_path(cwd)}", namespace=uuid.NAMESPACE_DNS)
 
 
-def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
+def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) -> dict[str, Path]:
     """Build {canonical_cwd: claude_dir} by reading each child's JSONL once.
 
     Claude's encoded-dir name is lossy (``/`` / `` `` / ``_`` → ``-``), so going
@@ -95,7 +96,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
         if not child.is_dir():
             continue
         real = decode_claude_project_dir(child)
-        if real is None or not is_valid_project_cwd(real):
+        if real is None or not is_valid_project_cwd(real, include_temp=include_temp):
             continue
         try:
             out[str(real.resolve())] = child
@@ -335,10 +336,20 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     each row with per-worker session counts read off disk — same shape the UI
     expected from the legacy implementation.
     """
-    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.operations.all_projects import get_all_projects
 
     all_projects = await get_all_projects(create_missing=False)
+    # The enrichment below is a synchronous walk over every worker's on-disk
+    # activity (``~/.claude/projects`` session stats, codex/copilot logs) —
+    # seconds on a machine with hundreds of historical cwds. Off the loop, so a
+    # picker opening this list does not stall every other request behind it.
+    return await asyncio.to_thread(_build_project_rows, all_projects)
+
+
+def _build_project_rows(all_projects: list) -> dict[str, Any]:
+    """Pure, blocking: per-worker activity + session counts per canonical cwd."""
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
+
     codex_activity = _codex_activity_by_cwd()
     copilot_activity = _copilot_activity_by_cwd()
     # One pass over claude_root → cwd lookup; otherwise the per-project search

@@ -1,7 +1,7 @@
 import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, Project, TypeId, type GitOrigin } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
+import { AutoLoginField } from '@src/pages/hub-home/AutoLoginField';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -422,12 +422,7 @@ export function NewSandboxDialog({
 
         {/* The one thing about the box you can only decide before it boots. */}
         {phase === 'created' && (
-          <label className="mt-3 flex items-start gap-2 text-xs" data-testid="sandbox-auto-login">
-            <Checkbox checked={autoLogin} onCheckedChange={(v) => setAutoLogin(v === true)} className="mt-0.5" />
-            <span className="text-muted-foreground">
-              <Trans>Sign me in automatically — this sandbox belongs to one person.</Trans>
-            </span>
-          </label>
+          <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="sandbox-auto-login" className="mt-3" />
         )}
 
         <DialogFooter className="mt-4">

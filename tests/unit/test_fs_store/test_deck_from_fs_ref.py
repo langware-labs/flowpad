@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.deck import Deck
+from flow_sdk.capsules import CapsuleData
+from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.deck import extract_deck
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -48,7 +50,7 @@ def test_indexer_compatible_all_fields(tmp_path: Path) -> None:
     tpl = tmp_path / "assets" / "deck-templates" / "aurora"
     tpl.mkdir(parents=True)
     (tpl / "template.json").write_text(json.dumps({"metadata": {}, "data": {}}), encoding="utf-8")
-    write_folder_capsule_id(tpl, tpl_id)
+    FolderCapsule(tpl).write("identity", CapsuleData(1, {"id": tpl_id}))
 
     deck = _seed_deck(tmp_path, "pitch", manifest={
         "title": "Pitch", "description": "investor deck",
@@ -56,7 +58,7 @@ def test_indexer_compatible_all_fields(tmp_path: Path) -> None:
         "slides": [{"layout": "cover-centered", "slots": {"title": "Hi"}}],
     })
     ref = FSRef(deck)
-    gen = SchemaRegistry.get("deck").mint_entity_id(ref)
+    gen = resolve_id(SchemaRegistry.get("deck"), ref)
     loaded = Deck.from_fs_ref(ref)
     rec = extract_deck(ref, gen)[0]
     m = rec.meta_dict()["metadata"]
