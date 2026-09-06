@@ -2552,13 +2552,15 @@ class Entity(DBEntity):
         # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
-        # Unconditional, NOT gated on `was_create`: the write that actually loses
-        # links believes it is a create. The frontend re-POSTs a project for a
-        # folder it already has, which lands on the stored row and blanks it —
-        # so "am I creating?" is the caller's belief, while "is there a row?" is
-        # the fact. The helper reads the row and no-ops when there genuinely
-        # isn't one.
-        await self._merge_stored_context_links()
+        # ONLY on the anomalous create-over-existing-row: the caller believes it
+        # is creating, but a row is already there. That is the shape that loses
+        # links — the frontend re-POSTs a project for a folder it already has,
+        # and the fresh instance's empty buckets land on the stored row. A
+        # genuine update must NOT merge: `remove_context_dir` and the share
+        # prune drop a link on purpose, and unioning would make removal
+        # impossible.
+        if was_create:
+            await self._merge_stored_context_links()
         create_target = await self._prepare_for_storage()
         suppress_store = _SUPPRESS_STORE.get()
 
