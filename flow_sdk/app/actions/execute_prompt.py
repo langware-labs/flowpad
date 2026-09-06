@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.transcript_analyzer.entry import EntryKind
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -356,72 +357,66 @@ async def _emit_prompt_completion(
     }
 
 
-def _is_user_turn_boundary(msg: dict) -> bool:
-    """True when ``msg`` is a genuine user prompt — the start of a new turn —
-    rather than a ``tool_result`` the tool runtime feeds back to the model
-    mid-turn. Used to slice only the latest turn's reply out of a transcript
-    that replays every prior turn (see ``_capture_assistant_reply``)."""
-    if msg.get("role") != "user":
-        return False
-    content = msg.get("content")
-    if isinstance(content, list):
-        # A tool_result block is mid-turn tool output, NOT a new prompt — it
-        # must not reset the turn.
-        return not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
-    return bool(content)
+def _last_turn_assistant_text(entries) -> str:
+    """The assistant text of the LAST turn, from typed transcript entries.
 
+    Pure and vendor-agnostic: it reads the analyzer's normalized
+    ``TranscriptEntry`` model (``kind`` / ``text`` / ``is_meta`` / ``id``), which
+    every driver's parser produces, so one implementation serves claude, codex,
+    copilot and opencode -- and a fifth vendor the day its parser lands.
 
-def _assistant_text(msg: dict) -> str:
-    """Concatenate the visible ``text`` blocks of one assistant message."""
-    content = msg.get("content")
-    if not isinstance(content, list):
-        return ""
-    out = [
-        (block.get("text") or "").strip()
-        for block in content
-        if isinstance(block, dict) and block.get("type") == "text"
-    ]
-    return "\n\n".join(t for t in out if t)
+    Walks BACKWARDS and stops at the prompt that opened this turn: a resumed
+    session replays every prior turn, and everything before that prompt is
+    provably not part of this reply. ``is_meta`` user entries (system reminders,
+    tool results fed back mid-turn) are not prompts and must not end the turn.
+
+    Assistant text is de-duplicated by entry id with LAST-WRITTEN winning: a
+    vendor may emit a line twice (a streaming chunk, then the finalized
+    snapshot, sharing an id). Walking backwards, the first sighting IS the last
+    written, so the first wins and earlier copies are skipped.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for entry in reversed(list(entries)):
+        kind = getattr(entry, "kind", None)
+        if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
+            break  # the prompt that opened this turn — everything older is a prior turn
+        if kind is not EntryKind.ASSISTANT_MESSAGE:
+            continue
+        text = (getattr(entry, "text", "") or "").strip()
+        if not text:
+            continue
+        eid = getattr(entry, "id", None)
+        if eid is not None:
+            if eid in seen:
+                continue  # an earlier copy of a line already taken
+            seen.add(eid)
+        out.append(text)
+    return "\n\n".join(reversed(out)).strip()
 
 
 async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
-    """Run the turn to completion and return ONLY the latest turn's assistant
-    CHAT text.
+    """Run the turn to completion and return ONLY the latest turn's assistant text.
 
-    ``stream_transcript`` replays the whole JSONL from the top, and a resumed
-    Claude session re-emits every prior turn — so a fixed line offset can't
-    isolate the new turn. We drop the collected text every time a genuine user
-    prompt appears, so only the assistant text following the LAST user prompt
-    (this turn's reply) survives. ``stream_transcript`` itself is resume-aware
-    (it won't end on the prior turn's terminal marker while this turn's worker
-    is live), so by the time it returns the transcript holds THIS turn and the
-    turn-slicing yields the correct reply — no baseline bookkeeping needed.
+    Two concerns, deliberately split. The WAIT is the transcript stream, which is
+    resume-aware (it will not end on a prior turn's terminal marker while this
+    turn's worker is still live). The READ is the analyzer's typed entry model
+    via ``_load_transcript`` -- never this module hand-parsing a vendor's wire
+    shape.
 
-    Claude can also write an assistant message more than once (streaming +
-    finalized snapshot share ``message.id``); we key on the id with last-write-
-    wins so a repeated snapshot can't duplicate the text within a turn.
+    That split is the fix for a real defect. This used to parse Claude's
+    ``{"message": {"role": "assistant", "content": [...]}}`` JSONL inline; every
+    other harness writes a different shape, so the parse found nothing and
+    returned "". The worker had run fine, the turn went IDLE, and
+    ``run_session_turn`` wrote NO completion -- a session on codex/copilot/
+    opencode simply never replied, which read from the outside as "that model
+    does not work with that harness". It was never the model.
     """
-    # dict preserves insertion order (py3.7+); last-write-wins keying dedups a
-    # repeated streaming/finalized snapshot that shares message.id.
-    turn: "dict[str, str]" = {}
-    noid = 0
-    async for entry in ap.stream_transcript():
-        msg = entry.get("message") if isinstance(entry, dict) else None
-        if not isinstance(msg, dict):
-            continue
-        if _is_user_turn_boundary(msg):
-            turn.clear()  # new turn — discard everything from prior turns
-            continue
-        if msg.get("role") == "assistant":
-            text = _assistant_text(msg)
-            if not text:
-                continue
-            mid = msg.get("id")
-            if not mid:
-                mid = f"_noid_{noid}"
-                noid += 1
-            turn[mid] = text  # last write wins for a repeated snapshot id
-    return "\n\n".join(turn.values()).strip()
+    async for _ in ap.stream_transcript():
+        pass  # drain: the stream ending IS "this turn finished"
+
+    transcript = ap._load_transcript()
+    return _last_turn_assistant_text(transcript.entries if transcript is not None else [])
 
 
 # The reply body wraps the assistant text so the UI's MessageBubble can
@@ -667,12 +662,28 @@ async def run_session_turn(
                 logger.warning("[session] turn failed session=%s: %s", session.id, run_err, exc_info=True)
                 return ApiFailResponse(message=f"session turn failed: {run_err}")
 
+            if not reply:
+                # A worker that RAN and produced no readable text is a defect, not a
+                # quiet success. Reporting it as success is exactly how the
+                # claude-shaped capture hid for three harnesses: the turn went IDLE,
+                # nothing was written, and the guest — who has no clock — waited
+                # forever on a reply that was never coming. Fail loudly and name the
+                # worker's own verdict, so the next unreadable vendor surfaces here
+                # instead of as "that model does not work with that harness".
+                status = ap.fetch_worker_status()
+                session.mark_activity(RemoteWorkerSessionStatus.ERROR)
+                await session.save()
+                logger.warning(
+                    "[session] worker produced no readable reply session=%s worker=%s status=%s — "
+                    "the turn ran but its transcript yielded no assistant text",
+                    session.id,
+                    getattr(ap.driver, "name", "?"),
+                    status,
+                )
+                return ApiFailResponse(message=f"the worker finished ({status}) but produced no readable reply")
+
             session.mark_activity(RemoteWorkerSessionStatus.IDLE)
             await session.save()
-            if not reply:
-                return ApiSuccessResponse(
-                    data={"executed": True, "reply": None, "process_id": ap.id, "session_id": session.id}
-                )
 
             from flow_sdk.app.actions.notification_action import handle_add_message
 

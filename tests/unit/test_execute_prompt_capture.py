@@ -1,82 +1,122 @@
-"""Regression: ``_capture_assistant_reply`` must return ONLY the latest turn.
+"""``_last_turn_assistant_text`` — the session turn's reply extraction.
 
-Bug (this session): ``stream_transcript`` replays the whole JSONL from the top,
-and a resumed Claude session re-emits every prior turn. The old capture used a
-fixed line offset to skip prior turns; the offset misaligned with the replayed
-stream, so every earlier assistant reply leaked into each new conversation
-message. The switch is the turn-boundary slicing in ``_capture_assistant_reply``
-(reset the collected text on each genuine user prompt).
+Two properties, and the first one is why this file exists.
 
-This test feeds a faithful two-turn replay and asserts the captured reply is the
-SECOND turn's answer only — not the first turn's, and not a tool_result-induced
-split. It fails (returns both answers) against the old offset-based logic and
-passes against the turn-boundary logic.
+**Every vendor, not just claude.** The capture used to hand-parse Claude's
+``{"message": {"role": "assistant", "content": [...]}}`` JSONL inline. codex,
+copilot and opencode each write a different shape, so the parse found nothing
+and returned ``""`` — the worker had run fine, the turn went IDLE, and
+``run_session_turn`` wrote NO completion. A live session on any non-claude
+harness simply never replied, which read from the outside as "that model does
+not work with that harness". It was never the model. The fix reads the
+analyzer's normalized ``TranscriptEntry`` model instead, so the vendor's own
+parser owns the shape. ``test_every_vendor_yields_its_reply`` is the guard: it
+runs the real recorded transcript of all four harnesses through the extractor
+and would have caught the original bug — and catches vendor five the day its
+parser lands, which a claude-only fake never could.
+
+**Only the latest turn.** A resumed session replays every prior turn, so the
+extractor must stop at the prompt that opened this one. ``is_meta`` user entries
+(system reminders, tool results fed back mid-turn) are not prompts and must not
+end the turn; a line re-emitted under the same id (streaming chunk, then the
+finalized snapshot) must count once, last-written winning.
 """
+
 from __future__ import annotations
 
-from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply
+from pathlib import Path
+
+import pytest
+
+from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
+from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry, UserMessageEntry
+
+_RESOURCES = Path(__file__).resolve().parent / "resources" / "transcripts"
+
+#: ``(worker, recorded transcript, its format, a phrase the reply must contain)``.
+#: Real captures, one per harness FlowPad can spawn — the point is that the
+#: extractor is vendor-agnostic, so a claude-shaped fake would prove nothing.
+VENDORS = [
+    ("claude", "claude_multi_block_message.jsonl", None, "Verdict"),
+    ("codex", "codex_stream_events.jsonl", TranscriptFormat.CODEX_STREAM, "helper function"),
+    ("copilot", "copilot_stream_stdin_prompt.jsonl", TranscriptFormat.COPILOT_STREAM, "stdin-ok"),
+    ("opencode", "opencode_stream_hello.jsonl", TranscriptFormat.OPENCODE_STREAM, "Hello"),
+]
 
 
-def _user(content):
-    return {"type": "user", "message": {"role": "user", "content": content}}
+def _entry(cls, **kwargs):
+    """A typed entry with the envelope fields the analyzer requires."""
+    base = {"id": kwargs.pop("id"), "session_id": "s1", "timestamp": "2026-09-06T00:00:00Z", "worker": "claude"}
+    return cls(**kwargs, **base)
 
 
-def _assistant(mid, text):
-    return {
-        "type": "assistant",
-        "message": {
-            "id": mid,
-            "role": "assistant",
-            "content": [{"type": "text", "text": text}],
-        },
-    }
+def _assistant(eid: str, text: str) -> AssistantMessageEntry:
+    return _entry(AssistantMessageEntry, id=eid, text=text)
 
 
-class _FakeProcess:
-    """Minimal stand-in: ``_capture_assistant_reply`` only calls
-    ``stream_transcript``. We replay a multi-turn transcript exactly as
-    ``AgenticProcess.stream_transcript`` would on a resumed session (whole file
-    from the top, one parsed dict per line)."""
-
-    def __init__(self, entries):
-        self._entries = entries
-
-    async def stream_transcript(self, timeout=300, poll_interval=0.2):
-        for entry in self._entries:
-            yield entry
+def _user(eid: str, text: str, *, is_meta: bool = False) -> UserMessageEntry:
+    return _entry(UserMessageEntry, id=eid, text=text, is_meta=is_meta)
 
 
-async def test_capture_returns_only_latest_turn():
+@pytest.mark.parametrize("worker, filename, fmt, expected", VENDORS, ids=[v[0] for v in VENDORS])
+def test_every_vendor_yields_its_reply(worker, filename, fmt, expected):
+    """The recorded transcript of EVERY harness yields that harness's reply.
+
+    The regression the original defect needed: on codex/copilot/opencode the old
+    claude-shaped parse returned "" here, and the session silently never replied.
+    """
+    path = _RESOURCES / filename
+    parsed = AgentTranscriptFile(worker, path, transcript_format=fmt) if fmt else AgentTranscriptFile(worker, path)
+
+    reply = _last_turn_assistant_text(parsed.entries)
+
+    assert reply, f"{worker}: extractor found no assistant text in a real {worker} transcript"
+    assert expected in reply, f"{worker}: expected {expected!r} in the reply, got {reply[:200]!r}"
+
+
+def test_only_the_latest_turn_is_returned():
+    """A replayed prior turn must not leak into this turn's reply."""
     entries = [
-        # ── Turn 1 (already shown in a prior message) ──
-        _user("first question"),
-        _assistant("msg_1", "FIRST ANSWER"),
-        # ── Turn 2 (the one this capture is for) ──
-        _user("second question"),
-        # mid-turn tool round-trip: a tool_result user entry must NOT be
-        # treated as a new turn boundary (it's tool output fed back to Claude).
-        _assistant("msg_2a", "thinking about tools"),
-        _user([{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]),
-        _assistant("msg_2b", "SECOND ANSWER"),
+        _user("u1", "first question"),
+        _assistant("a1", "FIRST ANSWER"),
+        _user("u2", "second question"),
+        _assistant("a2", "SECOND ANSWER"),
     ]
-    ap = _FakeProcess(entries)
 
-    reply = await _capture_assistant_reply(ap)
+    reply = _last_turn_assistant_text(entries)
 
-    # The bug: prior-turn text leaks in.
-    assert "FIRST ANSWER" not in reply, f"prior turn leaked into reply: {reply!r}"
-    # The tool round-trip is mid-turn, so its assistant text belongs to turn 2.
-    assert reply == "thinking about tools\n\nSECOND ANSWER", reply
+    assert reply == "SECOND ANSWER", reply
 
 
-async def test_repeated_snapshot_does_not_duplicate():
-    """Claude writes some assistant messages twice (streaming + finalized
-    snapshot share ``message.id``); the finalized text must win once, not
-    duplicate."""
+def test_a_meta_user_entry_does_not_end_the_turn():
+    """Tool output fed back mid-turn is not a new prompt, so the assistant text
+    on both sides of it belongs to the same reply."""
     entries = [
-        _user("question"),
-        _assistant("msg_X", "partial"),        # streaming snapshot
-        _assistant("msg_X", "final answer"),   # finalized snapshot, same id
+        _user("u1", "question"),
+        _assistant("a1", "thinking about tools"),
+        _user("u2", "tool result", is_meta=True),
+        _assistant("a2", "final answer"),
     ]
-    reply = await _capture_assistant_reply(_FakeProcess(entries))
+
+    reply = _last_turn_assistant_text(entries)
+
+    assert reply == "thinking about tools\n\nfinal answer", reply
+
+
+def test_a_repeated_id_counts_once_with_the_last_write_winning():
+    """A streamed chunk and its finalized snapshot share an id — one line, and
+    the finalized text is the one that survives."""
+    entries = [
+        _user("u1", "question"),
+        _assistant("msg_x", "partial"),
+        _assistant("msg_x", "final answer"),
+    ]
+
+    reply = _last_turn_assistant_text(entries)
+
     assert reply == "final answer", reply
+
+
+def test_no_entries_is_empty_not_an_error():
+    assert _last_turn_assistant_text([]) == ""
