@@ -110,7 +110,7 @@ const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
  *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
  *  and the same person owns both — a message of mine that came back through the
  *  hub must not read as somebody else's. */
-export function isViewer(senderId: string | null | undefined, viewer: ConversationFacetInput['viewer']): boolean {
+export function isViewer(senderId: string | null | undefined, viewer: CategoryInputs['viewer']): boolean {
   return !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
 }
 
