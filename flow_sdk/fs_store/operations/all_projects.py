@@ -260,7 +260,13 @@ async def get_all_projects(
         if proj.fs_storage_mount_path:
             canonical = canonical_posix_path(proj.fs_storage_mount_path)
             if is_valid_project_cwd(canonical, include_temp=include_temp):
-                by_cwd[canonical] = proj
+                # FIRST match wins — the contract `Project.find_by_cwd` and
+                # `Project.index_by_mount` both document and implement. This used
+                # to overwrite, so when two rows shared a mount path (a duplicate
+                # the find-then-create upsert let through) the picker attributed
+                # the folder to the LAST row while every find_by_cwd caller got
+                # the FIRST. One folder, two project ids, depending on who asked.
+                by_cwd.setdefault(canonical, proj)
 
     to_create: list[ProjectInfo] = []
     for cwd, info in fs_by_cwd.items():
