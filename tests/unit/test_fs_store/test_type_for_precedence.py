@@ -169,3 +169,45 @@ def test_a_second_extension_names_the_same_type(tmp_path: Path, _probe_type) -> 
     _probe_type("_probe_multi", File(ext=".probe", also=(".probe2",)))
     assert SchemaRegistry.type_for(tmp_path / "a.probe") == "_probe_multi"
     assert SchemaRegistry.type_for(tmp_path / "a.PROBE2") == "_probe_multi"
+
+
+# --- ``placed_only``: the confident half of the answer. A caller that MINTS on
+# the result (``flow show``) must not treat "every .md is a markdown asset" —
+# true of the type system, false of the walk — as a licence to create a row.
+
+
+def test_placed_only_drops_the_extension_tier(tmp_path: Path) -> None:
+    loose = tmp_path / "work" / "hello.md"
+    loose.parent.mkdir(parents=True)
+    loose.write_text("# scratch\n", encoding="utf-8")
+
+    assert SchemaRegistry.type_for(loose) == "markdown", "the type system still names it"
+    assert SchemaRegistry.type_for(loose, placed_only=True) is None, "but nothing placed it"
+
+
+def test_placed_only_keeps_every_declared_placement(tmp_path: Path) -> None:
+    for rel, expected in (
+        ("docs/guide.md", "markdown"),          # a declared mount, shared with markdown_index
+        ("docs/deep/nested.md", "markdown"),    # the mount is recursive
+        (".claude/commands/deploy.md", "command"),
+        ("CLAUDE.md", "claude_md"),             # a fixed name
+        ("skills/s/SKILL.md", "skill"),         # a folder type's main document
+    ):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# x\n", encoding="utf-8")
+        assert SchemaRegistry.type_for(path, placed_only=True) == expected, rel
+
+
+def test_a_shared_mount_resolves_to_the_type_that_needs_no_declaration(tmp_path: Path) -> None:
+    """``docs`` is both markdown and markdown_index. A document that declares
+    nothing is the plain one; only an explicit ``type:`` makes it the index."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    plain = docs / "guide.md"
+    plain.write_text("---\ntitle: Guide\n---\n# Guide\n", encoding="utf-8")
+    index = docs / "index.md"
+    index.write_text("---\ntype: markdown_index\n---\n# Index\n", encoding="utf-8")
+
+    assert SchemaRegistry.type_for(plain, placed_only=True) == "markdown"
+    assert SchemaRegistry.type_for(index, placed_only=True) == "markdown_index"
