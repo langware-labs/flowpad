@@ -4981,6 +4981,20 @@ class AgenticProcess(Entity):
                 session_id=descriptor.session_id,
                 transcript_format=descriptor.format,
             )
+        except ValueError:
+            # Parser DISPATCH failed — an unregistered worker/format, i.e. our
+            # bug, not a bad file. It stays non-fatal (a transcript we cannot
+            # read must not break the caller), but it is logged at WARNING with
+            # the pair that missed: at debug level this was invisible, and a
+            # silent None here surfaces as an agent that answered nothing.
+            logger.warning(
+                "AgenticProcess %s _load_transcript: no parser for worker=%r format=%r",
+                self.id,
+                self.driver.name,
+                descriptor.format,
+                exc_info=True,
+            )
+            return None
         except Exception:
             logger.debug("AgenticProcess %s _load_transcript: parse failed", self.id, exc_info=True)
             return None
