@@ -1567,7 +1567,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // short-circuits on OPEN/CONNECTING so repeat calls are free, a page that
     // never watches anything still opens no socket, and it cannot be defeated by
     // init ordering. Not awaited -- the seed fetch must not wait on a handshake.
-    void ConnectionManager.getInstance().connect();
+    // `.catch`, not `void`: unawaited by design, but a rejected promise nobody
+    // observes is an unhandled rejection. A failed handshake here is already
+    // reported by the connection status; it must not take the process down.
+    ConnectionManager.getInstance().connect().catch(() => undefined);
 
     // Check if a WatchedQuery exists
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
