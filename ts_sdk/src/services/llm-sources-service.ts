@@ -163,7 +163,15 @@ export class LlmSourcesService {
    *
    * A refused call resolves with `ok: false` rather than throwing — a refusal is the answer.
    */
-  testSource(source: { kind: string; provider?: string; harness?: string; endpoint_typeid?: string }) {
+  testSource(source: {
+    kind: string;
+    provider?: string;
+    harness?: string;
+    endpoint_typeid?: string;
+    /** Device rows only: drop a latched refusal first. For a button a person pressed — an
+     *  automatic probe must not overturn a refusal the harness itself made. */
+    force?: boolean;
+  }) {
     return apiClient.post<LLMEndpointTestResult>(`${this.base}/test-source`, source);
   }
 

@@ -40,9 +40,8 @@ import {
   harnessKinds,
   labelForWorker,
   useLlmSources,
-  useRecheckSignIn,
   useFundingFollowsLogin,
-  useRefreshLoginStates,
+  useProbeDeviceLogins,
   useTestSource,
   useSelectSource,
   workerOf,
@@ -76,7 +75,6 @@ function SourceRow({
 }) {
   const { t } = useLingui();
   const worker = workerOf(harness);
-  const recheck = useRecheckSignIn();
   const testing = testSource.pending === llmSourceRef(source);
   const verdict = testSource.verdicts[llmSourceRef(source)];
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
@@ -175,32 +173,19 @@ function SourceRow({
         {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
       </Button>
       {needsSignIn ? (
-        <>
-          {/* "I already signed in — look again."
-              A refusal the harness made mid-turn is LATCHED, and a silent
-              re-check may not clear it (a stored credential proves presence,
-              not validity). So a person who ran `claude /login` in their own
-              terminal saw this row keep saying "signed out" with only a Sign in
-              button — offering to start a login they had already completed. */}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={recheck.isPending}
-            onClick={() => recheck.mutate(harness)}
-            title={t`Already signed in elsewhere? Check again`}
-            data-testid={`llm-source-recheck-${worker}`}
-          >
-            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Re-check</Trans>}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openHarnessLoginModal()}
-            data-testid={`llm-source-signin-${worker}`}
-          >
-            <Trans>Sign in</Trans>
-          </Button>
-        </>
+        /* No Re-check beside it. It asked `authStatus`, whose answer reports what FUNDS the
+           harness rather than whether this login works — so on a signed-out row it announced
+           the hub endpoint, which is not what the button appeared to offer. The arrival probe
+           now answers the "did I sign in elsewhere" case without being asked, and Test answers
+           it on demand, so nothing is lost with it. */
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openHarnessLoginModal()}
+          data-testid={`llm-source-signin-${worker}`}
+        >
+          <Trans>Sign in</Trans>
+        </Button>
       ) : needsKey ? (
         <Button
           size="sm"
@@ -230,10 +215,11 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { status, isLoading } = useLlmSources();
-  // Ask the vendors whether they are signed in, now — nothing else refreshes
-  // `login_state` between backend restarts, and a launch that failed for want of
-  // a source routes here expecting this page to know better than it did.
-  useRefreshLoginStates();
+  // Ask every device login whether it is really signed in, now. Free (a local subprocess
+  // against an existing subscription), so it runs unasked on every arrival — the only way
+  // this page can be right about a login the user ended in their own terminal. Device only:
+  // the key and hub checks spend money and stay behind a click.
+  useProbeDeviceLogins();
   // ...and keep following: a sign-in made from the modal THIS page opens must flip the row
   // from "Sign in" to "Use", which the mount-only probe above cannot do on its own.
   useFundingFollowsLogin();

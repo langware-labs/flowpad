@@ -1835,8 +1835,8 @@ msgid "already running"
 msgstr "قيد التشغيل بالفعل"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "Already signed in elsewhere? Check again"
-msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -4613,7 +4613,6 @@ msgid "Could not change sign-in method"
 msgstr "تعذر تغيير طريقة تسجيل الدخول"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
 
@@ -14818,8 +14817,8 @@ msgid "RAM:"
 msgstr "ذاكرة الوصول العشوائي:"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "Re-check"
-msgstr "تحقّق مرة أخرى"
+#~ msgid "Re-check"
+#~ msgstr "تحقّق مرة أخرى"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -17532,7 +17531,6 @@ msgstr "لم يتم تأكيد تسجيل الدخول"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
@@ -18123,8 +18121,8 @@ msgid "Still signed in"
 msgstr "الجلسة ما زالت نشطة"
 
 #: src/components/llm-sources/use-llm-sources.ts
-msgid "Still signed out — please re-authenticate"
-msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
