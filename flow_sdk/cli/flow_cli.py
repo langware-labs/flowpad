@@ -1235,6 +1235,10 @@ from flow_sdk.cli.commands.context_cmd import context_app
 
 app.add_typer(context_app, name="context")
 
+from flow_sdk.cli.commands.llm_cmd import llm_app
+
+app.add_typer(llm_app, name="llm")
+
 from flow_sdk.cli.commands.connections_cmd import connections_app
 
 app.add_typer(connections_app, name="connections")

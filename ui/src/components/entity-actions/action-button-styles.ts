@@ -15,6 +15,18 @@ export const compactEntityActionClassName =
 export const chromeEntityActionClassName = `${compactEntityActionClassName} h-8 w-8 [&_svg]:size-[18px]`;
 
 /**
+ * The chrome glyph size as a class the ICON can wear itself, for glyphs that are
+ * not an `svg` and so fall outside the `[&_svg]` rule above — the icon packs
+ * render a brand mark as a mask `span` (see `ICON_CSS`), whose `:where(.fp-icon)`
+ * 1em default then wins by default rather than by intent.
+ *
+ * Spelled out rather than interpolated into the rule above: Tailwind scans
+ * source text, and `[&_svg]:size-[18px]` has to appear literally to be
+ * generated. The two must therefore be kept in step by hand — hence this note.
+ */
+export const chromeGlyphClassName = 'size-[18px]';
+
+/**
  * The chrome size applied from a PARENT to a cluster of shared buttons it does
  * not own (the entity-actions toolbar, which keeps its compact size everywhere
  * else). Boxes only — each button keeps whatever glyph size its own contract

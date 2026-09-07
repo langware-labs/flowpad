@@ -13,6 +13,7 @@ import { iconForType, labelForType } from '@src/components/graph-view/icons/icon
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
+import { useProjectLocation } from '@src/hooks/use-project-location';
 
 /**
  * The address bar's contents: `Project / …ancestors… / current`.
@@ -63,6 +64,8 @@ export interface Crumb {
    */
   path?: string | null;
   filename?: string | null;
+  /** `path` names a folder, not a file — a Files dock. */
+  directory?: boolean;
 }
 
 export interface EntityBreadcrumbs {
@@ -153,6 +156,7 @@ function viewLabel(dock: DockPointer | null): string {
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
   const { project, activeEntity, activeEntityTypeId } = useContext();
+  const { projectPath } = useProjectLocation();
 
   // Identity of what this dock ADDRESSES, as a string.
   //
@@ -406,8 +410,14 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // route's own VFS path first (parsed, no fetch, right on the first frame),
     // then the resolved entity's `asset_ref` for a typeid-addressed asset.
     const assetRef = (resolved.entity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
-    const path = dock?.resourceVfsPath?.machinePath || assetRef || null;
+    // A Files dock shows a FOLDER. Its root ("<project>'s Files") has no pointer
+    // at all, yet it is the most file-backed thing in the app — it is the
+    // project directory — so it falls back to the project's own path. Without
+    // this the crumb was plain text and offered nothing on hover.
+    const isExplorer = dock?.viewType === ViewType.EXPLORER;
+    const path = dock?.resourceVfsPath?.machinePath || assetRef || (isExplorer ? projectPath : null) || null;
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
+    const directory = isExplorer;
 
     out.push(
       targetTypeId
@@ -419,6 +429,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             kind: 'current',
             path,
             filename,
+            directory,
           }
         : {
             key: 'view',
@@ -435,6 +446,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             kind: 'current',
             path,
             filename,
+            directory,
           },
     );
 
@@ -452,6 +464,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     targetTypeId,
     targetTitle,
     resolved.entity,
+    projectPath,
   ]);
 
   return { crumbs, targetTypeId, targetTitle };

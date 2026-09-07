@@ -300,14 +300,15 @@ async function tabIds(page: Page): Promise<string[]> {
 }
 
 /**
- * Switch the active project via the projects-counter chip popover. The chip
- * stays mounted even when the current project has zero open tabs (it labels the
- * ambient current project + the counts of projects that still own tabs), so it
- * is the affordance the matrix uses to move OFF an emptied project.
+ * Switch the active project via the top-nav project chip's popover (the tab
+ * strip no longer carries its own chip). The chip stays mounted even when the
+ * current project has zero open tabs (it labels the ambient current project +
+ * the counts of projects that still own tabs), so it is the affordance the
+ * matrix uses to move OFF an emptied project.
  */
 async function openProjectsChipPopover(page: Page) {
-  await page.locator('[data-testid="projects-counter-chip"]').first().click();
-  const popover = page.locator('[data-testid="projects-counter-popover"]');
+  await page.locator('[data-testid="top-nav-project-list"]').first().click();
+  const popover = page.locator('[data-testid="top-nav-project-popover"]');
   await popover.waitFor({ state: 'visible', timeout: 10_000 });
   return popover;
 }
@@ -601,7 +602,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
       await dismissCleanedSessionsOrSkip(page);
 
-      // The history entry point is the opener toolbar — the projects chip
+      // The history entry point is the opener toolbar — the nav-bar project chip
       // popover is a pure project list.
       await openTabViaMenu(page, 'history');
 
@@ -819,7 +820,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  // ---- D. Projects count chips selection ----
+  // ---- D. Project chip selection (top nav bar) ----
 
   test('test 21: Chip selects project, swaps tab strip, and lands on the project home', async ({ page }) => {
     const rq = await api();
@@ -831,10 +832,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     // Select Proj-B explicitly.
-    await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B|proj-b/).first().click();
+    await switchToProjectViaChip(page, 'Proj-B');
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
     await expect(page).toHaveURL(new RegExp(`/dock/project/${pb}(?:\\?|$)`));
     await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i);
@@ -854,7 +853,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('3', { timeout: 15_000 });
+    await expect(page.locator('[data-testid="top-nav-project-list"]').first()).toContainText('3', { timeout: 15_000 });
     await rq.dispose();
   });
 
@@ -901,8 +900,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(`/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    const popover = page.locator('[data-testid="projects-counter-popover"]');
+    const popover = await openProjectsChipPopover(page);
     // Reuse the existing popover readiness budget for the last expected row:
     // the shell-backed project buckets can arrive after the current-project row.
     await popover.getByRole('button', { name: /Proj-D 1/ }).waitFor({ state: 'visible', timeout: 10_000 });
@@ -955,9 +953,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(`/dock/shell/shell-${aShells[1].id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B/).first().click();
+    await switchToProjectViaChip(page, 'Proj-B');
     // Direct REST tab fixtures have no last_active_at, so none is a known
     // resume target. The current contract keeps the project's tabs available
     // in the strip but lands on the project home until the user selects one.
@@ -1521,10 +1517,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await dismissCleanedSessionsOrSkip(page);
     // Count = 2 even though Proj-C owns zero terminal tabs (the fix: the chip is
     // kind-agnostic, not terminal-only).
-    await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('2', { timeout: 15_000 });
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    const popover = page.locator('[data-testid="projects-counter-popover"]');
-    await popover.waitFor({ state: 'visible', timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-project-list"]').first()).toContainText('2', { timeout: 15_000 });
+    const popover = await openProjectsChipPopover(page);
     // Proj-C is listed, with a per-project badge of 1 (its single content tab).
     const cRow = popover.getByRole('button', { name: /Proj-C/ });
     await expect(cRow).toBeVisible({ timeout: 10_000 });

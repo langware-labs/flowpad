@@ -1,20 +1,20 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
+import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
-import { cn } from '@src/lib/utils';
-import { Globe, Loader2, RotateCcw } from 'lucide-react';
+import { FolderOpen, Globe, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /**
  * THE project list — the "which open project am I in, and which can I switch
- * to" menu — as a headless hook plus the list it renders. Two chips wear it:
- * the advanced tab strip's {@link ProjectsCounterChip} and the navigation
- * bar's {@link RuntimeChip}. Each owns its own trigger, Popover and testids;
+ * to" menu — as a headless hook plus the list it renders. The navigation bar's
+ * {@link RuntimeChip} wears it: the chip owns its trigger, Popover and testids;
  * the buckets, ordering, counts and URL-first selection live here, once.
  */
 
@@ -24,10 +24,9 @@ function bucketDisplayName(bucket: TabProjectBucket): string {
 
 /**
  * Name shown on the chip's project label. Prefer the explicit current-project
- * name; otherwise fall back to the matching open bucket's display name so a
- * project with live terminals still labels itself even without the prop.
- * Returns null when no project is known (the chip then shows counts only).
- * Pure + dependency-free so it's unit-testable in isolation.
+ * name; otherwise fall back to the matching open bucket's display name (the
+ * project entity may not have resolved one yet). Returns null when no project
+ * is known. Pure + dependency-free so it's unit-testable in isolation.
  */
 export function resolveProjectChipName(
   currentProjectName: string | null | undefined,
@@ -194,8 +193,7 @@ interface ProjectListMenuOptions {
   /** The scope the surrounding surface is in; highlights that row and decides Global. */
   currentProjectId?: string | null;
   /** Display name of the current project. Optional: the menu falls back to the
-   *  matching open bucket's name, so a project with live terminals still labels
-   *  itself even without it. */
+   *  matching open bucket's name when the entity hasn't resolved one. */
   currentProjectName?: string | null;
 }
 
@@ -220,10 +218,14 @@ export interface ProjectListMenu {
   /** "N open tab(s)". */
   tabsLabel: string;
   /** The scope and both counts on one line, for a flat aria-label. */
-  summaryLabel: string;
   recoveringId: string | null;
   handleSelect: (bucket: TabProjectBucket) => Promise<void>;
   handleSelectGlobal: () => Promise<void>;
+  /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
+  projectDialogOpen: boolean;
+  setProjectDialogOpen: (open: boolean) => void;
+  /** Close the list and pop the "Open project" dialog. */
+  handleOpenProject: () => void;
 }
 
 /** The project list's state and actions, trigger-agnostic. */
@@ -234,6 +236,7 @@ export function useProjectListMenu({
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
   const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
 
@@ -266,8 +269,6 @@ export function useProjectListMenu({
   const projectsLabel = `${projectTotal} open project${projectTotal === 1 ? '' : 's'}`;
   const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
   const scopeLabel = projectName ?? (isGlobalScope ? 'Global' : null);
-  const countsLabel = `${projectsLabel}, ${tabsLabel}`;
-  const summaryLabel = scopeLabel ? `${scopeLabel} — ${countsLabel}` : countsLabel;
 
   const handleRecover = async (bucket: TabProjectBucket) => {
     setRecoveringId(bucket.projectId);
@@ -315,6 +316,16 @@ export function useProjectListMenu({
     navigation.openDock(await dockForGlobalEntry(currentDock));
   };
 
+  // The list only switches between projects that already own tabs; opening
+  // one that doesn't (or a brand-new folder) goes through the same
+  // OpenProjectComponent dialog the footer's Switch Project button uses. The
+  // dialog is rendered by the chip via {@link ProjectListOpenDialog}, outside
+  // the popover, since Radix unmounts the popover content on close.
+  const handleOpenProject = () => {
+    setOpen(false);
+    setProjectDialogOpen(true);
+  };
+
   return {
     open,
     setOpen,
@@ -327,16 +338,48 @@ export function useProjectListMenu({
     scopeLabel,
     projectsLabel,
     tabsLabel,
-    summaryLabel,
     recoveringId,
     handleSelect,
     handleSelectGlobal,
+    projectDialogOpen,
+    setProjectDialogOpen,
+    handleOpenProject,
   };
 }
 
-/** The two counts, one line each — the body of both chips' hover surfaces, so
- *  which number is which is unmistakable. Each caller names the scope above
- *  it in its own way. */
+/**
+ * The "Open project" dialog the list's bottom button pops. The chip renders
+ * this once, as a sibling of its Popover (NOT inside the popover content,
+ * which unmounts on close and would take the dialog with it).
+ */
+export function ProjectListOpenDialog({ menu }: { menu: ProjectListMenu }) {
+  const { refetch: refetchProjects } = useProjects();
+  return (
+    <OpenProjectComponent
+      open={menu.projectDialogOpen}
+      onOpenChange={menu.setProjectDialogOpen}
+      onProjectChanged={() => void refetchProjects()}
+    />
+  );
+}
+
+/** The full-width "Open project" button that closes the project list. */
+function OpenProjectRow({ menu }: { menu: ProjectListMenu }) {
+  return (
+    <button
+      type="button"
+      onClick={menu.handleOpenProject}
+      className="flex w-full items-center justify-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+      data-testid="projects-counter-open-project"
+    >
+      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+      <Trans>Open project</Trans>
+    </button>
+  );
+}
+
+/** The two counts, one line each — the body of the chip's hover surface, so
+ *  which number is which is unmistakable. The caller names the scope above it. */
 export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
   return (
     <>
@@ -347,20 +390,11 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
 }
 
 /**
- * The open-projects count as both chips wear it on their trigger: hairline,
- * project glyph, number. Renders nothing at zero — a "0" advertises nothing.
- * `hairlineClassName` / `iconClassName` carry the surface's tone (the strip's
- * chip sits on the page, the nav bar's on a runtime tint).
+ * The open-projects count as the chip wears it on its trigger: hairline,
+ * project glyph, number, toned for the nav bar's runtime tint. Renders nothing
+ * at zero — a "0" advertises nothing.
  */
-export function ProjectCountBadge({
-  menu,
-  hairlineClassName = 'bg-border',
-  iconClassName = 'text-muted-foreground',
-}: {
-  menu: ProjectListMenu;
-  hairlineClassName?: string;
-  iconClassName?: string;
-}) {
+export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
   if (menu.projectTotal === 0) return null;
   const ProjectIcon = iconForType(Project.type);
   return (
@@ -369,8 +403,8 @@ export function ProjectCountBadge({
       data-testid="project-count-badge"
       aria-label={menu.projectsLabel}
     >
-      <span aria-hidden className={cn('mx-0.5 h-3 w-px shrink-0', hairlineClassName)} />
-      <ProjectIcon className={cn('h-3 w-3 shrink-0', iconClassName)} />
+      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
+      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
       {menu.projectTotal}
     </span>
   );
@@ -378,13 +412,18 @@ export function ProjectCountBadge({
 
 /**
  * The list itself — the `<ul>` that goes inside a `PopoverContent`. The caller
- * owns the Popover and its content so each chip keeps its own testid, width
- * and alignment; this renders the rows the same way for both. With nothing to
- * list it says so, rather than opening onto an empty box.
+ * owns the Popover and its content so the chip keeps its own testid, width
+ * and alignment. With nothing to list it says so, rather than opening onto an
+ * empty box.
  */
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   const { buckets, currentProjectId, isGlobalScope, globalTabCount, recoveringId, handleSelect, handleSelectGlobal } =
     menu;
+  const openProjectRow = (
+    <div className="mt-1 border-t border-border pt-1">
+      <OpenProjectRow menu={menu} />
+    </div>
+  );
 
   // Buckets in parent → subproject render order (a subproject is a project
   // whose folder lives inside another open project's folder). Display-only
@@ -399,88 +438,94 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
 
   if (!isGlobalScope && treeRows.length === 0) {
     return (
-      <div className="px-2 py-1.5 text-xs text-muted-foreground">
-        <Trans>No project has open tabs yet.</Trans>
+      <div>
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+          <Trans>No project has open tabs yet.</Trans>
+        </div>
+        {openProjectRow}
       </div>
     );
   }
 
   return (
-    <ul className="flex flex-col">
-      {isGlobalScope ? (
-        // The Global scope row — violet-accented so it never reads as a
-        // regular project, and always the current scope when shown.
-        <li key="__global__">
-          <button
-            type="button"
-            aria-current="true"
-            onClick={() => void handleSelectGlobal()}
-            className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-start text-sm font-medium hover:bg-violet-500/15"
-            data-testid="projects-counter-global"
-          >
-            <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-            <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
-              <Trans>Global</Trans>
-            </span>
-            <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
-              {globalTabCount}
-            </span>
-          </button>
-        </li>
-      ) : null}
-      {isGlobalScope && treeRows.length > 0 ? (
-        // Small mid-title separating the Global row from the project
-        // buckets below it.
-        <li key="__projects_title__" aria-hidden>
-          <SectionHairlineTitle>
-            <Trans>Active projects</Trans>
-          </SectionHairlineTitle>
-        </li>
-      ) : null}
-      {treeRows.map(({ bucket, guides }) => {
-        const isCurrent = bucket.projectId === currentProjectId;
-        const isRecovering = recoveringId === bucket.projectId;
-        const isMissing = bucket.state === 'missing';
-        // Live/loading rows lead with the per-type PROJECT icon from the
-        // TypeInfo registry (never a hardcoded glyph); a missing row
-        // swaps in its recover affordance instead.
-        let leadingIcon: React.ReactNode = (
-          <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
-        );
-        if (isMissing) {
-          leadingIcon = isRecovering ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-          ) : (
-            <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-          );
-        }
-        const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
-          isCurrent ? 'bg-muted/60 font-medium' : ''
-        } ${isMissing ? 'text-muted-foreground' : ''}`;
-        return (
-          <li key={bucket.projectId}>
+    <div className="flex flex-col">
+      <ul className="flex flex-col">
+        {isGlobalScope ? (
+          // The Global scope row — violet-accented so it never reads as a
+          // regular project, and always the current scope when shown.
+          <li key="__global__">
             <button
               type="button"
-              aria-current={isCurrent ? 'true' : undefined}
-              disabled={bucket.state === 'loading' || isRecovering}
-              onClick={() => void handleSelect(bucket)}
-              className={rowClass}
+              aria-current="true"
+              onClick={() => void handleSelectGlobal()}
+              className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-start text-sm font-medium hover:bg-violet-500/15"
+              data-testid="projects-counter-global"
             >
-              <RowGuides guides={guides} />
-              {leadingIcon}
-              <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
-              {isMissing && !isRecovering ? (
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <Trans>recover</Trans>
-                </span>
-              ) : null}
-              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                {bucket.tabCount}
+              <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+              <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
+                <Trans>Global</Trans>
+              </span>
+              <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
+                {globalTabCount}
               </span>
             </button>
           </li>
-        );
-      })}
-    </ul>
+        ) : null}
+        {isGlobalScope && treeRows.length > 0 ? (
+          // Small mid-title separating the Global row from the project
+          // buckets below it.
+          <li key="__projects_title__" aria-hidden>
+            <SectionHairlineTitle>
+              <Trans>Active projects</Trans>
+            </SectionHairlineTitle>
+          </li>
+        ) : null}
+        {treeRows.map(({ bucket, guides }) => {
+          const isCurrent = bucket.projectId === currentProjectId;
+          const isRecovering = recoveringId === bucket.projectId;
+          const isMissing = bucket.state === 'missing';
+          // Live/loading rows lead with the per-type PROJECT icon from the
+          // TypeInfo registry (never a hardcoded glyph); a missing row
+          // swaps in its recover affordance instead.
+          let leadingIcon: React.ReactNode = (
+            <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+          );
+          if (isMissing) {
+            leadingIcon = isRecovering ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+            );
+          }
+          const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
+            isCurrent ? 'bg-muted/60 font-medium' : ''
+          } ${isMissing ? 'text-muted-foreground' : ''}`;
+          return (
+            <li key={bucket.projectId}>
+              <button
+                type="button"
+                aria-current={isCurrent ? 'true' : undefined}
+                disabled={bucket.state === 'loading' || isRecovering}
+                onClick={() => void handleSelect(bucket)}
+                className={rowClass}
+              >
+                <RowGuides guides={guides} />
+                {leadingIcon}
+                <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+                {isMissing && !isRecovering ? (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <Trans>recover</Trans>
+                  </span>
+                ) : null}
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                  {bucket.tabCount}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {openProjectRow}
+    </div>
   );
 }

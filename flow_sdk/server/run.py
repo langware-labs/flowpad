@@ -35,7 +35,7 @@ if sys.platform == "win32":
 
 import uvicorn
 from dotenv import load_dotenv
-from filelock import FileLock, Timeout
+from filelock import FileLock
 
 _lock: FileLock | None = None  # kept alive for the process lifetime
 
@@ -71,13 +71,9 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _acquire_singleton_lock() -> bool:
-    """Acquire an exclusive process-level lock to prevent duplicate server instances.
+    """Acquire the per-instance backend lock (see ``flow_sdk.singleton_lock``).
 
-    Uses filelock (fcntl on POSIX, msvcrt on Windows) — kernel-owned, so the
-    lock is automatically released if the process crashes without cleanup.
-    We also write our PID into the lock file so stale locks can be detected.
-
-    Returns True if the lock was acquired, False if another instance is running.
+    Returns True if the lock was acquired, False if another backend is running.
     Set FLOWPAD_SKIP_LOCK=true to bypass (for isolated test servers).
     """
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
@@ -85,73 +81,22 @@ def _acquire_singleton_lock() -> bool:
         return True
 
     global _lock
-    from flow_sdk.config import get_port_file_path
+    from flow_sdk import singleton_lock
+    from flow_sdk.instance_settings import get_instance_settings
 
-    lock_path = get_port_file_path().with_suffix(".lock")
-    pid_path = get_port_file_path().with_suffix(".pid")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _try_acquire() -> bool:
-        global _lock
-        _lock = FileLock(str(lock_path), timeout=0)
-        try:
-            _lock.acquire()
-            pid_path.write_text(str(os.getpid()))
-            logging.info("[singleton] Lock acquired: pid=%d path=%s", os.getpid(), lock_path)
-            return True
-        except Timeout:
-            return False
-
-    if _try_acquire():
-        return True
-
-    # Acquisition failed — read holder PID from pid file (may not exist if server
-    # was started before PID-writing was added, or if file was deleted externally).
-    try:
-        holder_pid = int(pid_path.read_text().strip())
-    except Exception:
-        holder_pid = 0
-
-    if not holder_pid or not _pid_alive(holder_pid):
-        # Either no PID file or the recorded PID is dead — stale lock.
-        # Remove and retry; FileLock is the real guard.
-        if holder_pid:
-            logging.warning("[singleton] Stale lock (pid=%d is dead) — removing and retrying", holder_pid)
-        else:
-            logging.warning("[singleton] No PID in pid file — retrying acquire")
-        lock_path.unlink(missing_ok=True)
-        pid_path.unlink(missing_ok=True)
-        if _try_acquire():
-            return True
-
-    logging.warning(
-        "[singleton] Server already running (pid=%s) — exiting (our pid=%d)",
-        holder_pid or "unknown",
-        os.getpid(),
+    settings = get_instance_settings()
+    _lock = singleton_lock.acquire(
+        settings.server_lock_path, settings.server_pid_path, _pid_alive, logging.getLogger(), "Server"
     )
-    return False
+    return _lock is not None
 
 
 def _release_singleton_lock() -> None:
     if _lock and _lock.is_locked:
-        _lock.release()
-        # Deliberately does NOT unlink server.lock. Deleting a lock file after
-        # releasing it is the classic filelock footgun: between release() and
-        # unlink() another backend can acquire the same inode, we then delete
-        # the file it holds, a third creates a fresh file and acquires that —
-        # and two backends are both "the singleton". `restart-backend` (old
-        # backend exiting while the new one starts) is exactly that window.
-        #
-        # Leftover lock/pid files are harmless: _acquire_singleton_lock already
-        # treats them as stale by checking the recorded pid, and
-        # `flow instance ctl reconcile` removes them, gated on no live process
-        # holding them. Hygiene belongs in the layer whose job is clearing
-        # control-plane facts that are provably false — not in a shutdown path
-        # that cannot know whether someone has already taken over.
-        from flow_sdk.config import get_port_file_path
+        from flow_sdk import singleton_lock
+        from flow_sdk.instance_settings import get_instance_settings
 
-        pid_path = get_port_file_path().with_suffix(".pid")
-        pid_path.unlink(missing_ok=True)
+        singleton_lock.release(_lock, get_instance_settings().server_pid_path)
         logging.info("[singleton] Lock released: pid=%d", os.getpid())
 
 

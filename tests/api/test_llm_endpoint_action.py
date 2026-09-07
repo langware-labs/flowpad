@@ -241,3 +241,232 @@ async def test_the_bare_get_is_still_the_status(bootstrapped_client, hub_login, 
     body = (await bootstrapped_client.get(PATH)).json()
     assert body["status"] == "SUCCESS"
     assert "available" in body["data"] and "hub_user_typeid" in body["data"]
+
+
+# ── binding: one source rendered for a shell (``flow llm use``) ──────────────
+
+
+@pytest.mark.asyncio
+async def test_the_status_names_the_variables_a_shell_binding_can_set(bootstrapped_client):
+    """``flow llm clear`` has no source and no credential, and still has to know which variables
+    to unset. It rides the STATUS, not the credential route: the names are static and
+    secret-free, and a list kept in the CLI would go stale the first time a harness gained one."""
+    r = await bootstrapped_client.get(PATH)
+
+    assert r.status_code == 200, r.text
+    assert {"ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"} <= set(r.json()["data"]["managed_vars"])
+
+
+@pytest.mark.asyncio
+async def test_binding_requires_a_source(bootstrapped_client):
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={})
+
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.asyncio
+async def test_binding_renders_every_harness_for_a_bound_endpoint(bootstrapped_client, hub_login):
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+
+    assert r.status_code == 200, r.text
+    harnesses = r.json()["data"]["harnesses"]
+    assert set(harnesses) == set(HUB_ENDPOINT_HARNESSES)
+    # claude carries the redirect in an environment variable...
+    assert harnesses["claude"]["env"]["ANTHROPIC_BASE_URL"].endswith(INVOKE_PATH)
+    assert harnesses["claude"]["files"] == {}
+    # ...codex and opencode cannot: their base URL only moves through a file, and the only
+    # variable they honour points AT it. Verified against the real CLIs (codex ignores
+    # OPENAI_BASE_URL; opencode ignores OPENROUTER_BASE_URL and OPENCODE_BASE_URL).
+    assert harnesses["codex"]["pointer_env"] == "CODEX_HOME"
+    assert harnesses["codex"]["pointer_is_dir"] is True
+    assert INVOKE_PATH in harnesses["codex"]["files"]["config.toml"]
+    assert harnesses["opencode"]["pointer_env"] == "OPENCODE_CONFIG"
+    assert harnesses["opencode"]["pointer_is_dir"] is False
+    assert INVOKE_PATH in harnesses["opencode"]["files"]["opencode.json"]
+
+
+@pytest.mark.asyncio
+async def test_the_generated_codex_config_is_the_c_overrides_verbatim(bootstrapped_client, hub_login):
+    """Dotted keys are valid TOML, so the file is the spawn's ``-c`` pairs one per line. If
+    these two ever diverge, a terminal and a worker would reach different providers."""
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+    toml = r.json()["data"]["harnesses"]["codex"]["files"]["config.toml"]
+
+    assert 'model_provider = "flowpad"' in toml
+    assert 'model_providers.flowpad.wire_api = "responses"' in toml
+    # A person typing `codex exec` passes no --model, so the slug has to be in the file.
+    assert toml.startswith("model = ")
+
+
+@pytest.mark.asyncio
+async def test_binding_reports_a_harness_that_cannot_use_the_source(bootstrapped_client, hub_login):
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": "llm_endpoint:nobody-has-this"})
+
+    assert r.status_code == 200, r.text
+    for entry in r.json()["data"]["harnesses"].values():
+        # A refusal, not an empty binding: the caller renders the sentence rather than
+        # silently emitting nothing and leaving the shell unfunded.
+        assert entry.get("reason")
+
+
+@pytest.mark.asyncio
+async def test_binding_refuses_an_unknown_harness(bootstrapped_client):
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": "x", "harness": "emacs"})
+
+    assert r.status_code == 404, r.text
+
+
+# ── project scope: rung 2, which had no writer at all ────────────────────────
+#
+# A real typeid, unlike ``BIND`` above: a project pin is validated as a TypeId before it is
+# stored, because a malformed one would not match any candidate and would silently rule out
+# every source in the project instead of failing here.
+PINNED = "llm_endpoint-6f3be311-d82f-4bc6-9862-66c1e31c310c"
+
+
+@pytest.mark.asyncio
+async def test_select_at_project_scope_pins_the_project(bootstrapped_client, hub_login):
+    from flow_sdk.builtin.project import Project
+
+    project = await Project(name="llm-scope-test").save()
+    try:
+        r = await bootstrapped_client.post(
+            f"{PATH}/select",
+            json={"scope": "project", "project_id": str(project.id), "endpoint_typeid": PINNED},
+        )
+
+        assert r.status_code == 200, r.text
+        assert (await Project.get_by_id(str(project.id))).llm_endpoint_typeid == PINNED
+
+        # ...and an empty endpoint unpins it, so the box-wide order applies again.
+        r = await bootstrapped_client.post(f"{PATH}/select", json={"scope": "project", "project_id": str(project.id)})
+        assert r.status_code == 200, r.text
+        assert (await Project.get_by_id(str(project.id))).llm_endpoint_typeid is None
+    finally:
+        await project.delete()
+
+
+@pytest.mark.asyncio
+async def test_a_project_pin_leaves_every_capability_alone(bootstrapped_client, hub_login):
+    """The two scopes write different rows. A project pin that also flipped the box's
+    preference would silently outlive the project it was made for."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.project import Project
+
+    kind = worker_capability_kind("claude")
+    before = getattr(await Capability.get_by_kind(kind), "auth_mode", None)
+    project = await Project(name="llm-scope-untouched").save()
+    try:
+        await bootstrapped_client.post(
+            f"{PATH}/select",
+            json={"scope": "project", "project_id": str(project.id), "endpoint_typeid": PINNED},
+        )
+
+        assert getattr(await Capability.get_by_kind(kind), "auth_mode", None) == before
+    finally:
+        await project.delete()
+
+
+@pytest.mark.asyncio
+async def test_project_scope_requires_a_project(bootstrapped_client):
+    r = await bootstrapped_client.post(f"{PATH}/select", json={"scope": "project", "endpoint_typeid": "x"})
+
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_scope_is_refused_rather_than_defaulted(bootstrapped_client):
+    r = await bootstrapped_client.post(
+        f"{PATH}/select", json={"scope": "galaxy", "harness": "claude", "kind": "device"}
+    )
+
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.asyncio
+async def test_every_harness_gets_its_model_in_shell_scope(bootstrapped_client, hub_login):
+    """A spawn passes ``--model``; a person typing the CLI passes nothing. Without the slug
+    the harness asks for its own default, which a budgeted endpoint refuses outright --
+    observed as claude requesting ``claude-opus-4-8`` and getting a 400 for having no price."""
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+    harnesses = r.json()["data"]["harnesses"]
+
+    assert harnesses["claude"]["env"]["ANTHROPIC_MODEL"] == harnesses["claude"]["model"]
+    assert harnesses["copilot"]["env"]["COPILOT_MODEL"] == harnesses["copilot"]["model"]
+    assert harnesses["codex"]["files"]["config.toml"].startswith("model = ")
+    assert harnesses["opencode"]["model"] in harnesses["opencode"]["files"]["opencode.json"]
+    # ...and `clear` must know about every one of them, or a stale model outlives the source.
+    status = await bootstrapped_client.get(PATH)
+    assert "ANTHROPIC_MODEL" in status.json()["data"]["managed_vars"]
+
+
+@pytest.mark.asyncio
+async def test_every_harness_says_where_it_reads_funding_from_box_wide(bootstrapped_client, hub_login):
+    """``flow llm user set`` funds a box whose only consumer is a person at a prompt, so each
+    harness has to name the file IT reads by default -- three do, copilot has none."""
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+    users = {worker: entry["user"] for worker, entry in r.json()["data"]["harnesses"].items()}
+
+    assert users["claude"] == {
+        **users["claude"],
+        "fmt": "json",
+        "path": ".claude/settings.json",
+    }
+    assert users["claude"]["merge"]["env"]["ANTHROPIC_BASE_URL"].endswith(INVOKE_PATH)
+    # ``fmt`` is what the APPLIER must do, and there are two things to do: merge a document, or
+    # replace a managed region. Which file it is, is ``path``'s business.
+    assert users["codex"]["fmt"] == "block" and users["codex"]["path"] == ".codex/config.toml"
+    assert users["opencode"]["fmt"] == "json" and users["opencode"]["path"] == ".config/opencode/opencode.json"
+    # copilot has no provider file and no config-dir variable, so its box-wide form is the shell
+    # profile -- and it says so rather than silently writing nothing.
+    assert users["copilot"]["fmt"] == "block" and users["copilot"]["note"]
+
+
+@pytest.mark.asyncio
+async def test_codex_box_wide_carries_the_token_as_a_header_not_env_key(bootstrapped_client, hub_login):
+    """``env_key`` names an environment variable, and a person typing ``codex`` has none set --
+    ``~/.codex/auth.json`` does NOT satisfy it for a custom provider. ``http_headers`` is the only
+    file-only way in, so the box-wide render must drop ``env_key`` and use the header."""
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+    lines = r.json()["data"]["harnesses"]["codex"]["user"]["lines"]
+
+    assert any("http_headers.Authorization" in line and "Bearer" in line for line in lines)
+    # Dropped, not merely overridden: leaving it in makes codex demand the variable even though
+    # the header would have authenticated the call. The SHELL form still uses env_key +
+    # CODEX_HOME -- the two forms differ on purpose.
+    assert not any("env_key" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_opencode_box_wide_inlines_the_key(bootstrapped_client, hub_login):
+    """No variable is exported box-wide, so the key has to live in the file opencode reads."""
+    await bootstrapped_client.post(PATH, json=BIND)
+
+    r = await bootstrapped_client.post(f"{PATH}/binding", json={"endpoint_typeid": BIND["endpoint_typeid"]})
+    merge = r.json()["data"]["harnesses"]["opencode"]["user"]["merge"]
+
+    options = next(iter(merge["provider"].values()))["options"]
+    assert options["apiKey"] and options["baseURL"].endswith(f"{INVOKE_PATH}/v1")
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_post_sub_action_is_not_treated_as_a_bind(bootstrapped_client, hub_login):
+    """The bare POST means "the hub is binding this box", so falling through to it turned any
+    misspelled or newer-client sub-path into a bind — and reported a failure about the wrong
+    operation entirely (a new client's POST .../binding once answered "invoke_path must be a
+    hub-relative path" against an older server)."""
+    r = await bootstrapped_client.post(f"{PATH}/nosuchthing", json={})
+
+    assert r.status_code == 404, r.text
+    assert "nosuchthing" in r.json()["message"]

@@ -732,6 +732,39 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
+#: Every field ``_perform_open`` mints during a launch. ``start_pty`` runs the
+#: launch on a DB-fresh copy (so two concurrent opens can't double-spawn), then
+#: copies exactly these back onto the caller's object — the launch's OUTPUTS,
+#: the mirror of the ``session_id_override``/``terminal_theme`` inputs copied in.
+#: Explicit rather than a whole-entity refresh: a blanket copy would also
+#: clobber caller-side edits that were never part of the launch.
+#:
+#: MUST list every ``self.<field> =`` assignment in ``_perform_open``. Omitting
+#: one silently recreates the staleness bug this exists to fix — the restart
+#: triplet below was missed on the first pass, and since ``save()`` recomputes
+#: ``restart_required`` from ``last_started_hash``, a caller saving its own
+#: object after a relaunch would have flipped a correctly-launched process back
+#: to "restart needed". ``tests/unit/test_launch_output_fields.py`` pins this
+#: list to the source so it cannot drift again.
+_LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "shell_id",
+    "sidecar_shell_id",
+    "status",
+    "visible",
+    "pty_mode",
+    "start_failure",
+    "last_started_snapshot",
+    "last_started_hash",
+    "restart_required",
+    # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
+    # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
+    # (tab_order). A delegated write is exactly as invisible to the caller as an
+    # inline one — the guard follows private helpers for this reason.
+    "context_data",
+    "tab_order",
+)
+
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
@@ -1604,6 +1637,27 @@ class AgenticProcess(Entity):
                 return result
             finally:
                 fresh._set_start_lifecycle(False)
+                # The launch ran on ``fresh``, so every field it minted lives
+                # there. Copy them back: the object the caller still holds must
+                # describe the worker that was just started, not the pre-launch
+                # snapshot it came in as. Without this an in-process caller
+                # keeps ``session_id=None`` forever, and since
+                # ``transcript_path`` is None without a session id, any
+                # subsequent ``stream_transcript`` can never resolve and dies
+                # on its deadline — a launch bug wearing a timeout's clothes.
+                # (Regression from 499b4fa93, which moved the launch from
+                # ``self`` to ``fresh`` to stop two concurrent opens from
+                # double-spawning, but kept only the inbound copies above.)
+                for _field in _LAUNCH_OUTPUT_FIELDS:
+                    _value = getattr(fresh, _field)
+                    # Shallow-copy the dict fields (context_data,
+                    # last_started_snapshot): a bare reference would leave two
+                    # live entities aliasing ONE mutable dict. Nothing mutates
+                    # these in place today — every writer rebuilds and
+                    # reassigns — so this is closing a footgun, not a bug. A
+                    # deep copy is not an option: the payload carries immutable
+                    # TypeId values that choke it (see ``adopt_worker_session``).
+                    setattr(self, _field, dict(_value) if isinstance(_value, dict) else _value)
 
     async def start(
         self,
@@ -2599,6 +2653,13 @@ class AgenticProcess(Entity):
         self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="drain-queue")
+    async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Kick a drain without adding a prompt (unlike ``set-queue-enabled``, touches
+        nothing else). Idempotent: an empty or busy queue is a no-op."""
+        self._schedule_queue_drain("ui")
         return ApiSuccessResponse(data=self.queue.read())
 
     @action.post(action_name="dequeue")

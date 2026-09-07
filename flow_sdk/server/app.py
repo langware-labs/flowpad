@@ -63,6 +63,7 @@ from .routes import (
     graph_workflows_router,
     hooks_router,
     ingest_router,
+    agents_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
@@ -131,8 +132,6 @@ async def _on_server_startup():
             "server_pid": os.getpid(),
             "server_create_time": psutil.Process(os.getpid()).create_time(),
             "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
-            "webhook_path": "/api/v1/webhook/listen",
-            "health_path": "/api/v1/health/status",
         }
     )
     print(f"  server.json:   {settings.server_json_path}")
@@ -583,6 +582,7 @@ server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
+server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)

@@ -85,7 +85,13 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     copyToClipboard,
     fsManager: { ...actual.fsManager, open: openFolder },
-    dataContext: { ...actual.dataContext, setContextEntityTypeId: setContext },
+    // Built on the real prototype, not spread: `on`/`off` live on
+    // DataContext.prototype, and the SDK context hook's subscription manager
+    // calls `dataContext.on` for the first subscriber (the project dialog's
+    // `useProjects` → `useAuth`). A spread copy has no `on` and throws in commit.
+    dataContext: Object.assign(Object.create(Object.getPrototypeOf(actual.dataContext)), actual.dataContext, {
+      setContextEntityTypeId: setContext,
+    }),
   };
 });
 
@@ -230,7 +236,9 @@ describe('the navigation bar', () => {
     await user.click(screen.getByTestId('top-nav-project-list'));
 
     const popover = await screen.findByTestId('top-nav-project-popover');
-    expect(within(popover).getAllByRole('button')).toHaveLength(2);
+    // Two project rows plus the trailing "Open project" button.
+    expect(within(popover).getAllByRole('button')).toHaveLength(3);
+    expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
     await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
 
     await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }));
@@ -325,6 +333,25 @@ describe('the navigation bar', () => {
     await waitFor(() => expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull());
   });
 
+  it('keeps the hover card shut while the pointer roams the open list', async () => {
+    // The list hangs right under the pill, so moving into it re-crosses the
+    // hover trigger. The card must not re-open over the list and hide it.
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2)], globalTabCount: 0 };
+    const user = fakeClockUser();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project-list'));
+    const popover = await screen.findByTestId('top-nav-project-popover');
+
+    await user.hover(screen.getByTestId('top-nav-project-list'));
+    await user.hover(within(popover).getByTestId('projects-counter-open-project'));
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS * 2));
+
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    expect(screen.getByTestId('top-nav-project-popover')).toBeTruthy();
+  });
+
   it('reloads the window on click', async () => {
     const user = userEvent.setup();
     renderBar();
@@ -407,6 +434,11 @@ describe('the navigation bar', () => {
 
     expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
+  });
+
+  it('sets the OS window title from the address', () => {
+    renderBar();
+    expect(document.title).toBe('Flowpad: Acme / Design notes');
   });
 
   it('gives the address back when the user clicks outside search', async () => {
