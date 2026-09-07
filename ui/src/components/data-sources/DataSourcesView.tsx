@@ -40,7 +40,7 @@ import { ReplayDialog } from './ReplayDialog';
 
 export function DataSourcesView() {
   const { t } = useLingui();
-  const startVibe = useStartVibeSession();
+  const { start: startVibe, installDialog } = useStartVibeSession();
   const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
   const { specFor } = useSourceSpecs();
 
@@ -71,8 +71,8 @@ export function DataSourcesView() {
     () =>
       [...sources].sort(
         (a, b) =>
-          (b.created_date ? new Date(b.created_date).getTime() : 0) - (a.created_date ? new Date(a.created_date).getTime() : 0) ||
-          (a.name || '').localeCompare(b.name || ''),
+          (b.created_date ? new Date(b.created_date).getTime() : 0) -
+            (a.created_date ? new Date(a.created_date).getTime() : 0) || (a.name || '').localeCompare(b.name || ''),
       ),
     [sources],
   );
@@ -85,9 +85,7 @@ export function DataSourcesView() {
           <Trans>Data sources</Trans>
         </h1>
         {sources.length > 0 && (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {sources.length}
-          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
         )}
         {/* The primary act of this screen, where every list screen keeps it:
             top right, before any row — not trailing the grid as a tile. */}
@@ -98,8 +96,8 @@ export function DataSourcesView() {
       </header>
       <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
         <Trans>
-          One per remote feed or account. The poller syncs each on the heartbeat and turns what it
-          finds into records you can search, read and build flows on.
+          One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records
+          you can search, read and build flows on.
         </Trans>
       </p>
 
@@ -119,22 +117,42 @@ export function DataSourcesView() {
               variant="outline"
               className="gap-1.5"
               data-testid="data-sources-ask-agent"
-              onClick={() => startVibe(t`Connect a data source for me and help me define what I want out of each item.`)}
+              onClick={() =>
+                startVibe(t`Connect a data source for me and help me define what I want out of each item.`)
+              }
             >
               <Sparkles className="size-4" />
               <Trans>Ask the agent to connect one</Trans>
             </Button>
+            {installDialog}
           </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
-          <div className={cn(ROW_GRID, 'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground')}>
-            <span><Trans>Source</Trans></span>
-            <span><Trans>Status</Trans></span>
-            <span><Trans>Streams</Trans></span>
-            <span><Trans>Synced</Trans></span>
-            <span><Trans>Next poll</Trans></span>
-            <span className="text-end"><Trans>Actions</Trans></span>
+          <div
+            className={cn(
+              ROW_GRID,
+              'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
+            )}
+          >
+            <span>
+              <Trans>Source</Trans>
+            </span>
+            <span>
+              <Trans>Status</Trans>
+            </span>
+            <span>
+              <Trans>Streams</Trans>
+            </span>
+            <span>
+              <Trans>Synced</Trans>
+            </span>
+            <span>
+              <Trans>Next poll</Trans>
+            </span>
+            <span className="text-end">
+              <Trans>Actions</Trans>
+            </span>
           </div>
           {sorted.map((source) => (
             <DataSourceRow
@@ -151,11 +169,7 @@ export function DataSourcesView() {
 
       <DataSourceDialog open={editorOpen} onOpenChange={setEditorOpen} editing={editing} />
 
-      <ReplayDialog
-        source={replaying}
-        open={!!replaying}
-        onOpenChange={(next) => !next && setReplaying(null)}
-      />
+      <ReplayDialog source={replaying} open={!!replaying} onOpenChange={(next) => !next && setReplaying(null)} />
 
       <ConfirmDialog
         open={!!deleting}
