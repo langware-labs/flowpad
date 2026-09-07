@@ -63,6 +63,37 @@ async def test_missing_project_record_mints_and_persists_dns_v5() -> None:
     assert FSRecord.discover(RecordType.PROJECT)[0].id == expected
 
 
+@pytest.mark.asyncio
+async def test_existing_record_keeps_its_id_when_resolved_id_disagrees() -> None:
+    """A second id for an owned cwd must never re-stamp the record: that is how
+    one project ended up as two shadow folders with the children split."""
+    cwd = "/flowpad-tests/project-identity-contested"
+    FSRecord(RecordType.PROJECT, V4, cwd=cwd, name="flowpad-oss").save()
+
+    await claude_projects._upsert_project_for_cwd(cwd, resolved_id=V5, claude_project=True)
+
+    assert [r.id for r in FSRecord.discover(RecordType.PROJECT)] == [V4]
+
+
+def test_display_name_never_claims_a_path() -> None:
+    """A user-named project whose name looks like a path must not answer for
+    that path: ``name`` is display-only, never a lookup key."""
+    owner = "/flowpad-tests/name-claims/real-owner"
+    FSRecord(RecordType.PROJECT, V4, cwd=owner, name="real").save()
+    # Newer id, path-shaped display name pointing at the owner's folder.
+    FSRecord(
+        RecordType.PROJECT,
+        "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        fs_storage_mount_path="/flowpad-tests/name-claims/elsewhere",
+        name=owner,
+    ).save()
+    # A record with nothing but a path-shaped name owns nothing.
+    FSRecord(RecordType.PROJECT, V5, name="/flowpad-tests/name-claims/name-only").save()
+
+    assert existing_project_record_id(FSRef(owner)) == V4
+    assert existing_project_record_id(FSRef("/flowpad-tests/name-claims/name-only")) is None
+
+
 def test_project_parser_and_identity_registration_contract() -> None:
     for parser in (
         claude_projects._upsert_project_for_cwd,

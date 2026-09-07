@@ -2152,7 +2152,7 @@ class Project(Entity):
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
         if was_create:
-            await self._warn_on_duplicate_name()
+            await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
         await super().save(owner, notify=notify)
         if was_create:
@@ -2170,49 +2170,31 @@ class Project(Entity):
         await ensure_default_wiki(self)
         return self
 
-    async def _warn_on_duplicate_name(self) -> None:
-        """Flag a brand-new project whose name another project already uses.
-
-        Names are display-only and nothing keys on them, but two projects
-        called the same thing on different folders are indistinguishable in
-        every picker, tab strip and chip — the user reads them as one project
-        and their chats as mixed up. A project on the SAME folder is a real
-        duplicate: ``find_by_cwd`` should have been consulted and the caller
-        is told so. Never raises; creation must not fail on a hint.
-        """
-        name = (self.name or "").strip()
-        if not name:
+    async def _warn_if_mount_owned_elsewhere(self) -> None:
+        """Log (never raise) when a brand-new project lands on a folder another
+        project already owns: the caller skipped ``find_by_cwd``, the natural
+        key. Names are display-only and may legitimately repeat, so they are
+        not checked. Only the indexed EQ query runs — no table scan on create."""
+        mount = self.fs_storage_mount_path
+        if not mount:
             return
         try:
             from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-            same_name = await type(self).get_all(
-                QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["name", name]))
+            owners = await type(self).get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["fs_storage_mount_path", mount]))
             )
         except Exception:  # noqa: BLE001
-            log.debug("[project] duplicate-name check skipped", exc_info=True)
+            log.debug("[project] mount-ownership check skipped", exc_info=True)
             return
-        mine = canonical_posix_path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
-        for other in same_name:
-            if str(other.id) == str(self.id):
-                continue
-            theirs = canonical_posix_path(other.fs_storage_mount_path) if other.fs_storage_mount_path else None
-            if mine and theirs and mine == theirs:
+        for other in owners:
+            if str(other.id) != str(self.id):
                 log.warning(
                     "[project] creating %r at %s but project %s already owns that folder; "
-                    "callers should resolve with Project.find_by_cwd first",
-                    name,
-                    mine,
+                    "resolve with Project.find_by_cwd before minting",
+                    self.name,
+                    mount,
                     other.id,
-                )
-            else:
-                log.warning(
-                    "[project] creating %r at %s while project %s of the same name exists at %s; "
-                    "same-named projects are indistinguishable in the UI",
-                    name,
-                    mine,
-                    other.id,
-                    theirs,
                 )
 
     async def _stamp_index_sentinel(self) -> None:
