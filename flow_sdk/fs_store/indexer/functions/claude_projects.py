@@ -225,8 +225,11 @@ def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
                         break
                     if raw.get("type") == "session_meta":
                         payload = raw.get("payload") or {}
-                        if payload.get("cwd") == cwd:
-                            matched = True
+                        payload_cwd = payload.get("cwd")
+                        try:
+                            matched = bool(payload_cwd) and canonical_posix_path(payload_cwd) == cwd
+                        except OSError:
+                            matched = False
                         break
                 if matched:
                     total += 1

@@ -6239,7 +6239,10 @@ class AgenticProcess(Entity):
             asset_path = canonical_posix_path(asset_ref)
             type_info = SchemaRegistry.get(entity.type or entity.get_type())
             folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
-            if read_path == asset_path or (folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")):
+            read_path_posix = canonical_posix_path(read_path)
+            if read_path_posix == asset_path or (
+                folder_backed and read_path_posix.startswith(asset_path.rstrip("/") + "/")
+            ):
                 return entity
         return None
 
