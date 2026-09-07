@@ -20,7 +20,7 @@ import { VibeRecentSessions } from './vibe-recent-sessions';
 export function VibeNewChat() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
-  const startVibe = useStartVibeSession();
+  const { start: startVibe, installDialog } = useStartVibeSession();
   const [draft, setDraft] = useState('');
   const [model, setModel] = useVibeModelTier();
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -62,6 +62,7 @@ export function VibeNewChat() {
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
+        {installDialog}
         <ProjectActionsRow className="w-full self-start" />
         <ProjectAgentsStrip className="w-full self-start" />
         <VibeRecentSessions />
