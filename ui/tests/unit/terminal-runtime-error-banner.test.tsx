@@ -6,10 +6,20 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TerminalRuntimeError, TerminalRuntimeErrorKind } from '@sdk';
+import { AgenticProcess, type TerminalRuntimeError, type TerminalRuntimeErrorKind } from '@sdk';
 import { TerminalRuntimeErrorBanner } from '@src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner';
 
 const PROCESS_ID = 'aaaa1111-2222-4333-8444-555555555555';
+
+/** A real one. A spawn refusal quotes the whole worker PATH, and on Windows that
+ *  is what turned a one-line banner into a dozen wrapped lines covering the
+ *  terminal it was reporting on. */
+const HUGE = `claude executable 'claude' not found on worker PATH (${Array.from(
+  { length: 20 },
+  (_, i) => `C:\\Users\\me\\dir-${i}\\bin`,
+).join(';')})`;
+
+const copied: string[] = [];
 
 // Reactive snapshot from ``useContext`` — we drive it from the test.
 const mockSnapshot: { terminalRuntimeError: TerminalRuntimeError | null } = {
@@ -22,7 +32,7 @@ vi.mock('@src/hooks/useContext', () => ({
 
 vi.mock('@sdk', async () => {
   // Keep real Project / TypeId exports; just stub the dataContext mutators.
-  const real = (await vi.importActual<typeof import('@sdk')>('@sdk'));
+  const real = await vi.importActual<typeof import('@sdk')>('@sdk');
   return {
     ...real,
     dataContext: {
@@ -35,6 +45,13 @@ vi.mock('@sdk', async () => {
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+// The clipboard: jsdom has none, and the copy path is the point of the test.
+vi.mock('@src/components/ui/copy-button', () => ({
+  CopyButton: ({ value, testId }: { value: string; testId?: string }) => (
+    <button type="button" data-testid={testId} onClick={() => copied.push(value)} />
+  ),
 }));
 
 function setError(kind: TerminalRuntimeErrorKind): void {
@@ -76,6 +93,55 @@ describe('TerminalRuntimeErrorBanner', () => {
     const { dataContext } = await import('@sdk');
     render(<TerminalRuntimeErrorBanner />);
     fireEvent.click(screen.getByTestId('terminal-runtime-error-banner-dismiss'));
+    // Asserting ON the spy, never calling it detached, so there is no `this` to
+    // lose. Pre-existing; annotated because touching this file makes the hook
+    // gate on it.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataContext.setTerminalRuntimeError).toHaveBeenCalledWith(null);
+  });
+
+  describe('a very long server error', () => {
+    beforeEach(() => {
+      copied.length = 0;
+      setError('failed_to_start');
+      // `start_failure` is read off the cached process; stub the lookup so the
+      // banner renders the server's sentence rather than its generic copy.
+      vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue({ start_failure: HUGE } as never);
+    });
+
+    it('shows it on ONE line instead of burying the terminal', () => {
+      render(<TerminalRuntimeErrorBanner />);
+
+      const detail = screen.getByTestId('terminal-runtime-error-banner-detail');
+      // `truncate` is the whole fix: one line, ellipsis, no wrapping.
+      expect(detail.className).toContain('truncate');
+      // And the text is still THERE — trimmed by CSS, never cut, so hover and
+      // copy both hand over the real thing.
+      expect(detail.textContent).toContain('not found on worker PATH');
+      expect(detail.textContent).toContain('dir-19');
+    });
+
+    it('copies the full error, not the truncated line', () => {
+      render(<TerminalRuntimeErrorBanner />);
+
+      fireEvent.click(screen.getByTestId('terminal-runtime-error-banner-copy'));
+
+      expect(copied).toHaveLength(1);
+      expect(copied[0]).toContain('dir-19');
+      expect(copied[0]).not.toContain('…');
+    });
+
+    it('offers no copy button for our own boilerplate', () => {
+      // `runtime_terminated` has no server sentence — its detail is copy we
+      // wrote ("Click Restart to spawn a fresh PTY"). A button to put that on
+      // the clipboard is an affordance for nothing; the copy exists for the
+      // long verbatim errors someone needs to paste into a report.
+      vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(null as never);
+      setError('runtime_terminated');
+      render(<TerminalRuntimeErrorBanner />);
+
+      expect(screen.getByTestId('terminal-runtime-error-banner-detail')).toBeTruthy();
+      expect(screen.queryByTestId('terminal-runtime-error-banner-copy')).toBeNull();
+    });
   });
 });

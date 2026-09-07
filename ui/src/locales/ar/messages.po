@@ -4501,6 +4501,10 @@ msgstr "نسخ الموجه"
 msgid "Copy Provider ID"
 msgstr "نسخ معرف المزود"
 
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
 msgstr "نسخ مسار هذا الملف إلى الحافظة"

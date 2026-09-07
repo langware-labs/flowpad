@@ -4501,6 +4501,10 @@ msgstr "Copy prompt"
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
 
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr "Copy the full error"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
 msgstr "Copy this file's path to the clipboard"

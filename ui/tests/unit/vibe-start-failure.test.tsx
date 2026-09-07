@@ -23,6 +23,7 @@ const { PROJECT, ...h } = vi.hoisted(() => ({
   PROJECT: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01',
   launch: vi.fn(),
   test: vi.fn(),
+  ensureChecked: vi.fn(),
   getSnapshot: vi.fn(),
   notifyError: vi.fn(),
   openSources: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     capabilityManager: {
       test: h.test,
+      ensureChecked: h.ensureChecked,
       getSnapshot: h.getSnapshot,
       // The dialog reads its install command from the summary, not the row.
       getCachedSummary: () => null,
@@ -95,6 +97,8 @@ describe('vibe chat start failure', () => {
     vi.clearAllMocks();
     // The umbrella resolves to the default assistant — what a launch would use.
     h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE });
+    // The pre-flight passes by default, so each test drives the path it means to.
+    h.ensureChecked.mockResolvedValue({ checked: true, available: true });
   });
 
   it('offers the install dialog when the harness really is missing', async () => {
@@ -180,5 +184,33 @@ describe('vibe chat start failure', () => {
     // And no probe at all: the failure already said what is wrong.
     expect(h.test).not.toHaveBeenCalled();
     expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('asks BEFORE launching, so a missing harness never reaches the backend', async () => {
+    // The reported asymmetry: on a box with nothing installed, a Start-<vendor>
+    // click showed the install dialog while a vibe prompt showed only "error".
+    // The strip had a pre-flight and this did not, so the chat launched, took a
+    // 400, and depended on a re-probe that read a row still calling the harness
+    // available. Asking first makes the two surfaces answer alike.
+    h.ensureChecked.mockResolvedValue({ checked: true, available: false });
+
+    const { submit, dialog } = mountVibe();
+    submit();
+
+    await waitFor(() => expect(dialog()).toBeTruthy());
+    expect(h.launch).not.toHaveBeenCalled();
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('launches anyway when the capability API cannot answer', async () => {
+    // An older backend must not block a prompt — the same allowance the strip
+    // makes. Unknown is not "missing".
+    h.ensureChecked.mockRejectedValue(new Error('no capability API'));
+    h.launch.mockResolvedValue({ id: 'p', watch: () => Promise.resolve() });
+
+    const { submit } = mountVibe();
+    submit();
+
+    await waitFor(() => expect(h.launch).toHaveBeenCalled());
   });
 });
