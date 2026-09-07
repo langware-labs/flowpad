@@ -611,11 +611,23 @@ class ScanActionsMixin:
             funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
             if funding.chosen is None:
                 logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} has no LLM source")
-                # `blocked` is the resolver's own top-ranked refusal, rendered
-                # verbatim — the same sentence the LLM Sources screen shows, so
-                # the two cannot disagree about why a box is stuck.
+                # The SAME opening sentence ``LLMSourceError`` uses, then the
+                # resolver's own top-ranked refusal.
+                #
+                # Both halves are load-bearing. The reason is what a person can
+                # act on and is the sentence the LLM Sources screen shows, so
+                # the two cannot disagree about why a box is stuck. The opening
+                # is what the FRONTEND reads: `isUnfundedHarness` matches "no
+                # usable LLM source" to route this failure to the sources page
+                # rather than the install screen, and it is the only signal it
+                # gets — the envelope carries no error code. Returning the bare
+                # reason made this gate unrecognisable to the routing it exists
+                # to feed, and a launch refused for funding landed the user on
+                # Capabilities, which can only offer to install a harness they
+                # already have.
+                reason = funding.blocked or "no source is configured"
                 return ApiFailResponse(
-                    message=funding.blocked or f"{worker_type.value} has no usable LLM source.",
+                    message=f"{worker_type.value} has no usable LLM source: {reason}",
                     status_code=400,
                 )
 
