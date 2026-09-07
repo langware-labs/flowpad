@@ -6,6 +6,7 @@
  * things it must still offer, and the one case where it must not appear at all.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const openDock = vi.hoisted(() => vi.fn());
@@ -40,13 +41,18 @@ import { CrumbDetailsPopover } from '@src/components/top-nav-bar/CrumbDetailsPop
 
 const PATH = '/Users/me/Flowpad workspace/proj/docs/chip_demo.md';
 
-function open(props: Partial<{ filename: string | null; path: string }> = {}) {
+function mount(props: Partial<{ filename: string | null; path: string; directory: boolean }> = {}) {
   render(
     <CrumbDetailsPopover label="chip_demo" filename="chip_demo.md" path={PATH} {...props}>
       <button type="button">chip_demo</button>
     </CrumbDetailsPopover>,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'chip_demo' }));
+  return screen.getByRole('button', { name: 'chip_demo' });
+}
+
+/** Click is the SYNCHRONOUS way in; hover is what the user does, pinned separately. */
+function open(props: Partial<{ filename: string | null; path: string; directory: boolean }> = {}) {
+  fireEvent.click(mount(props));
 }
 
 beforeEach(() => {
@@ -56,6 +62,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the crumb details popover', () => {
+  it('opens on hover, like the project crumb card beside it', async () => {
+    const user = userEvent.setup();
+    const trigger = mount();
+    expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull();
+
+    await user.hover(trigger);
+
+    expect(await screen.findByTestId('top-nav-crumb-details')).toBeTruthy();
+  });
+
+  it('opens a FOLDER crumb in Files as itself, and reveals it without selecting', () => {
+    open({ filename: null, path: '/Users/me/Flowpad workspace/proj', directory: true });
+
+    fireEvent.click(screen.getByTestId('top-nav-crumb-open-files'));
+    const pointer = openDock.mock.calls[0][0] as { pointer?: string };
+    expect(pointer.pointer).toBe('/Users/me/Flowpad workspace/proj');
+
+    fireEvent.click(screen.getByTestId('top-nav-crumb-reveal'));
+    expect(fsOpen).toHaveBeenCalledWith(undefined);
+  });
+
   it('shows the real filename, with the extension the crumb drops', () => {
     open();
 
