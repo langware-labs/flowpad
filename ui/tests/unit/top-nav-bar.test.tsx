@@ -430,6 +430,11 @@ describe('the navigation bar', () => {
     expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
   });
 
+  it('sets the OS window title from the address', () => {
+    renderBar();
+    expect(document.title).toBe('Flowpad: Acme / Design notes');
+  });
+
   it('gives the address back when the user clicks outside search', async () => {
     const user = userEvent.setup();
     renderBar();
