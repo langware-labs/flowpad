@@ -732,12 +732,20 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
-#: Fields ``_perform_open`` mints during a launch. ``start_pty`` runs the launch
-#: on a DB-fresh copy (so two concurrent opens can't double-spawn), then copies
-#: exactly these back onto the caller's object — the launch's OUTPUTS, the
-#: mirror of the ``session_id_override``/``terminal_theme`` inputs it copies in.
-#: Deliberately explicit rather than a whole-entity refresh: a blanket copy would
-#: also clobber caller-side edits that were never part of the launch.
+#: Every field ``_perform_open`` mints during a launch. ``start_pty`` runs the
+#: launch on a DB-fresh copy (so two concurrent opens can't double-spawn), then
+#: copies exactly these back onto the caller's object — the launch's OUTPUTS,
+#: the mirror of the ``session_id_override``/``terminal_theme`` inputs copied in.
+#: Explicit rather than a whole-entity refresh: a blanket copy would also
+#: clobber caller-side edits that were never part of the launch.
+#:
+#: MUST list every ``self.<field> =`` assignment in ``_perform_open``. Omitting
+#: one silently recreates the staleness bug this exists to fix — the restart
+#: triplet below was missed on the first pass, and since ``save()`` recomputes
+#: ``restart_required`` from ``last_started_hash``, a caller saving its own
+#: object after a relaunch would have flipped a correctly-launched process back
+#: to "restart needed". ``tests/unit/test_launch_output_fields.py`` pins this
+#: list to the source so it cannot drift again.
 _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "session_id",
     "shell_id",
@@ -746,6 +754,9 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "visible",
     "pty_mode",
     "start_failure",
+    "last_started_snapshot",
+    "last_started_hash",
+    "restart_required",
 )
 
 # Per-process serialization for prompt-queue drains so two ready edges can't
@@ -1631,9 +1642,8 @@ class AgenticProcess(Entity):
                 # (Regression from 499b4fa93, which moved the launch from
                 # ``self`` to ``fresh`` to stop two concurrent opens from
                 # double-spawning, but kept only the inbound copies above.)
-                if fresh is not self:
-                    for _field in _LAUNCH_OUTPUT_FIELDS:
-                        setattr(self, _field, getattr(fresh, _field))
+                for _field in _LAUNCH_OUTPUT_FIELDS:
+                    setattr(self, _field, getattr(fresh, _field))
 
     async def start(
         self,

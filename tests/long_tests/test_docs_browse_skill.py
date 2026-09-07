@@ -38,11 +38,32 @@ from flow_sdk.transcript_analyzer import EntryKind
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
     safe_exit,
 )
 from tests.test_settings import test_service_config
 
 SKILL_NAME = "docs-browse"
+
+# ── MODEL TIER ────────────────────────────────────────────────────────────────
+# Per-test, because the two tests need different things of the model:
+#
+#   deep_chain  (sm/haiku)  — NUDGED: the prompt names the index and says to walk
+#                             it. A mechanical file walk; passes cheaply at sm.
+#   ambient     (md/sonnet) — UN-NUDGED: the model must reach for docs-browse on
+#                             its own. That is a REASONING behaviour, and it is
+#                             tier-bound. Measured on/off, same vault, only the
+#                             tier changed:
+#                               sm : skill_calls=[], no index.md   -> FAIL (3/3)
+#                               md : skill_calls=['docs-browse']   -> PASS (3/3)
+#
+# The skill is discoverable at BOTH tiers — assistant_enabled=True, the assistant
+# root is in resolved_add_dirs, and test_skill_transcript_analysis observes real
+# SKILL_CALLs on claude. Haiku simply answers by grep. Pinning a model too small
+# to exhibit the behaviour under test made a harness choice look like a product
+# bug; pinning sonnet for BOTH would tax the mechanical test for no reason.
+#: Poll budget inside the approved 120s pytest cap, leaving margin for asserts.
+_DEADLINE_S = 110
 _REPO_DOCS = Path(__file__).parents[2] / "docs"
 
 pytestmark = [
@@ -125,7 +146,7 @@ class BrowseSetup(NamedTuple):
 
 @pytest.fixture
 async def browse_setup(
-    tmp_path, local_project, local_compute_node
+    request, tmp_path, local_project, local_compute_node
 ):
     """Seeded vault + indexed chain + a saved STANDARD process, torn down after.
 
@@ -140,18 +161,7 @@ async def browse_setup(
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=str(vault),
-        # MD (sonnet), NOT the sm/haiku tier this used to pin. Ambient discovery
-        # — reaching for docs-browse when the prompt names neither the skill nor
-        # the index — is a REASONING behaviour, not an index walk. Measured
-        # on/off, same fixture, same vault, only the tier changed:
-        #   sm/haiku : skill_calls=[], no index.md read            -> FAIL (3/3)
-        #   md/sonnet: skill_calls=['docs-browse'], reads index.md -> PASS
-        # The skill IS discoverable at sm (assistant_enabled=True, the assistant
-        # root is in resolved_add_dirs, and test_skill_transcript_analysis
-        # observes real SKILL_CALLs on claude) — haiku simply answers by grep.
-        # Pinning a model too small to exhibit the behaviour under test made a
-        # harness choice look like a product bug.
-        cli_config={"model": ModelTier.MD.value},
+        cli_config={"model": request.param.value},
         visible=False,
     ).save()
     try:
@@ -191,7 +201,7 @@ def _answer_text(transcript) -> str:
 async def _await(process, predicate):
     # Fill the approved 120s test budget (leave margin for asserts/cleanup);
     # the pytest timeout cap itself is untouched.
-    return await await_transcript(process, "claude", predicate, deadline_s=110)
+    return await await_transcript(process, "claude", predicate, deadline_s=_DEADLINE_S)
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -200,6 +210,7 @@ async def _await(process, predicate):
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
+@pytest.mark.parametrize("browse_setup", [ModelTier.SM], indirect=True)
 async def test_docs_browse_deep_chain(browse_setup):
     """Nudged: the worker must walk THREE index levels (root → runbooks →
     deploy) and read the deep target, answering with the nonce'd canary."""
@@ -218,10 +229,7 @@ async def test_docs_browse_deep_chain(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        # A timeout is a RESULT. The deterministic start_pty staleness bug
-        # (fixed 2026-09-07) wore exactly this signature for three months
-        # because it was downgraded to a skip here.
-        pytest.fail("no usable transcript within the deadline", pytrace=False)
+        fail_no_transcript(_DEADLINE_S)
 
     index_reads = _file_reads(transcript, lambda p: p.name == "index.md")
     vault_resolved = vault.resolve()
@@ -245,6 +253,7 @@ async def test_docs_browse_deep_chain(browse_setup):
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
+@pytest.mark.parametrize("browse_setup", [ModelTier.MD], indirect=True)
 async def test_docs_browse_ambient_discovery(browse_setup):
     """Un-nudged: the prompt names neither the skill nor the index. The worker
     should reach for docs-browse (or at least the index chain) on its own."""
@@ -260,10 +269,7 @@ async def test_docs_browse_ambient_discovery(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        # A timeout is a RESULT. The deterministic start_pty staleness bug
-        # (fixed 2026-09-07) wore exactly this signature for three months
-        # because it was downgraded to a skip here.
-        pytest.fail("no usable transcript within the deadline", pytrace=False)
+        fail_no_transcript(_DEADLINE_S)
 
     used_skill = bool(_skill_calls(transcript))
     used_index = bool(_file_reads(transcript, lambda p: p.name == "index.md"))

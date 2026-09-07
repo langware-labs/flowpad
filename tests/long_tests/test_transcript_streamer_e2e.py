@@ -35,6 +35,7 @@ from flow_sdk.responses import ApiResponse, ApiSuccessResponse
 from flow_sdk.server.fsop_watcher import fsop_watcher
 from flow_sdk.transcript_streamer import transcript_streamer_registry
 from tests.test_settings import test_service_config
+from tests.long_tests._transcript_helpers import fail_worker_timeout
 
 _log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def _prompt_or_skip(ap: AgenticProcess, text: str) -> ApiResponse:
     try:
         return await ap.prompt(text)
     except (ApiErrorTimeoutError, TimeoutError) as exc:
-        pytest.fail(f"timed out driving the prompt turn: {exc}", pytrace=False)
+        fail_worker_timeout(exc)
 
 
 @pytest.fixture
