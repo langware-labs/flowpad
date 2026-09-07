@@ -57,7 +57,14 @@ function funding({ deviceEligible = true }: { deviceEligible?: boolean } = {}) {
   return {
     sources: {
       [CLAUDE]: [
-        { endpoint_typeid: DEVICE_ID, name: 'claude device login', rank: 0, eligible: deviceEligible, auto: true },
+        {
+          endpoint_typeid: DEVICE_ID,
+          name: 'claude device login',
+          rank: 0,
+          eligible: deviceEligible,
+          auto: true,
+          detail: 'signed in',
+        },
         { endpoint_typeid: KEY_ID, name: 'openrouter key', rank: 10, eligible: true, auto: false },
         { endpoint_typeid: HUB_ID, name: 'Gadi +20', rank: 20, eligible: true, auto: false },
       ],
@@ -265,5 +272,44 @@ describe('the verdict is visible on the row', () => {
 
     const verdict = await screen.findByTestId('llm-source-verdict-claude-hub');
     expect(verdict.textContent).toContain('Test passed');
+  });
+});
+
+describe('a failed verdict does not sit above a stale "signed in"', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    h.status.mockReturnValue(funding());
+  });
+
+  it('drops the softer standing line once the row has failed its own test', async () => {
+    // Reported with a screenshot: the row read "claude CLI is not logged in." on one line
+    // and "signed in" on the next. `detail` describes the row as of the last backend read;
+    // a verdict from just now is newer and more specific, and two lines that contradict each
+    // other are worse than one.
+    h.testSource.mockResolvedValue({
+      ok: false,
+      status: 401,
+      model: '',
+      latency_ms: 3,
+      message: 'claude CLI is not logged in.',
+    });
+
+    const { container } = renderPage();
+    screen.getByTestId('llm-source-test-claude-device-claude').click();
+
+    await screen.findByTestId('llm-source-verdict-claude-device');
+    expect(container.textContent).toContain('claude CLI is not logged in.');
+    expect(container.textContent).not.toContain('signed in');
+  });
+
+  it('keeps it when the test passed — the two agree', async () => {
+    h.testSource.mockResolvedValue({ ok: true, status: 200, model: '', latency_ms: 3, message: '' });
+
+    const { container } = renderPage();
+    screen.getByTestId('llm-source-test-claude-device-claude').click();
+
+    await screen.findByTestId('llm-source-verdict-claude-device');
+    expect(container.textContent).toContain('signed in');
   });
 });

@@ -212,3 +212,64 @@ async def test_a_hub_row_still_goes_to_the_hubs_own_verdict():
 async def test_an_unknown_kind_is_refused_rather_than_guessed():
     with pytest.raises(HubEndpointBindError):
         await check_llm_source({"kind": "something-else"})
+
+
+@pytest.mark.asyncio
+async def test_a_probed_sign_out_survives_the_row_object_that_learned_it():
+    """The verdict must reach the resolver, not die with the row that probed.
+
+    ``login_state`` is ``Persist.FALSE``, which means DB-only -- NOT in-memory-only --
+    and ``notify_updated`` only publishes a frame. The resolver reads the field through
+    its OWN ``Capability.get_by_kind`` in ``llm_source._inventory``, a different
+    instance, so a probe that does not save is a probe nobody downstream can see.
+
+    Reported exactly that way: signed out of the CLI outside Flowpad, and the LLM
+    sources page kept saying "signed in" however many times it probed -- then showed a
+    failed test with "signed in" underneath it, the row disagreeing with itself.
+    """
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    probe = WorkerAuthResult(status=WorkerAuthStatus.LOGGED_OUT, verified=True, message="claude CLI is not logged in.")
+
+    saved = AsyncMock()
+    with (
+        patch.object(Capability, "save", new=saved),
+        patch.object(Capability, "notify_updated", new=AsyncMock()),
+        patch(
+            "flow_sdk.builtin.agentic_process.cli_drivers.get_driver",
+            return_value=type("D", (), {"auth_probe": AsyncMock(return_value=probe)})(),
+        ),
+    ):
+        await cap.refresh_login_state()
+
+    assert cap.login_state is DeviceLoginState.IDLE
+    saved.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_verdict_writes_nothing():
+    """A probe that confirms what we already knew is not a reason to write.
+
+    This runs on arrival at a page and on every startup sweep; saving an unchanged field
+    would be a DB write per harness per visit for no news at all.
+    """
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    probe = WorkerAuthResult(status=WorkerAuthStatus.LOGGED_IN, verified=True)
+
+    saved = AsyncMock()
+    with (
+        patch.object(Capability, "save", new=saved),
+        patch.object(Capability, "notify_updated", new=AsyncMock()),
+        patch(
+            "flow_sdk.builtin.agentic_process.cli_drivers.get_driver",
+            return_value=type("D", (), {"auth_probe": AsyncMock(return_value=probe)})(),
+        ),
+    ):
+        await cap.refresh_login_state()
+
+    saved.assert_not_awaited()

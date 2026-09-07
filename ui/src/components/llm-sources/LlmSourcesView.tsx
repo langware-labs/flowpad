@@ -133,11 +133,16 @@ function SourceRow({
             </span>
           </div>
         )}
-        {/* The backend owns this sentence. Rendered verbatim, never rewritten here. */}
-        {(source.reason || source.detail) && (
+        {/* The backend owns this sentence. Rendered verbatim, never rewritten here.
+            `detail` is suppressed under a FAILED verdict: it is the softer of the two
+            ("signed in", "sign-in not checked") and describes the row as of the last read,
+            so a just-failed test left the row contradicting itself in two stacked lines —
+            "claude CLI is not logged in." above "signed in". `reason` is kept either way:
+            that is a refusal, and two refusals do not disagree. */}
+        {(source.reason || (verdict && !verdict.ok ? '' : source.detail)) && (
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {source.reason && <AlertCircle className="h-3 w-3 text-amber-500" />}
-            <span className="truncate">{source.reason || source.detail}</span>
+            <span className="truncate">{source.reason || (verdict && !verdict.ok ? '' : source.detail)}</span>
           </div>
         )}
       </div>

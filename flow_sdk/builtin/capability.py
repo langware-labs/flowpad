@@ -519,7 +519,24 @@ class Capability(Entity):
         if worker_type is None:
             return None
         result = await get_driver(worker_type).auth_probe()
+        before = self.login_state
         await self._mirror_probe_to_login_state(result)
+        if self.login_state != before:
+            # SAVE, or the verdict dies with this row object. ``Persist.FALSE`` means DB-only
+            # (never mirrored into metadata.json) -- NOT in-memory-only -- and
+            # ``notify_updated`` only publishes a frame. The resolver reads this field through
+            # its own ``Capability.get_by_kind`` in ``llm_source._inventory``, a DIFFERENT
+            # instance, which without this still sees the state we just disproved.
+            #
+            # That is what let a harness the user had signed OUT of outside Flowpad keep
+            # reporting "signed in" on the LLM sources page: arriving there probes, the probe
+            # correctly said logged out, and the answer was thrown away every time. The row
+            # then showed a failed test and "signed in" beneath it, disagreeing with itself.
+            #
+            # ``discovery._resolve_login_states`` carries this same save because it calls the
+            # mirror directly; here it belongs to the one method every ON-DEMAND probe goes
+            # through, so a caller cannot forget it.
+            await self.save(notify=False)
         return result
 
     async def _mirror_probe_to_login_state(self, result) -> None:
