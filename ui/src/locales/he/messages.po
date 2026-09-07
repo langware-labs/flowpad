@@ -4501,6 +4501,10 @@ msgstr "העתק פרומפט"
 msgid "Copy Provider ID"
 msgstr "העתק מזהה ספק"
 
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
 msgstr "העתקת נתיב הקובץ הזה ללוח"

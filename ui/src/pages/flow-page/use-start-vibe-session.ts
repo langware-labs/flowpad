@@ -3,6 +3,7 @@ import {
   AgentKind,
   AgenticProcess,
   apiClient,
+  capabilityManager,
   CapabilityKinds,
   ComputeNode,
   dataContext,
@@ -16,6 +17,9 @@ import { useProject } from '@sdk/react/hooks';
 import { HARNESS_CAPABILITY_BY_WORKER } from '@src/components/workers/worker-types';
 import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
 import { errorDetail } from '@src/lib/error-message';
+
+/** The umbrella kind: 'whichever harness this box is set to use'. */
+const HARNESS = CapabilityKinds.Harness;
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -250,7 +254,7 @@ export function useStartVibeSession(): StartVibeSession {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
-  const { confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
+  const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
 
   const start = useCallback(
     (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => {
@@ -266,49 +270,80 @@ export function useStartVibeSession(): StartVibeSession {
       }
       const paths = dataContext.bootstrapInfo?.desktop_info?.paths;
       const workdir = project.fs_storage_mount_path || project.name || paths?.workspace || undefined;
+      const kind = workerType ? (HARNESS_CAPABILITY_BY_WORKER[workerType] ?? HARNESS) : HARNESS;
+      // Bound here, not read inside `launch`: the guard above narrowed `project`,
+      // but that narrowing does not survive into a nested function.
+      const projectId = project.id;
 
-      void launchVibeSessionForProject({
-        projectId: project.id,
-        workdir,
-        message,
-        files,
-        model,
-        workerType,
-        navigation,
-        onAttachmentError: () =>
-          notify.error({
-            title: t`Attachment upload failed`,
-            message: t`Starting the session without the attached files.`,
-          }),
-      }).catch((error: unknown) => {
-        console.error('[Vibe] Failed to start vibe session:', error);
-        // The backend explains itself here — `createProcess` refuses a missing
-        // harness with "<name> is not installed on this machine."
-        // (flow_sdk/builtin/faas/scan_actions.py). That sentence used to be
-        // replaced by a fixed "Failed to start the build session", so the one
-        // thing the user could act on reached the console and nowhere else.
-        //
-        // A missing harness is not a message problem though — it is a thing to
-        // FIX, so it raises the install dialog (with its "Try auto install")
-        // exactly as the terminal strip's openers do. `confirmMissingThen`
-        // re-probes rather than trusting the stale capability row, so anything
-        // that failed for another reason falls through to its real message
-        // instead of being mislabelled as an uninstalled harness.
-        const kind = workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : CapabilityKinds.Harness;
-        confirmMissingThen(kind ?? CapabilityKinds.Harness, error, () =>
-          notify.error({
-            title: t`Could not start`,
-            // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
-            // whose own message is the boilerplate "Request failed with status
-            // code 4xx". Taking the envelope ONLY means a failure the server did
-            // not explain falls back to our wording instead of putting a status
-            // line in front of the user as if it were an explanation.
-            message: errorDetail(error) || t`Failed to start the build session.`,
-          }),
-        );
-      });
+      // PRE-FLIGHT, the same gate the terminal strip's openers have had.
+      //
+      // Without it the two surfaces answered the same machine differently: on a
+      // box with no harness installed, a Start-<vendor> click showed the install
+      // dialog while a vibe prompt launched, took the backend's 400 and — when
+      // the failure path's re-probe read a row that still called the harness
+      // available — fell through to a toast saying only "error". The user found
+      // this by getting the right dialog from the terminal and nothing from the
+      // chat, on the same machine, seconds apart.
+      //
+      // Asking BEFORE launching is also the cheaper order: `ensureChecked` is
+      // cached and dedupes in flight, so the common case costs nothing, while
+      // the failure path pays for a real probe.
+      void capabilityManager
+        .ensureChecked(kind)
+        .then((harness) => {
+          if (harness.checked && !harness.available) {
+            promptToInstall();
+            return;
+          }
+          launch();
+        })
+        // An older backend without the capability API must not block a prompt —
+        // the same allowance `startAgenticTab` makes before a spawn.
+        .catch(() => launch());
+
+      function launch() {
+        void launchVibeSessionForProject({
+          projectId,
+          workdir,
+          message,
+          files,
+          model,
+          workerType,
+          navigation,
+          onAttachmentError: () =>
+            notify.error({
+              title: t`Attachment upload failed`,
+              message: t`Starting the session without the attached files.`,
+            }),
+        }).catch((error: unknown) => {
+          console.error('[Vibe] Failed to start vibe session:', error);
+          // The backend explains itself here — `createProcess` refuses a missing
+          // harness with "<name> is not installed on this machine."
+          // (flow_sdk/builtin/faas/scan_actions.py). That sentence used to be
+          // replaced by a fixed "Failed to start the build session", so the one
+          // thing the user could act on reached the console and nowhere else.
+          //
+          // A missing harness is not a message problem though — it is a thing to
+          // FIX, so it raises the install dialog (with its "Try auto install")
+          // exactly as the terminal strip's openers do. `confirmMissingThen`
+          // re-probes rather than trusting the stale capability row, so anything
+          // that failed for another reason falls through to its real message
+          // instead of being mislabelled as an uninstalled harness.
+          confirmMissingThen(kind, error, () =>
+            notify.error({
+              title: t`Could not start`,
+              // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
+              // whose own message is the boilerplate "Request failed with status
+              // code 4xx". Taking the envelope ONLY means a failure the server did
+              // not explain falls back to our wording instead of putting a status
+              // line in front of the user as if it were an explanation.
+              message: errorDetail(error) || t`Failed to start the build session.`,
+            }),
+          );
+        });
+      }
     },
-    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t, confirmMissingThen],
+    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t, confirmMissingThen, promptToInstall],
   );
 
   return { start, installDialog };
