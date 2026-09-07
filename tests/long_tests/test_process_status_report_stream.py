@@ -21,6 +21,7 @@ import pytest
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError, WorkerStatus
 from flow_sdk.transcript_analyzer.counters import ProcessCounters, ProcessStatusReport
 from tests.test_settings import test_service_config
+from tests.long_tests._transcript_helpers import fail_worker_timeout
 
 pytestmark = [
     pytest.mark.skipif(
@@ -62,8 +63,7 @@ async def test_status_report_matches_transcript_exactly(
         await ap.prompt("build me hello world webapp")
         await ap.wait()
     except (ApiErrorTimeoutError, TimeoutError) as exc:
-        # A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
-        pytest.fail(f"{worker_id}: timed out driving the turn: {exc}", pytrace=False)
+        fail_worker_timeout(exc, worker_id)
 
     # The one ground truth: re-parse the session transcript the worker wrote.
     transcript = ap._load_transcript()

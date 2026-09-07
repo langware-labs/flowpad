@@ -34,6 +34,8 @@ from flow_sdk.transcript_analyzer import EntryKind
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
+    fail_worker_timeout,
     safe_exit,
 )
 from tests.test_settings import test_service_config
@@ -124,13 +126,12 @@ async def test_worker_mounts_context_folder(
             deadline_s=90,
         )
     except (ApiErrorTimeoutError, TimeoutError) as exc:
-        # A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
-        pytest.fail(f"{worker_id}: timed out waiting for the worker turn: {exc}", pytrace=False)
+        fail_worker_timeout(exc, worker_id)
     finally:
         await safe_exit(ap)
 
     if transcript is None:
-        pytest.fail(f"{worker_id}: no transcript within 90s — the worker never wrote one", pytrace=False)
+        fail_no_transcript(90, worker_id)
     unavailable = _worker_unavailable(transcript)
     if unavailable is not None:
         pytest.skip(
