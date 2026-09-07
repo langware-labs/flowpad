@@ -13,6 +13,7 @@
 import {
   LLMFundingKind,
   llmSourceRef,
+  llmSourcesService,
   sameLlmSource,
   selectKindFor,
   type LLMEndpointOffer,
@@ -39,8 +40,9 @@ import {
   harnessKinds,
   labelForWorker,
   useLlmSources,
-  useRecheckSignIn,
-  useRefreshLoginStates,
+  useFundingFollowsLogin,
+  useProbeDeviceLogins,
+  useTestSource,
   useSelectSource,
   workerOf,
 } from './use-llm-sources';
@@ -54,6 +56,7 @@ function SourceRow({
   onSelect,
   inUse,
   busy,
+  testSource,
 }: {
   source: LLMSource;
   /** The row the verdict names. Undefined only if the backend listed a verdict whose endpoint
@@ -67,10 +70,13 @@ function SourceRow({
   inUse: boolean;
   onSelect: (s: LLMSource) => void;
   busy: boolean;
+  /** The page's one test runner, shared so only the pressed row spins. */
+  testSource: ReturnType<typeof useTestSource>;
 }) {
   const { t } = useLingui();
   const worker = workerOf(harness);
-  const recheck = useRecheckSignIn();
+  const testing = testSource.pending === llmSourceRef(source);
+  const verdict = testSource.verdicts[llmSourceRef(source)];
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
@@ -103,11 +109,38 @@ function SourceRow({
             </Badge>
           )}
         </div>
-        {/* The backend owns this sentence. Rendered verbatim, never rewritten here. */}
-        {(source.reason || source.detail) && (
+        {/* The last test's answer, ON THE ROW. Reported: Test showed a spinner, the button
+            came back, and nothing else — so a source that is simply not signed in looked
+            identical to one that passed. Sits above the backend's standing sentence because
+            it is the newer, more specific fact: that sentence describes the row at the last
+            read, this describes what happened when the row was actually exercised. */}
+        {verdict && (
+          <div
+            className={`mt-0.5 flex items-center gap-1 text-xs ${verdict.ok ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'}`}
+            data-testid={`llm-source-verdict-${worker}-${endpoint?.kind ?? 'unknown'}`}
+          >
+            {verdict.ok ? <Check className="h-3 w-3 shrink-0" /> : <AlertCircle className="h-3 w-3 shrink-0" />}
+            <span className="truncate">
+              {verdict.ok ? (
+                <Trans>Test passed — this source can fund a run</Trans>
+              ) : (
+                // The provider's own sentence when there is one: "insufficient credits" and
+                // "invalid key" have different cures and only it knows which this is.
+                verdict.message || <Trans>Test failed — this source cannot fund a run right now</Trans>
+              )}
+            </span>
+          </div>
+        )}
+        {/* The backend owns this sentence. Rendered verbatim, never rewritten here.
+            `detail` is suppressed under a FAILED verdict: it is the softer of the two
+            ("signed in", "sign-in not checked") and describes the row as of the last read,
+            so a just-failed test left the row contradicting itself in two stacked lines —
+            "claude CLI is not logged in." above "signed in". `reason` is kept either way:
+            that is a refusal, and two refusals do not disagree. */}
+        {(source.reason || (verdict && !verdict.ok ? '' : source.detail)) && (
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {source.reason && <AlertCircle className="h-3 w-3 text-amber-500" />}
-            <span className="truncate">{source.reason || source.detail}</span>
+            <span className="truncate">{source.reason || (verdict && !verdict.ok ? '' : source.detail)}</span>
           </div>
         )}
       </div>
@@ -121,35 +154,38 @@ function SourceRow({
           <ArrowUpRight className="h-4 w-4" />
         </Button>
       )}
+      {/* EVERY row tests itself. The three kinds fail for three unrelated reasons — a device
+          login is signed out, a stored key is revoked or out of credit, a hub endpoint is
+          unbound or spent — so a verdict is only meaningful when the row asking is the row
+          answering. The single Test this replaces lived on the signed-out device row alone
+          and ran `authStatus`, whose answer reports WHAT FUNDS THE HARNESS: pressed after a
+          successful sign-in it said "using the hub endpoint", an answer about a different
+          row entirely. The key and hub checks each send one minimal completion, so a green
+          verdict means tokens were really bought and not merely that a credential exists. */}
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={testing}
+        onClick={() => testSource.test({ source, endpoint, harness })}
+        title={t`Does this source actually work?`}
+        data-testid={`llm-source-test-${worker}-${endpoint?.kind ?? 'unknown'}${endpoint?.provider ? `-${endpoint.provider}` : ''}`}
+      >
+        {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+      </Button>
       {needsSignIn ? (
-        <>
-          {/* "I already signed in — look again."
-              A refusal the harness made mid-turn is LATCHED, and a silent
-              re-check may not clear it (a stored credential proves presence,
-              not validity). So a person who ran `claude /login` in their own
-              terminal saw this row keep saying "signed out" with only a Sign in
-              button — offering to start a login they had already completed.
-              This is the same forced re-check the Assistants & keys modal's
-              Test button makes, put where the problem is actually reported. */}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={recheck.isPending}
-            onClick={() => recheck.mutate(harness)}
-            title={t`Already signed in elsewhere? Check again`}
-            data-testid={`llm-source-recheck-${worker}`}
-          >
-            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openHarnessLoginModal()}
-            data-testid={`llm-source-signin-${worker}`}
-          >
-            <Trans>Sign in</Trans>
-          </Button>
-        </>
+        /* No Re-check beside it. It asked `authStatus`, whose answer reports what FUNDS the
+           harness rather than whether this login works — so on a signed-out row it announced
+           the hub endpoint, which is not what the button appeared to offer. The arrival probe
+           now answers the "did I sign in elsewhere" case without being asked, and Test answers
+           it on demand, so nothing is lost with it. */
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openHarnessLoginModal()}
+          data-testid={`llm-source-signin-${worker}`}
+        >
+          <Trans>Sign in</Trans>
+        </Button>
       ) : needsKey ? (
         <Button
           size="sm"
@@ -179,11 +215,18 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { status, isLoading } = useLlmSources();
-  // Ask the vendors whether they are signed in, now — nothing else refreshes
-  // `login_state` between backend restarts, and a launch that failed for want of
-  // a source routes here expecting this page to know better than it did.
-  useRefreshLoginStates();
+  // Ask every device login whether it is really signed in, now. Free (a local subprocess
+  // against an existing subscription), so it runs unasked on every arrival — the only way
+  // this page can be right about a login the user ended in their own terminal. Device only:
+  // the key and hub checks spend money and stay behind a click.
+  useProbeDeviceLogins();
+  // ...and keep following: a sign-in made from the modal THIS page opens must flip the row
+  // from "Sign in" to "Use", which the mount-only probe above cannot do on its own.
+  useFundingFollowsLogin();
   const select = useSelectSource();
+  // One runner for the whole page: it carries which row is mid-test, so a shared `isPending`
+  // cannot grey out every other row's Test button while one real network call is in flight.
+  const testSource = useTestSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);
   // A verdict names an endpoint and mirrors none of its fields, so every render that wants a
@@ -204,6 +247,34 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const onSelect = useCallback(
     async (harness: string, source: LLMSource) => {
       try {
+        // A device row must be PROVEN before it is chosen, and this is not belt-and-braces —
+        // without it, Use on a device login is a no-op on exactly the box that needs it.
+        //
+        // An unprobed login is `rank=_RANK_DEVICE_UNPROVEN (30), auto=False` whenever a wallet
+        // is available, and the hub endpoint is `rank=20, auto=True`; `pick_llm_candidate`
+        // takes the first eligible AND auto, so the hub wins. Choosing the device row then
+        // writes `auth_mode='device'` — which `_preferred` reads as "NO preference stated",
+        // because `device` is the field's default and there is no way to say "device,
+        // explicitly". So the pick evaporates and the ladder runs again, hub first. Reported
+        // exactly that way: clicked Use, opened a new terminal, still on the hub budget.
+        //
+        // Probing is the honest fix rather than inventing a third preference state: a login
+        // that answers `logged_in` becomes `_RANK_DEVICE (0)` and wins the ladder on its own
+        // merits, which is what "use my OAuth" should mean. And a login that answers
+        // `logged_out` — the case where the user had signed out of the CLI outside Flowpad,
+        // while this page still offered Use — opens the sign-in the row could not.
+        if (endpointFor(source)?.kind === LLMFundingKind.Device) {
+          const proof = await llmSourcesService.testSource({ kind: 'device', harness });
+          if (!proof.ok) {
+            notify.warning({
+              title: t`${source.name} is not signed in`,
+              message: proof.message || t`Sign in first, then this source can fund a run.`,
+              durationMs: 5000,
+            });
+            openHarnessLoginModal();
+            return;
+          }
+        }
         const next = await select.mutateAsync({
           harness,
           // The pick endpoint still speaks the pre-endpoint vocabulary, so the row's kind is
@@ -223,7 +294,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
         notify.error({ title: t`Could not switch source`, message: errorMessage(e, '') });
       }
     },
-    [select, t],
+    [select, t, endpointFor],
   );
 
   const GROUPS: [LLMFundingKind, string][] = useMemo(
@@ -321,6 +392,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
                       navigation={navigation}
                       inUse={!!resolvedFor(focused) && sameLlmSource(source, resolvedFor(focused)!)}
                       busy={select.isPending}
+                      testSource={testSource}
                       onSelect={(s) => void onSelect(focused, s)}
                     />
                   ))}

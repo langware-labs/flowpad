@@ -10,7 +10,7 @@
  * and stayed in Hebrew.
  *
  * So this test enters through the REAL loader the vibe switch navigates to
- * (`loadHomePage` for `/?vibeNoProcess=true&scope-mode=project&scope-activeProjectId=…`)
+ * (`loadHomePage` for `/?scope-mode=project&scope-activeProjectId=…&viewMode=vibe`)
  * with context in the state the click path leaves it in. Calling
  * `applyProjectLocale` directly would pass against the bug — the bug is that
  * nothing calls it.
@@ -38,7 +38,7 @@ let initialLocale: string;
 
 /** The URL the vibe home switch navigates to. */
 const vibeHomeUrl = (projectId: string) =>
-  `http://localhost/?vibeNoProcess=true&scope-mode=project&scope-activeProjectId=${projectId}&viewMode=vibe`;
+  `http://localhost/?scope-mode=project&scope-activeProjectId=${projectId}&viewMode=vibe`;
 
 async function runHomeLoader(projectId: string): Promise<void> {
   try {

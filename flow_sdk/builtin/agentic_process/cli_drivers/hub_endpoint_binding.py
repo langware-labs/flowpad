@@ -417,3 +417,168 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}
+
+
+#: The cheapest model each provider will answer a one-token completion with. A test that
+#: spends is only honest if it spends the least it can: the question is "can this key buy
+#: tokens", and the smallest model answers it for the smallest amount.
+_TEST_MODELS = {
+    "openrouter": "openai/gpt-5-mini",
+    "openai": "gpt-5-mini",
+    "anthropic": "claude-haiku-4.5",
+}
+
+
+def _verdict(ok: bool, *, status: int = 0, model: str = "", latency_ms: int = 0, message: str = "") -> dict:
+    """The one shape every source kind answers a test in.
+
+    Deliberately the hub's ``test`` shape verbatim (``LLMEndpointTestResult``), so the page
+    renders one verdict component for three unrelated checks. A refusal is a VERDICT and comes
+    back inside the success envelope with ``ok: false`` -- only a transport failure raises.
+    """
+    return {"ok": ok, "status": status, "model": model, "latency_ms": latency_ms, "message": message}
+
+
+async def _test_device_login(worker_type: str, *, force: bool) -> dict:
+    """Ask the vendor CLI whether THIS login works.
+
+    ``force`` drops a latched refusal first, and is for a person pressing Test: the latch is
+    exactly what they are disputing, since a refusal the harness made mid-turn survives a
+    silent re-probe on purpose (a stored credential proves presence, not validity). The
+    arrival probe passes ``force=False`` -- it is automatic, and automatically overturning a
+    refusal the harness itself made is how a signed-out harness comes to read as signed in.
+
+    The honest limit, stated rather than hidden: a device login is a credential for a TERMINAL
+    (``LLMEndpointKind.DEVICE`` is ``invocable=False``), so nothing here can spend it. This
+    reports what the vendor's own ``auth-status`` says and never claims to have bought a token
+    with it -- unlike the other two kinds, which really do.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    if cap is None:
+        return _verdict(False, message=f"no capability row for {worker_type}")
+    # Deliberately NOT ``auth_status_action``, though it is the other forced probe. That one
+    # answers "what funds this harness" -- it resolves the box endpoint and reports THAT -- so
+    # pressing Test on a signed-in device login replied "using the hub endpoint", which is the
+    # complaint this whole action exists to fix. Here the row asks about ITSELF.
+    # ``force`` only when a PERSON pressed Test. The latch exists because a refusal the
+    # harness made mid-turn is stronger evidence than ``auth-status``, which reports a
+    # credential's presence and never its validity -- so an automatic probe that cleared it
+    # would resurrect "signed in" for a login the harness itself had just refused. The
+    # arrival probe is automatic and therefore never forces; the button is the user saying
+    # they fixed it, and may.
+    if force:
+        cap.login_denied = False
+    result = await cap.refresh_login_state()
+    if result is None:
+        return _verdict(False, message=f"{worker_type} has no device login to test")
+    status = str(getattr(result.status, "value", result.status) or "")
+    signed_in = status == "logged_in"
+    # ``unknown`` is not a sign-out: the probe timed out or could not parse the vendor's
+    # output, and saying "signed out" for that is the exact conflation the driver contract
+    # forbids. It reports as a failed TEST with the probe's own words, and (by
+    # ``_mirror_probe_to_login_state``) moves ``login_state`` in neither direction.
+    return _verdict(
+        signed_in,
+        status=200 if signed_in else 401,
+        message="" if signed_in else (result.message or f"{worker_type} reports: {status or 'no answer'}"),
+    )
+
+
+async def _test_api_key(provider: str) -> dict:
+    """Spend one token through the stored key, and report what the provider said.
+
+    A real completion, because the question a person asks this button is "will a run work",
+    and every cheaper check answers a different one: a key can be present, well-formed and
+    accepted for authentication while the account behind it has no credit -- which fails a
+    spawn at the first turn, with the key still looking perfect on this page.
+
+    The key never leaves this machine: the call goes straight to the provider from the box
+    that stores it, which is the same path a worker's own key auth takes.
+    """
+    import time  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
+
+    from flow_sdk.cli.auth.lm_api_keys import get_lm_api  # noqa: PLC0415
+
+    key = get_lm_api(provider)
+    if not key:
+        return _verdict(False, status=401, message=f"no {provider} key is stored on this machine")
+    model = _TEST_MODELS.get(provider, "")
+    if not model:
+        return _verdict(False, message=f"{provider} has no test model configured")
+
+    if provider == "anthropic":
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+    else:
+        base = "https://openrouter.ai/api/v1" if provider == "openrouter" else "https://api.openai.com/v1"
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}"}
+        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+
+    started = time.monotonic()
+    try:
+        # No timeout of our own: httpx's default bounds this, and inventing a budget here to
+        # ride past a slow provider is the move the repo's timeout rule forbids.
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        return _verdict(False, model=model, latency_ms=int((time.monotonic() - started) * 1000), message=str(exc))
+    latency = int((time.monotonic() - started) * 1000)
+    if response.status_code < 400:
+        return _verdict(True, status=response.status_code, model=model, latency_ms=latency)
+    # The provider's own sentence, never one of ours: "insufficient credit" and "invalid key"
+    # are different problems with different cures, and only it knows which this is.
+    detail = ""
+    try:
+        payload = response.json()
+        detail = str((payload.get("error") or {}).get("message") or "") if isinstance(payload, dict) else ""
+    except ValueError:
+        detail = ""
+    return _verdict(
+        False,
+        status=response.status_code,
+        model=model,
+        latency_ms=latency,
+        message=detail or response.text[:200] or f"HTTP {response.status_code}",
+    )
+
+
+async def check_llm_source(payload: dict) -> dict:
+    """Does THIS source work — one row, one answer.
+
+    The page has three kinds of row and they fail for three unrelated reasons: a device login
+    is signed out, a stored key is revoked or out of credit, a hub endpoint is unbound or its
+    budget is spent. One button per row, each running the check that kind actually needs, is
+    the only way a verdict means anything -- the single Test this replaces asked "is the
+    harness signed in" and answered it on every row alike, including rows where sign-in is not
+    what funds anything.
+
+    Dispatches on the endpoint KIND rather than the harness, because that is what decides which
+    credential is under test. ``harness`` is still required for the device kind: a device login
+    is per-harness and has no other identity.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+    kind = str(payload.get("kind") or "").strip()
+    if kind == LLMEndpointKind.DEVICE:
+        worker = str(payload.get("harness") or "").strip()
+        if not worker:
+            raise HubEndpointBindError("harness is required to test a device login", 400)
+        return await _test_device_login(
+            worker.split(".")[1] if worker.startswith("harness.") else worker,
+            force=bool(payload.get("force")),
+        )
+    if kind == LLMEndpointKind.API_KEY:
+        provider = str(payload.get("provider") or "").strip()
+        if not provider:
+            raise HubEndpointBindError("provider is required to test a stored key", 400)
+        return await _test_api_key(provider)
+    if kind == LLMEndpointKind.HUB:
+        return await test_hub_llm_endpoint(payload)
+    raise HubEndpointBindError(f"unknown source kind {kind!r}", 400)

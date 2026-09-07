@@ -351,6 +351,11 @@ msgstr "{0} مُنتشر"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن فتحه."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} غير مسجّل الدخول"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -1830,8 +1835,8 @@ msgid "already running"
 msgstr "قيد التشغيل بالفعل"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "Already signed in elsewhere? Check again"
-msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -4608,7 +4613,6 @@ msgid "Could not change sign-in method"
 msgstr "تعذر تغيير طريقة تسجيل الدخول"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
 
@@ -4913,6 +4917,10 @@ msgstr "تعذر تحديد موقع هذا المجلد"
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
 msgstr "تعذر إجراء اختبار الاتصال."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "تعذّر تشغيل الاختبار"
 
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
@@ -6441,6 +6449,10 @@ msgstr "المستندات"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "المستندات التي تشير إلى هذا المستند"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "هل يعمل هذا المصدر فعلًا؟"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -14804,6 +14816,10 @@ msgstr "ذاكرة الوصول العشوائي (MB)"
 msgid "RAM:"
 msgstr "ذاكرة الوصول العشوائي:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Re-check"
+#~ msgstr "تحقّق مرة أخرى"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "إعادة التحقق من {title}"
@@ -17428,6 +17444,10 @@ msgstr "عرض Sigma للرسم البياني"
 msgid "Sign in"
 msgstr "تسجيل الدخول"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "سجّل الدخول أولًا، عندها يمكن لهذا المصدر تمويل التشغيل."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "تسجيل الدخول للوصول إلى flow الخاص بك وتفعيل Flowpad AI agent"
@@ -17511,7 +17531,6 @@ msgstr "لم يتم تأكيد تسجيل الدخول"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
@@ -18102,8 +18121,8 @@ msgid "Still signed in"
 msgstr "الجلسة ما زالت نشطة"
 
 #: src/components/llm-sources/use-llm-sources.ts
-msgid "Still signed out — please re-authenticate"
-msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18617,6 +18636,14 @@ msgstr "اختبار"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "فشل الاختبار"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "فشل الاختبار — لا يمكن لهذا المصدر تمويل التشغيل الآن"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "نجح الاختبار — يمكن لهذا المصدر تمويل التشغيل"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -19395,6 +19422,14 @@ msgstr "رابط الجلسة هذا غير صحيح أو غير متاح."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "تحتوي هذه المهارة على تغييرات غير مثبتة — يعمل التحسين فقط على مهارة نظيفة."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "لم يعمل هذا المصدر"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "هذا المصدر يعمل"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
