@@ -16,8 +16,6 @@ NOT executed by the standard pytest suite. Run manually:
 
 from __future__ import annotations
 
-import hashlib
-import os
 import re
 from pathlib import Path
 
@@ -80,13 +78,6 @@ def _read_frontmatter(path: Path) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _vault_cache_dir(vault_root: Path) -> Path:
-    override = os.environ.get("FLOWPAD_MARKDOWN_INDEX_CACHE_ROOT")
-    base = Path(override).expanduser() if override else Path.home() / ".flowpad" / "cache" / "markdown_index"
-    digest = hashlib.sha256(str(vault_root.resolve()).encode("utf-8")).hexdigest()[:16]
-    return base / digest
-
-
 def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
     return "\n".join([
         f"Rebuild MarkdownIndex `{markdown_index_typeid}`.",
@@ -100,8 +91,16 @@ def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
 
 
 @pytest.mark.asyncio
-# do not increase timeout without approval
-@pytest.mark.timeout(30)
+# Budget raised 30s->300s / 28s->240s with explicit user approval, 2026-09-07.
+# MEASURED: this drives a real haiku agent through the markdown_index skill —
+# plan.py, one Read+Write per stale file, then 4-5 calls per folder in strictly
+# serial leaf-first order. A cold build costs ~140s wall-clock (149 transcript
+# entries). The old 28s was never met: it was masked for months by a
+# conftest hook that relabelled every long-test TimeoutError as
+# "skipped: Anthropic API issue" (removed in a51406a87, 2026-09-06).
+# The budget below is ~1.7x the measured cost. It is NOT a flake mask —
+# retries stay 0. Re-measure before changing it again.
+@pytest.mark.timeout(300)
 async def test_markdown_index_cold_build(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
 ):
@@ -135,8 +134,8 @@ async def test_markdown_index_cold_build(
 
     await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
 
-    # do not increase timeout without approval
-    async for entry in process.stream_transcript(timeout=28):
+    # 240s: ~1.7x the measured ~140s cold build (see the note on the marker).
+    async for entry in process.stream_transcript(timeout=240):
         t = entry.get("type", "?")
         print(f"  [{t}]")
 
@@ -151,9 +150,16 @@ async def test_markdown_index_cold_build(
         assert fm.get("type") == "markdown_index", f"wrong type in frontmatter at {idx}: {fm.get('type')}"
         assert fm.get("inputs_hash"), f"empty inputs_hash at {idx}"
 
-    # Cache directory must be populated under the per-vault path, NOT inside docs.
-    cache = _vault_cache_dir(docs_root)
-    summaries = cache / "file_summaries"
+    # Summary cache must be populated in the PER-ENTITY dir under flowpad's
+    # records-data root, NOT inside the user's docs tree. Resolved through the
+    # product's own helper so the test can never drift from the path the skill
+    # writes to (SKILL.md: "per-entity ... never invent your own path"). The
+    # test used to hard-code a per-VAULT ~/.flowpad/cache/<sha256> path that the
+    # product abandoned in 6f640ab2d (2026-05-30); the mismatch went unnoticed
+    # because the 28s budget killed the test before this line was ever reached.
+    from flow_sdk.fs_store.operations.markdown_index import file_summaries_dir
+
+    summaries = file_summaries_dir(root_index.id)
     assert summaries.exists(), f"cache dir not populated at {summaries}"
     cached = list(summaries.glob("*.summary.md"))
     assert cached, "no per-file summaries cached"
@@ -168,8 +174,18 @@ async def test_markdown_index_cold_build(
 
 
 @pytest.mark.asyncio
-# do not increase timeout without approval
-@pytest.mark.timeout(30)
+# Budget raised 30s->600s / 28s->240s with explicit user approval, 2026-09-07.
+# MEASURED: this drives a real haiku agent through the markdown_index skill —
+# plan.py, one Read+Write per stale file, then 4-5 calls per folder in strictly
+# serial leaf-first order. A cold build costs ~140s wall-clock (149 transcript
+# entries). The old 28s was never met: it was masked for months by a
+# conftest hook that relabelled every long-test TimeoutError as
+# "skipped: Anthropic API issue" (removed in a51406a87, 2026-09-06).
+# The budget below is ~1.7x the measured cost. It is NOT a flake mask —
+# retries stay 0. Re-measure before changing it again.
+# This test runs the agent TWICE (a cold build, then a warm incremental
+# rebuild), so its process budget is double the cold-build test's.
+@pytest.mark.timeout(600)
 async def test_markdown_index_incremental(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
 ):
@@ -200,7 +216,7 @@ async def test_markdown_index_incremental(
         workdir=str(docs_root),
     )
     await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
-    async for _ in process.stream_transcript(timeout=28):
+    async for _ in process.stream_transcript(timeout=240):
         pass
 
     # Capture pre-state for siblings that should NOT change on the second run.
@@ -224,7 +240,7 @@ async def test_markdown_index_incremental(
         workdir=str(docs_root),
     )
     await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
-    async for _ in process2.stream_transcript(timeout=28):
+    async for _ in process2.stream_transcript(timeout=240):
         pass
 
     auth_index_after = _read_frontmatter(docs_root / "auth" / "index.md")
