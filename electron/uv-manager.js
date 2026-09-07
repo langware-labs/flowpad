@@ -165,6 +165,13 @@ class UvManager {
     const home = os.homedir();
     const extra = [];
 
+    // First: the flowpad tool venv's own bin dir, so `python` / `python3` /
+    // `pip` resolve to the uv-managed CPython the backend itself runs on —
+    // for the backend and for every worker/skill it spawns — rather than to
+    // whatever (if any) Python the machine happens to have. Harmless before
+    // the first install (the dir simply doesn't exist yet).
+    extra.push(this._toolVenvBinDir());
+
     if (IS_WIN) {
       // uv tool bin dir
       extra.push(path.join(home, '.local', 'bin'));
@@ -510,6 +517,11 @@ class UvManager {
     return IS_WIN
       ? path.join(os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
       : path.join(os.homedir(), '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
+  }
+
+  /** The venv's executables dir: python(.exe), pip, flow and the package's console scripts. */
+  _toolVenvBinDir() {
+    return path.join(this._toolVenvDir(), IS_WIN ? 'Scripts' : 'bin');
   }
 
   /**
