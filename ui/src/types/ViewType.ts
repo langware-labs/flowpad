@@ -107,6 +107,26 @@ export interface ViewerMeta {
    * browsers (Assets, Explorer) where in-tab navigation must stay in one chip.
    */
   scopeKeyed?: boolean;
+  /**
+   * When true, tab identity is the FIRST pointer segment — the HOST — and every
+   * deeper segment is sub-state *within* that host (a selected message inside a
+   * conversation, a route inside an app). One tab per host, however deep the URL
+   * goes. The third fold: `foldsPointer` above is one tab per VIEW, `scopeKeyed`
+   * one per SCOPE, this one per HOST.
+   *
+   * ONLY when segment 0 is an ENTITY IDENTITY. NOT for a view whose first segment
+   * is a DISCRIMINATOR — `lens` (`<category>/<type>/<ref>`), `k-browser`
+   * (`vfs|typeid/<value>`), `graph` (`<type>/<id>`) — where folding would merge
+   * every claude lens, or the entire knowledge browser, into one chip. The
+   * failure is silent (tabs merge, nothing errors), so check this before setting
+   * the flag on a new view.
+   *
+   * Prefer OPTIONS for new sub-state (`forInbox` puts `conversation`/`message`
+   * there, and options are excluded from `tabHash` for free). Use this flag when
+   * the sub-state is already a documented, deep-linkable PATH that cannot move
+   * without breaking existing links.
+   */
+  foldsSubPointer?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -247,6 +267,9 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Sparkles',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+    // Pointer is `<uname>/<routerPath>`: the app is the host, its internal route
+    // is sub-state the guest repoints on every `navigate-app` message.
+    foldsSubPointer: true,
   },
   [ViewType.GRAPH]: {
     title: msg`Graph`,
@@ -476,6 +499,10 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'MessageSquare',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+    // Pointer is `<conversationId>[/message/<messageId>]`: the message is a
+    // selected bubble inside the conversation, the same kind of sub-state
+    // `thread`/`agentId` already ride as options.
+    foldsSubPointer: true,
   },
   [ViewType.SPEC]: {
     title: msg`Spec`,
