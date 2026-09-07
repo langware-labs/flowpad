@@ -23,7 +23,6 @@ const { PROJECT, ...h } = vi.hoisted(() => ({
   PROJECT: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01',
   launch: vi.fn(),
   test: vi.fn(),
-  ensureChecked: vi.fn(),
   getSnapshot: vi.fn(),
   notifyError: vi.fn(),
   openSources: vi.fn(),
@@ -52,7 +51,6 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     capabilityManager: {
       test: h.test,
-      ensureChecked: h.ensureChecked,
       getSnapshot: h.getSnapshot,
       // The dialog reads its install command from the summary, not the row.
       getCachedSummary: () => null,
@@ -96,9 +94,9 @@ describe('vibe chat start failure', () => {
     cleanup();
     vi.clearAllMocks();
     // The umbrella resolves to the default assistant — what a launch would use.
-    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE });
-    // The pre-flight passes by default, so each test drives the path it means to.
-    h.ensureChecked.mockResolvedValue({ checked: true, available: true });
+    // The pre-flight reads this cache synchronously; passing by default so each
+    // test drives the path it means to.
+    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE, checked: true, available: true });
   });
 
   it('offers the install dialog when the harness really is missing', async () => {
@@ -186,13 +184,10 @@ describe('vibe chat start failure', () => {
     expect(h.notifyError).not.toHaveBeenCalled();
   });
 
-  it('asks BEFORE launching, so a missing harness never reaches the backend', async () => {
+  it('asks BEFORE launching, so a known-missing harness never reaches the backend', async () => {
     // The reported asymmetry: on a box with nothing installed, a Start-<vendor>
     // click showed the install dialog while a vibe prompt showed only "error".
-    // The strip had a pre-flight and this did not, so the chat launched, took a
-    // 400, and depended on a re-probe that read a row still calling the harness
-    // available. Asking first makes the two surfaces answer alike.
-    h.ensureChecked.mockResolvedValue({ checked: true, available: false });
+    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE, checked: true, available: false });
 
     const { submit, dialog } = mountVibe();
     submit();
@@ -202,10 +197,12 @@ describe('vibe chat start failure', () => {
     expect(h.notifyError).not.toHaveBeenCalled();
   });
 
-  it('launches anyway when the capability API cannot answer', async () => {
-    // An older backend must not block a prompt — the same allowance the strip
-    // makes. Unknown is not "missing".
-    h.ensureChecked.mockRejectedValue(new Error('no capability API'));
+  it('launches without waiting when nothing is known yet', async () => {
+    // The cold case, and the one that was reported as "nothing happened": the
+    // old pre-flight PROBED here — one backend call per harness, in series —
+    // and the first prompt of a session sat through all of them with no
+    // feedback. Unknown is not "missing", and it must not cost a wait either.
+    h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE, checked: false, available: false });
     h.launch.mockResolvedValue({ id: 'p', watch: () => Promise.resolve() });
 
     const { submit } = mountVibe();
