@@ -1829,9 +1829,19 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const connection_manager = ConnectionManager.getInstance();
     if (connection_manager.connected) {
       const connection_id = connection_manager.id;
-      await apiClient.post(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/unwatch`, {
-        connection_id: connection_id,
-      });
+      try {
+        await apiClient.post(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/unwatch`, {
+          connection_id: connection_id,
+        });
+      } catch {
+        // Best-effort teardown. The cache check above only catches a row this
+        // client already dropped; a row deleted SERVER-side is still cached
+        // here, so the unwatch 404s. The caller is the unsubscribe function
+        // React runs on unmount and never awaits, so a rejection here is an
+        // unhandled rejection that fails the whole run even when every test
+        // passed — same shape as the fire-and-forget connect. The watch is
+        // gone either way: the row is gone, and the socket drops with it.
+      }
     }
   }
 
