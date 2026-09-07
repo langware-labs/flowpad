@@ -140,8 +140,18 @@ async def browse_setup(
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=str(vault),
-        # Small tier → haiku for claude: cheapest/fastest for the index walk.
-        cli_config={"model": ModelTier.SM.value},
+        # MD (sonnet), NOT the sm/haiku tier this used to pin. Ambient discovery
+        # — reaching for docs-browse when the prompt names neither the skill nor
+        # the index — is a REASONING behaviour, not an index walk. Measured
+        # on/off, same fixture, same vault, only the tier changed:
+        #   sm/haiku : skill_calls=[], no index.md read            -> FAIL (3/3)
+        #   md/sonnet: skill_calls=['docs-browse'], reads index.md -> PASS
+        # The skill IS discoverable at sm (assistant_enabled=True, the assistant
+        # root is in resolved_add_dirs, and test_skill_transcript_analysis
+        # observes real SKILL_CALLs on claude) — haiku simply answers by grep.
+        # Pinning a model too small to exhibit the behaviour under test made a
+        # harness choice look like a product bug.
+        cli_config={"model": ModelTier.MD.value},
         visible=False,
     ).save()
     try:
