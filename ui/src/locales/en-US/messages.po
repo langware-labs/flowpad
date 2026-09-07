@@ -1829,6 +1829,10 @@ msgstr "already present"
 msgid "already running"
 msgstr "already running"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Already signed in elsewhere? Check again"
+msgstr "Already signed in elsewhere? Check again"
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -4605,6 +4609,7 @@ msgid "Could not change sign-in method"
 msgstr "Could not change sign-in method"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
@@ -17508,6 +17513,7 @@ msgstr "Sign-in not confirmed"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -18097,6 +18103,10 @@ msgstr "Still can't link this project"
 msgid "Still signed in"
 msgstr "Still signed in"
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Still signed out — please re-authenticate"
+msgstr "Still signed out — please re-authenticate"
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18600,6 +18610,7 @@ msgstr "Terminal Sessions"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "Test"
 

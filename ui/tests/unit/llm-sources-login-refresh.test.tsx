@@ -21,6 +21,12 @@ import type { ReactNode } from 'react';
 const h = vi.hoisted(() => ({
   authStatus: vi.fn(),
   capabilityFor: vi.fn(),
+  success: vi.fn(),
+  warning: vi.fn(),
+}));
+
+vi.mock('@src/notifications', () => ({
+  notify: { success: h.success, warning: h.warning, error: vi.fn() },
 }));
 
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => ({ project: null }) }));
@@ -33,7 +39,7 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 
 import { HARNESS_CAPABILITY_KINDS } from '@sdk';
-import { useRefreshLoginStates } from '@src/components/llm-sources/use-llm-sources';
+import { useRecheckSignIn, useRefreshLoginStates } from '@src/components/llm-sources/use-llm-sources';
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -75,5 +81,47 @@ describe('LLM sources arrival login re-probe', () => {
     // Nothing to ask and nothing thrown — the page still renders what it has.
     await waitFor(() => expect(h.capabilityFor).toHaveBeenCalled());
     expect(h.authStatus).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The forced re-check — "I signed in elsewhere, look again".
+ *
+ * A refusal the harness made mid-turn is LATCHED, and the silent probe above
+ * may not clear it: `claude auth status` reports a credential's presence, never
+ * its validity, so presence must not overturn a refusal the harness actually
+ * made. `force` is the user asserting they fixed it, which is why it belongs on
+ * a button and not on a render.
+ *
+ * Reported exactly that way: signed in with `claude /login` outside Flowpad,
+ * and the row kept saying "signed out" while offering only a Sign in button for
+ * a login already completed.
+ */
+describe('LLM sources forced re-check', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.capabilityFor.mockImplementation(() => ({ authStatus: h.authStatus }));
+  });
+
+  it('asks with force, which is the only probe that may clear a latched refusal', async () => {
+    h.authStatus.mockResolvedValue({ status: 'logged_in', message: 'stored credentials' });
+
+    const { result } = renderHook(() => useRecheckSignIn(), { wrapper });
+    result.current.mutate('harness.claude.cli');
+
+    await waitFor(() => expect(h.authStatus).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(h.success).toHaveBeenCalled());
+  });
+
+  it('says so when the harness really is still signed out', async () => {
+    // Forcing is not asserting the answer — a genuine sign-out still reports as
+    // one, and the latch is cleared to whatever the probe actually found.
+    h.authStatus.mockResolvedValue({ status: 'logged_out', message: 'please run /login' });
+
+    const { result } = renderHook(() => useRecheckSignIn(), { wrapper });
+    result.current.mutate('harness.claude.cli');
+
+    await waitFor(() => expect(h.warning).toHaveBeenCalled());
+    expect(h.success).not.toHaveBeenCalled();
   });
 });

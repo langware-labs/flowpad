@@ -1829,6 +1829,10 @@ msgstr "موجود بالفعل"
 msgid "already running"
 msgstr "قيد التشغيل بالفعل"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Already signed in elsewhere? Check again"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "افتح أيضًا نافذة طرفية مرافقة لنظام التشغيل"
@@ -4605,6 +4609,7 @@ msgid "Could not change sign-in method"
 msgstr "تعذر تغيير طريقة تسجيل الدخول"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
 
@@ -17508,6 +17513,7 @@ msgstr "لم يتم تأكيد تسجيل الدخول"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
@@ -18097,6 +18103,10 @@ msgstr "ما زال ربط هذا المشروع غير ممكن"
 msgid "Still signed in"
 msgstr "الجلسة ما زالت نشطة"
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Still signed out — please re-authenticate"
+msgstr ""
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "لا يزال العمل جارياً — يتم حزم المرفقات وتحميلها. قد تستغرق نسخة الجلسة أو الملفات الكبيرة دقيقة واحدة."
@@ -18600,6 +18610,7 @@ msgstr "جلسات الطرفية"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "اختبار"
 
