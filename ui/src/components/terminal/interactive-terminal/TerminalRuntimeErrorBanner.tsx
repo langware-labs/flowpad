@@ -7,6 +7,8 @@ import { AlertTriangle, PlayCircle, Plug, RefreshCw, Wand2, type LucideIcon } fr
 import { AgenticProcess, Project, TypeId, dataContext, type TerminalRuntimeError } from '@sdk';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 
 /**
@@ -209,12 +211,21 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
  * set, picks per-kind copy + action from KIND_CONFIG and lets the user
  * fire the recovery in one click.
  */
-export function TerminalRuntimeErrorBanner() {
+export function TerminalRuntimeErrorBanner({ processId }: { processId?: string }) {
   const { terminalRuntimeError } = useDataContext();
   const [busy, setBusy] = useState(false);
   const { t } = useLingui();
 
   if (!terminalRuntimeError) return null;
+  // The error names ONE process, and this component is mounted by every
+  // terminal — so a failure had been showing over whichever terminal you
+  // happened to be looking at. A plain shell has no process at all and was
+  // reporting a Claude session's launch failure above its own prompt, with a
+  // Retry button that would restart something else entirely.
+  //
+  // A caller with no process passes none, which is exactly the plain-terminal
+  // case: nothing here can own a process failure, so nothing is shown.
+  if (processId !== terminalRuntimeError.processId) return null;
   const cfg = KIND_CONFIG[terminalRuntimeError.kind];
   if (!cfg) return null;
 
@@ -233,51 +244,93 @@ export function TerminalRuntimeErrorBanner() {
   const ActionIcon = cfg.actionIcon;
 
   return (
-    <div
-      className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[12px] text-amber-900 dark:text-amber-200"
-      data-testid="terminal-runtime-error-banner"
-      data-error-kind={terminalRuntimeError.kind}
-    >
-      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <div className="font-medium">{i18n._(cfg.title)}</div>
-        {detail && <div className="text-[11px] opacity-80">{detail}</div>}
+    // Its own provider: this banner mounts in several hosts and cannot assume
+    // one above it.
+    <TooltipProvider delayDuration={200}>
+      <div
+        className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[12px] text-amber-900 dark:text-amber-200"
+        data-testid="terminal-runtime-error-banner"
+        data-error-kind={terminalRuntimeError.kind}
+      >
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">{i18n._(cfg.title)}</div>
+          {detail && (
+            // ONE line, whatever the backend sent.
+            //
+            // `start_failure` is a verbatim server sentence and some of them are
+            // enormous: a spawn refusal quotes the whole worker PATH, which on
+            // Windows ran to a dozen wrapped lines and pushed the terminal off
+            // screen behind its own error. Truncating is not hiding — the full
+            // text is one hover away and one click from the clipboard, which is
+            // what it is actually for: pasting into a bug report.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="truncate text-[11px] opacity-80" data-testid="terminal-runtime-error-banner-detail">
+                  {detail}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start" className="max-h-60 max-w-xl overflow-auto">
+                {/* `whitespace-pre-wrap` + `break-all`: the long ones are
+                  separator-packed PATH strings with no spaces to wrap at, so
+                  without this the tooltip is one unreadable line. */}
+                <p className="whitespace-pre-wrap break-all text-[11px]">{detail}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        {/* Only a SERVER sentence is worth a copy button. `cfg.detail` is our own
+            boilerplate ("Click Restart to spawn a fresh PTY") — offering to put
+            that on the clipboard is an affordance for nothing, and it is the
+            long verbatim ones that people actually need to paste into a report. */}
+        {latchedReason && (
+          <CopyButton
+            // `latchedReason` gates this, so `detail` is the composed sentence —
+            // but that implication is not one TS can follow, and the fallback is
+            // the raw server text either way.
+            value={detail ?? latchedReason}
+            title={t`Copy the full error`}
+            testId="terminal-runtime-error-banner-copy"
+            className="shrink-0 rounded p-1 opacity-70 hover:opacity-100"
+            iconClassName="h-3.5 w-3.5"
+          />
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          disabled={busy}
+          onClick={() => {
+            // `onClick` wants a void return, so the async work is fired rather
+            // than returned — an unhandled rejection here would be invisible.
+            void (async () => {
+              setBusy(true);
+              try {
+                await cfg.action(terminalRuntimeError.processId);
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+          data-testid="terminal-runtime-error-banner-action"
+          className="shrink-0"
+        >
+          <ActionIcon className="h-3.5 w-3.5" />
+          {busy ? t`Working…` : i18n._(cfg.actionLabel)}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => dataContext.setTerminalRuntimeError(null)}
+          data-testid="terminal-runtime-error-banner-dismiss"
+          className="shrink-0 opacity-70 hover:opacity-100"
+          title={t`Dismiss banner (the runtime error stays — this just hides the affordance)`}
+        >
+          <Trans>Dismiss</Trans>
+        </Button>
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="default"
-        disabled={busy}
-        onClick={() => {
-          // `onClick` wants a void return, so the async work is fired rather
-          // than returned — an unhandled rejection here would be invisible.
-          void (async () => {
-            setBusy(true);
-            try {
-              await cfg.action(terminalRuntimeError.processId);
-            } finally {
-              setBusy(false);
-            }
-          })();
-        }}
-        data-testid="terminal-runtime-error-banner-action"
-        className="shrink-0"
-      >
-        <ActionIcon className="h-3.5 w-3.5" />
-        {busy ? t`Working…` : i18n._(cfg.actionLabel)}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={() => dataContext.setTerminalRuntimeError(null)}
-        data-testid="terminal-runtime-error-banner-dismiss"
-        className="shrink-0 opacity-70 hover:opacity-100"
-        title={t`Dismiss banner (the runtime error stays — this just hides the affordance)`}
-      >
-        <Trans>Dismiss</Trans>
-      </Button>
-    </div>
+    </TooltipProvider>
   );
 }

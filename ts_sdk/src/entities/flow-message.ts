@@ -309,19 +309,30 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   // -------- Header / Body interface (principle #6) -------- //
 
-  /** True iff at least one attachment requires a packed body bundle.
-   *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
-  /** THE one read rule for a message's time — mirrors
-   *  FlowMessage.event_time on the backend: `sent_at` pins a
-   *  channel-projected message to when the human sent it; everything else
-   *  falls through to the clocks it already trusts. Render THIS, never
-   *  created_date/updated_date directly. */
+  /** WHEN THIS MESSAGE ENTERED THE CONVERSATION — mirrors
+   *  FlowMessage.occurred_at on the backend. Its position in the feed and the
+   *  time on its bubble. Deliberately excludes `updated_date`: a message's
+   *  place is fixed when it is sent, and a delivery receipt (which bumps the
+   *  hub's `updated_date` and syncs back under LWW) must not slide it past
+   *  replies already written. Render THIS, never created_date/updated_date. */
+  get occurredAt(): string | null {
+    const pick = this.sent_at ?? this.created_date ?? null;
+    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
+    return pick instanceof Date ? pick.toISOString() : pick;
+  }
+
+  /** WHEN THIS MESSAGE LAST CHANGED — mirrors FlowMessage.event_time on the
+   *  backend: the recency/activity clock behind the inbox's "Xm ago". Includes
+   *  `updated_date` because a genuine edit IS new activity. For a message's
+   *  place in the feed read `occurredAt` instead. */
   get eventTime(): string | null {
     const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
     // Base-entity clocks are string|Date on the wire type; normalize to ISO.
     return pick instanceof Date ? pick.toISOString() : pick;
   }
 
+  /** True iff at least one attachment requires a packed body bundle.
+   *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
   hasBody(): boolean {
     for (const att of this.attachment ?? []) {
       if (att.attachment_type === AttachmentType.FILE) return true;
