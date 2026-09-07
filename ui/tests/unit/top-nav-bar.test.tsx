@@ -230,7 +230,9 @@ describe('the navigation bar', () => {
     await user.click(screen.getByTestId('top-nav-project-list'));
 
     const popover = await screen.findByTestId('top-nav-project-popover');
-    expect(within(popover).getAllByRole('button')).toHaveLength(2);
+    // Two project rows plus the trailing "Open project" button.
+    expect(within(popover).getAllByRole('button')).toHaveLength(3);
+    expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
     await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
 
     await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }));
@@ -323,6 +325,25 @@ describe('the navigation bar', () => {
 
     await screen.findByTestId('top-nav-project-popover');
     await waitFor(() => expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull());
+  });
+
+  it('keeps the hover card shut while the pointer roams the open list', async () => {
+    // The list hangs right under the pill, so moving into it re-crosses the
+    // hover trigger. The card must not re-open over the list and hide it.
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2)], globalTabCount: 0 };
+    const user = fakeClockUser();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project-list'));
+    const popover = await screen.findByTestId('top-nav-project-popover');
+
+    await user.hover(screen.getByTestId('top-nav-project-list'));
+    await user.hover(within(popover).getByTestId('projects-counter-open-project'));
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS * 2));
+
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    expect(screen.getByTestId('top-nav-project-popover')).toBeTruthy();
   });
 
   it('reloads the window on click', async () => {

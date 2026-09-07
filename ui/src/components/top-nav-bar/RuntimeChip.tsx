@@ -17,6 +17,7 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
+import { useState } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
@@ -107,6 +108,18 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   const { t } = useLingui();
   const menu = useProjectListMenu({ currentProjectId: project?.id, currentProjectName: project?.displayName });
 
+  // The hover card is controlled so it can never sit on top of the open list:
+  // while the list is open (the popover hangs right under the pill, so the
+  // pointer crosses the trigger on its way in), the card is forced shut and
+  // Radix's hover-to-open is ignored. Uncontrolled, the card would re-open
+  // over the list and hide it.
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const hoverCardOpen = hoverOpen && !menu.open;
+  const setListOpen = (open: boolean) => {
+    if (open) setHoverOpen(false);
+    menu.setOpen(open);
+  };
+
   const homeLabel = t`Open project home`;
   const { className: runtimeClass, heading } = RUNTIME_APPEARANCE[kind];
 
@@ -115,10 +128,13 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   const ProjectIcon = iconForType(Project.type);
 
   return (
-    // The hover card is left uncontrolled: Radix closes it when the trigger
-    // blurs, which opening the list (focus moves into the popover) does.
-    <HoverCard openDelay={RUNTIME_HOVER_OPEN_DELAY_MS} closeDelay={100}>
-      <Popover open={menu.open} onOpenChange={menu.setOpen}>
+    <HoverCard
+      open={hoverCardOpen}
+      onOpenChange={(open) => setHoverOpen(open && !menu.open)}
+      openDelay={RUNTIME_HOVER_OPEN_DELAY_MS}
+      closeDelay={100}
+    >
+      <Popover open={menu.open} onOpenChange={setListOpen}>
         <PopoverAnchor asChild>
           {/* A div, not a button: it holds two controls, and a button inside
               a button is invalid HTML (the nav-bar test pins that). The list
