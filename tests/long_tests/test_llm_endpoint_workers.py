@@ -48,7 +48,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.flowpad_types.enums import WorkerType
-from tests.long_tests._transcript_helpers import assert_prompt_ok, safe_exit
+from tests.long_tests._transcript_helpers import assert_prompt_ok, fail_no_transcript, safe_exit
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -213,7 +213,7 @@ async def _answer(process: AgenticProcess, deadline_s: float = 240.0) -> str:
             if history:
                 return json.dumps(history, default=str).lower()
         await asyncio.sleep(2.0)
-    raise AssertionError(f"no transcript after {deadline_s}s -- the turn never finished")
+    fail_no_transcript(deadline_s)
 
 
 def _delta(before: dict, after: dict) -> dict:

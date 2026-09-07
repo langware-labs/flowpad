@@ -757,6 +757,12 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
+    # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
+    # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
+    # (tab_order). A delegated write is exactly as invisible to the caller as an
+    # inline one — the guard follows private helpers for this reason.
+    "context_data",
+    "tab_order",
 )
 
 # Per-process serialization for prompt-queue drains so two ready edges can't
@@ -1643,7 +1649,15 @@ class AgenticProcess(Entity):
                 # ``self`` to ``fresh`` to stop two concurrent opens from
                 # double-spawning, but kept only the inbound copies above.)
                 for _field in _LAUNCH_OUTPUT_FIELDS:
-                    setattr(self, _field, getattr(fresh, _field))
+                    _value = getattr(fresh, _field)
+                    # Shallow-copy the dict fields (context_data,
+                    # last_started_snapshot): a bare reference would leave two
+                    # live entities aliasing ONE mutable dict. Nothing mutates
+                    # these in place today — every writer rebuilds and
+                    # reassigns — so this is closing a footgun, not a bug. A
+                    # deep copy is not an option: the payload carries immutable
+                    # TypeId values that choke it (see ``adopt_worker_session``).
+                    setattr(self, _field, dict(_value) if isinstance(_value, dict) else _value)
 
     async def start(
         self,

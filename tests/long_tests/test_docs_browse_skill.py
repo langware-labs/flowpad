@@ -45,23 +45,17 @@ from tests.test_settings import test_service_config
 
 SKILL_NAME = "docs-browse"
 
-# ── MODEL TIER ────────────────────────────────────────────────────────────────
-# Per-test, because the two tests need different things of the model:
-#
-#   deep_chain  (sm/haiku)  — NUDGED: the prompt names the index and says to walk
-#                             it. A mechanical file walk; passes cheaply at sm.
-#   ambient     (md/sonnet) — UN-NUDGED: the model must reach for docs-browse on
-#                             its own. That is a REASONING behaviour, and it is
-#                             tier-bound. Measured on/off, same vault, only the
-#                             tier changed:
-#                               sm : skill_calls=[], no index.md   -> FAIL (3/3)
-#                               md : skill_calls=['docs-browse']   -> PASS (3/3)
-#
-# The skill is discoverable at BOTH tiers — assistant_enabled=True, the assistant
+# Model tier is per test — see the TIER POLICY in tests/long_tests/_model_tier.py.
+#   deep_chain[sm] — NUDGED (the prompt names the index and says to walk it): a
+#                    mechanical walk, passes cheaply at sm.
+#   ambient[md]    — UN-NUDGED: the model must reach for docs-browse on its own.
+#                    Measured, same vault, only the tier changed:
+#                      sm -> skill_calls=[], no index.md read  = FAIL (3/3)
+#                      md -> skill_calls=['docs-browse']       = PASS (3/3)
+# The skill is discoverable at BOTH tiers (assistant_enabled=True, the assistant
 # root is in resolved_add_dirs, and test_skill_transcript_analysis observes real
-# SKILL_CALLs on claude. Haiku simply answers by grep. Pinning a model too small
-# to exhibit the behaviour under test made a harness choice look like a product
-# bug; pinning sonnet for BOTH would tax the mechanical test for no reason.
+# SKILL_CALLs at sm) — haiku simply answers by grep.
+
 #: Poll budget inside the approved 120s pytest cap, leaving margin for asserts.
 _DEADLINE_S = 110
 _REPO_DOCS = Path(__file__).parents[2] / "docs"

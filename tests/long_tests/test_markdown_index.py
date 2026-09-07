@@ -36,6 +36,24 @@ from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_l
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
+# Model tier: md, not the default sm — see the TIER POLICY in
+# tests/long_tests/_model_tier.py. Measured here: sm is FLAKY (1 fail / 2 pass;
+# the failure a fast ~56s exit with index.md files missing, no timeout), md is
+# 3/3 and faster (131-146s vs 181s).
+#
+# Budgets: 30s->300s/600s and 28s->240s, approved 2026-09-07. MEASURED, not
+# guessed — a cold build is ~140s (149 transcript entries) and `incremental`
+# runs that loop twice; observed cold 100-162s, incremental 178-255s, so the
+# budgets are ~1.5x the worst run. The old 28s was NEVER met and was never
+# measured; it read green for months only because a conftest hook relabelled
+# every long-test TimeoutError as "skipped: Anthropic API issue" (removed in
+# a51406a87). Ruled out by measurement: skill growth (the 2026-05-23 original
+# measures 137.2s vs today's 139.8s) and the per-folder renderer (0.8s x3).
+# These are upper bounds on a HANG — stream_transcript returns as soon as the
+# worker goes idle, so a passing run is not slowed.
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
 # ── MODEL TIER ────────────────────────────────────────────────────────────────
 # md/sonnet, NOT the sm/haiku these inherit from ``make_process`` by default.
 # Driving the markdown_index skill end to end (plan.py -> summarise every stale
