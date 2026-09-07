@@ -125,6 +125,11 @@ export interface LLMUsageReport {
 export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
   const info = new ActionInfo(name, type, id, method);
   if (subpath) info.subpath = subpath;
+  // Hub-owned — reflect to the hub, or the desk backend (no handler for these)
+  // falls through to a generic entity read and answers 200 with the ENTITY.
+  // Reflection needs a target entity (`should_reflect_to_hub`); id-less actions
+  // (`catalog`, `token_plan/me`) are served by the desk's own proxy action.
+  if (id !== null) info.hubReflect = true;
   return info;
 }
 
@@ -141,7 +146,7 @@ export class LlmEndpointsService {
    */
   async listShared(): Promise<LLMEndpoint[]> {
     const rows = await dataManager.callAction<undefined, Array<Record<string, unknown>>>(
-      new ActionInfo('catalog', TYPE, null, 'GET'),
+      hubAction('catalog', TYPE, null, 'GET'),
     );
     return (rows ?? []).map((row) => new LLMEndpoint(row as never));
   }

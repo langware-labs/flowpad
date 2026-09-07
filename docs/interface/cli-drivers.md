@@ -248,12 +248,28 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |
 | API-key auth (`ApiAuthSpec`) | OpenRouter or the FlowPad hub endpoint (NOT a direct Anthropic key: `base_env` is pinned to OpenRouter's URL, so selecting one would post that key to OpenRouter); env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
 
-When a harness's `Capability.auth_mode == "api"`, `resolve_worker_api_auth`
-(`api_auth.py`) reads the driver's `ApiAuthSpec`, pulls the provider key via
-`get_lm_api`, folds the provider env into the spawn (through
-`apply_worker_secret_env`), and overrides `resolved_model` with the spec's
-tier→slug map. A missing key raises `WorkerSpawnError` rather than silently
-falling back to the device-login picker.
+WHICH source funds a spawn is `resolve_llm_source`'s decision (`llm_source.py`);
+`api_auth.py` owns the other half — turning that decision into env, a model slug
+and config overrides. `resolve_worker_api_auth(process)` resolves the source and
+hands it to `binding_for_candidate(worker_type, candidate, tier=…)`, which is the
+half that does not care where the choice came from: it reads the driver's
+`ApiAuthSpec`, takes the key off the chosen endpoint (the hub login for a hub
+endpoint, the stored key otherwise — never the environment, so a spawn cannot be
+funded by something the picker never counted), folds the provider env into the
+spawn through `apply_worker_secret_env`, and resolves the slug from the spec's
+tier→slug map ⊕ the harness's `Capability.model_map`. A missing key raises
+`WorkerSpawnError` rather than silently falling back to the device-login picker.
+
+The same binding also has to reach a **person at a prompt**, which is what
+`flow llm` spends: `shell_binding` renders it for one terminal (exports, plus a
+generated file and the variable that points at it for codex and opencode, which
+honour no base-URL variable at all), and `user_binding` renders it into the file
+each harness reads by default so every terminal is funded. Both are thin over the
+same `WorkerApiAuth`, and the per-harness facts they need — `prompt_model_env_vars`
+(the model var a surface with no argv must set), `pointer_env`/`pointer_is_dir`,
+`config_filename`, `user_config_path`/`user_config_fmt`/`user_config_note` — live on
+`ApiAuthSpec` beside the rest, so a new harness is one spec literal rather than an
+edit in each renderer.
 
 ### Vendor-specific notes
 

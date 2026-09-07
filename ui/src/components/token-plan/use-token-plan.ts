@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const TOKEN_PLAN_QUERY_KEY = ['token-plan', 'me'] as const;
 
-export function useTokenPlan(options: { enabled?: boolean } = {}) {
+export function useTokenPlan(options: { enabled?: boolean; refetchOnWindowFocus?: boolean } = {}) {
   return useQuery<TokenPlan>({
     queryKey: TOKEN_PLAN_QUERY_KEY,
     queryFn: () => tokenPlanService.me(),
@@ -19,7 +19,7 @@ export function useTokenPlan(options: { enabled?: boolean } = {}) {
     // No poll — every mutation path invalidates through `useInvalidateTokenPlan`,
     // and a focus refetch covers "I came back after spending". A background
     // interval would re-run that ~30-query read forever on any open hub tab.
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: options.refetchOnWindowFocus ?? true,
     retry: false,
     enabled: options.enabled ?? true,
   });
