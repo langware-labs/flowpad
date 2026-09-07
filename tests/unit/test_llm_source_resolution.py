@@ -82,6 +82,34 @@ def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
     llm_endpoint.set_hub_llm_endpoint(typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool")
 
 
+def _grant(monkeypatch, *, typeid: str = EP1) -> None:
+    """A hub endpoint the user may spend, with the box NOT bound to it.
+
+    The state a fresh desktop install is in after someone grants it a budget: the hub has
+    listed the endpoint, nothing has pushed a binding. ``_bind`` is the other half — the
+    same wallet, formally assigned.
+    """
+    import time
+
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.config import default_service_config
+    from flow_sdk.instance_settings import llm_endpoint as settings
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
+    set_api_key("fp-hub-key")
+    settings.reset_cache()
+    granted = LLMEndpoint(
+        id=typeid.split("-", 1)[1],
+        name="Team pool",
+        provider="openrouter",
+        kind="hub",
+        invoke_url=f"/api/v1/graph/{typeid}/invoke",
+    )
+    settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [granted])
+    assert settings.get_hub_llm_endpoint() is None, "a grant is not a binding"
+
+
 def _process(worker_type: str = "claude", *, endpoint: str | None = None, project_id: str | None = None):
     return SimpleNamespace(
         driver=SimpleNamespace(name=worker_type),
@@ -113,7 +141,7 @@ _ERROR = DeviceLoginState.ERROR
 
 
 @pytest.mark.parametrize(
-    ("state", "bound", "eligible", "auto"),
+    ("state", "wallet", "eligible", "auto"),
     [
         (_AUTH, False, True, True),
         (_AUTH, True, True, True),  # proven beats a mere offer
@@ -121,20 +149,20 @@ _ERROR = DeviceLoginState.ERROR
         (_IDLE, True, False, False),
         (_ERROR, True, False, False),
         (None, False, True, True),  # nobody asked: today's desktop default
-        (None, True, True, False),  # nobody asked, but this box was given an endpoint
+        (None, True, True, False),  # nobody asked, but a wallet is there to lose to
         # the string forms too -- the field is ``(str, Enum)``, so both reach this code
         ("authenticated", False, True, True),
         ("idle", False, False, False),
     ],
 )
-def test_the_device_rung_only_asserts_what_it_was_told(state, bound, eligible, auto) -> None:
+def test_the_device_rung_only_asserts_what_it_was_told(state, wallet, eligible, auto) -> None:
     """``login_state`` is ``Persist.FALSE``, so ``None`` means "nobody has asked" -- the
     COMMON state after any restart, not an edge case. We rule a device login out only on a
-    verdict we were actually given, and let an explicit box binding break the tie when we
-    have none."""
+    verdict we were actually given, and let a spendable wallet break the tie when we have
+    none."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    source = _device_source("claude", state, bound).source
+    source = _device_source("claude", state, wallet).source
     assert (source.eligible, source.auto) == (eligible, auto)
     # a verdict we were GIVEN is cached evidence; no verdict is only a presumption
     assert str(source.authority) == ("presumed" if state is None else "cached")
@@ -176,6 +204,44 @@ async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monk
     _bind(monkeypatch)
     endpoint, chosen = await resolve_llm_endpoint(_process())
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
+
+
+async def test_a_granted_budget_outranks_a_harness_nobody_has_signed_into(env, monkeypatch) -> None:
+    """A budget you can spend beats a login nobody has verified — bound or not.
+
+    Reported from a real desktop install: the user was granted a budget on the hub, installed
+    Flowpad and Claude Code fresh, and every spawn died on Claude's own "Could not resolve
+    authentication method" with the budget untouched. The ladder asked whether a wallet had
+    been ASSIGNED to this box rather than whether one could be SPENT, so an unprobed device
+    login sat at ``_RANK_DEVICE`` with ``auto=True`` and won against an eligible hub endpoint
+    at ``_RANK_ENDPOINT``. Restarting fixed it only because the probe then had something to
+    answer about.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
+
+    _grant(monkeypatch)
+    device = _by_kind(await list_llm_candidates("claude"), "device")[0]
+    assert not device.auto, "an unverified login must not auto-win while a wallet is spendable"
+
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
+
+
+async def test_a_granted_budget_actually_reaches_the_spawn(env, monkeypatch) -> None:
+    """The half the user feels: the spawn is handed hub credentials, not nothing.
+
+    Enters through ``resolve_worker_api_auth``, the binding a spawn really uses, rather than
+    the resolver above it — a DEVICE win returns ``None`` there, which is precisely "spawn with
+    whatever the vendor CLI has", and the vendor CLI had nothing.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _grant(monkeypatch)
+    auth = await resolve_worker_api_auth(_process())
+    assert auth is not None, (
+        "the spawn was handed no credentials while a granted budget was available — this is the "
+        "state that dies on the vendor's own 'Could not resolve authentication method'"
+    )
 
 
 async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None:
