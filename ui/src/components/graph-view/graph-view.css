@@ -829,19 +829,105 @@
   font-weight: 600;
 }
 
-/* ============ Property panel ============ */
-.property-panel,
-.access-panel {
+/* ============ Node panel ============
+   ONE panel beside the graph, anchored left. There were briefly two — an
+   inspector on the right and an access editor on the left — which put a window
+   on each side of the canvas, both naming the same node. The node's identity is
+   the header; tabs switch only the body beneath it. */
+.node-panel {
   width: 320px;
   flex-shrink: 0;
   background: var(--bg-panel);
+  border-inline-end: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.property-panel {
-  border-inline-start: 1px solid var(--border);
-  overflow: hidden;
+.node-panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+/* Without tabs the header carries the separation the tab strip would provide. */
+.node-panel-header--divided {
+  border-bottom: 1px solid var(--border);
+}
+.node-panel-header .icon-and-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.node-panel-header .big-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.node-panel-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.node-panel-close {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+}
+.node-panel-close:hover {
+  color: var(--text);
+  background: var(--hover-strong);
+}
+
+.node-panel-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.node-panel-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 9px 8px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font:
+    500 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.node-panel-tabs button:hover {
+  color: var(--text);
+}
+.node-panel-tabs button[aria-selected='true'] {
+  color: var(--text);
+  border-bottom-color: rgb(129, 140, 248);
+}
+
+.node-panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-bottom: 12px;
 }
 
 .property-empty {
@@ -869,34 +955,6 @@
   line-height: 1.5;
 }
 
-.property-body {
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-}
-
-.property-header {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-}
-.property-header .icon-and-pill {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.property-header .big-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(99, 102, 241, 0.18);
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 .type-pill {
   display: inline-flex;
   align-items: center;
@@ -1005,12 +1063,6 @@
   letter-spacing: 0.5px;
   align-self: flex-start;
 }
-.property-header h2 {
-  font-size: 14px;
-  font-weight: 600;
-  word-break: break-word;
-}
-
 .section {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
@@ -1149,58 +1201,10 @@
   cursor: grabbing;
 }
 
-/* ============ Access panel (LEFT) ============
-   Same shell as `.property-panel`, anchored to the opposite edge so the node
-   inspector and the access editor can both be open on one selection without
-   competing for the same side. The border side is the whole difference. */
-.access-panel {
-  border-inline-end: 1px solid var(--border);
-  overflow-y: auto;
-  padding-bottom: 12px;
-}
-
-.access-panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 14px 14px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.access-panel-eyebrow {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.access-panel-header h2 {
-  margin: 2px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.access-panel-header button {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 4px;
-}
-
-.access-panel-header button:hover {
-  color: var(--text);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-
-.access-panel-parent,
-.access-panel-empty,
-.access-panel-error {
+/* ============ Access tab ============ */
+.access-parent,
+.access-empty,
+.access-error {
   margin: 0;
   padding: 10px 14px;
   font-size: 12px;
@@ -1208,7 +1212,7 @@
   line-height: 1.5;
 }
 
-.access-panel-error {
+.access-error {
   color: var(--danger, #dc2626);
 }
 

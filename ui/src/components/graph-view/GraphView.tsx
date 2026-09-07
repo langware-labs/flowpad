@@ -7,11 +7,10 @@ import { AtlasGraphRenderer } from './graph/AtlasGraphRenderer';
 import type { GraphRenderer } from './graph/graphRenderer';
 import { loadDepGraph, rebuildDepGraph, type GraphLayout } from './graph/loadDepGraph';
 import { loadWorldView, refreshWorldView } from './graph/loadWorldView';
-import { AccessPanel } from './ui/AccessPanel';
+import { NodePanel } from './ui/NodePanel';
 import { heatSummaryForGraph } from './graph/heat';
 import type { Theme } from './graph/themeColors';
 import { HeatLegend } from './ui/HeatLegend';
-import { PropertyPanel } from './ui/PropertyPanel';
 import { TopBar } from './ui/TopBar';
 import { useGraphUrlState, type SubgraphCodec } from './url-state';
 import { SURFACE, type GraphSurface } from './surfaces';
@@ -311,11 +310,16 @@ export function GraphView({
       data-edge-count={edgeCount}
     >
       <div className="app">
-        {isWorldView && selected ? (
-          <AccessPanel
+        {!atlasActive ? (
+          <NodePanel
             node={selected}
+            localRootKey={urlState.focus}
+            showWorldViewProperties={spec.signals}
+            showAccess={isWorldView}
+            onNeighborClick={(key) => navigateSelection(key)}
+            onFocus={navigateFocus}
             onClose={() => setUrlState({ selected: undefined })}
-            onChanged={handleAction}
+            onChanged={() => void handleAction()}
           />
         ) : null}
         <div className="main-col">
@@ -454,15 +458,6 @@ export function GraphView({
             {heatSummary && !loading && !error && <HeatLegend summary={heatSummary} />}
           </div>
         </div>
-        {!atlasActive ? (
-          <PropertyPanel
-            node={selected}
-            localRootKey={urlState.focus}
-            showWorldViewProperties={spec.signals}
-            onNeighborClick={(key) => navigateSelection(key)}
-            onFocus={navigateFocus}
-          />
-        ) : null}
       </div>
     </div>
   );
