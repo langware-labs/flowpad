@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   getByTypeId: vi.fn(),
   invite: vi.fn(),
   standing: vi.fn(),
+  copyToClipboard: vi.fn(),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
@@ -65,6 +66,7 @@ vi.mock('@sdk', async (importOriginal) => {
       delete: h.del,
       getByTypeId: h.getByTypeId,
     },
+    copyToClipboard: h.copyToClipboard,
   };
 });
 // `EndpointControls` renders on every row that has a pool; it is its own dedicated suite
@@ -259,6 +261,34 @@ describe('OrgUnit', () => {
     h.team.mockReturnValue(idle);
     draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
     expect(screen.getByTestId('org-over-allocated')).toBeTruthy();
+  });
+
+  it('offers the org and team ids as a copy icon, without printing either on the row', async () => {
+    // The id is what support and every API call ask for, and noise to whoever is reading the page.
+    // So it is one click away and no glance away -- an icon, never the uuid as text.
+    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+    h.team.mockReturnValue(idle);
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+
+    expect(screen.queryByText(UUID(1))).toBeNull();
+    expect(screen.queryByText(UUID(4))).toBeNull();
+
+    fireEvent.click(screen.getByTestId('org-copy-id'));
+    await waitFor(() => expect(h.copyToClipboard).toHaveBeenCalledWith(UUID(1)));
+
+    fireEvent.click(screen.getByTestId(`team-${UUID(4)}-copy-id`));
+    await waitFor(() => expect(h.copyToClipboard).toHaveBeenLastCalledWith(UUID(4)));
+  });
+
+  it('offers the same copy icon to a member, who may not rename the row it sits on', async () => {
+    h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
+    h.team.mockReturnValue(idle);
+    h.standing.mockReturnValue(standing({ teams: [{ id: UUID(2), name: 'Class A', role: 'member' }] }));
+    draw(<OrgUnit orgId={UUID(1)} orgName="Course Project" onDeleted={vi.fn()} />);
+
+    expect(screen.queryByText(UUID(1))).toBeNull();
+    fireEvent.click(screen.getByTestId('org-standing-copy-id'));
+    await waitFor(() => expect(h.copyToClipboard).toHaveBeenCalledWith(UUID(1)));
   });
 
   it('shows a refused caller their own standing, not a line about what admins may see', () => {

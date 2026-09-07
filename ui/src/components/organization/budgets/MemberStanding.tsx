@@ -14,7 +14,9 @@
  * the browser: the role shown is the one the hub resolved.
  */
 import { Loader2 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
+
+import { CopyButton } from '@src/components/ui/copy-button';
 
 import { useOrgStanding } from './use-budgets';
 
@@ -27,6 +29,20 @@ function RoleChip({ role, testId }: { role: string; testId?: string }) {
     >
       <Trans>you are {role}</Trans>
     </span>
+  );
+}
+
+/** The id, one click away and no glance away — the same affordance `EditableTitle` gives the
+ *  admin's rows. Never rendered as text: a raw uuid is noise to whoever is reading the row. */
+function CopyId({ id, testId }: { id: string; testId?: string }) {
+  const { t } = useLingui();
+  return (
+    <CopyButton
+      value={id}
+      title={t`Copy id`}
+      testId={testId}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+    />
   );
 }
 
@@ -46,9 +62,12 @@ export function MemberStanding({ orgId, orgName }: { orgId: string; orgName?: st
   return (
     <section className="rounded-lg border border-border" data-testid="org-standing">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <h2 className="min-w-0 truncate text-lg font-semibold" data-testid="org-standing-name">
-          {name}
-        </h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="min-w-0 truncate text-lg font-semibold" data-testid="org-standing-name">
+            {name}
+          </h2>
+          <CopyId id={orgId} testId="org-standing-copy-id" />
+        </div>
         <div className="flex items-center gap-2">
           {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           {data?.role && <RoleChip role={data.role} testId="org-standing-role" />}
