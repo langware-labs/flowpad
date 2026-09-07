@@ -116,11 +116,14 @@ export function HomeLanding() {
   // chat process, embed the `vibe` persona, open the workspace, prompt —
   // uploading any attachments to the process input dir first). Same shared
   // path as flow-page's "New chat" starter.
-  const handleVibeSubmit = useStartVibeSession();
+  const { start: handleVibeSubmit, installDialog } = useStartVibeSession();
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       <HomeCustomBackground url={homeBackgroundUrl} />
+      {/* Raised when the first prompt cannot start because no harness is
+          installed — outside VibeSwap so it survives either surface. */}
+      {installDialog}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         <VibeSwap
           vibe={

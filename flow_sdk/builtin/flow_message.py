@@ -689,14 +689,30 @@ class FlowMessage(Entity):
         return False
 
     @property
+    def occurred_at(self) -> Optional[datetime]:
+        """WHEN THIS MESSAGE ENTERED THE CONVERSATION — its position in the
+        feed and the time on its bubble. Read this for anything about WHERE a
+        message sits in the timeline, never ``event_time``.
+
+        ``sent_at`` pins a channel-projected message (a Slack/email backfill)
+        to when the human actually sent it; otherwise ``created_date`` is the
+        birth time, hub-stamped for a received message and compose time for
+        one of ours. ``updated_date`` is deliberately excluded: it is a
+        PROCESSING clock, and a message's place is fixed when it is sent.
+        ``project_pointers_to_entity`` documents the two-clock split and the
+        incident that forced it."""
+        return self.sent_at or self.created_date
+
+    @property
     def event_time(self) -> Optional[datetime]:
-        """THE one read rule for a message's time — every derivation (the
-        conversation pointer rebuild, recency, and therefore inbox order and
-        bubble times) reads this, never ``created_date``/``updated_date``
-        directly. ``sent_at`` pins a channel-projected message to when the
-        human actually sent it; for everything else ``updated_date`` keeps
-        today's behavior (an authored message's edit bumps recency) with
-        ``created_date`` as the final fallback."""
+        """WHEN THIS MESSAGE LAST CHANGED — the conversation's recency clock,
+        i.e. the inbox's "Xm ago". Read this for anything about ACTIVITY;
+        for a message's place in the feed read ``occurred_at`` instead.
+
+        Here ``updated_date`` is correct and load-bearing: a genuine edit is
+        new activity and must float the conversation. It is kept honest at the
+        other end by ``FlowMessage.is_stale``, which refuses to advance the
+        local clock for a bare touch."""
         return self.sent_at or self.updated_date or self.created_date
 
     def attachments(self) -> list[Attachment]:

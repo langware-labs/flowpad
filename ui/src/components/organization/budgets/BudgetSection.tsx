@@ -160,6 +160,7 @@ export function OrgUnit({ orgId, orgName, onDeleted }: { orgId: string; orgName?
             onDelete={() => setConfirmDelete(true)}
             deleting={deleting}
             manage={org.can_manage}
+            copyId={orgId}
             headingClassName="text-lg font-semibold"
             testIdPrefix="org"
           />
@@ -552,6 +553,7 @@ function TeamUnit({
           onDelete={() => setConfirmDelete(true)}
           deleting={deleting}
           manage={team.can_manage}
+          copyId={team.id}
           headingClassName="text-sm font-semibold"
           testIdPrefix={`team-${team.id}`}
         />

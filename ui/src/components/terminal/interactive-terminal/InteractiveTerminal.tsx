@@ -1274,7 +1274,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // Only the dock we are actually showing may type into us. Warm-mounted
     // panels for other tabs share this component, and a command addressed to
     // one terminal must never land in another.
-    if (currentDock?.pointer !== sessionId) return;
+    //
+    // Through `shellId`, because the dock spells a shell as its TypeId
+    // (`shell-<uuid>`) while `sessionId` here is the bare uuid — comparing the
+    // two raw never matched, and the command was silently never typed.
+    if (currentDock?.shellId !== sessionId) return;
     const ask = currentDock?.shellStartCommand ?? null;
     if (!ask || startCommandRef.current === ask.command) return;
     startCommandRef.current = ask.command;
@@ -1657,8 +1661,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
         {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,
-          shell entity missing, network). Renders nothing when null. */}
-        <TerminalRuntimeErrorBanner />
+          shell entity missing, network). Renders nothing when null, and
+          nothing when the failure belongs to a DIFFERENT process: a plain
+          terminal passes no id and so never wears another session's error. */}
+        <TerminalRuntimeErrorBanner processId={process?.id} />
 
         <PtySyncProvider session={ptySyncRef.current}>
           {/* Column header — only for Claude pane; terminal debug chrome

@@ -132,8 +132,16 @@ class LLMSourceError(Exception):
 # ── inventory ────────────────────────────────────────────────────────────────────
 
 
-def _device_source(worker_type: str, login_state, box_bound: bool) -> Candidate:
+def _device_source(worker_type: str, login_state, wallet_available: bool) -> Candidate:
     """The vendor device login for *worker_type*, and what we actually know about it.
+
+    ``wallet_available`` is "there is a hub endpoint this box can SPEND", not "a hub
+    endpoint was assigned to it". The distinction is the whole rung: when nobody has
+    probed the login we do not know whether it works, and presuming it does is only safe
+    while there is nothing better to fall back on. If a wallet is there, an unverified
+    login must lose to it -- being wrong costs a spawn that dies on the vendor's own
+    "Could not resolve authentication method" with the budget untouched, which is what a
+    fresh desktop install with a granted budget and no vendor login used to do.
 
     Deliberately says nothing about whether the CLI is INSTALLED. That is a different
     question with an owner already: ``build_worker_spawn_env`` refuses a missing binary
@@ -187,12 +195,14 @@ def _device_source(worker_type: str, login_state, box_bound: bool) -> Candidate:
         LLMSource(
             endpoint_typeid=typeid,
             name=name,
-            rank=_RANK_DEVICE_UNPROVEN if box_bound else _RANK_DEVICE,
+            rank=_RANK_DEVICE_UNPROVEN if wallet_available else _RANK_DEVICE,
             eligible=True,
-            auto=not box_bound,
+            auto=not wallet_available,
             authority=LLMSourceAuthority.PRESUMED,
             detail=(
-                "sign-in not checked; this box is bound to a hub endpoint" if box_bound else "sign-in state not checked"
+                "sign-in not checked; a hub endpoint can fund this box"
+                if wallet_available
+                else "sign-in state not checked"
             ),
         ),
     )
@@ -337,9 +347,19 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     # reading each value would decrypt and re-parse the whole blob once per provider.
     stored = {str(rec.get("name", "")) for rec in get_secrets()}
 
-    candidates = [_device_source(worker_type, getattr(cap, "login_state", None), bound is not None)]
+    # Built FIRST, because what the device rung is allowed to presume depends on it.
+    endpoint_candidates = _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
+    # "Is there a wallet this box can actually spend?" -- NOT "was one formally assigned".
+    # A granted budget the box was never BOUND to is still money the user has, and an
+    # unverified device login that outranks it spends nothing at all: the spawn is handed no
+    # credentials and dies on the vendor's own "Could not resolve authentication method"
+    # with the budget untouched. Keying on the binding made every unbound box presume its
+    # device login, which is the state a fresh desktop install with a hub budget is in.
+    spendable_wallet = any(c.source.eligible for c in endpoint_candidates)
+
+    candidates = [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
     candidates += _key_sources(spec, rows, stored)
-    candidates += _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
+    candidates += endpoint_candidates
     return candidates, cap
 
 
@@ -516,9 +536,27 @@ def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> lis
     questions about one inventory, and the picker must not ask this one: filtering the list
     of choices BY the current choice is circular, and it is what left a box pinned to a
     vanished endpoint with no row it could click. See :func:`llm_picker_view`.
+
+    **A Flowpad preference is not applied while this box is signed out of the hub.** A
+    preference names which source to prefer; it cannot conjure one this box has no key to
+    sign for. Applied anyway it did not select the hub budget -- there is no hub candidate
+    at all when signed out -- it only made everything ELSE ineligible, so a machine with a
+    working device login and a stored key had nothing to spawn with:
+
+        claude has no usable LLM source:
+          - claude device login: claude is set to use flowpad
+          - openrouter key: claude is set to use flowpad
+
+    Ignoring it drops the box through to the ranking underneath, which is exactly where a
+    box with no stated preference already lands. Nothing about the order is redefined here
+    and the preference is not cleared -- it is a stored choice that becomes live again the
+    moment the box signs in, and rewriting it on a transient sign-out would silently
+    discard a decision the user made.
     """
     preferred = _preferred(cap)
     if not preferred:
+        return candidates
+    if preferred == LMApiProvider.FLOWPAD.value and not _hub_logged_in():
         return candidates
     name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
     why = f"{worker_type} is set to use {name}"
@@ -623,6 +661,12 @@ class PickerView(NamedTuple):
     #: other way to say WHY a box is stuck once the choices stop carrying the overlay's
     #: sentence, and "the list is the explanation" has to keep holding.
     blocked: str
+    #: A stated preference that is NOT in force, and why -- empty when the preference (if any)
+    #: is being honoured. Distinct from ``blocked``: nothing is stuck, something is funding the
+    #: harness, and the screen would otherwise show a Flowpad preference silently having no
+    #: effect. Saying it is the difference between "your setting is being ignored, here is
+    #: why" and a box that appears to disobey its own configuration.
+    note: str = ""
 
 
 async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> PickerView:
@@ -654,6 +698,26 @@ async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrig
         offers=sorted(inventory, key=lambda c: c.source.rank),
         chosen=chosen,
         blocked="" if chosen else next((c.source.reason for c in overlaid if c.source.reason), ""),
+        note=_ignored_preference_note(worker_type, cap, constraint),
+    )
+
+
+def _ignored_preference_note(worker_type: str, cap, constraint) -> str:
+    """The sentence for a Flowpad preference this box cannot act on.
+
+    ``_apply_preference`` drops such a preference so the ranking underneath still funds the
+    harness. That rescue is silent by construction, and silence is its own bug here: the
+    screen shows "use Flowpad" selected while something else plainly does the spending, and
+    a reader has no way to connect the two. This is the connection.
+
+    Says nothing when a constraint is in force -- a process or project pin already outranks
+    the preference, so reporting the preference as "ignored" would blame the wrong rung.
+    """
+    if constraint is not None or _preferred(cap) != LMApiProvider.FLOWPAD.value or _hub_logged_in():
+        return ""
+    return (
+        f"{worker_type} is set to use Flowpad, but this box is signed out of Flowpad — "
+        f"falling back to its other sources until you sign in."
     )
 
 

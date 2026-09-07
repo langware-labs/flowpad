@@ -26,7 +26,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
-import { AlertCircle, ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowUpRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  Loader2,
+  Terminal,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -36,6 +46,7 @@ import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TokenPlanChip } from '@src/components/token-plan/TokenPlanChip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
@@ -617,8 +628,9 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
   );
 }
 
-/** Detail: one assistant, focused on the single next action. */
-function HarnessDetail({
+/** Detail: one assistant, focused on the single next action. Exported for the
+ *  unit test that pins the not-installed arm. */
+export function HarnessDetail({
   kind,
   onBack,
   onDone,
@@ -633,6 +645,7 @@ function HarnessDetail({
   keys: LmApiKeySummary[];
 }) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   const {
     capability,
     status,
@@ -656,6 +669,21 @@ function HarnessDetail({
     apiAvailable,
     setAuthMode,
   } = useHarness(kind, keys);
+
+  // The install one-liner for THIS machine, or null when the vendor publishes
+  // no unattended route here (see `CapabilitySpec.install_commands`). Read off
+  // the capability row, so the modal offers exactly what the Capabilities page
+  // and the "harness is required" dialog offer — one source, three surfaces.
+  const installCommand = capability?.install_command ?? null;
+
+  // Types the command at a prompt and stops; the user presses Enter. Dismisses
+  // the modal on the way out so the terminal it just opened is what they see —
+  // leaving a dialog over the thing it told them to look at reads as a bug.
+  const tryAutoInstall = useCallback(() => {
+    if (!installCommand) return;
+    onDone();
+    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+  }, [installCommand, navigation, onDone]);
 
   return (
     <div style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }} className="flex flex-col">
@@ -743,12 +771,33 @@ function HarnessDetail({
         {status === 'unavailable' ? (
           <div className="flex flex-col items-center gap-4 text-center">
             <DialogDescription className="text-sm text-muted-foreground">
-              <Trans>
-                {name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign
-                in.
-              </Trans>
+              {installCommand ? (
+                <Trans>
+                  {name} isn't installed on this computer yet. Install it below, then come back here to sign in.
+                </Trans>
+              ) : (
+                <Trans>
+                  {name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign
+                  in.
+                </Trans>
+              )}
             </DialogDescription>
-            <Button className="w-full" onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}>
+            {/* The vendor's own published one-liner, resolved by the backend for
+                THIS platform. It leads because it is the shortest route from
+                "not installed" to "signed in" — the guide stays for the
+                platforms with no unattended installer (OpenCode on Windows) and
+                for anyone who would rather read first. */}
+            {installCommand && (
+              <Button className="w-full gap-1.5" data-testid="harness-auto-install" onClick={tryAutoInstall}>
+                <Terminal className="h-4 w-4" />
+                <Trans>Try auto install</Trans>
+              </Button>
+            )}
+            <Button
+              variant={installCommand ? 'outline' : 'default'}
+              className="w-full"
+              onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}
+            >
               <Trans>Show setup guide</Trans>
             </Button>
           </div>

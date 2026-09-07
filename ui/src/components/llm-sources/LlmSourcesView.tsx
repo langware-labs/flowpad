@@ -19,7 +19,7 @@ import {
   type LLMSource,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertCircle, ArrowUpRight, Check, KeyRound, Waypoints } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
@@ -35,7 +35,15 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
 import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
-import { harnessKinds, labelForWorker, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
+import {
+  harnessKinds,
+  labelForWorker,
+  useLlmSources,
+  useRecheckSignIn,
+  useRefreshLoginStates,
+  useSelectSource,
+  workerOf,
+} from './use-llm-sources';
 import { visibleSources } from './visible-sources';
 
 function SourceRow({
@@ -62,6 +70,7 @@ function SourceRow({
 }) {
   const { t } = useLingui();
   const worker = workerOf(harness);
+  const recheck = useRecheckSignIn();
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
@@ -113,14 +122,34 @@ function SourceRow({
         </Button>
       )}
       {needsSignIn ? (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openHarnessLoginModal()}
-          data-testid={`llm-source-signin-${worker}`}
-        >
-          <Trans>Sign in</Trans>
-        </Button>
+        <>
+          {/* "I already signed in — look again."
+              A refusal the harness made mid-turn is LATCHED, and a silent
+              re-check may not clear it (a stored credential proves presence,
+              not validity). So a person who ran `claude /login` in their own
+              terminal saw this row keep saying "signed out" with only a Sign in
+              button — offering to start a login they had already completed.
+              This is the same forced re-check the Assistants & keys modal's
+              Test button makes, put where the problem is actually reported. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={recheck.isPending}
+            onClick={() => recheck.mutate(harness)}
+            title={t`Already signed in elsewhere? Check again`}
+            data-testid={`llm-source-recheck-${worker}`}
+          >
+            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openHarnessLoginModal()}
+            data-testid={`llm-source-signin-${worker}`}
+          >
+            <Trans>Sign in</Trans>
+          </Button>
+        </>
       ) : needsKey ? (
         <Button
           size="sm"
@@ -150,6 +179,10 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { status, isLoading } = useLlmSources();
+  // Ask the vendors whether they are signed in, now — nothing else refreshes
+  // `login_state` between backend restarts, and a launch that failed for want of
+  // a source routes here expecting this page to know better than it did.
+  useRefreshLoginStates();
   const select = useSelectSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);
@@ -248,6 +281,21 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
           );
         })}
       </section>
+
+      {/* A stated preference that is NOT in force — the box is signed out of Flowpad while
+          Claude is set to use it. Sits above the list because it explains the whole page:
+          without it the reader sees "use Flowpad" selected and something else plainly doing
+          the spending, with nothing joining the two. Not an error — the harness IS funded,
+          which is why it is a note and not the `blocked` sentence. */}
+      {focused && status.notes?.[focused] && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-500"
+          data-testid="llm-sources-note"
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{status.notes[focused]}</span>
+        </div>
+      )}
 
       {focused && (
         <section className="flex flex-col gap-3" data-testid="llm-sources-list">
