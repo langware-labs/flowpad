@@ -1454,6 +1454,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             bind_hub_llm_endpoint,
             chain_hub_llm_endpoint,
             hub_llm_endpoint_status,
+            llm_binding,
             select_llm_source,
             test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
@@ -1489,6 +1490,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # desktop screen has no other way to reach that action.
                 if sub_path == "test":
                     return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
+                # ``binding`` materializes ONE source for a terminal. A POST, like ``test``,
+                # because it is the one route here that hands back a CREDENTIAL -- for a stored
+                # key that is a secret out of the sod the caller does not otherwise hold, and a
+                # secret does not belong on a cacheable GET. Body forwarded whole, like its
+                # siblings, so the payload whitelist lives in one place.
+                if sub_path == "binding":
+                    return ApiSuccessResponse(data=await llm_binding(body))
+                if sub_path:
+                    # An unknown sub-action is a mistake, not a bind. Falling through used to
+                    # turn any misspelled or newer-client POST into "the hub is binding this
+                    # box", which fails with a message about the WRONG operation -- observed as
+                    # a new client's POST .../binding answering "invoke_path must be a
+                    # hub-relative path" against an older server.
+                    return ApiFailResponse(message=f"Unknown llm-endpoint action {sub_path!r}", status_code=404)
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
