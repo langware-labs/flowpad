@@ -363,6 +363,37 @@ class Capability(Entity):
         self.login_accepts_code = accepts_code
         self.login_message = message
 
+    async def _adopt_completed_login(self) -> None:
+        """A finished device login is also a CHOICE to fund this harness with it.
+
+        ``auth_mode``/``api_provider`` is rung 3, and rung 3 is a constraint: with
+        ``(api, flowpad)`` stored, ``_apply_preference`` marks every other candidate
+        ineligible with ``"<worker> is set to use flowpad"`` -- the device login
+        included, however freshly it authenticated. Nothing in the login path wrote
+        that pair, so signing in could not dislodge it: the row kept offering Sign in
+        for a login already completed, and the resolver kept spending the hub budget.
+        Reported on Windows exactly that way.
+
+        ``device`` is the field default and therefore reads as "no preference", so this
+        does not pin the login -- it drops the harness back onto the ordinary ladder,
+        where a probed login (``_RANK_DEVICE``) outranks a hub endpoint on its own
+        merits. That is the whole change: a stale pin stops speaking for the user.
+
+        Only an EXPLICIT pin is cleared, and only on a completed login. A box that
+        never stated a preference is already at the default, and a login that failed
+        or is mid-flight has said nothing about what should fund anything.
+        """
+        if self.auth_mode != "api":
+            return
+        import logging
+
+        previous = self.api_provider
+        self.auth_mode, self.api_provider = "device", None
+        await self.save(notify=True)
+        logging.getLogger(__name__).info(
+            "[capability] %s: device login completed; cleared the %r preference", self.kind, previous
+        )
+
     async def _apply_login_session(self, session) -> None:
         """Mirror a DeviceLoginSession onto the transient login_* fields and
         broadcast (no DB write — the fields are runtime-only)."""
@@ -371,6 +402,7 @@ class Capability(Entity):
             # A completed login is newer and stronger evidence than the refusal
             # that prompted it.
             self.login_denied = False
+            await self._adopt_completed_login()
         self._set_login_fields(
             state=DeviceLoginState(snapshot["state"]),
             url=snapshot["url"],

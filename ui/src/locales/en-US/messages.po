@@ -4914,6 +4914,10 @@ msgstr "Could not resolve this folder"
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "Could not run the test"
+
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
 msgstr "Could not save {envVar}"
@@ -6441,6 +6445,10 @@ msgstr "Documents"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "Documents that link here"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "Does this source actually work?"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -14804,6 +14812,10 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "RAM:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Re-check"
+msgstr "Re-check"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "Re-check {title}"
@@ -19395,6 +19407,14 @@ msgstr "This session URL is malformed or unavailable."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "This skill has uncommitted changes — improve runs only on a clean skill."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "This source did not work"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "This source works"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."

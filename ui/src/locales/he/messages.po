@@ -4914,6 +4914,10 @@ msgstr "לא ניתן לפתור את התיקייה"
 msgid "Could not run the connection test."
 msgstr "לא ניתן להריץ בדיקת חיבור."
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "לא ניתן היה להריץ את הבדיקה"
+
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
 msgstr ""
@@ -6441,6 +6445,10 @@ msgstr "מסמכים"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "מסמכים המקשרים לכאן"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "האם המקור הזה באמת עובד?"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -14804,6 +14812,10 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "זיכרון RAM:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Re-check"
+msgstr "בדוק שוב"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "בדוק שוב את {title}"
@@ -19395,6 +19407,14 @@ msgstr "כתובת הסשן אינה תקינה או אינה זמינה."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "ליכולת הזו יש שינויים שלא בוצע להם commit — שיפור פועל רק על יכולת נקייה."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "המקור הזה לא עבד"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "המקור הזה עובד"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."

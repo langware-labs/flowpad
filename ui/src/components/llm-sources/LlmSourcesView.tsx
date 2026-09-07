@@ -40,7 +40,9 @@ import {
   labelForWorker,
   useLlmSources,
   useRecheckSignIn,
+  useFundingFollowsLogin,
   useRefreshLoginStates,
+  useTestSource,
   useSelectSource,
   workerOf,
 } from './use-llm-sources';
@@ -54,6 +56,7 @@ function SourceRow({
   onSelect,
   inUse,
   busy,
+  testSource,
 }: {
   source: LLMSource;
   /** The row the verdict names. Undefined only if the backend listed a verdict whose endpoint
@@ -67,10 +70,13 @@ function SourceRow({
   inUse: boolean;
   onSelect: (s: LLMSource) => void;
   busy: boolean;
+  /** The page's one test runner, shared so only the pressed row spins. */
+  testSource: ReturnType<typeof useTestSource>;
 }) {
   const { t } = useLingui();
   const worker = workerOf(harness);
   const recheck = useRecheckSignIn();
+  const testing = testSource.pending === llmSourceRef(source);
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
@@ -121,6 +127,24 @@ function SourceRow({
           <ArrowUpRight className="h-4 w-4" />
         </Button>
       )}
+      {/* EVERY row tests itself. The three kinds fail for three unrelated reasons — a device
+          login is signed out, a stored key is revoked or out of credit, a hub endpoint is
+          unbound or spent — so a verdict is only meaningful when the row asking is the row
+          answering. The single Test this replaces lived on the signed-out device row alone
+          and ran `authStatus`, whose answer reports WHAT FUNDS THE HARNESS: pressed after a
+          successful sign-in it said "using the hub endpoint", an answer about a different
+          row entirely. The key and hub checks each send one minimal completion, so a green
+          verdict means tokens were really bought and not merely that a credential exists. */}
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={testing}
+        onClick={() => testSource.test({ source, endpoint, harness })}
+        title={t`Does this source actually work?`}
+        data-testid={`llm-source-test-${worker}-${endpoint?.kind ?? 'unknown'}${endpoint?.provider ? `-${endpoint.provider}` : ''}`}
+      >
+        {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+      </Button>
       {needsSignIn ? (
         <>
           {/* "I already signed in — look again."
@@ -128,9 +152,7 @@ function SourceRow({
               re-check may not clear it (a stored credential proves presence,
               not validity). So a person who ran `claude /login` in their own
               terminal saw this row keep saying "signed out" with only a Sign in
-              button — offering to start a login they had already completed.
-              This is the same forced re-check the Assistants & keys modal's
-              Test button makes, put where the problem is actually reported. */}
+              button — offering to start a login they had already completed. */}
           <Button
             size="sm"
             variant="ghost"
@@ -139,7 +161,7 @@ function SourceRow({
             title={t`Already signed in elsewhere? Check again`}
             data-testid={`llm-source-recheck-${worker}`}
           >
-            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Re-check</Trans>}
           </Button>
           <Button
             size="sm"
@@ -183,7 +205,13 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   // `login_state` between backend restarts, and a launch that failed for want of
   // a source routes here expecting this page to know better than it did.
   useRefreshLoginStates();
+  // ...and keep following: a sign-in made from the modal THIS page opens must flip the row
+  // from "Sign in" to "Use", which the mount-only probe above cannot do on its own.
+  useFundingFollowsLogin();
   const select = useSelectSource();
+  // One runner for the whole page: it carries which row is mid-test, so a shared `isPending`
+  // cannot grey out every other row's Test button while one real network call is in flight.
+  const testSource = useTestSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);
   // A verdict names an endpoint and mirrors none of its fields, so every render that wants a
@@ -321,6 +349,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
                       navigation={navigation}
                       inUse={!!resolvedFor(focused) && sameLlmSource(source, resolvedFor(focused)!)}
                       busy={select.isPending}
+                      testSource={testSource}
                       onSelect={(s) => void onSelect(focused, s)}
                     />
                   ))}

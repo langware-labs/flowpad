@@ -149,6 +149,25 @@ export class LlmSourcesService {
   }
 
   /**
+   * Does THIS source work — one row, one answer.
+   *
+   * The per-row Test. `test` above asks the hub about one endpoint and is right only for a hub
+   * row; the other two kinds fail for reasons it cannot see. A device login is signed out, a
+   * stored key is revoked or out of credit — so the backend dispatches on `kind` and runs the
+   * check that kind actually needs, answering in this same verdict shape either way.
+   *
+   * The API-key and hub checks SPEND: each sends one minimal completion, because "is the key
+   * present" and "can the key buy tokens" are different questions and only the second one
+   * predicts whether a run will work. A device login cannot be spent from here (it is a
+   * terminal credential), so that verdict reports the vendor's own auth-status and says so.
+   *
+   * A refused call resolves with `ok: false` rather than throwing — a refusal is the answer.
+   */
+  testSource(source: { kind: string; provider?: string; harness?: string; endpoint_typeid?: string }) {
+    return apiClient.post<LLMEndpointTestResult>(`${this.base}/test-source`, source);
+  }
+
+  /**
    * The hub's resolved chain for `endpointId` — which hops a call travels, and which root's
    * provider key it ends up spending.
    *
