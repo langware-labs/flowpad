@@ -275,31 +275,28 @@ export function useStartVibeSession(): StartVibeSession {
       // but that narrowing does not survive into a nested function.
       const projectId = project.id;
 
-      // PRE-FLIGHT, the same gate the terminal strip's openers have had.
+      // PRE-FLIGHT on what is ALREADY KNOWN, and nothing else.
       //
-      // Without it the two surfaces answered the same machine differently: on a
-      // box with no harness installed, a Start-<vendor> click showed the install
-      // dialog while a vibe prompt launched, took the backend's 400 and — when
-      // the failure path's re-probe read a row that still called the harness
-      // available — fell through to a toast saying only "error". The user found
-      // this by getting the right dialog from the terminal and nothing from the
-      // chat, on the same machine, seconds apart.
+      // A missing harness should raise the install dialog rather than take a
+      // doomed launch, which is what the terminal strip's openers do. But this
+      // must not WAIT to find out. `ensureChecked` probes when no verdict
+      // exists, and on a cold manager with nothing installed that is one
+      // backend probe per harness, in series — the first vibe prompt of a
+      // session sat through all of them with no spinner and no feedback, which
+      // read as "nothing happened". Opening a terminal first warmed the cache
+      // and made the next prompt instant, which is exactly how it was reported.
       //
-      // Asking BEFORE launching is also the cheaper order: `ensureChecked` is
-      // cached and dedupes in flight, so the common case costs nothing, while
-      // the failure path pays for a real probe.
-      void capabilityManager
-        .ensureChecked(kind)
-        .then((harness) => {
-          if (harness.checked && !harness.available) {
-            promptToInstall();
-            return;
-          }
-          launch();
-        })
-        // An older backend without the capability API must not block a prompt —
-        // the same allowance `startAgenticTab` makes before a spawn.
-        .catch(() => launch());
+      // `getSnapshot` is a synchronous read of that same cache, so a known
+      // answer is acted on immediately and an unknown one costs nothing: the
+      // launch goes ahead and the failure path routes it. That path is not a
+      // fallback of last resort — it is the one the terminal already proves,
+      // and it carries the reason the pre-flight would never have.
+      const known = capabilityManager.getSnapshot(kind);
+      if (known.checked && !known.available) {
+        promptToInstall();
+        return;
+      }
+      launch();
 
       function launch() {
         void launchVibeSessionForProject({
