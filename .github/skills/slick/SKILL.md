@@ -30,7 +30,7 @@ below — open it when you need the exact path or class to model after.
 
 ## Modes
 
-The seven principles below are the rubric. There are three ways to apply them:
+The eight principles below are the rubric. There are three ways to apply them:
 
 * **`slick`** **(default, while authoring)** — apply the lens as you write. No
   report; just produce slick code.
@@ -48,7 +48,7 @@ instead. State the scope you used in one line.
 
 ### `slick check` — output contract
 
-Goal: **high signal, zero noise.** Only flag violations of the seven principles
+Goal: **high signal, zero noise.** Only flag violations of the eight principles
 that materially hurt placement, reuse, or testability. When in doubt, leave it
 out — a check that lists ten nits is worse than one that names the two real
 problems.
@@ -58,8 +58,10 @@ own; a frontend write that should go through an action; a parallel action/method
 ~95% duplicating an existing one; `if name == "x"` / bare-string branching on
 shared infra that should be an enum or a driver trait; a bare string used for a
 typed value; per-type behavior hardcoded at a call site instead of `TypeInfo`; a
-new dependency that stdlib or an existing dep covers; a behavior that can't be
-exercised in a REPL or a <15-line no-mock test (god-object / tangled surface).
+new dependency that stdlib or an existing dep covers; a local absolute path
+re-spelled with `as_posix()`, or compared against a differently-spelled one; a
+behavior that can't be exercised in a REPL or a <15-line no-mock test
+(god-object / tangled surface).
 
 Out of scope (do NOT flag): formatting, naming taste, micro-perf, anything
 `CLAUDE.md` already governs (unless egregiously violated), and speculative
@@ -113,7 +115,7 @@ built-in python  →  one focused package  →  worker harness / driver
 Push work down to the layer that can truly own it. The frontend is the *last*
 resort, and it only ever renders or calls an action — never decides.
 
-## The seven principles
+## The eight principles
 
 ### 1. Headless by default — the frontend renders, it does not decide
 
@@ -260,6 +262,13 @@ means slow code — fix the code).
 * Not slick: a 100-method `AgenticProcess` god-object where a behavior can only
   be reached by booting a worker. Prefer short functions with clear names;
   done right, most functionality is provable in under ten lines.
+
+### 8. One spelling for an absolute path
+
+**Rule:** an absolute path that's stored, compared, or used as a key has exactly one spelling — pathlib-native `str(Path(p).resolve())` (what `FSRef` and the indexer write), never `canonical_posix_path()` (an entity-DB-only lex-range exception) or raw `"/" + path` anchoring at a comparison site; `as_posix()` on a genuinely relative path (git rel\_path, zip entry, bundle layout) is separate and correct.
+**Why it hides in CI:** both non-relative spellings collapse to the same string on Linux/macOS, so a comparison mixing them passes CI and only drops a real row as "unowned" on Windows.
+**Live examples:** `agentic_process.py`'s `_entity_for_transcript_read` (FLOWPAD-2065) and `fs_records_actions.py`'s `expanded = "/" + expanded` (FLOWPAD-2063/2064).
+**Slick:** normalize once, at the seam the value is looked up through (`Entity.get_by_asset_ref`) — not sprinkled at whichever call site remembers to, which drifts the moment a new caller is added.
 
 ## The "where does this go?" checklist
 
