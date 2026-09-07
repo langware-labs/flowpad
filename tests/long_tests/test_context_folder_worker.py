@@ -123,13 +123,14 @@ async def test_worker_mounts_context_folder(
             ),
             deadline_s=90,
         )
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip(f"{worker_id} API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        # A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
+        pytest.fail(f"{worker_id}: timed out waiting for the worker turn: {exc}", pytrace=False)
     finally:
         await safe_exit(ap)
 
     if transcript is None:
-        pytest.skip(f"{worker_id} produced no transcript within 90s — infra/LLM latency")
+        pytest.fail(f"{worker_id}: no transcript within 90s — the worker never wrote one", pytrace=False)
     unavailable = _worker_unavailable(transcript)
     if unavailable is not None:
         pytest.skip(
