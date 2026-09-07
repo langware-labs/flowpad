@@ -16,6 +16,7 @@ vi.mock('@sdk/activity', async () => {
 });
 
 import type { ActivityProgressSpec } from '@sdk/activity';
+import { lazyAssets } from '@sdk/lazy';
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 import { useActivity } from '@src/hooks/useActivity';
 
@@ -65,6 +66,12 @@ describe('useActivity', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(START));
     __resetActivityStoreForTest();
+    // `useActivitySpec` hydrates through `useLazyAsset`, so every row here also owns a
+    // react-query observer. Destroying the last observer schedules a cache-eviction
+    // timeout (`Query.scheduleGc`) — a timer this file's clock assertions would count as
+    // the hook's own. An infinite gcTime means nothing is scheduled, so the counts below
+    // measure the clock and only the clock.
+    lazyAssets.client.setDefaultOptions({ queries: { gcTime: Infinity } });
   });
 
   afterEach(() => {
