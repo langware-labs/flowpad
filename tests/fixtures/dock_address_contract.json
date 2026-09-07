@@ -130,6 +130,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "fullbleed"
     },
     "system_profile": {
@@ -137,6 +138,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "analysis": {
@@ -144,6 +146,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "chat": {
@@ -151,6 +154,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "shell": {
@@ -158,6 +162,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "editor": {
@@ -165,6 +170,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "web-app": {
@@ -172,6 +178,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "environment": {
@@ -179,6 +186,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "connections": {
@@ -186,6 +194,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "artifacts": {
@@ -193,6 +202,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "reasoning": {
@@ -200,6 +210,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "diff": {
@@ -207,6 +218,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "unsupported": {
@@ -214,6 +226,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "markdown": {
@@ -221,6 +234,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "docs": {
@@ -228,6 +242,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "assistance": {
@@ -235,6 +250,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "survey": {
@@ -242,6 +258,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "api-keys": {
@@ -249,6 +266,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "hooks": {
@@ -256,6 +274,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "machine": {
@@ -263,6 +282,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "explorer": {
@@ -270,6 +290,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": true,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "skills": {
@@ -277,6 +298,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "ai-config": {
@@ -284,6 +306,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "show": {
@@ -291,6 +314,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "apps": {
@@ -298,6 +322,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": true,
       "chrome": "workspace"
     },
     "graph": {
@@ -305,6 +330,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "worldview": {
@@ -312,6 +338,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "organization": {
@@ -319,6 +346,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "tag": {
@@ -326,6 +354,7 @@
       "pointer": "required",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "subgraph": {
@@ -333,6 +362,7 @@
       "pointer": "required",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "k-browser": {
@@ -340,6 +370,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "lens": {
@@ -347,6 +378,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "session": {
@@ -354,6 +386,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "tasks": {
@@ -361,6 +394,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "settings": {
@@ -368,6 +402,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "preferences": {
@@ -375,6 +410,7 @@
       "pointer": "optional",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "agentic_process": {
@@ -382,6 +418,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "search": {
@@ -389,6 +426,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "events": {
@@ -396,6 +434,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "triggers": {
@@ -403,6 +442,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "capabilities": {
@@ -410,6 +450,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "graph-workflows": {
@@ -417,6 +458,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "signals": {
@@ -424,6 +466,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "data-sources": {
@@ -431,6 +474,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "process-runs": {
@@ -438,6 +482,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "plan": {
@@ -445,6 +490,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "cron": {
@@ -452,6 +498,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "assets": {
@@ -459,6 +506,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": true,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "project": {
@@ -466,6 +514,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "inbox": {
@@ -473,6 +522,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "conversation": {
@@ -480,6 +530,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": true,
       "chrome": "workspace"
     },
     "spec": {
@@ -487,6 +538,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "graph_context": {
@@ -494,6 +546,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "diagnosis": {
@@ -501,6 +554,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "desktop": {
@@ -508,6 +562,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": true,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "live_session": {
@@ -515,6 +570,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "helpdesk": {
@@ -522,6 +578,7 @@
       "pointer": "required",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "atlas": {
@@ -529,6 +586,7 @@
       "pointer": "optional",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "records": {
@@ -536,6 +594,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "entity": {
@@ -543,6 +602,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "credentials": {
@@ -550,6 +610,7 @@
       "pointer": "optional",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "app": {
@@ -557,6 +618,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "llm-endpoints": {
@@ -564,6 +626,7 @@
       "pointer": "optional",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "token-plan": {
@@ -571,6 +634,7 @@
       "pointer": "optional",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "llm-sources": {
@@ -578,6 +642,7 @@
       "pointer": "optional",
       "folds_pointer": true,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "agent": {
@@ -585,6 +650,7 @@
       "pointer": "required",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     },
     "rag": {
@@ -592,6 +658,7 @@
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
+      "folds_sub_pointer": false,
       "chrome": "workspace"
     }
   },

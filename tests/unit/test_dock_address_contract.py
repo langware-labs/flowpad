@@ -120,6 +120,7 @@ def test_view_meta_matches_the_contract(view):
     assert meta.pointer.value == expected["pointer"]
     assert meta.folds_pointer is expected["folds_pointer"]
     assert meta.scope_keyed is expected["scope_keyed"]
+    assert meta.folds_sub_pointer is expected["folds_sub_pointer"]
     assert meta.chrome == expected["chrome"]
 
 
