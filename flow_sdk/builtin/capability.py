@@ -395,9 +395,18 @@ class Capability(Entity):
         )
 
     async def _apply_login_session(self, session) -> None:
-        """Mirror a DeviceLoginSession onto the transient login_* fields and
-        broadcast (no DB write — the fields are runtime-only)."""
+        """Mirror a DeviceLoginSession onto the transient login_* fields and broadcast.
+
+        The url/code/message fields really are runtime-only — they describe a login in
+        flight and mean nothing once it lands. ``login_state`` is NOT: it is
+        ``Persist.FALSE``, which is DB-only rather than in-memory-only, and the resolver
+        reads it through its own ``Capability.get_by_kind``. So a COMPLETED login has to be
+        saved or the verdict dies with this row object, exactly as an unsaved probe did —
+        sign in, come back to the LLM sources page, and it still says signed out, because
+        the one fact that changed never reached the reader. Reported that way.
+        """
         snapshot = session.to_json()
+        before = self.login_state
         if DeviceLoginState(snapshot["state"]) is DeviceLoginState.AUTHENTICATED:
             # A completed login is newer and stronger evidence than the refusal
             # that prompted it.
@@ -411,6 +420,11 @@ class Capability(Entity):
             message=snapshot["message"],
         )
         await self.notify_updated()
+        # After the broadcast, and only on a real change: a login moves through several
+        # states (starting, awaiting_user) and each is a frame worth publishing but not a
+        # row worth writing until the value actually differs.
+        if self.login_state != before:
+            await self.save(notify=False)
 
     @action.post(action_name="device-login")
     async def device_login_action(self) -> ApiSuccessResponse | ApiFailResponse:

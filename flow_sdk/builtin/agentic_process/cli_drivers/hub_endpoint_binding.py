@@ -439,12 +439,14 @@ def _verdict(ok: bool, *, status: int = 0, model: str = "", latency_ms: int = 0,
     return {"ok": ok, "status": status, "model": model, "latency_ms": latency_ms, "message": message}
 
 
-async def _test_device_login(worker_type: str) -> dict:
-    """Ask the vendor CLI whether THIS login works, forcing past a latched refusal.
+async def _test_device_login(worker_type: str, *, force: bool) -> dict:
+    """Ask the vendor CLI whether THIS login works.
 
-    ``force`` because the latch is exactly what a person pressing Test is disputing: a refusal
-    the harness made mid-turn survives a silent re-probe on purpose (a stored credential proves
-    presence, not validity), and the button is the user asserting they fixed it.
+    ``force`` drops a latched refusal first, and is for a person pressing Test: the latch is
+    exactly what they are disputing, since a refusal the harness made mid-turn survives a
+    silent re-probe on purpose (a stored credential proves presence, not validity). The
+    arrival probe passes ``force=False`` -- it is automatic, and automatically overturning a
+    refusal the harness itself made is how a signed-out harness comes to read as signed in.
 
     The honest limit, stated rather than hidden: a device login is a credential for a TERMINAL
     (``LLMEndpointKind.DEVICE`` is ``invocable=False``), so nothing here can spend it. This
@@ -461,7 +463,14 @@ async def _test_device_login(worker_type: str) -> dict:
     # answers "what funds this harness" -- it resolves the box endpoint and reports THAT -- so
     # pressing Test on a signed-in device login replied "using the hub endpoint", which is the
     # complaint this whole action exists to fix. Here the row asks about ITSELF.
-    cap.login_denied = False
+    # ``force`` only when a PERSON pressed Test. The latch exists because a refusal the
+    # harness made mid-turn is stronger evidence than ``auth-status``, which reports a
+    # credential's presence and never its validity -- so an automatic probe that cleared it
+    # would resurrect "signed in" for a login the harness itself had just refused. The
+    # arrival probe is automatic and therefore never forces; the button is the user saying
+    # they fixed it, and may.
+    if force:
+        cap.login_denied = False
     result = await cap.refresh_login_state()
     if result is None:
         return _verdict(False, message=f"{worker_type} has no device login to test")
@@ -561,7 +570,10 @@ async def check_llm_source(payload: dict) -> dict:
         worker = str(payload.get("harness") or "").strip()
         if not worker:
             raise HubEndpointBindError("harness is required to test a device login", 400)
-        return await _test_device_login(worker.split(".")[1] if worker.startswith("harness.") else worker)
+        return await _test_device_login(
+            worker.split(".")[1] if worker.startswith("harness.") else worker,
+            force=bool(payload.get("force")),
+        )
     if kind == LLMEndpointKind.API_KEY:
         provider = str(payload.get("provider") or "").strip()
         if not provider:

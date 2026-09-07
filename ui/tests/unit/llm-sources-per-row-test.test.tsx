@@ -48,6 +48,7 @@ vi.mock('@sdk', async (importOriginal) => {
 import { LlmSourcesView } from '@src/components/llm-sources/LlmSourcesView';
 
 const CLAUDE = 'harness.claude.cli';
+const HARNESS = ['harness.claude.cli', 'harness.codex.cli', 'harness.copilot.cli', 'harness.opencode.cli'];
 const DEVICE_ID = 'llm_endpoint@device';
 const KEY_ID = 'llm_endpoint@key';
 const HUB_ID = 'llm_endpoint@hub';
@@ -235,7 +236,9 @@ describe('choosing a device login proves it first', () => {
     screen.getByTestId('llm-source-use-claude-api_key').click();
 
     await waitFor(() => expect(h.select).toHaveBeenCalled());
-    expect(h.testSource).not.toHaveBeenCalled();
+    // The arrival probe fires device checks on mount; what must not happen is a KEY probe,
+    // which is the one that spends.
+    expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'api_key' }));
   });
 });
 
@@ -311,5 +314,81 @@ describe('a failed verdict does not sit above a stale "signed in"', () => {
 
     await screen.findByTestId('llm-source-verdict-claude-device');
     expect(container.textContent).toContain('signed in');
+  });
+});
+
+describe('the arrival probe', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    h.status.mockReturnValue(funding());
+    h.testSource.mockResolvedValue({ ok: true, status: 200, model: '', latency_ms: 3, message: '' });
+  });
+
+  it('checks every device login without being asked', async () => {
+    // Reported: signed out of the CLI in a terminal, came to this page, and the row still
+    // claimed to be signed in until Test was pressed by hand. A vendor `auth-status` is a
+    // local subprocess against a subscription the user already pays for, so it is free to run
+    // on arrival — and running it is the only way the page can be right about a login that
+    // ended somewhere else.
+    renderPage();
+
+    await waitFor(() => expect(h.testSource).toHaveBeenCalledWith(expect.objectContaining({ kind: 'device' })));
+  });
+
+  it('never probes a key or a hub endpoint on its own', async () => {
+    // Those two SPEND on every press. Arriving at a page must not cost money.
+    renderPage();
+
+    await waitFor(() => expect(h.testSource).toHaveBeenCalled());
+    expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'api_key' }));
+    expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'hub' }));
+  });
+
+  it('does not force, so a refusal the harness made stands', async () => {
+    // `force` drops a latched refusal. The harness saying "not logged in" mid-turn is stronger
+    // evidence than `auth-status`, which proves a credential exists and never that it works —
+    // so clearing that automatically is how a signed-out harness reads as signed in again.
+    renderPage();
+
+    await waitFor(() => expect(h.testSource).toHaveBeenCalled());
+    for (const [arg] of h.testSource.mock.calls) expect(arg.force).toBeFalsy();
+  });
+
+  it('forces when a person presses Test — that is the button that may', async () => {
+    renderPage();
+    h.testSource.mockClear();
+
+    screen.getByTestId('llm-source-test-claude-device-claude').click();
+
+    await waitFor(() => expect(h.testSource).toHaveBeenCalledWith(expect.objectContaining({ force: true })));
+  });
+
+  it('one wedged vendor CLI does not stop the others reporting', async () => {
+    // Carried over from the hook test this replaced. A per-harness catch, not one around the
+    // batch: three of four harnesses are usually not installed, and a missing or hanging
+    // binary is the ordinary case rather than the exception.
+    h.testSource.mockImplementation((s: { harness?: string }) =>
+      s.harness === HARNESS[0]
+        ? Promise.reject(new Error('probe timed out'))
+        : Promise.resolve({ ok: true, status: 200, model: '', latency_ms: 1, message: '' }),
+    );
+
+    renderPage();
+
+    await waitFor(() => expect(h.testSource.mock.calls.length).toBeGreaterThan(1));
+    // And the page still renders — a rejected probe is swallowed, not thrown.
+    expect(screen.getByTestId('llm-sources-view')).toBeTruthy();
+  });
+
+  it('has no Re-check button left to press', () => {
+    // It ran `authStatus`, which reports what FUNDS the harness — so on a signed-out row it
+    // announced the hub endpoint, which is not what the button appeared to offer. The arrival
+    // probe answers its case unasked, and Test answers it on demand.
+    h.status.mockReturnValue(funding({ deviceEligible: false }));
+    renderPage();
+
+    expect(screen.queryByTestId('llm-source-recheck-claude')).toBeNull();
+    expect(screen.getByTestId('llm-source-signin-claude')).toBeTruthy();
   });
 });

@@ -111,12 +111,12 @@ async def test_device_row_reports_its_own_login_not_what_funds_the_harness():
         patch.object(Capability, "get_by_kind", new=AsyncMock(return_value=cap)),
         patch.object(Capability, "refresh_login_state", new=AsyncMock(return_value=probe)),
     ):
-        verdict = await check_llm_source({"kind": "device", "harness": "claude"})
+        verdict = await check_llm_source({"kind": "device", "harness": "claude", "force": True})
 
     assert verdict["ok"] is True
     assert verdict["status"] == 200
     # The latch is what the button disputes: a refusal made mid-turn must not outlive the
-    # user asserting they fixed it.
+    # user asserting they fixed it. Only with ``force`` -- see the test below.
     assert cap.login_denied is False
 
 
@@ -271,5 +271,69 @@ async def test_an_unchanged_verdict_writes_nothing():
         ),
     ):
         await cap.refresh_login_state()
+
+    saved.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_arrival_probe_may_not_overturn_a_refusal_the_harness_made():
+    """Automatic probes never force, and this is the reason the flag exists.
+
+    A harness that answered a turn with "Not logged in" is the strongest evidence there is
+    about THIS box at the moment of use. ``auth-status`` is weaker: it reports that a
+    credential is present, never that it works. So a probe that ran on every arrival and
+    cleared the latch would quietly resurrect "signed in" for a login the harness itself had
+    just refused -- the exact regression ``report_signed_out_action`` was written to prevent.
+
+    The Test button carries ``force`` because a person pressing it is asserting they fixed it.
+    """
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_denied = True
+    probe = WorkerAuthResult(status=WorkerAuthStatus.LOGGED_IN, verified=True, message="stored credentials")
+
+    with (
+        patch.object(Capability, "get_by_kind", new=AsyncMock(return_value=cap)),
+        patch.object(Capability, "refresh_login_state", new=AsyncMock(return_value=probe)),
+    ):
+        await check_llm_source({"kind": "device", "harness": "claude"})
+
+    assert cap.login_denied is True
+
+
+@pytest.mark.asyncio
+async def test_a_completed_login_is_saved_so_the_next_page_can_see_it():
+    """Sign in, come back, and the page still said signed out.
+
+    ``_apply_login_session`` documented its fields as runtime-only and wrote none of them.
+    True of the url/code/message -- they describe a login in flight -- and false of
+    ``login_state``, which is ``Persist.FALSE`` (DB-only, not in-memory-only) and is read by
+    the resolver through its own instance. So the one fact that changed never reached anyone.
+    """
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_state = DeviceLoginState.IDLE
+
+    saved = AsyncMock()
+    with patch.object(Capability, "save", new=saved), patch.object(Capability, "notify_updated", new=AsyncMock()):
+        await cap._apply_login_session(_Session(DeviceLoginState.AUTHENTICATED))
+
+    assert cap.login_state is DeviceLoginState.AUTHENTICATED
+    saved.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_login_still_in_flight_writes_no_row():
+    """`starting` and `awaiting_user` are frames worth publishing, not rows worth writing."""
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_state = DeviceLoginState.AWAITING_USER
+
+    saved = AsyncMock()
+    with patch.object(Capability, "save", new=saved), patch.object(Capability, "notify_updated", new=AsyncMock()):
+        await cap._apply_login_session(_Session(DeviceLoginState.AWAITING_USER))
 
     saved.assert_not_awaited()
