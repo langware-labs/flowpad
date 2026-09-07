@@ -211,12 +211,21 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
  * set, picks per-kind copy + action from KIND_CONFIG and lets the user
  * fire the recovery in one click.
  */
-export function TerminalRuntimeErrorBanner() {
+export function TerminalRuntimeErrorBanner({ processId }: { processId?: string }) {
   const { terminalRuntimeError } = useDataContext();
   const [busy, setBusy] = useState(false);
   const { t } = useLingui();
 
   if (!terminalRuntimeError) return null;
+  // The error names ONE process, and this component is mounted by every
+  // terminal — so a failure had been showing over whichever terminal you
+  // happened to be looking at. A plain shell has no process at all and was
+  // reporting a Claude session's launch failure above its own prompt, with a
+  // Retry button that would restart something else entirely.
+  //
+  // A caller with no process passes none, which is exactly the plain-terminal
+  // case: nothing here can own a process failure, so nothing is shown.
+  if (processId !== terminalRuntimeError.processId) return null;
   const cfg = KIND_CONFIG[terminalRuntimeError.kind];
   if (!cfg) return null;
 

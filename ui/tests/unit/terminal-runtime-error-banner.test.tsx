@@ -68,7 +68,7 @@ describe('TerminalRuntimeErrorBanner', () => {
   });
 
   it('renders nothing when terminalRuntimeError is null', () => {
-    const { container } = render(<TerminalRuntimeErrorBanner />);
+    const { container } = render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe('TerminalRuntimeErrorBanner', () => {
     ['network_error', /couldn.?t reach the backend/i, /retry/i],
   ])('renders the right copy + action button for kind=%s', (kind, titleMatcher, actionMatcher) => {
     setError(kind);
-    render(<TerminalRuntimeErrorBanner />);
+    render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
     const banner = screen.getByTestId('terminal-runtime-error-banner');
     expect(banner.getAttribute('data-error-kind')).toBe(kind);
     expect(banner.textContent).toMatch(titleMatcher);
@@ -91,7 +91,7 @@ describe('TerminalRuntimeErrorBanner', () => {
   it('Dismiss button calls dataContext.setTerminalRuntimeError(null)', async () => {
     setError('pty_attach_failed');
     const { dataContext } = await import('@sdk');
-    render(<TerminalRuntimeErrorBanner />);
+    render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
     fireEvent.click(screen.getByTestId('terminal-runtime-error-banner-dismiss'));
     // Asserting ON the spy, never calling it detached, so there is no `this` to
     // lose. Pre-existing; annotated because touching this file makes the hook
@@ -110,7 +110,7 @@ describe('TerminalRuntimeErrorBanner', () => {
     });
 
     it('shows it on ONE line instead of burying the terminal', () => {
-      render(<TerminalRuntimeErrorBanner />);
+      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
 
       const detail = screen.getByTestId('terminal-runtime-error-banner-detail');
       // `truncate` is the whole fix: one line, ellipsis, no wrapping.
@@ -122,7 +122,7 @@ describe('TerminalRuntimeErrorBanner', () => {
     });
 
     it('copies the full error, not the truncated line', () => {
-      render(<TerminalRuntimeErrorBanner />);
+      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
 
       fireEvent.click(screen.getByTestId('terminal-runtime-error-banner-copy'));
 
@@ -138,10 +138,36 @@ describe('TerminalRuntimeErrorBanner', () => {
       // long verbatim errors someone needs to paste into a report.
       vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(null as never);
       setError('runtime_terminated');
-      render(<TerminalRuntimeErrorBanner />);
+      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
 
       expect(screen.getByTestId('terminal-runtime-error-banner-detail')).toBeTruthy();
       expect(screen.queryByTestId('terminal-runtime-error-banner-copy')).toBeNull();
+    });
+  });
+
+  describe('whose failure it is', () => {
+    // The banner is mounted by EVERY terminal but the error names one process,
+    // so a Claude session's launch failure had been showing above a plain
+    // terminal's own prompt — with a Retry button that would restart something
+    // else entirely. Reported from a screenshot of exactly that.
+    beforeEach(() => setError('failed_to_start'));
+
+    it('shows on the terminal whose process failed', () => {
+      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
+
+      expect(screen.getByTestId('terminal-runtime-error-banner')).toBeTruthy();
+    });
+
+    it('stays off a plain terminal, which owns no process at all', () => {
+      render(<TerminalRuntimeErrorBanner />);
+
+      expect(screen.queryByTestId('terminal-runtime-error-banner')).toBeNull();
+    });
+
+    it('stays off a DIFFERENT session, whose launch was fine', () => {
+      render(<TerminalRuntimeErrorBanner processId="bbbb2222-3333-4444-8555-666666666666" />);
+
+      expect(screen.queryByTestId('terminal-runtime-error-banner')).toBeNull();
     });
   });
 });
