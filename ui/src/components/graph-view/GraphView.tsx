@@ -7,6 +7,7 @@ import { AtlasGraphRenderer } from './graph/AtlasGraphRenderer';
 import type { GraphRenderer } from './graph/graphRenderer';
 import { loadDepGraph, rebuildDepGraph, type GraphLayout } from './graph/loadDepGraph';
 import { loadWorldView, refreshWorldView } from './graph/loadWorldView';
+import { AccessPanel } from './ui/AccessPanel';
 import { heatSummaryForGraph } from './graph/heat';
 import type { Theme } from './graph/themeColors';
 import { HeatLegend } from './ui/HeatLegend';
@@ -310,6 +311,13 @@ export function GraphView({
       data-edge-count={edgeCount}
     >
       <div className="app">
+        {isWorldView && selected ? (
+          <AccessPanel
+            node={selected}
+            onClose={() => setUrlState({ selected: undefined })}
+            onChanged={handleAction}
+          />
+        ) : null}
         <div className="main-col">
           <TopBar
             title={title}

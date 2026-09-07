@@ -830,13 +830,17 @@
 }
 
 /* ============ Property panel ============ */
-.property-panel {
+.property-panel,
+.access-panel {
   width: 320px;
   flex-shrink: 0;
   background: var(--bg-panel);
-  border-inline-start: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+}
+
+.property-panel {
+  border-inline-start: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -1143,4 +1147,183 @@
 .worldview-atlas.is-dragging,
 .worldview-atlas.is-dragging .atlas-node {
   cursor: grabbing;
+}
+
+/* ============ Access panel (LEFT) ============
+   Same shell as `.property-panel`, anchored to the opposite edge so the node
+   inspector and the access editor can both be open on one selection without
+   competing for the same side. The border side is the whole difference. */
+.access-panel {
+  border-inline-end: 1px solid var(--border);
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
+.access-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.access-panel-eyebrow {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.access-panel-header h2 {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.access-panel-header button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.access-panel-header button:hover {
+  color: var(--text);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+.access-panel-parent,
+.access-panel-empty,
+.access-panel-error {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.access-panel-error {
+  color: var(--danger, #dc2626);
+}
+
+.access-mode {
+  border: none;
+  margin: 0;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.access-mode label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.access-mode strong {
+  display: block;
+  font-weight: 600;
+}
+
+.access-mode em {
+  display: block;
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.access-rules {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.access-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.access-rule select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.access-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.access-rule-remove,
+.access-add {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.access-rule-remove:hover,
+.access-add:hover {
+  color: var(--text);
+}
+
+.access-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 14px 0;
+}
+
+.access-actions button {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.access-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.access-actions .access-save {
+  border-color: transparent;
+  background: var(--accent, #4f46e5);
+  color: #fff;
+}
+
+.access-spin {
+  display: inline-block;
+  vertical-align: -2px;
+  animation: access-spin 1s linear infinite;
+}
+
+@keyframes access-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
