@@ -1,7 +1,7 @@
 import { TypeId, VFSPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
-import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor } from './asset-doc-types';
+import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 
 export interface ContentAssetTarget {
@@ -56,6 +56,23 @@ export function isContentAssetDock(dock: DockPointer): boolean {
   const pointer = assetPointerForDock(dock);
   if (pointer?.mode === AssetMode.EDITOR) return !isFilelessEditor(pointer.editor);
   return pointer?.mode === AssetMode.WIKI;
+}
+
+/**
+ * A content-asset dock whose editor is a passive PREVIEW (`isPreviewEditor`) —
+ * html/image/video/audio/pdf — rather than an editing surface.
+ *
+ * `flow show` pins these `withActiveDisplay(true)`, and the vibe workspace's
+ * own Display pane already renders whatever the active display addresses
+ * (`VibeWorkspace`'s child-URL branch → `ContentPanel`). Routing one into
+ * `AssetVibeWorkspace` instead (a work-context chat + editor host, built for a
+ * file someone is EDITING) swaps out the agent's Display entirely and opens a
+ * redundant asset workspace — the deliverable never appears where the agent
+ * put it, and its materialized tab shows up as a stray chip beside it.
+ */
+export function isPreviewAssetDock(dock: DockPointer): boolean {
+  const pointer = assetPointerForDock(dock);
+  return pointer?.mode === AssetMode.EDITOR && isPreviewEditor(pointer.editor);
 }
 
 /**
