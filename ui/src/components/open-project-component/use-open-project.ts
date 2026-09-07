@@ -91,6 +91,19 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
               return;
             }
           }
+          // `vibeNoProcess` OFF on home, ON when leaving a workspace.
+          //
+          // The flag's only effect is which surface `flow-page` renders for a
+          // HOME dock: set, it picks `VibeNoProcessWorkspace` (the "Start new
+          // chat" pane + the project's past builds) over the `VibeNewChat`
+          // hero. That pane is the right landing for the branch above — you
+          // left a workspace for a project that has no process, and its earlier
+          // builds are what you came for. It is the WRONG one here: opening a
+          // project ON home stays home, and home is the hero. A freshly cloned
+          // project has no past builds at all, so the flag turned "open this
+          // template" into an empty pane with the agents the repo brought along
+          // (its whole point) nowhere in sight.
+          //
           // URL-first, exactly as the non-vibe home branch below: the
           // scope-carrying HOME dock's loader (adoptScopeProject → loadProject)
           // is the single writer of project context.
@@ -106,7 +119,7 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true })
+            DockPointer.forHome(undefined, undefined, isHome ? undefined : { vibeNoProcess: true })
               .withScopeFilter(projectScope(project.id))
               .withViewMode(ViewMode.Vibe),
           );
