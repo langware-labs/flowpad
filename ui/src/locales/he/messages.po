@@ -351,6 +351,11 @@ msgstr "{0} פרוס"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא ניתן לפתוח אותה."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} לא מחובר"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -1830,8 +1835,8 @@ msgid "already running"
 msgstr "כבר פעיל"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "Already signed in elsewhere? Check again"
-msgstr "כבר התחברת במקום אחר? בדוק שוב"
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "כבר התחברת במקום אחר? בדוק שוב"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -4608,7 +4613,6 @@ msgid "Could not change sign-in method"
 msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 
@@ -4913,6 +4917,10 @@ msgstr "לא ניתן לפתור את התיקייה"
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
 msgstr "לא ניתן להריץ בדיקת חיבור."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "לא ניתן היה להריץ את הבדיקה"
 
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
@@ -6441,6 +6449,10 @@ msgstr "מסמכים"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "מסמכים המקשרים לכאן"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "האם המקור הזה באמת עובד?"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -14804,6 +14816,10 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "זיכרון RAM:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Re-check"
+#~ msgstr "בדוק שוב"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "בדוק שוב את {title}"
@@ -17428,6 +17444,10 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "יש להתחבר כדי לגשת לזרימה שלך ולפתוח את סוכן ה-AI של Flowpad."
@@ -17511,7 +17531,6 @@ msgstr "ההתחברות לא אושרה"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
@@ -18102,8 +18121,8 @@ msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
 
 #: src/components/llm-sources/use-llm-sources.ts
-msgid "Still signed out — please re-authenticate"
-msgstr "עדיין מנותק — יש להתחבר מחדש"
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "עדיין מנותק — יש להתחבר מחדש"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18617,6 +18636,14 @@ msgstr "בדיקה"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "בדיקה נכשלה"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "הבדיקה נכשלה — המקור הזה לא יכול לממן הרצה כרגע"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "הבדיקה עברה — המקור הזה יכול לממן הרצה"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -19395,6 +19422,14 @@ msgstr "כתובת הסשן אינה תקינה או אינה זמינה."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "ליכולת הזו יש שינויים שלא בוצע להם commit — שיפור פועל רק על יכולת נקייה."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "המקור הזה לא עבד"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "המקור הזה עובד"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."

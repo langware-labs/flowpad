@@ -1453,6 +1453,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             HubEndpointBindError,
             bind_hub_llm_endpoint,
             chain_hub_llm_endpoint,
+            check_llm_source,
             hub_llm_endpoint_status,
             select_llm_source,
             test_hub_llm_endpoint,
@@ -1489,6 +1490,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # desktop screen has no other way to reach that action.
                 if sub_path == "test":
                     return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
+                # ``test-source`` is the PER-ROW check: the same verdict shape, but dispatched
+                # on the source kind, so a device login and a stored key are each asked the
+                # question that can actually fail for them. ``test`` above stays the hub-only
+                # pass-through it has always been.
+                if sub_path == "test-source":
+                    return ApiSuccessResponse(data=await check_llm_source(body))
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())

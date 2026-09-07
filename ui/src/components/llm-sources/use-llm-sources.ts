@@ -12,8 +12,10 @@ import { useContext } from '@sdk/react/hooks';
 import {
   capabilityManager,
   HARNESS_CAPABILITY_KINDS,
+  llmSourceRef,
   llmSourcesService,
   type LLMEndpointOffer,
+  type LLMEndpointTestResult,
   type LLMFundingKind,
   type LLMFundingStatus,
   type LLMSource,
@@ -22,7 +24,7 @@ import {
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { notify } from '@src/notifications';
 
@@ -138,99 +140,156 @@ export function labelForWorker(worker: string): string {
 }
 
 /**
- * Re-ask each harness whether it is signed in, on arrival at this page.
+ * Ask every harness's DEVICE LOGIN whether it is really signed in, on arrival.
  *
- * `Capability.login_state` is runtime-only and is RESOLVED in exactly two
- * places: the backend's startup sweep, and the Assistants & keys modal's own
- * probe when it opens. Nothing else refreshes it — so a person who signs in to
- * the vendor CLI outside Flowpad (or in a Flowpad terminal) leaves this page
- * showing "signed out" indefinitely, and the device source it would pick stays
- * ineligible.
+ * Free and local: a vendor `auth-status` is a subprocess against credentials the user
+ * already pays a subscription for, and it makes no network call. So it runs unasked, every
+ * time this page opens — which is the only way the page can be right about a login the user
+ * ended somewhere else. Reported exactly that way: signed out of the CLI in a terminal, came
+ * here, and the row still claimed to be signed in until Test was pressed by hand.
  *
- * That closes a loop rather than merely looking stale: a launch with no usable
- * source now routes HERE, and a page that cannot learn the truth sends the user
- * straight back to the failure that sent them.
+ * DEVICE ONLY, and that is the whole rule. The key and hub checks spend real money on every
+ * press, so they stay behind a deliberate click; nothing here may trigger them.
  *
- * Same shape as the Capabilities view's arrival re-probe, one question over —
- * that one re-runs discovery to ask "is it installed", this one runs the
- * vendor's own check to ask "is it signed in".
+ * Server-side (`testSource`) rather than `capabilityManager.getSnapshot(kind).capability`:
+ * that read returns `undefined` until the manager has loaded, and the hook it replaced ran
+ * exactly once on mount, so on a cold arrival it probed NOTHING and silently left the page
+ * showing whatever it had. The backend needs no warm client cache to find its own rows.
  *
- * Failures are swallowed on purpose. An unreachable or unparseable probe leaves
- * `login_state` untouched by design (an undetermined answer is evidence about
- * the probe, not about the login), so the page keeps its last known state and
- * every row's own affordance still works.
+ * Never forced. `force` drops a refusal the harness made mid-turn, and doing that
+ * automatically would overturn the strongest evidence there is with a probe that only proves
+ * a credential exists. The Test button carries that power because a person is asserting it.
  */
-export function useRefreshLoginStates(): void {
+export function useProbeDeviceLogins(): void {
   const qc = useQueryClient();
   const params = useFundingParams();
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const probes = HARNESS_CAPABILITY_KINDS.map(async (kind) => {
-        const capability = capabilityManager.getSnapshot(kind).capability;
-        // `catch` per harness, not around the batch: one vendor CLI that hangs
-        // or is missing must not stop the other three from reporting.
-        await capability?.authStatus().catch(() => undefined);
-      });
-      await Promise.all(probes);
-      // ONE refresh after all four, not one each — the funding status is a
-      // single backend read covering every harness.
+      // Per-harness catch, not one around the batch: three of four harnesses are usually not
+      // installed, and one missing binary must not stop the others reporting.
+      await Promise.all(
+        HARNESS_CAPABILITY_KINDS.map((kind) =>
+          llmSourcesService.testSource({ kind: 'device', harness: kind }).catch(() => undefined),
+        ),
+      );
+      // ONE refresh after all of them — the funding picture is a single read covering every
+      // harness, so four invalidations would be three wasted round-trips.
       if (!cancelled) await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
     })();
     return () => {
       cancelled = true;
     };
-    // Mount only: this is an arrival probe, and re-running it on every params
-    // change would spawn four vendor CLIs each time the active project moved.
+    // Mount only: an arrival probe. Re-running it whenever the active project moved would
+    // spawn four vendor CLIs for a change that cannot affect a device login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 
 /**
- * "I signed in elsewhere — look again."
+ * Re-read the funding picture whenever a harness's login state moves.
  *
- * The one probe allowed to drop a recorded refusal. When a harness tells
- * FlowPad mid-turn that it is not logged in, that denial is latched, and a
- * SILENT re-check cannot clear it: `claude auth status` reports a credential's
- * presence, never its validity, so presence must not overturn a refusal the
- * harness actually made. `useRefreshLoginStates` is exactly that silent kind
- * and is correct to be.
+ * The reported symptom, and the one that made the page look broken: sign in from the modal
+ * this page opens, succeed, and the device row still offers **Test** and **Sign in** — never
+ * **Use**. The row's affordance is chosen by `source.eligible`, which the backend derives from
+ * `login_state`; the login writes that field and broadcasts it, but the broadcast lands on
+ * `capabilityManager` while this page renders from a SEPARATE react-query cache that nothing
+ * told. `useRefreshLoginStates` is mount-only by design, so the page kept the snapshot it
+ * arrived with for as long as it stayed open.
  *
- * Which leaves the case this exists for, and which the backend's own docstring
- * names: a user who ran `claude /login` in their own terminal. The credential
- * is good, the latch says otherwise, and nothing a page does on its own may
- * disagree. `force` is the user asserting they fixed it — so it belongs on a
- * button they press, never on a render.
- *
- * The row showing "signed out" offered only Sign in, which starts a device
- * login nobody needs when they are already signed in. The cure lived on another
- * screen (the Assistants & keys Test button); this puts it where the problem is
- * reported.
+ * Subscribing to the manager closes that gap at the seam where the news actually arrives,
+ * rather than polling or re-probing: one invalidation per capability broadcast, and the row
+ * re-renders from the same backend read every other answer on this page comes from.
  */
-export function useRecheckSignIn() {
+export function useFundingFollowsLogin(): void {
   const qc = useQueryClient();
   const params = useFundingParams();
-  return useMutation({
-    mutationFn: async (harnessKind: string) => {
-      const capability = capabilityManager.getSnapshot(harnessKind).capability;
-      if (!capability) throw new Error('no capability row for this harness');
-      return capability.authStatus(true);
-    },
-    onSuccess: async (result) => {
-      // The verdict came back; the funding picture is derived from it, so it has
-      // to be re-read rather than patched — a cleared denial changes which
-      // source WINS, not just one row's label.
+  useEffect(
+    () =>
+      capabilityManager.subscribe(() => {
+        void qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
+      }),
+    [qc, params],
+  );
+}
+
+/**
+ * "Does THIS row work?" — the per-source test.
+ *
+ * One button per row, because the three kinds fail for three unrelated reasons and a single
+ * verdict cannot cover them. The Test this replaces ran `authStatus`, whose answer reports
+ * WHAT FUNDS THE HARNESS: pressing it on a device login that had just signed in successfully
+ * replied "using the hub endpoint" — an answer about a different row. Reported exactly that
+ * way on Windows.
+ *
+ * Keyed by `llmSourceRef` so only the pressed row spins: `isPending` on a shared mutation
+ * would grey out every Test button on the page for one row's call, and the key-and-hub checks
+ * are real network calls that take a moment.
+ */
+export function useTestSource() {
+  const qc = useQueryClient();
+  const params = useFundingParams();
+  const [pending, setPending] = useState<string>('');
+  const [verdicts, setVerdicts] = useState<Record<string, LLMEndpointTestResult>>({});
+  // The ref, not the state: `onSuccess` runs after `onSettled` has already cleared `pending`,
+  // so reading the state there would file every verdict under the empty key.
+  const pendingRef = useRef<string>('');
+  const mutation = useMutation({
+    mutationFn: ({ source, endpoint, harness }: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) =>
+      llmSourcesService.testSource({
+        kind: endpoint?.kind ?? '',
+        provider: endpoint?.provider,
+        harness,
+        endpoint_typeid: source.endpoint_typeid,
+        // A PERSON pressed this, so it may drop a latched refusal — the arrival probe, which
+        // is automatic, may not. See `_test_device_login`.
+        force: true,
+      }),
+    onSettled: () => setPending(''),
+    onSuccess: async (result: LLMEndpointTestResult) => {
+      // The verdict lands ON THE ROW, not only in a toast. Reported: pressing Test showed a
+      // spinner, then the button came back, and nothing else — the toast was either missed or
+      // never seen, and a test whose answer you cannot find has not answered. The row keeps
+      // its verdict until the next press.
+      setVerdicts((prior) => ({ ...prior, [pendingRef.current]: result }));
+      // A device test can flip `login_state`, and a key that turns out to be dead changes
+      // which source WINS — so the funding picture is re-read rather than patched.
       await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
-      if (result.status === 'logged_in') {
-        notify.success({ title: i18n._(msg`Signed in`), message: result.message || undefined, durationMs: 3000 });
-      } else {
-        notify.warning({
-          title: i18n._(msg`Still signed out — please re-authenticate`),
-          message: result.message || undefined,
-          durationMs: 5000,
+      if (result.ok) {
+        notify.success({
+          title: i18n._(msg`This source works`),
+          message: result.model ? `${result.model} · ${result.latency_ms}ms` : undefined,
+          durationMs: 3000,
         });
+      } else {
+        // The provider's own sentence, verbatim. "Insufficient credit" and "invalid key" are
+        // different problems with different cures, and only it knows which this is.
+        notify.warning({ title: i18n._(msg`This source did not work`), message: result.message, durationMs: 6000 });
       }
     },
-    onError: () => notify.error({ title: i18n._(msg`Could not check sign-in`), durationMs: 4000 }),
+    onError: (e) => {
+      // A transport failure is still an answer the row must show, for the same reason: the
+      // button coming back with nothing beside it reads as "the test did nothing".
+      setVerdicts((prior) => ({
+        ...prior,
+        [pendingRef.current]: { ok: false, status: 0, model: '', latency_ms: 0, message: String(e) },
+      }));
+      notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000 });
+    },
   });
+  return {
+    /** Which row is mid-test, as an `llmSourceRef`; `''` when none is. */
+    pending,
+    /** The last verdict per row, by `llmSourceRef` — rendered on the row itself. */
+    verdicts,
+    test: (args: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) => {
+      const ref = llmSourceRef(args.source);
+      pendingRef.current = ref;
+      setPending(ref);
+      // Drop the previous verdict as the new run starts: a stale green beside a spinner claims
+      // an answer this press has not produced yet.
+      setVerdicts((prior) => Object.fromEntries(Object.entries(prior).filter(([key]) => key !== ref)));
+      mutation.mutate(args);
+    },
+  };
 }

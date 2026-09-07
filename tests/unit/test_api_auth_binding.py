@@ -302,17 +302,34 @@ async def test_hub_endpoint_unbound_raises(env, monkeypatch) -> None:
         await resolve_worker_api_auth(_fake_process("claude"))
 
 
-async def test_hub_endpoint_without_login_raises(env, monkeypatch) -> None:
-    """Bound but logged out: the "key" is the hub login, so there is none."""
+async def test_hub_endpoint_without_login_falls_through(env, monkeypatch) -> None:
+    """Bound but SIGNED OUT of Flowpad: the preference is ignored, not enforced.
+
+    A Flowpad budget is a preference, and a preference names a source the person
+    would rather spend -- it cannot name one they can still reach once they have
+    signed out. Enforcing it here is the trap that was reported on Windows:
+    claude installed AND signed in, and every launch refused with
+
+        claude has no usable LLM source:
+          - claude device login: claude is set to use flowpad
+          - openrouter key:      claude is set to use flowpad
+
+    -- two working sources excluded by a budget the box could no longer reach.
+    So a signed-out box drops the pin and walks the ordinary ladder (device
+    login first, then a stored key). Here that lands on the device login, and
+    device auth is ``None`` -- the vendor CLI reads its own credentials.
+
+    The narrowing is exactly this one case. ``test_hub_endpoint_unbound_raises``
+    is its sibling and still fails loudly: SIGNED IN with no endpoint bound is a
+    broken binding, not an unreachable one.
+    """
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.cli.auth.hub_login import delete_api_key
 
     _bind_hub(monkeypatch, login=False)
     delete_api_key()
     await _set_harness_api("claude", provider="flowpad")
-    with pytest.raises(WorkerSpawnError):
-        await resolve_worker_api_auth(_fake_process("claude"))
+    assert await resolve_worker_api_auth(_fake_process("claude")) is None
 
 
 # ── a process may spend a different budget than its box ──────────────────────
