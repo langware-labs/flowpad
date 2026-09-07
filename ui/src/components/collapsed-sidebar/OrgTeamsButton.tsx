@@ -10,8 +10,13 @@ import { ViewType } from '@src/types/ViewType';
 /**
  * Org & teams — account-cluster button at the foot of the rail, beside the theme
  * toggle and user menu, not a `RAIL_ITEMS` mode-matrix entry. Self-gating like
- * the dev-mode button next to it: renders nothing unless `useHasOrgOrTeam()`.
- * Opens `ViewType.ORGANIZATION`, the same page the hub rail's entry opens.
+ * the dev-mode button next to it.
+ *
+ * Carries `data-testid`, NOT `data-rail-item`: that attribute is the rail's
+ * identity, emitted only from the two spec-driven loops, and
+ * `tests/react/rail-order-and-gates.test.tsx` collects every one of them to
+ * assert the exact rail order. A cluster button wearing it would join a contract
+ * it is deliberately outside. The sibling buttons use test ids for the same reason.
  */
 export function OrgTeamsButton() {
   const { t } = useLingui();
@@ -26,8 +31,10 @@ export function OrgTeamsButton() {
     <Button
       variant="ghost"
       size="icon"
-      className={cn('h-8 w-8', isActive && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-      data-rail-item="org-teams"
+      // `bg-accent`, matching FlowpadAssistantButton beside it — the cluster's
+      // pressed state, not the `bg-sidebar-accent` the menu-shaped rail uses.
+      className={cn('h-8 w-8', isActive && 'bg-accent text-accent-foreground')}
+      data-testid="org-teams-button"
       onClick={() => navigation.openTab(ViewType.ORGANIZATION)}
       title={t`Org & teams`}
     >

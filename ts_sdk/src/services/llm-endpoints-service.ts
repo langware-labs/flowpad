@@ -125,11 +125,11 @@ export interface LLMUsageReport {
 export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
   const info = new ActionInfo(name, type, id, method);
   if (subpath) info.subpath = subpath;
-  // Hub-owned — reflect to the hub, or the desk backend (no handler for these)
-  // falls through to a generic entity read and answers 200 with the ENTITY.
-  // Reflection needs a target entity (`should_reflect_to_hub`); id-less actions
-  // (`catalog`, `token_plan/me`) are served by the desk's own proxy action.
-  if (id !== null) info.hubReflect = true;
+  // Hub-owned — reflect, or the desk (no handler for these) falls through to a
+  // generic entity read and answers 200 with the ENTITY. Id-less actions
+  // (`catalog`, `token_plan/me`) cannot reflect — `should_reflect_to_hub` needs
+  // a target entity — and are served by the desk's own proxy action instead.
+  info.hubReflect = id !== null;
   return info;
 }
 
