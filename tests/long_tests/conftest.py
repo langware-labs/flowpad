@@ -11,6 +11,7 @@ worker-specific symbol.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -418,11 +419,22 @@ def _await_backend_health(proc: subprocess.Popen, port: int, log: Path) -> None:
 # expressed as another driver method here, not as an ``if worker_id == ...``
 # branch in the test.
 
-_WORKER_PARAMS = [
-    pytest.param("claude", id="claude"),
-    pytest.param("codex", id="codex"),
-    pytest.param("copilot", id="copilot"),
-]
+
+def _worker_param(name: str) -> "pytest.param":
+    """One worker row, skipped when its CLI is not installed on this host.
+
+    An absent optional worker must SKIP, never fail: with no binary the driver
+    spawns nothing, so the test burns its whole budget and dies on the timeout
+    cap — a latency-shaped failure for a missing dependency.
+    """
+    return pytest.param(
+        name,
+        id=name,
+        marks=pytest.mark.skipif(shutil.which(name) is None, reason=f"{name} CLI not installed"),
+    )
+
+
+_WORKER_PARAMS = [_worker_param(n) for n in ("claude", "codex", "copilot")]
 
 
 @pytest.fixture(params=_WORKER_PARAMS)
