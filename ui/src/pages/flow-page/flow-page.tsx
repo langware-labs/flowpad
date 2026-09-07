@@ -37,12 +37,9 @@ export default function FlowPage() {
   // not apply. Route it through the standard layout so ContentPanel's page=hub
   // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
   const hubMode = currentDock?.page === PageId.HUB;
-  // A preview-editor active display (html/image/video/audio/pdf pinned by
-  // `flow show`) stays with VibeWorkspace's own Display pane instead of
-  // AssetVibeWorkspace — see `isPreviewAssetDock`. Gated on `isVibe` and
-  // `isActiveDisplay` so a file opened directly (assets browser, chat
-  // attachment) still gets the normal asset-workspace chrome; only the
-  // agent's own pinned deliverable is exempted.
+  // A `flow show`-pinned preview stays with VibeWorkspace's Display pane rather
+  // than swapping to AssetVibeWorkspace. `isActiveDisplay` is what limits this to
+  // the agent's own pin — a file the USER opened keeps the asset chrome.
   const isPreviewDisplay = isVibe && !!currentDock && currentDock.isActiveDisplay && isPreviewAssetDock(currentDock);
   const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock) && !isPreviewDisplay;
 

@@ -46,9 +46,8 @@ function row(id: string, overrides: Partial<ITab> = {}): ITab {
 }
 
 /** A child row shaped like the workspace's OWN active display (FLOWPAD-2096):
- *  `flow show` of a preview target (html/image/…) navigates to this dock,
- *  `materializeTab` adopts it as a child of the process tab, but it must not
- *  render as a SECOND chip — the fixed Display header already represents it. */
+ *  `materializeTab` adopts a `flow show` preview target as a child of the process
+ *  tab, but the fixed Display header already represents it — so it gets no chip. */
 function activeDisplayRow(id: string): ITab {
   return row(id, {
     pointer: JSON.stringify({

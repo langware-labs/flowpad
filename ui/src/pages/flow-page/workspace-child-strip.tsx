@@ -43,14 +43,9 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
   useTabLifecycles();
   const workspaceChildren = useWorkspaceChildren(processTab?.id);
   const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
-  // The workspace's OWN active display (a `flow show` target `materializeTab`
-  // adopted as a child — see `isAdoptableChildDock`) is content the fixed
-  // "Display" square below already represents; it is not a SEPARATE thing the
-  // agent opened. Rendering it again as a chip would duplicate every preview
-  // target (html/image/pdf/…) the moment it stops swapping into
-  // `AssetVibeWorkspace`. Excluded from the STRIP only — `children` (closing,
-  // adoption bookkeeping) keeps it, since the row is real and must still be
-  // torn down with the rest of the workspace.
+  // The workspace's OWN active display is already the fixed "Display" square, so
+  // its adopted child row must not ALSO be a chip. Dropped from the STRIP only —
+  // `children` keeps it, or closing the workspace would leak the row.
   const visibleChildren = useMemo(
     () => children.filter((tab) => !(tab.dockPointer && new DockPointer(tab.dockPointer).isActiveDisplay)),
     [children],
@@ -61,11 +56,9 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
 
   const processKey = processDock.tabHash ?? 'workspace-display';
   const activeKey = currentDock?.tabHash ?? '';
-  // The active display's own dock (e.g. a preview target) carries the
-  // host-keyed `ACTIVE_DISPLAY_HASH_NS` tabHash, not the process's — so a
-  // plain key comparison never lit the square for it. Its chip is deliberately
-  // not in the strip (see `visibleChildren` above), so this is the only cue
-  // the user gets that the Display IS what's on screen.
+  // The active display's dock is keyed by `ACTIVE_DISPLAY_HASH_NS`, not the
+  // process's tabHash, so a plain comparison never lit the square for it — and
+  // with no chip in the strip either, nothing marked the Display as active.
   const processActive = activeKey === processKey || !!currentDock?.isActiveDisplay;
 
   const childByKey = useMemo(() => {
