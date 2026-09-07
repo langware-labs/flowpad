@@ -8,6 +8,7 @@ import React from 'react';
 import {
   ProjectCountBadge,
   ProjectCountsSummary,
+  ProjectListOpenDialog,
   ProjectListPopoverContent,
   useProjectListMenu,
 } from './project-list-menu';
@@ -109,6 +110,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>
       </Popover>
+      <ProjectListOpenDialog menu={menu} />
     </TooltipProvider>
   );
 };
