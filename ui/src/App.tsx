@@ -8,6 +8,7 @@ import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesCo
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
@@ -83,6 +84,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
   useEffect(() => {
     const cleanup = initNotificationIngest();
+    // A load-time resolver (agent auto-launch) cannot toast before the outlet
+    // exists; it stashes, and this is the flush.
+    flushAgentAutoLaunchWarning();
     return cleanup;
   }, []);
 

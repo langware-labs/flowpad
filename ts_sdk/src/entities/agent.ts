@@ -86,6 +86,17 @@ export class Agent extends APIEntity<Agent> {
   /** Absolute on-disk path to the agent's folder (`agent.md` sits inside). */
   asset_ref?: string;
 
+  // ── presentation + project auto-launch ─────────────────────────────────
+  /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
+   *  Presentation only — never part of the transcript, never sent to the model. */
+  intro?: string;
+  /** Launch once, the first time the project this agent lives in is opened.
+   *  Oldest wins when several agents in a project set it; the rest are
+   *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
+  auto_launch: boolean;
+  /** First prompt of the auto-launched session, delivered via the prompt queue. */
+  auto_launch_prompt?: string;
+
   constructor(entity: Partial<Agent> = {}) {
     super(entity);
     this.name = entity.name;
@@ -111,6 +122,10 @@ export class Agent extends APIEntity<Agent> {
 
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
+
+    this.intro = entity.intro;
+    this.auto_launch = entity.auto_launch ?? false;
+    this.auto_launch_prompt = entity.auto_launch_prompt;
   }
 
   /**

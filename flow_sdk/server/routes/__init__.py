@@ -1,6 +1,7 @@
 """Route modules for the flow_sdk server."""
 
 from .agent_records import router as agent_records_router
+from .agents import router as agents_router
 from .asset_share import router as asset_share_router
 from .assets import router as assets_router
 from .auth import router as auth_router
@@ -89,6 +90,7 @@ __all__ = [
     "capabilities_router",
     "toplog_router",
     "graph_workflows_router",
+    "agents_router",
     "journeys_router",
     "git_router",
     "worldview_router",

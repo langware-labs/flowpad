@@ -22,6 +22,9 @@ export type AgentDocumentPatch = Partial<
     | 'load_flowpad_assistant'
     | 'cli_options'
     | 'enabled'
+    | 'intro'
+    | 'auto_launch'
+    | 'auto_launch_prompt'
     | 'system_prompt'
   >
 >;

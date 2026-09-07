@@ -2601,6 +2601,13 @@ class AgenticProcess(Entity):
         self._schedule_queue_drain("enqueue")
         return ApiSuccessResponse(data=self.queue.read())
 
+    @action.post(action_name="drain-queue")
+    async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Kick a drain without adding a prompt (unlike ``set-queue-enabled``, touches
+        nothing else). Idempotent: an empty or busy queue is a no-op."""
+        self._schedule_queue_drain("ui")
+        return ApiSuccessResponse(data=self.queue.read())
+
     @action.post(action_name="dequeue")
     async def _dequeue_action(self) -> ApiSuccessResponse | ApiFailResponse:
         body = await _read_json_body()

@@ -250,6 +250,11 @@ msgstr "{0} הערות בשורה זו"
 msgid "{0} attachments"
 msgstr "{0} קבצים מצורפים"
 
+#. placeholder {0}: warning.winner
+#: src/agents/agent-auto-launch-warning.ts
+msgid "{0} auto-launched"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "{0} avatar"
 #~ msgstr "אווטר של {0}"
@@ -1028,7 +1033,7 @@ msgstr ""
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 msgstr "מקור הוא חשבון מרחוק אחד או קבוצת הזנות אחת. הסנכרון מתבצע בכל דופק."
 
-#: src/components/entity-execution-panel/execution-message/execution-message.tsx
+#: src/components/agents/AgentSignature.tsx
 msgid "About {name}"
 msgstr ""
 
@@ -2454,6 +2459,19 @@ msgstr "זיהוי כיוון אוטומטי מהתו החזק הראשון"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-enable all project-level MCP servers"
 msgstr "הפעלה אוטומטית של כל שרתי ה-MCP ברמת הפרויקט"
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch on project open"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch prompt"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "auto-login off"
@@ -8034,6 +8052,10 @@ msgstr "בשיגור…"
 msgid "First indexed"
 msgstr "אונדקס לראשונה"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "First prompt to send when the project opens…"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "First selection"
 msgstr "בבחירה הראשונה"
@@ -9566,6 +9588,11 @@ msgstr "הוראות"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "שפת הממשק וכיוון הטקסט."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Intro"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Invalid"
@@ -12976,6 +13003,10 @@ msgstr "הכנה ראשונית"
 #: src/components/account/settings-section.tsx
 msgid "Onboarding reset"
 msgstr "איפוס הכנה ראשונית"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+msgstr ""
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "One per line. Each URL becomes its own stream with its own cursor and health."
@@ -17382,6 +17413,10 @@ msgstr "מציג 20 מתוך {0} ערכים"
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "מציג את התצורה הנוכחית בלבד — אין תמונת מצב טעונה עד ההתחלה המוצלחת הראשונה."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Shown as the agent's first message. Not sent to the model."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "מוצג בשלב האישור"
@@ -20699,6 +20734,10 @@ msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון נו
 #: src/components/account/settings-section.tsx
 msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
 msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון, זרועים בהפעלה הראשונה. סטטוס: {onboardingStatus}"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Welcome! Tell the user what this agent can do and how to start…"
+msgstr ""
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #~ msgid "What are Flowpad's runtime environments?"

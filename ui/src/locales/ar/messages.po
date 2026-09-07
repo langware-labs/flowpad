@@ -250,6 +250,11 @@ msgstr "{0} تعليقات توضيحية على هذا الصف"
 msgid "{0} attachments"
 msgstr "{0} مرفقات"
 
+#. placeholder {0}: warning.winner
+#: src/agents/agent-auto-launch-warning.ts
+msgid "{0} auto-launched"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "{0} avatar"
 #~ msgstr "الصورة الرمزية لـ {0}"
@@ -1028,7 +1033,7 @@ msgstr ""
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 msgstr "المصدر هو حساب بعيد واحد أو مجموعة موجزات. تقوم آلية المسح بمزامنته مع كل نبضة."
 
-#: src/components/entity-execution-panel/execution-message/execution-message.tsx
+#: src/components/agents/AgentSignature.tsx
 msgid "About {name}"
 msgstr ""
 
@@ -2454,6 +2459,19 @@ msgstr "الكشف التلقائي عن الاتجاه من أول حرف قو�
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-enable all project-level MCP servers"
 msgstr "تفعيل جميع خوادم MCP على مستوى المشروع تلقائياً"
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch on project open"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch prompt"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "auto-login off"
@@ -8034,6 +8052,10 @@ msgstr "جارٍ البث…"
 msgid "First indexed"
 msgstr "أول فهرسة"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "First prompt to send when the project opens…"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "First selection"
 msgstr "عند أول تحديد"
@@ -9566,6 +9588,11 @@ msgstr "التعليمات"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "لغة الواجهة واتجاه النص."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Intro"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Invalid"
@@ -12976,6 +13003,10 @@ msgstr "الإعداد الأولي"
 #: src/components/account/settings-section.tsx
 msgid "Onboarding reset"
 msgstr "إعادة تعيين الإعداد الأولي"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+msgstr ""
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "One per line. Each URL becomes its own stream with its own cursor and health."
@@ -17382,6 +17413,10 @@ msgstr "عرض 20 من أصل {0} إدخال"
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "عرض الإعدادات الحالية فقط — لا توجد لقطة محفوظة حتى البدء الناجح الأول."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Shown as the agent's first message. Not sent to the model."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "تظهر عند الموافقة"
@@ -20699,6 +20734,10 @@ msgstr "تمت إعادة إنشاء إشارة الترحيب المرجعية 
 #: src/components/account/settings-section.tsx
 msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
 msgstr "إشارة الترحيب المرجعية ومدخل الخلاصة، يُنشآن عند التشغيل الأول. الحالة: {onboardingStatus}"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Welcome! Tell the user what this agent can do and how to start…"
+msgstr ""
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #~ msgid "What are Flowpad's runtime environments?"

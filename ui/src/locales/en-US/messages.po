@@ -250,6 +250,11 @@ msgstr "{0} annotations on this row"
 msgid "{0} attachments"
 msgstr "{0} attachments"
 
+#. placeholder {0}: warning.winner
+#: src/agents/agent-auto-launch-warning.ts
+msgid "{0} auto-launched"
+msgstr "{0} auto-launched"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "{0} avatar"
 #~ msgstr "{0} avatar"
@@ -1028,7 +1033,7 @@ msgstr "a server someone else hosts"
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 
-#: src/components/entity-execution-panel/execution-message/execution-message.tsx
+#: src/components/agents/AgentSignature.tsx
 msgid "About {name}"
 msgstr "About {name}"
 
@@ -2454,6 +2459,19 @@ msgstr "Auto-detect direction from first strong character"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-enable all project-level MCP servers"
 msgstr "Auto-enable all project-level MCP servers"
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+msgstr "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch on project open"
+msgstr "Auto-launch on project open"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch prompt"
+msgstr "Auto-launch prompt"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "auto-login off"
@@ -8034,6 +8052,10 @@ msgstr "Firing…"
 msgid "First indexed"
 msgstr "First indexed"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "First prompt to send when the project opens…"
+msgstr "First prompt to send when the project opens…"
+
 #: src/i18n/pref-labels.ts
 msgid "First selection"
 msgstr "First selection"
@@ -9566,6 +9588,11 @@ msgstr "Instructions"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "Interface language and text direction."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Intro"
+msgstr "Intro"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Invalid"
@@ -12976,6 +13003,10 @@ msgstr "Onboarding"
 #: src/components/account/settings-section.tsx
 msgid "Onboarding reset"
 msgstr "Onboarding reset"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "One per line. Each URL becomes its own stream with its own cursor and health."
@@ -17382,6 +17413,10 @@ msgstr "Showing 20 of {0} entries"
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "Showing current configuration only — there is no loaded snapshot until the first successful start."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Shown as the agent's first message. Not sent to the model."
+msgstr "Shown as the agent's first message. Not sent to the model."
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "Shown at approval"
@@ -20699,6 +20734,10 @@ msgstr "Welcome bookmark + feed entry re-created."
 #: src/components/account/settings-section.tsx
 msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
 msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Welcome! Tell the user what this agent can do and how to start…"
+msgstr "Welcome! Tell the user what this agent can do and how to start…"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #~ msgid "What are Flowpad's runtime environments?"
