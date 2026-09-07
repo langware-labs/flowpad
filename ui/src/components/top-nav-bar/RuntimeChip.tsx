@@ -27,8 +27,7 @@ import { RUNTIME_APPEARANCE } from './runtime-appearance';
  * Two facts on one pill: WHICH MACHINE serves this UI (the color and the
  * glyph — the safety signal) and WHICH PROJECT you are in (the name). It is a
  * split chip: the project-glyph segment opens the project's home, the name
- * segment opens the shared project list (`project-list-menu`, the same list
- * the advanced tab strip's chip shows). Hovering explains the runtime in a sentence and links
+ * segment opens the shared project list (`project-list-menu`). Hovering explains the runtime in a sentence and links
  * to the "Runtime environments" wiki page, peeked in the wiki modal.
  *
  * It DETECTS NOTHING. The kind is resolved by the backend and arrives on
@@ -185,7 +184,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <span className="hidden max-w-[10rem] truncate sm:inline">
                     {menu.projectName ?? <RuntimeLabel kind={kind} />}
                   </span>
-                  <ProjectCountBadge menu={menu} hairlineClassName="bg-white/40" iconClassName="opacity-80" />
+                  <ProjectCountBadge menu={menu} />
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>
               </PopoverTrigger>

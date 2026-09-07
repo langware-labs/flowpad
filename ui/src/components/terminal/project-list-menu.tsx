@@ -8,15 +8,13 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
-import { cn } from '@src/lib/utils';
 import { FolderOpen, Globe, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /**
  * THE project list — the "which open project am I in, and which can I switch
- * to" menu — as a headless hook plus the list it renders. Two chips wear it:
- * the advanced tab strip's {@link ProjectsCounterChip} and the navigation
- * bar's {@link RuntimeChip}. Each owns its own trigger, Popover and testids;
+ * to" menu — as a headless hook plus the list it renders. The navigation bar's
+ * {@link RuntimeChip} wears it: the chip owns its trigger, Popover and testids;
  * the buckets, ordering, counts and URL-first selection live here, once.
  */
 
@@ -26,10 +24,9 @@ function bucketDisplayName(bucket: TabProjectBucket): string {
 
 /**
  * Name shown on the chip's project label. Prefer the explicit current-project
- * name; otherwise fall back to the matching open bucket's display name so a
- * project with live terminals still labels itself even without the prop.
- * Returns null when no project is known (the chip then shows counts only).
- * Pure + dependency-free so it's unit-testable in isolation.
+ * name; otherwise fall back to the matching open bucket's display name (the
+ * project entity may not have resolved one yet). Returns null when no project
+ * is known. Pure + dependency-free so it's unit-testable in isolation.
  */
 export function resolveProjectChipName(
   currentProjectName: string | null | undefined,
@@ -196,8 +193,7 @@ interface ProjectListMenuOptions {
   /** The scope the surrounding surface is in; highlights that row and decides Global. */
   currentProjectId?: string | null;
   /** Display name of the current project. Optional: the menu falls back to the
-   *  matching open bucket's name, so a project with live terminals still labels
-   *  itself even without it. */
+   *  matching open bucket's name when the entity hasn't resolved one. */
   currentProjectName?: string | null;
 }
 
@@ -222,7 +218,6 @@ export interface ProjectListMenu {
   /** "N open tab(s)". */
   tabsLabel: string;
   /** The scope and both counts on one line, for a flat aria-label. */
-  summaryLabel: string;
   recoveringId: string | null;
   handleSelect: (bucket: TabProjectBucket) => Promise<void>;
   handleSelectGlobal: () => Promise<void>;
@@ -274,8 +269,6 @@ export function useProjectListMenu({
   const projectsLabel = `${projectTotal} open project${projectTotal === 1 ? '' : 's'}`;
   const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
   const scopeLabel = projectName ?? (isGlobalScope ? 'Global' : null);
-  const countsLabel = `${projectsLabel}, ${tabsLabel}`;
-  const summaryLabel = scopeLabel ? `${scopeLabel} — ${countsLabel}` : countsLabel;
 
   const handleRecover = async (bucket: TabProjectBucket) => {
     setRecoveringId(bucket.projectId);
@@ -345,7 +338,6 @@ export function useProjectListMenu({
     scopeLabel,
     projectsLabel,
     tabsLabel,
-    summaryLabel,
     recoveringId,
     handleSelect,
     handleSelectGlobal,
@@ -356,7 +348,7 @@ export function useProjectListMenu({
 }
 
 /**
- * The "Open project" dialog the list's bottom button pops. Each chip renders
+ * The "Open project" dialog the list's bottom button pops. The chip renders
  * this once, as a sibling of its Popover (NOT inside the popover content,
  * which unmounts on close and would take the dialog with it).
  */
@@ -371,7 +363,7 @@ export function ProjectListOpenDialog({ menu }: { menu: ProjectListMenu }) {
   );
 }
 
-/** The full-width "Open project" button that closes every project list. */
+/** The full-width "Open project" button that closes the project list. */
 function OpenProjectRow({ menu }: { menu: ProjectListMenu }) {
   return (
     <button
@@ -386,9 +378,8 @@ function OpenProjectRow({ menu }: { menu: ProjectListMenu }) {
   );
 }
 
-/** The two counts, one line each — the body of both chips' hover surfaces, so
- *  which number is which is unmistakable. Each caller names the scope above
- *  it in its own way. */
+/** The two counts, one line each — the body of the chip's hover surface, so
+ *  which number is which is unmistakable. The caller names the scope above it. */
 export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
   return (
     <>
@@ -399,20 +390,11 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
 }
 
 /**
- * The open-projects count as both chips wear it on their trigger: hairline,
- * project glyph, number. Renders nothing at zero — a "0" advertises nothing.
- * `hairlineClassName` / `iconClassName` carry the surface's tone (the strip's
- * chip sits on the page, the nav bar's on a runtime tint).
+ * The open-projects count as the chip wears it on its trigger: hairline,
+ * project glyph, number, toned for the nav bar's runtime tint. Renders nothing
+ * at zero — a "0" advertises nothing.
  */
-export function ProjectCountBadge({
-  menu,
-  hairlineClassName = 'bg-border',
-  iconClassName = 'text-muted-foreground',
-}: {
-  menu: ProjectListMenu;
-  hairlineClassName?: string;
-  iconClassName?: string;
-}) {
+export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
   if (menu.projectTotal === 0) return null;
   const ProjectIcon = iconForType(Project.type);
   return (
@@ -421,8 +403,8 @@ export function ProjectCountBadge({
       data-testid="project-count-badge"
       aria-label={menu.projectsLabel}
     >
-      <span aria-hidden className={cn('mx-0.5 h-3 w-px shrink-0', hairlineClassName)} />
-      <ProjectIcon className={cn('h-3 w-3 shrink-0', iconClassName)} />
+      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
+      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
       {menu.projectTotal}
     </span>
   );
@@ -430,9 +412,9 @@ export function ProjectCountBadge({
 
 /**
  * The list itself — the `<ul>` that goes inside a `PopoverContent`. The caller
- * owns the Popover and its content so each chip keeps its own testid, width
- * and alignment; this renders the rows the same way for both. With nothing to
- * list it says so, rather than opening onto an empty box.
+ * owns the Popover and its content so the chip keeps its own testid, width
+ * and alignment. With nothing to list it says so, rather than opening onto an
+ * empty box.
  */
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   const { buckets, currentProjectId, isGlobalScope, globalTabCount, recoveringId, handleSelect, handleSelectGlobal } =

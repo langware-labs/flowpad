@@ -10,11 +10,12 @@ import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
  *   - spawn flows (claude/codex/copilot/terminal/sandbox) + harness gating
  *   - the opener toolbar (`trailing`), the new-tab menu, and the empty-state
  *     spawn handlers
- *   - the `ProjectsCounterChip` (`leading`)
  *   - the history / resume / install modals
  *
  * It holds NO session list, active-key, or close/rename/select handlers — those
- * are URL-first in `UnifiedTabStrip`. Spawns navigate directly to the new
+ * are URL-first in `UnifiedTabStrip`. Nor any project switcher or history
+ * controls: both live in the top navigation bar (`RuntimeChip`), the app's one
+ * browser-style chrome, so the strip's band is all tabs. Spawns navigate directly to the new
  * terminal (no host callback round-trip).
  */
 import {
@@ -46,7 +47,6 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
-import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
@@ -78,8 +78,6 @@ export interface TerminalStripController {
   tabsProjectId: string | null;
   newTabMenuItems: TabStripContextMenuItem[];
   closeShortcutLabel: string;
-  /** Leading fixed node (ProjectsCounterChip). */
-  leading: React.ReactNode;
   /** Trailing opener toolbar (null unless `addTabButton`). */
   trailing: React.ReactNode;
   /**
@@ -113,9 +111,6 @@ export function useTerminalStripController({
   // newTabMenuItems memos on every render.
   const ContextIcon = useMemo(() => iconForType(GraphContext.type), []);
   const tabsProjectId = spawnProjectId ?? dataContext.project?.id ?? null;
-  const currentProjectName = spawnProjectId
-    ? null
-    : (dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null);
 
   const tabCreationLockRef = useRef(false);
   const [pendingTabCreation, setPendingTabCreation] = useState<'claude' | 'codex' | 'copilot' | 'opencode' | 'terminal' | null>(
@@ -403,29 +398,6 @@ export function useTerminalStripController({
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
-  // Leading region: the project chip (the strip's project dropdown), then the
-  // anchor divider that separates this fixed cluster from the tab row.
-  //
-  // History controls do NOT belong here. They live in the top navigation bar,
-  // which is the app's one browser-style chrome — two sets of Back buttons on
-  // one screen is worse than none.
-  const leading = useMemo(
-    () => (
-      <>
-        <ProjectsCounterChip currentProjectId={tabsProjectId} currentProjectName={currentProjectName} />
-        {/* Anchor divider: a full-height hairline that visually makes the
-            leading cluster the container the tab strip hangs off of, rather
-            than just another item in the row. `self-stretch` spans the band. */}
-        <span
-          aria-hidden
-          data-testid="projects-counter-anchor"
-          className="mx-1.5 w-px shrink-0 self-stretch bg-border"
-        />
-      </>
-    ),
-    [tabsProjectId, currentProjectName],
-  );
-
   const modals = (
     <>
       <AskInstallOneOfDialog kinds={installChoiceKinds} onClose={() => setInstallChoiceKinds(null)} />
@@ -472,7 +444,6 @@ export function useTerminalStripController({
     tabsProjectId,
     newTabMenuItems,
     closeShortcutLabel: `${modLabel}+W`,
-    leading,
     trailing,
     openers,
     modals,
