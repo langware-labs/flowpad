@@ -10,6 +10,7 @@ import {
   bindAssetEditorRegistry,
   editorForPath,
   editorForType,
+  isPreviewEditor,
   mainFileForType,
   markdownExtensions,
   primaryTypeForEditor,
@@ -52,6 +53,30 @@ describe('editorForType', () => {
     bind([{ type_name: 'skill', editor: 'task' }]);
     const ptr = AssetDocPointer.parse(DockPointer.forAssetEditor('skill', '/Users/me/.claude/skills/x').pointer);
     expect(ptr.editor).toBe(AssetEditor.TASK);
+  });
+});
+
+describe('isPreviewEditor', () => {
+  it.each([AssetEditor.HTML, AssetEditor.IMAGE, AssetEditor.VIDEO, AssetEditor.AUDIO, AssetEditor.PDF])(
+    'accepts %s as a passive preview',
+    (editor) => {
+      expect(isPreviewEditor(editor)).toBe(true);
+    },
+  );
+
+  it.each([
+    // A raw-text editor, not a passive preview — a user works ON it.
+    AssetEditor.CODE,
+    // Interactive sandbox + agent bridge, not a passive render (excluded
+    // deliberately despite being file-only and preview-shaped, unlike html).
+    AssetEditor.MCP_APP,
+    // Entity-backed editing surfaces.
+    AssetEditor.MARKDOWN,
+    AssetEditor.SKILL,
+    undefined,
+    null,
+  ])('rejects %s', (editor) => {
+    expect(isPreviewEditor(editor)).toBe(false);
   });
 });
 
