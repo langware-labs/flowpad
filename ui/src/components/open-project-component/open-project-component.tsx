@@ -87,8 +87,8 @@ function CompactProjectSelectDialog({
         ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
         : null;
 
-  // Active projects = the ones that own open tabs — the SAME source the tab
-  // strip's projects chip renders, so both surfaces always agree.
+  // Active projects = the ones that own open tabs — the SAME source the nav
+  // bar's project chip renders, so both surfaces always agree.
   const { buckets } = useTabProjectBuckets();
   const tabCountByProjectId = useMemo(() => new Map(buckets.map((b) => [b.projectId, b.tabCount])), [buckets]);
 
