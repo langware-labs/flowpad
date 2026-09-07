@@ -19,8 +19,12 @@ import {
   type LLMSource,
   type LLMSourceRef,
 } from '@sdk';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
+
+import { notify } from '@src/notifications';
 
 import { WORKER_LABELS, type WorkerType } from '@src/hooks/useWorkerHistory';
 
@@ -180,4 +184,53 @@ export function useRefreshLoginStates(): void {
     // change would spawn four vendor CLIs each time the active project moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+/**
+ * "I signed in elsewhere — look again."
+ *
+ * The one probe allowed to drop a recorded refusal. When a harness tells
+ * FlowPad mid-turn that it is not logged in, that denial is latched, and a
+ * SILENT re-check cannot clear it: `claude auth status` reports a credential's
+ * presence, never its validity, so presence must not overturn a refusal the
+ * harness actually made. `useRefreshLoginStates` is exactly that silent kind
+ * and is correct to be.
+ *
+ * Which leaves the case this exists for, and which the backend's own docstring
+ * names: a user who ran `claude /login` in their own terminal. The credential
+ * is good, the latch says otherwise, and nothing a page does on its own may
+ * disagree. `force` is the user asserting they fixed it — so it belongs on a
+ * button they press, never on a render.
+ *
+ * The row showing "signed out" offered only Sign in, which starts a device
+ * login nobody needs when they are already signed in. The cure lived on another
+ * screen (the Assistants & keys Test button); this puts it where the problem is
+ * reported.
+ */
+export function useRecheckSignIn() {
+  const qc = useQueryClient();
+  const params = useFundingParams();
+  return useMutation({
+    mutationFn: async (harnessKind: string) => {
+      const capability = capabilityManager.getSnapshot(harnessKind).capability;
+      if (!capability) throw new Error('no capability row for this harness');
+      return capability.authStatus(true);
+    },
+    onSuccess: async (result) => {
+      // The verdict came back; the funding picture is derived from it, so it has
+      // to be re-read rather than patched — a cleared denial changes which
+      // source WINS, not just one row's label.
+      await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
+      if (result.status === 'logged_in') {
+        notify.success({ title: i18n._(msg`Signed in`), message: result.message || undefined, durationMs: 3000 });
+      } else {
+        notify.warning({
+          title: i18n._(msg`Still signed out — please re-authenticate`),
+          message: result.message || undefined,
+          durationMs: 5000,
+        });
+      }
+    },
+    onError: () => notify.error({ title: i18n._(msg`Could not check sign-in`), durationMs: 4000 }),
+  });
 }

@@ -19,7 +19,7 @@ import {
   type LLMSource,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertCircle, ArrowUpRight, Check, KeyRound, Waypoints } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
@@ -39,6 +39,7 @@ import {
   harnessKinds,
   labelForWorker,
   useLlmSources,
+  useRecheckSignIn,
   useRefreshLoginStates,
   useSelectSource,
   workerOf,
@@ -69,6 +70,7 @@ function SourceRow({
 }) {
   const { t } = useLingui();
   const worker = workerOf(harness);
+  const recheck = useRecheckSignIn();
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
@@ -120,14 +122,34 @@ function SourceRow({
         </Button>
       )}
       {needsSignIn ? (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openHarnessLoginModal()}
-          data-testid={`llm-source-signin-${worker}`}
-        >
-          <Trans>Sign in</Trans>
-        </Button>
+        <>
+          {/* "I already signed in — look again."
+              A refusal the harness made mid-turn is LATCHED, and a silent
+              re-check may not clear it (a stored credential proves presence,
+              not validity). So a person who ran `claude /login` in their own
+              terminal saw this row keep saying "signed out" with only a Sign in
+              button — offering to start a login they had already completed.
+              This is the same forced re-check the Assistants & keys modal's
+              Test button makes, put where the problem is actually reported. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={recheck.isPending}
+            onClick={() => recheck.mutate(harness)}
+            title={t`Already signed in elsewhere? Check again`}
+            data-testid={`llm-source-recheck-${worker}`}
+          >
+            {recheck.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openHarnessLoginModal()}
+            data-testid={`llm-source-signin-${worker}`}
+          >
+            <Trans>Sign in</Trans>
+          </Button>
+        </>
       ) : needsKey ? (
         <Button
           size="sm"
