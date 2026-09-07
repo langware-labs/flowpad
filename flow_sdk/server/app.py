@@ -63,6 +63,7 @@ from .routes import (
     graph_workflows_router,
     hooks_router,
     ingest_router,
+    agents_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
@@ -583,6 +584,7 @@ server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
+server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)

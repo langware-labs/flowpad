@@ -50,6 +50,7 @@ import { ChatPlanModeProvider } from '@src/components/terminal/interactive-termi
 import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { AgentIntroMessage } from '@src/components/agents/AgentIntroMessage';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
@@ -924,6 +925,7 @@ export function EntityExecutionPanel({
       {showProcessNameBar && activeProcess && <ProcessNameBar process={activeProcess} />}
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
+        {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
         {dense ? (
           <>
             <TurnGroupsList

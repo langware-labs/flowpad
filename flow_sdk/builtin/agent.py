@@ -20,8 +20,11 @@ NOT the same thing as a ``SubAgent``: that is the provider-owned
 may *reference* SubAgents through ``subagents`` — they render to that path
 verbatim and are never absorbed here.
 """
+import asyncio
+import collections
 import functools
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from pydantic import PrivateAttr
@@ -70,6 +73,40 @@ def worker_type_value(worker: str | None) -> str:
     return _vendor(worker).worker_type
 
 
+#: One lock per project so concurrent auto-launch calls (two tabs, a reload
+#: storm) select-and-mark exactly once.
+_AUTO_LAUNCH_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+#: Key in the project's device state (``flow_sdk.project_device_state``) holding
+#: the agent ids whose auto-launch already fired, or was cancelled, here.
+_AUTO_LAUNCHED_KEY = "agent_auto_launched"
+
+
+@dataclass
+class AutoLaunchOutcome:
+    """What ``Agent.auto_launch_for`` did: the session it opened, and who lost."""
+
+    agent: "Agent"
+    process: "AgenticProcess"
+    cancelled: list["Agent"]
+    prompt_queued: bool
+
+    def to_payload(self) -> dict:
+        return {
+            "agent_id": self.agent.id,
+            "agent_title": self.agent.display_name,
+            "process_id": self.process.id,
+            "process_typeid": str(self.process.typeid),
+            "prompt_queued": self.prompt_queued,
+            "cancelled": [{"agent_id": agent.id, "title": agent.display_name} for agent in self.cancelled],
+        }
+
+    @staticmethod
+    def none_payload() -> dict:
+        """The same shape when nothing launched — one definition for both routes and tests."""
+        return {"agent_id": None, "process_id": None, "process_typeid": None, "prompt_queued": False, "cancelled": []}
+
+
 class AgentSpec(FrontMatter):
     """``agent.md`` — the shape of the document. ``name`` is deliberately NOT
     here: it comes from the folder (``TypeInfo.name_from_path``), so a rename
@@ -98,6 +135,9 @@ class AgentSpec(FrontMatter):
     load_flowpad_assistant: Optional[bool] = None
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
+    intro: Optional[str] = None
+    auto_launch: Optional[bool] = None
+    auto_launch_prompt: Optional[str] = None
     input: Optional[SpecType] = None
     output: Optional[SpecType] = None
     system_prompt: Body = ""
@@ -213,6 +253,27 @@ class Agent(Entity):
     # ── lifecycle ─────────────────────────────────────────────────────────
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+
+    # ── presentation + project auto-launch ────────────────────────────────
+    # DECLARATION ONLY, like `input`/`output`: none of these enter
+    # `to_agent_options`, so setting them never flips `restart_required`.
+    intro: str = APIField(
+        default="",
+        description="Welcome text shown as the agent's first message in Vibe/Standard chat so a new "
+        "session is not empty. Presentation only: it never enters the transcript or the model.",
+    )
+    auto_launch: bool = APIField(
+        default=False,
+        description="Launch this agent once, the first time the project it lives in is opened. "
+        "Once per project, ever — a failed attempt is not retried. When several agents in a "
+        "project set this, the oldest (first indexed, then alphabetical by folder) launches and "
+        "the others are cancelled with a warning.",
+    )
+    auto_launch_prompt: str = APIField(
+        default="",
+        description="First prompt of the auto-launched session, delivered through the process "
+        "prompt queue. Empty = open the session with no first turn.",
+    )
 
     _api_visible: ClassVar[bool] = True
 
@@ -374,6 +435,55 @@ class Agent(Entity):
         """Open a session AS this agent — saved, visible, no first turn."""
         target = deployment or await self.local_deployment()
         return await target.use(project_id=project_id)
+
+    @staticmethod
+    def auto_launched_ids(project_id: str) -> list[str]:
+        """The project's once-only marks, sorted — what a later open will skip."""
+        from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
+
+        return sorted(str(item) for item in read_project_device_state(project_id).get(_AUTO_LAUNCHED_KEY) or [])
+
+    @staticmethod
+    async def auto_launch_for(project_id: str) -> "AutoLaunchOutcome | None":
+        """The one agent to auto-launch when ``project_id`` is opened, launched — or None.
+
+        Candidates: agents rooted in the project or one of its direct context
+        folders (``assets_under_roots``, the same scoping journeys use), enabled,
+        ``auto_launch`` on, and not yet marked. Every candidate — winner and
+        cancelled — is marked before the session opens, under a per-project
+        lock, so it is ONCE per project (see the ``auto_launch`` field). The
+        prompt is enqueued, not sent: the caller kicks the queue (``drain-queue``)
+        after the vibe persona is embedded, the order ``useAgentLauncher`` uses.
+        """
+        from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return None
+        roots = project.direct_context_roots()
+
+        def age_key(agent: "Agent") -> tuple[str, str, str]:
+            created = agent.created_date.isoformat() if agent.created_date else ""
+            return (created, agent.asset_ref or "", agent.id)
+
+        async with _AUTO_LAUNCH_LOCKS[project_id]:
+            done = set(Agent.auto_launched_ids(project_id))
+            flagged = await Agent.get_all({"match": {"auto_launch": True, "enabled": True}})
+            candidates = assets_under_roots([agent for agent in flagged if agent.id not in done], roots)
+            if not candidates:
+                return None
+            candidates.sort(key=age_key)
+            winner, cancelled = candidates[0], candidates[1:]
+            update_project_device_state(
+                project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
+            )
+
+        process = await winner.use(project_id=project_id)
+        prompt = (winner.auto_launch_prompt or "").strip()
+        if prompt:
+            process.queue.enqueue(prompt, source="auto_launch")
+        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=bool(prompt))
 
     def process_messages(self):
         """Scope message processing so each thread reuses one AgenticProcess."""
