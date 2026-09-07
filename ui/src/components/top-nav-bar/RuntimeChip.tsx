@@ -12,6 +12,7 @@ import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import {
   ProjectCountBadge,
   ProjectCountsSummary,
+  ProjectListOpenDialog,
   ProjectListPopoverContent,
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
@@ -227,6 +228,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>
       </Popover>
+      <ProjectListOpenDialog menu={menu} />
     </HoverCard>
   );
 }
