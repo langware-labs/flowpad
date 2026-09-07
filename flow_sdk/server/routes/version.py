@@ -286,7 +286,7 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
             reason="editable",
             error="This is an editable/dev install — reinstall is disabled.",
         )
-    if not get_status().get("monitor_alive"):
+    if not (await asyncio.to_thread(get_status)).get("monitor_alive"):
         return InstallVersionResponse(
             success=False,
             reason="no_monitor",

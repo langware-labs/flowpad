@@ -132,8 +132,6 @@ async def _on_server_startup():
             "server_pid": os.getpid(),
             "server_create_time": psutil.Process(os.getpid()).create_time(),
             "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
-            "webhook_path": "/api/v1/webhook/listen",
-            "health_path": "/api/v1/health/status",
         }
     )
     print(f"  server.json:   {settings.server_json_path}")

@@ -13,7 +13,6 @@ from .flowpad_discovery import (
     is_webhook_rate_limited,
     read_server_info,
     record_webhook_failure,
-    write_server_info,
 )
 from .notify import (
     get_flowpad_status,
@@ -37,7 +36,6 @@ __all__ = [
     "is_webhook_rate_limited",
     "read_server_info",
     "record_webhook_failure",
-    "write_server_info",
     # Notify
     "get_flowpad_status",
     "send_resource_sync",
