@@ -67,13 +67,20 @@ def caller_abs_path(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path.strip()))
 
 
-def discover_port() -> int:
-    """Resolve the active instance's running port (FLOW_INSTANCE-aware)."""
+def discover_port(required: bool = True):
+    """Resolve the active instance's running port (FLOW_INSTANCE-aware).
+
+    ``required=False`` answers ``None`` instead of exiting, for a command that has something
+    useful to do without a server — ``flow llm`` resolves in-process on a pure-CLI box. One
+    probe either way, so "is an instance running" is asked the same way everywhere.
+    """
     from flow_sdk.discovery.flowpad_discovery import InstanceNotRunningError, resolve_cli_port
 
     try:
         return resolve_cli_port()
     except InstanceNotRunningError as e:
+        if not required:
+            return None
         fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
 
 
