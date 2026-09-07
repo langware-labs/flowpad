@@ -13,6 +13,7 @@
 import {
   LLMFundingKind,
   llmSourceRef,
+  llmSourcesService,
   sameLlmSource,
   selectKindFor,
   type LLMEndpointOffer,
@@ -77,6 +78,7 @@ function SourceRow({
   const worker = workerOf(harness);
   const recheck = useRecheckSignIn();
   const testing = testSource.pending === llmSourceRef(source);
+  const verdict = testSource.verdicts[llmSourceRef(source)];
   // A signed-out device login cannot be picked here — signing in is the modal's job, and it owns
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
@@ -109,6 +111,28 @@ function SourceRow({
             </Badge>
           )}
         </div>
+        {/* The last test's answer, ON THE ROW. Reported: Test showed a spinner, the button
+            came back, and nothing else — so a source that is simply not signed in looked
+            identical to one that passed. Sits above the backend's standing sentence because
+            it is the newer, more specific fact: that sentence describes the row at the last
+            read, this describes what happened when the row was actually exercised. */}
+        {verdict && (
+          <div
+            className={`mt-0.5 flex items-center gap-1 text-xs ${verdict.ok ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'}`}
+            data-testid={`llm-source-verdict-${worker}-${endpoint?.kind ?? 'unknown'}`}
+          >
+            {verdict.ok ? <Check className="h-3 w-3 shrink-0" /> : <AlertCircle className="h-3 w-3 shrink-0" />}
+            <span className="truncate">
+              {verdict.ok ? (
+                <Trans>Test passed — this source can fund a run</Trans>
+              ) : (
+                // The provider's own sentence when there is one: "insufficient credits" and
+                // "invalid key" have different cures and only it knows which this is.
+                verdict.message || <Trans>Test failed — this source cannot fund a run right now</Trans>
+              )}
+            </span>
+          </div>
+        )}
         {/* The backend owns this sentence. Rendered verbatim, never rewritten here. */}
         {(source.reason || source.detail) && (
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
@@ -232,6 +256,34 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const onSelect = useCallback(
     async (harness: string, source: LLMSource) => {
       try {
+        // A device row must be PROVEN before it is chosen, and this is not belt-and-braces —
+        // without it, Use on a device login is a no-op on exactly the box that needs it.
+        //
+        // An unprobed login is `rank=_RANK_DEVICE_UNPROVEN (30), auto=False` whenever a wallet
+        // is available, and the hub endpoint is `rank=20, auto=True`; `pick_llm_candidate`
+        // takes the first eligible AND auto, so the hub wins. Choosing the device row then
+        // writes `auth_mode='device'` — which `_preferred` reads as "NO preference stated",
+        // because `device` is the field's default and there is no way to say "device,
+        // explicitly". So the pick evaporates and the ladder runs again, hub first. Reported
+        // exactly that way: clicked Use, opened a new terminal, still on the hub budget.
+        //
+        // Probing is the honest fix rather than inventing a third preference state: a login
+        // that answers `logged_in` becomes `_RANK_DEVICE (0)` and wins the ladder on its own
+        // merits, which is what "use my OAuth" should mean. And a login that answers
+        // `logged_out` — the case where the user had signed out of the CLI outside Flowpad,
+        // while this page still offered Use — opens the sign-in the row could not.
+        if (endpointFor(source)?.kind === LLMFundingKind.Device) {
+          const proof = await llmSourcesService.testSource({ kind: 'device', harness });
+          if (!proof.ok) {
+            notify.warning({
+              title: t`${source.name} is not signed in`,
+              message: proof.message || t`Sign in first, then this source can fund a run.`,
+              durationMs: 5000,
+            });
+            openHarnessLoginModal();
+            return;
+          }
+        }
         const next = await select.mutateAsync({
           harness,
           // The pick endpoint still speaks the pre-endpoint vocabulary, so the row's kind is
@@ -251,7 +303,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
         notify.error({ title: t`Could not switch source`, message: errorMessage(e, '') });
       }
     },
-    [select, t],
+    [select, t, endpointFor],
   );
 
   const GROUPS: [LLMFundingKind, string][] = useMemo(

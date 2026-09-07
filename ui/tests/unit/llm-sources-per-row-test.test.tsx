@@ -19,6 +19,8 @@ import type { ReactNode } from 'react';
 
 const h = vi.hoisted(() => ({
   testSource: vi.fn(),
+  select: vi.fn(),
+  openLogin: vi.fn(),
   subscribe: vi.fn(() => () => undefined),
   success: vi.fn(),
   warning: vi.fn(),
@@ -29,6 +31,7 @@ vi.mock('@src/notifications', () => ({
   notify: { success: h.success, warning: h.warning, error: vi.fn() },
 }));
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => ({ project: null }) }));
+vi.mock('@src/components/harness-login/harness-login-store', () => ({ openHarnessLoginModal: h.openLogin }));
 vi.mock('@sdk/react/hooks/useLazyAsset', () => ({ useLazyAsset: () => ({ data: h.status(), isLoading: false }) }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {}, currentDock: null }),
@@ -38,7 +41,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     capabilityManager: { getSnapshot: () => ({ capability: null }), subscribe: h.subscribe },
-    llmSourcesService: { testSource: h.testSource },
+    llmSourcesService: { testSource: h.testSource, select: h.select },
   };
 });
 
@@ -169,5 +172,98 @@ describe('the row follows a sign-in', () => {
 
     await waitFor(() => expect(screen.getByTestId('llm-source-use-claude-device')).toBeTruthy());
     expect(screen.queryByTestId('llm-source-signin-claude')).toBeNull();
+  });
+});
+
+describe('choosing a device login proves it first', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    h.status.mockReturnValue(funding());
+    h.select.mockResolvedValue({
+      ...funding(),
+      resolved: { [CLAUDE]: { endpoint_typeid: DEVICE_ID, name: 'claude device login' } },
+    });
+  });
+
+  it('does not write the pick when the login turns out to be signed out', async () => {
+    // The reported dead end. An UNPROBED login is `rank=30, auto=false` while a wallet is
+    // available, so the hub keeps winning — and writing `auth_mode='device'` says nothing,
+    // because that value reads as "no preference". The pick would evaporate silently and the
+    // next terminal would still spend the budget, which is exactly what happened.
+    h.testSource.mockResolvedValue({
+      ok: false,
+      status: 401,
+      model: '',
+      latency_ms: 5,
+      message: 'claude is signed out',
+    });
+
+    renderPage();
+    screen.getByTestId('llm-source-use-claude-device').click();
+
+    await waitFor(() => expect(h.testSource).toHaveBeenCalledWith(expect.objectContaining({ kind: 'device' })));
+    // The sign-in the row could not open — the user had signed out of the CLI outside Flowpad
+    // while this page still offered Use.
+    await waitFor(() => expect(h.openLogin).toHaveBeenCalled());
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
+  it('writes the pick once the login answers for itself', async () => {
+    // A probed login is `_RANK_DEVICE` (0) and wins the ladder on merit — which is what
+    // "use my OAuth" has to mean, since the preference field cannot express it.
+    h.testSource.mockResolvedValue({ ok: true, status: 200, model: '', latency_ms: 5, message: '' });
+
+    renderPage();
+    screen.getByTestId('llm-source-use-claude-device').click();
+
+    await waitFor(() => expect(h.select).toHaveBeenCalled());
+    expect(h.openLogin).not.toHaveBeenCalled();
+  });
+
+  it('does not probe a key row — only a device login needs proving', async () => {
+    // The hub row is the one in use here, so its button is correctly disabled; the key row is
+    // the choosable non-device one.
+    renderPage();
+    screen.getByTestId('llm-source-use-claude-api_key').click();
+
+    await waitFor(() => expect(h.select).toHaveBeenCalled());
+    expect(h.testSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('the verdict is visible on the row', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    h.status.mockReturnValue(funding());
+  });
+
+  it('states a failure on the row, not only in a toast', async () => {
+    // Reported: "just a spinner on the button and then the button appears again". A test whose
+    // answer you cannot find has not answered.
+    h.testSource.mockResolvedValue({
+      ok: false,
+      status: 401,
+      model: '',
+      latency_ms: 4,
+      message: 'claude is signed out',
+    });
+
+    renderPage();
+    screen.getByTestId('llm-source-test-claude-device-claude').click();
+
+    const verdict = await screen.findByTestId('llm-source-verdict-claude-device');
+    expect(verdict.textContent).toContain('claude is signed out');
+  });
+
+  it('says so on the row when it passes too', async () => {
+    h.testSource.mockResolvedValue({ ok: true, status: 200, model: 'm', latency_ms: 4, message: '' });
+
+    renderPage();
+    screen.getByTestId('llm-source-test-claude-hub-openrouter').click();
+
+    const verdict = await screen.findByTestId('llm-source-verdict-claude-hub');
+    expect(verdict.textContent).toContain('Test passed');
   });
 });

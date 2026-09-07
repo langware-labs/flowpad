@@ -351,6 +351,11 @@ msgstr "{0} פרוס"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא ניתן לפתוח אותה."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} לא מחובר"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -17440,6 +17445,10 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "יש להתחבר כדי לגשת לזרימה שלך ולפתוח את סוכן ה-AI של Flowpad."
@@ -18629,6 +18638,14 @@ msgstr "בדיקה"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "בדיקה נכשלה"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "הבדיקה נכשלה — המקור הזה לא יכול לממן הרצה כרגע"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "הבדיקה עברה — המקור הזה יכול לממן הרצה"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"

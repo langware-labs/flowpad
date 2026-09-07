@@ -351,6 +351,11 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} is not signed in"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -17440,6 +17445,10 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "Sign in first, then this source can fund a run."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "Sign in to access your flow and unlock Flowpad AI agent."
@@ -18629,6 +18638,14 @@ msgstr "Test"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "Test failed"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "Test failed — this source cannot fund a run right now"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "Test passed — this source can fund a run"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
