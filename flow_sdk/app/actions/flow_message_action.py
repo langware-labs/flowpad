@@ -1839,6 +1839,56 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
+@action.post(action_name="conversation-settle", types=None)
+async def conversation_settle() -> ApiResponse:
+    """Close or reopen a helpdesk ticket. Proxies to the hub's ``close`` /
+    ``reopen`` actions and mirrors the settled row locally.
+
+    Authorization is the hub's (see ``Conversation._set_settlement``); this adds
+    none of its own. The local mirror matters as much as the hub write — the
+    requester's portal reads the LOCAL row, so an unmirrored close still
+    presents as open on the surface it was clicked from.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id is required")
+        # The verb is the hub action name; anything else is a typo, not a state.
+        verb = (body.get("verb") or "close").strip().lower()
+        if verb not in ("close", "reopen"):
+            return ApiFailResponse(message="verb must be 'close' or 'reopen'")
+
+        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/{verb}", {})
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            return ApiFailResponse(message=f"Could not {verb} ticket: {msg}")
+
+        # The write response IS the settled conversation (the hub action returns
+        # `data=self`), so there is nothing to re-read — and mirroring what the
+        # hub actually stored beats mapping the verb back to a status ourselves,
+        # which would be a second copy of the hub's own rule.
+        data = (resp or {}).get("data")
+        status = None
+        if isinstance(data, dict) and data.get("id"):
+            status = data.get("status")
+            try:
+                await _upsert_hub_conversation_metadata(data, someone_typeid)
+            except Exception as e:  # noqa: BLE001 -- the hub is authoritative; a
+                # local mirror miss is a stale row, not a failed close.
+                logger.warning("[conversation-settle] local mirror failed (non-fatal): %s", e)
+
+        return ApiSuccessResponse(data={"conversation_id": conv_id, "status": status})
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-settle error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to settle ticket: {str(e)}")
+
+
 @action.post(action_name="helpdesk-tickets-list", types=None)
 async def helpdesk_tickets_list() -> ApiResponse:
     """Staff triage queue: list the helpdesk project's tickets (members-only on
@@ -3848,6 +3898,7 @@ async def _upsert_hub_conversation_metadata(
         for k in (
             "title",
             "kind",
+            "status",
             "participants",
             "remote_project_id",
             "remote_project_name",
@@ -3900,7 +3951,7 @@ async def _upsert_hub_conversation_metadata(
             return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
-    for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name"):
+    for k in ("title", "kind", "status", "participants", "remote_project_id", "remote_project_name"):
         v = hub_conv.get(k)
         if k == "participants" and isinstance(v, list):
             v = _normalize_participants(v)
