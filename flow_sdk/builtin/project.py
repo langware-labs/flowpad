@@ -625,22 +625,33 @@ class Project(Entity):
         # Retain protected legacy paths so the model carries one truthful source
         # value. They remain readable for cleanup/migration, but must never be
         # created, canonicalized, recovered, or recursively deleted.
-        if self.fs_storage_mount_path and self.protected_path:
+        if self.protected_path:
             return self
 
-        # Create the project folder if it doesn't exist.
-        if self.fs_storage_mount_path and not os.path.exists(self.fs_storage_mount_path):
-            try:
-                os.makedirs(self.fs_storage_mount_path, exist_ok=True)
-            except OSError as e:
-                # Non-fatal and expected for discovered/external project roots
-                # (e.g. decoded Claude project paths on read-only mounts). Debug,
-                # not warning — otherwise enumerating many such projects floods
-                # the log with hundreds of non-actionable lines.
-                logging.debug(f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}")
+        # Canonicalize only; the folder is created on first save (``_ensure_mount_dir``).
         if self.fs_storage_mount_path:
             self.fs_storage_mount_path = canonical_posix_path(self.fs_storage_mount_path)
         return self
+
+    def _ensure_mount_dir(self) -> None:
+        """Create the source folder for a project being persisted for the first time.
+
+        Runs on first ``save`` only, never from the validator: a validator runs
+        on EVERY load, so a mkdir there re-materialized the folder of a project
+        mid-delete (``_delete_with_children`` rmtree's it, then unindex
+        re-instantiates the row) and left an empty directory behind for every
+        deleted or never-materialized project. Protected legacy paths are never
+        created. Failure is non-fatal and expected for discovered/external roots
+        (e.g. decoded Claude project paths on read-only mounts), so it logs at
+        debug level only.
+        """
+        mount = self.fs_storage_mount_path
+        if not mount or self.protected_path:
+            return
+        try:
+            os.makedirs(mount, exist_ok=True)
+        except OSError as e:
+            logging.debug(f"Project: could not create mount path {mount!r}: {e}")
 
     @classmethod
     def derive_id_for_path(cls, path: str) -> str | None:
@@ -2140,6 +2151,9 @@ class Project(Entity):
         if self.legacy_include_dirs_:
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
+        if was_create:
+            await self._warn_on_duplicate_name()
+            self._ensure_mount_dir()
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
@@ -2155,6 +2169,51 @@ class Project(Entity):
 
         await ensure_default_wiki(self)
         return self
+
+    async def _warn_on_duplicate_name(self) -> None:
+        """Flag a brand-new project whose name another project already uses.
+
+        Names are display-only and nothing keys on them, but two projects
+        called the same thing on different folders are indistinguishable in
+        every picker, tab strip and chip — the user reads them as one project
+        and their chats as mixed up. A project on the SAME folder is a real
+        duplicate: ``find_by_cwd`` should have been consulted and the caller
+        is told so. Never raises; creation must not fail on a hint.
+        """
+        name = (self.name or "").strip()
+        if not name:
+            return
+        try:
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+            same_name = await type(self).get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["name", name]))
+            )
+        except Exception:  # noqa: BLE001
+            log.debug("[project] duplicate-name check skipped", exc_info=True)
+            return
+        mine = canonical_posix_path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
+        for other in same_name:
+            if str(other.id) == str(self.id):
+                continue
+            theirs = canonical_posix_path(other.fs_storage_mount_path) if other.fs_storage_mount_path else None
+            if mine and theirs and mine == theirs:
+                log.warning(
+                    "[project] creating %r at %s but project %s already owns that folder; "
+                    "callers should resolve with Project.find_by_cwd first",
+                    name,
+                    mine,
+                    other.id,
+                )
+            else:
+                log.warning(
+                    "[project] creating %r at %s while project %s of the same name exists at %s; "
+                    "same-named projects are indistinguishable in the UI",
+                    name,
+                    mine,
+                    other.id,
+                    theirs,
+                )
 
     async def _stamp_index_sentinel(self) -> None:
         """Stamp a brand-new project's ``.hash`` index sentinel so an empty
