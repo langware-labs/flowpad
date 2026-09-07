@@ -20,7 +20,11 @@ import apiClient from '@sdk/client';
 
 let mode = 'standard';
 
-vi.mock('@src/contexts/view-mode-context', () => ({
+// Partial mock: only `useViewMode` is steered. The module also exports the
+// `ViewMode` enum, which `use-asset-types` reads as `UiViewMode.Vibe` — a
+// whole-module replacement drops it and the hook dies on an undefined member.
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
   useViewMode: () => mode,
 }));
 

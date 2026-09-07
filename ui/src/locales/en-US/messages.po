@@ -637,6 +637,10 @@ msgstr "{name} avatar"
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+msgstr "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
 msgstr "{name} names no support queue"
@@ -1824,6 +1828,10 @@ msgstr "already present"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "already running"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Already signed in elsewhere? Check again"
+msgstr "Already signed in elsewhere? Check again"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -4463,6 +4471,10 @@ msgstr "Copy error text"
 msgid "Copy event JSON"
 msgstr "Copy event JSON"
 
+#: src/components/organization/budgets/EditableTitle.tsx
+msgid "Copy id"
+msgstr "Copy id"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
 msgstr "Copy join code"
@@ -4491,6 +4503,10 @@ msgstr "Copy prompt"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
+
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr "Copy the full error"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -4592,6 +4608,7 @@ msgid "Could not change sign-in method"
 msgstr "Could not change sign-in method"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
@@ -10590,7 +10607,6 @@ msgstr "Loading..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -17495,6 +17511,7 @@ msgstr "Sign-in not confirmed"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-sources/use-llm-sources.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -18084,6 +18101,10 @@ msgstr "Still can't link this project"
 msgid "Still signed in"
 msgstr "Still signed in"
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Still signed out — please re-authenticate"
+msgstr "Still signed out — please re-authenticate"
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18587,6 +18608,7 @@ msgstr "Terminal Sessions"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "Test"
 
@@ -19857,9 +19879,15 @@ msgstr "Triggers"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
 msgstr "Try auto install"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Try auto install (types the command in a terminal)"
+msgstr "Try auto install (types the command in a terminal)"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -21020,12 +21048,12 @@ msgid "You"
 msgstr "You"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "you are {role}"
-msgstr "you are {role}"
+#~ msgid "you are {role}"
+#~ msgstr "you are {role}"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "You are not in any team in this organization yet."
-msgstr "You are not in any team in this organization yet."
+#~ msgid "You are not in any team in this organization yet."
+#~ msgstr "You are not in any team in this organization yet."
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -21197,8 +21225,8 @@ msgid "Your sandbox is ready"
 msgstr "Your sandbox is ready"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "Your teams"
-msgstr "Your teams"
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
