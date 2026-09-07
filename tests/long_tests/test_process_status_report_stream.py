@@ -61,13 +61,14 @@ async def test_status_report_matches_transcript_exactly(
         # headless_prompt. send() is raw PTY-stdin and requires start_pty().
         await ap.prompt("build me hello world webapp")
         await ap.wait()
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip(f"{worker_id} API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        # A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
+        pytest.fail(f"{worker_id}: timed out driving the turn: {exc}", pytrace=False)
 
     # The one ground truth: re-parse the session transcript the worker wrote.
     transcript = ap._load_transcript()
     if transcript is None or not transcript.entries:
-        pytest.skip(f"{worker_id}: no transcript produced (worker unavailable?)")
+        pytest.fail(f"{worker_id}: the worker produced no transcript entries", pytrace=False)
 
     reference = ProcessCounters.from_transcript(transcript)
     # The run genuinely did work — copilot only reports output tokens, so gate

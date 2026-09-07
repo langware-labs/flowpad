@@ -172,7 +172,11 @@ async def test_skill_usage_visible_in_transcript(
             deadline_s=90,
         )
         if transcript is None:
-            pytest.skip(f"{cli_name} produced no usable transcript within 90s — infra/LLM latency")
+            pytest.fail(
+                f"{cli_name}: no usable transcript within 90s — the worker never "
+                f"produced one (a timeout is a result, not an infra excuse)",
+                pytrace=False,
+            )
 
         # The analyzer normalizes every worker's skill shape onto SkillCallEntry,
         # so the assertion is identical across claude / codex / copilot.

@@ -208,7 +208,10 @@ async def test_docs_browse_deep_chain(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        pytest.skip("no usable transcript within the deadline — infra/LLM latency")
+        # A timeout is a RESULT. The deterministic start_pty staleness bug
+        # (fixed 2026-09-07) wore exactly this signature for three months
+        # because it was downgraded to a skip here.
+        pytest.fail("no usable transcript within the deadline", pytrace=False)
 
     index_reads = _file_reads(transcript, lambda p: p.name == "index.md")
     vault_resolved = vault.resolve()
@@ -247,17 +250,22 @@ async def test_docs_browse_ambient_discovery(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        pytest.skip("no usable transcript within the deadline — infra/LLM latency")
+        # A timeout is a RESULT. The deterministic start_pty staleness bug
+        # (fixed 2026-09-07) wore exactly this signature for three months
+        # because it was downgraded to a skip here.
+        pytest.fail("no usable transcript within the deadline", pytrace=False)
 
     used_skill = bool(_skill_calls(transcript))
     used_index = bool(_file_reads(transcript, lambda p: p.name == "index.md"))
-    if not used_skill and not used_index:
-        # LLM non-compliance (answered by grep/luck), not a product bug —
-        # same downgrade idiom as test_skill_transcript_analysis.
-        pytest.skip(
-            "agent answered without the docs index or the docs-browse "
-            "skill — LLM non-compliance"
-        )
+    # THE SUBJECT OF THIS TEST. "The agent navigated via the docs index" is the
+    # property under test, so an agent that answered by grep/luck is the exact
+    # failure this file exists to catch — never a skip. Skipping here left the
+    # test unable to fail for ANY input: pass or skip were its only outcomes,
+    # which is indistinguishable from having no test at all.
+    assert used_skill or used_index, (
+        "agent answered without reading the docs index or invoking the "
+        "docs-browse skill — ambient discovery did not happen"
+    )
     assert f"RGP-{nonce}" in _answer_text(transcript), (
         "index-driven run failed to surface the canary — retrieval broke"
     )
