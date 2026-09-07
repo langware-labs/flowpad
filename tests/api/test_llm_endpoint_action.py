@@ -422,11 +422,13 @@ async def test_every_harness_says_where_it_reads_funding_from_box_wide(bootstrap
         "path": ".claude/settings.json",
     }
     assert users["claude"]["merge"]["env"]["ANTHROPIC_BASE_URL"].endswith(INVOKE_PATH)
-    assert users["codex"]["fmt"] == "toml" and users["codex"]["path"] == ".codex/config.toml"
+    # ``fmt`` is what the APPLIER must do, and there are two things to do: merge a document, or
+    # replace a managed region. Which file it is, is ``path``'s business.
+    assert users["codex"]["fmt"] == "block" and users["codex"]["path"] == ".codex/config.toml"
     assert users["opencode"]["fmt"] == "json" and users["opencode"]["path"] == ".config/opencode/opencode.json"
     # copilot has no provider file and no config-dir variable, so its box-wide form is the shell
     # profile -- and it says so rather than silently writing nothing.
-    assert users["copilot"]["fmt"] == "profile" and users["copilot"]["note"]
+    assert users["copilot"]["fmt"] == "block" and users["copilot"]["note"]
 
 
 @pytest.mark.asyncio

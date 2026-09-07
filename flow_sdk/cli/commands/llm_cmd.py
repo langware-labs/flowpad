@@ -34,6 +34,7 @@ Error contract (parsed by agents — keep stable)::
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shlex
@@ -113,8 +114,13 @@ _OPS: dict[str, tuple[str, str]] = {
 }
 
 
+@functools.lru_cache(maxsize=1)
 def _backend_port() -> int | None:
-    """The running instance's port, or ``None`` when nothing is running."""
+    """The running instance's port, or ``None`` when nothing is running.
+
+    Cached: it is a ``server.json`` read, it cannot change inside one CLI invocation, and
+    ``flow llm user set N all`` asks six times.
+    """
     return _discover_port(required=False)
 
 
@@ -335,14 +341,13 @@ def _emit_exports(binding: dict, workers: list[str]) -> None:
     env-reachable knob points AT a file — so for those two the export is a pointer and the
     real configuration is on disk.
     """
-    lines: list[str] = []
     for worker in workers:
         entry = (binding.get("harnesses") or {}).get(worker) or {}
         if entry.get("device"):
-            lines.append(f"# {worker}: signed in directly, nothing to export")
+            typer.echo(f"# {worker}: signed in directly, nothing to export")
             continue
         if entry.get("reason"):
-            lines.append(f"# {worker}: {entry['reason']}")
+            typer.echo(f"# {worker}: {entry['reason']}")
             continue
         files = entry.get("files") or {}
         if files:
@@ -356,17 +361,15 @@ def _emit_exports(binding: dict, workers: list[str]) -> None:
             pointer = entry.get("pointer_env") or ""
             if pointer:
                 target = directory if entry.get("pointer_is_dir") else directory / next(iter(files))
-                lines.append(f"export {pointer}={shlex.quote(str(target))}")
+                typer.echo(f"export {pointer}={shlex.quote(str(target))}")
         for name, value in (entry.get("env") or {}).items():
-            lines.append(f"export {name}={shlex.quote(str(value))}")
-    for line in lines:
-        typer.echo(line)
+            typer.echo(f"export {name}={shlex.quote(str(value))}")
 
 
 # ── user scope: write where each harness looks by default ────────────────────
 
 
-def _deep_merge(base: dict, fragment: dict) -> dict:
+def _deep_merge(base: dict, fragment: dict) -> None:
     """*fragment* laid over *base*, recursing into dicts. Anything the user put there that we
     do not name survives — this writes into ``~/.claude/settings.json``, which is a file people
     hand-edit, and eating their settings would be far worse than not funding a harness."""
@@ -375,7 +378,6 @@ def _deep_merge(base: dict, fragment: dict) -> dict:
             _deep_merge(base[key], value)
         else:
             base[key] = value
-    return base
 
 
 def _prune(base: dict, fragment: dict) -> None:
@@ -390,31 +392,20 @@ def _prune(base: dict, fragment: dict) -> None:
             _prune(base[key], value)
             if not base[key]:
                 base.pop(key, None)
-        elif key in base:
+        else:
             base.pop(key, None)
 
 
-def _managed_block(existing: str, lines: list[str]) -> str:
-    """*existing* with our managed region replaced by *lines* (removed when empty).
+def _profile_name() -> str:
+    """The startup file the user's shell actually reads.
 
-    Same reason as the merge above: a ``config.toml`` or a ``.profile`` belongs to the user, and
-    only the region between the markers is ours to rewrite.
+    ``~/.profile`` is the POSIX answer and the wrong one on a default macOS box: a non-login zsh
+    reads ``~/.zshrc`` and never sources ``.profile``, so writing there would report success and
+    fund nothing. The harness declares that it is profile-configured; which file that means is a
+    fact about this machine, so it is resolved by the side that owns the filesystem.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import MANAGED_BEGIN, MANAGED_END
-
-    kept, skipping = [], False
-    for line in existing.splitlines():
-        if line.strip() == MANAGED_BEGIN:
-            skipping = True
-        elif line.strip() == MANAGED_END:
-            skipping = False
-        elif not skipping:
-            kept.append(line)
-    while kept and not kept[-1].strip():
-        kept.pop()
-    if lines:
-        kept += [MANAGED_BEGIN, *lines, MANAGED_END]
-    return "\n".join(kept) + ("\n" if kept else "")
+    shell = Path(os.environ.get("SHELL", "")).name
+    return {"zsh": ".zshrc", "bash": ".bashrc"}.get(shell, ".profile")
 
 
 def _write_user_config(worker: str, spec: dict, *, remove: bool = False) -> str:
@@ -422,6 +413,8 @@ def _write_user_config(worker: str, spec: dict, *, remove: bool = False) -> str:
     fmt, rel = spec.get("fmt") or "", spec.get("path") or ""
     if not fmt or not rel:
         return f"  {worker}: {spec.get('note') or 'nothing to write'}"
+    if rel == ".profile":
+        rel = _profile_name()
     path = Path.home() / rel
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -436,8 +429,10 @@ def _write_user_config(worker: str, spec: dict, *, remove: bool = False) -> str:
             _deep_merge(current, spec.get("merge") or {})
         path.write_text(json.dumps(current, indent=2) + "\n")
     else:
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import apply_managed_block
+
         existing = path.read_text() if path.exists() else ""
-        path.write_text(_managed_block(existing, [] if remove else list(spec.get("lines") or [])))
+        path.write_text(apply_managed_block(existing, [] if remove else list(spec.get("lines") or [])))
 
     verb = "cleared" if remove else "wrote"
     note = f"  ({spec['note']})" if spec.get("note") else ""
@@ -485,7 +480,11 @@ def _use_shell(
 
 @llm_app.command("clear", help="Print unsets that undo `flow llm use` in this shell.")
 def _clear_shell() -> None:
-    for name in _status().get("managed_vars") or []:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars
+
+    # Derived from the harness specs, so no server and no network: asking the status for it
+    # bought a hub refresh and four inventory reads to learn a constant.
+    for name in managed_env_vars():
         typer.echo(f"unset {name}")
 
 
@@ -494,8 +493,6 @@ def _test(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
 ) -> None:
     row = _pick(_rows(_status()), ref)
-    if row.kind != "endpoint":
-        _fail(EXIT_INVALID_ARG, "NOT_TESTABLE", f"{row.name} is not a hub endpoint, so there is nothing to test.")
     verdict = _op("test", {"endpoint_typeid": row.typeid})
     _ok({"source": row.name, **verdict})
 
@@ -517,7 +514,7 @@ def _use_box(
     # ...and write it where each harness looks by DEFAULT, so a bare `claude` / `codex` /
     # `opencode` in any terminal is funded too. The selection above is what OUR workers read;
     # on a box whose only consumer is a person at a prompt it would otherwise fund nothing.
-    binding = _op("binding", {"endpoint_typeid": row.typeid, "harness": "all"})
+    binding = _op("binding", {"endpoint_typeid": row.typeid, "harness": harness})
     for worker in workers:
         spec = ((binding.get("harnesses") or {}).get(worker) or {}).get("user") or {}
         typer.echo(_write_user_config(worker, spec))
@@ -578,7 +575,7 @@ def _project_for_cwd(*, required: bool = True) -> str:
     ``required=False`` for the listing, which is merely BETTER inside a project and must
     still work outside one.
     """
-    cwd = Path(os.getcwd()).resolve()
+    cwd = Path.cwd().resolve()
     port = _backend_port()
     if port is None:
         # Project scope is the one scope that needs the graph. Say so plainly rather than
@@ -590,8 +587,8 @@ def _project_for_cwd(*, required: bool = True) -> str:
             )
         return ""
     rows = _call("GET", f"http://127.0.0.1:{port}/api/v1/graph/project", params={"limit": 500})
-    best: tuple[int, str] = (0, "")
-    for row in rows if isinstance(rows, list) else (rows.get("items") or []):
+    best_mount, best_id = "", ""
+    for row in rows if isinstance(rows, list) else []:
         mount = str(row.get("fs_storage_mount_path") or "")
         if not mount:
             continue
@@ -599,9 +596,8 @@ def _project_for_cwd(*, required: bool = True) -> str:
             resolved = Path(mount).resolve()
         except OSError:
             continue
-        if cwd == resolved or resolved in cwd.parents:
-            if len(str(resolved)) > best[0]:
-                best = (len(str(resolved)), str(row.get("id") or ""))
-    if not best[1] and required:
+        if (cwd == resolved or resolved in cwd.parents) and len(str(resolved)) > len(best_mount):
+            best_mount, best_id = str(resolved), str(row.get("id") or "")
+    if not best_id and required:
         _fail(EXIT_NOT_FOUND, "NO_PROJECT", f"No project mounts {cwd}. Pass --project <id>.")
-    return best[1]
+    return best_id

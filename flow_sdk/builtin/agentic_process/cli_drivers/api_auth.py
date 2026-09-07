@@ -17,11 +17,11 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import shlex
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
@@ -95,6 +95,16 @@ class ApiAuthSpec:
     #: UI, so its only box-wide form is the shell profile.
     user_config_path: str = ""
     user_config_fmt: str = ""
+    #: The name the harness insists on for its file-configured form. NOT derivable from
+    #: ``user_config_path``: codex's ``CODEX_HOME`` is a DIRECTORY and the file inside it must be
+    #: called ``config.toml`` -- that is codex's constraint, which only happens to equal the
+    #: basename of the box-wide path -- while opencode's pointer names the file itself, so its
+    #: basename is arbitrary. Deriving one from the other coupled two unrelated requirements.
+    config_filename: str = ""
+    #: Rendered verbatim when this harness has no config file of its own. On the spec like every
+    #: other per-harness fact, so a second profile-configured harness does not inherit a sentence
+    #: about copilot.
+    user_config_note: str = ""
     # FLOWPAD: (invoke_url, no trailing slash) -> binding. None = unsupported.
     hub_endpoint_binding: Callable[[str], ProviderBinding] | None = None
 
@@ -237,10 +247,15 @@ CODEX_API_AUTH_SPEC = ApiAuthSpec(
         ("model_providers.openrouter.env_key", "OPENROUTER_API_KEY"),
     ),
     provider_key="openrouter",
+    # ``CODEX_HOME`` is codex's whole state directory, not just where ``config.toml`` lives, so a
+    # shell pointed at ours gets a funded codex with no history, no ``auth.json`` and no MCP
+    # config. That is the trade for a redirect codex offers no other way to make; box-wide scope
+    # writes the managed region of the real ``~/.codex/config.toml`` instead and keeps all of it.
     pointer_env="CODEX_HOME",
     pointer_is_dir=True,
     user_config_path=".codex/config.toml",
     user_config_fmt="toml",
+    config_filename="config.toml",
     hub_endpoint_binding=_codex_hub_binding,
 )
 
@@ -263,6 +278,7 @@ COPILOT_API_AUTH_SPEC = ApiAuthSpec(
     model_env_vars=("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"),
     user_config_path=".profile",
     user_config_fmt="profile",
+    user_config_note="copilot has no config file of its own, so this goes in your shell profile.",
     hub_endpoint_binding=_copilot_hub_binding,
 )
 
@@ -276,7 +292,6 @@ def _opencode_hub_binding(url: str) -> ProviderBinding:
     return ProviderBinding(
         token_env_var="OPENROUTER_API_KEY",
         base_env={},
-        provider_key="openrouter",
         provider_options={"openrouter": {"options": {"baseURL": f"{url}/v1"}}},
     )
 
@@ -299,6 +314,7 @@ OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
     pointer_env="OPENCODE_CONFIG",
     user_config_path=".config/opencode/opencode.json",
     user_config_fmt="json",
+    config_filename="opencode.json",
     hub_endpoint_binding=_opencode_hub_binding,
 )
 
@@ -567,36 +583,34 @@ class UserBinding:
     note: str = ""
 
 
-def managed_env_vars() -> list[str]:
+@functools.cache
+def managed_env_vars() -> tuple[str, ...]:
     """Every variable the shell form can set, for any harness and any provider.
 
-    What ``flow llm clear`` unsets. Derived wholly from the specs -- including the pointer
+    What ``flow llm clear`` unsets. Cached because it is a constant: derived wholly from the specs -- including the pointer
     variables and the prompt-model variables, which used to be string literals here AND in the
     renderer below. Static and secret-free, because clearing must work with no source chosen and
     no credential available.
     """
     names: set[str] = set()
     for spec in _SPECS.values():
-        names.update({spec.token_env_var, *spec.base_env, *spec.model_env_vars, *spec.prompt_model_env_vars})
-        names.discard("")
-        if spec.pointer_env:
-            names.add(spec.pointer_env)
+        names.update(
+            {spec.token_env_var, spec.pointer_env, *spec.base_env, *spec.model_env_vars, *spec.prompt_model_env_vars}
+        )
         if spec.hub_endpoint_binding is not None:
             # The URL is never read back -- only the variable NAMES are -- so any well-formed
             # one will do.
             hub = spec.hub_endpoint_binding("https://example.invalid")
-            names.add(hub.token_env_var)
-            names.update(hub.base_env)
-    return sorted(names)
+            names.update({hub.token_env_var, *hub.base_env})
+    names.discard("")
+    return tuple(sorted(names))
 
 
 def _prompt_env(spec: ApiAuthSpec, auth: WorkerApiAuth) -> dict[str, str]:
     """*auth*'s env plus the model, for a surface that has no argv to carry it."""
-    env = dict(auth.env)
-    for name in spec.prompt_model_env_vars:
-        if auth.model_slug:
-            env[name] = auth.model_slug
-    return env
+    if not auth.model_slug:
+        return dict(auth.env)
+    return {**auth.env, **dict.fromkeys(spec.prompt_model_env_vars, auth.model_slug)}
 
 
 def _codex_toml(auth: WorkerApiAuth, *, inline_token: bool) -> list[str]:
@@ -636,39 +650,76 @@ def _opencode_config(auth: WorkerApiAuth, *, inline_key: bool) -> dict:
 
 
 def shell_binding(worker_type: str, auth: WorkerApiAuth) -> ShellBinding:
-    """*auth* rendered for ONE terminal: what to export, and what to write first."""
-    spec = _SPECS.get(worker_type)
+    """*auth* rendered for ONE terminal: what to export, and what to write first.
+
+    The question is "is this harness configured by a FILE?" -- ``pointer_env`` -- and the format
+    is a sub-question. Testing the format first conflated it with "is this codex", which would
+    have emitted a file with no variable able to point at it.
+    """
+    spec = driver_api_auth_spec(worker_type)
     if spec is None:
         return ShellBinding(env=dict(auth.env))
     env = _prompt_env(spec, auth)
-    if spec.user_config_fmt == "toml":
-        files = {Path(spec.user_config_path).name: "\n".join(_codex_toml(auth, inline_token=False)) + "\n"}
-    elif spec.pointer_env:
-        files = {
-            Path(spec.user_config_path).name: json.dumps(_opencode_config(auth, inline_key=False), indent=2) + "\n"
-        }
-    else:
+    if not spec.pointer_env:
         return ShellBinding(env=env)
-    return ShellBinding(env=env, files=files, pointer_env=spec.pointer_env, pointer_is_dir=spec.pointer_is_dir)
+    body = (
+        "\n".join(_codex_toml(auth, inline_token=False)) + "\n"
+        if spec.user_config_fmt == "toml"
+        else json.dumps(_opencode_config(auth, inline_key=False), indent=2) + "\n"
+    )
+    return ShellBinding(
+        env=env,
+        files={spec.config_filename: body},
+        pointer_env=spec.pointer_env,
+        pointer_is_dir=spec.pointer_is_dir,
+    )
 
 
 def user_binding(worker_type: str, auth: WorkerApiAuth) -> UserBinding:
     """*auth* written where *worker_type* looks by default, so EVERY terminal is funded."""
-    spec = _SPECS.get(worker_type)
+    spec = driver_api_auth_spec(worker_type)
     if spec is None or not spec.user_config_path:
         return UserBinding(note=f"{worker_type} cannot be configured box-wide")
-    env = _prompt_env(spec, auth)
-    if spec.user_config_fmt == "json" and spec.pointer_env:
-        merge = _opencode_config(auth, inline_key=True)
-    elif spec.user_config_fmt == "json":
-        merge = {"env": env}
-    elif spec.user_config_fmt == "toml":
-        return UserBinding(fmt="toml", path=spec.user_config_path, lines=tuple(_codex_toml(auth, inline_token=True)))
-    else:
-        return UserBinding(
-            fmt="profile",
-            path=spec.user_config_path,
-            lines=tuple(f"export {k}={shlex.quote(v)}" for k, v in env.items()),
-            note="copilot has no config file of its own, so this goes in your shell profile.",
-        )
+    if spec.user_config_fmt == "toml":
+        return UserBinding(fmt="block", path=spec.user_config_path, lines=tuple(_codex_toml(auth, inline_token=True)))
+    if spec.user_config_fmt == "profile":
+        lines = tuple(f"export {k}={shlex.quote(v)}" for k, v in _prompt_env(spec, auth).items())
+        return UserBinding(fmt="block", path=spec.user_config_path, lines=lines, note=spec.user_config_note)
+    # JSON, and which fragment depends on whether the harness is file-configured: opencode's
+    # funding lives under its provider block, claude's in the ``env`` block it applies to itself.
+    merge = _opencode_config(auth, inline_key=True) if spec.pointer_env else {"env": _prompt_env(spec, auth)}
     return UserBinding(fmt="json", path=spec.user_config_path, merge=merge)
+
+
+def apply_managed_block(existing: str, lines: "list[str] | tuple[str, ...]") -> str:
+    """*existing* with our managed region replaced by *lines* (removed when empty).
+
+    Beside the markers it is the inverse of: emitting and parsing one literal are one unit, and
+    splitting them left the only reader importing the format across a module boundary.
+
+    The region goes at the TOP, not the bottom. codex's config is dotted-key TOML, and a real
+    ``~/.codex/config.toml`` commonly ends inside a table (``[tui]``, ``[mcp_servers.x]``) --
+    appending there would re-parent every key we write under that table, silently and with no
+    error. TOML has no syntax for returning to the root table, so the only safe place is first.
+    """
+    kept = [line for line, skipping in _mark_regions(existing.splitlines()) if not skipping]
+    while kept and not kept[0].strip():
+        kept.pop(0)
+    block = [MANAGED_BEGIN, *lines, MANAGED_END] if lines else []
+    body = [*block, *kept] if block else kept
+    while body and not body[-1].strip():
+        body.pop()
+    return "\n".join(body) + ("\n" if body else "")
+
+
+def _mark_regions(lines: "list[str]"):
+    """Each line paired with whether it falls inside the managed region."""
+    skipping = False
+    for line in lines:
+        if line.strip() == MANAGED_BEGIN:
+            skipping = True
+            continue
+        if line.strip() == MANAGED_END:
+            skipping = False
+            continue
+        yield line, skipping
