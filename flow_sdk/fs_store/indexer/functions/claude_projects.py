@@ -11,6 +11,7 @@ Replaces the parse-side behaviour of the deleted ``ProjectFsRecord`` subclass.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
+
+logger = logging.getLogger(__name__)
 
 # ── Helpers (moved from ProjectFsRecord) ─────────────────────────────────────
 
@@ -137,15 +140,15 @@ def _project_cwd_index() -> "dict[str, FSRecord]":
 
     index: dict[str, FSRecord] = {}
     for record in FSRecord.discover(RecordType.PROJECT):
-        name = getattr(record, "name", None)
+        # ``name`` is a display field and never a lookup key: a project named
+        # like a path must not claim that folder. Path fields only.
         values = (
             getattr(record, "cwd", None),
             getattr(record, "fs_storage_mount_path", None),
             getattr(record, "real_path", None),
-            str(name) if name and Path(str(name)).is_absolute() else None,
         )
-        # One resolve per DISTINCT string: `name` is usually the same value as
-        # `cwd`, and `canonical_posix_path` is a realpath chain, not a string op.
+        # One resolve per DISTINCT string: `canonical_posix_path` is a realpath
+        # chain, not a string op.
         for value in dict.fromkeys(v for v in values if v):
             key = canonical_posix_path(str(value))
             current = index.get(key)
@@ -273,7 +276,14 @@ async def _upsert_project_for_cwd(
     canonical = canonical_posix_path(cwd)
     existing = _find_project_record_by_canonical(canonical)
     if existing is not None:
-        existing.id = resolved_id
+        # The owner of this cwd keeps its id. Re-stamping it with
+        # ``resolved_id`` used to fork a second shadow folder while every
+        # child row still pointed at the old id. A mismatch means two records
+        # answer to one path (see ``_project_cwd_index``).
+        if str(existing.id) != str(resolved_id):
+            logger.debug(
+                "[claude-projects] record %s owns cwd %s; ignoring resolved id %s", existing.id, canonical, resolved_id
+            )
         if claude_project is not None:
             existing.claude_project = claude_project
         if codex_project is not None:
