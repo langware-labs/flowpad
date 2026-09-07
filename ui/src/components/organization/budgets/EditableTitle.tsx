@@ -22,6 +22,7 @@ import { useLingui } from '@lingui/react/macro';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 
 export interface EditableTitleProps {
   name: string;
@@ -31,6 +32,10 @@ export interface EditableTitleProps {
   /** May the caller rename and delete this thing? The hub's own answer; required, so a new call
    *  site cannot silently default itself into showing controls that do not work. */
   manage: boolean;
+  /** The entity's id, offered as a copy icon beside the name — never rendered as text.
+   *  A raw uuid on the row is noise to the person reading it, but the id is what support and
+   *  every `flow`/API call ask for, so it is one click away and no glance away. */
+  copyId?: string;
   headingClassName: string;
   testIdPrefix: string;
 }
@@ -44,11 +49,23 @@ export function EditableTitle({
   onDelete,
   deleting,
   manage,
+  copyId,
   headingClassName,
   testIdPrefix,
 }: EditableTitleProps) {
   const { t } = useLingui();
   const rename = useInlineRename(name, onRename);
+
+  // Beside the name in BOTH branches: the id is not a permission, so a member who may not rename
+  // this thing still gets it.
+  const copy = copyId ? (
+    <CopyButton
+      value={copyId}
+      title={t`Copy id`}
+      testId={`${testIdPrefix}-copy-id`}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+    />
+  ) : null;
 
   // Plain text, not a disabled button: a control that cannot ever do anything for this person is
   // noise, and a greyed-out name reads as "broken" rather than as "not yours to change".
@@ -60,6 +77,7 @@ export function EditableTitle({
         <span className={`truncate px-1 py-0.5 ${headingClassName}`} title={name} data-testid={`${testIdPrefix}-name`}>
           {name}
         </span>
+        {copy}
       </div>
     );
   }
@@ -84,6 +102,7 @@ export function EditableTitle({
           {name}
         </button>
       )}
+      {copy}
       {onDelete && (
         <Button
           size="icon"

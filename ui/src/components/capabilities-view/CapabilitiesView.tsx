@@ -1,13 +1,7 @@
 import { LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { AgenticProcess, capabilityManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
-import type {
-  CapabilitiesSummary,
-  CapabilityAccess,
-  CapabilityDependency,
-  CapabilityIntent,
-  WorkerStatus,
-} from '@sdk';
+import type { CapabilitiesSummary, CapabilityAccess, CapabilityDependency, CapabilityIntent, WorkerStatus } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
@@ -35,6 +30,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Terminal,
   XCircle,
   icons as lucideIcons,
 } from 'lucide-react';
@@ -251,6 +247,8 @@ function CapabilityAccessRow({
   const [busy, setBusy] = useState(false);
   const Icon = capabilityIcon(access.icon);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const { navigation } = useDockNavigation();
+  const { t } = useLingui();
 
   // Bring the asked-for row into view — the table is long enough that landing
   // on it with no cue leaves the user hunting for the row they came for.
@@ -271,6 +269,21 @@ function CapabilityAccessRow({
     },
     [access.kind, onRefresh],
   );
+
+  // The vendor's own install one-liner, resolved by the backend for THIS
+  // platform (`CapabilitySpec.install_commands`). Null when the vendor ships no
+  // unattended installer here — the affordance is then absent rather than
+  // handing over a command that cannot work.
+  //
+  // Offered only for something actually missing. `installable` is a different
+  // question (can the setup AGENT act on this) and stays on its own button: an
+  // agent that reads the docs and improvises is the fallback for when there is
+  // no published one-liner, not a replacement for one.
+  const installCommand = access.available ? null : access.install_command;
+  const onTryAutoInstall = useCallback(() => {
+    if (!installCommand) return;
+    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+  }, [installCommand, navigation]);
 
   return (
     <div
@@ -346,6 +359,25 @@ function CapabilityAccessRow({
                 <Trans>Refresh status</Trans>
               </TooltipContent>
             </Tooltip>
+            {installCommand && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={onTryAutoInstall}
+                    data-testid={`capability-auto-install-${access.kind}`}
+                    aria-label={t`Try auto install`}
+                  >
+                    <Terminal className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <Trans>Try auto install (types the command in a terminal)</Trans>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {access.installable && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -568,7 +600,14 @@ export function CapabilitiesView() {
             <Trans>Capabilities</Trans>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => { void refresh().catch(() => {}); }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5"
+          onClick={() => {
+            void refresh().catch(() => {});
+          }}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           <Trans>Refresh</Trans>
         </Button>
@@ -579,11 +618,20 @@ export function CapabilitiesView() {
       <ScrollArea className="flex-1">
         <div className="space-y-3 p-4">
           {error && !summary ? (
-            <button type="button" role="alert" className="p-2 text-sm text-destructive" onClick={() => { void refresh().catch(() => {}); }}>
+            <button
+              type="button"
+              role="alert"
+              className="p-2 text-sm text-destructive"
+              onClick={() => {
+                void refresh().catch(() => {});
+              }}
+            >
               <Trans>Capabilities unavailable. Retry</Trans>
             </button>
           ) : !isLoading && intents.length === 0 ? (
-            <div className="p-2 text-sm text-muted-foreground"><Trans>No capabilities available</Trans></div>
+            <div className="p-2 text-sm text-muted-foreground">
+              <Trans>No capabilities available</Trans>
+            </div>
           ) : intents.length === 0 ? (
             <div className="flex items-center gap-2 px-1 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
