@@ -88,6 +88,10 @@ async def safe_exit(process: AgenticProcess) -> None:
         pass
 
 
+def _who(worker: str | None) -> str:
+    return f"{worker}: " if worker else ""
+
+
 def fail_worker_timeout(exc: BaseException, worker: str | None = None) -> NoReturn:
     """A worker turn that timed out FAILS the test — it is never a skip.
 
@@ -103,14 +107,12 @@ def fail_worker_timeout(exc: BaseException, worker: str | None = None) -> NoRetu
     which is the property that let the bug hide. If a budget is genuinely too
     tight, MEASURE it and raise it deliberately — never relabel the outcome.
     """
-    who = f"{worker}: " if worker else ""
-    pytest.fail(f"{who}worker turn timed out: {exc}", pytrace=False)
+    pytest.fail(f"{_who(worker)}worker turn timed out: {exc}", pytrace=False)
 
 
 def fail_no_transcript(deadline_s: float, worker: str | None = None) -> NoReturn:
     """No transcript within the deadline FAILS — same reasoning as above."""
-    who = f"{worker}: " if worker else ""
     pytest.fail(
-        f"{who}no usable transcript within {deadline_s:g}s — the worker never produced one",
+        f"{_who(worker)}no usable transcript within {deadline_s:g}s — the worker never produced one",
         pytrace=False,
     )
