@@ -388,7 +388,9 @@ class ScanActionsMixin:
                     # purges child records and their bundles, and detaches the
                     # shared @local compute node before the cascade. Re-deriving
                     # that here is how the global compute node gets deleted.
-                    deletion = await project._delete_with_children(folder="trash", delete_chats=True, harness_index=index)
+                    deletion = await project._delete_with_children(
+                        folder="trash", delete_chats=True, harness_index=index
+                    )
                     outcome = deletion.get("chat_cleanup") or {"cwd": row["cwd"], "removed_paths": []}
                     outcome["trashed"] = deletion.get("folder_mechanism") is not None
                     outcome["mechanism"] = deletion.get("folder_mechanism")
@@ -403,9 +405,7 @@ class ScanActionsMixin:
                 results.append({"project_id": project_id, "ok": False, "error": str(e)})
 
         succeeded = sum(1 for r in results if r["ok"])
-        return ApiSuccessResponse(
-            data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded}
-        )
+        return ApiSuccessResponse(data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded})
 
     async def _scan_project(self) -> ApiResponse:
         """Scan all resources for a specific project.
@@ -574,6 +574,60 @@ class ScanActionsMixin:
                 harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
                 return ApiFailResponse(
                     message=f"{harness_name} is not installed on this machine.",
+                    status_code=400,
+                )
+
+            # And the same gate for the OTHER thing a spawn needs: something to
+            # run on. Installed is not enough — a harness with no eligible
+            # source refuses at spawn, and by then the create has already
+            # answered 200. That is the exact failure the install gate above was
+            # written for, one question over: the process was born fine and the
+            # worker died afterwards, so a vibe prompt sat there with no answer,
+            # no error and nothing to click. The person who hit it typed into a
+            # chat that never replied.
+            #
+            # `llm_picker_view` rather than `resolve_llm_source`: it answers for
+            # a worker_type + scope, and there is no process here to hand the
+            # resolver. Same producer either way — `chosen` IS the resolver's
+            # answer, so this can never refuse a launch that would have worked.
+            #
+            # Local reads only (capability row, stored keys, the memoized
+            # endpoint listing) — no subprocess, which is the bar the install
+            # gate set for this request path.
+            #
+            # The scope is the one KNOWABLE here, and it is not quite the spawn's.
+            # Rung 1 (``AgenticProcess.llm_endpoint_typeid``) cannot exist yet —
+            # ``set_llm_endpoint`` acts on a process that already exists — so
+            # nothing is lost there. The one real gap is a process created with
+            # no ``project_id`` whose ancestor pins an endpoint: the spawn walks
+            # to it, this cannot, and a pin can ADD a candidate (``_apply_constraint``
+            # stubs a named hub endpoint the inventory has not heard of). Such a
+            # create would be refused here and would have spawned. Every caller
+            # that has a project passes it, so this is narrow — but it is a real
+            # false refusal, not a theoretical one, and belongs written down.
+            from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+            funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
+            if funding.chosen is None:
+                logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} has no LLM source")
+                # The SAME opening sentence ``LLMSourceError`` uses, then the
+                # resolver's own top-ranked refusal.
+                #
+                # Both halves are load-bearing. The reason is what a person can
+                # act on and is the sentence the LLM Sources screen shows, so
+                # the two cannot disagree about why a box is stuck. The opening
+                # is what the FRONTEND reads: `isUnfundedHarness` matches "no
+                # usable LLM source" to route this failure to the sources page
+                # rather than the install screen, and it is the only signal it
+                # gets — the envelope carries no error code. Returning the bare
+                # reason made this gate unrecognisable to the routing it exists
+                # to feed, and a launch refused for funding landed the user on
+                # Capabilities, which can only offer to install a harness they
+                # already have.
+                reason = funding.blocked or "no source is configured"
+                return ApiFailResponse(
+                    message=f"{worker_type.value} has no usable LLM source: {reason}",
                     status_code=400,
                 )
 
