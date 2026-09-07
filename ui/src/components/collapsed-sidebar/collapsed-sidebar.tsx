@@ -322,7 +322,9 @@ export function CollapsedSidebar() {
             </Button>
           )}
           {AMBIENT_JOURNEYS_ENABLED && <JourneyBadge />}
-          <OrgTeamsButton />
+          {/* Desk only: the hub rail already carries an `organization` entry to the
+              same ViewType, and two buttons for one destination lights both. */}
+          {!hubMode && <OrgTeamsButton />}
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />
