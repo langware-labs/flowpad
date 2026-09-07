@@ -278,27 +278,9 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
 }
 
 /**
- * Redirect a cold landing on a vibe process URL to the display it left off on.
- *
- * The pin lives on the process (`context_data.last_shown`), which `loadProcess`
- * has just put in cache, so this costs no fetch and the loader stays fast.
- *
- * Unconditional: every landing on an explicit vibe process URL redirects to
- * whatever `last_shown` currently names, no once-per-session memory. Entering
- * the chat always shows the last-shown item — that is the product requirement,
- * not a fallback for the case nothing has restored it yet.
- *
- * Guards, each earning its place:
- *  - **explicit `?viewMode=vibe` only.** The effective mode is not settled at
- *    loader time — a project's own `last_mode` is applied later by
- *    `applyProjectViewMode` — so an ambient read would be wrong for exactly the
- *    projects that default to vibe. Same reasoning as `canonicalWorkspaceDisplayPath`.
- *    It fails toward "stay on the process", which is the safe direction.
- *  - **`replace`, never push** — a pushed entry would sit in history redirecting
- *    forward again on every Back.
- *  - **`currentDock?.equals(placed)` in `NavigationActions.openDock`** is what
- *    stops this from looping: redirecting to the SAME url the loader is already
- *    resolving is a no-op there, not a second navigation.
+ * Redirect a cold landing on an explicit vibe process URL to `last_shown`,
+ * unconditionally, every time — no once-per-session memory.
+ * `NavigationActions.openDock`'s same-URL no-op check prevents looping.
  */
 export function restoreDisplayRedirect(processId: string, requestPath: string, carry?: ProcessRouteCarry): string | null {
   if (carry?.viewMode !== ViewMode.Vibe) return null;
