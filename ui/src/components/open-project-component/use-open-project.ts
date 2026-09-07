@@ -6,6 +6,7 @@ import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavi
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
+import { newProjectLocale } from '@src/contexts/locale-context';
 import { notify } from '@src/notifications';
 import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project } from '@sdk';
 import { useCallback } from 'react';
@@ -144,7 +145,7 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
       const openedExisting = !!targetProject;
 
       if (!targetProject) {
-        targetProject = new Project({ name: normalizedPath });
+        targetProject = new Project({ name: normalizedPath, locale: newProjectLocale() });
         targetProject = await targetProject.save([dataContext.someone]);
       }
 

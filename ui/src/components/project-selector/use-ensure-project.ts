@@ -1,5 +1,6 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project } from '@sdk';
+import { newProjectLocale, stampNewProjectLocale } from '@src/contexts/locale-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -48,7 +49,7 @@ export function useEnsureProject() {
       const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
       let target = freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path ?? '') === pathKey) ?? null;
       if (!target) {
-        target = await new Project({ name: normalized }).save([dataContext.someone]);
+        target = await new Project({ name: normalized, locale: newProjectLocale() }).save([dataContext.someone]);
       }
       await target.setupForDesktop();
       if (options?.select === false) return target;
@@ -99,6 +100,10 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
     async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
       const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
       if (result.kind === 'ok') {
+        // The backend minted this row, so the constructor-side seed the local
+        // create paths use isn't available — stamp it here, BEFORE `land`
+        // adopts the project and `applyProjectLocale` reads it.
+        await stampNewProjectLocale(result.project);
         await result.project.setupForDesktop();
         await land(result.project);
       }
