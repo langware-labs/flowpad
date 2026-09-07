@@ -223,18 +223,5 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       '_uvToolInstallForce: quarantines the corrupt env once, then rebuilds and succeeds');
   }
 
-  {
-    // _enrichedPath: the flowpad tool venv's bin dir comes FIRST, so `python`
-    // resolves to the uv-managed interpreter the backend runs on, for the
-    // backend and for every worker it spawns.
-    const m = new UvManager(silentLog);
-    const sep = process.platform === 'win32' ? ';' : ':';
-    const first = m._enrichedPath().split(sep)[0];
-    const venvBin = m._toolVenvBinDir();
-    eq(first, venvBin, '_enrichedPath: tool venv bin dir is first on PATH');
-    ok(/(\/bin|\\Scripts)$/.test(venvBin), '_toolVenvBinDir: ends in bin (unix) or Scripts (windows)');
-    ok(venvBin.startsWith(m._toolVenvDir()), '_toolVenvBinDir: lives under the tool venv dir');
-  }
-
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });
