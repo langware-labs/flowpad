@@ -1184,7 +1184,7 @@ class UvManager {
    */
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -1192,13 +1192,22 @@ class UvManager {
       // so it behaves the same for healthy, broken, and offline-from-cloud
       // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
       // running backend can answer the cloud `/check-update` policy, so defer
-      // to that verdict.
-      const status = beforeBackendStart
+      // to that verdict — unless the caller asks for the plain PyPI comparison
+      // (`compareWithPypi`, used by the hourly check so a newer release is
+      // offered even when the cloud policy would not *require* it).
+      const status = compareWithPypi
         ? await this._pypiUpdateStatus()
         : await this.getUpdateStatus(cloudUrl);
       if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
+      // The user already answered "Later" for this exact version in this
+      // session — don't ask again every hour. A new release, or the next launch
+      // (fresh process), asks again.
+      if (latest === this._deferredPackageVersion) {
+        this.log.info(`[uv] Update ${latest} available but deferred by the user earlier this session`);
+        return false;
+      }
       this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -1213,6 +1222,7 @@ class UvManager {
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
+      if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
       // User chose Upgrade — show loading screen and wait for its IPC listener.
