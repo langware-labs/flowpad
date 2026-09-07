@@ -93,6 +93,7 @@
         "arch": ["x64"]
       }
     ],
+    "signExts": [".exe", ".dll", ".node"],
     "azureSignOptions": {
       "endpoint": "https://eus.codesigning.azure.net/",
       "codeSigningAccountName": "",
