@@ -8,17 +8,41 @@ import { useMemo } from 'react';
  *  one fact rather than a render-time trim. */
 const MAX_HOME_AGENTS = 8;
 
-/** One `asset_ref` prefix range — the half-open `[<dir>/, <dir>0)` pair
- *  `Entity.assets_by_path` uses server-side (`/` is 0x2F, `0` the next
- *  codepoint), so a dir matches exactly its strict descendants. */
-function underDir(dir: string): ExpressionNode {
+/** The half-open `[<dir><sep>, <dir><next>)` pair `Entity.assets_by_path` uses
+ *  server-side, where `next` is the codepoint after the separator — so a dir
+ *  matches exactly its strict descendants. */
+function prefixRange(dir: string, sep: string, next: string): ExpressionNode {
   return new ExpressionNode({
     op: '$AND',
     operands: [
-      new ExpressionNode({ op: '$GE', operands: ['asset_ref', `${dir}/`] }),
-      new ExpressionNode({ op: '$LT', operands: ['asset_ref', `${dir}0`] }),
+      new ExpressionNode({ op: '$GE', operands: ['asset_ref', `${dir}${sep}`] }),
+      new ExpressionNode({ op: '$LT', operands: ['asset_ref', `${dir}${next}`] }),
     ],
   });
+}
+
+/**
+ * Every `asset_ref` prefix range a stored row may match for `dir`, which arrives
+ * from `context_roots` in canonical POSIX form (`C:/Users/…` on Windows).
+ *
+ * **One range per SEPARATOR SPELLING, and they are OR'd** — the rule
+ * `Entity.assets_by_path` already states server-side, for the same reason: the
+ * comparison is lexical, so a range only matches rows written in its own form,
+ * and on Windows BOTH forms are in the data. The indexer writes `asset_ref`
+ * through pathlib (backslashes) while `context_roots` and the other producers
+ * write `canonical_posix_path`. A POSIX-only range therefore matched nothing on
+ * Windows — `\` (0x5C) sorts past the `0` (0x30) that closes it — so a
+ * project's agents were invisible on its homes there while the identical
+ * project worked on macOS.
+ *
+ * Only a drive-lettered or UNC root gets the second range: those are the paths
+ * pathlib spells with `\`, and a POSIX root has no other spelling to add.
+ */
+function underDir(dir: string): ExpressionNode[] {
+  // "/" is 0x2F -> "0"; "\" is 0x5C -> "]".
+  const ranges = [prefixRange(dir, '/', '0')];
+  if (/^(?:[A-Za-z]:\/|\/\/)/.test(dir)) ranges.push(prefixRange(dir.replace(/\//g, '\\'), '\\', ']'));
+  return ranges;
 }
 
 /**
@@ -72,7 +96,7 @@ export function useProjectAgents(project?: Project | null) {
         // created-date — a launcher that reshuffles as agents are added is
         // disorienting.
         query: new QueryFilter({
-          match: new ExpressionNode({ op: '$OR', operands: roots.map(underDir) }),
+          match: new ExpressionNode({ op: '$OR', operands: roots.flatMap(underDir) }),
           order_by: { name: 'asc' },
           limit: MAX_HOME_AGENTS,
         }),
