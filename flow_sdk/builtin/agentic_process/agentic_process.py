@@ -732,6 +732,22 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
+#: Fields ``_perform_open`` mints during a launch. ``start_pty`` runs the launch
+#: on a DB-fresh copy (so two concurrent opens can't double-spawn), then copies
+#: exactly these back onto the caller's object — the launch's OUTPUTS, the
+#: mirror of the ``session_id_override``/``terminal_theme`` inputs it copies in.
+#: Deliberately explicit rather than a whole-entity refresh: a blanket copy would
+#: also clobber caller-side edits that were never part of the launch.
+_LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "shell_id",
+    "sidecar_shell_id",
+    "status",
+    "visible",
+    "pty_mode",
+    "start_failure",
+)
+
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
@@ -1604,6 +1620,20 @@ class AgenticProcess(Entity):
                 return result
             finally:
                 fresh._set_start_lifecycle(False)
+                # The launch ran on ``fresh``, so every field it minted lives
+                # there. Copy them back: the object the caller still holds must
+                # describe the worker that was just started, not the pre-launch
+                # snapshot it came in as. Without this an in-process caller
+                # keeps ``session_id=None`` forever, and since
+                # ``transcript_path`` is None without a session id, any
+                # subsequent ``stream_transcript`` can never resolve and dies
+                # on its deadline — a launch bug wearing a timeout's clothes.
+                # (Regression from 499b4fa93, which moved the launch from
+                # ``self`` to ``fresh`` to stop two concurrent opens from
+                # double-spawning, but kept only the inbound copies above.)
+                if fresh is not self:
+                    for _field in _LAUNCH_OUTPUT_FIELDS:
+                        setattr(self, _field, getattr(fresh, _field))
 
     async def start(
         self,
