@@ -58,18 +58,9 @@ export function isContentAssetDock(dock: DockPointer): boolean {
   return pointer?.mode === AssetMode.WIKI;
 }
 
-/**
- * A content-asset dock whose editor is a passive PREVIEW (`isPreviewEditor`) —
- * html/image/video/audio/pdf — rather than an editing surface.
- *
- * `flow show` pins these `withActiveDisplay(true)`, and the vibe workspace's
- * own Display pane already renders whatever the active display addresses
- * (`VibeWorkspace`'s child-URL branch → `ContentPanel`). Routing one into
- * `AssetVibeWorkspace` instead (a work-context chat + editor host, built for a
- * file someone is EDITING) swaps out the agent's Display entirely and opens a
- * redundant asset workspace — the deliverable never appears where the agent
- * put it, and its materialized tab shows up as a stray chip beside it.
- */
+/** A content-asset dock whose editor is a passive PREVIEW, not an editing surface.
+ *  A `flow show` pin of one belongs in the vibe Display pane; routing it to
+ *  `AssetVibeWorkspace` instead swaps that pane off screen entirely. */
 export function isPreviewAssetDock(dock: DockPointer): boolean {
   const pointer = assetPointerForDock(dock);
   return pointer?.mode === AssetMode.EDITOR && isPreviewEditor(pointer.editor);
