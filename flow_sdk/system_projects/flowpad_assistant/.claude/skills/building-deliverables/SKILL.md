@@ -33,18 +33,23 @@ reported, never an assumed one.
 
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**
-skill. Do NOT hand-write slide HTML and do NOT route a deck through the `.html` rule
+skill. Do NOT hand-write slide HTML and do NOT route a deck through the static-HTML rule
 below — decks belong to decker.
 
-**`.html` deliverable** (a generated `crm.html`, a chart, a report, a mockup, or a small
-static site of a few pages with their own images and stylesheets; NOT a slide deck) →
-the **html-builder** skill for the page itself (it loads **frontend-design** first, so
-the result looks designed rather than defaulted), then write the files in the project
-directory and `flow show file <abs-path-to-the-entry-page>.html`. No `http.server`, no
-port. html-builder owns how to author the page itself.
+**Static HTML — a page, a small site, or a no-build app** (a generated `crm.html`, a
+chart, a report, a mockup, a landing page, a one-page demo, a small game, a "hello world
+app", or a few pages with their own images and stylesheets; NOT a slide deck) → the
+**html-builder** skill for the page itself (it loads **frontend-design** first, so the
+result looks designed rather than defaulted), then write the files in the project
+directory. This is the one row for every no-build HTML deliverable; what changes is only
+how you show it.
 
-**Two things the preview cannot do**, and they are the only reasons to reach for the
-server rule below:
+**The default is `flow show file <abs-path-to-the-entry-page>.html`** — no `http.server`,
+no port, no fetch check. Take this path unless the page needs one of the two things
+below.
+
+**Serve it on a port ONLY if the page needs something the preview cannot do**, which is
+exactly these two:
 
 * **`localStorage` / `sessionStorage`** — a page that remembers something (a todo list,
   a saved theme, a score). Storage *throws* in the preview, which kills the whole
@@ -52,15 +57,16 @@ server rule below:
 * **`fetch` of its own data file** — a page that loads `data.json` beside it. (A
   `<script src="data.js">` is fine; it is the `fetch`/XHR that is blocked.)
 
-If the page needs either, serve it from the very first show rather than switching later
-— the surface changes shape under the user mid-session.
+Nothing else qualifies. A countdown, a clock, an animation, a canvas game, a chart with
+its data inline, `setInterval`, an image folder — all of that renders in the preview. If
+you cannot name which of the two bullets applies, you are on the default path: write the
+files, `flow show file`, and stop there. Starting a server "to check it works" is not a
+reason; the preview is the check.
 
-**Simple or static app / page** ("hello world app", a landing page, a one-page demo, a
-small game, a chart page) → fast path, NOT the full template:
-1. Write the files (`index.html` + assets) in the project directory, through the
-   **html-builder** skill — it owns no-build static pages and loads **frontend-design**
-   for the aesthetic direction, which is what stops this coming out as bare unstyled text.
-2. Get a port and serve on it — never pick a number yourself (other builds are serving
+If the page does need one of the two, serve it from the very first show rather than
+switching later — the surface changes shape under the user mid-session:
+
+1. Get a port and serve on it — never pick a number yourself (other builds are serving
    on this machine too). **Resolve the interpreter, start, then PROVE it answers** — a
    background-launch receipt reports the SHELL starting, not the server listening, so a
    dead interpreter is indistinguishable from a live server until something fetches a page.
@@ -82,9 +88,11 @@ small game, a chart page) → fast path, NOT the full template:
                  -WindowStyle Hidden -PassThru        # keep the PID it returns
    (Invoke-WebRequest -Uri "http://localhost:$PORT/index.html" -UseBasicParsing).StatusCode
    ```
-3. Only once that fetch returned 200 / the page body: `flow show webapp --port <that port>`.
-   If it did not, STOP and report the failure — do not retry blind, and do not call
-   `flow show`. The real error is in `~/.flow/app-open-logs/`; read it.
+
+2. Only once that fetch returned 200 / the page body: `flow show webapp --port <that port>`.
+   If it did not, STOP and report the failure — do not retry blind, do not call
+   `flow show`, and do not fall back to `flow show file` as if nothing happened. The real
+   error is in `~/.flow/app-open-logs/`; read it.
 
 **Never kill processes by name.** `pkill -f python` / `Get-Process python | Stop-Process -Force`
 takes down Flowpad's own Python backend along with everything else, and every `flow` command
