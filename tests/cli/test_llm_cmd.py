@@ -114,8 +114,7 @@ def test_an_out_of_range_number_says_what_the_range_is():
 
 
 def test_an_ambiguous_prefix_is_refused_rather_than_guessed():
-    rows = llm_cmd._rows({**STATUS, "endpoints": STATUS["endpoints"]})
-    rows = [row._replace(name="team pool") if row.n == 2 else row for row in rows]
+    rows = [row._replace(name="team pool") if row.n == 2 else row for row in llm_cmd._rows(STATUS)]
 
     with pytest.raises(typer.Exit):
         llm_cmd._pick(rows, "team")
@@ -216,11 +215,11 @@ def test_a_value_with_a_quote_survives_the_shell(shell_dir, capsys):
     nasty = "tok'; echo pwned #"
     llm_cmd._emit_exports({"harnesses": {"claude": {"env": {"ANTHROPIC_AUTH_TOKEN": nasty}, "files": {}}}}, ["claude"])
 
+    # One arm, and the true one: a shell parses the line into exactly two words, the second
+    # carrying the token verbatim. The compound `or` this replaces had an always-false first arm,
+    # so only the second was ever doing any work.
     line = capsys.readouterr().out.strip()
-    assert (
-        shlex.split(line) == [f"export ANTHROPIC_AUTH_TOKEN={nasty}"]
-        or shlex.split(f"x {line.split('=', 1)[1]}")[1] == nasty
-    )
+    assert shlex.split(line) == ["export", f"ANTHROPIC_AUTH_TOKEN={nasty}"]
 
 
 # ------------------------------------------------------------------ the route
@@ -391,19 +390,18 @@ def test_project_clear_unpins_by_sending_no_endpoint(recorder):
     assert post[2] == {"scope": "project", "project_id": "proj-1"}
 
 
-def test_clear_asks_the_backend_which_variables_it_manages(recorder):
-    """The variable names are the harnesses' business, so the CLI must not hold a list of
-    its own — a harness that gained a variable would then leak past `clear` forever."""
-    recorder.data = {"managed_vars": ["ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"]}
+def test_clear_derives_the_variables_from_the_harness_specs(recorder):
+    """The names are the harnesses' business, so the CLI holds no list of its own — and they are
+    a CONSTANT, so it asks nobody: no server, no hub refresh, no credential route."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars
 
     result = runner.invoke(app, ["llm", "clear"])
 
     assert result.exit_code == 0, result.output
     unset = [line.split()[1] for line in result.output.splitlines() if line.startswith("unset ")]
-    assert unset == ["ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"]
-    # Read off the STATUS: clearing needs variable names, not a credential, so it must not walk
-    # the one route that materializes keys.
-    assert not [call for call in recorder.calls if call[1].endswith("/binding")]
+    assert unset == list(managed_env_vars())
+    assert {"ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"} <= set(unset)
+    assert recorder.calls == []
 
 
 def test_a_source_the_box_does_not_have_is_refused_before_any_write(recorder):
@@ -520,23 +518,15 @@ def test_clearing_removes_our_leaves_and_nothing_else(tmp_path, monkeypatch):
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"theme": "dark", "env": {"MY_OWN": "keep", "A": "1"}}))
 
-    llm_cmd._write_user_config(
-        "claude", {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}, remove=True
-    )
+    spec = {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}
+    llm_cmd._write_user_config("claude", spec, remove=True)
 
     assert json.loads(settings.read_text()) == {"theme": "dark", "env": {"MY_OWN": "keep"}}
 
-
-def test_an_emptied_container_is_dropped_rather_than_left_behind(tmp_path, monkeypatch):
-    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
-    settings = tmp_path / ".claude/settings.json"
-    settings.parent.mkdir(parents=True)
+    # ...and with nothing of the user's left in it, the container goes too rather than lingering
+    # as an empty block.
     settings.write_text(json.dumps({"env": {"A": "1"}}))
-
-    llm_cmd._write_user_config(
-        "claude", {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}, remove=True
-    )
-
+    llm_cmd._write_user_config("claude", spec, remove=True)
     assert json.loads(settings.read_text()) == {}
 
 
@@ -544,6 +534,7 @@ def test_a_managed_block_rewrites_only_its_own_region(tmp_path, monkeypatch):
     """A ``config.toml`` or a ``.profile`` belongs to the user; only what is between the markers
     is ours. Re-running must replace that region, not append a second copy."""
     monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/sh")
     profile = tmp_path / ".profile"
     profile.write_text("export PATH=/mine\n")
     spec = {"fmt": "profile", "path": ".profile", "lines": ["export A=1"]}
@@ -565,3 +556,38 @@ def test_a_harness_with_no_config_file_says_so(tmp_path, monkeypatch):
     line = llm_cmd._write_user_config("nope", {"note": "nope cannot be configured box-wide"})
 
     assert "cannot be configured box-wide" in line
+
+
+def test_the_managed_toml_block_goes_first_so_its_keys_stay_root_level(tmp_path, monkeypatch):
+    """codex's config is dotted-key TOML, and a real ``~/.codex/config.toml`` commonly ends
+    inside a table. Appending our region there re-parents every key under that table — silently,
+    with no error and no funding. TOML cannot return to the root, so first is the only safe
+    place."""
+    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
+    config = tmp_path / ".codex/config.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text('[tui]\ntheme = "dark"\n')
+
+    llm_cmd._write_user_config(
+        "codex",
+        {"fmt": "block", "path": ".codex/config.toml", "lines": ['model_provider = "flowpad"']},
+    )
+
+    body = config.read_text()
+    assert body.index("model_provider") < body.index("[tui]"), "our key landed under [tui]"
+    assert 'theme = "dark"' in body
+
+
+def test_the_profile_is_the_one_the_users_shell_actually_reads(tmp_path, monkeypatch):
+    """``~/.profile`` is the POSIX answer and the wrong one on a default macOS box: a non-login
+    zsh reads ``~/.zshrc`` and never sources it, so we would report success and fund nothing."""
+    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
+    spec = {"fmt": "block", "path": ".profile", "lines": ["export A=1"]}
+
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    llm_cmd._write_user_config("copilot", spec)
+    assert "export A=1" in (tmp_path / ".zshrc").read_text()
+
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    llm_cmd._write_user_config("copilot", spec)
+    assert "export A=1" in (tmp_path / ".bashrc").read_text()

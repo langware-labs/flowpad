@@ -153,10 +153,10 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
         "provider": bound.provider if bound else None,
         "name": bound.name if bound else None,
         "hub_logged_in": hub_logged_in,
-        # Every variable a shell binding can set. Static and secret-free, so it rides the status
-        # rather than the credential route -- which is what lets ``flow llm clear`` work with no
-        # source chosen and no key resolved.
-        "managed_vars": managed_env_vars(),
+        # Every variable a shell binding can set. Static and secret-free; it rides the status so
+        # a client that already has one need not ask again, but ``flow llm clear`` calls
+        # ``managed_env_vars`` directly rather than buying a hub refresh for a constant.
+        "managed_vars": list(managed_env_vars()),
         # Who the hub thinks this box is. Lets a caller tell a budget allocated TO this person
         # from one they merely administer -- both are listed, and only this says which is which.
         "hub_user_typeid": _hub_user_typeid(),
@@ -506,7 +506,7 @@ async def llm_binding(payload: dict) -> dict:
         shell_binding,
         user_binding,
     )
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import picker_view_for, resolve_constraint
 
     typeid = str(payload.get("endpoint_typeid") or "").strip()
     if not typeid:
@@ -517,9 +517,17 @@ async def llm_binding(payload: dict) -> dict:
         raise HubEndpointBindError(f"unknown harness {harness!r}", 404)
     workers = HUB_ENDPOINT_HARNESSES if harness == "all" else (harness,)
 
+    # ONCE, not per harness, and the OFFER list rather than the overlaid one -- the same two
+    # decisions ``_sources_by_kind`` makes, for the same reasons. Calling ``list_llm_candidates``
+    # in the loop re-read the whole inventory per harness and threw away an overlay sort each
+    # time; ``llm_source`` documents that exact regression ("four harnesses became eight
+    # inventories per status poll"). Offers is also the list ``flow llm list`` numbers rows off,
+    # so a row number and this lookup cannot disagree.
+    constraint = await resolve_constraint(LLMScope())
     out: dict[str, dict] = {}
     for worker in workers:
-        candidate = next((c for c in await list_llm_candidates(worker) if c.source.endpoint_typeid == typeid), None)
+        offers = (await picker_view_for(worker, constraint)).offers
+        candidate = next((c for c in offers if c.source.endpoint_typeid == typeid), None)
         if candidate is None:
             out[worker] = {"reason": f"{worker} has no source {typeid}"}
             continue

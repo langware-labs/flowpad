@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, Optional, overload
 
 import typer
 
@@ -67,7 +67,15 @@ def caller_abs_path(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path.strip()))
 
 
-def discover_port(required: bool = True):
+@overload
+def discover_port(required: Literal[True] = ...) -> int: ...
+
+
+@overload
+def discover_port(required: Literal[False]) -> "int | None": ...
+
+
+def discover_port(required: bool = True) -> "int | None":
     """Resolve the active instance's running port (FLOW_INSTANCE-aware).
 
     ``required=False`` answers ``None`` instead of exiting, for a command that has something
