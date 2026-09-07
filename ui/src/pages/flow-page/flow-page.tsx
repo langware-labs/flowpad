@@ -11,7 +11,7 @@ import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
 import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
-import { isContentAssetDock } from '@src/navigation/content-asset-dock';
+import { isContentAssetDock, isPreviewAssetDock } from '@src/navigation/content-asset-dock';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
@@ -37,7 +37,14 @@ export default function FlowPage() {
   // not apply. Route it through the standard layout so ContentPanel's page=hub
   // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
   const hubMode = currentDock?.page === PageId.HUB;
-  const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock);
+  // A preview-editor active display (html/image/video/audio/pdf pinned by
+  // `flow show`) stays with VibeWorkspace's own Display pane instead of
+  // AssetVibeWorkspace — see `isPreviewAssetDock`. Gated on `isVibe` and
+  // `isActiveDisplay` so a file opened directly (assets browser, chat
+  // attachment) still gets the normal asset-workspace chrome; only the
+  // agent's own pinned deliverable is exempted.
+  const isPreviewDisplay = isVibe && !!currentDock && currentDock.isActiveDisplay && isPreviewAssetDock(currentDock);
+  const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock) && !isPreviewDisplay;
 
   // One common tree keeps asset/file ContentPanel ancestry stable while the URL
   // changes only its view mode. Non-asset Vibe destinations retain the existing

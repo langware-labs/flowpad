@@ -43,13 +43,30 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
   useTabLifecycles();
   const workspaceChildren = useWorkspaceChildren(processTab?.id);
   const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
+  // The workspace's OWN active display (a `flow show` target `materializeTab`
+  // adopted as a child — see `isAdoptableChildDock`) is content the fixed
+  // "Display" square below already represents; it is not a SEPARATE thing the
+  // agent opened. Rendering it again as a chip would duplicate every preview
+  // target (html/image/pdf/…) the moment it stops swapping into
+  // `AssetVibeWorkspace`. Excluded from the STRIP only — `children` (closing,
+  // adoption bookkeeping) keeps it, since the row is real and must still be
+  // torn down with the rest of the workspace.
+  const visibleChildren = useMemo(
+    () => children.filter((tab) => !(tab.dockPointer && new DockPointer(tab.dockPointer).isActiveDisplay)),
+    [children],
+  );
   // The child TABS only — the Display is NOT a tab (it renders as a fixed,
   // square header to the left of the strip). The strip starts after it.
-  const items: TabStripItem[] = useTabStripItems(children);
+  const items: TabStripItem[] = useTabStripItems(visibleChildren);
 
   const processKey = processDock.tabHash ?? 'workspace-display';
   const activeKey = currentDock?.tabHash ?? '';
-  const processActive = activeKey === processKey;
+  // The active display's own dock (e.g. a preview target) carries the
+  // host-keyed `ACTIVE_DISPLAY_HASH_NS` tabHash, not the process's — so a
+  // plain key comparison never lit the square for it. Its chip is deliberately
+  // not in the strip (see `visibleChildren` above), so this is the only cue
+  // the user gets that the Display IS what's on screen.
+  const processActive = activeKey === processKey || !!currentDock?.isActiveDisplay;
 
   const childByKey = useMemo(() => {
     const m = new Map<string, Tab>();
