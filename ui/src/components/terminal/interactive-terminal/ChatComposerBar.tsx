@@ -2,11 +2,15 @@ import {
   AgenticProcess,
   isBusy,
   TypeId,
+  WorkerStatus,
+  type StatusBearingProcess,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
+import { isTerminalStatus } from '@src/components/entity-execution-panel/ChatActivityLine';
+import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
@@ -56,6 +60,21 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
   // sendable.
   const indicatorProcess = reflected;
   const busy = isBusy(indicatorProcess);
+
+  // Gate the pill's "turn in flight" collapse on the same optimistic signal
+  // ChatActivityLine uses (`isPrompting` OR `busy`, see useTurnActivity), not
+  // on raw server-confirmed `busy` alone. `getDisplayStatus` already collapses
+  // a non-busy workerStatus to WORKING once `busy` flips true, but that flip
+  // only lands after the backend's websocket broadcast — until then this pill
+  // rendered the stale terminal workerStatus (e.g. INACTIVE) verbatim, for the
+  // whole round trip during which the activity line — gated on `active` —
+  // already read "Working" (FLOWPAD-2095).
+  const turn = useTurnActivity(reflected);
+  const workerStatus = turn.status ?? reflected.workerStatus;
+  const displayStatusSource: StatusBearingProcess =
+    turn.active && isTerminalStatus(workerStatus)
+      ? { status: reflected.status, workerStatus: WorkerStatus.WORKING, busy: reflected.busy }
+      : indicatorProcess;
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -118,11 +137,11 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       }
       statusSlot={
         <span
-          title={getStatusLabel(indicatorProcess)}
+          title={getStatusLabel(displayStatusSource)}
           className="flex items-center"
           data-testid="simple-chat-status"
         >
-          <ProcessStatusIndicator process={indicatorProcess} showLabel size="sm" className="px-1 text-muted-foreground" />
+          <ProcessStatusIndicator process={displayStatusSource} showLabel size="sm" className="px-1 text-muted-foreground" />
         </span>
       }
     />
