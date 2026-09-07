@@ -1661,8 +1661,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
         {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,
-          shell entity missing, network). Renders nothing when null. */}
-        <TerminalRuntimeErrorBanner />
+          shell entity missing, network). Renders nothing when null, and
+          nothing when the failure belongs to a DIFFERENT process: a plain
+          terminal passes no id and so never wears another session's error. */}
+        <TerminalRuntimeErrorBanner processId={process?.id} />
 
         <PtySyncProvider session={ptySyncRef.current}>
           {/* Column header — only for Claude pane; terminal debug chrome
