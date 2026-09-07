@@ -44,16 +44,11 @@ function seed({ lastShown, withDisplayTab = true }: { lastShown: unknown; withDi
 }
 
 let restoreDisplayRedirect: (id: string, path: string, carry?: unknown) => string | null;
-let resetDisplayRestoreForTests: () => void;
 
 beforeEach(async () => {
   vi.restoreAllMocks();
   const mod = await import('@src/routes/loaders/load-shell');
   restoreDisplayRedirect = mod.restoreDisplayRedirect as typeof restoreDisplayRedirect;
-  resetDisplayRestoreForTests = mod.resetDisplayRestoreForTests;
-  // The once-per-session set is module state and genuinely session-scoped, so each
-  // test starts from the state a hard reload produces.
-  resetDisplayRestoreForTests();
 });
 
 describe('vibe display restore redirect', () => {
@@ -68,12 +63,13 @@ describe('vibe display restore redirect', () => {
     expect(url).toContain(`${'viewMode'}=vibe`);
   });
 
-  it('fires at most once per process per session', () => {
+  it('fires every time the chat is entered, not just once per session', () => {
+    // Entering the chat always shows the last-shown item — no once-per-session
+    // memory. The Display home chip navigating back to this URL, or closing a
+    // child, must land on the deliverable again each time, not just the first.
     seed({ lastShown: { kind: 'vfs', path: DOC_PATH } });
     expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: ViewMode.Vibe })).not.toBeNull();
-    // The Display home chip navigates to this very URL on purpose, and so does
-    // closing a child. A second redirect would make the bare process unreachable.
-    expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: ViewMode.Vibe })).toBeNull();
+    expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: ViewMode.Vibe })).not.toBeNull();
   });
 
   it('stays put outside explicit vibe', () => {
@@ -81,7 +77,6 @@ describe('vibe display restore redirect', () => {
     // The effective mode is not settled at loader time (a project's own last_mode
     // is applied later), so anything but an explicit vibe param must not redirect.
     expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: null })).toBeNull();
-    resetDisplayRestoreForTests();
     expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, undefined)).toBeNull();
   });
 
@@ -89,7 +84,7 @@ describe('vibe display restore redirect', () => {
     // The cold landing this exists for: `flow show` arrived while nothing was
     // watching, so no active-display Tab row was ever minted. An earlier version
     // required that row as a "the user still has a display" record and therefore
-    // never fired on exactly this case. Once-per-session carries the guard instead.
+    // never fired on exactly this case.
     seed({ lastShown: { kind: 'vfs', path: DOC_PATH }, withDisplayTab: false });
     expect(restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: ViewMode.Vibe })).not.toBeNull();
   });

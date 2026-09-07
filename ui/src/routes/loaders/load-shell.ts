@@ -278,32 +278,15 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
 }
 
 /**
- * Processes whose display has already been restored in THIS browser session.
- *
- * Restore is a RELOAD behavior, not a navigation behavior, and that distinction is
- * the whole reason this set exists rather than a URL opt-out. Landing cold on a
- * process URL — a bookmark, a reload, a fresh link — should put the user back on
- * the deliverable the agent left them. But the Display home chip navigates to that
- * very URL on purpose, and so does closing a child; bouncing those straight back
- * out would make the bare process unreachable.
- *
- * A module-level set answers both: it is empty on a hard reload (exactly when
- * restore is wanted) and populated for the rest of the session (exactly when the
- * user is steering). No second display-state param has to exist in the URL, and
- * nothing has to sniff a referrer.
- */
-const restoredDisplays = new Set<string>();
-
-/** Test seam — a fresh module in a new browser session starts empty. */
-export function resetDisplayRestoreForTests(): void {
-  restoredDisplays.clear();
-}
-
-/**
  * Redirect a cold landing on a vibe process URL to the display it left off on.
  *
  * The pin lives on the process (`context_data.last_shown`), which `loadProcess`
  * has just put in cache, so this costs no fetch and the loader stays fast.
+ *
+ * Unconditional: every landing on an explicit vibe process URL redirects to
+ * whatever `last_shown` currently names, no once-per-session memory. Entering
+ * the chat always shows the last-shown item — that is the product requirement,
+ * not a fallback for the case nothing has restored it yet.
  *
  * Guards, each earning its place:
  *  - **explicit `?viewMode=vibe` only.** The effective mode is not settled at
@@ -311,26 +294,14 @@ export function resetDisplayRestoreForTests(): void {
  *    `applyProjectViewMode` — so an ambient read would be wrong for exactly the
  *    projects that default to vibe. Same reasoning as `canonicalWorkspaceDisplayPath`.
  *    It fails toward "stay on the process", which is the safe direction.
- *  - **once per process per session** (see `restoredDisplays`), which is also what
- *    keeps a durable `last_shown` from re-firing forever — the hazard `isFreshShow`
- *    guards on the non-vibe side.
  *  - **`replace`, never push** — a pushed entry would sit in history redirecting
  *    forward again on every Back.
- *
- * An earlier version also required the workspace's active-display Tab row to be
- * visible, reasoning that the row records whether the user still HAS a display.
- * It does not: the row is minted when a live client navigates, so on the cold
- * landing this function exists for — a reload, a bookmark, a shared link, or a
- * `flow show` that arrived while nothing was watching — there is no row yet and
- * the redirect never fired. The check could not tell "the user closed it" from
- * "no browser has ever shown it", and silently chose wrong on the common case.
- * Once-per-session carries the guard instead, and it is no weaker than the
- * behavior this replaced: the pane restored `last_shown` on EVERY mount.
+ *  - **`currentDock?.equals(placed)` in `NavigationActions.openDock`** is what
+ *    stops this from looping: redirecting to the SAME url the loader is already
+ *    resolving is a no-op there, not a second navigation.
  */
 export function restoreDisplayRedirect(processId: string, requestPath: string, carry?: ProcessRouteCarry): string | null {
   if (carry?.viewMode !== ViewMode.Vibe) return null;
-  if (restoredDisplays.has(processId)) return null;
-  restoredDisplays.add(processId);
 
   const process = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
   const lastShown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
