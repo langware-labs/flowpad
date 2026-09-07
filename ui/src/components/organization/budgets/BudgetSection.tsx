@@ -61,7 +61,6 @@ import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
 import { ShareOrgButton } from './OrgSharePanel';
 import { ShareProjectButton } from './ShareProjectPanel';
-import { MemberStanding } from './MemberStanding';
 import { MoneyBox } from './MoneyBox';
 import { PayingProviderSetup } from './PayingProviderSetup';
 import {
@@ -96,7 +95,7 @@ function TokenCount({ tokens, testIdPrefix }: { tokens: number; testIdPrefix?: s
 
 // ── organization ──────────────────────────────────────────────────────────────
 
-export function OrgUnit({ orgId, orgName, onDeleted }: { orgId: string; orgName?: string; onDeleted: () => void }) {
+export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => void }) {
   const { t } = useLingui();
   const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
   const setCap = useSetLifetimeCap();
@@ -113,9 +112,12 @@ export function OrgUnit({ orgId, orgName, onDeleted }: { orgId: string; orgName?
   });
 
   // Refused, not broken: `budgets` is admin-and-above on the hub, so this is the ordinary answer
-  // for a member who was invited to a team here. They get their own standing instead of a line
-  // about somebody else's permission -- see `MemberStanding`.
-  if (error) return <MemberStanding orgId={orgId} orgName={orgName} />;
+  // for a member who was invited to a team here. Render NOTHING. The screen is the money, a member
+  // has none of it to see, and a box explaining whose permission they lack is a sentence about
+  // somebody else -- told to a person who only wanted to know what they joined. What would serve
+  // them is their org and the teams they are in; that is a graph question (a plain team query
+  // still answers with every team in the org), not something to fake with a placeholder here.
+  if (error) return null;
   if (isLoading) return <Loading />;
   // Settled, and still no `org`. The declared shape promises one, so this is a hub answering
   // something we cannot render -- an older deployment without the action, or a refusal riding an
