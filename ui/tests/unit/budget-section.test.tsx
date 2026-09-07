@@ -29,13 +29,11 @@ const h = vi.hoisted(() => ({
   del: vi.fn(),
   getByTypeId: vi.fn(),
   invite: vi.fn(),
-  standing: vi.fn(),
   copyToClipboard: vi.fn(),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useOrgBudgets: (...args: unknown[]) => h.org(...args),
-  useOrgStanding: (...args: unknown[]) => h.standing(...args),
   useTeamBudgets: (...args: unknown[]) => h.team(...args),
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
   useRemoveAllowance: () => ({ mutate: h.removeAllowance, isPending: false }),
@@ -142,11 +140,6 @@ const idle = { data: undefined, isLoading: false, error: null };
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-});
-
-const standing = (over: Record<string, unknown> = {}) => ({
-  data: { id: UUID(1), name: 'Course Project', role: 'member', teams: [], ...over },
-  isLoading: false,
 });
 
 describe('OrgUnit', () => {
@@ -280,45 +273,18 @@ describe('OrgUnit', () => {
     await waitFor(() => expect(h.copyToClipboard).toHaveBeenLastCalledWith(UUID(4)));
   });
 
-  it('offers the same copy icon to a member, who may not rename the row it sits on', async () => {
-    h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
-    h.team.mockReturnValue(idle);
-    h.standing.mockReturnValue(standing({ teams: [{ id: UUID(2), name: 'Class A', role: 'member' }] }));
-    draw(<OrgUnit orgId={UUID(1)} orgName="Course Project" onDeleted={vi.fn()} />);
-
-    expect(screen.queryByText(UUID(1))).toBeNull();
-    fireEvent.click(screen.getByTestId('org-standing-copy-id'));
-    await waitFor(() => expect(h.copyToClipboard).toHaveBeenCalledWith(UUID(1)));
-  });
-
-  it('shows a refused caller their own standing, not a line about what admins may see', () => {
+  it('renders NOTHING for a caller the hub refuses, not a line about what admins may see', () => {
     // `budgets` is admin-and-above on the hub, so a 401 here is the ORDINARY answer for somebody
-    // who accepted an invitation to a team. They used to get "Only an admin of this organization
-    // can see its budgets" -- a sentence about a permission, where the question was "what did I
-    // just join". The money stays hidden; the membership does not.
+    // who accepted an invitation to a team. The screen is the money and they have none of it to
+    // see, so the row is absent -- not a box explaining whose permission they lack, which is a
+    // sentence about somebody else told to a person who wanted to know what they joined.
     h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
     h.team.mockReturnValue(idle);
-    h.standing.mockReturnValue(standing({ teams: [{ id: UUID(2), name: 'Class A', role: 'member' }] }));
-    draw(<OrgUnit orgId={UUID(1)} orgName="Course Project" onDeleted={vi.fn()} />);
+    const { container } = draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
 
+    expect(container.textContent).toBe('');
     expect(screen.queryByTestId('org-unit')).toBeNull();
-    expect(screen.getByTestId('org-standing-name').textContent).toBe('Course Project');
-    expect(screen.getByTestId('org-standing-role').textContent).toMatch(/member/i);
-    expect(screen.getByText('Class A')).toBeTruthy();
     expect(screen.queryByText(/only an admin/i)).toBeNull();
-    expect(screen.queryByTestId('org-total-cap')).toBeNull();
-  });
-
-  it('titles the member card from the org list while the standing read is still in flight', () => {
-    // The name is the one thing the card cannot do without, and the page already has it -- so a
-    // slow (or refused) standing read degrades to the name alone, never to an untitled card.
-    h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
-    h.team.mockReturnValue(idle);
-    h.standing.mockReturnValue({ data: undefined, isLoading: true });
-    draw(<OrgUnit orgId={UUID(1)} orgName="Course Project" onDeleted={vi.fn()} />);
-
-    expect(screen.getByTestId('org-standing-name').textContent).toBe('Course Project');
-    expect(screen.queryByTestId('org-standing-role')).toBeNull();
   });
 
   it('offers to set a team up when it has no budget, without touching the org level', () => {

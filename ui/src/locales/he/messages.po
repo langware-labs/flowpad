@@ -639,7 +639,7 @@ msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקו�
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
-msgstr ""
+msgstr "{name} עדיין לא מותקן במחשב הזה. התקן אותו למטה, ואז חזור לכאן כדי להתחבר."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -1014,7 +1014,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "A request just failed because {name} isn't signed in on this machine."
-msgstr ""
+msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
@@ -1338,7 +1338,7 @@ msgstr "הוסף חוק"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
-msgstr ""
+msgstr "הוסף מפתח"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Add link"
@@ -1383,7 +1383,7 @@ msgstr "הוסף תג…"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add this key under Connections"
-msgstr ""
+msgstr "הוסף את המפתח הזה תחת חיבורים"
 
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -1527,7 +1527,7 @@ msgstr ""
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Agent funding"
-msgstr ""
+msgstr "מימון הסוכן"
 
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
@@ -1831,7 +1831,7 @@ msgstr "כבר פעיל"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Already signed in elsewhere? Check again"
-msgstr ""
+msgstr "כבר התחברת במקום אחר? בדוק שוב"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2494,7 +2494,7 @@ msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Automatic"
-msgstr ""
+msgstr "אוטומטי"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -3106,7 +3106,7 @@ msgstr "יכולות"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Capabilities unavailable. Retry"
-msgstr ""
+msgstr "היכולות אינן זמינות. נסה שוב"
 
 #: src/i18n/type-labels.ts
 msgid "Capability"
@@ -3258,7 +3258,7 @@ msgstr "בודק את אינדקס התגיות…"
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Checking what funds {harnessLabel}…"
-msgstr ""
+msgstr "בודק מה מממן את {harnessLabel}…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -3335,7 +3335,7 @@ msgstr ""
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "chosen by you"
-msgstr ""
+msgstr "נבחר על ידך"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome"
@@ -4472,7 +4472,6 @@ msgid "Copy event JSON"
 msgstr "העתק JSON של אירוע"
 
 #: src/components/organization/budgets/EditableTitle.tsx
-#: src/components/organization/budgets/MemberStanding.tsx
 msgid "Copy id"
 msgstr ""
 
@@ -4507,7 +4506,7 @@ msgstr "העתק מזהה ספק"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
-msgstr ""
+msgstr "העתק את השגיאה המלאה"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -5037,7 +5036,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
-msgstr ""
+msgstr "לא ניתן היה להחליף מקור"
 
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
@@ -6139,7 +6138,7 @@ msgstr "התחברות דרך מכשיר"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Device logins"
-msgstr ""
+msgstr "התחברויות מכשיר"
 
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -8369,19 +8368,19 @@ msgstr "מסך מלא"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
-msgstr ""
+msgstr "ממומן על ידי נקודת קצה ב-Hub"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a stored API key"
-msgstr ""
+msgstr "ממומן על ידי מפתח API שמור"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
-msgstr ""
+msgstr "ממומן על ידי המנוי שלך אצל הספק"
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Funding for"
-msgstr ""
+msgstr "מימון עבור"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -9131,15 +9130,15 @@ msgstr "Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Hub endpoint"
-msgstr ""
+msgstr "נקודת קצה ב-Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Hub endpoint unavailable"
-msgstr ""
+msgstr "נקודת הקצה ב-Hub אינה זמינה"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Hub endpoints"
-msgstr ""
+msgstr "נקודות קצה ב-Hub"
 
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
@@ -9325,7 +9324,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "in use"
-msgstr ""
+msgstr "בשימוש"
 
 #: src/i18n/pref-labels.ts
 msgid "In-app only"
@@ -10299,14 +10298,14 @@ msgstr "מפתח LLM"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "LLM keys"
-msgstr ""
+msgstr "מפתחות LLM"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
-msgstr ""
+msgstr "מקורות LLM"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -10608,7 +10607,6 @@ msgstr "טוען..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -11757,7 +11755,7 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No capabilities available"
-msgstr ""
+msgstr "אין יכולות זמינות"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "no ceiling"
@@ -12079,7 +12077,7 @@ msgstr "אין אינדקס LLM לתיקייה זו עדיין."
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "No LLM source funds this harness"
-msgstr ""
+msgstr "אין מקור LLM שמממן את הרתמה הזו"
 
 #: src/components/project-home/BindSecretDialog.tsx
 #~ msgid "No local app secrets"
@@ -12796,7 +12794,7 @@ msgstr ""
 #: src/components/llm-endpoints/FundingProvenance.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
-msgstr ""
+msgstr "אין אפשרות מתאימה"
 
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Nothing found."
@@ -12926,7 +12924,7 @@ msgstr "להודיע לאנשים על הדחיפה הזו"
 #. placeholder {0}: landed?.name ?? source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Now using {0}"
-msgstr ""
+msgstr "עכשיו בשימוש: {0}"
 
 #: src/components/connections-manager.tsx
 msgid "OAuth"
@@ -13481,7 +13479,7 @@ msgstr "פתח את תמלול הסוכן הזה"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
-msgstr ""
+msgstr "פתח את נקודת הקצה הזו ב-Hub"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open this link on Flowpad Hub"
@@ -14306,7 +14304,7 @@ msgstr "בעיות שנמצאו"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "process"
-msgstr ""
+msgstr "תהליך"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
@@ -14353,7 +14351,7 @@ msgstr "התקדמות"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
-msgstr ""
+msgstr "פרויקט"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -17508,7 +17506,7 @@ msgstr "התחברות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in not confirmed"
-msgstr ""
+msgstr "ההתחברות לא אושרה"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
@@ -18105,7 +18103,7 @@ msgstr "ההתחברות עדיין פעילה"
 
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "Still signed out — please re-authenticate"
-msgstr ""
+msgstr "עדיין מנותק — יש להתחבר מחדש"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18631,7 +18629,7 @@ msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלך"
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "That change could not be applied."
-msgstr ""
+msgstr "לא ניתן היה להחיל את השינוי."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #~ msgid "That comes to ${0}, but only ${1} is left in {teamName}."
@@ -18769,7 +18767,7 @@ msgstr "שרת backend של FlowPad אינו מגיב."
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "The funding picture is only available on a desktop instance."
-msgstr ""
+msgstr "תמונת המימון זמינה רק במופע שולחני."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "The GitHub connection didn't complete."
@@ -18941,7 +18939,7 @@ msgstr "המקור לא הוסר."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "The stored API key for this provider is removed from this machine. You can add it again later."
-msgstr ""
+msgstr "מפתח ה-API השמור עבור ספק זה יוסר מהמחשב הזה. אפשר להוסיף אותו שוב מאוחר יותר."
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -19885,11 +19883,11 @@ msgstr "נסה שוב"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
-msgstr ""
+msgstr "נסה התקנה אוטומטית"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Try auto install (types the command in a terminal)"
-msgstr ""
+msgstr "נסה התקנה אוטומטית (מקליד את הפקודה בטרמינל)"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -20410,7 +20408,7 @@ msgstr "בשימוש"
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Using {0}"
-msgstr ""
+msgstr "בשימוש: {0}"
 
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -20519,7 +20517,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "via hub login"
-msgstr ""
+msgstr "דרך התחברות ל-Hub"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
@@ -20694,7 +20692,7 @@ msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>;
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "We couldn't confirm this sign-in: {statusReason}"
-msgstr ""
+msgstr "לא הצלחנו לאשר את ההתחברות: {statusReason}"
 
 #: src/notifications/ingest.ts
 msgid "We couldn't find what you were looking for on the cloud."
@@ -20864,7 +20862,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Where each assistant gets its model access, and why."
-msgstr ""
+msgstr "מהיכן כל עוזר מקבל גישה למודל, ולמה."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Where this desk lives"
@@ -21050,12 +21048,12 @@ msgid "You"
 msgstr "אתה"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "you are {role}"
-msgstr ""
+#~ msgid "you are {role}"
+#~ msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "You are not in any team in this organization yet."
-msgstr ""
+#~ msgid "You are not in any team in this organization yet."
+#~ msgstr ""
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -21227,8 +21225,8 @@ msgid "Your sandbox is ready"
 msgstr "ארגז החול שלך מוכן"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "Your teams"
-msgstr ""
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
