@@ -597,7 +597,10 @@ def _collect_codex_entries_sync(
     # newest ``limit`` rows, instead of parsing every date-sharded rollout file.
     scope_counts: dict[str, int] = {}
 
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import ensure_codex_session_stats  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.codex_sessions import (  # noqa: PLC0415
+        ensure_codex_session_stats,
+        rollout_thread_source,
+    )
 
     cache = _open_history_cache()
     cached = _cache_lookup(cache, candidates)
@@ -623,8 +626,18 @@ def _collect_codex_entries_sync(
                 "message_count": sd.get("message_count") or None,
                 "last_user_message": sd.get("last_user_message"),
                 "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+                "thread_source": getattr(session, "thread_source", "") or "",
             }
             pending.append((str(jsonl_path), mtime_ns, size, "codex", payload))
+
+        # A codex sub-agent thread is not a chat the user can resume: codex
+        # rejects `resume` on it ("cannot resume an unloaded multi-agent v2
+        # sub-agent through its parent") and the worker exits 1, so listing one
+        # produces a spawn -> exit 1 -> retry loop. Cache rows written before
+        # this classification carry no ``thread_source``; those pay one header
+        # read, once.
+        if (payload.get("thread_source") or rollout_thread_source(jsonl_path)) == "subagent":
+            continue
 
         sid = payload.get("session_id")
         if not sid or sid in seen:

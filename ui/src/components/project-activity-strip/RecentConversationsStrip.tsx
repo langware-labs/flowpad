@@ -23,6 +23,11 @@ import { deriveConversationTitle } from '@src/components/conversation/conversati
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
 import { conversationFacets, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+import {
+  type ChannelAttribution,
+  SourceChip,
+  useChannelAttribution,
+} from '@src/components/conversation/channel-attribution';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -96,6 +101,11 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     list.sort(compareConversationsByRecency);
     return list;
   }, [conversations]);
+
+  // Resolve channel attribution ONCE for the whole strip and hand each row its
+  // answer — same contract as the main inbox list, so a row never holds its own
+  // sources/specs query watchers.
+  const { attributionFor } = useChannelAttribution();
 
   const [hubSyncing, setHubSyncing] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -337,6 +347,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             <ConversationRow
               key={conv.id}
               conv={conv}
+              attributionFor={attributionFor}
               acceptingId={acceptingId}
               dismissingId={dismissingId}
               onAcceptInvitation={(id) => void handleAcceptInvitation(id)}
@@ -387,6 +398,11 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
 interface ConversationRowProps {
   conv: Conversation;
+  /** The strip resolves attribution once and hands each row its answer. */
+  attributionFor: (
+    origin: FlowMessage['origin'],
+    originLocal?: FlowMessage['origin_local'],
+  ) => ChannelAttribution | null;
   acceptingId: string | null;
   dismissingId: string | null;
   onAcceptInvitation: (invitationId: string) => void;
@@ -396,6 +412,7 @@ interface ConversationRowProps {
 
 function ConversationRow({
   conv,
+  attributionFor,
   acceptingId,
   dismissingId,
   onAcceptInvitation,
@@ -451,6 +468,11 @@ function ConversationRow({
     },
   });
   const isInvitationRow = facets.isInvitation;
+
+  // The row's channel glyph, resolved off the LATEST message's origin — the
+  // same signal the main inbox row uses. Hub-native rows resolve to null and
+  // render nothing: absence means "ours".
+  const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local);
 
   // ``dismissed_at`` is a strip-only "Hide from Recent" (EyeOff) flag — NOT part
   // of the shared category, so it stays local. Same auto-revive pattern: compare
@@ -541,6 +563,9 @@ function ConversationRow({
             {isInvitationRow && (
               <MailPlus className="h-3 w-3 flex-shrink-0 text-violet-500" aria-label={t`invitation`} />
             )}
+            {/* Icon-only here: the strip is too narrow to spend a word on the
+                channel name, which the main inbox can afford. */}
+            <SourceChip attribution={attribution} iconOnly />
             <span className="truncate">{fromName ?? title}</span>
           </span>
           <div className="flex shrink-0 items-center gap-1">

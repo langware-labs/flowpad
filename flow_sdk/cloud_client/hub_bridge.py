@@ -829,6 +829,11 @@ class HubWsBridge:
             "id",
             "type",
             "title",
+            # Hub-authoritative, and the reason the close reaches the OTHER side:
+            # `_set_settlement` fans out over this path, so a `status` missing
+            # from the allowlist is silently dropped and the desk's app keeps
+            # showing a settled ticket as open until some HTTP sync re-reads it.
+            "status",
             "remote_project_id",
             "remote_project_name",
             "participants",
@@ -869,6 +874,7 @@ class HubWsBridge:
 
         for field in (
             "title",
+            "status",
             "git_sharing_enabled",
             "members",
             "remote_project_id",

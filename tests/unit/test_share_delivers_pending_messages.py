@@ -9,7 +9,7 @@ inverts the order, so the message is still local when ``share()`` runs. Before
 the fix, ``share()`` pushed only the conversation shell + invitation and never
 the pending message — the recipient opened an empty conversation.
 
-The on/off switch is the ``await self._deliver_pending_messages()`` call in
+The on/off switch is the ``await self.deliver_pending_messages()`` call in
 ``Conversation.share()``: with it, the pending message is pushed through the
 normal send pipeline (``_send_conversation_message_header``); without it, it is
 not. This test drives ``share()`` at the unit layer (hub I/O neutralized) and
@@ -84,7 +84,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
     ):
         await conv.share(recipients=["gadi@langware.ai"])
 
-    # The bug's switch: with _deliver_pending_messages() in share(), the pending
+    # The bug's switch: with deliver_pending_messages() in share(), the pending
     # offline message is pushed through the normal send pipeline. Without it,
     # this is never awaited and the recipient gets an empty conversation.
     header.assert_awaited_once()
@@ -124,7 +124,7 @@ async def test_share_joins_before_any_fallible_post_create_work():
     with (
         patch.object(Entity, "share", new=AsyncMock(return_value=None)),
         patch.object(Conversation, "_link_context_to_conversation", side_effect=_link),
-        patch.object(Conversation, "_deliver_pending_messages", side_effect=_deliver),
+        patch.object(Conversation, "deliver_pending_messages", side_effect=_deliver),
         patch.object(Conversation, "_share_hostable_assets", new=AsyncMock(return_value=[])),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
         patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),

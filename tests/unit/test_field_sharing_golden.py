@@ -363,7 +363,9 @@ def test_the_two_egress_seams_now_agree():
                 # `owner` is a TypeId: the harness cannot invent one, and nothing
                 # should — it is stamped by the thread that mints the conversation.
                 "owner",
+                # StrEnums, like `kind`: the harness fills strings, not members.
                 "kind",
+                "status",
                 "last_active_at",
                 "last_edited_at",
                 "message_count",

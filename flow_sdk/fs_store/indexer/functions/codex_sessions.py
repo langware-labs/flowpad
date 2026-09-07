@@ -62,6 +62,9 @@ def codex_sessions_fn(
         if not sessions_root.is_dir():
             continue
         for jsonl in sessions_root.rglob("rollout-*.jsonl"):
+            # Sub-agent threads are not sessions — see rollout_thread_source.
+            if is_subagent_rollout(jsonl):
+                continue
             out.append(
                 FSRef(
                     jsonl,
@@ -100,6 +103,41 @@ def _extract_thread_id(filename: str) -> str | None:
     if len(parts) < 5:
         return None
     return "-".join(parts[-5:])
+
+
+def rollout_thread_source(path: str | Path) -> str:
+    """``session_meta.thread_source`` for a rollout — ``"subagent"`` for a
+    thread Codex spawned under a parent, ``"user"`` for a top-level session,
+    ``""`` when the header does not say.
+
+    A sub-agent rollout lives in the same directory, under the same
+    ``rollout-<ts>-<thread_id>.jsonl`` name, as a real session, so the header is
+    the only thing that separates them. Codex refuses ``resume`` on a sub-agent
+    ("cannot resume an unloaded multi-agent v2 sub-agent through its parent"),
+    so anything that offers sessions for resume must consult this first.
+    """
+    try:
+        for raw in _iter_head_json(Path(path)):
+            if (raw.get("type") or "") == "session_meta":
+                payload = raw.get("payload") or {}
+                declared = payload.get("thread_source")
+                if declared:
+                    return str(declared)
+                # Older rollouts predate ``thread_source`` but still carry the
+                # spawn edge, which is equally conclusive.
+                source = payload.get("source")
+                spawned = bool(payload.get("parent_thread_id")) or (
+                    isinstance(source, dict) and "subagent" in source
+                )
+                return "subagent" if spawned else ""
+    except (OSError, json.JSONDecodeError):
+        pass
+    return ""
+
+
+def is_subagent_rollout(path: str | Path) -> bool:
+    """True when this rollout is a Codex sub-agent thread, not a session."""
+    return rollout_thread_source(path) == "subagent"
 
 
 def codex_session_identity_key(ref: FSRef | Path) -> str:
@@ -164,6 +202,7 @@ def extract_codex_session_from_path(
     cwd = ""
     version = ""
     originator = ""
+    thread_source = ""
 
     try:
         for raw in _iter_head_json(p):
@@ -178,6 +217,8 @@ def extract_codex_session_from_path(
                     version = str(payload["cli_version"])
                 if not originator and payload.get("originator"):
                     originator = str(payload["originator"])
+                if not thread_source and payload.get("thread_source"):
+                    thread_source = str(payload["thread_source"])
             elif rtype == "thread.started" and raw.get("thread_id"):
                 session_id = str(raw["thread_id"])
     except OSError:
@@ -199,6 +240,7 @@ def extract_codex_session_from_path(
         cwd=cwd,
         version=version,
         originator=originator,
+        thread_source=thread_source,
         jsonl_path=str(p),
         worker_type="codex",
         source_file=str(p),
@@ -259,6 +301,15 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
     Codex stores rollouts as ``rollout-<ts>-<thread_id>.jsonl`` so a suffix
     scan is O(N) over rollout files. Pass ``date_path="YYYY/MM/DD"`` for an
     O(1) lookup when the date is known.
+
+    Like ``get_claude_session``, this is a path/envelope resolver, never a
+    content reader: it extracts with ``include_content=False`` so it never runs
+    the full ``worker_summary_log`` transcript parse. Its only caller
+    (``_resolve_session_record``, behind ``terminals/get_by_worker_id``) reads
+    ``cwd``/``name``/existence and never touches ``.content``, while the parse
+    it was paying for dominated the call — 205ms with it, 10ms without, on a
+    256KB rollout. A caller that genuinely wants ``content`` should reach for
+    ``extract_codex_session_from_path`` directly.
     """
     sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
@@ -270,15 +321,22 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
         if day.is_dir():
             for p in day.glob("rollout-*.jsonl"):
                 if p.name.endswith(suffix):
+                    if is_subagent_rollout(p):
+                        return None
                     try:
-                        return extract_codex_session_from_path(p)
+                        return extract_codex_session_from_path(p, include_content=False)
                     except (json.JSONDecodeError, OSError):
                         return None
 
     for p in sessions_root.rglob("rollout-*.jsonl"):
         if p.name.endswith(suffix):
+            # A sub-agent thread is not resumable: handing its id to
+            # ``codex resume`` exits 1 and the start latch retries forever.
+            # A miss is the correct answer here, exactly like an unknown id.
+            if is_subagent_rollout(p):
+                return None
             try:
-                return extract_codex_session_from_path(p)
+                return extract_codex_session_from_path(p, include_content=False)
             except (json.JSONDecodeError, OSError):
                 continue
     return None
