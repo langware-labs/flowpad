@@ -24,7 +24,7 @@ import {
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { notify } from '@src/notifications';
 
@@ -232,6 +232,10 @@ export function useTestSource() {
   const qc = useQueryClient();
   const params = useFundingParams();
   const [pending, setPending] = useState<string>('');
+  const [verdicts, setVerdicts] = useState<Record<string, LLMEndpointTestResult>>({});
+  // The ref, not the state: `onSuccess` runs after `onSettled` has already cleared `pending`,
+  // so reading the state there would file every verdict under the empty key.
+  const pendingRef = useRef<string>('');
   const mutation = useMutation({
     mutationFn: ({ source, endpoint, harness }: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) =>
       llmSourcesService.testSource({
@@ -242,6 +246,11 @@ export function useTestSource() {
       }),
     onSettled: () => setPending(''),
     onSuccess: async (result: LLMEndpointTestResult) => {
+      // The verdict lands ON THE ROW, not only in a toast. Reported: pressing Test showed a
+      // spinner, then the button came back, and nothing else — the toast was either missed or
+      // never seen, and a test whose answer you cannot find has not answered. The row keeps
+      // its verdict until the next press.
+      setVerdicts((prior) => ({ ...prior, [pendingRef.current]: result }));
       // A device test can flip `login_state`, and a key that turns out to be dead changes
       // which source WINS — so the funding picture is re-read rather than patched.
       await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
@@ -257,13 +266,28 @@ export function useTestSource() {
         notify.warning({ title: i18n._(msg`This source did not work`), message: result.message, durationMs: 6000 });
       }
     },
-    onError: (e) => notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000 }),
+    onError: (e) => {
+      // A transport failure is still an answer the row must show, for the same reason: the
+      // button coming back with nothing beside it reads as "the test did nothing".
+      setVerdicts((prior) => ({
+        ...prior,
+        [pendingRef.current]: { ok: false, status: 0, model: '', latency_ms: 0, message: String(e) },
+      }));
+      notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000 });
+    },
   });
   return {
     /** Which row is mid-test, as an `llmSourceRef`; `''` when none is. */
     pending,
+    /** The last verdict per row, by `llmSourceRef` — rendered on the row itself. */
+    verdicts,
     test: (args: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) => {
-      setPending(llmSourceRef(args.source));
+      const ref = llmSourceRef(args.source);
+      pendingRef.current = ref;
+      setPending(ref);
+      // Drop the previous verdict as the new run starts: a stale green beside a spinner claims
+      // an answer this press has not produced yet.
+      setVerdicts((prior) => Object.fromEntries(Object.entries(prior).filter(([key]) => key !== ref)));
       mutation.mutate(args);
     },
   };
