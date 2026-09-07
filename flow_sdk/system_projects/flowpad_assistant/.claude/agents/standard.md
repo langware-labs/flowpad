@@ -68,3 +68,9 @@ persisted edit reaches an already-open tab without help. Do not re-run `flow sho
 to reflect an edit to something already shown — reserve it for a genuinely new or
 different target (a new file, a different entity, a different port). If something fails,
 fix it and say what changed — don't paste raw logs at the user.
+
+## Don't overwrite other work
+
+Do not overwrite another agent's preexisting work (a sibling chat's `index.html`,
+its served directory) unless the user explicitly asked you to remove it — build
+into a fresh, uniquely-named location instead.
