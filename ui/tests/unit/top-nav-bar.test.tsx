@@ -85,7 +85,13 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     copyToClipboard,
     fsManager: { ...actual.fsManager, open: openFolder },
-    dataContext: { ...actual.dataContext, setContextEntityTypeId: setContext },
+    // Built on the real prototype, not spread: `on`/`off` live on
+    // DataContext.prototype, and the SDK context hook's subscription manager
+    // calls `dataContext.on` for the first subscriber (the project dialog's
+    // `useProjects` → `useAuth`). A spread copy has no `on` and throws in commit.
+    dataContext: Object.assign(Object.create(Object.getPrototypeOf(actual.dataContext)), actual.dataContext, {
+      setContextEntityTypeId: setContext,
+    }),
   };
 });
 
