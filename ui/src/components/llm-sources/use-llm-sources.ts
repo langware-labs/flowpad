@@ -12,8 +12,10 @@ import { useContext } from '@sdk/react/hooks';
 import {
   capabilityManager,
   HARNESS_CAPABILITY_KINDS,
+  llmSourceRef,
   llmSourcesService,
   type LLMEndpointOffer,
+  type LLMEndpointTestResult,
   type LLMFundingKind,
   type LLMFundingStatus,
   type LLMSource,
@@ -22,7 +24,7 @@ import {
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { notify } from '@src/notifications';
 
@@ -184,6 +186,87 @@ export function useRefreshLoginStates(): void {
     // change would spawn four vendor CLIs each time the active project moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+/**
+ * Re-read the funding picture whenever a harness's login state moves.
+ *
+ * The reported symptom, and the one that made the page look broken: sign in from the modal
+ * this page opens, succeed, and the device row still offers **Test** and **Sign in** — never
+ * **Use**. The row's affordance is chosen by `source.eligible`, which the backend derives from
+ * `login_state`; the login writes that field and broadcasts it, but the broadcast lands on
+ * `capabilityManager` while this page renders from a SEPARATE react-query cache that nothing
+ * told. `useRefreshLoginStates` is mount-only by design, so the page kept the snapshot it
+ * arrived with for as long as it stayed open.
+ *
+ * Subscribing to the manager closes that gap at the seam where the news actually arrives,
+ * rather than polling or re-probing: one invalidation per capability broadcast, and the row
+ * re-renders from the same backend read every other answer on this page comes from.
+ */
+export function useFundingFollowsLogin(): void {
+  const qc = useQueryClient();
+  const params = useFundingParams();
+  useEffect(
+    () =>
+      capabilityManager.subscribe(() => {
+        void qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
+      }),
+    [qc, params],
+  );
+}
+
+/**
+ * "Does THIS row work?" — the per-source test.
+ *
+ * One button per row, because the three kinds fail for three unrelated reasons and a single
+ * verdict cannot cover them. The Test this replaces ran `authStatus`, whose answer reports
+ * WHAT FUNDS THE HARNESS: pressing it on a device login that had just signed in successfully
+ * replied "using the hub endpoint" — an answer about a different row. Reported exactly that
+ * way on Windows.
+ *
+ * Keyed by `llmSourceRef` so only the pressed row spins: `isPending` on a shared mutation
+ * would grey out every Test button on the page for one row's call, and the key-and-hub checks
+ * are real network calls that take a moment.
+ */
+export function useTestSource() {
+  const qc = useQueryClient();
+  const params = useFundingParams();
+  const [pending, setPending] = useState<string>('');
+  const mutation = useMutation({
+    mutationFn: ({ source, endpoint, harness }: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) =>
+      llmSourcesService.testSource({
+        kind: endpoint?.kind ?? '',
+        provider: endpoint?.provider,
+        harness,
+        endpoint_typeid: source.endpoint_typeid,
+      }),
+    onSettled: () => setPending(''),
+    onSuccess: async (result: LLMEndpointTestResult) => {
+      // A device test can flip `login_state`, and a key that turns out to be dead changes
+      // which source WINS — so the funding picture is re-read rather than patched.
+      await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
+      if (result.ok) {
+        notify.success({
+          title: i18n._(msg`This source works`),
+          message: result.model ? `${result.model} · ${result.latency_ms}ms` : undefined,
+          durationMs: 3000,
+        });
+      } else {
+        // The provider's own sentence, verbatim. "Insufficient credit" and "invalid key" are
+        // different problems with different cures, and only it knows which this is.
+        notify.warning({ title: i18n._(msg`This source did not work`), message: result.message, durationMs: 6000 });
+      }
+    },
+    onError: (e) => notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000 }),
+  });
+  return {
+    /** Which row is mid-test, as an `llmSourceRef`; `''` when none is. */
+    pending,
+    test: (args: { source: LLMSource; endpoint?: LLMEndpointOffer; harness: string }) => {
+      setPending(llmSourceRef(args.source));
+      mutation.mutate(args);
+    },
+  };
 }
 
 /**

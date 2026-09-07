@@ -4914,6 +4914,10 @@ msgstr "تعذر تحديد موقع هذا المجلد"
 msgid "Could not run the connection test."
 msgstr "تعذر إجراء اختبار الاتصال."
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "تعذّر تشغيل الاختبار"
+
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
 msgstr ""
@@ -6441,6 +6445,10 @@ msgstr "المستندات"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "المستندات التي تشير إلى هذا المستند"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "هل يعمل هذا المصدر فعلًا؟"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -14804,6 +14812,10 @@ msgstr "ذاكرة الوصول العشوائي (MB)"
 msgid "RAM:"
 msgstr "ذاكرة الوصول العشوائي:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Re-check"
+msgstr "تحقّق مرة أخرى"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "إعادة التحقق من {title}"
@@ -19395,6 +19407,14 @@ msgstr "رابط الجلسة هذا غير صحيح أو غير متاح."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "تحتوي هذه المهارة على تغييرات غير مثبتة — يعمل التحسين فقط على مهارة نظيفة."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "لم يعمل هذا المصدر"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "هذا المصدر يعمل"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
