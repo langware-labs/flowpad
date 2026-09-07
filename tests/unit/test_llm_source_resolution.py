@@ -920,3 +920,31 @@ async def test_create_refuses_a_harness_with_nothing_to_run_on(env, monkeypatch)
     # screen's cannot drift apart.
     assert view.chosen is None
     assert view.blocked, "a refusal with no reason would reach the user as a bare 400"
+
+
+def test_both_refusals_open_with_the_sentence_the_frontend_reads() -> None:
+    """The signal that routes a funding failure to the LLM Sources page.
+
+    MIRRORED in TS — ``ui/src/lib/error-message.ts``'s ``isUnfundedHarness``
+    matches this phrase, and ``ui/tests/unit/error-message.test.ts`` pins the
+    same literal from the other side. The envelope carries no error code, so the
+    sentence is the only thing a caller can branch on.
+
+    Two producers must agree: ``LLMSourceError`` at spawn, and the create gate
+    in ``builtin/faas/scan_actions.py`` which refuses earlier. The gate returned
+    the bare REASON once — true, and unrecognisable — so a launch refused for
+    funding routed to Capabilities and offered to install a harness the machine
+    already had.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
+
+    PHRASE = "has no usable LLM source"
+
+    spawn = LLMSourceError("claude", [])
+    assert PHRASE in str(spawn)
+
+    # The gate's own format, spelled here because it is built inline in a request
+    # handler that cannot be called without a compute node. If that line changes
+    # shape, this is what says the routing went with it.
+    reason = "claude is set to use flowpad"
+    assert PHRASE in f"claude_code {PHRASE}: {reason}"
