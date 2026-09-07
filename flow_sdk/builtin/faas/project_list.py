@@ -99,7 +99,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) 
         if real is None or not is_valid_project_cwd(real, include_temp=include_temp):
             continue
         try:
-            out[str(real.resolve())] = child
+            out[canonical_posix_path(real)] = child
         except OSError:
             continue
     return out
