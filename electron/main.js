@@ -134,15 +134,29 @@ function setupElectronAutoUpdater() {
       log.warn('[electron-updater] mainWindow missing; will install on quit');
       return;
     }
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'FlowPad update ready',
-      message: `FlowPad ${info.version} is ready to install.`,
-      detail: 'Restart FlowPad now to apply the update.',
-    });
+    if (packageUpdateInFlight) {
+      // The package "Update Available" dialog (or its upgrade) is up right now.
+      // Don't stack a second dialog; the next hourly tick re-emits this event
+      // from the cached download and prompts then. Quitting meanwhile still
+      // installs it (autoInstallOnAppQuit).
+      log.info('[electron-updater] restart prompt postponed: package update in progress');
+      return;
+    }
+    desktopRestartPromptOpen = true;
+    let result;
+    try {
+      result = await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'FlowPad update ready',
+        message: `FlowPad ${info.version} is ready to install.`,
+        detail: 'Restart FlowPad now to apply the update.',
+      });
+    } finally {
+      desktopRestartPromptOpen = false;
+    }
     if (result.response === 0) {
       log.info('[electron-updater] user accepted, quitting to install');
       isQuitting = true;
@@ -152,13 +166,58 @@ function setupElectronAutoUpdater() {
     }
   });
 
-  // Long-lived sessions: re-check hourly and, if a newer desktop build appears,
-  // download it in the background (the update-downloaded handler then prompts to
-  // restart). Launch-time is handled by the pre-start flow, not here.
-  const HOUR_MS = 60 * 60 * 1000;
+  // Long-lived sessions: re-check hourly. Desktop: if a newer build appears,
+  // download it in the background (the update-downloaded handler then prompts
+  // to restart). Package (PyPI): offer the upgrade dialog — the launch-time
+  // checks only run at launch, so without this a user who keeps the app open
+  // across a backend release never hears about it. Launch-time is handled by
+  // the pre-start flow, not here.
+  const HOUR_MS = 4 * 60 * 1000;
   setInterval(async () => {
     if (await getDesktopUpdateVersion()) downloadDesktopUpdateInBackground();
+    await checkPackageUpdateInBackground();
   }, HOUR_MS);
+}
+
+// True while the desktop "update ready" dialog is on screen (hourly package
+// check waits for it) / while a package check, its dialog or its upgrade is in
+// progress (desktop restart prompt waits for it). One update dialog at a time.
+let desktopRestartPromptOpen = false;
+let packageUpdateInFlight = false;
+
+/**
+ * Hourly package (PyPI) update check for long-running sessions. Same dialog and
+ * upgrade path as the post-boot check, but compared against PyPI rather than
+ * the cloud policy verdict, so a newer release is offered as soon as it exists.
+ * Skipped in dev (would reinstall under a live dev backend), while a previous
+ * check/upgrade is still running, and while the desktop restart prompt is open.
+ */
+async function checkPackageUpdateInBackground() {
+  if (isDev) return;
+  if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
+  if (packageUpdateInFlight) {
+    log.info('[uv] hourly package check skipped: previous check/upgrade still running');
+    return;
+  }
+  if (desktopRestartPromptOpen) {
+    log.info('[uv] hourly package check skipped: desktop restart prompt is open');
+    return;
+  }
+  packageUpdateInFlight = true;
+  try {
+    log.info('[uv] hourly package check');
+    await uvManager.checkForUpdatesInBackground(mainWindow, {
+      sendStatus,
+      waitForBackend,
+      backendUrl: BACKEND_URL,
+      cloudUrl: FLOWPAD_CLOUD_URL,
+      compareWithPypi: true,
+    });
+  } catch (err) {
+    log.warn(`[uv] hourly package check failed: ${err.message}`);
+  } finally {
+    packageUpdateInFlight = false;
+  }
 }
 
 /**
