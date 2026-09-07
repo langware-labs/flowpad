@@ -20,6 +20,7 @@ import {
   type LLMSourceRef,
 } from '@sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 import { WORKER_LABELS, type WorkerType } from '@src/hooks/useWorkerHistory';
 
@@ -130,4 +131,53 @@ export function workerOf(kind: string): string {
  */
 export function labelForWorker(worker: string): string {
   return WORKER_LABELS[worker as WorkerType] ?? worker;
+}
+
+/**
+ * Re-ask each harness whether it is signed in, on arrival at this page.
+ *
+ * `Capability.login_state` is runtime-only and is RESOLVED in exactly two
+ * places: the backend's startup sweep, and the Assistants & keys modal's own
+ * probe when it opens. Nothing else refreshes it — so a person who signs in to
+ * the vendor CLI outside Flowpad (or in a Flowpad terminal) leaves this page
+ * showing "signed out" indefinitely, and the device source it would pick stays
+ * ineligible.
+ *
+ * That closes a loop rather than merely looking stale: a launch with no usable
+ * source now routes HERE, and a page that cannot learn the truth sends the user
+ * straight back to the failure that sent them.
+ *
+ * Same shape as the Capabilities view's arrival re-probe, one question over —
+ * that one re-runs discovery to ask "is it installed", this one runs the
+ * vendor's own check to ask "is it signed in".
+ *
+ * Failures are swallowed on purpose. An unreachable or unparseable probe leaves
+ * `login_state` untouched by design (an undetermined answer is evidence about
+ * the probe, not about the login), so the page keeps its last known state and
+ * every row's own affordance still works.
+ */
+export function useRefreshLoginStates(): void {
+  const qc = useQueryClient();
+  const params = useFundingParams();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const probes = HARNESS_CAPABILITY_KINDS.map(async (kind) => {
+        const capability = capabilityManager.getSnapshot(kind).capability;
+        // `catch` per harness, not around the batch: one vendor CLI that hangs
+        // or is missing must not stop the other three from reporting.
+        await capability?.authStatus().catch(() => undefined);
+      });
+      await Promise.all(probes);
+      // ONE refresh after all four, not one each — the funding status is a
+      // single backend read covering every harness.
+      if (!cancelled) await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Mount only: this is an arrival probe, and re-running it on every params
+    // change would spawn four vendor CLIs each time the active project moved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }

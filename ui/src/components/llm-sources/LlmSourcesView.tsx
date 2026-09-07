@@ -35,7 +35,14 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
 import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
-import { harnessKinds, labelForWorker, useLlmSources, useSelectSource, workerOf } from './use-llm-sources';
+import {
+  harnessKinds,
+  labelForWorker,
+  useLlmSources,
+  useRefreshLoginStates,
+  useSelectSource,
+  workerOf,
+} from './use-llm-sources';
 import { visibleSources } from './visible-sources';
 
 function SourceRow({
@@ -150,6 +157,10 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { status, isLoading } = useLlmSources();
+  // Ask the vendors whether they are signed in, now — nothing else refreshes
+  // `login_state` between backend restarts, and a launch that failed for want of
+  // a source routes here expecting this page to know better than it did.
+  useRefreshLoginStates();
   const select = useSelectSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);

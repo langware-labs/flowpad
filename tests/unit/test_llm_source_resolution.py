@@ -885,3 +885,38 @@ async def test_a_flowpad_pin_is_not_applied_while_signed_out(env) -> None:
     # And it says so, because a pin that silently stops applying is its own confusion: the
     # screen would show "use Flowpad" selected while something else plainly does the spending.
     assert "signed out of Flowpad" in view.note
+
+
+async def test_create_refuses_a_harness_with_nothing_to_run_on(env, monkeypatch) -> None:
+    """Installed is not enough — a create must also check there is something to spend.
+
+    The vibe report: a prompt was typed and nothing came back. No error, no
+    dialog, no answer. `createProcess` gates on ``is_installed`` and answered
+    200; the LLM source is resolved at SPAWN (``apply_worker_secret_env`` →
+    ``resolve_worker_api_auth``), so the process was born fine and the worker
+    died afterwards, where no status code can reach the caller. The chat sat
+    there.
+
+    That is the failure the install gate's own comment describes, one question
+    over — so fundability is gated in the same place, with the resolver's own
+    sentence as the message.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
+    from flow_sdk.builtin.capability import Capability
+
+    # Signed IN to the hub and pinned to Flowpad, with no hub endpoint behind it:
+    # the pin applies (the box can act on it) and rules out every other source.
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    cap.auth_mode, cap.api_provider = "api", "flowpad"
+    await cap.save(notify=False)
+    _hub_key(monkeypatch)
+
+    view = await llm_picker_view("claude")
+
+    # What the gate reads: no winner, and a sentence saying why. `blocked` is
+    # what the refusal carries, so the create's message and the LLM Sources
+    # screen's cannot drift apart.
+    assert view.chosen is None
+    assert view.blocked, "a refusal with no reason would reach the user as a bare 400"
