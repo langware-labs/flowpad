@@ -9,6 +9,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
+import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { NewChatButton } from './NewChatButton';
@@ -41,6 +42,8 @@ export function TopNavBar() {
   // need the dock's target, and resolving it twice would double the work on
   // every click.
   const { crumbs, targetTypeId, targetTitle } = useEntityBreadcrumbs(currentDock);
+  // The OS window title mirrors the address — same crumbs, no second resolve.
+  useDocumentTitle(windowTitleFor(crumbs));
 
   return (
     <div
