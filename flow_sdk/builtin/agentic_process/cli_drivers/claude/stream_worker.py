@@ -312,6 +312,18 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         """
         self._cancel_requested = True
         proc = self._proc
+        if proc is not None and proc.returncode is not None:
+            # Already exited before we touched it — Stop raced a turn that was
+            # completing on its own. The CLI wrote its own ending; nothing was
+            # interrupted, so this is graceful. Without this the exited process
+            # fails the `returncode is None` gate below, falls through to
+            # `_terminate_process`, and leaves `_cancelled_gracefully` False —
+            # which makes `cancel-prompt` write a durable abort marker for a
+            # turn that finished normally, and the marker replays forever as a
+            # phantom "turn aborted". Same pre-signal check codex already makes
+            # (`wound_down_cleanly = process.returncode is not None`).
+            self._cancelled_gracefully = True
+            return
         if proc is not None and proc.returncode is None and self._stdin_open:
             control = {
                 "type": "control_request",
