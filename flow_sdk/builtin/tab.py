@@ -756,14 +756,26 @@ async def _reparent_children(mapping: "dict[str, str | None]") -> bool:
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
     """Assign ``tab_order = contiguous index`` over ``new_order``; save only rows
-    whose index changed (no-op order ⇒ no write). Returns whether anything wrote."""
+    whose index changed (no-op order ⇒ no write). Returns whether anything wrote.
+
+    ``by_id`` is a snapshot taken before the status/reap pass of
+    ``_visible_tabs_sorted``, so a ``close_many`` can commit ``visible=False``
+    between that read and this write. Saving the snapshot row would write its
+    stale ``visible=True`` back and resurrect the closed tab — so the order is
+    applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
     wrote = False
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
-        if tab is not None and getattr(tab, "tab_order", 0) != idx:
-            tab.tab_order = idx
-            await tab.save()
-            wrote = True
+        if tab is None or getattr(tab, "tab_order", 0) == idx:
+            continue
+        # Field-scoped stamp: the earlier live-read-then-save() still lost a
+        # `close_many` that committed between the read and the save (the whole
+        # row went back, visible=True included). The driver stamp hydrates the
+        # authoritative row INSIDE the writer transaction, no-ops on a hidden
+        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
+        tab.tab_order = idx
+        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
+        wrote = wrote or stamped
     return wrote
 
 

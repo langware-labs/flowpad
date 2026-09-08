@@ -25,21 +25,28 @@ elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
   `browseable-chevron-asset-type:<type>:<scope>:<projectIds>`. Always use a
   **prefix match** (`starts with "browseable-chevron-asset-type:<type>:"`),
   never the bare literal. Same for `browseable-toolbar-*` ids.
-- The bare `/dock/assets` URL should NOT render an AssetListView until a type
-  is selected — by either clicking a tree node or navigating to
-  `/dock/assets/list/<type>`.
+- **Scope decides the bare-URL surface.** Under a project scope the bare
+  `/dock/assets` URL is the project's landing (Project home / Files / Context
+  folders) — that is deliberate (`isProjectHomeSurface`), and a running instance
+  almost always has a project in scope. The asset-type tree with its
+  "Select a type to browse" placeholder is the **unscoped** surface: address it
+  as `/dock/assets?scope-mode=all`. It should NOT render an AssetListView until
+  a type is selected — by clicking a tree node or navigating to
+  `/dock/assets/list/<type>?scope-mode=all`.
+- Tree roots are labelled from the backend type registry ("Sub-agents",
+  "Documents", …); identify a root by its chevron testid prefix, not its label.
 
 ## Steps
 
 ### test 1: /dock/assets renders the BrowseableTree sidebar + placeholder right panel
-- [browser] navigate to {APP_URL}/dock/assets
+- [browser] navigate to {APP_URL}/dock/assets?scope-mode=all
 - [browser] wait for page to load
 - [browser] validate the element with role="tree" is visible (the asset-type sidebar)
 - [browser] validate at least one treeitem at aria-level 1 is visible
 - [browser] validate the text "Select a type to browse" is visible somewhere on the page
 
 ### test 2: Header renders the assets controls (no LayoutList/Network toggles)
-- [browser] navigate to {APP_URL}/dock/assets
+- [browser] navigate to {APP_URL}/dock/assets?scope-mode=all
 - [browser] wait for page to load
 - [browser] validate the text "Assets" is visible (page title)
 - [browser] validate NO element matching `[aria-label*="hierarchy"], [aria-label*="list mode"], button:has(svg.lucide-layout-list), button:has(svg.lucide-network)` exists
@@ -53,7 +60,7 @@ elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
 - [browser] validate either a table OR an empty-state message ("No results found", "No skills", etc.) is visible
 
 ### test 4: Sidebar treeitems include known asset types
-- [browser] navigate to {APP_URL}/dock/assets
+- [browser] navigate to {APP_URL}/dock/assets?scope-mode=all
 - [browser] wait for page to load
 - [browser] validate treeitems with names "Agent", "Skill", "Workflow", and "Markdown" each appear in the role="tree" (case-insensitive)
 
@@ -61,7 +68,7 @@ elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
 # NOTE: pick a type whose level-1 row shows a non-zero count badge — an empty
 # type (e.g. skill at 0 records in a fresh env) has no children to expand, so
 # asserting level-2 items on it would be a self-inflicted test-issue.
-- [browser] navigate to {APP_URL}/dock/assets
+- [browser] navigate to {APP_URL}/dock/assets?scope-mode=all
 - [browser] wait for page to load
 - [browser] pick a level-1 treeitem whose accessible name contains a number (count > 0)
 - [browser] click the chevron whose data-testid starts with "browseable-chevron-asset-type:" inside that row

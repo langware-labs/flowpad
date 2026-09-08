@@ -26,7 +26,7 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
 
     // Wait for the process ribbon (indicates worker_session_id is set)
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const ribbon = activePanel.locator('.border-t .ms-auto');
+    const ribbon = activePanel.locator('[data-testid="terminal-ribbon-tabs"]');
     await expect(ribbon).toBeVisible({ timeout: 60_000 });
   } catch (e) {
     await skipIfPtyExhausted(page);

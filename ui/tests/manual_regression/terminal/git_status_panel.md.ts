@@ -18,7 +18,7 @@
  *   - Git tab × close button: button[aria-label="Close Git"]
  *   - Git panel header has exactly 1 button (Refresh); NO X in the panel header
  *   - File rows: .overflow-y-auto .flex.items-center.gap-2.rounded (hover:bg-muted/50)
- *   - Ribbon .ms-auto button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
+ *   - Ribbon button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
  *   - The ribbon only renders when an AgenticProcess is linked to the shell (process prop truthy)
  *   - Panel polls the git-status action every 5 seconds while open
  *
@@ -84,7 +84,7 @@ async function gotoProjectAgenticProcess(page: import('@playwright/test').Page, 
   await launcher.getByRole('button', { name: 'Claude Code' }).click();
   await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-(?!new)/);
   await ensureAdvancedView(page);
-  await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible();
+  await expect(activePanel(page).locator('[data-testid="terminal-ribbon-tabs"]')).toBeVisible();
   return page.url().match(/agentic_process-([0-9a-f-]+)/)?.[1] ?? '';
 }
 
@@ -102,7 +102,7 @@ let cachedAgenticUrl: string | null = null;
  */
 async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   const panel = activePanel(page);
-  const ribbon = panel.locator('.border-t .ms-auto');
+  const ribbon = panel.locator('[data-testid="terminal-ribbon-tabs"]');
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
@@ -179,7 +179,7 @@ test.describe('Git Status Panel', () => {
     // Ribbon should be visible — check the ms-auto button container
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ms-auto');
+    const mlAuto = panel.locator('[data-testid="terminal-ribbon-tabs"]');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
     // Right section: Context(0), Git(1), Prompts(2), Files(3), Dir(4), Queue(5)
@@ -313,7 +313,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ms-auto');
+    const mlAuto = panel.locator('[data-testid="terminal-ribbon-tabs"]');
 
     // Open Git (index 1)
     await ensureSideTabOpen(page, 1, 'Git');
@@ -368,9 +368,9 @@ test.describe('Git Status Panel', () => {
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(2_000);
 
-      // On plain shell: ribbon (.border-t .ms-auto) is NOT present.
+      // On plain shell: ribbon ([data-testid="terminal-ribbon-tabs"]) is NOT present.
       const panel = activePanel(page);
-      const mlAuto = panel.locator('.border-t .ms-auto');
+      const mlAuto = panel.locator('[data-testid="terminal-ribbon-tabs"]');
       await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
       await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
     } finally {

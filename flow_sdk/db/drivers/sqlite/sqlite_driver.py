@@ -1285,6 +1285,45 @@ class SQLiteDBDriver(DBDriver):
             current._dirty = False
             return current, True
 
+    async def stamp_tab_order(self, entity_id: str, tab_order: int) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically set only ``tab_order`` — the order writer's half of the
+        soft-close race. ``_persist_global_order`` used to re-read the row and
+        ``save()`` it whole; a ``close_many`` committing ``visible=False``
+        between that read and the save was overwritten and the closed tab
+        resurrected. Same shape as :meth:`stamp_last_active_at`: hydrate the
+        authoritative row inside the writer transaction, no-op on a hidden or
+        missing tab, and ``json_set`` exactly one field."""
+        async with self._session_ctx() as session:
+            current_result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity_id))
+            schema = current_result.scalar_one_or_none()
+            if schema is None:
+                return None, False
+
+            current = self._schema_to_entity(schema)
+            if getattr(current, "visible", True) is False:
+                return current, False
+            if getattr(current, "tab_order", None) == tab_order:
+                return current, False
+
+            self.apply_update_fields(current)
+            await session.execute(
+                update(EntitySchema)
+                .where(EntitySchema.id == entity_id)
+                .values(
+                    updated_by=current.updated_by,
+                    updated_date=current.updated_date,
+                    updated_through=current.updated_through,
+                    data=func.json_set(
+                        func.coalesce(EntitySchema.data, "{}"),
+                        "$.tab_order",
+                        tab_order,
+                    ),
+                )
+            )
+            current.tab_order = tab_order
+            current._dirty = False
+            return current, True
+
     async def _patch_data_field(
         self,
         entity_id: str,

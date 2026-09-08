@@ -368,7 +368,7 @@ export async function ensureSideTabOpen(page: Page, buttonIndex: number, tabLabe
     .getByText(tabLabel, { exact: true })
     .isVisible({ timeout: 1_000 })
     .catch(() => false);
-  if (!already) await activePanel(page).locator('.border-t .ms-auto button').nth(buttonIndex).click();
+  if (!already) await activePanel(page).locator('[data-testid="terminal-ribbon-tabs"] button').nth(buttonIndex).click();
   await tabStrip.getByText(tabLabel, { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 }
 

@@ -19,7 +19,10 @@ test.describe('Chat Tab Switching', () => {
 
     // Navigate back to home
     await page.goto('/dock/home');
-    await expect(page).toHaveURL(/\/dock\/home/, { timeout: 10_000 });
+    // `/dock/home` is the dock spelling of the app root; the loader redirects it
+    // to the canonical `/` (load-dock-pointer.ts) — same contract return_to_home
+    // asserts. The root path is where the home landing settles.
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe('/');
     // waitForLanding uses a CSS selector instead of getByRole to avoid aria-hidden
     // issues while a modal is present.
     await waitForLanding(page);

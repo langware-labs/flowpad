@@ -22,12 +22,16 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
 import { withViewMode, type QaViewMode } from '../_shared/view-mode';
+import { apiOrigin } from '../_shared/api';
 
 // ESM scope: no `__dirname`. Derive it from this module's own URL.
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const REPO_ROOT = path.resolve(HERE, '../../../..');
 const INSTANCE = process.env.FLOW_INSTANCE || 'dock7';
-const BACKEND = process.env.DOCK_SWEEP_BACKEND || 'http://localhost:6007';
+// Resolve the backend the way every other manual-regression file does
+// (FLOW_INSTANCE -> .env.<instance>.local, then LOCAL_SERVER_PORT). A literal
+// port here silently pointed the sweep at whatever happened to own :6007.
+const BACKEND = process.env.DOCK_SWEEP_BACKEND || apiOrigin();
 
 // Read rather than `import`: Playwright runs these as ESM, where a JSON import
 // needs an import attribute Node's loader rejects here.
@@ -110,6 +114,14 @@ test.describe('dock sweep', () => {
         // the mode is always set explicitly and never inherited.
         await page.goto(withViewMode('/dock/desktop', mode));
         await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+        // `data-view` proves the page rendered, not that the backend can steer
+        // it: a navigate targets the tab's WebSocket registration, which lands
+        // after first paint, and the previous case just closed its own page.
+        // Ask the control plane the same question `flow context` asks and only
+        // proceed once it names an active tab.
+        await expect
+          .poll(async () => (await fetch(`${BACKEND}/api/v1/agent/context`)).status, { timeout: 15_000 })
+          .toBe(200);
 
         const res = flow(['navigate', 'view', address]);
 

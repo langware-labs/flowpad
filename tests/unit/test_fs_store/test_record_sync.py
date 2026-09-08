@@ -28,7 +28,7 @@ from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 from flow_sdk.fs_store.fs_record import FSRecord, _json_default
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.datum import Datum
+from flow_sdk.schema.data_spec import DataSpec
 
 
 # ── Test type: one field per persist policy ──────────────────────────────────
@@ -51,7 +51,7 @@ class _SyncEntity(Entity):
     # DEFAULT but NOT in _SyncMeta → not persisted
     ghost: str | None = APIField(default=None)
     # A MODEL-valued persisted field (Dataset.contract is the real one).
-    contract: Datum | None = APIField(default=None, persist=Persist.TRUE)
+    spec: DataSpec | None = APIField(default=None, persist=Persist.TRUE)
 
 
 def _register_meta_model():
@@ -152,21 +152,21 @@ class TestModelValuedFields:
 
     def test_a_model_value_is_written_as_json_not_a_repr(self, tmp_path):
         rec = FSRecord(type="test_sync", id=str(uuid.uuid4()))
-        rec.save_metadata({"contract": Datum(kind="array", items=[Datum(kind="string")])})
-        on_disk = _meta_on_disk(rec)["contract"]
+        rec.save_metadata({"spec": DataSpec.model_validate({"kind": "array", "each": "string"})})
+        on_disk = _meta_on_disk(rec)["spec"]
         assert isinstance(on_disk, dict), f"written as {type(on_disk).__name__}: {on_disk!r}"
-        assert on_disk["kind"] == "array"
-        assert Datum.model_validate(on_disk).items[0].kind == "string"  # re-reads
+        assert on_disk == {"kind": "array", "each": "string"}
+        assert DataSpec.model_validate(on_disk).each.kind == "string"  # re-reads
 
     def test_a_collection_of_models_is_encoded_too(self):
         """The coercion belongs to the WRITER, so it reaches values a per-field
         branch on the producer would miss — a list or dict of models."""
         encoded = json.loads(json.dumps(
-            {"many": [Datum(value=1)], "by_name": {"a": Datum(value=2)}},
+            {"many": [DataSpec(kind="int")], "by_name": {"a": DataSpec(kind="bool")}},
             default=_json_default,
         ))
-        assert encoded["many"][0]["value"] == 1
-        assert encoded["by_name"]["a"]["value"] == 2
+        assert encoded["many"][0] == "int"
+        assert encoded["by_name"]["a"] == "bool"
 
     def test_an_unknown_type_keeps_the_historical_str_coercion(self):
         assert json.loads(json.dumps({"p": Path("/x/y")}, default=_json_default))["p"] == "/x/y"

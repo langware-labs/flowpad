@@ -1190,3 +1190,198 @@ Strong failure criteria are: the fake ignores or overwrites the posted project I
 - Modify: 1 existing React integration test, including its stale description
 - Add: 0 test files; add 1 in-test null-project negative control and explicit project-propagation assertions
 - Remove: 0 tests and 0 production behavior
+
+# Coverage Analysis — Phase 3 six-area failure cluster — 2026-08-25
+
+## Scope and observed failure signal
+
+This is a read-only, code-driven coverage audit of the six Phase 3 failure areas. No tests were run, no browser was opened, and no backend, hub, sandbox, or local instance was touched. The evidence source is the existing artifact
+`ui/tests/manual_regression/_results/2026-08-24T23-36-15Z/phase3-pytest-long.log`: 159 collected, 22 failed, 113 passed, 19 skipped, and 5 xfailed in 29m05s.
+
+The 22 failures come from eight test definitions:
+
+- 1 E2B last-PTY cleanup row;
+- 2 multi-vendor process-hook rows (Codex and Copilot);
+- 12 prompt/multi-turn rows (three vendors by PTY/headless by two behaviors);
+- 4 settings-instruction rows (all three headless vendors and Claude PTY; the Codex/Copilot PTY rows did not provide live coverage);
+- 1 live skill-chip stream row;
+- 2 system-prompt rows (Claude and Copilot; Codex passed).
+
+The required test layers were all inspected. `docs/reports/current_api_migration_status.md`, requested by the role instructions, is absent in this checkout; this audit therefore used the current interface/agentic-process documentation and code/test contracts only.
+
+Legend for the layer matrix: **exact** means the failure contract is directly covered, **adjacent** means only a neighboring seam is covered, and **none** means no relevant test was found.
+
+| Failure area | `tests/unit` | `tests/api` | `ui/tests` unit/api/react/long | `ui/tests/headless` | `ui/tests/hub` | manual regression | `_fast_paths` |
+|---|---|---|---|---|---|---|---|
+| E2B PTY cleanup | adjacent | none | adjacent / real E2B use only | none | none | E2B use only | none |
+| Multi-vendor process hooks | exact | partial, Claude-shaped | exact SDK + real vendor | none | none | none | none |
+| PTY/headless prompt + multi-turn | exact lower seams | partial, Claude headless | partial + real matrix | none | exact UI stress | exact Codex/UI scenarios | none |
+| Settings instruction propagation | exact launch sinks | none | incidental only | none | none | none | none |
+| Live skill-chip streaming | exact converter/grouping | none | converter smoke + mocked renderer | replay/authoring only | skill execution, not chip timing | skill execution, not chip timing | none |
+| System prompt propagation | partial Agent source + exact process sinks | none | authoring only + duplicated live test | none | none | none | none |
+
+## 1. E2B PTY cleanup
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_e2b_pty.py:237` — `test_shell_close_kills_sandbox_when_last_pty_leaves` | pytest-long, real E2B | modify | It is the only direct last-PTY cloud-reap proof. It timed out at the unchanged 30-second cap and currently closes through `shell.close()` and then conditionally calls `pty.close()` again before a remote `AsyncSandbox.get_info`, so the failure does not localize canonical close, provider cleanup, or the external verification call. |
+| `tests/long_tests/test_e2b_pty.py::{test_shell_on_sandbox_boots_linux_pty_via_shell_start,test_shell_on_sandbox_pwd_is_home_user,test_two_sandbox_shells_share_one_e2b_sandbox,test_shell_start_on_sandbox_uses_e2b_provider_not_local}` | pytest-long, real E2B | keep | These prove routing, shell usability, and same-node sandbox sharing. None closes the first of two PTYs or proves the last close kills exactly once. |
+| `tests/unit/conftest.py::any_provider`, `tests/unit/fakes/fake_e2b_sandbox.py`, `tests/unit/test_provider_dead_pty_no_bare_respawn.py`, and `tests/unit/test_factory_reset_system_content.py::test_factory_reset_terminates_live_pty_children_before_db_wipe` | pytest-unit | keep | The fake/provider seams and unrelated dead-PTY/factory-reset cleanup are useful foundations, but there is no E2B last-user reference-count regression. |
+| `ui/tests/api/shell_tabs.test.ts::{test_list_shells_excludes_closed,test_close_tab_write_through_persists,test_refresh_scenario_no_tabs_after_close_all,test_open_tab_sets_running}` and `ui/tests/react/shell_stress.test.ts` | Vitest API/React | keep | These pin Shell row/tab cleanup and local PTY stress, not the E2B provider's shared-sandbox lifetime. |
+| `ui/tests/long_tests/e2b_sandbox_pty.test.ts::{bootstrap exposes @sandbox compute node + sandbox_available flag,Cloud-button flow: create Shell on @sandbox…,…two sequential commands on the same Shell hit the same sandbox}` | Vitest long, real E2B | keep | This is strong TypeScript-SDK creation/routing/round-trip coverage, but it never closes the last sandbox Shell or observes reap. |
+| `ui/tests/manual_regression/terminal/{sandbox_terminal_uname.md.ts,sandbox_two_tabs_roundtrip.md.ts}` | Playwright manual | keep | These remain user-facing sandbox-use checks; cloud resource teardown is not a browser contract and should not be added here. |
+
+Modify the failing long test to use one canonical close path, assert the registry entry disappears immediately after the awaited close, and make one cloud-side state lookup. Put cleanup in `finally` so a failed assertion cannot leak the sandbox. Do not add a second close, retry, sleep, poll, or larger timeout.
+
+### Required new deterministic tests
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/unit/test_e2b_pty_cleanup.py::test_closing_one_of_two_e2b_ptys_does_not_kill_shared_sandbox` | pytest-unit | Open two fake E2B PTYs on one node, close one, and assert `kill` was not called, the sandbox cache remains, and the sibling PTY still exists. Any early kill or sibling-state removal fails. |
+| `tests/unit/test_e2b_pty_cleanup.py::test_closing_last_e2b_pty_kills_once_and_clears_provider_state` | pytest-unit | Close the final fake PTY and assert fake `sandbox.kill` was awaited exactly once and both PTY/sandbox caches are empty; repeat the close and assert no second kill. This isolates reference counting and idempotency without E2B network timing. |
+
+No new pytest-API, frontend, headless, hub, manual, or fast-path test is recommended: provider resource ownership is fully characterized by the deterministic provider tests plus the existing single real-E2B acceptance.
+
+## 2. Multi-vendor process hooks
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_process_hooks_multi_vendor.py:37` — `test_process_hook_acceptance_uses_real_vendor[codex|copilot]` | pytest-long, real CLIs | modify | Both rows timed out. The test correctly covers persisted intent, generated runtime contribution, real `flow hooks report`, canonical callback data, and SessionStart/UserPromptSubmit, but waits on bare `asyncio.Event.wait()` after `process.prompt()` with no causal failure surface. |
+| `tests/long_tests/test_claude_cli.py::test_process_hook_acceptance_uses_real_claude_plugin` | pytest-long, real Claude | keep | This is the Claude counterpart and passed in the same cycle. |
+| `tests/unit/test_process_hooks.py::{test_set_and_remove_hook_are_idempotent,test_process_hooks_reject_every_other_event_before_mutation,test_hook_intent_persists_and_rehydrated_process_reaches_registered_callback,test_callback_delivery_uses_process_id_and_one_targeted_flowdata,test_direct_listen_route_unwraps_vendor_native_hook_data,test_each_worker_launch_entry_prepares_once_with_runtime_parity,test_hook_events_accumulate_in_canonical_order_and_remove_independently,test_on_hook_delivers_each_configured_session_event_with_its_own_subtype}` | pytest-unit, three vendors where parametrized | keep | Strong semantic intent, launch, route, callback, ordering, and persistence coverage. |
+| `tests/unit/test_process_hook_runtime.py::{test_claude_process_hook_projection_is_deterministic,test_plugin_dirs_propagate_through_every_claude_context_consumer,test_claude_session_snapshot_and_normalization_carry_lifecycle_fields}` | pytest-unit | keep | Pins Claude projection and lifecycle normalization. |
+| `tests/unit/test_codex_process_hook_runtime.py::{test_codex_process_hook_runtime_is_structured_fileless_and_deterministic,test_codex_stream_worker_copies_hook_runtime_from_context,test_codex_hook_normalization_is_sparse_and_preserves_native_payload,test_codex_session_snapshot_and_normalization_carry_lifecycle_fields}` | pytest-unit | keep | Pins Codex fileless argv projection, stream-worker propagation, and native normalization. |
+| `tests/unit/test_copilot_process_hook_runtime.py::{test_process_hook_plugin_projection_is_deterministic_and_reconciles_stale_files,test_native_and_vscode_payloads_normalize_to_canonical_agent_hook_data,test_every_configured_event_projects_one_handler_under_its_alias,test_transport_terminator_is_stripped_only_for_the_prompt_event}` | pytest-unit | keep | Pins Copilot plugin projection, event aliases, native/VS Code payloads, and prompt normalization. |
+| `tests/unit/test_hook_capability_matrix.py::test_v1_vendors_support_exactly_the_same_event_set` and `tests/unit/test_hook_typed_responses.py::test_vendors_that_declare_no_response_events_render_nothing` | pytest-unit | keep | Correctly pins cross-vendor capability parity and observer-only response behavior. |
+| `tests/api/test_hook_unsupported_cell_is_reported.py::{test_set_hook_refuses_an_unsupported_event_with_the_reason,test_set_hook_accepts_a_supported_event}` and `tests/api/test_hook_response_round_trip.py::{test_a_callback_answer_comes_back_as_vendor_json,test_no_callback_returns_the_plain_ack}` | pytest-API | keep | These cover public action/route envelopes, but fixtures are Claude-shaped and do not prove Codex/Copilot launch contribution to report-route delivery. |
+| `ui/tests/unit/agentic-process-hooks.test.ts` and `ui/tests/long_tests/process_hook_acceptance.test.ts::%s: setHook → registerCallback → prompt delivers one canonical hook` | Vitest unit/long | keep | The SDK callback lifecycle and three-vendor real UserPromptSubmit acceptance are valuable. The long test covers only UserPromptSubmit; Python retains SessionStart/SessionEnd responsibilities. |
+
+Modify the Python real-vendor acceptance to preflight an explicit vendor-ready condition, run the prompt, and assert that required callbacks are already present when the prompt's terminal success is observed. A normalized vendor-unavailable result may skip; absence of callbacks after an accepted terminal turn must fail. Remove the unbounded event waits and preserve the existing 30-second cap and teardown.
+
+### Required new deterministic test
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/api/test_process_hook_delivery_matrix.py::test_configured_process_hook_reaches_callback_through_vendor_report_route` | pytest-API, parametrized Claude/Codex/Copilot and three supported events | Configure the hook through the public process action, launch a fake vendor command that invokes the generated report command with a native payload, and assert one canonical callback for the target process with the exact event, session discriminator, raw payload, and normalized prompt. Wrong process attribution, missing/duplicate delivery, wrong alias, or a projection that never calls the route fails. |
+
+No new frontend/headless/hub/manual/fast-path scenario is needed; the UI SDK and real-worker acceptance already cover the consumer boundary once deterministic backend route wiring exists.
+
+## 3. PTY/headless prompt and multi-turn transport matrix
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_pty_mode_matrix.py:303` — `test_prompt_streams_in_both_transports` | pytest-long, 3 vendors x 2 transports | modify | All six rows failed. It demands an exact assistant frame, but stops reading immediately when that frame appears instead of proving the turn reached its terminal frame. That makes the one-turn assertion weaker and can leave lifecycle work in flight. |
+| `tests/long_tests/test_pty_mode_matrix.py:328` — `test_multi_turn_resumes_same_session` | pytest-long, 3 vendors x 2 transports | modify | All six rows failed. `_send_turn` retries up to 20 times with one-second sleeps after breaking a live stream early, and `_settle_session_id` polls 15 times. Those waits can hide the unfinished-turn bug and violate the repository's no-timeout/retry masking rule. |
+| `tests/unit/test_codex_pty_composer_gate.py` (composer detection/delivery/terminal/error cases), `tests/unit/test_stream_transcript_resume_guard.py::{test_guard_waits_for_the_new_turn,test_without_worker_exits_on_stale_marker}`, `tests/unit/test_agentic_process_prompt_admission.py`, `tests/unit/test_agentic_process_turn_cleanup.py`, and `tests/unit/test_headless_turn_runner.py` | pytest-unit | keep | Strong lower-seam coverage exists for PTY input admission/composer behavior, new-turn transcript guarding, one-turn admission, cancellation, and shared headless lifecycle. |
+| Vendor CLI command/resume unit suites and `tests/unit/test_agentic_process_restart_snapshot.py::test_pty_mode_changes_codex_launch_shape_but_never_restart_hash` | pytest-unit | keep | These correctly pin each vendor's initial/resume argv and transport-derived launch differences. |
+| `tests/api/test_agentic_process_execute.py::{test_execute_headless_round_trip_captures_session_id,test_prompt_headless_streams_flowdata_and_end,test_cancel_prompt_terminates_in_flight_turn,test_disconnect_mid_turn_shielded_turn_completes_durably,test_r03_no_phantom_restart_across_transport_and_turns}` | pytest-API, fake Claude headless | keep | Good public lifecycle coverage, but it has no PTY path and no Codex/Copilot output/resume matrix. |
+| `ui/tests/long_tests/agentic_process_execute.test.ts::{executeInstruction(\"Say hola\")…,two sequential executeInstruction calls…}` | Vitest long, Claude headless | keep | Useful TypeScript-SDK headless smoke, but not vendor/transport parity. |
+| `ui/tests/hub/chat_terminal_switch_stress.ui.test.ts` | Vitest hub UI | keep | This is the strongest user-facing transport proof: repeated Chat/Terminal switching, canonical prompt/submit paths, and same-session continuity. |
+| `ui/tests/manual_regression/agentic-process/{codex_chat_terminal_switch_matrix.md.ts,codex_chat_terminal_full_matrix.md.ts}` and `ui/tests/manual_regression/terminal/visible_process_still_pty.md.ts` | Playwright manual | keep | These retain visual/navigation regression coverage. They should not duplicate the backend six-cell protocol matrix. |
+
+Modify both long matrix tests so one prompt stream is consumed through the expected exact assistant reply **and** its terminal `flow-result`/`flow-end`. After that terminal proof, read the process row once and, for multi-turn, send turn two once. Remove the 20-attempt retry/sleep loop and session-id polling; do not raise the global 30-second or HTTP read caps. An explicit normalized `flow-worker-unavailable` may skip; an arbitrary `flow-error`, missing exact reply, terminal-before-reply, changed session, duplicate turn, or unresolved first turn must fail.
+
+### Required new deterministic tests
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/api/test_agentic_process_transport_matrix.py::test_prompt_streams_one_complete_turn_for_every_vendor_and_transport` | pytest-API, fake worker, 3 x 2 | Through the public create/prompt actions, inject each vendor's minimal real-shaped output and assert persisted `pty_mode`, exact user/assistant FlowData, one terminal frame, and no prompt error. This isolates Flowpad routing from auth/network/model behavior. |
+| `tests/api/test_agentic_process_transport_matrix.py::test_two_prompts_resume_one_session_for_every_vendor_and_transport` | pytest-API, fake worker, 3 x 2 | Send two distinct prompts after terminal completion, assert two distinct exact replies in order, one stable non-empty session ID on process and transcript rows, and no duplicate/foreign turn. A fresh second session or second-turn 409 fails immediately; no retry is permitted. |
+
+No new UI-headless or fast-path test is recommended. The hub stress and manual matrices already cover rendering and toggling; the missing coverage is the deterministic public backend matrix.
+
+## 4. Settings instruction propagation
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_settings_instruction.py:168` — `test_settings_instruction_is_obeyed` | pytest-long, 3 vendors headless | modify | All rows failed the marker assertion. Asset delivery is asserted, but obedience is read from a separately resolved transcript after 20 seconds rather than from the prompt stream, so stale/wrong-session selection and worker output are conflated. |
+| `tests/long_tests/test_settings_instruction.py:203` — `test_settings_instruction_is_obeyed_pty` | pytest-long, 3 vendors PTY | modify | Claude failed; Codex/Copilot supplied no enforced live signal in this cycle. The paths differ (`prompt` versus `start_pty` + `submit`) and then rely on the same transcript poll, so vendor parity is not observed at one public seam. |
+| `tests/unit/test_system_instruction_assets.py::{test_embedded_assets_default_none_then_materialized,test_no_system_instructions_leaves_assets_uncreated,test_system_instruction_assets_applied_to_worker_options,test_persona_survives_fresh_entity_instance,test_pty_seam_never_applies_the_project_language}` | pytest-unit, vendor matrix where applicable | keep | This is strong asset materialization, rehydration, and PTY/headless instruction-context coverage. |
+| `tests/unit/test_cli_options_system_prompt.py::{test_claude_receives_system_prompt_file_flag,test_codex_receives_developer_instructions_config,test_copilot_receives_custom_instruction_dir_env,test_no_addition_is_a_no_op}` | pytest-unit | keep | Exact vendor sink coverage matches the driver contract: Claude append file, Codex developer instructions, and Copilot custom instruction directory. |
+| `ui/tests/long_tests/flow_show_display_focus.test.ts` | Vitest long | keep | It uses `context_data.instructions` incidentally to steer a live worker, but is a display-focus test and must not become the propagation contract. |
+
+Modify the live settings tests to drive the same public `/prompt` stream for PTY and headless and assert the unique marker in the exact assistant frame before terminal success. Preserve the asset assertions. Preflight explicit CLI/auth availability before the turn; after the worker accepts the turn, no fresh transcript or missing marker is a failure, not a skip. Remove transcript polling/sleeps and do not enlarge a cap.
+
+### Required new deterministic test
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/api/test_system_instruction_propagation.py::test_saved_process_instructions_reach_every_vendor_transport_sink` | pytest-API, fake launch capture, 3 x 2 | Create/save/reload a process with a nonce in `context.instructions`, prompt it through each transport, and inspect the actual launch argv/env/files: Claude has the generated append file, Codex has `developer_instructions`, and Copilot's configured directory contains `flowpad.instructions.md`. Missing nonce, wrong vendor sink, lost instructions after reload, or a transport-specific omission fails. |
+
+No UI form for this process setting was found, so no UI unit/react/headless/hub/manual/fast-path test should be invented. The public API serialization/reload seam is the material gap.
+
+## 5. Live skill-chip streaming
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_skill_chip_live_stream.py:56` — `test_live_stream_emits_skill_meta_chip_frame` | pytest-long, real Claude | modify | It timed out at 30 seconds while calling `proc.communicate(timeout=60)`. It asks a model to choose the Skill tool, then directly invokes `event_to_flowdata`; it does not traverse AgenticProcess prompt streaming or render the chip, so its name overstates the covered layers. |
+| `tests/unit/test_claude_event_to_flowdata.py::test_user_text_block_yields_meta_user_message` | pytest-unit | keep | Exact deterministic regression for Claude `user` text block -> `USER_MESSAGE is-meta=true`. |
+| `ui/tests/unit/group-turn-events-skill.test.ts::{drops the Skill TOOL_CALL and its TOOL_RESULT from dense groups,stamps the dropped call’s skill name onto the meta message group,reads the name from the flow value when the attribute is absent}` | Vitest unit | keep | Correctly pins collapse and skill-name harvesting. |
+| `ui/tests/unit/group-turn-events-virtual-drop.test.ts::{drops a codex skill call (tool-name shell),still harvests the skill name for the meta chip}` | Vitest unit | keep | Covers the Codex virtual-tool form and one-chip invariant. |
+| `ui/tests/unit/turn-files-chips.test.tsx::drops the Flowpad prompt envelope, keeps other meta messages` and `ui/tests/unit/tool-event-descriptor.test.ts::names the skill without making the dense row the click affordance` | Vitest component/unit | keep | These pin filtering/descriptor behavior, but `MetaMessageChip` is mocked in component tests, so the actual chip label/expansion is untested. |
+| `ui/tests/hub/skill_run_vibe_mcp_ui.ui.test.ts::Bob shares find-me-a-product; Alice runs it from the chip → mcp-ui form → report` | Vitest hub UI, live Claude | keep | Proves a received skill can be launched by name and render MCP-UI; it never asserts the in-chat `Using skill` meta chip, nor before-versus-after-refresh timing. |
+| `ui/tests/headless/full-analysis-flow.test.tsx` and `ui/tests/manual_regression/skills/full_analysis_flow.md.ts` | Vitest headless / Playwright manual | keep | These replay/seed skill-loaded analysis data; they do not observe a live prompt stream. |
+
+Modify the real-Claude long test into a narrowly named vendor stream-format acceptance. Read stdout incrementally within the existing 30-second cap and stop only after both a real Skill tool call and the corresponding raw user-text/meta conversion are observed; remove `communicate(timeout=60)`. Explicit auth/unavailability may skip, but an authenticated run that never invokes the requested skill or never emits the body must fail. The deterministic API and React tests below should carry the actual Flowpad regression contract.
+
+### Required new tests
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/api/test_skill_chip_stream.py::test_prompt_stream_forwards_skill_body_as_meta_user_frame_before_end` | pytest-API, fake Claude stream | Feed the public `/prompt` path a fixture containing Skill TOOL_CALL, injected `user` text body, TOOL_RESULT, and result. Assert the HTTP stream contains `flow-chat role=user is-meta=true` before the terminal frame and preserves the skill name/body. Missing, reordered-after-end, or duplicate meta frames fail. |
+| `ui/tests/react/meta-message-skill-chip.test.tsx::renders_skill_chip_from_live_meta_frame_before_reload` | Vitest React with real `MetaMessageChip` | Append the API-shaped meta FlowData to the mounted turn stream without remount/reload and assert `Using skill: chip-probe` appears once, dense Skill call/result rows stay hidden, and expanding the chip reveals the body. Do not mock `MetaMessageChip`. |
+
+A second live hub/browser scenario is not recommended: `skill_run_vibe_mcp_ui` is already expensive and model-driven. The deterministic public-stream plus actual-renderer tests prove the live-before-refresh bug; the existing hub run remains the end-user skill smoke.
+
+## 6. System prompt propagation
+
+This area is distinct from process settings at the source seam: an authored `Agent.system_prompt` must become deployment/process `context_data.instructions`. Below that seam, it deliberately shares the instruction-asset and vendor-sink pipeline from section 4.
+
+### Existing coverage disposition
+
+| Test | Type | Status | Exact coverage and limitation |
+|---|---|---|---|
+| `tests/long_tests/test_system_prompt.py:68` — `test_system_prompt` | pytest-long, 3 vendors headless | remove | Claude and Copilot failed; Codex passed. This test writes the same `AgenticProcess.instructions` field, asserts the same four files, and polls a transcript like `test_settings_instruction_is_obeyed`, but with a 150-second pytest timeout and 120-second polling budget. It does not exercise an `Agent`, deployment, or Agent-to-process mapping, so it duplicates settings coverage while violating the repository timeout policy. |
+| `tests/unit/agent/test_agent_deployment_contract.py::test_system_prompt_never_enters_cli_config` | pytest-unit | keep | Correct negative boundary: Agent identity does not enter restart-hashed `cli_config`. It does not positively assert where the prompt goes. |
+| `tests/unit/agent/test_seeded_agents.py:44::test_shipped_agent_parses_and_is_cheap`, `tests/unit/agent/test_q_bundle.py:16::test_q_bundle_is_a_valid_agent_with_its_qa_skill`, and `tests/unit/agent/test_agent_launch_bundle.py:51::test_shipped_agent_resolves_off_disk_without_an_index` | pytest-unit | keep | These prove authored/bundled agents have prompts, not runtime propagation. |
+| `tests/api/test_agent_authoring.py` and `tests/api/test_git_asset_share.py` | pytest-API | keep | These cover authoring/publishing/preserving `system_prompt`, not deployment launch. |
+| `ui/tests/unit/agent-document.test.ts::changes only the Markdown body for system_prompt` and `ui/tests/unit/agent-document-capsule.test.ts::re-attaches the capsule after a system_prompt swap` | Vitest unit | keep | Correct editor persistence coverage; execution remains a backend responsibility. |
+
+Remove the duplicated long test after the settings live matrix is repaired. Do not merge its 120/150-second budgets into another test. Preserve one real live semantic acceptance in `test_settings_instruction.py`, and cover the unique Agent source mapping deterministically.
+
+### Required new test
+
+| Proposed test | Type | Behavior and failure criteria |
+|---|---|---|
+| `tests/unit/agent/test_agent_deployment_contract.py::test_agent_system_prompt_becomes_process_context_instructions` | pytest-unit | Build/deploy an Agent with a unique system prompt through the production launch-bundle seam and assert the resulting process context instructions contain the prompt exactly once, survive save/reload, and remain absent from `cli_config`. Lost, duplicated, reordered behind caller instructions contrary to the declared merge order, or restart-hash contamination fails. |
+
+No second API/live/UI system-prompt scenario is required: the new Agent-source unit test composes with `test_saved_process_instructions_reach_every_vendor_transport_sink` and the repaired settings acceptance. This removes duplication while preserving end-to-end semantic coverage.
+
+## Prioritized gaps and disposition counts
+
+| Priority | Gap | Smallest effective action |
+|---|---|---|
+| P0 | No deterministic public 3-vendor x 2-transport prompt/resume matrix | Add the two fake-worker pytest-API matrix tests; repair the live matrix to drain one turn to terminal completion with no retries or polling. |
+| P0 | E2B last-PTY ownership is proven only by one opaque cloud timeout | Add the two provider-unit reference-count/idempotency tests; keep one canonical real-E2B reap acceptance. |
+| P0 | Process instructions have strong file/argv units but no save/reload/public-action propagation proof | Add the six-cell pytest-API sink test and make the live test assert its own streamed turn. |
+| P1 | Skill-chip coverage jumps from converter/grouping units to a model-driven direct-converter smoke; the public stream and actual renderer are absent | Add one pytest-API ordering test and one unmocked React chip test; narrow the real-Claude test to vendor format drift. |
+| P1 | Codex/Copilot hook route wiring is accepted only with real CLIs | Add a fake native-payload API matrix from configured launch contribution through callback delivery. |
+| P1 | `Agent.system_prompt` has only a negative `cli_config` assertion; the failing live test never launches an Agent | Add the positive Agent-to-process-context unit and remove the duplicated 120/150-second live test. |
+
+Disposition/count summary for the eight failing definitions (22 parametrized failures):
+
+- Keep unchanged: 0 failing definitions; retain all cited supporting tests.
+- Modify: 7 failing definitions (`test_shell_close_kills_sandbox_when_last_pty_leaves`, `test_process_hook_acceptance_uses_real_vendor`, both `test_pty_mode_matrix` definitions, both `test_settings_instruction` definitions, and `test_live_stream_emits_skill_meta_chip_frame`).
+- Remove: 1 obsolete definition (`test_system_prompt`).
+- Add: 9 named deterministic tests — 3 pytest-unit, 5 pytest-API, and 1 Vitest React.
+- Add no timeout, retry, sleep, polling, backoff, rerun, or flaky allowance; preserve every existing cap.

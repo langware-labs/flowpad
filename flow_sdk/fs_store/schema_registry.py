@@ -730,6 +730,11 @@ class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
     _types: ClassVar[dict[str, TypeInfo]] = {}
+    # kind → DataSpec. Lives HERE rather than in a second registry: a kind is a
+    # name in the same namespace type names draw from, and one lookup table is
+    # the standing rule. An unregistered kind is legal (an anonymous tag) and
+    # binds structurally — misses are answered with None, never minted.
+    _specs: ClassVar[dict[str, "DataSpec"]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
     # Whether the declarative type-info registrations have run in this process.
@@ -769,6 +774,18 @@ class SchemaRegistry:
     # ---------------------------------------------------------------------------
     # Registration
     # ---------------------------------------------------------------------------
+
+    @classmethod
+    def register_spec(cls, spec: "DataSpec") -> None:
+        """Register a named data shape so a bare ``kind`` can reference it."""
+        if not spec.kind:
+            raise ValueError("a registered DataSpec must carry a kind — that is its name")
+        cls._specs[spec.kind] = spec
+
+    @classmethod
+    def spec_for(cls, kind: str) -> "DataSpec | None":
+        """The shape registered for ``kind``, or None (anonymous — not an error)."""
+        return cls._specs.get(kind)
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:

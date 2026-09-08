@@ -27,7 +27,7 @@ let cachedAgenticUrl: string | null = null;
 
 async function gotoAgenticProcess(page: Page) {
   const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-  const ribbon = activePanel.locator('.border-t .ms-auto');
+  const ribbon = activePanel.locator('[data-testid="terminal-ribbon-tabs"]');
 
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);

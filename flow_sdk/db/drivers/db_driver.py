@@ -319,6 +319,10 @@ class DBDriver(Generic[RecordType]):
         """Atomically update only recency; return ``(current, stamped)``."""
         raise NotImplementedError("stamp_last_active_at is not implemented")
 
+    async def stamp_tab_order(self, entity_id: str, tab_order: int) -> tuple[Optional[RecordType], bool]:
+        """Atomically update only ``tab_order``; no-op on hidden/missing rows."""
+        raise NotImplementedError("stamp_tab_order is not implemented")
+
     async def compare_and_set_data_field(
         self,
         entity_id: str,

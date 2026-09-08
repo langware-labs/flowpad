@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { API, createVibeFixture, destroyVibeFixture, openVibe, type VibeFixture } from '../vibe/_helpers';
 
 /**
  * Every scenario of the journey runtime, driven the way a person drives one.
@@ -36,12 +37,26 @@ const STEPS = [
 let page: Page;
 /** One warm session for the file: a fresh context re-pulls the whole Vite dev
  *  module graph, which is slow enough to look like a journey failure. */
-test.beforeAll(async ({ browser }) => {
+let fixture: VibeFixture;
+test.beforeAll(async ({ browser, request }) => {
   page = await browser.newPage();
+  // The Vibe rail's Chats icon RESUMES the last chat opened in the scoped
+  // project (`useLastVibeChat`); with none it lands on the home hero and no
+  // `VibeDisplay` ever mounts. A QA-cleared DB has no chats, so seed one.
+  // `lastVibeChatQuery` matches process_type=chat AND a non-null
+  // last_active_at; neither is set by create or by opening the shell, so
+  // stamp both — the row must look like a chat the user actually opened.
+  fixture = await createVibeFixture(request, 'journey-sweep');
+  await request.put(`${API}/api/v1/graph/agentic_process/${fixture.processId}`, { data: { process_type: 'chat' } });
+  await request.post(`${API}/api/v1/graph/agentic_process/${fixture.processId}/activate`, { data: {} });
+  await openVibe(page, fixture.processId);
   await page.goto('/');
   await page.locator('[data-tag]').first().waitFor();
 });
-test.afterAll(async () => page.close());
+test.afterAll(async ({ request }) => {
+  await page.close();
+  await destroyVibeFixture(request, fixture);
+});
 
 const url = () => new URL(page.url());
 const stepParam = () => url().searchParams.get('journeyStep');
@@ -69,9 +84,16 @@ async function openAt(n: number, extra = ''): Promise<void> {
 async function launch(): Promise<void> {
   await page.goto(`/?journeyId=${encodeURIComponent(JOURNEY)}`);
   await page.locator('[data-tag]').first().waitFor();
+  // The tray mounts a beat after the first `[data-tag]`; sampling `count()`
+  // at that instant read 0 for BOTH buttons and then waited 60s on `restart`
+  // that never exists on a fresh tray. Wait for whichever control the tray
+  // actually renders, then press it.
   const start = page.getByTestId('journey-tray-start');
+  const restart = page.getByTestId('journey-tray-restart');
+  // A finished journey shows BOTH; `.first()` keeps the wait strict-mode safe.
+  await expect(start.or(restart).first()).toBeVisible();
   if (await start.count()) await start.click();
-  else await page.getByTestId('journey-tray-restart').click();
+  else await restart.click();
   await expectStep(1);
 }
 
@@ -110,8 +132,12 @@ test.describe('the journey demonstrates — the app really moves', () => {
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
     await next(); // the rail — opens a real build
-    await expectStep(3);
+    // The step is GATED on the build actually opening (`element.present:
+    // VibeDisplay` in the journey graph); assert the gate's own condition
+    // first, then the step. Under full-suite load the open can outlast one
+    // expect budget while the tray correctly holds at step 2.
     await expect(workspace()).toBeVisible();
+    await expectStep(3);
 
     await next(); // commentary
     await expectStep(4);

@@ -39,7 +39,7 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
     const ok = await activePanel(page)
-      .locator('.border-t .ms-auto')
+      .locator('[data-testid="terminal-ribbon-tabs"]')
       .isVisible({ timeout: 10_000 })
       .catch(() => false);
     if (ok) return cachedAgenticUrl;
@@ -60,7 +60,7 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
     // The Dir side window is a ribbon panel — Advanced-view only; the backend
     // pref now wins over the localStorage seed, so flip to Advanced at runtime.
     await ensureAdvancedView(page);
-    await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible({ timeout: 60_000 });
+    await expect(activePanel(page).locator('[data-testid="terminal-ribbon-tabs"]')).toBeVisible({ timeout: 60_000 });
   } catch (e) {
     await skipIfPtyExhausted(page);
     throw e;
@@ -77,8 +77,13 @@ test.describe('Dir side window scrolling', () => {
 
   test('dir panel scrolls (not clipped) when the directory overflows the viewport', async ({ page }) => {
     // A deliberately short viewport makes overflow deterministic even for a
-    // sparse project root. This is layout input, not a timing allowance.
-    await page.setViewportSize({ width: 1280, height: 320 });
+    // sparse project root. This is layout input, not a timing allowance. It
+    // must still leave the side window taller than the Dir panel's fixed chrome
+    // (path header + filter row + list padding, ~90px) once the tab strip,
+    // ribbon and prompt input have taken their share — otherwise the panel
+    // "overflows" on chrome alone and the measurement says nothing about the
+    // list's scroll chain.
+    await page.setViewportSize({ width: 1280, height: 480 });
 
     await gotoAgenticProcess(page);
 
@@ -93,7 +98,7 @@ test.describe('Dir side window scrolling', () => {
     // Advanced-only; gotoAgenticProcess already flipped to Advanced. Select it by
     // its FolderTree icon (index-independent — the ribbon gains/loses buttons).
     await ensureAdvancedView(page);
-    const dirButton = activePanel(page).locator('.border-t .ms-auto button:has(svg.lucide-folder-tree)');
+    const dirButton = activePanel(page).locator('[data-testid="terminal-ribbon-tabs"] button:has(svg.lucide-folder-tree)');
     await expect(dirButton).toBeVisible({ timeout: 15_000 });
     await dirButton.click();
 
