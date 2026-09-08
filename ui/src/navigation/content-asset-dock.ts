@@ -1,7 +1,7 @@
 import { TypeId, VFSPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
-import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor } from './asset-doc-types';
+import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 
 export interface ContentAssetTarget {
@@ -56,6 +56,14 @@ export function isContentAssetDock(dock: DockPointer): boolean {
   const pointer = assetPointerForDock(dock);
   if (pointer?.mode === AssetMode.EDITOR) return !isFilelessEditor(pointer.editor);
   return pointer?.mode === AssetMode.WIKI;
+}
+
+/** A content-asset dock whose editor is a passive PREVIEW, not an editing surface.
+ *  A `flow show` pin of one belongs in the vibe Display pane; routing it to
+ *  `AssetVibeWorkspace` instead swaps that pane off screen entirely. */
+export function isPreviewAssetDock(dock: DockPointer): boolean {
+  const pointer = assetPointerForDock(dock);
+  return pointer?.mode === AssetMode.EDITOR && isPreviewEditor(pointer.editor);
 }
 
 /**

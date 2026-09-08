@@ -339,6 +339,11 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} is not signed in"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -604,6 +609,10 @@ msgstr "{name} avatar"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+msgstr "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -1740,6 +1749,10 @@ msgstr "already present"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "already running"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "Already signed in elsewhere? Check again"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -4263,6 +4276,10 @@ msgstr "Copy error text"
 msgid "Copy event JSON"
 msgstr "Copy event JSON"
 
+#: src/components/organization/budgets/EditableTitle.tsx
+msgid "Copy id"
+msgstr "Copy id"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
 msgstr "Copy join code"
@@ -4291,6 +4308,10 @@ msgstr "Copy prompt"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
+
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr "Copy the full error"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -4672,6 +4693,10 @@ msgstr "Could not resolve this folder"
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "Could not run the test"
 
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
@@ -6152,6 +6177,10 @@ msgstr "Documents"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "Documents that link here"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "Does this source actually work?"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -10132,7 +10161,6 @@ msgstr "Loading..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -14175,6 +14203,10 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "RAM:"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Re-check"
+#~ msgstr "Re-check"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "Re-check {title}"
@@ -16755,6 +16787,10 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "Sign in first, then this source can fund a run."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "Sign in to access your flow and unlock Flowpad AI agent."
@@ -17419,6 +17455,10 @@ msgstr "Still can't link this project"
 msgid "Still signed in"
 msgstr "Still signed in"
 
+#: src/components/llm-sources/use-llm-sources.ts
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "Still signed out — please re-authenticate"
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -17886,6 +17926,7 @@ msgstr "Terminal Sessions"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "Test"
 
@@ -17894,6 +17935,14 @@ msgstr "Test"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "Test failed"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "Test failed — this source cannot fund a run right now"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "Test passed — this source can fund a run"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -18625,6 +18674,14 @@ msgstr "This session URL is malformed or unavailable."
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "This skill has uncommitted changes — improve runs only on a clean skill."
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "This source did not work"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "This source works"
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
 msgstr "This source's remote identity — one source per account."
@@ -19082,9 +19139,15 @@ msgstr "Triggers"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
 msgstr "Try auto install"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Try auto install (types the command in a terminal)"
+msgstr "Try auto install (types the command in a terminal)"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -20177,12 +20240,12 @@ msgid "You"
 msgstr "You"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "you are {role}"
-msgstr "you are {role}"
+#~ msgid "you are {role}"
+#~ msgstr "you are {role}"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "You are not in any team in this organization yet."
-msgstr "You are not in any team in this organization yet."
+#~ msgid "You are not in any team in this organization yet."
+#~ msgstr "You are not in any team in this organization yet."
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20350,8 +20413,8 @@ msgid "Your sandbox is ready"
 msgstr "Your sandbox is ready"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "Your teams"
-msgstr "Your teams"
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

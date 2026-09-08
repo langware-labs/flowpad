@@ -929,13 +929,18 @@ class Entity(DBEntity):
         of ``path_str``. Pure DB lookup (indexed ``asset_ref IN`` per type) —
         no disk access, no discovery."""
         import asyncio  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
 
         from flow_sdk.fs_store.path_utils import ancestors_of
         from flow_sdk.schema.layout import Folder  # noqa: PLC0415
 
-        ancestors = ancestors_of(path_str)
-        if not ancestors:
+        posix_ancestors = ancestors_of(path_str)
+        if not posix_ancestors:
             return None
+        # A folder-backed asset_ref may be stored native (FSRef.path) rather than
+        # posix-canonical, so probe both spellings per ancestor — same reasoning
+        # as asset_ref_spellings().
+        ancestors = list(dict.fromkeys(posix_ancestors + [str(Path(a)) for a in posix_ancestors]))
 
         def _folder_shaped(ecls: type) -> bool:
             info = SchemaRegistry.get(ecls.get_type())

@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
 
 const SHELL = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
 const INSTALL = 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"';
@@ -62,5 +63,29 @@ describe('shell start command', () => {
     // character is a different command, and it is about to be typed at a prompt.
     const url = DockPointer.forShell(SHELL, { prefillCommand: INSTALL }).toUrl('/dock/shell');
     expect(DockPointer.fromUrl(url)?.shellStartCommand).toEqual({ command: INSTALL, submit: false });
+  });
+
+  describe('shellId', () => {
+    // The bug this exists to prevent: `Shell.dockPointer` spells a shell as its
+    // TypeId (`shell-<uuid>`), while tabs and the PTY transport hold the bare
+    // uuid. The typed-command effect compared the two raw, never matched, and
+    // did nothing at all — a feature that looked shipped and was inert.
+    it('strips the TypeId prefix so it matches a bare session id', () => {
+      expect(new DockPointer(ViewType.SHELL, `shell-${SHELL}`).shellId).toBe(SHELL);
+    });
+
+    it('accepts a pointer that is already bare', () => {
+      expect(DockPointer.forShell(SHELL).shellId).toBe(SHELL);
+    });
+
+    it('is null for a process dock, which is not a shell id at all', () => {
+      const process = new DockPointer(ViewType.SHELL, 'agentic_process-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02');
+      expect(process.shellId).toBeNull();
+    });
+
+    it('is null when the dock addresses no shell', () => {
+      expect(new DockPointer(ViewType.SHELL).shellId).toBeNull();
+      expect(DockPointer.forTab(ViewType.HOME).shellId).toBeNull();
+    });
   });
 });

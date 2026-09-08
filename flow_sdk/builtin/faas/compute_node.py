@@ -1453,6 +1453,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             HubEndpointBindError,
             bind_hub_llm_endpoint,
             chain_hub_llm_endpoint,
+            check_llm_source,
             hub_llm_endpoint_status,
             llm_binding,
             select_llm_source,
@@ -1497,6 +1498,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # siblings, so the payload whitelist lives in one place.
                 if sub_path == "binding":
                     return ApiSuccessResponse(data=await llm_binding(body))
+                # ``test-source`` is the PER-ROW check: the same verdict shape, but dispatched
+                # on the source kind, so a device login and a stored key are each asked the
+                # question that can actually fail for them. ``test`` above stays the hub-only
+                # pass-through it has always been.
+                if sub_path == "test-source":
+                    return ApiSuccessResponse(data=await check_llm_source(body))
                 if sub_path:
                     # An unknown sub-action is a mistake, not a bind. Falling through used to
                     # turn any misspelled or newer-client POST into "the hub is binding this

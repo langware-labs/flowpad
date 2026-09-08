@@ -32,6 +32,14 @@ vi.mock('@src/components/agentic-progress/shared/status-indicator', () => ({
   getStatusLabel: () => 'status',
 }));
 
+// The pill's "turn in flight" collapse (FLOWPAD-2095) is exercised by its own
+// dedicated coverage, not here — the mock `makeProcess()` objects below are
+// plain data, not real AgenticProcess/EventEmitter instances, and the real
+// hook calls `process.on('prompting-change', ...)`, which they don't have.
+vi.mock('@src/components/entity-execution-panel/hooks/useTurnActivity', () => ({
+  useTurnActivity: () => ({ active: false, startedAt: null, status: null }),
+}));
+
 vi.mock('@src/notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
 // Capture what ChatComposerBar hands the real input: `disabled`, `running`,

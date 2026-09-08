@@ -61,3 +61,9 @@ Persisted writes refresh the open clean viewer while the turn is running. Do not
 user asks to open something related, run `flow show` once for that different target so
 it opens as a workspace child. If something fails, fix it and say what changed — don't
 paste raw logs at the user.
+
+## Don't overwrite other work
+
+Do not overwrite another agent's preexisting work (a sibling chat's `index.html`,
+its served directory) unless the user explicitly asked you to remove it — build
+into a fresh, uniquely-named location instead.
