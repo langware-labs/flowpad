@@ -2120,7 +2120,11 @@ class Entity(DBEntity):
 
         path = build_hub_url(self.get_type())
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(path, body)
+            # Idempotent: a 409 ("already exist") means this entity is already on
+            # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
+            # every invite. The create's post-condition is already satisfied, so
+            # treat it as a no-op success rather than a 500.
+            await client.post(path, body, idempotent=True)
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.

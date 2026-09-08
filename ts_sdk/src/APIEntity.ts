@@ -1163,9 +1163,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``fetchMembers`` is free (falls back to invalidation on any other shape).
    */
   public async removeMember(userId: string): Promise<void> {
+    // Never send an empty selector: a blank id serializes to ``{}`` and the hub
+    // rejects it ("At least one of 'user_id'…"). Fail loudly at the source
+    // instead of round-tripping a body-less DELETE.
+    const id = userId.trim();
+    if (!id) throw new Error('removeMember: a non-empty user id is required');
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
-    info.bodyParameters = { user_id: userId };
+    info.bodyParameters = { user_id: id };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
   }
