@@ -8,7 +8,7 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
-import { FolderOpen, Globe, Loader2, RotateCcw } from 'lucide-react';
+import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /**
@@ -219,8 +219,12 @@ export interface ProjectListMenu {
   tabsLabel: string;
   /** The scope and both counts on one line, for a flat aria-label. */
   recoveringId: string | null;
+  /** The bucket whose close-all is in flight, or null. */
+  closingId: string | null;
   handleSelect: (bucket: TabProjectBucket) => Promise<void>;
   handleSelectGlobal: () => Promise<void>;
+  /** Close every tab of `bucket`, which is what empties it out of the menu. */
+  handleCloseProject: (bucket: TabProjectBucket) => Promise<void>;
   /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
   projectDialogOpen: boolean;
   setProjectDialogOpen: (open: boolean) => void;
@@ -236,6 +240,7 @@ export function useProjectListMenu({
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
   const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
@@ -308,6 +313,35 @@ export function useProjectListMenu({
     // 'loading' — ignore; spinner is rendered in the row.
   };
 
+  // Close every tab of one project — the row's X, and the same verb as the
+  // strip's "Close all" applied to a bucket instead of the current scope. The
+  // row disappears as a CONSEQUENCE, not as a separate step: the menu is built
+  // from open tabs, so a project with none is no longer listed.
+  //
+  // Order matters when clearing the CURRENT scope. Navigating away first (while
+  // its tabs still exist) keeps this URL-first (CLAUDE.md) — the destination is
+  // resolved from live rows, then the loader re-scopes. Closing first would
+  // strand the URL on a tab that no longer exists and leave the resolver nothing
+  // to pick. Global is the honest landing: the project being emptied cannot be
+  // the destination, and `dockForGlobalEntry` falls back to Home on its own.
+  const handleCloseProject = async (bucket: TabProjectBucket) => {
+    setClosingId(bucket.projectId);
+    try {
+      if (bucket.projectId === currentProjectId) {
+        navigation.openDock(await dockForGlobalEntry(currentDock));
+      }
+      await bucket.closeAll();
+    } catch (error) {
+      notify.error({
+        title: t`Couldn't close the project's tabs`,
+        message: error instanceof Error ? error.message : String(error),
+        id: `project-close-all:${bucket.projectId}`,
+      });
+    } finally {
+      setClosingId(null);
+    }
+  };
+
   // Selecting the Global row re-focuses the Global scope (it's only shown while
   // Global is already current). URL-first: resolve the most-recently-active
   // global tab (or Home) and navigate; the loader re-scopes off the URL.
@@ -339,8 +373,10 @@ export function useProjectListMenu({
     projectsLabel,
     tabsLabel,
     recoveringId,
+    closingId,
     handleSelect,
     handleSelectGlobal,
+    handleCloseProject,
     projectDialogOpen,
     setProjectDialogOpen,
     handleOpenProject,
@@ -417,8 +453,18 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * empty box.
  */
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
-  const { buckets, currentProjectId, isGlobalScope, globalTabCount, recoveringId, handleSelect, handleSelectGlobal } =
-    menu;
+  const {
+    buckets,
+    currentProjectId,
+    isGlobalScope,
+    globalTabCount,
+    recoveringId,
+    closingId,
+    handleSelect,
+    handleSelectGlobal,
+    handleCloseProject,
+  } = menu;
+  const { t } = useLingui();
   const openProjectRow = (
     <div className="mt-1 border-t border-border pt-1">
       <OpenProjectRow menu={menu} />
@@ -497,17 +543,25 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               <RotateCcw className="h-3.5 w-3.5 shrink-0" />
             );
           }
-          const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
-            isCurrent ? 'bg-muted/60 font-medium' : ''
+          const isClosing = closingId === bucket.projectId;
+          // The close control is a SIBLING of the select button, not a child:
+          // a button inside a button is invalid HTML, and browsers recover from
+          // it by dropping the inner one — the row would swallow every close.
+          // The `<li>` is the flex row; `group` lets the X reveal on row hover.
+          const rowClass = `group flex w-full items-center gap-2 rounded pe-1 hover:bg-muted ${
+            isCurrent ? 'bg-muted/60' : ''
+          }`;
+          const selectClass = `flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-left text-sm ${
+            isCurrent ? 'font-medium' : ''
           } ${isMissing ? 'text-muted-foreground' : ''}`;
           return (
-            <li key={bucket.projectId}>
+            <li key={bucket.projectId} className={rowClass}>
               <button
                 type="button"
                 aria-current={isCurrent ? 'true' : undefined}
-                disabled={bucket.state === 'loading' || isRecovering}
+                disabled={bucket.state === 'loading' || isRecovering || isClosing}
                 onClick={() => void handleSelect(bucket)}
-                className={rowClass}
+                className={selectClass}
               >
                 <RowGuides guides={guides} />
                 {leadingIcon}
@@ -520,6 +574,27 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
                   {bucket.tabCount}
                 </span>
+              </button>
+              {/* Close-all-in-this-project. Emptying the bucket is what removes
+                  the row: the menu is built from open tabs, so a project with
+                  none simply stops being listed. Reachable on a MISSING row too
+                  — that is the only exit for an orphan whose project can never
+                  be recovered. Kept mounted (not hover-gated in the DOM) so it
+                  stays keyboard-reachable and testable; only opacity changes. */}
+              <button
+                type="button"
+                disabled={isClosing || isRecovering}
+                onClick={() => void handleCloseProject(bucket)}
+                title={t`Close all ${bucket.tabCount} tabs in this project`}
+                aria-label={t`Close all ${bucket.tabCount} tabs in this project`}
+                data-testid={`projects-counter-close-${bucket.projectId}`}
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+              >
+                {isClosing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <X className="h-3.5 w-3.5" />
+                )}
               </button>
             </li>
           );

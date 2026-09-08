@@ -730,11 +730,18 @@ async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # is the Global/projectless view.
     from flow_sdk.builtin.tab import _build_list, _http_list_all
 
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
     tag = uuid.uuid4()
-    pa = f"proj-a-{tag}"
-    pb = f"proj-b-{tag}"
+    # REAL Project rows. These were once bare `proj-a-<tag>` strings, which
+    # survived only on the reaper's since-removed non-UUID exemption (see
+    # test_missing_project_cleanup_reaps_non_uuid_project_id). This test is
+    # about list SCOPING, so it owns projects that actually exist.
+    pa = str(uuid.uuid4())
+    pb = str(uuid.uuid4())
+    await Project(id=pa, name=f"tab-list-a-{pa[:8]}").save()
+    await Project(id=pb, name=f"tab-list-b-{pb[:8]}").save()
     # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
     # whose Shell is absent is now reaped as a dead session, same as agentic_process).
     sa = Shell(id=str(uuid.uuid4()))
@@ -1365,3 +1372,50 @@ async def test_ordinary_tab_keeps_its_user_chosen_name() -> None:
 
     again = await ensure_tab(ptr, name="app.ts")
     assert again.name == "my renamed tab"
+
+
+@pytest.mark.asyncio
+async def test_missing_project_cleanup_reaps_non_uuid_project_id() -> None:
+    # RCA 2026-09-08: `_project_exists` exempted every non-UUID `project_id` as a
+    # "legacy/test identifier", so a UI fixture that reached a real backend
+    # (`project_id="proj-123"`, from share-remote-project-id.test.ts) left a Tab
+    # the reaper would never collect. The projects chip buckets tabs by the RAW
+    # `project_id` string, so that row rendered a permanent "Project unavailable
+    # (proj-123)" entry whose RECOVER could only ever 404 — recovery needs a
+    # `workdir` off a shell/agentic_process dependent, and a conversation tab has
+    # none. A non-UUID id is unresolvable by construction; it must be reaped, not
+    # exempted.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/non-uuid-project-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id="proj-123",
+    )
+
+    deleted = await delete_tabs_for_missing_project("proj-123")
+
+    assert deleted == 1
+    assert await Tab.get_one({"id": tab.id}) is None
+    # Same contract as the UUID path: row-only cleanup, target left intact.
+    reloaded_probe = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded_probe is not None and reloaded_probe.torn_down is False
+
+
+@pytest.mark.asyncio
+async def test_projectless_tab_is_never_reaped_as_missing_project() -> None:
+    # The counterpart guard: dropping the UUID shape gate must not turn a
+    # legitimately projectless (global) tab into an orphan. `project_id=None`
+    # still means "no owning project", never "owner is gone".
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/projectless-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=None,
+    )
+
+    assert await delete_tabs_for_missing_project(None) == 0
+    assert await Tab.get_one({"id": tab.id}) is not None
