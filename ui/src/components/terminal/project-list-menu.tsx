@@ -577,10 +577,16 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               </button>
               {/* Close-all-in-this-project. Emptying the bucket is what removes
                   the row: the menu is built from open tabs, so a project with
-                  none simply stops being listed. Reachable on a MISSING row too
-                  — that is the only exit for an orphan whose project can never
-                  be recovered. Kept mounted (not hover-gated in the DOM) so it
-                  stays keyboard-reachable and testable; only opacity changes. */}
+                  none simply stops being listed.
+                  Reachable on a MISSING row too — not as the only way out (the
+                  backend reaper hard-deletes a tab whose project cannot be
+                  resolved on the next tab list), but because `missing` is not
+                  only ever junk: it also latches when `Project.getById` fails
+                  transiently, and the reaper deliberately fails open on a
+                  lookup error. A user who wants those rows gone should not have
+                  to wait on a sweep that may correctly decline to run.
+                  Kept mounted (not hover-gated in the DOM) so it stays
+                  keyboard-reachable and testable; only opacity changes. */}
               <button
                 type="button"
                 disabled={isClosing || isRecovering}

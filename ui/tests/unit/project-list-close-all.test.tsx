@@ -10,10 +10,12 @@
  *   - clearing the CURRENT scope navigates away BEFORE closing, not after —
  *     closing first strands the URL on a tab that no longer exists;
  *   - clearing a non-current project never navigates;
- *   - a MISSING bucket can be closed. That is its only exit: recovery reads a
- *     `workdir` off a shell/agentic_process dependent, so an orphan that has
- *     none (e.g. a stale conversation tab) can never be recovered, and the row
- *     would otherwise be permanent.
+ *   - a MISSING bucket can be closed. Not because it is the only way out — the
+ *     backend reaper hard-deletes a tab whose project cannot be resolved — but
+ *     because `missing` also latches on a transient `Project.getById` failure,
+ *     and the reaper deliberately fails open on a lookup error. Recovery is no
+ *     help there either: it reads a `workdir` off a shell/agentic_process
+ *     dependent, and a conversation tab has none.
  */
 import { useProjectListMenu } from '@src/components/terminal/project-list-menu';
 import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
@@ -87,7 +89,7 @@ describe('project row close-all', () => {
     expect(calls).toEqual(['openDock:GLOBAL_DOCK', 'closeAll:p1']);
   });
 
-  it('closes a MISSING bucket — the only exit for an unrecoverable orphan', async () => {
+  it('closes a MISSING bucket — recovery cannot help every orphan', async () => {
     buckets = [bucket('proj-123', 'missing')];
     const { result } = renderHook(() => useProjectListMenu({ currentProjectId: null }));
 
