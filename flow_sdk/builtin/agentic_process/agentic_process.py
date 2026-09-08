@@ -6949,6 +6949,7 @@ class AgenticProcess(Entity):
         ``history=[]``, not a 404.
         """
         from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
+            history_start_time,
             load_abort_marker_frames,
             merge_abort_markers,
         )
@@ -6959,9 +6960,16 @@ class AgenticProcess(Entity):
         # of leaving its last tool call rendered as still running. Worker-
         # generic: the vendor transcript is vendor-owned and never contains
         # these; the sidecar in the process record dir does.
+        # ``history_start`` scopes sid-less markers (written before the worker
+        # reported a session id) to rollouts they chronologically overlap — a
+        # rotated session must not inherit them as a phantom index-0 abort.
         history = merge_abort_markers(
             history,
-            load_abort_marker_frames(self._record_dir(), session_id=self.session_id),
+            load_abort_marker_frames(
+                self._record_dir(),
+                session_id=self.session_id,
+                history_start=history_start_time(history),
+            ),
         )
         return ApiSuccessResponse(
             data={
