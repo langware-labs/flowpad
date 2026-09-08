@@ -71,7 +71,7 @@ const TerminalPanelErrorState: React.FC<{
 
   return (
     <div className="flex h-full w-full flex-col" data-testid="terminal-panel-error">
-      <TerminalRuntimeErrorBanner />
+      <TerminalRuntimeErrorBanner processId={processId} />
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
         <AlertTriangle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
         <div className="text-sm font-medium">This session has nothing to display</div>
@@ -342,7 +342,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // to attach to. Hook order is fixed — the entity is subscribed unconditionally
   // and the guard is applied below.
   const hostProcessId = processId
-    ? (DockPointer.isAgenticProcessPointer(processId) ? DockPointer.extractAgenticProcessId(processId) : processId)
+    ? DockPointer.isAgenticProcessPointer(processId)
+      ? DockPointer.extractAgenticProcessId(processId)
+      : processId
     : null;
   const { data: hostProcess } = useEntity<AgenticProcess>(
     hostProcessId ? new TypeId(AgenticProcess.type, hostProcessId) : null,

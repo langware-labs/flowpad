@@ -339,6 +339,11 @@ msgstr "{0} مُنتشر"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن فتحه."
 
+#. placeholder {0}: source.name
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{0} is not signed in"
+msgstr "{0} غير مسجّل الدخول"
+
 #. placeholder {0}: node.name || 'The sandbox'
 #. placeholder {1}: result.version
 #: src/hooks/use-sandboxes.ts
@@ -604,6 +609,10 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "لم يتم تثبيت {name} على هذا الجهاز حتى الآن. يُرجى اتباع دليل الإعداد السريع، ثم العودة إلى هنا لتسجيل الدخول.<<<<<<< HEAD"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+msgstr "لم يتم تثبيت {name} على هذا الجهاز بعد. ثبّته أدناه، ثم عد إلى هنا لتسجيل الدخول."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -946,7 +955,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "A request just failed because {name} isn't signed in on this machine."
-msgstr ""
+msgstr "فشل طلب للتو لأن {name} غير مسجّل الدخول على هذا الجهاز."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
@@ -1270,7 +1279,7 @@ msgstr "إضافة Hook"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
-msgstr ""
+msgstr "إضافة مفتاح"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Add link"
@@ -1315,7 +1324,7 @@ msgstr "إضافة وسم…"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add this key under Connections"
-msgstr ""
+msgstr "أضف هذا المفتاح ضمن الاتصالات"
 
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -1455,7 +1464,7 @@ msgstr ""
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Agent funding"
-msgstr ""
+msgstr "تمويل الوكيل"
 
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
@@ -1740,6 +1749,10 @@ msgstr "موجود بالفعل"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "قيد التشغيل بالفعل"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2358,7 +2371,7 @@ msgstr "يتم التحقق من التحديثات تلقائياً كل ساع
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Automatic"
-msgstr ""
+msgstr "تلقائي"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -2955,7 +2968,7 @@ msgstr "القدرات"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Capabilities unavailable. Retry"
-msgstr ""
+msgstr "القدرات غير متاحة. أعد المحاولة"
 
 #: src/i18n/type-labels.ts
 msgid "Capability"
@@ -3099,7 +3112,7 @@ msgstr "جاري التحقق من فهرس الوسوم…"
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Checking what funds {harnessLabel}…"
-msgstr ""
+msgstr "جارٍ التحقق مما يموّل {harnessLabel}…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -3176,7 +3189,7 @@ msgstr ""
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "chosen by you"
-msgstr ""
+msgstr "اخترته بنفسك"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome"
@@ -4263,6 +4276,10 @@ msgstr ""
 msgid "Copy event JSON"
 msgstr "نسخ JSON للحدث"
 
+#: src/components/organization/budgets/EditableTitle.tsx
+msgid "Copy id"
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
 msgstr "نسخ رمز الانضمام"
@@ -4291,6 +4308,10 @@ msgstr "نسخ الموجه"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "نسخ معرف المزود"
+
+#: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+msgid "Copy the full error"
+msgstr "نسخ الخطأ الكامل"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -4673,6 +4694,10 @@ msgstr "تعذر تحديد موقع هذا المجلد"
 msgid "Could not run the connection test."
 msgstr "تعذر إجراء اختبار الاتصال."
 
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "Could not run the test"
+msgstr "تعذّر تشغيل الاختبار"
+
 #: src/components/connections-manager.tsx
 msgid "Could not save {envVar}"
 msgstr ""
@@ -4787,7 +4812,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
-msgstr ""
+msgstr "تعذّر تبديل المصدر"
 
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
@@ -5853,7 +5878,7 @@ msgstr "تسجيل الدخول عبر الجهاز"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Device logins"
-msgstr ""
+msgstr "تسجيلات دخول الجهاز"
 
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -6152,6 +6177,10 @@ msgstr "المستندات"
 #: src/components/milkdown-editor/EditorWithSidePanel.tsx
 msgid "Documents that link here"
 msgstr "المستندات التي تشير إلى هذا المستند"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Does this source actually work?"
+msgstr "هل يعمل هذا المصدر فعلًا؟"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Domains accessible from sandbox"
@@ -7962,19 +7991,19 @@ msgstr "ملء الشاشة"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
-msgstr ""
+msgstr "مموَّل عبر نقطة نهاية في Hub"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a stored API key"
-msgstr ""
+msgstr "مموَّل عبر مفتاح API مخزَّن"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
-msgstr ""
+msgstr "مموَّل عبر اشتراكك لدى المزوّد"
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Funding for"
-msgstr ""
+msgstr "التمويل لـ"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8682,15 +8711,15 @@ msgstr "Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Hub endpoint"
-msgstr ""
+msgstr "نقطة نهاية في Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Hub endpoint unavailable"
-msgstr ""
+msgstr "نقطة النهاية في Hub غير متاحة"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Hub endpoints"
-msgstr ""
+msgstr "نقاط النهاية في Hub"
 
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
@@ -8876,7 +8905,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "in use"
-msgstr ""
+msgstr "قيد الاستخدام"
 
 #: src/i18n/pref-labels.ts
 msgid "In-app only"
@@ -9830,14 +9859,14 @@ msgstr "مفتاح LLM"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "LLM keys"
-msgstr ""
+msgstr "مفاتيح LLM"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
-msgstr ""
+msgstr "مصادر LLM"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -10132,7 +10161,6 @@ msgstr "جاري التحميل..."
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/MemberStanding.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -11246,7 +11274,7 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No capabilities available"
-msgstr ""
+msgstr "لا توجد قدرات متاحة"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "no ceiling"
@@ -11548,7 +11576,7 @@ msgstr "لا يوجد فهرس LLM لهذا المجلد بعد."
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "No LLM source funds this harness"
-msgstr ""
+msgstr "لا يوجد مصدر LLM يموّل هذا الإطار"
 
 #: src/components/account/system-log.tsx
 msgid "No log file found"
@@ -12229,7 +12257,7 @@ msgstr ""
 #: src/components/llm-endpoints/FundingProvenance.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "nothing eligible"
-msgstr ""
+msgstr "لا يوجد خيار مؤهل"
 
 #: src/components/data-sources/ChoiceField.tsx
 msgid "Nothing found."
@@ -12359,7 +12387,7 @@ msgstr "إخطار الأشخاص بهذا الإرسال"
 #. placeholder {0}: landed?.name ?? source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Now using {0}"
-msgstr ""
+msgstr "يُستخدم الآن {0}"
 
 #: src/components/connections-manager.tsx
 msgid "OAuth"
@@ -12883,7 +12911,7 @@ msgstr "فتح سجل حوار هذا الوكيل"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
-msgstr ""
+msgstr "افتح نقطة النهاية هذه في Hub"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open this link on Flowpad Hub"
@@ -13691,7 +13719,7 @@ msgstr "تم العثور على مشاكل"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "process"
-msgstr ""
+msgstr "عملية"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
@@ -13738,7 +13766,7 @@ msgstr "التقدم"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
-msgstr ""
+msgstr "مشروع"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14174,6 +14202,10 @@ msgstr "ذاكرة الوصول العشوائي (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "ذاكرة الوصول العشوائي:"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Re-check"
+#~ msgstr "تحقّق مرة أخرى"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -16755,6 +16787,10 @@ msgstr "عرض Sigma للرسم البياني"
 msgid "Sign in"
 msgstr "تسجيل الدخول"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Sign in first, then this source can fund a run."
+msgstr "سجّل الدخول أولًا، عندها يمكن لهذا المصدر تمويل التشغيل."
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "تسجيل الدخول للوصول إلى flow الخاص بك وتفعيل Flowpad AI agent"
@@ -17419,6 +17455,10 @@ msgstr "ما زال ربط هذا المشروع غير ممكن"
 msgid "Still signed in"
 msgstr "الجلسة ما زالت نشطة"
 
+#: src/components/llm-sources/use-llm-sources.ts
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "لا يزال العمل جارياً — يتم حزم المرفقات وتحميلها. قد تستغرق نسخة الجلسة أو الملفات الكبيرة دقيقة واحدة."
@@ -17886,6 +17926,7 @@ msgstr "جلسات الطرفية"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "اختبار"
 
@@ -17894,6 +17935,14 @@ msgstr "اختبار"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Test failed"
 msgstr "فشل الاختبار"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test failed — this source cannot fund a run right now"
+msgstr "فشل الاختبار — لا يمكن لهذا المصدر تمويل التشغيل الآن"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Test passed — this source can fund a run"
+msgstr "نجح الاختبار — يمكن لهذا المصدر تمويل التشغيل"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -17906,7 +17955,7 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 
 #: src/components/funding-chip/FundingChip.tsx
 msgid "That change could not be applied."
-msgstr ""
+msgstr "تعذّر تطبيق هذا التغيير."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -18036,7 +18085,7 @@ msgstr "خادم FlowPad الخلفي لا يستجيب."
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "The funding picture is only available on a desktop instance."
-msgstr ""
+msgstr "صورة التمويل متاحة فقط على نسخة سطح المكتب."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "The GitHub connection didn't complete."
@@ -18192,7 +18241,7 @@ msgstr "لم يتم حذف المصدر."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "The stored API key for this provider is removed from this machine. You can add it again later."
-msgstr ""
+msgstr "سيُزال مفتاح API المخزَّن لهذا المزوّد من هذا الجهاز. يمكنك إضافته مرة أخرى لاحقًا."
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -18624,6 +18673,14 @@ msgstr "رابط الجلسة هذا غير صحيح أو غير متاح."
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr "تحتوي هذه المهارة على تغييرات غير مثبتة — يعمل التحسين فقط على مهارة نظيفة."
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source did not work"
+msgstr "لم يعمل هذا المصدر"
+
+#: src/components/llm-sources/use-llm-sources.ts
+msgid "This source works"
+msgstr "هذا المصدر يعمل"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
@@ -19082,9 +19139,15 @@ msgstr "المشغّلات"
 msgid "Try again"
 msgstr "إعادة المحاولة"
 
+#: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Try auto install"
-msgstr ""
+msgstr "جرّب التثبيت التلقائي"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Try auto install (types the command in a terminal)"
+msgstr "جرّب التثبيت التلقائي (يكتب الأمر في الطرفية)"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -19585,7 +19648,7 @@ msgstr "باستخدام"
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Using {0}"
-msgstr ""
+msgstr "يستخدم {0}"
 
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -19678,7 +19741,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "via hub login"
-msgstr ""
+msgstr "عبر تسجيل الدخول إلى Hub"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
@@ -19999,7 +20062,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Where each assistant gets its model access, and why."
-msgstr ""
+msgstr "من أين يحصل كل مساعد على وصوله إلى النموذج، ولماذا."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Where this desk lives"
@@ -20177,12 +20240,12 @@ msgid "You"
 msgstr "أنت"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "you are {role}"
-msgstr ""
+#~ msgid "you are {role}"
+#~ msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "You are not in any team in this organization yet."
-msgstr ""
+#~ msgid "You are not in any team in this organization yet."
+#~ msgstr ""
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20350,8 +20413,8 @@ msgid "Your sandbox is ready"
 msgstr "الصندوق الرملي جاهز"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-msgid "Your teams"
-msgstr ""
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

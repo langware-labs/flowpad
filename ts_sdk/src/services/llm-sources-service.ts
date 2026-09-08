@@ -88,6 +88,12 @@ export interface LLMFundingStatus {
   /** Per capability kind, why nothing funds it — `''` when something does. `sources` no longer
    *  carries the resolver's overlay, so this is the only place a stuck harness explains itself. */
   blocked: Record<string, string>;
+  /** Per capability kind, a stated preference that is NOT in force, and why — `''` when the
+   *  preference (if any) is being honoured. Distinct from `blocked`: something IS funding the
+   *  harness. A Flowpad preference on a box signed out of Flowpad is the case this exists for;
+   *  without it the screen shows "use Flowpad" selected while something else does the spending,
+   *  and nothing connects the two. */
+  notes: Record<string, string>;
   /** The endpoints those verdicts name, by typeid, deduplicated across harnesses. A verdict
    *  mirrors none of the row's fields, so anything renderable (kind, provider, models) is
    *  looked up here. */
@@ -140,6 +146,33 @@ export class LlmSourcesService {
    */
   test(endpointId: string): Promise<LLMEndpointTestResult> {
     return apiClient.post(`${this.base}/test`, { endpoint_typeid: endpointId });
+  }
+
+  /**
+   * Does THIS source work — one row, one answer.
+   *
+   * The per-row Test. `test` above asks the hub about one endpoint and is right only for a hub
+   * row; the other two kinds fail for reasons it cannot see. A device login is signed out, a
+   * stored key is revoked or out of credit — so the backend dispatches on `kind` and runs the
+   * check that kind actually needs, answering in this same verdict shape either way.
+   *
+   * The API-key and hub checks SPEND: each sends one minimal completion, because "is the key
+   * present" and "can the key buy tokens" are different questions and only the second one
+   * predicts whether a run will work. A device login cannot be spent from here (it is a
+   * terminal credential), so that verdict reports the vendor's own auth-status and says so.
+   *
+   * A refused call resolves with `ok: false` rather than throwing — a refusal is the answer.
+   */
+  testSource(source: {
+    kind: string;
+    provider?: string;
+    harness?: string;
+    endpoint_typeid?: string;
+    /** Device rows only: drop a latched refusal first. For a button a person pressed — an
+     *  automatic probe must not overturn a refusal the harness itself made. */
+    force?: boolean;
+  }) {
+    return apiClient.post<LLMEndpointTestResult>(`${this.base}/test-source`, source);
   }
 
   /**

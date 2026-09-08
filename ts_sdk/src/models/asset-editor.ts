@@ -151,6 +151,21 @@ export function isFilelessEditor(editor: AssetEditor | null | undefined): boolea
   return !!editor && FILELESS_EDITORS.has(editor);
 }
 
+/** A passive preview a vibe Display pane renders inline — a different axis from
+ *  `isFileOnlyEditor`. `code` is out (raw source is worked ON, not shown), and so
+ *  is `mcp_app`: a live sandbox + agent bridge is interactive, not a render. */
+export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.HTML,
+  AssetEditor.IMAGE,
+  AssetEditor.VIDEO,
+  AssetEditor.AUDIO,
+  AssetEditor.PDF,
+]);
+
+export function isPreviewEditor(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && PREVIEW_EDITORS.has(editor);
+}
+
 /** Derived inverse of the STATIC table: record type → the editor that edits it. */
 
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
