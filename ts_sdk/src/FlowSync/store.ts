@@ -589,9 +589,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else if (op === 'create' || this.dataOpQueryInvalidation) {
-      // For create operations, always update watched queries so new entities appear in lists.
-      // For other ops (update), only invalidate if dataOpQueryInvalidation is enabled.
+    } else if (op === 'update' && this.dataOpQueryInvalidation) {
+      // `update` ops only invalidate (full network refetch) when explicitly
+      // enabled. `create` no longer takes this path — the data-op already carries
+      // the full entity, so it is spliced into matching results locally below
+      // (see the `case 'create'` block) instead of re-running the LIST query over
+      // the network per data-op (X5a). `dataOpQueryInvalidation` is currently
+      // never enabled, so this branch is dormant in practice.
       const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
 
       for (const watchedQuery of watchedQueries) {
@@ -650,6 +654,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         const entity = this.castAndDeepAssign(data);
         this.register_new_entity(typeId, entity);
+        // X5a: splice the already-delivered entity into every matching live
+        // query locally (mirror of `removeEntityFromResults` for delete) instead
+        // of a full network LIST refetch per create data-op. Gated by the same
+        // `query.validate(data)` scope check inside the helper.
+        this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, entity, data);
         this._notifyAllAliases(typeId, entity, entity);
         break;
       }
