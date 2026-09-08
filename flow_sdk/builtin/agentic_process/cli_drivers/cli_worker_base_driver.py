@@ -1194,11 +1194,54 @@ def worker_path_env(worker_type: str) -> dict[str, str] | None:
 
 
 def prepend_path_dir(folder: str, path: str | None) -> str:
-    """*path* with *folder* prepended; idempotent when it is already first."""
+    """*path* with *folder* prepended; idempotent when it is already first.
+
+    Use this only where nothing ahead of *folder* needs protecting — i.e. a
+    PATH built from ``os.environ`` that carries no Flowpad pin (see
+    :func:`worker_path_env`). When the PATH may already begin with this
+    backend's venv bin dir, use :func:`insert_capability_path_dir` instead.
+    """
     base = path or ""
     if base.split(os.pathsep, 1)[0] == folder:
         return base
     return f"{folder}{os.pathsep}{base}" if base else folder
+
+
+def insert_capability_path_dir(folder: str, path: str | None) -> str:
+    """*path* with *folder* ahead of everything EXCEPT this backend's venv pin.
+
+    The discovered capability folder has to outrank the service PATH, or spawn
+    fails with "codex not found despite discovery" (D02) — that is why it is
+    prepended at all. But prepending it unconditionally also puts it ahead of
+    the venv bin dir that :func:`flow_cli_env_path` pinned first, and vendor
+    bin folders are routinely shared directories (``~/.local/bin``) that carry
+    their own ``flow``. The version-skew guard then loses to whatever ``flow``
+    the vendor dir happens to ship — silently, and precisely for the worker
+    calls (``flow record/show/context``) the guard exists to protect.
+
+    ``apply_worker_env``'s docstring already names this ordering as the reason
+    ``FLOWPAD_PYTHON`` must be an absolute path; ``flow`` had no equivalent
+    escape, so the ordering is fixed here instead.
+
+    So: keep the venv dir first when it is first, and put *folder* immediately
+    behind it. Idempotent, and identical to ``prepend_path_dir`` when no pin is
+    present.
+    """
+    base = path or ""
+    if not base:
+        return folder
+    entries = base.split(os.pathsep)
+    if entries[0] == folder:
+        return base
+
+    venv_bin = str(Path(sys.executable).parent)
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    pinned = entries[0] == venv_bin and (Path(venv_bin) / exe).exists()
+    if not pinned:
+        return f"{folder}{os.pathsep}{base}"
+    if len(entries) > 1 and entries[1] == folder:
+        return base  # already immediately behind the pin
+    return os.pathsep.join([entries[0], folder, *entries[1:]])
 
 
 def worker_executable(worker_type: str) -> str | None:
@@ -1320,7 +1363,7 @@ def build_worker_spawn_env(
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
-    env["PATH"] = prepend_path_dir(folder, env.get("PATH"))
+    env["PATH"] = insert_capability_path_dir(folder, env.get("PATH"))
     return env
 
 
@@ -1755,6 +1798,7 @@ __all__ = [
     "get_driver",
     "latch_spawn_failure",
     "prepend_path_dir",
+    "insert_capability_path_dir",
     "resolve_worker_argv0",
     "restart_payload_from_cli_options",
     "stamp_cli_run_id",
