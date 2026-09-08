@@ -1,7 +1,10 @@
 """Narrow contract tests for the long-suite live-instance resolver."""
 
 import os
+from contextlib import closing
 from dataclasses import FrozenInstanceError, replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +18,7 @@ from flow_sdk.instances.model import (
     RoleStatus,
     Tier,
 )
+from tests.long_tests import conftest as long_conftest
 from tests.long_tests.conftest import LiveE2EInstance
 from tests.long_tests.test_ws_reconnect_message_catchup import _local_hub_for_pair
 
@@ -26,7 +30,7 @@ def resolver_state(monkeypatch, tmp_path):
     name = "qacycle-6"
     port = 6106
     pid = 41006
-    expected_flow_home = tmp_path / "real-home" / ".flow"
+    expected_flow_home = (tmp_path / "real-home" / ".flow").resolve()
     env_file = tmp_path / "repo" / f".env.{name}.local"
     backend = RoleStatus(
         role=Role.BACKEND,
@@ -91,6 +95,7 @@ def test_resolver_accepts_only_the_agreed_live_launcher_target(resolver_state, r
         backend_port=6106,
         backend_pid=41006,
         hub_url="http://localhost:8093",
+        flow_home=resolver_state["expected_flow_home"],
     )
     assert resolver_state["seen_flow_home"] == resolver_state["expected_flow_home"]
     with pytest.raises(FrozenInstanceError):
@@ -160,13 +165,100 @@ def test_resolver_skips_actionably_without_an_explicit_selector(monkeypatch, res
         resolve_live_e2e_instance("FLOWPAD_E2E_INSTANCE")
 
 
-def test_reconnect_pair_rejects_the_same_instance_twice():
+def test_reconnect_pair_rejects_the_same_instance_twice(tmp_path):
     instance = LiveE2EInstance(
         name="qacycle-6",
         backend_port=6106,
         backend_pid=41006,
         hub_url="http://localhost:8093",
+        flow_home=str(tmp_path / "flow-home"),
     )
 
     with pytest.raises(pytest.fail.Exception, match="must be distinct"):
         _local_hub_for_pair(instance, instance)
+
+
+@pytest.fixture()
+def cli_home_paths(monkeypatch, tmp_path):
+    sandbox_home = tmp_path / "sandbox-home"
+    cli_home = tmp_path / "real-home"
+    monkeypatch.setattr(long_conftest, "_SANDBOX_HOME", str(sandbox_home))
+    monkeypatch.setattr(long_conftest, "_SANDBOX_USERPROFILE", str(sandbox_home))
+    monkeypatch.setattr(long_conftest, "_REAL_HOME", str(cli_home))
+    monkeypatch.setenv("HOME", str(sandbox_home))
+    monkeypatch.setenv("USERPROFILE", str(sandbox_home))
+    return sandbox_home, cli_home
+
+
+@pytest.mark.parametrize("original_flow_home", [None, "", "explicit"])
+def test_cli_home_swap_preserves_flowpad_root_and_restores_env(
+    original_flow_home, cli_home_paths, monkeypatch, tmp_path
+):
+    from flow_sdk.instance_settings import get_instance_settings
+
+    sandbox_home, cli_home = cli_home_paths
+    if original_flow_home == "explicit":
+        original_flow_home = str(tmp_path / "explicit-flow-home")
+    if original_flow_home is None:
+        monkeypatch.delenv("FLOW_HOME", raising=False)
+    else:
+        monkeypatch.setenv("FLOW_HOME", original_flow_home)
+    request = SimpleNamespace(path=Path("test_context_process.py"))
+
+    with closing(long_conftest._real_home_for_cli_subprocess_tests.__wrapped__(request)) as swap:
+        injected = next(swap)
+        expected_root = Path(original_flow_home) if original_flow_home else sandbox_home / ".flow"
+        assert injected == (None if original_flow_home else str(expected_root))
+        assert Path.home() == cli_home
+        assert os.environ["USERPROFILE"] == str(cli_home)
+        settings = get_instance_settings()
+        assert settings.flow_home == expected_root
+        assert settings.sodot_path.is_relative_to(expected_root)
+
+    assert os.environ.get("FLOW_HOME") == original_flow_home
+    assert Path.home() == sandbox_home
+    assert os.environ["USERPROFILE"] == str(sandbox_home)
+
+
+@pytest.mark.parametrize("explicit_override", [None, "absolute", "relative"])
+def test_live_resolver_distinguishes_cli_fallback_from_explicit_root(
+    explicit_override, resolver_state, cli_home_paths, monkeypatch, tmp_path
+):
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli_worker import ClaudeCLIWorker
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+    from flow_sdk.instance_settings import get_instance_settings
+
+    sandbox_home, _ = cli_home_paths
+    request = SimpleNamespace(path=Path("test_context_process.py"))
+    with closing(long_conftest._real_home_for_cli_subprocess_tests.__wrapped__(request)) as swap:
+        injected = next(swap)
+        resolver = long_conftest.resolve_live_e2e_instance.__wrapped__(injected)
+        with monkeypatch.context() as selected_env:
+            expected_root = resolver_state["expected_flow_home"]
+            if explicit_override:
+                expected_root = str((tmp_path / "selected-flow-home").resolve())
+                caller_root = os.path.relpath(expected_root) if explicit_override == "relative" else expected_root
+                selected_env.setenv("FLOW_HOME", caller_root)
+            parent_root = os.environ["FLOW_HOME"]
+
+            live = resolver("FLOWPAD_E2E_INSTANCE")
+            assert live.flow_home == expected_root
+            assert resolver_state["seen_flow_home"] == expected_root
+            assert os.environ["FLOW_HOME"] == parent_root
+
+            selected_env.setenv("FLOW_INSTANCE", live.name)
+            worker_cwd = tmp_path / "worker-cwd"
+            worker_env = ClaudeCLIWorker.build_env(
+                AgenticContext(workdir=str(worker_cwd), env_vars={"FLOW_HOME": live.flow_home})
+            )
+            assert worker_env["FLOW_INSTANCE"] == live.name
+            assert worker_env["FLOW_HOME"] == expected_root
+            assert Path(worker_env["FLOW_HOME"]).is_absolute()
+            assert (worker_cwd / worker_env["FLOW_HOME"]).resolve() == Path(expected_root)
+            assert os.environ["FLOW_HOME"] == parent_root
+            assert get_instance_settings().flow_home == Path(parent_root)
+            if not explicit_override:
+                assert Path(parent_root) == sandbox_home / ".flow"
+
+    assert "FLOW_HOME" not in os.environ
+    assert Path.home() == sandbox_home

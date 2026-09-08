@@ -1,83 +1,79 @@
-"""RCA capture: user-scope sniffer install contaminates the real ~/.claude.
+"""User-scope sniffer installs honor an explicitly isolated Claude home.
 
-Proven root cause: ``BaseInstanceSettings`` resolves ``flow_home`` from
-``FLOW_HOME`` and ``claude_home`` from ``Path.home()`` *independently*
-(base_settings.py:285 vs :289), and the instance-settings cache is keyed by
-``(name, flow_home)`` only — ``claude_home`` is not part of the key. So when a
-process isolates flow data via ``FLOW_HOME`` but keeps the real ``HOME`` and
-leaves ``FLOWPAD_CLAUDE_HOME`` unset, the sniffer wrapper is written under the
-sandbox ``flow_home`` while the hook entries are written into the *real*
-``~/.claude/settings.json``.
-
-This drives the real production path (``FLOW_INSTANCE`` forces a non-"test"
-instance so ``BaseInstanceSettings.from_env`` runs — ``TestInstanceSettings``
-co-locates both homes under one sandbox and cannot reproduce the divergence).
-``real_home`` is a temp stand-in for ``Path.home()`` so the user's actual
-``~/.claude`` is never touched; it plays the exact role the bug leaks into.
+FLOW_HOME isolates Flowpad data; Claude configuration has its own selectors.
+A temporary HOME/USERPROFILE stands in for the user's real home throughout.
 """
+
+import json
 
 import pytest
 
-from flow_sdk.builtin.agent_hook import AgentHook, AgentProvider, HookScope
+from flow_sdk.builtin.agent_hook import (
+    DEFAULT_LISTENED_HOOKS,
+    AgentHook,
+    AgentProvider,
+    HookScope,
+)
 from flow_sdk.builtin.claude_settings_sync import sync_sniffer_hook_to_settings
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN BUG: BaseInstanceSettings resolves flow_home (FLOW_HOME) and "
-        "claude_home (Path.home()) independently, so a FLOW_HOME-isolated process "
-        "with the real HOME leaks the user-scope sniffer install into the real "
-        "~/.claude/settings.json. xfail(strict) keeps the suite green until the "
-        "resolver divergence is fixed, then flips to a failure to flag the fix."
-    ),
-)
-async def test_sniffer_install_does_not_contaminate_real_claude_settings(tmp_path, monkeypatch):
-    real_home = tmp_path / "real_home"            # stands in for the user's real $HOME
-    sandbox_flow = tmp_path / "sandbox" / ".flow"  # the FLOW_HOME isolation
-    real_home.mkdir(parents=True)
-    sandbox_flow.mkdir(parents=True)
-
-    # Production instance: FLOW_INSTANCE wins over PYTEST detection, so the real
-    # BaseInstanceSettings resolvers (the divergent ones) run.
+@pytest.fixture
+def isolated_user_home(tmp_path, monkeypatch):
+    real_home = tmp_path / "real_home"
+    real_home.mkdir()
+    # A non-test instance exercises the production provider-home resolvers.
     monkeypatch.setenv("FLOW_INSTANCE", "oss")
-    monkeypatch.setenv("FLOW_HOME", str(sandbox_flow))
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path / "sandbox" / ".flow"))
     monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
     monkeypatch.delenv("FLOWPAD_CLAUDE_HOME", raising=False)
-
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     reset_instance_settings()
     try:
-        settings = get_instance_settings()
-
-        # The on/off switch, observed: flow_home follows FLOW_HOME (sandbox) but
-        # claude_home falls back to Path.home() (real home) — they diverge.
-        real_claude_settings = real_home / ".claude" / "settings.json"
-        assert settings.flow_home == sandbox_flow, settings.flow_home
-        assert settings.claude_settings_json_path == real_claude_settings, (
-            settings.claude_settings_json_path
-        )
-
-        assert not real_claude_settings.exists()  # clean real home: nothing there yet
-
-        hook = AgentHook(
-            name="flowpad_sniffer",
-            hook_name="flowpad_sniffer",
-            provider=AgentProvider.CLAUDE_CODE,
-            hook_scope=HookScope.USER,
-            event="UserPromptSubmit",
-        )
-        assert hook.id, "AgentHook must have an id for the sniffer marker"
-
-        ok = await sync_sniffer_hook_to_settings(hook)
-        assert ok, "sniffer sync reported failure"
-
-        # INVARIANT: isolating flow data via FLOW_HOME must not write into the
-        # real ~/.claude. Expecting no change in real claude settings.
-        assert not real_claude_settings.exists(), (
-            "expecting no change in real claude settings, but the user-scope "
-            f"sniffer install wrote {real_claude_settings} — sniffer hooks "
-            "leaked into the real home despite FLOW_HOME isolation"
-        )
+        yield real_home
     finally:
         reset_instance_settings()
+
+
+@pytest.mark.parametrize("selector", ["FLOWPAD_CLAUDE_HOME", "CLAUDE_CONFIG_DIR"])
+async def test_sniffer_install_does_not_contaminate_real_claude_settings(
+    tmp_path, monkeypatch, isolated_user_home, selector
+):
+    real_claude_settings = isolated_user_home / ".claude" / "settings.json"
+    real_claude_settings.parent.mkdir()
+    sentinel = b'{"permissions":{"allow":["Read"]},"hooks":{}}\n'
+    real_claude_settings.write_bytes(sentinel)
+    sandbox_claude = tmp_path / "sandbox" / ".claude"
+    monkeypatch.setenv(selector, str(sandbox_claude))
+    reset_instance_settings()
+
+    settings = get_instance_settings()
+    assert settings.flow_home == tmp_path / "sandbox" / ".flow"
+    assert settings.claude_settings_json_path == sandbox_claude / "settings.json"
+    hook = AgentHook(
+        name="flowpad_sniffer",
+        hook_name="flowpad_sniffer",
+        provider=AgentProvider.CLAUDE_CODE,
+        hook_scope=HookScope.USER,
+        event="UserPromptSubmit",
+    )
+    assert hook.id, "AgentHook must have an id for the sniffer marker"
+    assert await sync_sniffer_hook_to_settings(hook)
+
+    installed = json.loads(settings.claude_settings_json_path.read_text())
+    assert set(installed["hooks"]) == set(DEFAULT_LISTENED_HOOKS)
+    for entries in installed["hooks"].values():
+        assert len(entries) == 1
+        assert len(entries[0]["hooks"]) == 1
+        command_hook = entries[0]["hooks"][0]
+        assert command_hook["type"] == "command"
+        assert "--name=flowpad_sniffer" in command_hook["command"]
+        assert f"--hook-entry-id={hook.id}" in command_hook["command"]
+    assert real_claude_settings.read_bytes() == sentinel
+
+
+def test_flow_home_alone_does_not_relocate_claude_settings(tmp_path, isolated_user_home):
+    settings = get_instance_settings()
+    assert settings.flow_home == tmp_path / "sandbox" / ".flow"
+    assert settings.claude_settings_json_path == isolated_user_home / ".claude" / "settings.json"

@@ -5,12 +5,15 @@ from pathlib import Path
 
 import pytest
 
+import flow_sdk.template_engine as template_engine
 from flow_sdk.template_engine import (
     CircularDependencyError,
     DuplicateTemplateError,
     TemplateEngine,
     TemplateError,
 )
+
+TEMPLATES_DIR = Path(template_engine.__file__).parent / "templates"
 
 
 # ------------------------------------------------------------------
@@ -129,23 +132,15 @@ def test_circular_dependency():
 
 def test_load_real_templates():
     """Verify the shipped templates load without errors."""
-    templates_dir = Path(__file__).resolve().parents[3] / "sdk" / "python" / "flow_sdk" / "template_engine" / "templates"
-    if not templates_dir.exists():
-        pytest.skip("templates dir not found")
-
     engine = TemplateEngine()
-    engine.load_folder(templates_dir)
+    engine.load_folder(TEMPLATES_DIR)
     assert len(engine.template_names) >= 5  # at least the core templates
 
 
 def test_generate_solution_engineer():
     """Smoke-test: render solution_engineer with minimal context."""
-    templates_dir = Path(__file__).resolve().parents[3] / "sdk" / "python" / "flow_sdk" / "template_engine" / "templates"
-    if not templates_dir.exists():
-        pytest.skip("templates dir not found")
-
     engine = TemplateEngine()
-    engine.load_folder(templates_dir)
+    engine.load_folder(TEMPLATES_DIR)
 
     context = {
         "agent_name": "TestBot",

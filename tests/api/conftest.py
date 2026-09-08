@@ -30,18 +30,36 @@ from flow_sdk.responses.response import ApiResponse
 from flow_sdk.server.app import app
 
 
-@pytest_asyncio.fixture
-async def usable_claude_source():
-    """Give worker lifecycle tests a credential-free, authenticated source."""
+async def _seed_usable_worker_source(worker_type: str):
+    """Set test capability state without copying worker credentials."""
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
 
-    capability = await Capability.get_by_kind(worker_capability_kind("claude"))
+    capability = await Capability.get_by_kind(worker_capability_kind(worker_type))
     assert capability is not None
+    previous_login = capability.login_state, capability.login_message
     capability.login_state = DeviceLoginState.AUTHENTICATED
     capability.login_message = "test source"
     await capability.save(notify=False)
+    return capability, previous_login
+
+
+@pytest_asyncio.fixture
+async def usable_claude_source():
+    """Give Claude lifecycle tests a usable cached device source."""
+    await _seed_usable_worker_source("claude")
+
+
+@pytest_asyncio.fixture
+async def usable_codex_source():
+    """Give Codex lifecycle tests a usable source, restoring it afterward."""
+    capability, previous_login = await _seed_usable_worker_source("codex")
+    try:
+        yield
+    finally:
+        capability.login_state, capability.login_message = previous_login
+        await capability.save(notify=False)
 
 
 def _invalidate_caches():

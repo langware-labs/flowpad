@@ -39,7 +39,13 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch, resolve_liv
     msg = await FlowMessage(id=MSG_ID, text="hello there").save()
     gc = await GraphContext(context_typeids=[str(msg.typeid)]).save()
     ap = AgenticProcess(
-        cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
+        cli_config={
+            "permission_mode": "bypassPermissions",
+            "model": ModelTier.SM.value,
+            # Only the subprocess's flow hooks use the live instance root;
+            # parent-process secrets remain in the pytest sandbox.
+            "env_vars": {"FLOW_HOME": primary.flow_home},
+        },
         workdir=str(tmp_path),
         visible=False,
         pty_mode=False,

@@ -48,6 +48,7 @@ class LiveE2EInstance:
     backend_port: int
     backend_pid: int
     hub_url: str
+    flow_home: str
 
 
 def _normalized_url(value: str) -> str:
@@ -55,14 +56,15 @@ def _normalized_url(value: str) -> str:
 
 
 @pytest.fixture()
-def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
+def resolve_live_e2e_instance(_real_home_for_cli_subprocess_tests) -> Callable[[str], LiveE2EInstance]:
     """Resolve an explicitly selected, live launcher-owned E2E instance.
 
     Pytest sandboxes HOME before importing Flowpad, while these tests target
     instances launched under the caller's real flow root. The resolver uses an
     explicit FLOW_HOME when supplied and otherwise derives that real root from
-    FLOWPAD_PRE_SANDBOX_HOME. Every selected target fails closed unless the
-    manager, launcher registry, and generated env file agree.
+    FLOWPAD_PRE_SANDBOX_HOME. The CLI-home fixture's injected sandbox fallback
+    is not an explicit launcher selection. Every selected target fails closed
+    unless the manager, launcher registry, and generated env file agree.
     """
 
     def _resolve(env_key: str) -> LiveE2EInstance:
@@ -80,7 +82,10 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
             pytest.fail(f"unsafe {env_key}={name!r}: {exc}", pytrace=False)
 
         real_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or _REAL_HOME
-        flow_home = os.environ.get("FLOW_HOME") or str(Path(real_home) / ".flow")
+        flow_home = os.environ.get("FLOW_HOME")
+        if flow_home == _real_home_for_cli_subprocess_tests:
+            flow_home = None
+        flow_home = str(Path(flow_home or Path(real_home) / ".flow").expanduser().resolve())
         with patch.dict(os.environ, {"FLOW_HOME": flow_home}):
             try:
                 status = manager.resolve(name)
@@ -160,6 +165,7 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
             backend_port=backend.port,
             backend_pid=backend.pid,
             hub_url=_normalized_url(record.hub_url),
+            flow_home=flow_home,
         )
 
     return _resolve
@@ -198,8 +204,8 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_asset_cleanup_agent",
         "test_context_folder_worker",
         "test_artifact_real_worker",
-        # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
-        # pids) of two running instances, which the sandbox HOME hides.
+        # Retained for the live reconnect rig; its resolver uses the preserved
+        # caller root independently of this fixture's injected Flowpad fallback.
         "test_ws_reconnect_message_catchup",
     }
 )
@@ -209,37 +215,40 @@ _REAL_HOME_TEST_MODULES = frozenset(
 def _real_home_for_cli_subprocess_tests(request):
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
-    Scope of this fixture is **subprocess auth only**: the CLI inherits the
-    swapped ``$HOME`` via ``os.environ`` propagation and reads its credentials
-    from the user's real ``~/.claude/.credentials.json``. **In-process**
-    flow_sdk state stays anchored to the sandbox — ``InstanceSettings`` was
-    built under sandbox HOME at flow_sdk import time and its cached
-    ``claude_projects_dir`` / ``codex_sessions_dir`` do NOT track this swap.
-    Code that calls ``Path.home()`` at request time (e.g. ``resolver.py`` after
-    its lazy refactor) DOES see the swap.
-
-    If a test in the allowlist needs to assert on in-process Claude project
-    enumeration, expect zero results: the indexer still walks the sandbox.
+    The CLI inherits the swapped ``$HOME`` for authentication. Pin Flowpad's
+    own data root before that swap unless the caller supplied FLOW_HOME:
+    ``get_instance_settings()`` re-resolves it on every lookup, so an unpinned
+    root would combine a real instance's SOD file with the test keyring.
+    Yield only the injected fallback so the live-instance resolver can
+    distinguish it from a caller's explicit launcher root.
 
     Tests in ``_REAL_HOME_TEST_MODULES`` need the user's real ``.claude/`` so
-    the CLI subprocess inherits working auth. All other long tests keep the
-    sandbox HOME from the parent conftest so the indexer doesn't walk the
-    real projects tree.
+    the CLI subprocess inherits working auth. Provider paths derived from HOME
+    can also follow the swap. All other long tests keep the sandbox HOME so the
+    indexer doesn't walk the real projects tree.
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
+        original_flow_home = os.environ.get("FLOW_HOME")
+        injected_flow_home = None
+        if not original_flow_home:
+            injected_flow_home = str(Path(_SANDBOX_HOME) / ".flow")
+            os.environ["FLOW_HOME"] = injected_flow_home
         os.environ["HOME"] = _REAL_HOME
         os.environ["USERPROFILE"] = _REAL_HOME
         try:
-            yield
+            yield injected_flow_home
         finally:
             os.environ["HOME"] = _SANDBOX_HOME
             os.environ["USERPROFILE"] = _SANDBOX_USERPROFILE
+            if original_flow_home is None:
+                os.environ.pop("FLOW_HOME", None)
+            else:
+                os.environ["FLOW_HOME"] = original_flow_home
     else:
-        yield
+        yield None
 
 
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
 from tests.api.conftest import (  # noqa: F401, E402
     _rebind_session_db_driver,
     bootstrap_payload,
@@ -249,23 +258,6 @@ from tests.api.conftest import (  # noqa: F401, E402
     drain_background_tasks,
     reset_db_for_testclient,
 )
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    """Convert TimeoutError / ApiErrorTimeoutError failures to skips.
-
-    pytest-asyncio 0.24 uses finalizers, so try/yield/except fixtures do not
-    catch exceptions from async tests.  This hook intercepts the report after
-    the call phase and downgrades the result when the failure is an external
-    infrastructure problem (API slow or unreachable), not a logic error.
-    """
-    outcome = yield
-    rep = outcome.get_result()
-    if rep.when == "call" and rep.failed and call.excinfo is not None:
-        if issubclass(call.excinfo.type, (ApiErrorTimeoutError, TimeoutError)):
-            rep.outcome = "skipped"
-            rep.longrepr = ("", 0, f"Skipped: Anthropic API issue — {call.excinfo.value}")
 
 
 @pytest.fixture()

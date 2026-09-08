@@ -1,4 +1,4 @@
-"""Tests for SchemaRegistry — TypeInfo, registration, persistence, logging."""
+"""Tests for SchemaRegistry — TypeInfo, in-memory registration, logging."""
 
 from __future__ import annotations
 
@@ -191,43 +191,32 @@ def test_get_default_index_types_fallback_when_empty():
 
 
 # ---------------------------------------------------------------------------
-# SchemaRegistry — persistence
+# SchemaRegistry — registration leaves schema storage untouched
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason="SchemaRegistry.register() no longer writes type_info.json to disk. "
-    "Module docstring still references it but implementation only stores in cls._types."
-)
-def test_persist_writes_type_info_json(tmp_path):
+def test_registration_does_not_create_schema_directory(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        SchemaRegistry.register(TypeInfo(type_name="persist_me", locations=["record"]))
-    json_file = tmp_path / "types" / "persist_me" / "type_info.json"
-    assert json_file.exists()
-    data = json.loads(json_file.read_text())
-    assert data["type_name"] == "persist_me"
-    _fresh_registry()
-
-
-@pytest.mark.skip(
-    reason="SchemaRegistry.register() no longer writes type_info.json to disk."
-)
-def test_persist_skips_if_hash_unchanged(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        info = TypeInfo(type_name="stable")
+    schema_dir = tmp_path / "schema"
+    info = TypeInfo(type_name="memory_only", locations=["record"])
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: schema_dir):
         SchemaRegistry.register(info)
-        json_file = tmp_path / "types" / "stable" / "type_info.json"
-        mtime1 = json_file.stat().st_mtime
+        assert SchemaRegistry.get(info.type_name) is info
+    assert not schema_dir.exists()
+    _fresh_registry()
 
-        # Re-register same info — hash unchanged, file should NOT be rewritten
-        import time
 
-        time.sleep(0.01)
-        SchemaRegistry.register(info)
-        mtime2 = json_file.stat().st_mtime
-    assert mtime1 == mtime2
+def test_reregistration_preserves_legacy_type_info_json(tmp_path):
+    _fresh_registry()
+    legacy_file = tmp_path / "types" / "stable" / "type_info.json"
+    legacy_file.parent.mkdir(parents=True)
+    legacy_bytes = b'{"type_name":"stable","index_fields":["legacy"]}\n'
+    legacy_file.write_bytes(legacy_bytes)
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+        SchemaRegistry.register(TypeInfo(type_name="stable", index_fields=["before"]))
+        SchemaRegistry.register(TypeInfo(type_name="stable", index_fields=["after"]))
+        assert SchemaRegistry.get("stable").index_fields == ["after"]
+    assert legacy_file.read_bytes() == legacy_bytes
     _fresh_registry()
 
 
@@ -306,20 +295,32 @@ def test_get_last_index_at_returns_timestamp(tmp_path):
     assert result == ts
 
 
-@pytest.mark.skip(
-    reason="get_last_global_index_at was removed; the global timestamp is now "
-    "derived in get_index_status as max(per_type[i].last_indexed_at)."
-)
-def test_get_last_global_index_at_none_when_no_log(tmp_path):
-    pass
+@pytest.mark.asyncio
+async def test_get_index_status_ignores_legacy_global_history(tmp_path):
+    _append_jsonl(tmp_path / "index_log.jsonl", {"created_at": "2026-09-01T12:00:00+00:00"})
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+        status = await SchemaRegistry.get_index_status(types=["skill", "bookmark"])
+    assert status.last_indexed_at is None
+    assert status.never_indexed is True
+    assert all(item.last_indexed_at is None for item in status.per_type)
 
 
-@pytest.mark.skip(
-    reason="get_last_global_index_at was removed; the global timestamp is now "
-    "derived in get_index_status as max(per_type[i].last_indexed_at)."
-)
-def test_get_last_global_index_at_returns_last(tmp_path):
-    pass
+@pytest.mark.asyncio
+async def test_get_index_status_uses_latest_requested_type_timestamp(tmp_path):
+    newer = "2026-09-01T12:00:00+00:00"
+    older = "2026-08-01T12:00:00+00:00"
+    _append_jsonl(tmp_path / "types" / "skill" / "index_log.jsonl", {"created_at": newer})
+    _append_jsonl(tmp_path / "types" / "bookmark" / "index_log.jsonl", {"created_at": older})
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+        for requested_types in (["skill", "bookmark", "spec"], ["spec", "bookmark", "skill"]):
+            status = await SchemaRegistry.get_index_status(types=requested_types)
+            assert status.last_indexed_at == newer
+            assert status.never_indexed is False
+            assert {item.type_name: item.last_indexed_at for item in status.per_type} == {
+                "skill": newer,
+                "bookmark": older,
+                "spec": None,
+            }
 
 
 # ---------------------------------------------------------------------------

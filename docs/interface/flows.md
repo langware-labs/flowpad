@@ -566,12 +566,9 @@ vs `POST /graph/shell`).
 - **Fork has no Python/SDK integration test** (browser-only, per above). The
   `visible: true` create-payload contract (the exact bug the search-dock scenario guards) is
   never exercised by an automated run.
-- **`tests/api/test_agentic_process_execute.py` is an empty file (0 bytes).** The headless
-  execute path has TS long-test coverage (`agentic_process_execute.test.ts`) but **zero** Python
-  API coverage despite the file existing as a placeholder.
-- **`findSession`/`get_by_worker_id` for Codex are gated on the `codex` binary**
-  (`requires_codex`, `test_pty_process_e2e.py:22-25`), so the Codex discovery+upsert path is
-  skipped on any host without the optional CLI — Claude is the only always-exercised sibling.
+- **Codex `get_by_worker_id` is gated on the `codex` binary** (`requires_codex`
+  in `test_pty_process_e2e.py`) because its upsert launches a real Shell and PTY.
+  Codex `findSession` is a read-only lookup and runs without the optional CLI.
 - **`recovery` mixes on-demand `open()` resume with a visible-AP watchdog**, but no single test
   proves the two don't double-spawn (one revives on load, one revives on a ~5s watchdog tick);
   `test_pty_recovery_on_demand.py` proves the *global* sweep is gone, and the TS tests prove the
