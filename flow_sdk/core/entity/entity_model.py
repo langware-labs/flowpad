@@ -2951,6 +2951,16 @@ class Entity(DBEntity):
             "content": content,
             "attributes": attributes,
         }
+        # Carried only when the caller supplied them, so every existing
+        # emitter's wire shape is unchanged. ``created_time`` matters on this
+        # path specifically: ``send_flow_data_to_entity`` stamps its own
+        # send-time ``t`` attribute over whatever the caller set, so the
+        # originating time can only survive as its own field (the client maps it
+        # back, mirroring ``FlowData.fromJSON``).
+        for key in ("process_entry", "created_time", "index"):
+            value = flow_data.get(key)
+            if value is not None:
+                frontend_flow_data[key] = value
 
         await send_flow_data_to_entity(self.typeid, frontend_flow_data)
 

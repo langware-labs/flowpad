@@ -516,10 +516,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
-    // Set timestamp if not present
-    if (!attributes['t']) {
+    // Prefer the ORIGINATING time when the emitter carried one. The WS layer
+    // stamps its own send-time `t` over the caller's attributes
+    // (`send_flow_data_to_entity`), so for a transcript-sourced row `t` is when
+    // the frame was broadcast, not when the agent did the thing — which would
+    // sort a pushed row after its own history twin. Same `created_time` → `t`
+    // mapping `FlowData.fromJSON` applies on the history path.
+    const originatedAt = (flowDataJson as { created_time?: unknown }).created_time;
+    if (typeof originatedAt === 'string' && originatedAt) {
+      attributes['t'] = originatedAt;
+    } else if (!attributes['t']) {
       attributes['t'] = new Date().toISOString();
     }
+    const wireIndex = (flowDataJson as { index?: unknown }).index;
+    if (wireIndex !== undefined && !attributes['i']) attributes['i'] = String(wireIndex);
 
     const flowData = new FlowData(elementType, content, attributes);
     // The FlowData constructor already reads `attributes['source']` and sets
