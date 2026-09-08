@@ -6862,6 +6862,29 @@ class AgenticProcess(Entity):
             "worker": worker_snapshot,
         }
 
+    def _restart_reference_hash(self) -> str:
+        """The hash the running worker's config SHOULD have, by today's algorithm.
+
+        Pure — it computes, it does not assign. ``save()`` decides whether to
+        write the result back.
+
+        ``last_started_hash`` is only as trustworthy as the build that wrote
+        it: the hashed payload is normalized before hashing, and that
+        normalization has changed (929f9b0e9 began stripping
+        ``TRANSPORT_DERIVED_WORKER_FIELDS``). Recomputing from
+        ``last_started_snapshot`` — the payload itself, persisted alongside the
+        hash — yields the value today's algorithm would have produced for the
+        very same launch, which is what the live snapshot must be compared
+        against.
+
+        Falls back to the stored hash when there is no snapshot to recompute
+        from (rows predating ``last_started_snapshot``): nothing better is
+        available, and the old behaviour is the safe answer there.
+        """
+        if not self.last_started_snapshot:
+            return self.last_started_hash or ""
+        return self._restart_snapshot(self.last_started_snapshot)
+
     def _restart_snapshot(self, payload: dict[str, Any] | None = None) -> str:
         """Stable hash over finalized generic + worker launch inputs.
 
@@ -6955,7 +6978,24 @@ class AgenticProcess(Entity):
         """
         await self._preserve_latest_display_pin()
         if not self._is_in_start_lifecycle() and self.status == ProcessStatus.RUNNING.value and self.last_started_hash:
-            self.restart_required = self._restart_snapshot() != self.last_started_hash
+            # Compare against a hash RECOMPUTED from the persisted snapshot,
+            # not the stored one. The hashed payload is normalized by
+            # `_comparable_restart_payload`, which began stripping
+            # TRANSPORT_DERIVED_WORKER_FIELDS in 929f9b0e9. A row whose
+            # `last_started_hash` was written before that build hashed those
+            # fields IN, so it can never equal today's hash of the same config
+            # — the restart glow lit on a process nobody had touched, while
+            # `restart-info` reported changed=[] because `_diff_snapshot_fields`
+            # compares payloads rather than hashes. The two comparators
+            # disagreed; this makes them agree.
+            reference = self._restart_reference_hash()
+            if reference != self.last_started_hash:
+                # Refresh explicitly, so the skew is corrected once and visibly
+                # rather than being re-derived on every save. `adopt_worker_session`
+                # already does the same recompute on session rotation — this is
+                # the same move for a process that has not rotated yet.
+                self.last_started_hash = reference
+            self.restart_required = self._restart_snapshot() != reference
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
