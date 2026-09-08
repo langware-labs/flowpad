@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ExternalLink, FolderOpen } from 'lucide-react';
 import { FSRef, TypeId } from '@sdk';
@@ -22,6 +22,12 @@ import { CopyPathButton } from './CopyPathButton';
  * Opens on HOVER, like the project crumb's card beside it — the two are the
  * same kind of affordance and must not need different gestures. A click opens
  * it too, for touch and for anyone who reaches for it that way.
+ *
+ * Radix dismisses a click-opened card on an outside pointer-down and on Escape
+ * by itself. What it cannot see is a click inside an EMBEDDED FRAME — the html
+ * preview, a webapp display, the deck viewer — because those events never reach
+ * this document, and the card then hangs over the page the user just clicked
+ * into. Focus is the one signal that crosses that boundary, so it closes on it.
  */
 export function CrumbDetailsPopover({
   label,
@@ -42,11 +48,26 @@ export function CrumbDetailsPopover({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
+  /** Whether the card was open when the trigger was pressed — read on the click
+   *  that follows, because Radix's own outside-dismiss (the trigger sits
+   *  outside the card) has already flipped `open` to false by then, and
+   *  toggling THAT would re-open the card the press meant to close. */
+  const openAtPointerDown = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onWindowBlur = () => {
+      if (document.activeElement instanceof HTMLIFrameElement) setOpen(false);
+    };
+    window.addEventListener('blur', onWindowBlur);
+    return () => window.removeEventListener('blur', onWindowBlur);
+  }, [open]);
 
   const parentDir = path.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || path;
   const filesTarget = directory ? path : parentDir;
 
   const openInFiles = useCallback(() => {
+    setOpen(false);
     navigation.openDock(DockPointer.forExplorer(filesTarget));
   }, [navigation, filesTarget]);
 
@@ -58,7 +79,13 @@ export function CrumbDetailsPopover({
 
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
-      <HoverCardTrigger asChild onClick={() => setOpen(true)}>
+      <HoverCardTrigger
+        asChild
+        onPointerDownCapture={() => {
+          openAtPointerDown.current = open;
+        }}
+        onClick={() => setOpen(!openAtPointerDown.current)}
+      >
         {children}
       </HoverCardTrigger>
       <HoverCardContent side="bottom" align="start" className="w-96 p-3" data-testid="top-nav-crumb-details">
@@ -81,7 +108,10 @@ export function CrumbDetailsPopover({
           {canReveal && (
             <button
               type="button"
-              onClick={() => void fsRef.open(directory ? undefined : { select: true })}
+              onClick={() => {
+                setOpen(false);
+                void fsRef.open(directory ? undefined : { select: true });
+              }}
               data-testid="top-nav-crumb-reveal"
               className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
