@@ -236,8 +236,13 @@ describe('the navigation bar', () => {
     await user.click(screen.getByTestId('top-nav-project-list'));
 
     const popover = await screen.findByTestId('top-nav-project-popover');
-    // Two project rows plus the trailing "Open project" button.
-    expect(within(popover).getAllByRole('button')).toHaveLength(3);
+    // Two project rows, each with its own close-all X, plus the trailing "Open
+    // project" button. Asserted by identity rather than as a bare count, so
+    // adding a per-row control doesn't read as a regression.
+    expect(within(popover).getByRole('button', { name: 'Acme 2' })).toBeTruthy();
+    expect(within(popover).getByRole('button', { name: 'Beta 1' })).toBeTruthy();
+    expect(within(popover).getByTestId(`projects-counter-close-${PROJECT_ID}`)).toBeTruthy();
+    expect(within(popover).getByTestId(`projects-counter-close-${OTHER_PROJECT_ID}`)).toBeTruthy();
     expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
     await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
 
