@@ -151,7 +151,7 @@ class ComputeNode(
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         """Claim the single-flight slot for ``job_name``, or raise if it is held.
 
-        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        The slot IS an ``Activity`` at ``(subject_entity=typeid, path=job_name)`` — one activity per
         address is the same statement this registry used to make, so the single-flight
         decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
         survives only as the carrier for the legacy ``IndexProgressTable`` payload while
@@ -160,7 +160,7 @@ class ComputeNode(
         from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
+        claimed = Activity.try_claim(job_name, subject_entity=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
@@ -187,7 +187,7 @@ class ComputeNode(
         """
         from flow_sdk.activity import monitor  # noqa: PLC0415
 
-        if monitor.holder(job_name, scope=str(self.typeid)) is None:
+        if monitor.holder(job_name, subject_entity=str(self.typeid)) is None:
             return None
         return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 

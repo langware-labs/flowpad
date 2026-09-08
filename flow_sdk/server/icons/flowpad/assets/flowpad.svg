@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Generator: Adobe Illustrator 25.4.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+
+<svg
+   version="1.1"
+   id="Laag_1"
+   x="0px"
+   y="0px"
+   viewBox="0 0 1000 1000"
+   enable-background="new 0 0 1000 507.4"
+   xml:space="preserve"
+   sodipodi:docname="flowpad_logomark-dark-square.svg"
+   width="1000"
+   height="1000"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs3" /><sodipodi:namedview
+   id="namedview3"
+   pagecolor="#ffffff"
+   bordercolor="#999999"
+   borderopacity="1"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   inkscape:zoom="0.46511628"
+   inkscape:cx="500.94999"
+   inkscape:cy="252.625"
+   inkscape:window-width="1920"
+   inkscape:window-height="1080"
+   inkscape:window-x="0"
+   inkscape:window-y="0"
+   inkscape:window-maximized="0"
+   inkscape:current-layer="Laag_1" />
+<g
+   id="g3"
+   transform="translate(0,245.1)">
+	<linearGradient
+   id="SVGID_1_"
+   gradientUnits="userSpaceOnUse"
+   x1="167.36929"
+   y1="586.31232"
+   x2="832.63019"
+   y2="-78.9487"
+   gradientTransform="translate(0,8.6)">
+		<stop
+   offset="0"
+   style="stop-color:#5E34DB"
+   id="stop1" />
+		<stop
+   offset="0.4994"
+   style="stop-color:#3061F5"
+   id="stop2" />
+		<stop
+   offset="1"
+   style="stop-color:#1FC2D2"
+   id="stop3" />
+	</linearGradient>
+	<path
+   fill="url(#SVGID_1_)"
+   d="M 500,262.3 C 360,262.3 246.1,376 245.7,516 H 157.3 C 157.6,327.3 311.2,173.9 500,173.9 Z M 842.7,8.6 H 754.3 C 753.9,148.5 640,262.3 500,262.3 v 88.4 C 688.8,350.7 842.4,197.3 842.7,8.6 Z M 910,97 C 869,285.7 700.8,427.5 500,427.5 v 88.4 C 749.7,515.9 957.8,334.7 1000,97 Z M 500,97 V 8.6 C 250.3,8.6 42.2,189.8 0,427.5 H 90 C 131,238.8 299.2,97 500,97 Z"
+   id="path3"
+   style="fill:url(#SVGID_1_)" />
+</g>
+</svg>

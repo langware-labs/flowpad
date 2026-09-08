@@ -601,6 +601,66 @@ its own review (and `log_mode` is enforced nowhere today).
   50-file batch yields exactly one envelope, log rows carry `event_id`, and
   "Run now" on a schedule rule lands a row in the feed within one poll.
 
+## `app.ready` — the backend lifecycle signal  ✅ (2026-09-08)
+
+The first backend-emitted tag under the `app` family, which until now meant
+"frontend-emitted". Emitted once per boot from the tail of `_on_server_startup`
+(`flow_sdk/server/app.py`), and forwarded (`FORWARDED_TAG_PATTERNS`) so a client
+that is already up hears it directly.
+
+**The emit order is the contract, and it is load-bearing:**
+
+```
+await first_bootstrap_served.wait()      # "ready" = someone asked for their world
+await gather(_system_content_index_task) # the shipped assets are now indexed
+await reconcile_wizard_triggers()        # ...and their triggers are armed
+publish_tag(make_tag_event("app.ready", …))
+```
+
+Steps 2 and 3 are what make the event mean anything. A Wizard shipped in a system
+project is discovered ONLY by the detached system-content index, and the bus has
+no durability (law 4): an unarmed subscriber at emit time does not receive the
+event late, it never receives it at all — and nothing anywhere would say why.
+Never reorder these four lines.
+
+**Once-per-machine lives on the TRIGGER, not on the event.** `Trigger.fire_once`
+suppresses a fire when `counter >= 1`, so the emitter needs no gate and an
+ordinary lifecycle event can fire on every boot. That is also why a wizard's
+declared subscription is a real `Trigger` row rather than the in-memory
+`subscriptions:` arming a GraphWorkflow uses: an in-memory subscription has
+nowhere to keep a counter across a restart.
+
+**Delivery is best-effort; the durable record is elsewhere.** `ws_forward._recent`
+is a bounded 200-entry debug ring for the Signals feed's first paint, not a
+delivery mechanism — a client connecting after the emit gets nothing live. What a
+late reader (or the container test) reads instead is the fired trigger's
+`counter` / `last_triggered` and the trigger-log JSONL row, whose
+`cause_event_id` joins back to this envelope's id.
+
+### Wizard triggers — derived, reconciled, pruned
+
+A `Wizard` asset declares its own subscriptions in `wizard.json`
+(`triggers: [{on, fire_once, target}]`). `reconcile_wizard_triggers()`
+(`flow_sdk/server/builtin_triggers.py`) turns them into TAG trigger rows.
+
+This is deliberately NOT an indexer hook: nothing in this tree creates a
+control-plane entity as a side effect of indexing an asset, and `Trigger(...)` is
+constructed in exactly two places, both seed paths. The reconcile is a third seed
+path — structurally `set_service_triggers()` with a computed spec list.
+
+Two consequences worth knowing:
+
+* `_register_post_save` now arms TAG triggers (it handled SCHEDULE and FSOP
+  only). Required, not incidental: wizard triggers are seeded AFTER the
+  `start_tag_triggers()` boot sweep, so without it they wait for the next
+  restart — silently.
+* The orphan **prune is a first** in this tree; nothing else deletes a derived
+  entity when its asset stops declaring it. It is scoped to the `wizard_` uname
+  prefix, and that prefix is the whole safety argument: unames are minted from
+  the asset slug, so a user-authored trigger can never land in the namespace.
+
+---
+
 ## Phase 9 — Recorder + policy hardening  ☐
 
 `EventBus.on("*", sink)` recorder interface; the four jsonl sinks (RunJournal,

@@ -12,12 +12,13 @@ Adding a new system trigger:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.instance_settings import get_instance_settings
 
 _log = logging.getLogger(__name__)
@@ -130,7 +131,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
 _UPSERT_SKIP_KEYS = frozenset({"uname", "counter", "last_triggered", "last_run", "next_run"})
 
 
-async def _upsert_one(spec: dict[str, Any]) -> None:
+async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = None) -> None:
     """Find-by-uname, then update-or-create. Idempotent across server restarts.
 
     On create, also runs the trigger-type's post-save registration so the
@@ -140,10 +141,13 @@ async def _upsert_one(spec: dict[str, Any]) -> None:
     matter at registration time anyway.
     """
     uname = spec["uname"]
-    try:
-        existing = await Trigger.get_by_uname(uname)
-    except Exception:
-        existing = None
+    if existing is None:
+        # Only when the caller has not already read it. A reconcile that reads
+        # the whole derived set once passes the row straight in.
+        try:
+            existing = await Trigger.get_by_uname(uname)
+        except Exception:
+            existing = None
 
     if existing is None:
         try:
@@ -188,6 +192,20 @@ async def _register_post_save(entity: Trigger) -> None:
 
             if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:
                 await fsop_watcher.on_trigger_saved(entity)
+        elif entity.trigger_type == TriggerType.TAG:
+            # Unlike FSOp, boot order does NOT cover this. The TAG boot sweep
+            # (`start_tag_triggers`, app.py:305) runs once, and any trigger
+            # seeded afterwards — every wizard trigger, because the system
+            # content index is detached and lands later — would sit unarmed
+            # until the next restart. The bus has no durability, so an unarmed
+            # subscriber at emit time means the event is simply gone, with
+            # nothing anywhere saying why the wizard never ran.
+            #
+            # `register_tag_trigger` unregisters-then-registers, so this is
+            # correct on create and on update alike.
+            from flow_sdk.builtin.tag_triggers import register_tag_trigger
+
+            register_tag_trigger(entity)
     except Exception:
         _log.exception("Post-save registration failed for trigger %r", entity.uname)
 
@@ -231,3 +249,201 @@ async def set_service_triggers() -> None:
         toplog.seed_file(settings.toplog_enabled)
     except Exception:
         _log.exception("Failed to seed/apply initial toplog state")
+
+
+# ── Wizard triggers — derived from indexed Wizard assets ─────────────────────
+#
+# A Wizard declares its own bus subscriptions in `wizard.json`. Those become
+# real Trigger rows, reconciled here.
+#
+# Deliberately NOT hooked into the indexer. Nothing in this tree creates a
+# control-plane entity as a side effect of indexing an asset, and this is not
+# the change that should introduce it: `Trigger(...)` is constructed in exactly
+# two places and both are seed paths. So this is a seed path too — structurally
+# `set_service_triggers()`, only with a spec list that is computed from what is
+# on disk instead of written out literally.
+#
+# It also answers "why a row rather than an in-memory subscription, like a
+# GraphWorkflow's `subscriptions:` block?" — `fire_once` needs a counter that
+# survives a restart, and an in-memory subscription has nowhere to keep one.
+
+#: Every derived wizard trigger's uname starts with this. The prefix is what
+#: makes the orphan prune below safe: unames are minted here from the asset
+#: slug, so a user-authored trigger can never land in the namespace and be
+#: mistaken for an orphan of ours.
+WIZARD_TRIGGER_UNAME_PREFIX = "wizard_"
+
+
+@trigger_callbacks.register(
+    "builtin_run_wizard",
+    meaning="Fired by a bus tag a Wizard asset declared for itself. Resolves the "
+            "Wizard from the trigger's path and runs it, reporting through the "
+            "shared Activity tree. A shipped wizard runs unprompted; anything "
+            "else is refused here, because running a cloned repo's shell "
+            "one-liners unattended would make opening a project a code-execution "
+            "primitive.",
+)
+async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.wizard import read_wizard  # noqa: PLC0415
+
+    asset_ref = (trigger.path or "").strip()
+    if not asset_ref:
+        _log.warning("wizard trigger %r carries no path; nothing to run", trigger.uname)
+        return
+
+    wizard = await Wizard.get_one({"asset_ref": asset_ref})
+    spec = wizard.spec() if wizard is not None else read_wizard(Path(asset_ref))
+    if spec is None:
+        _log.warning("wizard trigger %r: no readable wizard at %s", trigger.uname, asset_ref)
+        return
+
+    trusted = wizard.is_system() if wizard is not None else False
+    if not trusted:
+        # No client to ask, and a trigger fire is by definition unattended.
+        # Refusing is the only safe answer; the user can still run it from the
+        # UI, which is where the approval prompt lives.
+        _log.warning(
+            "wizard trigger %r: %s is not shipped with Flowpad, so it will not run "
+            "unattended. Run it from the app to approve it.",
+            trigger.uname, asset_ref,
+        )
+        return
+
+    from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+
+    try:
+        result = await execute_wizard(
+            str(wizard.id) if wizard else "unknown", spec, asset_ref,
+            trusted=True,
+            # INSTANCE scope (None), deliberately — not the wizard entity.
+            #
+            # `_send` routes by subject entity: one naming an entity reaches only
+            # that entity's WATCHERS, while an unscoped one belongs to the box and
+            # is broadcast to every connection. A trigger-fired run is unattended
+            # by definition — it fires at boot, before anyone has opened the wizard
+            # and usually before a browser exists at all — so entity scope
+            # addressed a complete, correct progress tree to an audience of zero.
+            # Verified on a clean container: the tree was right at its scoped
+            # address and the footer chip's unscoped replay returned zero rows.
+            #
+            # Setting up the machine at startup IS box-level work, the same shape
+            # as an index walk, so it belongs in the same chip. The UI path keeps
+            # entity scope, because there the viewer IS watching. Which of the two
+            # is used changes only WHO SEES the run — never who may start one:
+            # `execute_wizard` holds the wizard's own slot for that.
+            subject_entity=None,
+        )
+    except RuntimeError as exc:
+        _log.info("wizard trigger %r: %s", trigger.uname, exc)
+        return
+    _log.info("wizard trigger %r: %s — %s", trigger.uname,
+              "ok" if result.ok else "failed", result.message)
+
+
+def _wizard_slug(asset_ref: str) -> str:
+    """A uname-safe slug from a wizard's folder name."""
+    from pathlib import Path  # noqa: PLC0415
+
+    raw = Path(asset_ref).name or "wizard"
+    return "".join(ch if ch.isalnum() else "_" for ch in raw.lower()).strip("_") or "wizard"
+
+
+async def wizard_trigger_specs() -> list[dict[str, Any]]:
+    """One TAG trigger spec per subscription declared by an indexed Wizard.
+
+    A malformed pattern is dropped with a warning rather than raising: the
+    document may have come from a repo someone cloned, and one bad wizard must
+    not stop the others from arming.
+    """
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.tags.bus import validate_bus_pattern  # noqa: PLC0415
+
+    specs: list[dict[str, Any]] = []
+    try:
+        wizards = await Wizard.get_all({})
+    except Exception:
+        _log.exception("wizard triggers: could not list wizards")
+        return specs
+
+    for wizard in wizards:
+        spec = wizard.spec()
+        if spec is None or not spec.enabled or not wizard.enabled:
+            continue
+        slug = _wizard_slug(wizard.asset_ref)
+        for index, declared in enumerate(spec.triggers):
+            problem = validate_bus_pattern(declared.on)
+            if problem:
+                _log.warning("wizard %r trigger %d: %s", wizard.name, index, problem)
+                continue
+            specs.append(dict(
+                uname=f"{WIZARD_TRIGGER_UNAME_PREFIX}{slug}_{index}",
+                name=f"{spec.name or wizard.name or slug} ({declared.on})",
+                description=(
+                    f"Declared by the {spec.name or slug} wizard. Runs it when "
+                    f"{declared.on} fires"
+                    + (", once ever." if declared.fire_once else ".")
+                ),
+                trigger_type=TriggerType.TAG,
+                tag_pattern=declared.on,
+                tag_target=declared.target or None,
+                fire_once=declared.fire_once,
+                path=wizard.asset_ref,
+                actions=[TriggerAction(
+                    action_type=ActionType.CALLBACK,
+                    callback_name="builtin_run_wizard",
+                )],
+            ))
+    return specs
+
+
+async def reconcile_wizard_triggers() -> None:
+    """Converge the derived wizard triggers, and prune the orphans.
+
+    Upsert reuses `_upsert_one`, so `counter` / `last_triggered` survive — which
+    matters more here than anywhere else: clobbering the counter of a
+    `fire_once` trigger would re-arm it and re-run the wizard.
+
+    The prune is a first in this tree — nothing else deletes a derived entity
+    when its asset stops declaring it. It is scoped to the `wizard_` uname
+    prefix, and only removes rows no live wizard still declares.
+    """
+    try:
+        specs = await wizard_trigger_specs()
+    except Exception:
+        _log.exception("wizard triggers: spec derivation failed")
+        return
+
+    # ONE query serves both halves. It used to be a `get_by_uname` per spec
+    # followed by an unscoped `Trigger.get_all({})` — an N+1 whose final scan
+    # re-fetched every row the N lookups had just read one at a time, and an
+    # unscoped read of the whole table besides (which this repo bans outright).
+    # The prefix that identifies these rows is the same one the prune needs, so
+    # a single `$LIKE` answers "what exists" for the upsert and "what is orphaned"
+    # for the prune.
+    try:
+        existing_rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(
+            op=QueryOp.LIKE, operands=["uname", f"{WIZARD_TRIGGER_UNAME_PREFIX}%"],
+        )))
+    except Exception:
+        _log.exception("wizard triggers: could not read the existing rows")
+        return
+    by_uname = {(getattr(row, "uname", "") or ""): row for row in existing_rows}
+
+    for spec in specs:
+        await _upsert_one(spec, existing=by_uname.get(spec["uname"]))
+
+    wanted = {spec["uname"] for spec in specs}
+    try:
+        from flow_sdk.builtin.tag_triggers import unregister_tag_trigger  # noqa: PLC0415
+
+        for uname, row in by_uname.items():
+            if uname in wanted:
+                continue
+            _log.info("wizard triggers: pruning orphan %r", uname)
+            unregister_tag_trigger(row.id)
+            await row.delete()
+    except Exception:
+        _log.exception("wizard triggers: orphan prune failed")

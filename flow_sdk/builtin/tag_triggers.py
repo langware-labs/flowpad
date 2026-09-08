@@ -227,6 +227,17 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
                     "rule was disabled between arming and this event", event)
         return
 
+    # FIRE-ONCE — the durable "already happened here" record, kept on the row
+    # rather than in a file beside whoever emits the event. Checked before the
+    # storm guard because a spent trigger should not consume a fire budget, and
+    # recorded rather than silently dropped: "the rule is armed, the event
+    # matched, and nothing happened" is the single most confusing non-fire in
+    # the design, which is exactly what the events screen exists to explain.
+    if trigger.fire_once and trigger.counter >= 1:
+        _suppressed(trigger, "already_fired",
+                    f"rule is fire-once and already fired at {trigger.last_run}", event)
+        return
+
     # SELF-LOOP BRAKE — mirrors the flow-subscription brake at
     # graph_workflow_manager/manager.py:372. Every `trigger.*` emission puts
     # `trigger:<id>` innermost in ctx.scope, and a tag fire PROPAGATES the
@@ -273,10 +284,12 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # Shared fire steps (same helpers as schedule/fsop). Tag fires carry no
     # file changes; the causing ENVELOPE rides through to the run entry, where
     # phase 7 preserves its id — so a run and this log row share one join key.
-    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
-                                     envelope=event, trigger=trigger)
-    await dispatch_trigger_actions(trigger, changes=[])
-
+    # BEFORE the work, for the same reason `trigger.fired` is emitted before it:
+    # the row means "this rule matched this envelope and dispatch has begun".
+    # Written afterwards, the causal join is invisible for as long as the actions
+    # run — a wizard action runs an agent for MINUTES — and lost entirely if they
+    # hang or the process dies. The counter said 1 while the log said nothing had
+    # ever fired, which is the one question this row exists to answer.
     _append_log(trigger.name or trigger_id, {
         "hook_event": "tag_fire",
         "trigger": True,
@@ -288,6 +301,10 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
         **_cause_keys(event),
         "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
     })
+
+    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
+                                     envelope=event, trigger=trigger)
+    await dispatch_trigger_actions(trigger, changes=[])
 
 
 def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:

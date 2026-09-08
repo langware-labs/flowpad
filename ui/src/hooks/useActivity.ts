@@ -85,8 +85,8 @@ export function useElapsedMs(spec: ActivityProgressSpec | null): number {
   return Math.max(end - Date.parse(spec.started_at), 0);
 }
 
-export function useActivity(path: string, scope?: string | null): ActivityView {
-  const spec = useActivitySpec(path, scope);
+export function useActivity(path: string, subject_entity?: string | null): ActivityView {
+  const spec = useActivitySpec(path, subject_entity);
   const now = useClock();
   const elapsedMs = useElapsedMs(spec);
 
