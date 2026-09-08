@@ -483,8 +483,20 @@ async def _load_status_targets(
 def _pointer_project_id(pointer: str | None) -> str | None:
     """The project id NAMED by a project-scoped dock pointer — pure parse, no
     existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
-    Returns the id only when UUID-shaped (same reap-eligibility rule as
-    ``_existing_project_ids``); any other pointer shape → ``None``."""
+
+    The UUID check here is a PARSE guard, deliberately NOT the reap-eligibility
+    rule ``_existing_project_ids`` uses — those two once agreed, and no longer do.
+    This one asks "does this pointer segment name an id at all", the address
+    question every URL/VFS matcher asks, which is why it goes through the
+    version-agnostic ``is_valid_uuid`` (CLAUDE.md forbids tightening it).
+    ``_existing_project_ids`` asks the different question "is this ref dangling",
+    and answers it from the DB for every id shape.
+
+    Consequence worth knowing: a pointer naming a NON-id (``proj-123``) parses to
+    ``None`` and so escapes the pointer-orphan reap, even though its ``project_id``
+    twin is now collected. Such a tab navigates to ``/dock/project/<junk>`` →
+    "Project not found" forever (RCA 2026-07-08). Closing that gap means reaping
+    on un-parseable pointers too, which is a separate behaviour change."""
     if not pointer:
         return None
     try:
