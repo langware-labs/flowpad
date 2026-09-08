@@ -96,6 +96,7 @@ export * from './members';
 export * from './git-workdir';
 export * from './inbox-manager';
 export * from './journey';
+export * from './wizard';
 export * from './wiki';
 export * from './rag-index';
 // The composer's two sends: into a conversation, and back out its channel.
