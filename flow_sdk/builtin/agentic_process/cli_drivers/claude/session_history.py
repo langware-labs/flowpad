@@ -148,8 +148,6 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
             fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
             fd.attributes["subtype"] = kind
             fd.attributes["observation-kind"] = observation_kind
-            if entry_id:
-                fd.attributes["transcript-entry-id"] = str(entry_id)
             # ``entry.to_flow_data()`` mints its FlowData without a time, so the
             # constructor defaults ``created_time`` to NOW — i.e. parse time, not
             # when the agent did the thing. The message branch below carries the
