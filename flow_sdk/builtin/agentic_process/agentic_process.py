@@ -5546,34 +5546,6 @@ class AgenticProcess(Entity):
         return self.driver.skills_root(self, assets_dir)
 
     @staticmethod
-    def _demote_markdown_headings(body: str, levels: int = 2) -> str:
-        """Push a persona body's own headings DOWN so it nests under its label.
-
-        A persona body opens at ``# <Title>`` because it is authored as a
-        standalone document. Pasted verbatim under a ``## <name>`` label, that
-        H1 out-ranks both the label and the block's own H1, so the reader stops
-        seeing a subordinate spec and starts seeing a second top-level
-        instruction set — which is how a secondary persona used to capture the
-        session. Fenced code is left alone: ``#`` there is a comment or a shell
-        prompt, not a heading.
-        """
-        out: list[str] = []
-        in_fence = False
-        for line in body.splitlines():
-            stripped = line.lstrip()
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                in_fence = not in_fence
-                out.append(line)
-                continue
-            if not in_fence and stripped.startswith("#"):
-                hashes = len(stripped) - len(stripped.lstrip("#"))
-                if 1 <= hashes <= 6 and stripped[hashes : hashes + 1] in ("", " "):
-                    out.append("#" * min(hashes + levels, 6) + stripped[hashes:])
-                    continue
-            out.append(line)
-        return "\n".join(out)
-
-    @staticmethod
     def _render_agents_instruction_block(agents_json: dict | None) -> str:
         """Render embedded personas: the FIRST is the principal, the rest ride under it.
 
@@ -5635,7 +5607,7 @@ class AgenticProcess(Entity):
             if sub_desc:
                 sections.append(sub_desc)
             if sub_body:
-                sections.append(AgenticProcess._demote_markdown_headings(sub_body))
+                sections.append(sub_body)
         return "\n".join(sections)
 
     def _load_materialized_agents_json(self, assets_dir: "Path") -> dict:
