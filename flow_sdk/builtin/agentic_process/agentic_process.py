@@ -1146,6 +1146,13 @@ class AgenticProcess(Entity):
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
         ),
     )
+    process_persona_path: str | None = APIField(
+        default=None,
+        description=(
+            "Assets-dir-relative path of the materialized sub-agent that IS this "
+            "process's persona (e.g. `.claude/agents/vibe.md`); None = no persona."
+        ),
+    )
     mcp_servers: list[McpSpec] = APIField(
         default_factory=list,
         description=(
@@ -5214,7 +5221,9 @@ class AgenticProcess(Entity):
     # ── State ─────────────────────────────────────────────────────────────────
 
     @action.post(action_name="load-embedded-subagent")
-    async def load_embedded_subagent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+    async def load_embedded_subagent_action(
+        self, asset_ref: str = "", set_ap_persona: bool = False
+    ) -> "ApiSuccessResponse | ApiFailResponse":
         """Load a sub-agent from its ``asset_ref`` and embed it into this process.
 
         ``asset_ref`` is the sub-agent record's own OS filesystem path (an ``FSRef``
@@ -5243,17 +5252,29 @@ class AgenticProcess(Entity):
         # it with `Path("/" + ref)` instead corrupted every Windows ref
         # (`C:\...` → `\C:\...`), so the file never existed and the embed failed.
         abs_path = Path(asset_ref).resolve()
+        # Both failures below used to return silently: the process then ran with
+        # no persona and NOTHING recorded it anywhere -- the browser console's
+        # `[Vibe] failed to embed` warning was the only trace a session ever left.
         if not abs_path.exists():
+            logger.warning(
+                "load-embedded-subagent(%s): agent file not found: %s%s",
+                self.id, abs_path, " (persona NOT set)" if set_ap_persona else "",
+            )
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = extract_subagent_from_path(abs_path)
         if agent is None:
+            logger.warning(
+                "load-embedded-subagent(%s): could not parse agent file: %s%s",
+                self.id, abs_path, " (persona NOT set)" if set_ap_persona else "",
+            )
             return ApiFailResponse(message=f"Could not parse agent file: {abs_path}")
         assets = self.ensure_embedded_assets()
         name = agent.name or abs_path.stem
-        assets.load_asset(
-            Path(".claude") / "agents" / f"{name}.md",
-            content=render_subagent_markdown(agent),
-        )
+        rel = Path(".claude") / "agents" / f"{name}.md"
+        assets.load_asset(rel, content=render_subagent_markdown(agent))
+        # The caller declares the persona; it is never inferred from embed order.
+        if set_ap_persona:
+            self.process_persona_path = rel.as_posix()
         self._normalize_process_asset_mount()
         ref = self._agent_entity_ref(abs_path)
         self._record_embedded_ref(ref)
@@ -5546,30 +5567,18 @@ class AgenticProcess(Entity):
         return self.driver.skills_root(self, assets_dir)
 
     @staticmethod
-    def _render_agents_instruction_block(agents_json: dict | None) -> str:
-        """Render embedded personas: the FIRST is the principal, the rest ride under it.
+    def _render_persona_section(name: str | None, entry: dict | None) -> list[str]:
+        """The persona's own block -- the identity directive and its spec.
 
-        There is ALWAYS exactly one principal. The previous shape emitted the
-        "you are this agent" directive only when precisely ONE persona was
-        embedded; a second one silently replaced that identity with a flat
-        catalogue of co-equal specs. The session then adopted no persona at all
-        and fell back to the harness identity ("I am Claude Code") — or, when
-        the intended principal failed to embed, the leftover secondary persona
-        inherited the directive and the session announced itself as that agent
-        and refused work outside that agent's scope.
-
-        Order is the caller's embed order (``_load_materialized_agents_json``
-        is mtime-sorted), so the principal is the persona embedded first.
+        Empty when the process has no persona, which is what keeps the identity
+        from being handed to whichever agent happens to be there.
         """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return ""
-
-        items = list(agents_json.items())
-        name, entry = items[0]
-        body = (entry or {}).get("prompt") or ""
-        desc = (entry or {}).get("description") or ""
-        sections: list[str] = [
+        if not name:
+            return []
+        entry = entry or {}
+        desc = entry.get("description") or ""
+        body = entry.get("prompt") or ""
+        out = [
             f"# You are the '{name}' agent",
             (
                 "The user is chatting with you (this agent) directly. "
@@ -5581,33 +5590,85 @@ class AgenticProcess(Entity):
             ),
         ]
         if desc:
-            sections.append(f"\n## Description\n{desc}")
+            out.append(f"\n## Description\n{desc}")
         if body:
-            sections.append(f"\n## Instructions\n{body}")
+            out.append(f"\n## Instructions\n{body}")
+        return out
 
-        rest = items[1:]
-        if not rest:
-            return "\n".join(sections)
+    @staticmethod
+    def _render_subagent_sections(agents: "list[tuple[str, dict]]", persona: str | None) -> list[str]:
+        """The non-persona agents, one ## block each. Empty when there are none.
 
-        sections.append("\n# Sub-agents available to you")
-        sections.append(
-            "The ## blocks below are ADDITIONAL specialised agents you may draw "
-            f"on. They do NOT replace your persona — you remain the '{name}' "
-            "agent for every reply. When a request falls squarely in one of "
-            "their areas, execute that agent's instructions yourself in this "
-            "same turn rather than delegating to a separate sub-agent; "
-            "otherwise ignore them. Never introduce yourself as one of these "
-            "agents, and never decline a request on the grounds that it falls "
-            "outside one of their scopes."
-        )
-        for sub_name, sub_entry in rest:
-            sub_body = (sub_entry or {}).get("prompt") or ""
-            sub_desc = (sub_entry or {}).get("description") or ""
-            sections.append(f"\n## {sub_name}")
-            if sub_desc:
-                sections.append(sub_desc)
-            if sub_body:
-                sections.append(sub_body)
+        The heading turns on whether a persona holds the identity: beneath one
+        they are subordinate sub-agents, without one they are a flat catalogue.
+        """
+        if not agents:
+            return []
+        if persona:
+            out = [
+                "\n# Sub-agents available to you",
+                (
+                    "The ## blocks below are ADDITIONAL specialised agents you may draw "
+                    f"on. They do NOT replace your persona -- you remain the '{persona}' "
+                    "agent for every reply. When a request falls squarely in one of "
+                    "their areas, execute that agent's instructions yourself in this "
+                    "same turn rather than delegating to a separate sub-agent; "
+                    "otherwise ignore them. Never introduce yourself as one of these "
+                    "agents, and never decline a request on the grounds that it falls "
+                    "outside one of their scopes."
+                ),
+            ]
+        else:
+            out = [
+                "# Embedded agent specs",
+                (
+                    "Each ## block below is the canonical instruction body for a "
+                    "named agent. When the user instruction names one of these "
+                    "agents, do not delegate to a separate sub-agent. Execute the "
+                    "agent instructions yourself in this same turn and follow "
+                    "side-effect instructions literally."
+                ),
+            ]
+        for name, entry in agents:
+            entry = entry or {}
+            desc = entry.get("description") or ""
+            body = entry.get("prompt") or ""
+            out.append(f"\n## {name}")
+            if desc:
+                out.append(desc)
+            if body:
+                out.append(body)
+        return out
+
+    @staticmethod
+    def _render_agents_instruction_block(agents_json: dict | None, persona_path: str | None = None) -> str:
+        """Render the embedded sub-agents into the system-instruction text.
+
+        ``persona_path`` (the process's ``process_persona_path``) names the agent
+        that IS this process's identity: it carries the "you are this agent"
+        directive and the others render beneath it. When it is None or names an
+        agent that is not embedded, nothing is promoted -- the block stays a flat
+        catalogue and the worker keeps its own identity. Declared, never inferred.
+        """
+        agents_json = agents_json or {}
+        if not agents_json:
+            return ""
+
+        persona = Path(persona_path).stem if persona_path else None
+        if persona not in agents_json:
+            if persona is not None:
+                # Declared but not embedded: the materialized file is gone or no
+                # longer parses. Should never happen; the session silently loses
+                # its identity when it does, so say so rather than infer one.
+                logger.warning(
+                    "persona %r declared (%s) but not among the embedded agents %s; rendering without a persona",
+                    persona, persona_path, sorted(agents_json),
+                )
+            persona = None
+
+        rest = [(n, e) for n, e in agents_json.items() if n != persona]
+        sections = AgenticProcess._render_persona_section(persona, agents_json.get(persona))
+        sections += AgenticProcess._render_subagent_sections(rest, persona)
         return "\n".join(sections)
 
     def _load_materialized_agents_json(self, assets_dir: "Path") -> dict:
@@ -5660,7 +5721,7 @@ class AgenticProcess(Entity):
 
         asset_dir = self.ensure_embedded_assets()
         agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)}
-        agent_block = self._render_agents_instruction_block(agents)
+        agent_block = self._render_agents_instruction_block(agents, self.process_persona_path)
         instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
 
         self._normalize_process_asset_mount()
