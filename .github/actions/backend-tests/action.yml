@@ -4,6 +4,16 @@ inputs:
   tier:
     description: "Which pytest tier to run: 'unit' or 'api'"
     required: true
+  shard:
+    description: >-
+      1-based shard index for the unit tier. Omit (or set shards to 1) to run
+      the whole tier in one job.
+    required: false
+    default: '1'
+  shards:
+    description: 'How many shards the unit tier is split across.'
+    required: false
+    default: '1'
 runs:
   using: 'composite'
   steps:
@@ -29,9 +39,10 @@ runs:
     # Advisory-only: a new CVE in a pinned transitive dep must not block PRs
     # (or, through the deploy gate, PyPI releases). Failures show as a red
     # step icon in the log without failing the job. Runs once, in the unit
-    # tier, so the parallel api job doesn't duplicate it.
+    # tier's FIRST shard, so neither the parallel api job nor the sibling
+    # shard duplicates it.
     - name: pip-audit (advisory, non-blocking)
-      if: ${{ inputs.tier == 'unit' }}
+      if: ${{ inputs.tier == 'unit' && inputs.shard == '1' }}
       continue-on-error: true
       run: uv tool run pip-audit --desc
       shell: bash
@@ -42,9 +53,47 @@ runs:
     # default so the local inner loop stays fast; that is an ergonomic choice,
     # not a coverage one, and CI is not the inner loop. Without the flag those
     # tests run nowhere — tests/long_tests is an excluded tier (see test.yml).
+    # Sharded by FILE, round-robin over a sorted list, so the two halves are
+    # interleaved rather than split alphabetically — adjacent files tend to be
+    # the same subsystem and therefore the same cost, so a straight cut would
+    # put most of the weight on one runner.
+    #
+    # The split is by path rather than pytest-xdist because these tests are not
+    # written to share a process: tests/conftest.py roots the DB, records and
+    # home under a per-PROCESS mkdtemp, and the repo has a documented history of
+    # SQLite lock contention when writers overlap. Separate jobs are separate
+    # VMs, so isolation is exactly what it was in a single run.
+    #
+    # This does NOT relax the 15-minute cap. The tier was 12m09s green on
+    # 2026-09-06 and had only three minutes of headroom; runner variance ate it
+    # and the job has been killed on every branch since, release/v0.2 included.
+    # Halving the work restores real headroom instead of widening the budget.
     - name: pytest tests/unit
       if: ${{ inputs.tier == 'unit' }}
-      run: uv run pytest tests/unit -q --long
+      run: |
+        set -euo pipefail
+        SHARD='${{ inputs.shard }}'
+        SHARDS='${{ inputs.shards }}'
+        if [ "$SHARDS" -le 1 ]; then
+          uv run pytest tests/unit -q --long
+          exit $?
+        fi
+        # `while read` rather than `mapfile`: mapfile is bash 4+, and this
+        # script should not silently depend on the runner image's bash version.
+        SEL=()
+        i=0
+        total=0
+        while IFS= read -r f; do
+          total=$(( total + 1 ))
+          if [ $(( i % SHARDS )) -eq $(( SHARD - 1 )) ]; then SEL+=("$f"); fi
+          i=$(( i + 1 ))
+        done < <(find tests/unit -name 'test_*.py' | sort)
+        if [ ${#SEL[@]} -eq 0 ]; then
+          echo "::error::shard $SHARD/$SHARDS selected no test files — the split is broken"
+          exit 1
+        fi
+        echo "shard $SHARD/$SHARDS: ${#SEL[@]} of $total files"
+        uv run pytest "${SEL[@]}" -q --long
       shell: bash
 
     # tests/api includes files that spawn or probe a real Claude CLI (worker
