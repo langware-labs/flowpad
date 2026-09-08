@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Plus } from 'lucide-react';
-import { DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import { Plus, Trash2 } from 'lucide-react';
+import { Agent, config, DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import apiClient from '@sdk/client';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
   AssetRow,
@@ -9,11 +10,16 @@ import {
   basename,
   descriptorKey,
   displayLabelForDescriptor,
+  parseTypeid,
   type AssetScope,
 } from '@src/components/asset-manager';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useStagedAssets } from './useStagedAssets';
@@ -84,7 +90,27 @@ export function AgentResourcesBody() {
   // `useStagedAssets` like its three neighbours: a DataSource is a DB row and a
   // property of the INSTANCE (`scope: []`, see flow_sdk/builtin/data_source.py),
   // not a file the project-level path scan could find.
-  const { data: sources = NO_SOURCES, isLoading: sourcesLoading } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { data: sources = NO_SOURCES, isLoading: sourcesLoading, refetch: refetchSources } =
+    useEntitiesQuery<DataSource>(sourcesQuery);
+
+  // The verb and its confirm copy are owned by `use-source-delete`, shared
+  // with the Data Sources screen — this panel reuses them rather than
+  // re-implementing "what does deleting a source do".
+  const { deleting, setDeleting, remove: removeSource, confirm: deleteConfirm } = useSourceDelete(
+    () => void refetchSources(),
+  );
+
+  // The agent open in the adjacent editor pane, when there is one — read from
+  // context rather than re-resolved from the URL: `load-asset.ts` (URL-first
+  // navigation, see this repo's own doctrine) already writes it there before
+  // this pane renders. A source created here is that agent's, the same way
+  // `AttachedChannelsBar` stamps `owner` for a channel added from the agent's
+  // Inbox view; before this, `owner` was never set at all and every source
+  // created from this panel came back unowned regardless of which agent's
+  // editor it was opened from.
+  const { activeEntityTypeId } = useContext();
+  const editingAgentId = activeEntityTypeId?.type === Agent.type ? activeEntityTypeId : null;
+  const editingAgentKey = editingAgentId?.toString() ?? null;
 
   const { navigation } = useDockNavigation();
 
@@ -114,9 +140,19 @@ export function AgentResourcesBody() {
     [navigation, t],
   );
 
+  // Scoped to the agent this panel is open for — the same field `bind_channel`
+  // and this panel's own `owner={editingAgentId}` (above) stamp. Without an
+  // agent open there is no owner to match, so the list is empty rather than
+  // every source on the instance: an unscoped list here contradicted the
+  // section's own claim to show "what an agent here can actually read from".
+  const ownedSources = useMemo(
+    () => (editingAgentKey ? sources.filter((s) => s.owner === editingAgentKey) : NO_SOURCES),
+    [sources, editingAgentKey],
+  );
+
   const sourceRows = useMemo(
     () =>
-      [...sources]
+      [...ownedSources]
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         .map((source) => {
           const typeid = source.typeId.toString();
@@ -141,15 +177,31 @@ export function AgentResourcesBody() {
               .filter(Boolean)
               .join('\n'),
           };
-          return { d, key: typeid, label, scope };
+          return { d, key: typeid, label, scope, source };
         }),
-    [sources],
+    [ownedSources],
   );
 
   const mcpAssetRows = useMemo(
     () => mcpAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
     [mcpAssets.descriptors],
   );
+
+  // Same generic route every other file-backed asset (agent, skill, workflow,
+  // plan, markdown, …) already deletes through — see
+  // `browseable-tree/adapters/assetTypeRoot.tsx` — not a bespoke MCP verb.
+  // `showDeleteAssetModal` is a singleton mounted once at the app root
+  // (`App.tsx`), so no dialog needs mounting here.
+  const onDeleteMcp = (row: { d: AssetDescriptor; label: string }) => {
+    const { type, id } = parseTypeid(row.d.typeid);
+    showDeleteAssetModal({
+      name: row.label,
+      onConfirm: async () => {
+        await apiClient.delete(`${config.API_PREFIXES.graph}/${type}/${id}`);
+      },
+      onAfterDelete: () => mcpAssets.refresh(),
+    });
+  };
 
   return (
     <div className="flex flex-col py-1">
@@ -179,24 +231,43 @@ export function AgentResourcesBody() {
         }
       >
         {sourceRows.map((row) => (
-          <AssetRow
-            key={row.key}
-            descriptor={row.d}
-            scope={row.scope}
-            label={row.label}
-            selected={false}
-            improvable={false}
-            busy={false}
-            openAction={openInDataSources}
-            cannotOpenReason={t`Configured in Data sources — no file on disk`}
-          />
+          <div key={row.key} className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <AssetRow
+                descriptor={row.d}
+                scope={row.scope}
+                label={row.label}
+                selected={false}
+                improvable={false}
+                busy={false}
+                openAction={openInDataSources}
+                cannotOpenReason={t`Configured in Data sources — no file on disk`}
+              />
+            </div>
+            <IconButton
+              icon={Trash2}
+              label={t`Delete ${row.label}`}
+              onClick={() => setDeleting(row.source)}
+              testId={`agent-resource-delete-data-source-${row.source.id}`}
+            />
+          </div>
         ))}
       </NavigatorSection>
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so
-          the pane never loses the agent being edited. */}
-      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
+          the pane never loses the agent being edited. `owner` stamps the
+          created source onto the agent this panel is open for, same as
+          `AttachedChannelsBar`'s call one view over. */}
+      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} owner={editingAgentId} />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(next) => !next && setDeleting(null)}
+        variant="destructive"
+        {...deleteConfirm}
+        onConfirm={() => deleting && void removeSource(deleting)}
+      />
 
       {/* The project's OWN `mcp` assets, and nothing else. This used to also
           list the servers configured in the selected worker's vendor files
@@ -224,15 +295,24 @@ export function AgentResourcesBody() {
         }
       >
         {mcpAssetRows.map((row) => (
-          <AssetRow
-            key={row.key}
-            descriptor={row.d}
-            scope={row.scope}
-            label={row.label}
-            selected={false}
-            improvable={false}
-            busy={false}
-          />
+          <div key={row.key} className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <AssetRow
+                descriptor={row.d}
+                scope={row.scope}
+                label={row.label}
+                selected={false}
+                improvable={false}
+                busy={false}
+              />
+            </div>
+            <IconButton
+              icon={Trash2}
+              label={t`Delete ${row.label}`}
+              onClick={() => onDeleteMcp(row)}
+              testId={`agent-resource-delete-mcp-${parseTypeid(row.d.typeid).id}`}
+            />
+          </div>
         ))}
       </NavigatorSection>
 
