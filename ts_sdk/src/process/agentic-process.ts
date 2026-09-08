@@ -2219,9 +2219,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Load a sub-agent from a VFS path and embed it into this process.
    * Mirrors the Python `process.load_embedded_subagent()` API.
    * The sub-agent spec is merged into cli_config on the backend and persisted.
+   *
+   * `setApPersona` declares this sub-agent to BE the process's persona: the
+   * backend stores its materialized path as `process_persona_path` and renders
+   * it with the "you are this agent" directive, with every other embedded
+   * sub-agent nested beneath it. Pass it for a base persona (`vibe`,
+   * `standard`) and NOT for the layered ones, which must not claim the
+   * identity. It overwrites any persona already set. Without it a process has
+   * no persona and the worker keeps its own identity -- the normal case for a
+   * terminal process.
    */
-  async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
-    await this.post('load-embedded-subagent', { asset_ref: sourcePath });
+  async loadEmbeddedSubagent(sourcePath: string, setApPersona = false): Promise<void> {
+    await this.post('load-embedded-subagent', { asset_ref: sourcePath, set_ap_persona: setApPersona });
   }
 
   /**

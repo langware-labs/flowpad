@@ -64,7 +64,9 @@ type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMo
 export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
   try {
     const vibeRef = await systemSubagentRef('vibe');
-    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef);
+    // `true` -- the vibe sub-agent IS the session's persona; the kind==vibe
+    // layers embedded below must not claim that identity.
+    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef, true);
     else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
     console.warn('[Vibe] failed to embed vibe sub-agent; continuing without persona', e);
