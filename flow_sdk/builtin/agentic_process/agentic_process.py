@@ -5546,50 +5546,96 @@ class AgenticProcess(Entity):
         return self.driver.skills_root(self, assets_dir)
 
     @staticmethod
+    def _demote_markdown_headings(body: str, levels: int = 2) -> str:
+        """Push a persona body's own headings DOWN so it nests under its label.
+
+        A persona body opens at ``# <Title>`` because it is authored as a
+        standalone document. Pasted verbatim under a ``## <name>`` label, that
+        H1 out-ranks both the label and the block's own H1, so the reader stops
+        seeing a subordinate spec and starts seeing a second top-level
+        instruction set — which is how a secondary persona used to capture the
+        session. Fenced code is left alone: ``#`` there is a comment or a shell
+        prompt, not a heading.
+        """
+        out: list[str] = []
+        in_fence = False
+        for line in body.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                out.append(line)
+                continue
+            if not in_fence and stripped.startswith("#"):
+                hashes = len(stripped) - len(stripped.lstrip("#"))
+                if 1 <= hashes <= 6 and stripped[hashes : hashes + 1] in ("", " "):
+                    out.append("#" * min(hashes + levels, 6) + stripped[hashes:])
+                    continue
+            out.append(line)
+        return "\n".join(out)
+
+    @staticmethod
     def _render_agents_instruction_block(agents_json: dict | None) -> str:
+        """Render embedded personas: the FIRST is the principal, the rest ride under it.
+
+        There is ALWAYS exactly one principal. The previous shape emitted the
+        "you are this agent" directive only when precisely ONE persona was
+        embedded; a second one silently replaced that identity with a flat
+        catalogue of co-equal specs. The session then adopted no persona at all
+        and fell back to the harness identity ("I am Claude Code") — or, when
+        the intended principal failed to embed, the leftover secondary persona
+        inherited the directive and the session announced itself as that agent
+        and refused work outside that agent's scope.
+
+        Order is the caller's embed order (``_load_materialized_agents_json``
+        is mtime-sorted), so the principal is the persona embedded first.
+        """
         agents_json = agents_json or {}
         if not agents_json:
             return ""
 
-        if len(agents_json) == 1:
-            name, entry = next(iter(agents_json.items()))
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections: list[str] = [
-                f"# You are the '{name}' agent",
-                (
-                    "The user is chatting with you (this agent) directly. "
-                    "Adopt the persona and follow the instructions below for "
-                    "every reply, even when the user does not name the agent. "
-                    "Execute side-effect instructions literally (file writes, "
-                    "command outputs); do not paraphrase or summarise away "
-                    "required artifacts."
-                ),
-            ]
-            if desc:
-                sections.append(f"\n## Description\n{desc}")
-            if body:
-                sections.append(f"\n## Instructions\n{body}")
-            return "\n".join(sections)
-
-        sections = [
-            "# Embedded agent specs",
+        items = list(agents_json.items())
+        name, entry = items[0]
+        body = (entry or {}).get("prompt") or ""
+        desc = (entry or {}).get("description") or ""
+        sections: list[str] = [
+            f"# You are the '{name}' agent",
             (
-                "Each ## block below is the canonical instruction body for a "
-                "named agent. When the user instruction names one of these "
-                "agents, do not delegate to a separate sub-agent. Execute the "
-                "agent instructions yourself in this same turn and follow "
-                "side-effect instructions literally."
+                "The user is chatting with you (this agent) directly. "
+                "Adopt the persona and follow the instructions below for "
+                "every reply, even when the user does not name the agent. "
+                "Execute side-effect instructions literally (file writes, "
+                "command outputs); do not paraphrase or summarise away "
+                "required artifacts."
             ),
         ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
+        if desc:
+            sections.append(f"\n## Description\n{desc}")
+        if body:
+            sections.append(f"\n## Instructions\n{body}")
+
+        rest = items[1:]
+        if not rest:
+            return "\n".join(sections)
+
+        sections.append("\n# Sub-agents available to you")
+        sections.append(
+            "The ## blocks below are ADDITIONAL specialised agents you may draw "
+            f"on. They do NOT replace your persona — you remain the '{name}' "
+            "agent for every reply. When a request falls squarely in one of "
+            "their areas, execute that agent's instructions yourself in this "
+            "same turn rather than delegating to a separate sub-agent; "
+            "otherwise ignore them. Never introduce yourself as one of these "
+            "agents, and never decline a request on the grounds that it falls "
+            "outside one of their scopes."
+        )
+        for sub_name, sub_entry in rest:
+            sub_body = (sub_entry or {}).get("prompt") or ""
+            sub_desc = (sub_entry or {}).get("description") or ""
+            sections.append(f"\n## {sub_name}")
+            if sub_desc:
+                sections.append(sub_desc)
+            if sub_body:
+                sections.append(AgenticProcess._demote_markdown_headings(sub_body))
         return "\n".join(sections)
 
     def _load_materialized_agents_json(self, assets_dir: "Path") -> dict:
