@@ -3010,6 +3010,7 @@ msgid "changed"
 msgstr "changed"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Changed"
 msgstr "Changed"
 
@@ -3017,10 +3018,9 @@ msgstr "Changed"
 msgid "Changes"
 msgstr "Changes"
 
-#. placeholder {0}: changed.length
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Changes ({0})"
-msgstr "Changes ({0})"
+#~ msgid "Changes ({0})"
+#~ msgstr "Changes ({0})"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -3567,6 +3567,12 @@ msgstr "Close All"
 msgid "Close all {0} tabs"
 msgstr "Close all {0} tabs"
 
+#. placeholder {0}: bucket.tabCount
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Close all {0} tabs in this project"
+msgstr "Close all {0} tabs in this project"
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "Close All But This"
@@ -3968,6 +3974,7 @@ msgstr "Connect a data source to make it available here"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
@@ -4023,6 +4030,7 @@ msgid "Connecting"
 msgstr "Connecting"
 
 #: src/components/account/user-info.tsx
+#: src/components/git/RepoPicker.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -4858,6 +4866,10 @@ msgstr "Could not verify {0}"
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "Couldn't close the project's tabs"
+msgstr "Couldn't close the project's tabs"
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Couldn't finish preparing your sandbox"
 msgstr "Couldn't finish preparing your sandbox"
@@ -5463,8 +5475,11 @@ msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "Delete \"{0}\" from the OS keychain? This cannot be undone."
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: row.label
 #. placeholder {0}: s.name
 #: src/components/account/secrets-section.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete {0}"
 msgstr "Delete {0}"
@@ -8161,9 +8176,14 @@ msgstr "GitHub connected — private repos included."
 msgid "GitHub connected."
 msgstr "GitHub connected."
 
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "GitHub connection failed."
 msgstr "GitHub connection failed."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "GitHub connection failed. Please try again."
+msgstr "GitHub connection failed. Please try again."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -10941,6 +10961,7 @@ msgstr "Never synced to cloud"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
@@ -11020,10 +11041,9 @@ msgstr "New file"
 msgid "New File"
 msgstr "New File"
 
-#. placeholder {0}: newFiles.length
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "New Files ({0})"
-msgstr "New Files ({0})"
+#~ msgid "New Files ({0})"
+#~ msgstr "New Files ({0})"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -14675,6 +14695,7 @@ msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
 msgstr "Removed"
 

@@ -428,7 +428,16 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # rows reading "FlowPad" would be a puzzle; this one says how it connects.
         display_name="FlowPad (OAuth)",
         user_credentials_name="flowpad_credentials",
-        icon="Flowpad",
+        # PLACEHOLDER, not a design choice: the brands pack has no `flowpad.svg`,
+        # so "Flowpad" resolved to nothing and the icon fence failed
+        # (test_icon_spec: "icon names nothing serves exactly"). A served lucide
+        # name keeps the row rendering — the hub IS the cloud side of this
+        # connection, so it is at least honest — but the FlowPad mark belongs
+        # here. Swap this for "Flowpad" the moment artwork lands in
+        # flow_sdk/server/icons/brands/ with a matching icon_pack.json entry;
+        # only a logo.png exists today and inventing a vector from it is a
+        # brand decision, not a build fix.
+        icon="Cloud",
         # A real authorization-code grant against the hub's own
         # /api/v1/oauth/authorize + /oauth/token, redirected to a loopback port —
         # RFC 8252, the same grant Google and Microsoft use here. NOT
