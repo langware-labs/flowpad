@@ -7133,17 +7133,19 @@ class AgenticProcess(Entity):
         entity leaves that file, so a "deleted" chat re-appears in the list and
         stays resolvable by its worker session id (effectively undeletable).
 
-        Renaming the transcript to ``<name>.deleted`` tombstones it: the
-        ``*.jsonl`` discovery globs and the exact-``<sid>.jsonl`` resolver both
-        skip it, while the data stays recoverable (no destructive unlink).
-        Best-effort — a tombstone failure never blocks the entity delete.
+        So the transcript is REMOVED, not renamed. A ``<name>.deleted`` rename
+        hid the file from the discovery globs but left every byte of the
+        conversation readable on disk, which is not what the Chats trash button
+        promises the user ("This cannot be undone"). A delete that leaves the
+        content recoverable is a delete only to the code that globs for it.
+        Best-effort — a failure to unlink never blocks the entity delete.
 
         Also ends the process's Activity: a deleted process never reaches ``close``,
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
         if delete_chats:
-            self._tombstone_session_transcript()
+            self._delete_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
@@ -7153,27 +7155,32 @@ class AgenticProcess(Entity):
         self._last_broadcast_key = None
         return result
 
-    def _tombstone_session_transcript(self) -> None:
-        """Rename this process's on-disk transcript to ``<name>.deleted`` so the
-        on-disk read paths stop re-deriving the deleted session. No-op when there
-        is no session id or no transcript on disk."""
+    def _delete_session_transcript(self) -> None:
+        """Remove this process's on-disk transcript so the on-disk read paths
+        stop re-deriving the deleted session AND the conversation stops being
+        readable. No-op when there is no session id or no transcript on disk.
+
+        A tombstone left by an earlier build (``<name>.deleted``) is removed
+        too: those files are exactly the content this delete is meant to
+        destroy, and the user was told it was already gone.
+        """
         if not self.session_id:
             return
         try:
             path = self.driver.transcript_path(self)
         except Exception as e:
-            logger.debug("tombstone: transcript_path lookup failed for %s: %s", self.session_id, e)
+            logger.debug("delete: transcript_path lookup failed for %s: %s", self.session_id, e)
             return
-        if path is None or not path.exists():
+        if path is None:
             return
-        tomb = path.with_name(path.name + ".deleted")
-        try:
-            if tomb.exists():
-                tomb.unlink()
-            path.rename(tomb)
-            logger.info("tombstoned deleted session transcript %s -> %s", path.name, tomb.name)
-        except OSError as e:
-            logger.warning("tombstone of %s failed: %s", path, e)
+        for victim in (path, path.with_name(path.name + ".deleted")):
+            if not victim.exists():
+                continue
+            try:
+                victim.unlink()
+                logger.info("deleted session transcript %s", victim.name)
+            except OSError as e:
+                logger.warning("delete of %s failed: %s", victim, e)
 
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
