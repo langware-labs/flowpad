@@ -3010,6 +3010,7 @@ msgid "changed"
 msgstr "השתנה"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Changed"
 msgstr "השתנה"
 
@@ -3017,10 +3018,9 @@ msgstr "השתנה"
 msgid "Changes"
 msgstr "שינויים"
 
-#. placeholder {0}: changed.length
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Changes ({0})"
-msgstr "שינויים ({0})"
+#~ msgid "Changes ({0})"
+#~ msgstr "שינויים ({0})"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -3567,6 +3567,12 @@ msgstr "סגור הכל"
 msgid "Close all {0} tabs"
 msgstr "סגור את כל {0} הכרטיסיות"
 
+#. placeholder {0}: bucket.tabCount
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Close all {0} tabs in this project"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "סגור הכל חוץ מזה"
@@ -3968,6 +3974,7 @@ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
@@ -4023,6 +4030,7 @@ msgid "Connecting"
 msgstr "מתחבר"
 
 #: src/components/account/user-info.tsx
+#: src/components/git/RepoPicker.tsx
 msgid "Connecting…"
 msgstr "מתחברת..."
 
@@ -4858,6 +4866,10 @@ msgstr "לא ניתן לאמת את {0}"
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "Couldn't close the project's tabs"
+msgstr ""
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Couldn't finish preparing your sandbox"
 msgstr "הכנת ארגז החול לא הושלמה"
@@ -5463,8 +5475,11 @@ msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "מחק את \"{0}\" מה-keychain של מערכת ההפעלה? לא ניתן לבטל פעולה זו."
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: row.label
 #. placeholder {0}: s.name
 #: src/components/account/secrets-section.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete {0}"
 msgstr "מחק {0}"
@@ -8161,9 +8176,14 @@ msgstr "GitHub מחובר — מאגרים פרטיים כלולים."
 msgid "GitHub connected."
 msgstr "GitHub מחובר."
 
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "GitHub connection failed."
 msgstr "החיבור ל-GitHub נכשל."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "GitHub connection failed. Please try again."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -10941,6 +10961,7 @@ msgstr "מעולם לא סונכרן לענן"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
@@ -11020,10 +11041,9 @@ msgstr "קובץ חדש"
 msgid "New File"
 msgstr "קובץ חדש"
 
-#. placeholder {0}: newFiles.length
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "New Files ({0})"
-msgstr "קבצים חדשים ({0})"
+#~ msgid "New Files ({0})"
+#~ msgstr "קבצים חדשים ({0})"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -14675,6 +14695,7 @@ msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "הסרת הקובץ הזה מה-commit הבא (git restore --staged)"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
 msgstr "הוסר"
 
