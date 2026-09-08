@@ -9,7 +9,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
-from flow_sdk.cli.auth.hub_login import delete_api_key, is_logged_in, set_api_key
+from flow_sdk.cli.auth.hub_login import is_logged_in, set_api_key
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
 from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
 from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup
@@ -520,19 +520,42 @@ def auth_login(
 @auth_app.command("logout")
 def auth_logout():
     """
-    Logout from Flowpad by removing your stored API key.
+    Logout from Flowpad: remove your stored API key and the hub data it pulled
+    onto this machine.
+
+    Asks the RUNNING backend to do it whenever there is one, rather than doing
+    it here. The CLI is a separate process: a logout performed in-process would
+    stop a hub WebSocket this process never opened and invalidate a bootstrap
+    cache only it can see, while the live backend kept its authenticated socket
+    and its logged-in UI — and the one part that did cross over, deleting rows,
+    would make the CLI a second writer on the instance's SQLite. Delegating puts
+    the whole logout in the one process that owns the state, and gets the UI
+    repaint for free. With no backend up there is no such conflict, so the same
+    work runs locally.
 
     Example: flow auth logout
     """
-    if is_logged_in():
-        from flow_sdk.cli.app_config import clear_user
-
-        delete_api_key()
-        clear_user()
-        typer.echo("✓ Successfully logged out from Flowpad")
-        typer.echo("✓ API key and user info removed")
-    else:
+    if not is_logged_in():
         typer.echo("⚠ Not currently logged in")
+        return
+
+    from flow_sdk.cli.commands._common import local_post
+    from flow_sdk.server.launch import check_server_health
+
+    port = get_instance_settings().port
+    if check_server_health(port):
+        # ``local_post``, not a bare requests call: it carries the cookie-gate
+        # secret, without which a gated instance refuses this like any other
+        # keyless caller.
+        local_post(f"http://127.0.0.1:{port}/api/v1/cloud/logout", json={}, timeout=30).raise_for_status()
+    else:
+        import asyncio
+
+        from flow_sdk.cli.auth.cloud_login import clear_user_data
+
+        asyncio.run(clear_user_data())
+    typer.echo("✓ Successfully logged out from Flowpad")
+    typer.echo("✓ API key, user info and local hub data removed")
 
 
 # --- what the hub configures on a box it launched -------------------------
