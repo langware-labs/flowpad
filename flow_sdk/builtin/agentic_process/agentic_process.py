@@ -1919,8 +1919,8 @@ class AgenticProcess(Entity):
                 # error type every other spawn path raises.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     WorkerSpawnError,
+                    insert_capability_path_dir,
                     no_worker_message,
-                    prepend_path_dir,
                     worker_bin_folder,
                     worker_path_env,
                 )
@@ -1929,14 +1929,17 @@ class AgenticProcess(Entity):
                 if path_env is None:
                     raise WorkerSpawnError(self.driver.name, no_worker_message(self.driver.name))
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
-                # …except the discovered bin folder stays first on PATH: the
-                # worker env's own PATH (apply_worker_env's venv pin) is built
-                # from this backend's possibly-stripped service PATH, and
-                # letting it clobber the capability prepend re-breaks spawn
-                # (the D02 "codex not found despite discovery" failure).
+                # …except the discovered bin folder must stay ahead of the
+                # service PATH: the worker env's own PATH (apply_worker_env's
+                # venv pin) is built from this backend's possibly-stripped
+                # service PATH, and letting it clobber the capability entry
+                # re-breaks spawn (the D02 "codex not found despite discovery"
+                # failure). It goes BEHIND the venv `flow` pin, though — a
+                # vendor folder that is a shared dir carrying its own `flow`
+                # (~/.local/bin) must not defeat the version-skew guard.
                 folder = worker_bin_folder(self.driver.name)
                 if folder and "PATH" in spawn_env:
-                    spawn_env["PATH"] = prepend_path_dir(folder, spawn_env["PATH"])
+                    spawn_env["PATH"] = insert_capability_path_dir(folder, spawn_env["PATH"])
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
