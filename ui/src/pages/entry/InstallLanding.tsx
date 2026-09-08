@@ -1,5 +1,12 @@
 import { t } from '@lingui/core/macro';
-import { type BranchSummary, type RepoSummary, isHubOnly, navigator as sdkNavigator } from '@sdk';
+import {
+  type BranchSummary,
+  type RepoSummary,
+  connectionManager,
+  isHubOnly,
+  oauthService,
+  navigator as sdkNavigator,
+} from '@sdk';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { CreatePrivateRepoForm } from '@src/components/git/CreatePrivateRepoForm';
 import { RepoPicker } from '@src/components/git/RepoPicker';
@@ -18,7 +25,7 @@ import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type PickerView = 'repos' | 'branches' | 'create' | 'confirm';
 
@@ -31,6 +38,41 @@ export default function InstallLanding() {
   const [branch, setBranch] = useState<BranchSummary | null>(null);
   const [started, setStarted] = useState(false);
   const [cancelled, setCancelled] = useState(false);
+  const [connectingGithub, setConnectingGithub] = useState(false);
+  const [githubConnectionError, setGithubConnectionError] = useState('');
+  // Bumping this remounts RepoPicker, which is how a freshly granted token
+  // gets used: useGitRepos caches for 5 minutes, so the failed fetch would
+  // otherwise stay cached and the panel keep showing the dead end it was just
+  // rescued from.
+  const [repoPickerRevision, setRepoPickerRevision] = useState(0);
+
+  useEffect(() => {
+    const handleGithubConnection = (message: { auth_method?: string; status?: string }) => {
+      if (message.auth_method !== 'github') return;
+      setConnectingGithub(false);
+      if (message.status === 'success') {
+        setGithubConnectionError('');
+        setRepoPickerRevision((revision) => revision + 1);
+      } else {
+        setGithubConnectionError(t`GitHub connection failed. Please try again.`);
+      }
+    };
+    connectionManager.on('on_llm_config_msg', handleGithubConnection);
+    return () => {
+      // Braced: `off` returns the manager for chaining, and an effect cleanup
+      // must return void.
+      connectionManager.off('on_llm_config_msg', handleGithubConnection);
+    };
+  }, []);
+
+  const connectGithub = useCallback(() => {
+    setConnectingGithub(true);
+    setGithubConnectionError('');
+    void oauthService.connect('github').catch(() => {
+      setConnectingGithub(false);
+      setGithubConnectionError(t`GitHub connection failed.`);
+    });
+  }, []);
   const failed = steps.some((step) => step.status === 'error');
 
   if (!isHubOnly()) {
@@ -137,7 +179,14 @@ export default function InstallLanding() {
             </div>
           ) : view === 'repos' ? (
             <div className="flex flex-col gap-3">
-              <RepoPicker provider="github" allowedRoles={['admin', 'write']} onSelect={selectRepo} />
+              <RepoPicker
+                key={repoPickerRevision}
+                provider="github"
+                allowedRoles={['admin', 'write']}
+                onSelect={selectRepo}
+                connectionAction={{ label: t`Connect GitHub`, pending: connectingGithub, onClick: connectGithub }}
+              />
+              {githubConnectionError && <p className="text-xs text-destructive">{githubConnectionError}</p>}
               <Button
                 variant="outline"
                 className="w-full gap-2"
