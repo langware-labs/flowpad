@@ -78,6 +78,16 @@ runs:
           uv run pytest tests/unit -q --long
           exit $?
         fi
+        # Atoms are DIRECTORIES (plus the loose top-level test files), never
+        # individual files inside a package. tests/unit/test_data_spec is why:
+        # its _roundtrip helper exposes module-level NOT_ON_DISK / OVERRIDES
+        # dicts that test_asset_roundtrip.py fills in AT IMPORT, and
+        # test_db_roundtrip.py reads. Split those two apart and the second fails
+        # with "harness has no sample for field 'expand'" — which is exactly
+        # what a per-file split did. The coupling is pre-existing (that test
+        # fails standalone on main too); keeping a package whole means sharding
+        # does not have to fix it first.
+        #
         # `while read` rather than `mapfile`: mapfile is bash 4+, and this
         # script should not silently depend on the runner image's bash version.
         SEL=()
@@ -87,7 +97,8 @@ runs:
           total=$(( total + 1 ))
           if [ $(( i % SHARDS )) -eq $(( SHARD - 1 )) ]; then SEL+=("$f"); fi
           i=$(( i + 1 ))
-        done < <(find tests/unit -name 'test_*.py' | sort)
+        done < <( { find tests/unit -mindepth 1 -maxdepth 1 -type d ! -name '__pycache__';
+                    find tests/unit -mindepth 1 -maxdepth 1 -name 'test_*.py'; } | sort )
         if [ ${#SEL[@]} -eq 0 ]; then
           echo "::error::shard $SHARD/$SHARDS selected no test files — the split is broken"
           exit 1
