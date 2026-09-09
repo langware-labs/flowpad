@@ -155,13 +155,6 @@ def document_warnings(spec: WizardSpec) -> "list[WizardIssueSpec]":
             ))
         else:
             seen[step.id] = index
-    if spec.triggers:
-        issues.append(WizardIssueSpec(
-            loc=["triggers"],
-            msg="triggers are reconciled at startup, so a change here takes effect "
-                "on the next restart",
-            type="trigger_restart", severity="warning",
-        ))
     return issues
 
 
@@ -196,9 +189,6 @@ def extract_wizard(ref: FSRef, resolved_id: str) -> list[FSRecord]:
             "enabled": spec.enabled,
             "version": spec.version,
             "step_count": len(spec.steps),
-            # Surfaced so a list can say "runs itself on X" without re-reading
-            # the document, and so the trigger reconcile has a cheap prefilter.
-            "trigger_tags": [trigger.on for trigger in spec.triggers],
         }
     rec = FSRecord(**rec_kwargs)
     object.__setattr__(rec, "_asset_ref", FSRef(path.resolve()))

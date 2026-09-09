@@ -253,6 +253,30 @@ async def set_service_triggers() -> None:
 WIZARD_TRIGGER_UNAME_PREFIX = "wizard_"
 
 
+async def _wizard_for(trigger: Trigger) -> "Optional[Wizard]":
+    """The wizard this trigger launches: its action's target, else its parent,
+    else the legacy path.
+
+    Three rungs and they are ordered by how EXPLICIT they are. The action names
+    a TypeId because the author said so. `parent_type_id` is the enclosure rule
+    — a trigger living inside a wizard's folder launches that wizard, which is
+    what lets an author write `run_wizard: ""` and not go hunting for a uuid.
+    `path` is only for rows minted before either existed.
+    """
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+
+    for candidate in (
+        *(str(getattr(a, "target_type_id", "") or "") for a in (trigger.actions or [])),
+        str(trigger.parent_type_id or ""),
+    ):
+        if candidate.startswith("wizard-"):
+            found = await Wizard.get_by_id(candidate.split("-", 1)[1])
+            if found is not None:
+                return found
+    asset_ref = (trigger.path or "").strip()
+    return await Wizard.get_one({"asset_ref": asset_ref}) if asset_ref else None
+
+
 @trigger_callbacks.register(
     "builtin_run_wizard",
     meaning="Fired by a bus tag a Wizard asset declared for itself. Resolves the "
@@ -268,12 +292,18 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.functions.wizard import read_wizard  # noqa: PLC0415
 
-    asset_ref = (trigger.path or "").strip()
-    if not asset_ref:
-        _log.warning("wizard trigger %r carries no path; nothing to run", trigger.uname)
+    # WHICH wizard, by TypeId, off the ACTION that says so. `trigger.path` was
+    # the old channel and a poor one: a generic field a HOOK trigger uses for
+    # its record.json, marked Sharing.PRIVATE, so a shared trigger lost its
+    # subject entirely and nothing could validate the subject was a wizard.
+    # `path` is still read as a fallback so a row seeded before this keeps
+    # running.
+    wizard = await _wizard_for(trigger)
+    asset_ref = (wizard.asset_ref if wizard else (trigger.path or "")).strip()
+    if wizard is None and not asset_ref:
+        _log.warning("wizard trigger %r names no wizard; nothing to run", trigger.uname)
         return
 
-    wizard = await Wizard.get_one({"asset_ref": asset_ref})
     spec = wizard.spec() if wizard is not None else read_wizard(Path(asset_ref))
     if spec is None:
         _log.warning("wizard trigger %r: no readable wizard at %s", trigger.uname, asset_ref)
@@ -322,107 +352,35 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
               "ok" if result.ok else "failed", result.message)
 
 
-def _wizard_slug(asset_ref: str) -> str:
-    """A uname-safe slug from a wizard's folder name."""
-    from pathlib import Path  # noqa: PLC0415
-
-    raw = Path(asset_ref).name or "wizard"
-    return "".join(ch if ch.isalnum() else "_" for ch in raw.lower()).strip("_") or "wizard"
-
-
-async def wizard_trigger_specs() -> list[dict[str, Any]]:
-    """One TAG trigger spec per subscription declared by an indexed Wizard.
-
-    A malformed pattern is dropped with a warning rather than raising: the
-    document may have come from a repo someone cloned, and one bad wizard must
-    not stop the others from arming.
-    """
-    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
-    from flow_sdk.tags.bus import validate_bus_pattern  # noqa: PLC0415
-
-    specs: list[dict[str, Any]] = []
-    try:
-        wizards = await Wizard.get_all({})
-    except Exception:
-        _log.exception("wizard triggers: could not list wizards")
-        return specs
-
-    for wizard in wizards:
-        spec = wizard.spec()
-        if spec is None or not spec.enabled or not wizard.enabled:
-            continue
-        slug = _wizard_slug(wizard.asset_ref)
-        for index, declared in enumerate(spec.triggers):
-            problem = validate_bus_pattern(declared.on)
-            if problem:
-                _log.warning("wizard %r trigger %d: %s", wizard.name, index, problem)
-                continue
-            specs.append(dict(
-                uname=f"{WIZARD_TRIGGER_UNAME_PREFIX}{slug}_{index}",
-                name=f"{spec.name or wizard.name or slug} ({declared.on})",
-                description=(
-                    f"Declared by the {spec.name or slug} wizard. Runs it when "
-                    f"{declared.on} fires"
-                    + (", once ever." if declared.fire_once else ".")
-                ),
-                trigger_type=TriggerType.TAG,
-                tag_pattern=declared.on,
-                tag_target=declared.target or None,
-                fire_once=declared.fire_once,
-                path=wizard.asset_ref,
-                actions=[TriggerAction(
-                    action_type=ActionType.CALLBACK,
-                    callback_name="builtin_run_wizard",
-                )],
-            ))
-    return specs
-
-
 async def reconcile_wizard_triggers() -> None:
-    """Converge the derived wizard triggers, and prune the orphans.
+    """Retire the DERIVED wizard triggers of older installs.
 
-    Upsert reuses `_upsert_one`, so `counter` / `last_triggered` survive — which
-    matters more here than anywhere else: clobbering the counter of a
-    `fire_once` trigger would re-arm it and re-run the wizard.
+    A wizard's trigger is now an ordinary child asset with its own row, minted
+    and armed by the indexer. The rows this used to derive — ``wizard_<slug>_<n>``,
+    keyed POSITIONALLY, so reordering a wizard's array swapped two triggers'
+    durable counters — are superseded, and an armed row whose declaration no
+    longer exists would fire a callback for a wizard nothing points at.
 
-    The prune is a first in this tree — nothing else deletes a derived entity
-    when its asset stops declaring it. It is scoped to the `wizard_` uname
-    prefix, and only removes rows no live wizard still declares.
+    So this no longer derives anything; it deletes that namespace once. The
+    prefix is what makes it safe: those unames were minted by us, so a
+    user-authored trigger can never land in it. Kept as a named step rather than
+    a migration script because it must run before ``app.ready`` — the same
+    ordering the derivation needed, for the opposite reason.
     """
-    try:
-        specs = await wizard_trigger_specs()
-    except Exception:
-        _log.exception("wizard triggers: spec derivation failed")
-        return
+    from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
-    # ONE query serves both halves. It used to be a `get_by_uname` per spec
-    # followed by an unscoped `Trigger.get_all({})` — an N+1 whose final scan
-    # re-fetched every row the N lookups had just read one at a time, and an
-    # unscoped read of the whole table besides (which this repo bans outright).
-    # The prefix that identifies these rows is the same one the prune needs, so
-    # a single `$LIKE` answers "what exists" for the upsert and "what is orphaned"
-    # for the prune.
     try:
-        existing_rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(
+        rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(
             op=QueryOp.LIKE, operands=["uname", f"{WIZARD_TRIGGER_UNAME_PREFIX}%"],
         )))
     except Exception:
-        _log.exception("wizard triggers: could not read the existing rows")
+        _log.exception("Could not read legacy wizard triggers")
         return
-    by_uname = {(getattr(row, "uname", "") or ""): row for row in existing_rows}
 
-    for spec in specs:
-        await _upsert_one(spec, existing=by_uname.get(spec["uname"]))
-
-    wanted = {spec["uname"] for spec in specs}
-    try:
-        from flow_sdk.builtin.tag_triggers import unregister_tag_trigger  # noqa: PLC0415
-
-        for uname, row in by_uname.items():
-            if uname in wanted:
-                continue
-            _log.info("wizard triggers: pruning orphan %r", uname)
-            unregister_tag_trigger(row.id)
+    for row in rows:
+        await disarm_trigger(str(row.id))
+        try:
             await row.delete()
-    except Exception:
-        _log.exception("wizard triggers: orphan prune failed")
+            _log.info("retired derived wizard trigger %r (now a child asset)", row.uname)
+        except Exception:
+            _log.exception("Could not retire legacy wizard trigger %r", row.uname)
