@@ -3,7 +3,8 @@ import { useLingui } from '@lingui/react/macro';
 import { errorMessage } from '@src/lib/error-message';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { notify } from '@src/notifications';
-import { Loader2, PackageCheck, PackagePlus } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Info, Loader2, PackageCheck, PackagePlus } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
 /**
@@ -95,21 +96,52 @@ export function PublishedToggle({ entity, projectId, variant = 'pill', onChanged
     : 'border-border bg-muted text-muted-foreground hover:text-foreground';
 
   return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        void toggle();
-      }}
-      disabled={busy}
-      aria-pressed={published}
-      title={title}
-      className={`${base} ${tone} flex-shrink-0 disabled:opacity-60`}
-      data-testid="published-toggle"
-      data-state={published ? 'published' : 'unpublished'}
-    >
-      <Icon className={`h-3 w-3 shrink-0 ${busy ? 'animate-spin' : ''}`} />
-      {label}
-    </button>
+    <span className="inline-flex flex-shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          void toggle();
+        }}
+        disabled={busy}
+        aria-pressed={published}
+        title={title}
+        className={`${base} ${tone} disabled:opacity-60`}
+        data-testid="published-toggle"
+        data-state={published ? 'published' : 'unpublished'}
+      >
+        <Icon className={`h-3 w-3 shrink-0 ${busy ? 'animate-spin' : ''}`} />
+        {label}
+      </button>
+      <PublishedInfo />
+    </span>
+  );
+}
+
+/** What Published means, in three lines — the popover behind the info glyph. */
+function PublishedInfo() {
+  const { t } = useLingui();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(event) => event.stopPropagation()}
+          className="grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+          aria-label={t`What does Published do?`}
+          data-testid="published-info"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 space-y-2 text-xs" onClick={(event) => event.stopPropagation()}>
+        <p className="font-medium">{t`What Published does`}</p>
+        <ul className="list-disc space-y-1 ps-4 text-muted-foreground">
+          <li>{t`Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page.`}</li>
+          <li>{t`Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>.`}</li>
+          <li>{t`When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed.`}</li>
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 }

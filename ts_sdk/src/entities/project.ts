@@ -7,8 +7,10 @@ import {
   TypeId,
   gitOriginFromUrl,
   type GitOrigin,
+  EMPTY_PUBLISHED_DIRECTORY,
   EMPTY_PUBLISHED_VIEW,
   type InstallPublishedResult,
+  type PublishedDirectory,
   type InstallRequest,
   type PublishedView,
   type RequestInstallResult,
@@ -559,6 +561,22 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('published', Project.type, this.typeId.id, 'GET');
     const view = await dataManager.callAction<void, PublishedView | null>(actionInfo);
     return view ?? EMPTY_PUBLISHED_VIEW;
+  }
+
+  /**
+   * HUB: everything published by the projects the caller can read — the
+   * Discover directory (`GET project/published_directory`), newest first, with
+   * facets over the whole set. `typeid` / `project` / `type` narrow the rows.
+   */
+  static async getPublishedDirectory(opts: { typeid?: string; project?: string; type?: string } = {}): Promise<PublishedDirectory> {
+    const actionInfo = new ActionInfo('published_directory', Project.type, null, 'GET');
+    const params: Record<string, string> = {};
+    if (opts.typeid) params.typeid = opts.typeid;
+    if (opts.project) params.project = opts.project;
+    if (opts.type) params.type = opts.type;
+    if (Object.keys(params).length) actionInfo.queryParameters = params;
+    const directory = await dataManager.callAction<void, PublishedDirectory | null>(actionInfo);
+    return directory ?? EMPTY_PUBLISHED_DIRECTORY;
   }
 
   /**

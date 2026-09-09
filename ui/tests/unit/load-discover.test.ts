@@ -36,3 +36,13 @@ describe('loadDiscover', () => {
     expect(dock.scopeProjectId).toBeNull();
   });
 });
+
+describe('loadDiscoverDetail', () => {
+  it('adopts the scope the same way for /discover/:typeid', async () => {
+    const { loadDiscoverDetail } = await import('@src/routes/loaders/load-discover');
+    const request = new Request(`http://localhost/discover/skill-x?scope-mode=project&scope-activeProjectId=${PROJECT_ID}`);
+    await loadDiscoverDetail({ request, params: { typeid: 'skill-x' }, context: {} } as never);
+    expect(initSdk).toHaveBeenCalled();
+    expect(adoptScopeProject.mock.calls[0][0].scopeProjectId).toBe(PROJECT_ID);
+  });
+});

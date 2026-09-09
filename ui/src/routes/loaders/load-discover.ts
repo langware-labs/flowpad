@@ -16,6 +16,11 @@ import { adoptScopeProject } from './load-dock-pointer';
  * `dataContext`, never `useLoaderData`.
  */
 export async function loadDiscover(args: LoaderArgs) {
+  return loadDiscoverDetail(args);
+}
+
+/** Same two steps for `/discover/:typeid`; the page fetches the row by its param. */
+export async function loadDiscoverDetail(args: LoaderArgs) {
   await initSdk(args.params);
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);

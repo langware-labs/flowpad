@@ -41,7 +41,47 @@ export interface PublishedRow extends PublishedRowBase {
   posix_path?: string | null;
   /** Whether a local entity row exists; desk only. */
   indexed?: boolean;
+  /** What the desk did about putting the document on the hub after the last publish; desk only. */
+  hub_body?: { status: 'published' | 'skipped' | 'failed'; code: string | null } | null;
 }
+
+/**
+ * Why a row's document cannot be read on the hub.
+ * - `type_not_git`: the type is not git-publishable, so the hub never stores its document
+ * - `not_on_hub`: nothing registered the asset on the hub (project not linked, GitHub not connected, …)
+ * - `not_materialized`: registered, but its tree was never snapshotted (`gitops/materialize`)
+ */
+export type BodyReason = 'type_not_git' | 'not_on_hub' | 'not_materialized';
+
+/** The main document of a materialized asset, as the hub's `fs` action serves it. */
+export interface BodyRef {
+  type_id: string;
+  path: string;
+}
+
+/** One row of the hub-wide directory: a published row plus its publisher and hub-body state. */
+export interface DirectoryRow extends PublishedRow {
+  source_project_id: string;
+  source_project_name: string;
+  body_supported: boolean;
+  body_available: boolean;
+  body_reason: BodyReason | null;
+  body_ref: BodyRef | null;
+}
+
+export interface DirectoryFacets {
+  types: { type: string; count: number }[];
+  projects: { id: string; name: string; count: number }[];
+}
+
+/** `GET project/published_directory` — everything the caller's projects published. */
+export interface PublishedDirectory {
+  rows: DirectoryRow[];
+  facets: DirectoryFacets;
+  total: number;
+}
+
+export const EMPTY_PUBLISHED_DIRECTORY: PublishedDirectory = { rows: [], facets: { types: [], projects: [] }, total: 0 };
 
 export interface UnpublishedRow {
   typeid: string;
