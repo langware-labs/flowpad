@@ -6,7 +6,7 @@ import { canonicalPath } from '@src/components/project-selector';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
 import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
@@ -318,17 +318,19 @@ export function useProjectListMenu({
   // row disappears as a CONSEQUENCE, not as a separate step: the menu is built
   // from open tabs, so a project with none is no longer listed.
   //
-  // Order matters when clearing the CURRENT scope. Navigating away first (while
-  // its tabs still exist) keeps this URL-first (CLAUDE.md) — the destination is
-  // resolved from live rows, then the loader re-scopes. Closing first would
-  // strand the URL on a tab that no longer exists and leave the resolver nothing
-  // to pick. Global is the honest landing: the project being emptied cannot be
-  // the destination, and `dockForGlobalEntry` falls back to Home on its own.
+  // Order matters when emptying the CURRENT scope. Leaving first (while its tabs
+  // still exist) keeps this URL-first (CLAUDE.md) — the destination is resolved
+  // from live rows, then the loader re-scopes. Closing first would strand the URL
+  // on a tab that no longer exists and leave the resolver nothing to pick. Global
+  // is the honest landing: the project being emptied cannot be the destination.
+  // Emptying the scope you are in is also the one close that ends your MEMBERSHIP
+  // of it, which is why this leaves via `leaveProjectScope` (it owns the context
+  // clear no loader can) rather than merely navigating.
   const handleCloseProject = async (bucket: TabProjectBucket) => {
     setClosingId(bucket.projectId);
     try {
       if (bucket.projectId === currentProjectId) {
-        navigation.openDock(await dockForGlobalEntry(currentDock));
+        navigation.openDock(await leaveProjectScope(currentDock));
       }
       await bucket.closeAll();
     } catch (error) {
