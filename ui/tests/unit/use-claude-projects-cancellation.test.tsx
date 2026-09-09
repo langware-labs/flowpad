@@ -29,21 +29,23 @@ function mockAbortableAction() {
 }
 
 /**
- * console.error calls that belong to THIS test.
+ * React warnings logged during this test — the thing it actually guards.
  *
- * The spy is global to the vitest worker, and the unit tier runs files
- * concurrently in it, so an unrelated file's async XHR rejection ("getaddrinfo
- * ENOTFOUND unit-tier-has-no-backend.invalid", the tier's own no-backend
- * sentinel) lands in whatever assertion window happens to be open. Asserting
- * `not.toHaveBeenCalled()` on the raw spy therefore failed intermittently, in
- * whichever test was unlucky — it was green by timing, not by correctness.
+ * Written as a POSITIVE match, not a deny-list. The first attempt filtered the
+ * known tier noise (the `unit-tier-has-no-backend.invalid` DNS failures) and
+ * then failed anyway on `WebSocket error:`, because the spy is global to the
+ * vitest worker and the unit tier runs files concurrently in it — so ANY
+ * unrelated async rejection lands in whatever assertion window is open, and a
+ * deny-list only ever grows one pattern per new source.
  *
- * The guard this test actually wants is "unmounting produced no React warning",
- * so foreign network noise is filtered and everything else still fails.
+ * What this test is about is unmount behaviour, so it asserts that unmounting
+ * logged no REACT warning ("Warning:", "not wrapped in act", "unmounted
+ * component"). Foreign noise cannot make it fail; a genuine React complaint
+ * still does.
  */
-function ownErrors(spy: ReturnType<typeof vi.spyOn>): unknown[][] {
-  const FOREIGN = /unit-tier-has-no-backend|ENOTFOUND|Service Unavailable|Backend server is not responding/i;
-  return spy.mock.calls.filter((args) => !FOREIGN.test(args.map(String).join(' ')));
+function reactWarnings(spy: ReturnType<typeof vi.spyOn>): unknown[][] {
+  const REACT = /Warning:|not wrapped in act|unmounted component|Cannot update a component/i;
+  return spy.mock.calls.filter((args) => REACT.test(args.map(String).join(' ')));
 }
 
 describe('project hook request lifecycle', () => {
@@ -59,7 +61,7 @@ describe('project hook request lifecycle', () => {
     lazyAssets.setScope(Math.random().toString());
     await waitFor(() => expect(signal?.aborted).toBe(true));
 
-    expect(ownErrors(consoleError)).toEqual([]);
+    expect(reactWarnings(consoleError)).toEqual([]);
   });
 
   it('keeps a shared project scan alive on unmount and aborts on identity change', async () => {
@@ -74,6 +76,6 @@ describe('project hook request lifecycle', () => {
     lazyAssets.setScope(Math.random().toString());
     await waitFor(() => expect(signal?.aborted).toBe(true));
 
-    expect(ownErrors(consoleError)).toEqual([]);
+    expect(reactWarnings(consoleError)).toEqual([]);
   });
 });
