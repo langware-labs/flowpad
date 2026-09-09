@@ -253,8 +253,40 @@ class WizardSpec(DataSpec):
     version: int = 1
     enabled: bool = True
     icon: str = "Wand2"
+    #: A CONVERSATIONAL wizard: one agent talks to the person for the whole run,
+    #: and the caller supplies the prompt and payload at launch. It declares its
+    #: driver here and has NO steps — there is nothing to sequence, because the
+    #: conversation is the run.
+    #:
+    #: Fabricating a single step to hold the agent instead looked tidier and was
+    #: a trap: every field on that step (id, label, prompt, timeout) is inert on
+    #: the launched path — `startWizardProcess` builds the prompt from the
+    #: caller's request — while the viewer's Run button would happily execute the
+    #: placeholder prompt against no payload at all, ungated, because a shipped
+    #: wizard needs no approval.
+    agent: str = ""
     steps: list[WizardStepSpec] = []
     triggers: list[WizardTriggerSpec] = []
+
+    @model_validator(mode="after")
+    def _conversational_or_stepped(self) -> "WizardSpec":
+        """A wizard is EITHER a conversation or a sequence of steps.
+
+        Strict on purpose, and it is the check the `agent` field exists to make
+        possible: a conversational document that grows a second step is now a
+        parse error rather than a wizard that silently half-runs — the launcher
+        embeds one agent and would never reach the rest.
+        """
+        if self.agent and self.steps:
+            raise ValueError(
+                f"wizard {self.name!r} declares both an agent and steps; it is either a "
+                "conversational wizard (agent, no steps) or a stepped one (steps, no agent)"
+            )
+        if not self.agent and not self.steps:
+            raise ValueError(
+                f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it"
+            )
+        return self
 
 # ─────────────────────────────────────────────────────────────────────────────
 # What a RUN produced. These travel — into `run.json`, onto the entity payload

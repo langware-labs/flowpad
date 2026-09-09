@@ -40,6 +40,14 @@ export interface IWizard extends IEntity {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  /** The agent driving this CONVERSATIONAL wizard, declared in the document.
+   *
+   *  Non-empty means the wizard is a conversation: it has no steps, it is
+   *  launched from wherever it is offered (with the caller's prompt and
+   *  payload), and there is nothing for the step runner to run. Empty means it
+   *  is a stepped wizard the backend runner drives. The two are mutually
+   *  exclusive — `WizardSpec` refuses a document that is both. */
+  agent?: string;
   /** Ships inside Flowpad, so the runner trusts its commands. NOT the base
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
@@ -64,6 +72,14 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  /** The agent driving this CONVERSATIONAL wizard, declared in the document.
+   *
+   *  Non-empty means the wizard is a conversation: it has no steps, it is
+   *  launched from wherever it is offered (with the caller's prompt and
+   *  payload), and there is nothing for the step runner to run. Empty means it
+   *  is a stepped wizard the backend runner drives. The two are mutually
+   *  exclusive — `WizardSpec` refuses a document that is both. */
+  agent?: string;
   /** Ships inside Flowpad, so the runner trusts its commands. NOT the base
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
@@ -76,6 +92,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     this.description = entity.description;
     // A computed field on the backend: re-read on every fetch, never written
     // from here. The UI mirrors it, the backend owns it.
+    this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;
   }

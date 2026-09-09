@@ -1,5 +1,5 @@
 import {
-  SubAgent,
+  Wizard,
   AgenticProcess,
   ComputeNode,
   ProcessKind,
@@ -11,30 +11,52 @@ import {
   type WizardProcessResult,
 } from '@sdk';
 
+import { systemSubagentRef } from '@src/pages/flow-page/vibe-personas';
+
 let wizardAgentRefCache: Record<string, string | null> = {};
 
-/** Resolve a wizard's agent by name → its `asset_ref` (the wizard name IS the
- *  agent name; there is no static table). Cached per name.
+/** Resolve a wizard's driving agent by wizard name → the agent's `asset_ref`.
  *
- *  System (SDK-shipped) wizard agents only surface with `include_system`, which
- *  the entity query layer omits — so we hit the graph route with the flag passed
- *  as `params` and hydrate the rows into `SubAgent` entities via `dataManager`
- *  (the same shape `CapabilityManager` uses), rather than reading raw JSON.
+ *  Two hops, and the first one is the migration: a wizard is a WIZARD ASSET
+ *  (`agentic-assets/wizard/<name>/wizard.json`) that DECLARES the agent driving
+ *  it, and only then do we look that agent up. It used to be one hop on an
+ *  assumption — the wizard name WAS an agent name, with no declaration anywhere
+ *  — so a wizard had no description, no icon, and nothing to open in the UI.
  *
- *  Returns null when the name matches nothing. Callers MUST treat that as fatal
- *  — see `startWizardProcess`. */
+ *  System (SDK-shipped) rows only surface with `include_system`, which the entity
+ *  query layer omits, so the first hop passes the flag as `params`.
+ *
+ *  Returns null when the name matches no wizard, or when the wizard names no
+ *  agent. Callers MUST treat that as fatal — see `startWizardProcess`. */
 export async function resolveWizardAgentRef(name: string): Promise<string | null> {
   if (name in wizardAgentRefCache) return wizardAgentRefCache[name];
-  const rows = await apiClient.get<unknown[]>('/graph/agent', { params: { include_system: true } });
-  const agents = (rows ?? []).map((row) => dataManager.updateEntityFromJson<SubAgent>(row));
-  const ref = agents.find((a) => a.name === name)?.asset_ref ?? null;
-  wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
+
+  const wizardRows = await apiClient.get<unknown[]>('/graph/wizard', {
+    params: { include_system: true },
+  });
+  const wizards = (wizardRows ?? []).map((row) => dataManager.updateEntityFromJson<Wizard>(row));
+  // `agent` is a computed field carrying what the document DECLARES: the agent
+  // that drives this conversation. Empty for a stepped wizard, which the backend
+  // runner runs instead — so those correctly resolve to nothing here.
+  const agentName = wizards.find((w) => w.name === name)?.agent ?? null;
+  if (!agentName) return null;
+
+  // `systemSubagentRef` is the existing resolver for this exact question, and
+  // reusing it fixes two things a hand-rolled copy got wrong. It queries
+  // `/graph/subagent` — `.claude/agents/*.md` is the SubAgent family (see
+  // docs/glossary.md) and `loadEmbeddedSubagent` embeds one of those, whereas
+  // this used to ask `/graph/agent`, so three of the four wizards resolved to
+  // nothing and every launch threw "No wizard named … is installed". And it
+  // filters `scope === 'system'`, so a project sub-agent that happens to be
+  // called `task-analyze` cannot shadow the shipped one.
+  const ref = await systemSubagentRef(agentName);
+  // HITS only. The one caller answers `null` by clearing the cache, so a stored
+  // miss could never be read back.
+  if (ref) wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
   return ref;
 }
 
-/** Forget the cached name→ref answers. The resolver caches misses as well as
- *  hits, so a wizard indexed after a failed lookup would stay unresolvable for
- *  the life of the page without this. */
+/** Forget the cached name→ref answers. */
 export function clearWizardAgentRefCache(): void {
   wizardAgentRefCache = {};
 }
@@ -86,8 +108,8 @@ export async function startWizardProcess<T = unknown>(
     clearWizardAgentRefCache();
     throw new Error(
       `No wizard named "${request.wizardName}" is installed. ` +
-      'Wizards are agents under agentic-assets/agent/ or .claude/agents/; ' +
-      'check the name, or re-index if it was just added.',
+      'A wizard is a folder under agentic-assets/wizard/ whose wizard.json names ' +
+      'the agent that drives it; check the name, or re-index if it was just added.',
     );
   }
 
