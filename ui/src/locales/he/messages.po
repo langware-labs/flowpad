@@ -218,6 +218,11 @@ msgstr "{0}"
 msgid "{0} — no email sent."
 msgstr ""
 
+#. placeholder {0}: LABELS[m]
+#: src/components/view-toggle/view-toggle.tsx
+msgid "{0} — not while the agent is working"
+msgstr "{0} — לא בזמן שהסוכן עובד"
+
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
 msgid "{0} — opened \"{fallbackName}\" instead."
@@ -5045,6 +5050,10 @@ msgstr ""
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "לא ניתן היה להחליף מקור"
+
+#: src/components/terminal/interactive-terminal/use-process-surface.ts
+msgid "Could not switch to chat"
+msgstr "לא ניתן היה לעבור לצ'אט"
 
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"

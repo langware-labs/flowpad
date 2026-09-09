@@ -65,9 +65,14 @@ violations are flagged inline as debt.
    preserves both. `session_id` is a *worker* id, not an entity id — never feed
    it to TypeId construction (codex mints v7 rollout ids).
 
-3. **Mid-turn guard.** A prompt turn in flight ⇒ 409 on `prompt` and on
-   `switch-mode`→CLI. *Known asymmetry (debt):* `switch-mode`→interactive and
-   `restart` have no backend guard — the UI gates them.
+3. **Mid-turn guard.** A turn in flight ⇒ 409 on `prompt`, on `switch-mode` in
+   **both** directions, and on `restart`. The guard
+   (`_reject_if_turn_in_flight`) sits in `switch_mode` above the branch and keys
+   on `is_turn_busy` — the same predicate the wire `busy` flag derives from, so
+   the 409 and the client's own gate can never disagree. (The old
+   →CLI-only asymmetry is fixed; the frontend still declines rather than firing
+   a call it knows will 409, and it splits its own predicate by direction —
+   readiness to enter a PTY, busy to leave one.)
 
 4. **`restart_required` is a snapshot-hash contract.** `save()` while RUNNING
    compares the worker-config snapshot (MD5 of generic + finalized CLI options,
