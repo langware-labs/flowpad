@@ -7,6 +7,7 @@ import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectClou
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
+import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import apiClient from '@sdk/client';
 import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
@@ -134,9 +135,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitGateOpen, setGitGateOpen] = useState(false);
   const [gitSetupOpen, setGitSetupOpen] = useState(false);
-  // Bumped when the setup wizard finishes: the chip's answer is stale the
-  // moment a remote exists.
-  const [gitRefresh, setGitRefresh] = useState(0);
   const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
   const [gitGateReason, setGitGateReason] = useState<string | null>(null);
   const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
@@ -179,7 +177,9 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         },
         prompt: `Set up Git in the exact project folder ${path} for sharing, as the wizard data specifies.`,
       });
-      setGitRefresh((n) => n + 1);
+      // The wizard just changed this folder's git state, and nothing announces
+      // filesystem changes — tell every mounted preflight to ask again.
+      invalidateGitPreflight(project.typeId);
     },
     [project],
   );
@@ -234,9 +234,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
               </>
             ) : (
               <>
-                {/* `key` remounts the chip so its preflight asks again — the answer is
-                    stale the moment the wizard gives the project a remote. */}
-                <ProjectGitChip key={gitRefresh} projectTypeId={projectTypeId} onChecked={setGitChecks} />
+                <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
               </>
