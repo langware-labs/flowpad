@@ -1,4 +1,4 @@
-import { Tab, TabLifecycleState, tabForDockKey, tabKey, tabManager, toplog } from '@sdk';
+import { Tab, TabLifecycleState, perfTime, tabForDockKey, tabKey, tabManager, toplog } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
@@ -60,12 +60,10 @@ async function materializeTab(
   dock: DockPointer,
   options: SetupTabOptions,
 ): Promise<{ tab: Tab | null; tabs: Tab[] }> {
-  const t0 = performance.now();
-  const existing = await tabManager.listAll();
-  toplog.log(
-    'process_load',
-    `materializeTab tabManager.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
-  );
+  // Every awaited leg below is timed individually. One label used to cover all
+  // three round-trips, which is how a 4816ms cold open was attributed to a
+  // loader that awaits nothing — measure per leg before deciding what to cut.
+  const existing = await perfTime('materializeTab.listAll(reuse-check)', () => tabManager.listAll());
   const existingTab = tabForDockKey(existing, dock.tabHash);
   // The URL says which workspace, if any, is hosting this dock. Only workspace
   // CONTENT may be adopted — content assets/files and a plain terminal (a shell
@@ -98,16 +96,18 @@ async function materializeTab(
   // denormalized target/project metadata; send it through the same backend
   // `new_tab` ensure seam with only the new parent edge.
   if (needsReparent && existingTab?.pointer) {
-    await tabManager.newTab(existingTab.pointer, {
-      targetType: existingTab.target_type,
-      targetId: existingTab.target_id,
-      projectId: existingTab.project_id,
-      name: existingTab.name,
-      iconKey: existingTab.icon_key,
-      worktree: existingTab.worktree,
-      parentTabId,
-    });
-    const all = await tabManager.listAll();
+    await perfTime('materializeTab.newTab(reparent)', () =>
+      tabManager.newTab(existingTab.pointer, {
+        targetType: existingTab.target_type,
+        targetId: existingTab.target_id,
+        projectId: existingTab.project_id,
+        name: existingTab.name,
+        iconKey: existingTab.icon_key,
+        worktree: existingTab.worktree,
+        parentTabId,
+      }),
+    );
+    const all = await perfTime('materializeTab.listAll(reparent-adopt)', () => tabManager.listAll());
     return { tab: tabForDockKey(all, dock.tabHash) ?? existingTab, tabs: all };
   }
   // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
@@ -131,7 +131,8 @@ async function materializeTab(
   const lensProjectStale =
     dock.viewType === ViewType.LENS &&
     !!existingTab &&
-    (await tabManager.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
+    (await perfTime('materializeTab.resolveDockTarget(lens)', () => tabManager.resolveDockTarget(dock)))
+      .projectId !== (existingTab.project_id ?? null);
   // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
   // project self-heal below), a stale lens tab (above), one that needs
   // re-parenting into the active workspace, or one carrying a stale parent
@@ -172,10 +173,10 @@ async function materializeTab(
   // doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  const scoped = await tabManager.ensureDock(dock, { parentTabId });
+  const scoped = await perfTime('materializeTab.ensureDock', () => tabManager.ensureDock(dock, { parentTabId }));
   const scopedTab = tabForDockKey(scoped, dock.tabHash);
 
-  const all = await tabManager.listAll();
+  const all = await perfTime('materializeTab.listAll(adopt)', () => tabManager.listAll());
   const tab = tabForDockKey(all, dock.tabHash) ?? scopedTab;
   return { tab, tabs: all };
 }
