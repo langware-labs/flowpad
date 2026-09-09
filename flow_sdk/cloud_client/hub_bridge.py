@@ -756,6 +756,8 @@ class HubWsBridge:
             # is_read=False; copying it here clobbered the local read state
             # (e.g. re-marked the sender's own just-sent message unread). Only
             # sync the delivery/body fields the hub actually owns.
+            persisted = None
+            last_field = ""
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -773,8 +775,34 @@ class HubWsBridge:
                     # carries a stale "created", or an out-of-order frame, must
                     # not knock "sent"/"delivered" backward.
                     continue
-                setattr(existing, field, data[field])
-            await existing.save(someone_typeid, notify=True)
+                # ONE TARGETED UPDATE PER FIELD, never a whole-row save. ``existing``
+                # was read at the top of this handler, and the handler is slow (a hub
+                # round-trip); a ``save()`` here round-trips that stale copy and
+                # silently rolls back whatever another task wrote to the row in the
+                # meantime. That is not hypothetical: it un-consumed a prompt's
+                # ``prompt_auto_handled`` marker mid-turn, so the turn ran twice and
+                # the guest got two replies. ``is_read`` / ``is_archived`` / ``is_draft``
+                # are per-machine state sitting behind the same race — the "don't copy
+                # the hub's value" note above only stops the hub supplying a wrong
+                # value, not this handler overwriting a local one.
+                row, patched = await existing._db.update_existing_data_field(
+                    existing.id, existing.get_type(), field, data[field]
+                )
+                if patched and row is not None:
+                    persisted, last_field = row, field
+                    # Keep the in-memory copy current for the code below WITHOUT
+                    # dirtying it — nothing may save this stale object again.
+                    was_dirty = existing._dirty
+                    setattr(existing, field, getattr(row, field))
+                    existing._dirty = was_dirty
+            if persisted is not None:
+                from flow_sdk.core.entity.entity_model import (  # noqa: PLC0415
+                    _publish_server_managed_field_update,
+                )
+
+                # Publish the freshly persisted row, the way every other
+                # server-managed field write does (``mark-edit`` is the precedent).
+                await _publish_server_managed_field_update(existing, persisted, last_field)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
             # no-op when the FM carries no asset TYPE_ID attachments.
