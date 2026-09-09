@@ -218,6 +218,11 @@ msgstr "{0}"
 msgid "{0} — no email sent."
 msgstr "{0} — no email sent."
 
+#. placeholder {0}: LABELS[m]
+#: src/components/view-toggle/view-toggle.tsx
+msgid "{0} — not while the agent is working"
+msgstr "{0} — not while the agent is working"
+
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
 msgid "{0} — opened \"{fallbackName}\" instead."
@@ -5045,6 +5050,10 @@ msgstr "Could not stop covering {path}"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "Could not switch source"
+
+#: src/components/terminal/interactive-terminal/use-process-surface.ts
+msgid "Could not switch to chat"
+msgstr "Could not switch to chat"
 
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
