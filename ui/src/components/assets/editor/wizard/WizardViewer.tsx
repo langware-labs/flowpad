@@ -10,7 +10,16 @@ import {
   type WizardAwaiting,
   type WizardStepOutcome,
 } from '@sdk';
-import { CheckCircle2, Circle, CircleDashed, Loader2, TriangleAlert } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  CircleDashed,
+  ListTree,
+  Loader2,
+  PanelRightClose,
+  RotateCcw,
+  TriangleAlert,
+} from 'lucide-react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
@@ -18,7 +27,11 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { AdvancedOnly } from '@src/components/view-mode';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
+import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
+import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
+import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
@@ -28,6 +41,10 @@ import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
 const MAIN_FILE = 'wizard.json';
+
+/** This viewer's one side window. The id is dock state (`?sideWindows=…`), so
+ *  it is opaque, stable, and must not be renamed — a persisted URL carries it. */
+const RUN_DETAIL_WINDOW = 'wizard-run';
 
 /** Per-outcome presentation. `satisfied` is a real success — the machine was
  *  already in the state the step wanted — so it reads as done, not as skipped
@@ -105,6 +122,11 @@ function WizardViewerBody({
   const runView = useWizardRun(wizard);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // URL-first, exactly like the markdown editor's and the terminal's side
+  // windows: the open set lives on the DockPointer, so opening Run detail is
+  // back-button-restorable and shareable.
+  const { windows, open, close, closeAll, select } = useSideWindows();
+  const isAdvanced = useIsAdvanced();
 
   // The DOCUMENT is the source of the step list, not `state.outcomes`. A wizard
   // that has never run used to show no steps at all; and an outcome list is the
@@ -189,7 +211,7 @@ function WizardViewerBody({
     [call, values, state.inputs],
   );
 
-  return (
+  const main = (
     <div className="flex flex-col gap-4 p-4" data-testid="wizard-viewer">
       <header className="flex items-center gap-2">
         {/* From the backend type registry — the project's rule for every per-type
@@ -207,12 +229,42 @@ function WizardViewerBody({
             offering it has. The backend refuses such a run, so offering the
             button would be offering a guaranteed error. */}
         {conversational ? null : (
-          <Button onClick={run} disabled={busy} data-testid="wizard-run">
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {pending ? <Trans>Continue</Trans> : <Trans>Run</Trans>}
-          </Button>
+          <>
+            {/* Reset sits beside Run because they are the same decision made
+                twice — start this wizard, or start it over. It is Advanced-only
+                for the same reason the editor is: it discards a run record. */}
+            <AdvancedOnly reserve={false}>
+              <Button
+                variant="ghost"
+                onClick={() => void reset()}
+                // A reset landing mid-run would have the runner write its
+                // outcomes into the record just cleared; the backend refuses
+                // with a 409, and this keeps the button from inviting it.
+                disabled={resetting || runView.live}
+                title={t`Archive this run and start the record fresh. It stays approved to run.`}
+                data-testid="wizard-reset"
+              >
+                {resetting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                )}
+                <Trans>Reset</Trans>
+              </Button>
+            </AdvancedOnly>
+            <Button onClick={run} disabled={busy} data-testid="wizard-run">
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {pending ? <Trans>Continue</Trans> : <Trans>Run</Trans>}
+            </Button>
+          </>
         )}
       </header>
+
+      {resetError && (
+        <p className="text-xs text-destructive" data-testid="wizard-reset-error">
+          {resetError}
+        </p>
+      )}
 
       {askApproval ? (
         <section
@@ -350,29 +402,81 @@ function WizardViewerBody({
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab
           into fields nobody can see. */}
-      {conversational ? null : (
-        <AdvancedOnly reserve={false} className="flex flex-col gap-4">
-          {doc ? (
-            <WizardForm
-              doc={doc}
-              commit={editor.commit}
-              validation={editor.validation}
-              saveError={editor.saveError}
-              saving={editor.saving}
-              readOnly={editor.readOnly}
-            />
-          ) : null}
-          <WizardDebugger
-            steps={joinedSteps}
-            orphaned={orphaned}
-            live={runView.live}
-            loadingDetail={runView.loadingDetail}
-            onExpand={() => void runView.loadDetail()}
-            onReset={() => void reset()}
-            resetting={resetting}
-            resetError={resetError}
+      {conversational || !doc ? null : (
+        <AdvancedOnly reserve={false}>
+          <WizardForm
+            doc={doc}
+            commit={editor.commit}
+            validation={editor.validation}
+            saveError={editor.saveError}
+            saving={editor.saving}
+            readOnly={editor.readOnly}
           />
         </AdvancedOnly>
+      )}
+    </div>
+  );
+
+  // Run detail is a SIDE WINDOW, not a panel under the form: it is a reference
+  // surface you consult while editing the steps beside it, and the drawer is
+  // the app's one place for that (`useSideWindows` — same architecture as the
+  // markdown editor's backlinks and the terminal's windows).
+  const railTabs: TabDescriptor[] = conversational || !isAdvanced ? [] : [
+    {
+      id: RUN_DETAIL_WINDOW,
+      label: t`Run detail`,
+      icon: ListTree,
+      description: t`Every command this wizard ran, and what it printed`,
+    },
+  ];
+  const openTabs = railTabs
+    .filter((tab) => windows.includes(tab.id))
+    .map((tab) => ({ ...tab, closable: true }));
+
+  return (
+    <div className="flex h-full w-full" data-testid="wizard-viewer-shell">
+      <div className="min-w-0 flex-1 overflow-y-auto">{main}</div>
+
+      {openTabs.length > 0 && (
+        <TabbedSideDrawer<string>
+          open
+          onOpenChange={closeAll}
+          closeIcon={PanelRightClose}
+          closeLabel={t`Collapse side window`}
+          width="w-96"
+          data-testid="wizard-side-window"
+          tabTestIdPrefix="wizard-side-tab"
+          tabs={openTabs}
+          activeTab={RUN_DETAIL_WINDOW}
+          onActiveTabChange={select}
+          onCloseTab={close}
+        >
+          {{
+            [RUN_DETAIL_WINDOW]: (
+              <WizardDebugger
+                steps={joinedSteps}
+                orphaned={orphaned}
+                loadingDetail={runView.loadingDetail}
+                onExpand={() => void runView.loadDetail()}
+              />
+            ),
+          }}
+        </TabbedSideDrawer>
+      )}
+
+      {railTabs.length > 0 && (
+        <CollapsedSideRail data-testid="wizard-side-window-collapsed">
+          {railTabs.map((tab) => (
+            <SideRailButton
+              key={tab.id}
+              icon={tab.icon}
+              label={tab.label}
+              active={windows.includes(tab.id)}
+              onClick={() => open(tab.id)}
+              testId={`wizard-side-tab-collapsed-${tab.id}`}
+            />
+          ))}
+        </CollapsedSideRail>
       )}
     </div>
   );

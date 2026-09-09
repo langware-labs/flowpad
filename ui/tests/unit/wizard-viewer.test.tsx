@@ -30,6 +30,22 @@ const view = vi.hoisted(() => ({ advanced: false }));
 vi.mock('@src/components/view-mode', () => ({
   AdvancedOnly: ({ children }: { children: React.ReactNode }) =>
     view.advanced ? <>{children}</> : null,
+  useIsAdvanced: () => view.advanced,
+}));
+
+/** Side windows are dock state (`?sideWindows=…`), so the real hook needs a
+ *  Router around every case here. The URL plumbing has its own tests; what
+ *  these assert is which surface the viewer puts where. */
+const side = vi.hoisted(() => ({
+  windows: [] as string[],
+  open: vi.fn(),
+  close: vi.fn(),
+  closeAll: vi.fn(),
+  select: vi.fn(),
+  toggle: vi.fn(),
+}));
+vi.mock('@src/navigation/useSideWindows', () => ({
+  useSideWindows: () => ({ ...side, active: side.windows[side.windows.length - 1] ?? null }),
 }));
 
 import { WizardViewer } from '@src/components/assets/editor/wizard/WizardViewer';
@@ -66,6 +82,7 @@ const fsRef = () => refWith(async () => DOC);
 
 beforeEach(() => {
   view.advanced = false;
+  side.windows = [];
   vi.clearAllMocks();
   h.callAction.mockResolvedValue({ status: 'pending' });
   h.refreshByTypeId.mockResolvedValue(null);
@@ -199,12 +216,46 @@ describe('the advanced gate is a skin', () => {
     await waitFor(() => expect(reads.n).toBe(1));
   });
 
-  it('shows both in Advanced', async () => {
+  it('shows the editor inline and OFFERS run detail in Advanced', async () => {
     view.advanced = true;
     render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
-    expect(screen.getByTestId('wizard-debugger')).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('wizard-form')).toBeTruthy());
+    // Run detail is a side window: the rail offers it, and it is not mounted
+    // until someone opens it.
+    expect(screen.getByTestId('wizard-side-tab-collapsed-wizard-run')).toBeTruthy();
+    expect(screen.queryByTestId('wizard-debugger')).toBeNull();
+  });
+
+  it('renders run detail in the side drawer once that window is open', async () => {
+    view.advanced = true;
+    side.windows = ['wizard-run'];
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+
+    await waitFor(() => expect(screen.getByTestId('wizard-side-window')).toBeTruthy());
+    expect(screen.getByTestId('wizard-debugger')).toBeTruthy();
+  });
+
+  it('offers no run-detail window in Standard', () => {
+    view.advanced = false;
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+
+    expect(screen.queryByTestId('wizard-side-tab-collapsed-wizard-run')).toBeNull();
+    expect(screen.queryByTestId('wizard-debugger')).toBeNull();
+  });
+
+  it('puts Reset beside Run, and only in Advanced', async () => {
+    view.advanced = false;
+    const { unmount } = render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    expect(screen.queryByTestId('wizard-reset')).toBeNull();
+    unmount();
+
+    view.advanced = true;
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    const header = screen.getByTestId('wizard-run').closest('header');
+    // Same header as Run: they are one decision made twice — start it, or
+    // start it over.
+    expect(header?.contains(screen.getByTestId('wizard-reset'))).toBe(true);
   });
 
   it('offers no editor for a conversational wizard — it has no steps to edit', () => {
@@ -234,12 +285,14 @@ describe('the document arrives asynchronously', () => {
 
   it('shows the steps from the document once the read lands', async () => {
     view.advanced = true;
+    side.windows = ['wizard-run'];
     render(<WizardViewer fsRef={lateRef()} wizard={wizard({})} />);
 
     // The step list is sourced from the DOCUMENT, so a wizard that has never
     // run still lists what it would do.
     await waitFor(() => expect(screen.getByTestId('wizard-step-alpha')).toBeTruthy());
-    expect(screen.getByTestId('wizard-inspect-alpha')).toBeTruthy();
     expect(screen.getByTestId('wizard-step-form-alpha')).toBeTruthy();
+    // The side window reads the same joined steps.
+    expect(screen.getByTestId('wizard-inspect-alpha')).toBeTruthy();
   });
 });
