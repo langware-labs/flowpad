@@ -600,7 +600,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={tabContainerRef}
         data-testid="terminal-tabs-row"
-        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1 ps-2 pt-1"
+        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1 ps-2"
       >
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
