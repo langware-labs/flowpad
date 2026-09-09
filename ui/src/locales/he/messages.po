@@ -9760,7 +9760,7 @@ msgstr "שפה"
 msgid "Large"
 msgstr "גדול"
 
-#. placeholder {0}: new Date((liveOrTrigger.last_triggered || liveOrTrigger.last_run) as string | Date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+#. placeholder {0}: new Date(lastTriggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "last {0}"
 msgstr "הפעלה אחרונה {0}"
