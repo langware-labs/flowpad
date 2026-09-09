@@ -2125,7 +2125,11 @@ class Entity(DBEntity):
 
         path = build_hub_url(self.get_type())
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(path, body)
+            # Idempotent: a 409 ("already exist") means this entity is already on
+            # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
+            # every invite. The create's post-condition is already satisfied, so
+            # treat it as a no-op success rather than a 500.
+            await client.post(path, body, idempotent=True)
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
@@ -2952,6 +2956,16 @@ class Entity(DBEntity):
             "content": content,
             "attributes": attributes,
         }
+        # Carried only when the caller supplied them, so every existing
+        # emitter's wire shape is unchanged. ``created_time`` matters on this
+        # path specifically: ``send_flow_data_to_entity`` stamps its own
+        # send-time ``t`` attribute over whatever the caller set, so the
+        # originating time can only survive as its own field (the client maps it
+        # back, mirroring ``FlowData.fromJSON``).
+        for key in ("process_entry", "created_time", "index"):
+            value = flow_data.get(key)
+            if value is not None:
+                frontend_flow_data[key] = value
 
         await send_flow_data_to_entity(self.typeid, frontend_flow_data)
 

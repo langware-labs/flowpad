@@ -103,6 +103,8 @@ class BaseInstanceSettings:
     server_json_path: Path
     server_pid_path: Path
     server_lock_path: Path
+    monitor_pid_path: Path
+    monitor_lock_path: Path
     server_log_path: Path
 
     # ---- Storage roots (per-instance) ----
@@ -263,6 +265,8 @@ class BaseInstanceSettings:
             server_json_path=instance_dir / "server.json",
             server_pid_path=instance_dir / "server.pid",
             server_lock_path=instance_dir / "server.lock",
+            monitor_pid_path=instance_dir / "server.monitor.pid",
+            monitor_lock_path=instance_dir / "server.monitor.lock",
             # server_log_path is dead — launch.py writes timestamped files
             # under logs_dir/server/<ts>.log. Kept as a placeholder so the
             # field still exists for back-compat readers.

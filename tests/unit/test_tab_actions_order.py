@@ -37,6 +37,35 @@ from flow_sdk.fs_store.record_types import RecordType
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 
+#: The project ids these ordering tests scope their tabs to, as REAL Project rows
+#: (minted in ``_ensure_test_projects``). They were once bare ``"p1"``/``"pA"``
+#: strings backed by nothing, which survived only on the reaper's since-removed
+#: non-UUID exemption — see ``test_missing_project_cleanup_reaps_non_uuid_project_id``
+#: in ``test_tab_entity.py`` for that story. They are UUIDs here because a Project
+#: id MUST be a valid TypeId: the entity layer rejects ``Project(id="p1")`` with
+#: ValueError, which is why a non-UUID ``project_id`` can never resolve.
+P1 = "11111111-1111-4111-8111-111111111111"
+PA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+PB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+_TEST_PROJECT_IDS = (P1, PA, PB)
+
+
+@pytest.fixture(scope="module", autouse=True)
+async def _ensure_test_projects():
+    """The three projects these tests scope to, minted ONCE for the module.
+
+    Without real rows the missing-project reaper hard-deletes their tabs mid-list
+    and every order assertion sees an empty strip. Module-scoped because the rows
+    never change and are never torn down — per-test it re-queried all three before
+    each test to no effect. Kept separate from ``_clean_visible_tabs``, which is
+    genuinely per-test; folding them would drag this back to function scope."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    for pid in _TEST_PROJECT_IDS:
+        if await Project.get_one({"id": pid}) is None:
+            await Project(id=pid, name=f"tab-order-{pid[:8]}").save()
+
+
 @pytest.fixture(autouse=True)
 async def _clean_visible_tabs():
     """Session SQLite is shared across tests; start each with no visible tabs so
@@ -54,52 +83,52 @@ async def _order(project: str | None = None) -> list[str]:
 
 
 async def test_ensure_tab_assigns_contiguous_global_order() -> None:
-    a = await ensure_tab("p/a", project_id="p1")
-    b = await ensure_tab("p/b", project_id="p1")
-    c = await ensure_tab("p/c", project_id="p1")
+    a = await ensure_tab("p/a", project_id=P1)
+    b = await ensure_tab("p/b", project_id=P1)
+    c = await ensure_tab("p/c", project_id=P1)
     assert (a.tab_order, b.tab_order, c.tab_order) == (0, 1, 2)
-    assert await _order("p1") == [a.id, b.id, c.id]
+    assert await _order(P1) == [a.id, b.id, c.id]
 
 
 async def test_new_tab_opener_inserts_after_opener() -> None:
-    a = await ensure_tab("o/a", project_id="p1")
-    await ensure_tab("o/b", project_id="p1")
-    await ensure_tab("o/c", project_id="p1")
+    a = await ensure_tab("o/a", project_id=P1)
+    await ensure_tab("o/b", project_id=P1)
+    await ensure_tab("o/c", project_id=P1)
     # A new tab opened from within `a` lands immediately after `a`.
-    await _http_new_tab(Tab, pointer="o/x", project_id="p1", after_tab_id=a.id)
+    await _http_new_tab(Tab, pointer="o/x", project_id=P1, after_tab_id=a.id)
     xid = tab_id_for("o/x")
-    order = await _order("p1")
+    order = await _order(P1)
     assert order.index(xid) == order.index(a.id) + 1
 
 
 async def test_reopen_keeps_slot() -> None:
-    a = await ensure_tab("r/a", project_id="p1")
-    b = await ensure_tab("r/b", project_id="p1")
-    c = await ensure_tab("r/c", project_id="p1")
-    before = await _order("p1")
+    a = await ensure_tab("r/a", project_id=P1)
+    b = await ensure_tab("r/b", project_id=P1)
+    c = await ensure_tab("r/c", project_id=P1)
+    before = await _order(P1)
     await b.close()
-    again = await ensure_tab("r/b", project_id="p1")  # reopen same pointer
+    again = await ensure_tab("r/b", project_id=P1)  # reopen same pointer
     assert again.id == b.id
-    assert await _order("p1") == before == [a.id, b.id, c.id]
+    assert await _order(P1) == before == [a.id, b.id, c.id]
 
 
 async def test_order_action_reorders_globally() -> None:
-    a = await ensure_tab("d/a", project_id="p1")
-    b = await ensure_tab("d/b", project_id="p1")
-    c = await ensure_tab("d/c", project_id="p1")
+    a = await ensure_tab("d/a", project_id=P1)
+    b = await ensure_tab("d/b", project_id=P1)
+    c = await ensure_tab("d/c", project_id=P1)
     # Move c to the very front (after=None, before=a).
     await _http_order(Tab, reorder_tab_id=c.id, after_tab_id=None, before_tab_id=a.id)
-    assert await _order("p1") == [c.id, a.id, b.id]
+    assert await _order(P1) == [c.id, a.id, b.id]
 
 
 async def test_list_scopes_each_tab_to_exactly_one_view() -> None:
     # Each tab belongs to EXACTLY one scope — a projectless ("global") tab appears
     # only in the None (no active project) view, never inside a project's strip.
-    a = await ensure_tab("f/a", project_id="pA")
+    a = await ensure_tab("f/a", project_id=PA)
     s = await ensure_tab("f/s", project_id=None)  # projectless (settings-like)
-    bproj = await ensure_tab("f/b", project_id="pB")
-    pa = await _order("pA")
-    pb = await _order("pB")
+    bproj = await ensure_tab("f/b", project_id=PB)
+    pa = await _order(PA)
+    pb = await _order(PB)
     none_view = await _order(None)
     assert a.id in pa and s.id not in pa and bproj.id not in pa  # projectless no longer bleeds in
     assert bproj.id in pb and s.id not in pb and a.id not in pb
@@ -107,17 +136,17 @@ async def test_list_scopes_each_tab_to_exactly_one_view() -> None:
 
 
 async def test_close_action_drops_from_list() -> None:
-    a = await ensure_tab("c/a", project_id="p1")
-    b = await ensure_tab("c/b", project_id="p1")
+    a = await ensure_tab("c/a", project_id=P1)
+    b = await ensure_tab("c/b", project_id=P1)
     await _http_close(b)
-    assert await _order("p1") == [a.id]
+    assert await _order(P1) == [a.id]
 
 
 async def test_close_action_is_not_starved_by_index_orphan_discovery(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A long read-only index sweep must not own SQLite's writer slot."""
-    tab = await ensure_tab("c/during-index-sweep", project_id="p1")
+    tab = await ensure_tab("c/during-index-sweep", project_id=P1)
     driver = get_db_driver()
     real_list_sources = driver.list_entity_sources_by_type
     close_requested = asyncio.Event()
@@ -156,13 +185,13 @@ async def test_close_action_is_not_starved_by_index_orphan_discovery(
 
 
 async def test_close_many_durably_hides_every_tab_before_acknowledging() -> None:
-    a = await ensure_tab("cm/a", project_id="p1")
-    b = await ensure_tab("cm/b", project_id="p1")
-    c = await ensure_tab("cm/c", project_id="p1")
+    a = await ensure_tab("cm/a", project_id=P1)
+    b = await ensure_tab("cm/b", project_id=P1)
+    c = await ensure_tab("cm/c", project_id=P1)
 
-    await _http_close_many(Tab, tab_ids=[a.id, b.id, a.id], project="p1")
+    await _http_close_many(Tab, tab_ids=[a.id, b.id, a.id], project=P1)
 
-    assert await _order("p1") == [c.id]
+    assert await _order(P1) == [c.id]
     assert (await Tab.get_one({"id": a.id})).visible is False
     assert (await Tab.get_one({"id": b.id})).visible is False
 
@@ -200,7 +229,7 @@ async def _blocking_probe_tab(pointer: str) -> tuple[_BlockingTeardownProbe, Tab
     gate = asyncio.Event()
     _GATES[probe.id] = gate
     tab = await ensure_tab(
-        pointer, target_type=probe.get_type(), target_id=probe.id, project_id="p1"
+        pointer, target_type=probe.get_type(), target_id=probe.id, project_id=P1
     )
     return probe, tab, gate
 
@@ -223,7 +252,7 @@ async def test_http_close_logs_teardown_failure(caplog: pytest.LogCaptureFixture
     probe = _RaisingTeardownProbe(id=str(uuid.uuid4()))
     await probe.save()
     tab = await ensure_tab(
-        "bg/fail", target_type=probe.get_type(), target_id=probe.id, project_id="p1"
+        "bg/fail", target_type=probe.get_type(), target_id=probe.id, project_id=P1
     )
     with caplog.at_level(logging.WARNING, logger="flow_sdk.builtin.tab"):
         await _http_close(tab)  # must not raise despite the failing teardown
@@ -239,7 +268,7 @@ async def test_reopen_waits_for_pending_teardown() -> None:
         await _http_close(tab)
         reopen = asyncio.create_task(
             ensure_tab(
-                "bg/reopen", target_type=probe.get_type(), target_id=probe.id, project_id="p1"
+                "bg/reopen", target_type=probe.get_type(), target_id=probe.id, project_id=P1
             )
         )
         await asyncio.sleep(0.05)
@@ -256,21 +285,21 @@ async def test_display_row_reap_keeps_order_contiguous() -> None:
     # global order must stay gap-free so the next insert lands contiguously.
     from flow_sdk.builtin.tab import _build_tab_list
 
-    a = await ensure_tab("g/a", project_id="p1")
+    a = await ensure_tab("g/a", project_id=P1)
     legacy = Tab(
         id=tab_id_for('{"viewType": "display", "pointer": "agentic_process-g"}'),
         pointer='{"viewType": "display", "pointer": "agentic_process-g"}',
         target_type="agentic_process",
         target_id="g",
-        project_id="p1",
+        project_id=P1,
         visible=True,
         tab_order=1,
     )
     await legacy.save()
-    c = await ensure_tab("g/c", project_id="p1")
+    c = await ensure_tab("g/c", project_id=P1)
 
-    await _build_tab_list("p1")  # reaps the display row
-    assert await _order("p1") == [a.id, c.id]
-    d = await ensure_tab("g/d", project_id="p1")
-    order = await _order("p1")
+    await _build_tab_list(P1)  # reaps the display row
+    assert await _order(P1) == [a.id, c.id]
+    d = await ensure_tab("g/d", project_id=P1)
+    order = await _order(P1)
     assert order == [a.id, c.id, d.id] or order.index(d.id) == order.index(c.id) + 1

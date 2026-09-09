@@ -30,6 +30,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     load_transcript_history,
 )
 from flow_sdk.builtin.agentic_process.turn_abort import (
+    history_start_time,
     load_abort_marker_frames,
     merge_abort_markers,
     record_turn_abort,
@@ -223,3 +224,54 @@ def test_merge_without_markers_is_identity(tmp_path: Path):
 
     assert merge_abort_markers(history, []) is history
     assert load_abort_marker_frames(tmp_path / "record") == []
+
+
+def test_sidless_marker_excluded_from_rotated_session_replay(tmp_path: Path):
+    """R2: a marker written with ``session_id: ""`` (cancel before
+    ``thread.started`` reported a sid) belongs to the session that was live
+    THEN. A rotated session's replay starts later — the stale sid-less marker
+    must be excluded, not inserted as a phantom "turn aborted" at index 0 of
+    every future session forever."""
+    rollout = tmp_path / "rollout.jsonl"
+    _write_cancelled_rollout(rollout)  # replay frames start 06:00:00
+    record_dir = tmp_path / "record"
+    # Sid-less marker from a PREVIOUS (rotated-away) session's first-turn cancel.
+    _write_marker_line(record_dir, timestamp="2026-07-10T05:00:00.000Z", session_id="")
+
+    history = load_transcript_history(rollout)
+    frames = load_abort_marker_frames(
+        record_dir, session_id=_SID, history_start=history_start_time(history)
+    )
+
+    assert frames == [], "stale sid-less marker must not leak into a rotated session"
+
+
+def test_sidless_marker_overlapping_replay_is_included(tmp_path: Path):
+    """A sid-less marker that chronologically overlaps the replayed rollout
+    (the genuine first-turn-cancel-before-sid case) still merges."""
+    rollout = tmp_path / "rollout.jsonl"
+    _write_cancelled_rollout(rollout)
+    record_dir = tmp_path / "record"
+    _write_marker_line(record_dir, timestamp="2026-07-10T06:01:00.000Z", session_id="")
+
+    history = load_transcript_history(rollout)
+    frames = load_abort_marker_frames(
+        record_dir, session_id=_SID, history_start=history_start_time(history)
+    )
+
+    assert len(frames) == 1
+    merged = merge_abort_markers(history, frames)
+    assert any(_is_terminated_status(fd) for fd in merged)
+
+
+def test_sidless_marker_included_when_history_empty(tmp_path: Path):
+    """No replayed frames (cancel before anything flushed) → no chronological
+    bound → the sid-less marker is included."""
+    record_dir = tmp_path / "record"
+    _write_marker_line(record_dir, timestamp="2026-07-10T06:01:00.000Z", session_id="")
+
+    frames = load_abort_marker_frames(
+        record_dir, session_id=_SID, history_start=history_start_time([])
+    )
+
+    assert len(frames) == 1

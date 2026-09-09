@@ -36,6 +36,7 @@ export interface IDataSource extends IEntity {
   channel?: string;
   account_key?: string;
   account_identities?: string[];
+  inbound_allowed_senders?: string[];
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
@@ -92,6 +93,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   owner: string | null = null;
   /** Addresses that are ME on this source. Display/round-trip only. */
   account_identities: string[] = [];
+  /** Who may drive the owning agent from this channel — sender external ids
+   *  (a Slack member id, an email address), one per provider's own namespace.
+   *  Empty admits nobody: see `EmailInbox.allowed`, the gate this backs for
+   *  every channel-bound agent, not only an allocated mailbox. */
+  inbound_allowed_senders: string[] = [];
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -121,6 +127,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.account_key = entity.account_key ?? this.account_key;
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
+    this.inbound_allowed_senders = entity.inbound_allowed_senders ?? this.inbound_allowed_senders;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;

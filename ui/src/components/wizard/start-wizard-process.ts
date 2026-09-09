@@ -1,5 +1,5 @@
 import {
-  SubAgent,
+  Wizard,
   AgenticProcess,
   ComputeNode,
   ProcessKind,
@@ -11,22 +11,54 @@ import {
   type WizardProcessResult,
 } from '@sdk';
 
+import { systemSubagentRef } from '@src/pages/flow-page/vibe-personas';
+
 let wizardAgentRefCache: Record<string, string | null> = {};
 
-/** Resolve a wizard's agent by name → its `asset_ref` (the wizard name IS the
- *  agent name; there is no static table). Cached per name.
+/** Resolve a wizard's driving agent by wizard name → the agent's `asset_ref`.
  *
- *  System (SDK-shipped) wizard agents only surface with `include_system`, which
- *  the entity query layer omits — so we hit the graph route with the flag passed
- *  as `params` and hydrate the rows into `SubAgent` entities via `dataManager`
- *  (the same shape `CapabilityManager` uses), rather than reading raw JSON. */
+ *  Two hops, and the first one is the migration: a wizard is a WIZARD ASSET
+ *  (`agentic-assets/wizard/<name>/wizard.json`) that DECLARES the agent driving
+ *  it, and only then do we look that agent up. It used to be one hop on an
+ *  assumption — the wizard name WAS an agent name, with no declaration anywhere
+ *  — so a wizard had no description, no icon, and nothing to open in the UI.
+ *
+ *  System (SDK-shipped) rows only surface with `include_system`, which the entity
+ *  query layer omits, so the first hop passes the flag as `params`.
+ *
+ *  Returns null when the name matches no wizard, or when the wizard names no
+ *  agent. Callers MUST treat that as fatal — see `startWizardProcess`. */
 export async function resolveWizardAgentRef(name: string): Promise<string | null> {
   if (name in wizardAgentRefCache) return wizardAgentRefCache[name];
-  const rows = await apiClient.get<unknown[]>('/graph/agent', { params: { include_system: true } });
-  const agents = (rows ?? []).map((row) => dataManager.updateEntityFromJson<SubAgent>(row));
-  const ref = agents.find((a) => a.name === name)?.asset_ref ?? null;
-  wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
+
+  const wizardRows = await apiClient.get<unknown[]>('/graph/wizard', {
+    params: { include_system: true },
+  });
+  const wizards = (wizardRows ?? []).map((row) => dataManager.updateEntityFromJson<Wizard>(row));
+  // `agent` is a computed field carrying what the document DECLARES: the agent
+  // that drives this conversation. Empty for a stepped wizard, which the backend
+  // runner runs instead — so those correctly resolve to nothing here.
+  const agentName = wizards.find((w) => w.name === name)?.agent ?? null;
+  if (!agentName) return null;
+
+  // `systemSubagentRef` is the existing resolver for this exact question, and
+  // reusing it fixes two things a hand-rolled copy got wrong. It queries
+  // `/graph/subagent` — `.claude/agents/*.md` is the SubAgent family (see
+  // docs/glossary.md) and `loadEmbeddedSubagent` embeds one of those, whereas
+  // this used to ask `/graph/agent`, so three of the four wizards resolved to
+  // nothing and every launch threw "No wizard named … is installed". And it
+  // filters `scope === 'system'`, so a project sub-agent that happens to be
+  // called `task-analyze` cannot shadow the shipped one.
+  const ref = await systemSubagentRef(agentName);
+  // HITS only. The one caller answers `null` by clearing the cache, so a stored
+  // miss could never be read back.
+  if (ref) wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
   return ref;
+}
+
+/** Forget the cached name→ref answers. */
+export function clearWizardAgentRefCache(): void {
+  wizardAgentRefCache = {};
 }
 
 export interface StartedWizard<T = unknown> {
@@ -59,6 +91,28 @@ export async function startWizardProcess<T = unknown>(
   // reconnectable via useProcessesForTarget regardless of whether the agent got
   // around to stamping process_id. Fall back to a unique key when no subject.
   const target = request.wizardData?.targetTypeId?.trim() || `wizard:${request.wizardName}:${Date.now()}`;
+
+  // Resolved BEFORE the process exists, and fatal when it misses.
+  //
+  // This used to sit after createProcess and merely `console.warn`, so a
+  // mistyped or unindexed wizard name produced a REAL process running the
+  // wizard prompt with no agent embedded: it answered as a generic assistant,
+  // never ran `flow wizard … close`, and the caller's promise hung forever with
+  // a warning buried in the console. A name that resolves to nothing is a bug in
+  // the caller, and the only useful thing to do with it is say so loudly before
+  // anything is spawned.
+  const agentRef = await resolveWizardAgentRef(request.wizardName);
+  if (!agentRef) {
+    // The cache stores misses too; drop it so a wizard indexed after this
+    // failure is resolvable on the next attempt.
+    clearWizardAgentRefCache();
+    throw new Error(
+      `No wizard named "${request.wizardName}" is installed. ` +
+      'A wizard is a folder under agentic-assets/wizard/ whose wizard.json names ' +
+      'the agent that drives it; check the name, or re-index if it was just added.',
+    );
+  }
+
   const process = await computeNode.createProcess(
     {
       targetVfsPath: target,
@@ -83,12 +137,9 @@ export async function startWizardProcess<T = unknown>(
   const wizardClosed = awaitWizardResult<T>(process);
 
   // Embed the driving sub-agent before the prompt so it handles the turn.
-  try {
-    const agentRef = await resolveWizardAgentRef(request.wizardName);
-    if (agentRef) await process.loadEmbeddedSubagent(agentRef);
-  } catch (e) {
-    console.warn(`[startWizardProcess] failed to embed wizard sub-agent ${request.wizardName}`, e);
-  }
+  // `agentRef` was resolved above, so a failure here is a real embed failure
+  // (a deleted asset, a backend error) rather than an unknown name.
+  await process.loadEmbeddedSubagent(agentRef);
 
   // `result` resolves on the FIRST of:
   //  - `wizard.closed` — the agent closed with its verdict (preferred; carries data);

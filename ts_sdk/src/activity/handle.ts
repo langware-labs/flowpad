@@ -47,30 +47,30 @@ interface VerbBody {
   ref?: string | null;
   code?: string | null;
   counter?: string;
-  scope?: string | null;
+  subject_entity?: string | null;
 }
 
 export class Activity {
   private constructor(
     readonly path: string,
-    readonly scope?: string | null,
+    readonly subject_entity?: string | null,
   ) {}
 
   /** The node at `path`, created on the backend by the first verb that reaches it. */
-  static get(path: string, scope?: string | null): Activity {
-    return new Activity(path.replace(/^\/+|\/+$/g, ''), scope ?? null);
+  static get(path: string, subject_entity?: string | null): Activity {
+    return new Activity(path.replace(/^\/+|\/+$/g, ''), subject_entity ?? null);
   }
 
   /** The child called `name` — the same node `Activity.get('parent/name')` addresses. */
   child(name: string): Activity {
-    return new Activity(`${this.path}/${name.replace(/^\/+|\/+$/g, '')}`, this.scope);
+    return new Activity(`${this.path}/${name.replace(/^\/+|\/+$/g, '')}`, this.subject_entity);
   }
 
   /** Chains verbs in issue order so a burst cannot arrive out of sequence. */
   private queue: Promise<ActivityProgressSpec | null> = Promise.resolve(null);
 
   private send(verb: string, body: VerbBody = {}): Promise<ActivityProgressSpec | null> {
-    const payload = { ...body, scope: this.scope ?? undefined };
+    const payload = { ...body, subject_entity: this.subject_entity ?? undefined };
     this.queue = this.queue
       .then(() => apiClient.post(`${BASE}/${this.path}/${verb}`, payload))
       .then(asSpec)
@@ -108,9 +108,9 @@ export class Activity {
   async spec(): Promise<ActivityProgressSpec | null> {
     try {
       const res: unknown = await apiClient.get(`${BASE}/${this.path}`, {
-        // Omit an absent scope: a query string cannot carry null, and `scope=` would ask
-        // for an activity in a scope literally named "".
-        params: this.scope ? { scope: this.scope } : {},
+        // Omit an absent subject_entity: a query string cannot carry null, and `subject_entity=` would ask
+        // for an activity in a subject_entity literally named "".
+        params: this.subject_entity ? { subject_entity: this.subject_entity } : {},
       });
       return asSpec(res);
     } catch {
@@ -124,9 +124,9 @@ export class Activity {
 }
 
 /** Live roots, for a client that wants the list without subscribing. */
-export async function listActivities(scope?: string | null, allScopes = false): Promise<ActivityProgressSpec[]> {
+export async function listActivities(subject_entity?: string | null, allSubjects = false): Promise<ActivityProgressSpec[]> {
   try {
-    const params = allScopes ? { all: true } : scope ? { scope } : {};
+    const params = allSubjects ? { all: true } : subject_entity ? { subject_entity } : {};
     const res: unknown = await apiClient.get(BASE, { params });
     return Array.isArray(res) ? (res as ActivityProgressSpec[]) : [];
   } catch {

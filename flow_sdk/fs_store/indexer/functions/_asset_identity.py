@@ -53,3 +53,21 @@ def native_json_identity() -> JsonRoot:
 
 def derived_identity(reader: Any = None) -> Derived:
     return Derived(reader=reader)
+
+
+def main_file_mtime(ref: Any, filename: str) -> float:
+    """Freshness of a folder asset = the mtime of the ONE file that defines it.
+
+    The third copy of this was being written when it moved here. Every
+    ``Folder(main=...)`` type wants exactly this rule and for the same reason:
+    a folder asset accumulates things beside its document — a helpdesk's guides
+    have their own records and their own hashes, a wizard's folder collects run
+    scratch — and hashing the tree would re-index the asset every time any of
+    that changed, which is precisely when nothing about the asset did.
+
+    ``0.0`` for a missing file: an asset whose document is gone is not fresh.
+    """
+    try:
+        return (ref._path / filename).stat().st_mtime
+    except OSError:
+        return 0.0

@@ -25,7 +25,7 @@ const START = '2026-09-03T12:00:00.000Z';
 function spec(over: Partial<ActivityProgressSpec> = {}): ActivityProgressSpec {
   return {
     activity_id: 'a1',
-    scope: null,
+    subject_entity: null,
     path: 'index',
     name: 'index',
     label: 'Indexing',

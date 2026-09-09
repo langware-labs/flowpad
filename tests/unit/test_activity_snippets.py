@@ -107,7 +107,7 @@ def test_snippet_6_eviction():
 
 def test_snippet_7_scope():
     Activity.get("index").inc_success()
-    Activity.get("run", scope="agentic_process-abc").inc_success()
+    Activity.get("run", subject_entity="agentic_process-abc").inc_success()
 
-    assert [s.path for s in monitor.list(scope="agentic_process-abc")] == ["run"]
+    assert [s.path for s in monitor.list(subject_entity="agentic_process-abc")] == ["run"]
     assert [s.path for s in monitor.list()] == ["index"]

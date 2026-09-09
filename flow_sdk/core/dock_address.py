@@ -325,6 +325,11 @@ class ViewMeta:
     addressable: bool = True
     folds_pointer: bool = False
     scope_keyed: bool = False
+    #: Tab identity is the FIRST pointer segment, the host
+    #: (``conversation/<id>/message/<mid>`` keys on ``<id>``). See
+    #: ``ViewerMeta.foldsSubPointer`` in ``ui/src/types/ViewType.ts`` for when this is
+    #: and is not the right fold -- TypeScript owns the rule, this only mirrors it.
+    folds_sub_pointer: bool = False
     chrome: str = "workspace"  # "workspace" | "fullbleed"
     label: str = ""  # English, agent-facing: "Search indexes", not "rag"
     aliases: tuple[str, ...] = ()  # what a user might call it, lowercase
@@ -379,7 +384,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")
     ),
     ViewType.SHOW: _m(_REQ, label="Show"),
-    ViewType.APPS: _m(_REQ, label="Skill apps"),
+    ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
     ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
     ViewType.WORLDVIEW: _m(
         _REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")
@@ -441,7 +446,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # `<agentId>/inbox` — the id leads, so the pointer is required.
     ViewType.AGENT: _m(_REQ, label="Agent"),
     ViewType.INBOX: _m(_NONE, label="Inbox", aliases=("messages",)),
-    ViewType.CONVERSATION: _m(_REQ, label="Conversation", pages=("desk", "hub")),
+    ViewType.CONVERSATION: _m(
+        _REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")
+    ),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),
     ViewType.DIAGNOSIS: _m(_REQ, label="Diagnosis"),

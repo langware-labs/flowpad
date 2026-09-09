@@ -1,5 +1,5 @@
 /**
- * Behavioural lock for the project-menu chip (ProjectsCounterChip): it shows one
+ * Behavioural lock for the project-menu chip (the nav bar's RuntimeChip): it shows one
  * row per project that owns an open tab, across ALL tab kinds.
  *
  * Two regressions this guards:
@@ -50,7 +50,7 @@ function tabRow(id: string, targetType: string, targetId: string, projectId: str
   };
 }
 
-describe('ProjectsCounterChip buckets — one chip per project across all projects', () => {
+describe('project chip buckets — one row per project across all projects', () => {
   let queryClient: QueryClient;
 
   beforeEach(async () => {

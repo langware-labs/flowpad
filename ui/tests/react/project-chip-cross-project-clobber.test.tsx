@@ -1,6 +1,6 @@
 /**
  * Regression: opening a tab in a SECOND project must not erase the FIRST
- * project from the active-projects chip (ProjectsCounterChip / useTabProjectBuckets).
+ * project from the active-projects chip (RuntimeChip / useTabProjectBuckets).
  *
  * Real-flow reproduction of the cross-project clobber:
  *   - Project A already owns a terminal tab (the chip shows 1 project: A).

@@ -12,7 +12,7 @@ from flow_sdk.activity import ActivityState, monitor
 from flow_sdk.builtin.agentic_process.activity_bridge import (
     PROCESS_ACTIVITY_PATH,
     end_process_activity,
-    scope_for,
+    subject_for,
     sync_process_activity,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus
@@ -30,7 +30,7 @@ def _clean_monitor():
 
 
 def spec():
-    return monitor.get(PROCESS_ACTIVITY_PATH, scope=scope_for(PROC))
+    return monitor.get(PROCESS_ACTIVITY_PATH, subject_entity=subject_for(PROC))
 
 
 def report(**counters):
@@ -50,12 +50,12 @@ def test_a_flush_creates_the_process_activity_in_its_own_scope():
 
     assert spec() is not None
     assert spec().label == "fix nav bug"
-    assert spec().scope == f"agentic_process-{PROC}"
+    assert spec().subject_entity == f"agentic_process-{PROC}"
     assert monitor.get(PROCESS_ACTIVITY_PATH) is None, "it is not on the instance-wide address"
 
 
 def test_the_activity_carries_no_icon_so_the_process_glyph_is_inherited():
-    """An activity's icon falls back to its scope entity's ``TypeInfo.icon``, and the scope
+    """An activity's icon falls back to its subject_entity entity's ``TypeInfo.icon``, and the subject_entity
     IS the process. Setting a glyph here would duplicate the type registry."""
     sync_process_activity(PROC, worker_status=WorkerStatus.WORKING, report=report())
 

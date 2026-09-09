@@ -133,7 +133,17 @@ class JsonlTeeStreamWorker(AgenticWorker):
         return self._interrupted
 
     async def close_session(self) -> None:
-        self._interrupted = True
+        # Only a LIVE process was actually interrupted. `_interrupted` is not
+        # just the `cancelled_gracefully` signal — it also drives
+        # `_terminal_synthetic_event`, which writes a `flowpad.interrupted`
+        # event into the worker's OWN transcript. Setting it unconditionally
+        # meant a Stop that raced a turn finishing on its own branded that
+        # completed turn as interrupted, permanently and visibly, in the vendor
+        # transcript. An already-exited process wrote its own ending; leave it
+        # alone and let the normal terminal stand.
+        proc = self._proc
+        if proc is None or proc.returncode is None:
+            self._interrupted = True
         await self._terminate_process()
 
     def get_session_id(self) -> str | None:

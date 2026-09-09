@@ -194,7 +194,11 @@ class PtySession(Pty):
 
     async def close(self) -> None:
         """Permanent teardown: kill OS PTY, close disk record, clear in-memory state."""
-        self._signal_output_queues()
+        # No signalling here: ``close_session`` now releases the waiters itself,
+        # so every path that evicts a session does it — not just this one.
+        # Signalling twice would put a second, unread ``None`` on each queue.
+        # ``kill()`` above still signals, because it pops ``states`` directly
+        # and never reaches ``close_session``.
         await self._mgr.close_session(self._pty_key)
         await self._provider.close_pty_session(self._pn_id, self._shell_id)
 

@@ -317,20 +317,6 @@ def get_port_file_path() -> Path:
     return _active_server_json_path()
 
 
-class FlowpadServerInfo(BaseModel):
-    """Server connection info written to server.json for external tools."""
-
-    port: int
-    webhook_path: str = "/api/v1/webhook/listen"
-    health_path: str = "/api/v1/health/status"
-    url: str = ""
-    server_pid: int | None = None
-    monitor_pid: int | None = None
-    launch_iso_time: str | None = None  # ISO 8601
-    server_create_time: float | None = None
-    generation: str | None = None
-
-
 def load_server_info() -> dict:
     """Read ~/.flow/server.json, return empty dict if missing/corrupt."""
     import json
@@ -356,31 +342,27 @@ def save_server_info(data: dict) -> Path:
     return port_file
 
 
-def write_server_info(port: int) -> Path:
-    """Write server.json with connection info for external tools.
+def _server_info_write_lock():
+    """Serialises read-modify-write of server.json across processes.
 
-    Args:
-        port: The port the server is running on.
-
-    Returns:
-        Path to the written server.json file.
+    The backend, its monitor and the CLI launcher each merge their own keys
+    into the same file; without this, two of them updating within the same
+    millisecond lose one another's keys. ``server.lock`` is taken -- it is the
+    backend singleton -- so this is a sibling file. A holder that dies releases
+    it (kernel-owned); one that hangs is waited out, never deadlocked on.
     """
-    data = load_server_info()
-    data.update(
-        {
-            "port": port,
-            "webhook_path": "/api/v1/webhook/listen",
-            "health_path": "/api/v1/health/status",
-        }
-    )
-    return save_server_info(data)
+    from filelock import FileLock
+
+    port_file = get_port_file_path()
+    return FileLock(str(port_file.with_name(port_file.name + ".lock")), timeout=5)
 
 
 def set_server_info(data: dict) -> Path:
     """Merge-write data into the active server json (dev or prod). Atomic."""
-    existing = load_server_info()
-    existing.update(data)
-    return save_server_info(existing)
+    with _server_info_write_lock():
+        existing = load_server_info()
+        existing.update(data)
+        return save_server_info(existing)
 
 
 def clear_server_info(
@@ -396,6 +378,16 @@ def clear_server_info(
     report``) treat any server.json as a live target, so a stale one
     re-routes their traffic to whichever server later recycles the port.
     """
+    try:
+        with _server_info_write_lock():
+            _clear_server_info_locked(expected_pid, expected_create_time, expected_generation)
+    except Exception:
+        pass
+
+
+def _clear_server_info_locked(
+    expected_pid: int | None, expected_create_time: float | None, expected_generation: str | None
+) -> None:
     try:
         if expected_pid is not None or expected_create_time is not None or expected_generation is not None:
             current = load_server_info()
