@@ -436,7 +436,10 @@ export function useFavoritesProjectRoots(): {
           break;
         }
         if (cur.id) chain.push(cur.id);
-        const parent = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+        // Annotated, not inferred: `cur` is reassigned from `parent` at the
+        // foot of the loop, so inferring `parent` from `cur.parent_id` makes
+        // each type depend on the other and TS gives up with an implicit any.
+        const parent: Bookmark | undefined = cur.parent_id ? byId.get(cur.parent_id) : undefined;
         // A cycle re-enters an id already on this chain; stop and bucket by the
         // row we are standing on rather than looping forever.
         if (!parent || (parent.id && chain.includes(parent.id))) {

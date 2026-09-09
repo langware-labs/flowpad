@@ -285,7 +285,7 @@ function BrowseableRow({
   hoverExpandMs,
   hoverSeenMs,
   levelFooter,
-  mirrored,
+  mirrored = false,
 }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
