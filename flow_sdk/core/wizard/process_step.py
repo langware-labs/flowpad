@@ -1,0 +1,97 @@
+"""Hand one wizard step to an agent, and wait for it.
+
+This is the four-line core of ``run_capability_install_process``
+(``flow_sdk/core/capabilities/registry.py:663``) with one deliberate change:
+the process is **awaited**, not monitored.
+
+That function returns the moment the worker starts and lets a background
+monitor settle the verdict, because a browser needs the process id while the
+run is still live. A wizard step has no such caller — the next step's
+precondition depends on this one having finished — so the runner blocks here.
+
+``run_capability_install_process`` is deliberately NOT reused: it is welded to
+``CapabilitySpec``, mutates a ``Capability`` row's ``last_setup``/``state``, and
+schedules a fire-and-forget re-discovery. A wizard step wants none of that.
+
+Nothing here raises. A machine with no harness capability resolved is the
+NORMAL state of the bare box a wizard exists to fix, so "no harness" has to be
+a legible failed step, not a traceback that takes the whole run with it.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ProcessResult:
+    """What the agent step did. ``process_id`` is set even when ``ok`` is False,
+    so a caller can always link to the run that failed."""
+
+    process_id: Optional[str]
+    ok: bool
+    message: str = ""
+
+
+async def launch_step_process(
+    *,
+    agent: str,
+    prompt: str,
+    name: str,
+    workdir: Path,
+    context_data: Optional[dict] = None,
+    target_typeid_str: str = "",
+    timeout_seconds: float = 1800.0,
+) -> ProcessResult:
+    """Spawn a headless agent process for one step and wait for it to settle."""
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
+    from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+    try:
+        worker_type = await resolve_default_worker_type()
+    except Exception as exc:  # noqa: BLE001
+        # The bare box a wizard is meant to fix often has no harness yet. Say so.
+        return ProcessResult(None, False, f"No coding-agent harness is available to run this step: {exc}")
+
+    try:
+        deployment = await get_agent_local_deployment(agent)
+    except LookupError as exc:
+        return ProcessResult(None, False, str(exc))
+
+    try:
+        process = await deployment.create_process(
+            prompt,
+            worker_type=worker_type,
+            name=name,
+            workdir=str(workdir),
+            context_data={**(context_data or {}), "wizard_step_prompt": prompt},
+            target_typeid_str=target_typeid_str,
+        )
+        await process.save(notify=True)
+    except Exception as exc:  # noqa: BLE001
+        return ProcessResult(None, False, f"Could not start the step's agent: {exc}")
+
+    process_id = str(process.id)
+    try:
+        start = await process.prompt(prompt)
+    except Exception as exc:  # noqa: BLE001
+        return ProcessResult(process_id, False, f"Agent failed to start: {exc}")
+    if isinstance(start, ApiFailResponse):
+        return ProcessResult(process_id, False, getattr(start, "message", "Agent failed to start"))
+
+    try:
+        await process.wait(timeout=timeout_seconds)
+    except TimeoutError:
+        return ProcessResult(process_id, False, f"Agent did not finish within {timeout_seconds:.0f}s")
+    except Exception as exc:  # noqa: BLE001
+        return ProcessResult(process_id, False, f"Agent run failed: {exc}")
+
+    # Reaching a terminal state is NOT proof the work landed — that is what the
+    # step's `verify` is for. All this reports is that the agent stopped.
+    return ProcessResult(process_id, True, "agent finished")

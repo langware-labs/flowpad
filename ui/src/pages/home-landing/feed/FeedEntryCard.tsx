@@ -49,8 +49,14 @@ export function FeedEntryCard({
 }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
   const targetTypeId = feedData.targetTypeId;
+  // ``watch:false`` — the parent (``HomeFeedColumn``) batch-hydrates every
+  // card's target with one ``$IN`` query per type (X2), warming the shared
+  // cache and providing a single live ``watchQuery`` subscription. So this
+  // ``useEntity`` resolves straight from cache with no per-card GET and no
+  // per-card ``/watch`` POST. (It still subscribes client-side for live row
+  // updates, which is network-free.)
   const { data: entity, isLoading } = useEntity(targetTypeId, {
-    watch: true,
+    watch: false,
     enabled: !!targetTypeId,
   });
 

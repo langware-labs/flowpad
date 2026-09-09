@@ -123,10 +123,10 @@ async def test_lifecycle_verbs_move_the_state(client):
 
 
 async def test_scope_is_taken_from_the_body(client):
-    await post(client, "run", "inc_success", scope="agentic_process-abc")
+    await post(client, "run", "inc_success", subject_entity="agentic_process-abc")
 
     assert monitor.get("run") is None, "the unscoped address is a different activity"
-    assert monitor.get("run", scope="agentic_process-abc").done == 1
+    assert monitor.get("run", subject_entity="agentic_process-abc").done == 1
 
 
 # ---------------------------------------------------------------- reading
@@ -161,9 +161,9 @@ async def test_list_returns_live_roots(client):
 
 async def test_list_filters_by_scope(client):
     Activity.get("index").inc_success()
-    Activity.get("run", scope="agentic_process-abc").inc_success()
+    Activity.get("run", subject_entity="agentic_process-abc").inc_success()
 
-    scoped = data(await client.get(BASE, params={"scope": "agentic_process-abc"}))
+    scoped = data(await client.get(BASE, params={"subject_entity": "agentic_process-abc"}))
     everything = data(await client.get(BASE, params={"all": "true"}))
 
     assert [r["path"] for r in scoped] == ["run"]
@@ -209,12 +209,12 @@ async def test_a_bad_argument_is_a_refusal_not_a_crash(client):
 
 async def test_an_empty_scope_parameter_means_the_instance_scope(client):
     """A query string cannot carry ``None``. A caller that always serialises the
-    parameter sends ``scope=``, and that must resolve to the instance-wide activity
-    rather than to one in a scope literally named "" — which would never be found."""
+    parameter sends ``subject_entity=``, and that must resolve to the instance-wide activity
+    rather than to one in a subject_entity literally named "" — which would never be found."""
     Activity.get("index").inc_success()
 
-    assert data(await client.get(f"{BASE}/index", params={"scope": ""}))["done"] == 1
-    assert [r["path"] for r in data(await client.get(BASE, params={"scope": ""}))] == ["index"]
+    assert data(await client.get(f"{BASE}/index", params={"subject_entity": ""}))["done"] == 1
+    assert [r["path"] for r in data(await client.get(BASE, params={"subject_entity": ""}))] == ["index"]
 
 
 async def test_the_emitter_is_installed_at_server_startup():

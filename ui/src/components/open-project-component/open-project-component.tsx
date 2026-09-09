@@ -87,8 +87,8 @@ function CompactProjectSelectDialog({
         ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
         : null;
 
-  // Active projects = the ones that own open tabs — the SAME source the tab
-  // strip's projects chip renders, so both surfaces always agree.
+  // Active projects = the ones that own open tabs — the SAME source the nav
+  // bar's project chip renders, so both surfaces always agree.
   const { buckets } = useTabProjectBuckets();
   const tabCountByProjectId = useMemo(() => new Map(buckets.map((b) => [b.projectId, b.tabCount])), [buckets]);
 
@@ -117,7 +117,9 @@ function CompactProjectSelectDialog({
 
   // One row shape for both sections; active rows carry the chip's tab-count badge.
   const renderRow = (project: ProjectListItem, tabCount?: number) => {
-    const projectPath = normalizePath(project.cwd || project.name || '');
+    // Mount path only, never `name` — matches `currentProjectPath` above, so
+    // a cwd-less row simply never reads as current instead of matching by name.
+    const projectPath = normalizePath(project.cwd || '');
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
     return (
@@ -463,15 +465,21 @@ export function OpenProjectComponent({
     }
   }, [open]);
 
+  // Mount path only, never `name` — a Project's name is not a location.
   const currentProjectPath = useMemo(
-    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
+    () => normalizePath(currentProject?.fs_storage_mount_path || ''),
     [currentProject],
   );
 
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
-      const path = normalizePath(project.cwd || project.name || '');
-      if (!path) return;
+      // `cwd` is the only openable location; see `isOpenableProjectPath` for
+      // what falling back to `name` here used to mint.
+      const path = normalizePath(project.cwd || '');
+      if (!path) {
+        setError(t`This project has no folder on disk and can't be opened.`);
+        return;
+      }
 
       setOpeningProjectId(project.id);
       setError(null);

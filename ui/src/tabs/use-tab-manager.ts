@@ -8,6 +8,7 @@ import {
   Project,
   projectTabCounts,
   tabManager,
+  tabsForProject,
   terminalTabsForScope,
   topLevelTabsForProject,
   type Tab,
@@ -15,6 +16,7 @@ import {
   type TabScope,
 } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
+import { closeTabsWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 /** Thin React subscription to the SDK's canonical, unscoped tab snapshot. */
@@ -112,6 +114,18 @@ export interface TabProjectBucket {
   state: BucketState;
   tabCount: number;
   recover: () => Promise<Project | null>;
+  /** Close EVERY open tab carrying this `project_id`, emptying the bucket so it
+   *  drops out of the menu. Resolves once the backend has durably acknowledged.
+   *
+   *  The set closed is a superset of what `tabCount` advertises: the count comes
+   *  from `projectTabCounts`, which skips a tab whose target IS the project (its
+   *  own landing chip). Closing must still take that one, or clearing a project
+   *  would leave an invisible row behind — filtered from the count, so the
+   *  bucket vanishes from the menu while the tab lives on.
+   *
+   *  Callers that may be closing the CURRENT scope must navigate away first —
+   *  this only closes. */
+  closeAll: () => Promise<void>;
 }
 
 export interface UseTabProjectBucketsResult {
@@ -184,9 +198,23 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
           });
           return recovered;
         };
-        return { projectId, project, state, tabCount, recover };
+        // The close-all set, from the SAME unfiltered snapshot the counts come
+        // from. Keyed on the raw `project_id` (no existence check), so a bucket
+        // whose project is missing still owns its rows and can be cleared —
+        // the only way out for an orphan the recover path cannot help.
+        const bucketTabs = tabsForProject(tabs, projectId);
+        const closeAll = async (): Promise<void> => {
+          if (bucketTabs.length === 0) return;
+          // The SAME durable batch path the strip's "Close all" uses — it waits
+          // for one backend acknowledgement before hiding chips, because a
+          // close-all is usually followed by navigation that would otherwise
+          // abort the fan-out and resurrect every tab.
+          await closeTabsWithLifecycle(bucketTabs, projectId);
+          await tabManager.refresh();
+        };
+        return { projectId, project, state, tabCount, recover, closeAll };
       }),
-    [grouped, status],
+    [tabs, grouped, status],
   );
 
   return { buckets, globalTabCount };

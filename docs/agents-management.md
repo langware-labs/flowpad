@@ -47,6 +47,34 @@ icon values remain supported for Agents that do not use an image.
 Creating another Agent whose normalized name resolves to an occupied bundle
 returns a conflict and never overwrites the existing Agent or its files.
 
+### Intro and project auto-launch
+
+Three frontmatter keys are **declaration only**: they round-trip through
+`agent.md`, show in the profile editor, and never enter `to_agent_options`, so
+setting them does not flip `restart_required` on a running process.
+
+| Key | Meaning |
+|-----|---------|
+| `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
+| `auto_launch` | Launch this agent once, the first time the project it lives in is opened. |
+| `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |
+
+Auto-launch is **once per project, ever**. The dock loaders run a load-redirect
+resolver (`ui/src/agents/agent-auto-launch-redirect.ts`, registered after the
+journey one) that calls `POST /api/v1/agents/auto-launch {project_id}`.
+`Agent.auto_launch_for` scopes candidates to agents rooted in the project or
+one of its direct context folders, `enabled` with `auto_launch` on, and not yet
+in the project's device state (`<instance_dir>/projects/<project_id>/device_state.json`,
+key `agent_auto_launched`, via `flow_sdk/project_device_state.py` — backend-owned so no
+UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). The **oldest** wins — first
+indexed (`created_date`), then alphabetical by folder — and every candidate,
+winner and cancelled alike, is recorded before the session opens, so a cancelled
+agent never fires on a later open and a failed launch is not retried. The UI
+warns which launches were cancelled. The session is opened with `use()`, the
+prompt is enqueued server-side, and the UI embeds the vibe persona before it
+kicks the queue with `drain-queue`. Never set `auto_launch` on a system agent:
+the system project is a context root of every project.
+
 The same entity supports two execution modes:
 
 | Mode | Entity flag | Runtime | Output path | Primary frontend surface |

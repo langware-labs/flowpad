@@ -3,7 +3,8 @@
 // compute-node -> shell) hits the APIEntity circular-init and "Class extends
 // value undefined" at collection.
 import '@sdk';
-import { beforeEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
 import { installLeakTripwire } from '../_cleanup';
 import { loadShippedIconPacks } from '../_icon-packs';
 
@@ -14,6 +15,22 @@ import { loadShippedIconPacks } from '../_icon-packs';
 // a cheap regression guard for a future unit test that starts creating real
 // backend entities. No-ops silently when no backend is reachable.
 installLeakTripwire(['skill']);
+
+// Unmount whatever a test rendered, after EVERY test — the arrangement the react
+// tier already has, and the one RTL expects. Without it a file that renders a
+// Radix dialog and never unmounts the last one leaves `pointer-events: none` on
+// document.body, because Radix guards a modal by styling the body and undoes it
+// on unmount. The style then outlives the file: `isolate` gives the next file a
+// fresh module registry, but not a fresh jsdom document, so the next file's very
+// first click fails with "element has `pointer-events: none`" — a failure that
+// reads like a broken component and never reproduces in isolation.
+//
+// That is the whole of the tier's cross-file flakiness (~36% of full runs, a
+// different victim each time). Found by pairing vibe-start-failure.test.tsx with
+// project-publish-button.test.tsx: 4 failures in 8 runs together, 0 in 6 alone.
+// A per-file `cleanup()` in `beforeEach` does not cover it — it unmounts between
+// tests but never after the last one.
+afterEach(() => cleanup());
 
 // Icons resolve through the SDK registry, which the app fills from bootstrap
 // before its first render. This tier has no backend, so load the shipped

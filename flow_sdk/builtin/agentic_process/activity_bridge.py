@@ -13,8 +13,8 @@ indexing walk and a Claude session alike. The report carries running TOTALS, so 
 lives on ``Activity`` where every producer inherits the same answer. The existing status-report field and its own
 ``progress_report`` emit are untouched — folding the two is a phase-2 question.
 
-No icon is set. An activity's icon falls back to its scope entity's ``TypeInfo.icon``, and
-the scope here IS the process, so a process row gets the process glyph without this module
+No icon is set. An activity's icon falls back to its subject_entity entity's ``TypeInfo.icon``, and
+the subject_entity here IS the process, so a process row gets the process glyph without this module
 duplicating the type registry.
 """
 
@@ -29,8 +29,8 @@ from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 
 logger = logging.getLogger(__name__)
 
-#: One root per process, addressed within the process's own scope. The name is generic
-#: because the scope already says which process this is.
+#: One root per process, addressed within the process's own subject_entity. The name is generic
+#: because the subject_entity already says which process this is.
 PROCESS_ACTIVITY_PATH = "process"
 
 #: Which counters from the status report are worth a row on the chip, mapped to the name
@@ -40,7 +40,7 @@ PROCESS_ACTIVITY_PATH = "process"
 _COUNTER_FIELDS = {"assistant_messages": "messages", "tool_calls": "tool_calls"}
 
 
-def scope_for(process_id: Any) -> str:
+def subject_for(process_id: Any) -> str:
     return f"agentic_process-{process_id}"
 
 
@@ -83,7 +83,7 @@ def sync_process_activity(
     inside the transcript debounce path where an exception would be far from its cause.
     """
     try:
-        act = Activity.get(PROCESS_ACTIVITY_PATH, scope=scope_for(process_id))
+        act = Activity.get(PROCESS_ACTIVITY_PATH, subject_entity=subject_for(process_id))
         if act.is_terminal:
             return
 
@@ -136,9 +136,9 @@ def end_process_activity(process_id: Any, *, message: "Optional[str]" = None) ->
     even if no further status report ever arrives.
     """
     try:
-        Activity.get(PROCESS_ACTIVITY_PATH, scope=scope_for(process_id)).done(message)
+        Activity.get(PROCESS_ACTIVITY_PATH, subject_entity=subject_for(process_id)).done(message)
     except Exception:  # noqa: BLE001
         logger.debug("activity bridge close failed for process %s", process_id, exc_info=True)
 
 
-__all__ = ["PROCESS_ACTIVITY_PATH", "end_process_activity", "scope_for", "sync_process_activity"]
+__all__ = ["PROCESS_ACTIVITY_PATH", "end_process_activity", "subject_for", "sync_process_activity"]

@@ -339,12 +339,13 @@ async def _handle_status(provider: str) -> ApiResponse:
 
 
 async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
-    """Handle flowpad_cloud disconnect: clear local credentials and return the cloud logout URL."""
-    from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
+    """Handle flowpad_cloud disconnect: clear local credentials + hub-derived
+    local data, and return the cloud logout URL."""
+    from flow_sdk.cli.auth.cloud_login import clear_user_data
     from flow_sdk.cli.auth.cloud_urls import get_logout_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    await clear_cloud_credentials()
+    await clear_user_data()
 
     port = get_instance_settings().port
     post_logout_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"

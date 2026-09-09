@@ -81,8 +81,6 @@ async def _serve_process_hook_route(server_json_path: Path):
             {
                 "port": port,
                 "server_pid": os.getpid(),
-                "webhook_path": "/api/v1/webhook/listen",
-                "health_path": "/api/v1/health/status",
             }
         ),
         encoding="utf-8",

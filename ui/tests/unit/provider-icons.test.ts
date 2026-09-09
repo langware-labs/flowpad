@@ -81,6 +81,22 @@ describe('connection provider icons', () => {
     expect(providerIcons.length).toBeGreaterThanOrEqual(6);
   });
 
+  // An unresolved name degrades SILENTLY to the caller's fallback, so
+  // `provider_registry.py` could publish one nothing serves for as long as
+  // nobody opened the dialog. `Flowpad` did exactly that: the registry named
+  // it, no pack declared it, and the tile drew a monogram. Asserting the whole
+  // published set — rather than a list restated here — means a provider added
+  // tomorrow is covered the moment it lands.
+  it('publishes no name that resolves to nothing', () => {
+    const unresolved = providerIcons.filter(
+      (name) => resolveIcon(name, getIconPacks()).kind === 'none',
+    );
+    expect(
+      unresolved,
+      `provider_registry.py publishes icon names no pack serves: ${unresolved.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it.each(providerIcons)('%s resolves to a real glyph', (name) => {
     // The connection surfaces ask the resolver directly now; a name it does not
     // claim draws the caller's own fallback — a monogram — instead of a glyph.

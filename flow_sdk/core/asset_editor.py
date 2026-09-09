@@ -49,6 +49,7 @@ class AssetEditor(StrEnum):
     USAGE_REPORT = "usage_report"
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     JOURNEY = "journey"
+    WIZARD = "wizard"
     MCP = "mcp"  # an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
     # A hub LLM budget, rendered read-only. Entity-backed but never file-backed:
     # there is no local row at all (see flow_sdk/builtin/llm_endpoint.py), so the
@@ -91,6 +92,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.USAGE_REPORT: [EntityType.USAGE_REPORT],
     AssetEditor.ASSET_CLEANUP_REPORT: [EntityType.ASSET_CLEANUP_REPORT],
     AssetEditor.JOURNEY: [EntityType.JOURNEY],
+    AssetEditor.WIZARD: [EntityType.WIZARD],
     AssetEditor.MCP: [EntityType.MCP],
     AssetEditor.LLM_ENDPOINT: [EntityType.LLM_ENDPOINT],
     AssetEditor.HTML: [],

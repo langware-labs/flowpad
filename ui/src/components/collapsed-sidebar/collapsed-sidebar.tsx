@@ -3,6 +3,7 @@ import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
+import { OrgTeamsButton } from './OrgTeamsButton';
 import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
@@ -321,6 +322,9 @@ export function CollapsedSidebar() {
             </Button>
           )}
           {AMBIENT_JOURNEYS_ENABLED && <JourneyBadge />}
+          {/* Desk only: the hub rail already carries an `organization` entry to the
+              same ViewType, and two buttons for one destination lights both. */}
+          {!hubMode && <OrgTeamsButton />}
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />

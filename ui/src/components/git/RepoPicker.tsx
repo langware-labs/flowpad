@@ -1,4 +1,5 @@
 import type { GitProvider, RepoSummary } from '@sdk';
+import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useGitRepos } from '@src/hooks/use-git-providers';
@@ -17,6 +18,17 @@ interface RepoPickerProps {
    *  the token actually reaches — e.g. whether private repos are visible —
    *  without issuing its own request. */
   onReposLoaded?: (repos: RepoSummary[]) => void;
+  /** Offered in the ERROR branch only, as the way out of it. A failed repo
+   *  list is usually a missing or revoked provider grant, and without this the
+   *  panel states the failure and stops — every remaining affordance needs the
+   *  same broken grant. The host owns the connect flow (it knows which provider
+   *  and what to do after), so this is a button spec, not a connect
+   *  implementation. */
+  connectionAction?: {
+    label: string;
+    pending: boolean;
+    onClick: () => void;
+  };
 }
 
 function roleBadgeClass(role: RepoSummary['role']): string {
@@ -35,7 +47,14 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
  */
-export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, onReposLoaded }: RepoPickerProps) {
+export function RepoPicker({
+  provider,
+  onSelect,
+  enabled = true,
+  allowedRoles,
+  onReposLoaded,
+  connectionAction,
+}: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
 
@@ -95,8 +114,23 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, o
           // failed fetch fell through to the empty state and asserted "No repos
           // accessible with this token" — blaming the user's token for what was
           // really a refused request.
-          <div className="px-3 py-4 text-xs text-destructive">
-            <Trans>Couldn’t load your repos.</Trans> {error?.message ?? ''}
+          <div className="flex items-center justify-between gap-3 px-3 py-4 text-xs text-destructive">
+            <span>
+              <Trans>Couldn’t load your repos.</Trans> {error?.message ?? ''}
+            </span>
+            {connectionAction && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-xs"
+                disabled={connectionAction.pending}
+                onClick={connectionAction.onClick}
+                data-testid="repo-picker-connect"
+              >
+                {connectionAction.pending ? <Trans>Connecting…</Trans> : connectionAction.label}
+              </Button>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">

@@ -199,7 +199,14 @@ async def test_start_pty_reloads_process_inside_open_lock_and_applies_session_ov
 
     assert result is expected
     assert calls == [(fresh, "resume", True, True, "session-override")]
-    assert stale.session_id is None
+    # The launch ran on ``fresh``; the caller's object must MIRROR what was
+    # launched. This previously asserted ``stale.session_id is None`` — that the
+    # caller stayed untouched — which is precisely the staleness that made
+    # ``transcript_path`` (None without a session id) unresolvable for any
+    # in-process caller. ``_LAUNCH_OUTPUT_FIELDS`` now copies the launch outputs
+    # back, so the override the worker actually used is visible here too.
+    assert stale.session_id == "session-override"
+    assert stale.shell_id == fresh.shell_id
 
 
 @pytest.mark.asyncio

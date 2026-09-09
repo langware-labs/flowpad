@@ -732,6 +732,39 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
+#: Every field ``_perform_open`` mints during a launch. ``start_pty`` runs the
+#: launch on a DB-fresh copy (so two concurrent opens can't double-spawn), then
+#: copies exactly these back onto the caller's object — the launch's OUTPUTS,
+#: the mirror of the ``session_id_override``/``terminal_theme`` inputs copied in.
+#: Explicit rather than a whole-entity refresh: a blanket copy would also
+#: clobber caller-side edits that were never part of the launch.
+#:
+#: MUST list every ``self.<field> =`` assignment in ``_perform_open``. Omitting
+#: one silently recreates the staleness bug this exists to fix — the restart
+#: triplet below was missed on the first pass, and since ``save()`` recomputes
+#: ``restart_required`` from ``last_started_hash``, a caller saving its own
+#: object after a relaunch would have flipped a correctly-launched process back
+#: to "restart needed". ``tests/unit/test_launch_output_fields.py`` pins this
+#: list to the source so it cannot drift again.
+_LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "shell_id",
+    "sidecar_shell_id",
+    "status",
+    "visible",
+    "pty_mode",
+    "start_failure",
+    "last_started_snapshot",
+    "last_started_hash",
+    "restart_required",
+    # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
+    # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
+    # (tab_order). A delegated write is exactly as invisible to the caller as an
+    # inline one — the guard follows private helpers for this reason.
+    "context_data",
+    "tab_order",
+)
+
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
@@ -1611,6 +1644,27 @@ class AgenticProcess(Entity):
                 return result
             finally:
                 fresh._set_start_lifecycle(False)
+                # The launch ran on ``fresh``, so every field it minted lives
+                # there. Copy them back: the object the caller still holds must
+                # describe the worker that was just started, not the pre-launch
+                # snapshot it came in as. Without this an in-process caller
+                # keeps ``session_id=None`` forever, and since
+                # ``transcript_path`` is None without a session id, any
+                # subsequent ``stream_transcript`` can never resolve and dies
+                # on its deadline — a launch bug wearing a timeout's clothes.
+                # (Regression from 499b4fa93, which moved the launch from
+                # ``self`` to ``fresh`` to stop two concurrent opens from
+                # double-spawning, but kept only the inbound copies above.)
+                for _field in _LAUNCH_OUTPUT_FIELDS:
+                    _value = getattr(fresh, _field)
+                    # Shallow-copy the dict fields (context_data,
+                    # last_started_snapshot): a bare reference would leave two
+                    # live entities aliasing ONE mutable dict. Nothing mutates
+                    # these in place today — every writer rebuilds and
+                    # reassigns — so this is closing a footgun, not a bug. A
+                    # deep copy is not an option: the payload carries immutable
+                    # TypeId values that choke it (see ``adopt_worker_session``).
+                    setattr(self, _field, dict(_value) if isinstance(_value, dict) else _value)
 
     async def start(
         self,
@@ -1872,8 +1926,8 @@ class AgenticProcess(Entity):
                 # error type every other spawn path raises.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     WorkerSpawnError,
+                    insert_capability_path_dir,
                     no_worker_message,
-                    prepend_path_dir,
                     worker_bin_folder,
                     worker_path_env,
                 )
@@ -1882,14 +1936,17 @@ class AgenticProcess(Entity):
                 if path_env is None:
                     raise WorkerSpawnError(self.driver.name, no_worker_message(self.driver.name))
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
-                # …except the discovered bin folder stays first on PATH: the
-                # worker env's own PATH (apply_worker_env's venv pin) is built
-                # from this backend's possibly-stripped service PATH, and
-                # letting it clobber the capability prepend re-breaks spawn
-                # (the D02 "codex not found despite discovery" failure).
+                # …except the discovered bin folder must stay ahead of the
+                # service PATH: the worker env's own PATH (apply_worker_env's
+                # venv pin) is built from this backend's possibly-stripped
+                # service PATH, and letting it clobber the capability entry
+                # re-breaks spawn (the D02 "codex not found despite discovery"
+                # failure). It goes BEHIND the venv `flow` pin, though — a
+                # vendor folder that is a shared dir carrying its own `flow`
+                # (~/.local/bin) must not defeat the version-skew guard.
                 folder = worker_bin_folder(self.driver.name)
                 if folder and "PATH" in spawn_env:
-                    spawn_env["PATH"] = prepend_path_dir(folder, spawn_env["PATH"])
+                    spawn_env["PATH"] = insert_capability_path_dir(folder, spawn_env["PATH"])
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
@@ -2606,6 +2663,13 @@ class AgenticProcess(Entity):
         self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="drain-queue")
+    async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Kick a drain without adding a prompt (unlike ``set-queue-enabled``, touches
+        nothing else). Idempotent: an empty or busy queue is a no-op."""
+        self._schedule_queue_drain("ui")
         return ApiSuccessResponse(data=self.queue.read())
 
     @action.post(action_name="dequeue")
@@ -5082,7 +5146,6 @@ class AgenticProcess(Entity):
         stale ``plan_path`` if the file is missing.
         """
         from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
-        from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
 
         plan_file_path = ""
 
@@ -5094,16 +5157,8 @@ class AgenticProcess(Entity):
         if not plan_file_path:
             plan_file_path = self.plan_path or ""
 
-        if not plan_file_path and transcript is not None:
-            # plan_mode attachment fallback (Claude interactive PTY).
-            for e in reversed(transcript.entries):
-                if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
-                    continue
-                att = (e.payload or {}).get("attachment") or {}
-                if att.get("type") == "plan_mode":
-                    plan_file_path = str(att.get("planFilePath") or "")
-                    if plan_file_path:
-                        break
+        if not plan_file_path:
+            plan_file_path = self.plan_path_from_attachments(transcript)
 
         if not plan_file_path or not Path(plan_file_path).exists():
             if self.plan_path:
@@ -5194,6 +5249,36 @@ class AgenticProcess(Entity):
                 "entries": [e.to_dict() for e in transcript.entries],
             }
         )
+
+    @staticmethod
+    def plan_path_from_attachments(transcript: "AgentTranscriptFile | None") -> str:
+        """Newest ``plan_mode`` attachment's ``planFilePath``, or ``""``.
+
+        Claude Code announces the plan file on a ``plan_mode`` ATTACHMENT when the
+        turn ENTERS plan mode; the later ``ExitPlanMode`` tool_use carries only the
+        ``plan`` prose and no ``planFilePath`` at all. So for an ordinary plan-mode
+        turn this attachment is the only place the path ever appears.
+
+        Both plan-detection paths resolve through here — the pull action
+        (``transcript/plan``) and the live streamer flush
+        (``_process_transcript_entries``). They used to disagree: the pull path had
+        this fallback and the push path did not, so a plan detected mid-session
+        never persisted ``plan_path`` and the ribbon's Open-Plan chip only appeared
+        after a reload (FLOWPAD-1972).
+        """
+        from flow_sdk.transcript_analyzer.entries.meta import MetaEntry  # noqa: PLC0415
+
+        if transcript is None:
+            return ""
+        for e in reversed(transcript.entries):
+            if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                continue
+            att = (e.payload or {}).get("attachment") or {}
+            if att.get("type") == "plan_mode":
+                path = str(att.get("planFilePath") or "")
+                if path:
+                    return path
+        return ""
 
     def _transcript_header(self, transcript: "AgentTranscriptFile") -> dict[str, Any]:
         meta = transcript._session_meta_payload()
@@ -6859,6 +6944,29 @@ class AgenticProcess(Entity):
             "worker": worker_snapshot,
         }
 
+    def _restart_reference_hash(self) -> str:
+        """The hash the running worker's config SHOULD have, by today's algorithm.
+
+        Pure — it computes, it does not assign. ``save()`` decides whether to
+        write the result back.
+
+        ``last_started_hash`` is only as trustworthy as the build that wrote
+        it: the hashed payload is normalized before hashing, and that
+        normalization has changed (929f9b0e9 began stripping
+        ``TRANSPORT_DERIVED_WORKER_FIELDS``). Recomputing from
+        ``last_started_snapshot`` — the payload itself, persisted alongside the
+        hash — yields the value today's algorithm would have produced for the
+        very same launch, which is what the live snapshot must be compared
+        against.
+
+        Falls back to the stored hash when there is no snapshot to recompute
+        from (rows predating ``last_started_snapshot``): nothing better is
+        available, and the old behaviour is the safe answer there.
+        """
+        if not self.last_started_snapshot:
+            return self.last_started_hash or ""
+        return self._restart_snapshot(self.last_started_snapshot)
+
     def _restart_snapshot(self, payload: dict[str, Any] | None = None) -> str:
         """Stable hash over finalized generic + worker launch inputs.
 
@@ -6952,7 +7060,24 @@ class AgenticProcess(Entity):
         """
         await self._preserve_latest_display_pin()
         if not self._is_in_start_lifecycle() and self.status == ProcessStatus.RUNNING.value and self.last_started_hash:
-            self.restart_required = self._restart_snapshot() != self.last_started_hash
+            # Compare against a hash RECOMPUTED from the persisted snapshot,
+            # not the stored one. The hashed payload is normalized by
+            # `_comparable_restart_payload`, which began stripping
+            # TRANSPORT_DERIVED_WORKER_FIELDS in 929f9b0e9. A row whose
+            # `last_started_hash` was written before that build hashed those
+            # fields IN, so it can never equal today's hash of the same config
+            # — the restart glow lit on a process nobody had touched, while
+            # `restart-info` reported changed=[] because `_diff_snapshot_fields`
+            # compares payloads rather than hashes. The two comparators
+            # disagreed; this makes them agree.
+            reference = self._restart_reference_hash()
+            if reference != self.last_started_hash:
+                # Refresh explicitly, so the skew is corrected once and visibly
+                # rather than being re-derived on every save. `adopt_worker_session`
+                # already does the same recompute on session rotation — this is
+                # the same move for a process that has not rotated yet.
+                self.last_started_hash = reference
+            self.restart_required = self._restart_snapshot() != reference
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
@@ -6970,6 +7095,7 @@ class AgenticProcess(Entity):
         ``history=[]``, not a 404.
         """
         from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
+            history_start_time,
             load_abort_marker_frames,
             merge_abort_markers,
         )
@@ -6980,9 +7106,16 @@ class AgenticProcess(Entity):
         # of leaving its last tool call rendered as still running. Worker-
         # generic: the vendor transcript is vendor-owned and never contains
         # these; the sidecar in the process record dir does.
+        # ``history_start`` scopes sid-less markers (written before the worker
+        # reported a session id) to rollouts they chronologically overlap — a
+        # rotated session must not inherit them as a phantom index-0 abort.
         history = merge_abort_markers(
             history,
-            load_abort_marker_frames(self._record_dir(), session_id=self.session_id),
+            load_abort_marker_frames(
+                self._record_dir(),
+                session_id=self.session_id,
+                history_start=history_start_time(history),
+            ),
         )
         return ApiSuccessResponse(
             data={
@@ -7125,17 +7258,19 @@ class AgenticProcess(Entity):
         entity leaves that file, so a "deleted" chat re-appears in the list and
         stays resolvable by its worker session id (effectively undeletable).
 
-        Renaming the transcript to ``<name>.deleted`` tombstones it: the
-        ``*.jsonl`` discovery globs and the exact-``<sid>.jsonl`` resolver both
-        skip it, while the data stays recoverable (no destructive unlink).
-        Best-effort — a tombstone failure never blocks the entity delete.
+        So the transcript is REMOVED, not renamed. A ``<name>.deleted`` rename
+        hid the file from the discovery globs but left every byte of the
+        conversation readable on disk, which is not what the Chats trash button
+        promises the user ("This cannot be undone"). A delete that leaves the
+        content recoverable is a delete only to the code that globs for it.
+        Best-effort — a failure to unlink never blocks the entity delete.
 
         Also ends the process's Activity: a deleted process never reaches ``close``,
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
         if delete_chats:
-            self._tombstone_session_transcript()
+            self._delete_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
@@ -7145,27 +7280,32 @@ class AgenticProcess(Entity):
         self._last_broadcast_key = None
         return result
 
-    def _tombstone_session_transcript(self) -> None:
-        """Rename this process's on-disk transcript to ``<name>.deleted`` so the
-        on-disk read paths stop re-deriving the deleted session. No-op when there
-        is no session id or no transcript on disk."""
+    def _delete_session_transcript(self) -> None:
+        """Remove this process's on-disk transcript so the on-disk read paths
+        stop re-deriving the deleted session AND the conversation stops being
+        readable. No-op when there is no session id or no transcript on disk.
+
+        A tombstone left by an earlier build (``<name>.deleted``) is removed
+        too: those files are exactly the content this delete is meant to
+        destroy, and the user was told it was already gone.
+        """
         if not self.session_id:
             return
         try:
             path = self.driver.transcript_path(self)
         except Exception as e:
-            logger.debug("tombstone: transcript_path lookup failed for %s: %s", self.session_id, e)
+            logger.debug("delete: transcript_path lookup failed for %s: %s", self.session_id, e)
             return
-        if path is None or not path.exists():
+        if path is None:
             return
-        tomb = path.with_name(path.name + ".deleted")
-        try:
-            if tomb.exists():
-                tomb.unlink()
-            path.rename(tomb)
-            logger.info("tombstoned deleted session transcript %s -> %s", path.name, tomb.name)
-        except OSError as e:
-            logger.warning("tombstone of %s failed: %s", path, e)
+        for victim in (path, path.with_name(path.name + ".deleted")):
+            if not victim.exists():
+                continue
+            try:
+                victim.unlink()
+                logger.info("deleted session transcript %s", victim.name)
+            except OSError as e:
+                logger.warning("delete of %s failed: %s", victim, e)
 
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
@@ -8336,14 +8476,21 @@ class AgenticProcess(Entity):
         touched: list[str] = []
         touched_set: set[str] = set()
         for entry in entries:
-            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+            if isinstance(entry, ExitPlanModeEntry):
+                # The tool_use input carries only the ``plan`` prose — the path
+                # lives on the earlier ``plan_mode`` attachment. Resolve through
+                # the same helper the pull path uses so a live plan and a reloaded
+                # one agree on where the plan is.
+                plan_file_path = entry.plan_file_path or self.plan_path_from_attachments(self._load_transcript())
+                if not plan_file_path:
+                    continue
                 # Order matters: cross-link save first so the entity-update
                 # WS broadcast precedes plan.create. Consumers reading
                 # AP.private_context_entities on the event see the link.
-                await self.on_plan_created(entry)
+                await self.on_plan_created(entry, plan_file_path=plan_file_path)
                 await self.emit_entity_event(
                     "plan.create",
-                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                    {"plan_file_path": plan_file_path, "session_id": self.session_id},
                 )
                 continue
 
@@ -8837,21 +8984,26 @@ class AgenticProcess(Entity):
                 exc_info=True,
             )
 
-    async def on_plan_created(self, entry) -> None:
+    async def on_plan_created(self, entry, plan_file_path: str | None = None) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.
 
         Resolves the plan entity (indexing it on demand if the indexer hasn't
         caught up), sets ``plan_path`` if stale, and mutually cross-links the
         plan and this process via ``private_context_entities``. Shares the plan
         resolver with PlanHandler (indexer).
+
+        ``plan_file_path`` overrides ``entry.plan_file_path`` for callers that
+        already resolved it. An ``ExitPlanMode`` tool_use carries no
+        ``planFilePath``, so the live path resolves it from the ``plan_mode``
+        attachment first — see :meth:`plan_path_from_attachments`.
         """
         from flow_sdk.core.entity.cross_link import cross_link_entities
         from flow_sdk.fs_store.transcript_indexer.handlers.plan_handler import resolve_plan
 
-        plan = await resolve_plan(entry.plan_file_path)
+        path_str = str(plan_file_path or entry.plan_file_path)
+        plan = await resolve_plan(path_str)
         if plan is None:
             return
-        path_str = str(entry.plan_file_path)
         if self.plan_path != path_str:
             self.plan_path = path_str
             await self.save()

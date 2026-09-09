@@ -70,6 +70,7 @@ export enum RecordType {
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey',
+  WIZARD = 'wizard',
   // A hub budget this box may spend. No file and no local row — the Assets
   // browser feeds it from the `llm-endpoint` box action (see
   // `flow_sdk/builtin/llm_endpoint.py`), and its editor is read-only.

@@ -385,12 +385,17 @@ async def _visible_tabs_sorted() -> list[Tab]:
 async def _project_exists(project_id: str | None) -> bool:
     if not project_id:
         return True
-    try:
-        uuid.UUID(str(project_id))
-    except (TypeError, ValueError):
-        # Legacy/test project identifiers are not reliable Project primary keys;
-        # only UUID-shaped project refs are eligible for stale-row deletion.
-        return True
+    # NO shape gate. A ``project_id`` that is not UUID-shaped cannot ever name a
+    # Project: every Project id is allocated as a uuid (``allocate_id``), and even
+    # a path-recovered one is an "opaque uuid4" (``Project.recover_by_path``). The
+    # old gate exempted non-UUID ids as "legacy/test identifiers" — which made a
+    # TEST id the one thing the reaper could never collect, so a UI fixture that
+    # reached a real backend (``project_id="proj-123"``) pinned an undeletable
+    # phantom project in the projects chip forever: unrecoverable (the recover
+    # endpoint reads a ``workdir`` off shell/agentic_process dependents, and a
+    # conversation tab has none) and unreachable (the chip's row routes to recover,
+    # never to navigation). Absence is decided by the lookup below, for every id
+    # shape alike; the ``except`` remains the only fail-open.
     try:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
@@ -478,8 +483,20 @@ async def _load_status_targets(
 def _pointer_project_id(pointer: str | None) -> str | None:
     """The project id NAMED by a project-scoped dock pointer — pure parse, no
     existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
-    Returns the id only when UUID-shaped (same reap-eligibility rule as
-    ``_existing_project_ids``); any other pointer shape → ``None``."""
+
+    The UUID check here is a PARSE guard, deliberately NOT the reap-eligibility
+    rule ``_existing_project_ids`` uses — those two once agreed, and no longer do.
+    This one asks "does this pointer segment name an id at all", the address
+    question every URL/VFS matcher asks, which is why it goes through the
+    version-agnostic ``is_valid_uuid`` (CLAUDE.md forbids tightening it).
+    ``_existing_project_ids`` asks the different question "is this ref dangling",
+    and answers it from the DB for every id shape.
+
+    Consequence worth knowing: a pointer naming a NON-id (``proj-123``) parses to
+    ``None`` and so escapes the pointer-orphan reap, even though its ``project_id``
+    twin is now collected. Such a tab navigates to ``/dock/project/<junk>`` →
+    "Project not found" forever (RCA 2026-07-08). Closing that gap means reaping
+    on un-parseable pointers too, which is a separate behaviour change."""
     if not pointer:
         return None
     try:
@@ -503,17 +520,16 @@ async def _existing_project_ids(
     pointer-orphan reap so each pointer is parsed a single time per list call.
 
     Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
-    set of distinct UUID-shaped ``project_id``s (the only ones eligible for
-    reaping — legacy/non-UUID ids aren't reliable Project keys, same rule as
-    ``_project_exists``) and ``existing_ids`` is the subset of those that exist.
+    set of distinct non-empty ``project_id``s — EVERY shape, matching
+    ``_project_exists``: a non-UUID id can never be a Project key, so it is the
+    most certainly-dangling ref there is, not an exempt one — and ``existing_ids``
+    is the subset of those that exist.
     The caller reaps ``candidate_ids - existing_ids`` without re-validating shape.
     ``ok`` is ``False`` if the lookup raised, so the caller fails open and reaps
     nothing.
     """
     candidates = {
-        str(t.project_id)
-        for t in tabs
-        if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
+        str(t.project_id) for t in tabs if getattr(t, "project_id", None)
     }
     # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
     # can carry a live (target-healed) ``project_id`` while its URL still names a

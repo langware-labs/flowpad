@@ -87,3 +87,27 @@ describe('patchAgentDocument', () => {
     expect(() => patchAgentDocument('---\n- one\n---\nbody', { title: 'x' })).toThrow(/mapping/);
   });
 });
+
+describe('patchAgentDocument — intro / auto-launch', () => {
+  it('writes intro, auto_launch and auto_launch_prompt as frontmatter, body untouched', () => {
+    const result = patchAgentDocument(SOURCE, {
+      intro: 'Hi! Ask me about this repo.',
+      auto_launch: true,
+      auto_launch_prompt: 'Say hello',
+    });
+
+    expect(result).toContain('intro: Hi! Ask me about this repo.');
+    expect(result).toContain('auto_launch: true');
+    expect(result).toContain('auto_launch_prompt: Say hello');
+    expect(result).toContain('Original instructions.');
+    expect(result).toContain('unknown:\n  nested: keep-me');
+  });
+
+  it('turning auto-launch off keeps the false and the prompt', () => {
+    const on = patchAgentDocument(SOURCE, { auto_launch: true, auto_launch_prompt: 'go' });
+    const off = patchAgentDocument(on, { auto_launch: false });
+
+    expect(off).toContain('auto_launch: false');
+    expect(off).toContain('auto_launch_prompt: go');
+  });
+});
