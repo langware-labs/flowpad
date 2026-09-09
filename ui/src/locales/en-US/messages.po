@@ -4993,8 +4993,8 @@ msgid "Couldn’t load your repos."
 msgstr "Couldn’t load your repos."
 
 #: src/components/terminal/project-launch-bar.tsx
-msgid "Couldn't open a terminal"
-msgstr "Couldn't open a terminal"
+#~ msgid "Couldn't open a terminal"
+#~ msgstr "Couldn't open a terminal"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
@@ -5033,8 +5033,8 @@ msgid "Couldn't read this team's people."
 msgstr "Couldn't read this team's people."
 
 #: src/components/terminal/project-launch-bar.tsx
-msgid "Couldn't resolve the launch commands for this folder"
-msgstr "Couldn't resolve the launch commands for this folder"
+#~ msgid "Couldn't resolve the launch commands for this folder"
+#~ msgstr "Couldn't resolve the launch commands for this folder"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -12786,8 +12786,8 @@ msgid "Open {title} install page"
 msgstr "Open {title} install page"
 
 #: src/components/terminal/project-launch-bar.tsx
-msgid "Open {vendorLabel} in an OS terminal here"
-msgstr "Open {vendorLabel} in an OS terminal here"
+#~ msgid "Open {vendorLabel} in an OS terminal here"
+#~ msgstr "Open {vendorLabel} in an OS terminal here"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
@@ -12827,8 +12827,8 @@ msgid "Open all"
 msgstr "Open all"
 
 #: src/components/terminal/project-launch-bar.tsx
-msgid "Open an OS terminal here"
-msgstr "Open an OS terminal here"
+#~ msgid "Open an OS terminal here"
+#~ msgstr "Open an OS terminal here"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Open analysis"
@@ -15332,8 +15332,8 @@ msgid "Resolving [[{name}]]…"
 msgstr "Resolving [[{name}]]…"
 
 #: src/components/terminal/project-launch-bar.tsx
-msgid "Resolving launch commands…"
-msgstr "Resolving launch commands…"
+#~ msgid "Resolving launch commands…"
+#~ msgstr "Resolving launch commands…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Respect .gitignore when searching files"
@@ -20467,7 +20467,6 @@ msgid "What is a context folder?"
 msgstr "What is a context folder?"
 
 #: src/components/status-bar.tsx
-#: src/components/terminal/project-list-menu.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
