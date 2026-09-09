@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from flow_sdk.core.wizard.exec import ShellResult, run_shell
+from flow_sdk.core.wizard.exec import ShellResult, capped, run_shell
 from flow_sdk.core.wizard.process_step import ProcessResult, launch_step_process
 from flow_sdk.core.wizard.state import input_env
 from flow_sdk.schema.data_spec.wizard_spec import (
@@ -55,6 +56,57 @@ class WizardNotApproved(RuntimeError):
 
 
 @dataclass(frozen=True)
+class StepProbe:
+    """One command a step ran. In-flight twin of `WizardStepProbeSpec`.
+
+    A dataclass here for the same reason `StepOutcome` is one: this module stays
+    entity- and registry-free, which is what runs its tests in milliseconds. The
+    conversion happens at the one edge that serializes.
+    """
+
+    phase: str
+    command: str = ""
+    returncode: Optional[int] = None
+    timed_out: bool = False
+    duration_s: float = 0.0
+    stdout: str = ""
+    stderr: str = ""
+    truncated: bool = False
+
+    @classmethod
+    def of(cls, phase: str, command: str, result: "ShellResult") -> "StepProbe":
+        """Record a shell result, keeping the tail of each stream."""
+        out, out_cut = capped(result.stdout or "")
+        err, err_cut = capped(result.stderr or "")
+        return cls(
+            phase=phase, command=command, returncode=result.returncode,
+            timed_out=result.timed_out, duration_s=result.duration_s,
+            stdout=out, stderr=err, truncated=out_cut or err_cut,
+        )
+
+    def to_payload(self) -> dict:
+        from flow_sdk.schema.data_spec.wizard_spec import WizardStepProbeSpec  # noqa: PLC0415
+
+        return WizardStepProbeSpec(
+            phase=self.phase, command=self.command, returncode=self.returncode,
+            timed_out=self.timed_out, duration_s=round(self.duration_s, 3),
+            stdout=self.stdout, stderr=self.stderr, truncated=self.truncated,
+        ).model_dump(mode="json")
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    """What a step's ONE action did. A 5-tuple is where a return signature stops
+    being readable, and the probe is the fifth thing."""
+
+    ok: bool
+    message: str = ""
+    returncode: Optional[int] = None
+    process_id: Optional[str] = None
+    probe: Optional[StepProbe] = None
+
+
+@dataclass(frozen=True)
 class StepOutcome:
     """A step's verdict, in flight.
 
@@ -69,6 +121,7 @@ class StepOutcome:
     returncode: Optional[int] = None
     process_id: Optional[str] = None
     duration_s: float = 0.0
+    probes: tuple[StepProbe, ...] = ()
 
     @property
     def skipped(self) -> bool:
@@ -83,6 +136,7 @@ class StepOutcome:
             # Rounded once, here: three decimals is the difference a person can
             # act on, and the raw float would churn `run.json` on every re-run.
             duration_s=round(self.duration_s, 3),
+            probes=[p.to_payload() for p in self.probes],
         ).model_dump(mode="json")
 
 
@@ -142,13 +196,20 @@ class WizardRunResult:
 async def _evaluate(
     check: WizardCheckSpec,
     *,
+    phase: str,
     shell: Callable[..., Any],
     workdir: Path,
     platform: str,
     env: dict,
-) -> tuple[CheckOutcome, Optional[ShellResult]]:
+) -> tuple[CheckOutcome, Optional[StepProbe]]:
     """Ask one check. No command for this platform ⇒ the check is silent here,
-    which is ``not_applicable`` — never a failure, and never a pass."""
+    which is ``not_applicable`` — never a failure, and never a pass.
+
+    Returns the probe as well: this function is the only place that holds both
+    the `ShellResult` and the RESOLVED command string, and it used to drop both.
+    The result itself is not returned — the probe already carries every field a
+    caller reads off it (returncode, timed_out, duration_s, both streams).
+    """
     command = check.command_for(platform)
     if not command:
         return CheckOutcome.NOT_APPLICABLE, None
@@ -159,7 +220,8 @@ async def _evaluate(
         extra_env=env,
         platform=platform,
     )
-    return check.outcome_for(result.returncode, timed_out=result.timed_out), result
+    outcome = check.outcome_for(result.returncode, timed_out=result.timed_out)
+    return outcome, StepProbe.of(phase, command, result)
 
 
 async def _act(
@@ -171,12 +233,12 @@ async def _act(
     platform: str,
     env: dict,
     subject_entity: str,
-) -> tuple[bool, str, Optional[int], Optional[str]]:
-    """Run the step's one action. Returns (ok, message, returncode, process_id)."""
+) -> ActionResult:
+    """Run the step's one action, and record what it ran."""
     if step.command is not None:
         command = step.command.command_for(platform)
         if not command:
-            return False, f"no command for {platform}", None, None
+            return ActionResult(False, f"no command for {platform}")
         result: ShellResult = await shell(
             command,
             timeout_seconds=step.command.timeout_seconds,
@@ -184,11 +246,20 @@ async def _act(
             extra_env=env,
             platform=platform,
         )
+        probe = StepProbe.of("action", command, result)
         if result.timed_out:
-            return False, f"timed out after {step.command.timeout_seconds:.0f}s", result.returncode, None
+            return ActionResult(
+                False, f"timed out after {step.command.timeout_seconds:.0f}s",
+                result.returncode, None, probe,
+            )
         if not result.ok:
-            return False, result.tail() or f"exit {result.returncode}", result.returncode, None
-        return True, "", result.returncode, None
+            return ActionResult(
+                False, result.tail() or f"exit {result.returncode}", result.returncode, None, probe,
+            )
+        # Success used to report `message=""` and drop stdout entirely. The
+        # message stays empty — a green step should not shout — but the output
+        # now survives on the probe.
+        return ActionResult(True, "", result.returncode, None, probe)
 
     assert step.process is not None, "spec validator guarantees exactly one action"
     outcome: ProcessResult = await launch(
@@ -200,7 +271,7 @@ async def _act(
         target_typeid_str=subject_entity,
         timeout_seconds=step.process.timeout_seconds,
     )
-    return outcome.ok, ("" if outcome.ok else outcome.message), None, outcome.process_id
+    return ActionResult(outcome.ok, "" if outcome.ok else outcome.message, None, outcome.process_id)
 
 
 async def run_wizard(
@@ -293,53 +364,87 @@ async def run_wizard(
                 abort_reason = "asked for input"
                 continue
 
+            # Every terminal outcome below carries this. It used to be dropped
+            # for `completed`, `failed` and `not_applicable` alike — only
+            # `satisfied` reported one, and that was the PROBE's, not the step's.
+            step_started = time.monotonic()
+            probes: list[StepProbe] = []
+
             # ── ask ──
             if step.precondition is not None:
                 verdict, probe = await _evaluate(
-                    step.precondition, shell=shell, workdir=workdir, platform=platform, env=env
+                    step.precondition, phase="precondition",
+                    shell=shell, workdir=workdir, platform=platform, env=env,
                 )
+                if probe is not None:
+                    probes.append(probe)
                 if verdict is CheckOutcome.SATISFIED:
                     child.done("already satisfied")
                     root.inc_skipped()
                     outcomes.append(StepOutcome(
                         step.id, SATISFIED, "already satisfied",
                         returncode=probe.returncode if probe else None,
-                        duration_s=probe.duration_s if probe else 0.0,
+                        duration_s=time.monotonic() - step_started,
+                        probes=tuple(probes),
                     ))
                     continue
                 if verdict is CheckOutcome.NOT_APPLICABLE:
                     child.done(f"not applicable on {platform}")
                     root.inc_skipped()
-                    outcomes.append(StepOutcome(step.id, NOT_APPLICABLE, f"not applicable on {platform}"))
+                    outcomes.append(StepOutcome(
+                        step.id, NOT_APPLICABLE, f"not applicable on {platform}",
+                        duration_s=time.monotonic() - step_started,
+                        probes=tuple(probes),
+                    ))
                     continue
 
             # ── act ──
-            ok, message, returncode, process_id = await _act(
+            acted = await _act(
                 step, shell=shell, launch=launch, workdir=workdir,
                 platform=platform, env=env, subject_entity=subject_entity or "",
             )
+            # Only these three are reassigned below (by the verify block);
+            # everything else is read off `acted` where it is used.
+            ok, message, returncode = acted.ok, acted.message, acted.returncode
+            if acted.probe is not None:
+                probes.append(acted.probe)
 
             # ── prove ──
             if ok and step.verify is not None:
                 verdict, probe = await _evaluate(
-                    step.verify, shell=shell, workdir=workdir, platform=platform, env=env
+                    step.verify, phase="verify",
+                    shell=shell, workdir=workdir, platform=platform, env=env,
                 )
+                if probe is not None:
+                    probes.append(probe)
                 if verdict is not CheckOutcome.SATISFIED:
                     ok = False
                     # The action claimed success and the machine disagrees. Say
                     # exactly that — it is the single most useful line in the run.
+                    # This no longer loses the action's own output: that is on
+                    # the action probe, and verify's exit code is on verify's.
                     message = "the step ran but did not take effect (verify failed)"
                     if probe is not None:
                         returncode = probe.returncode
 
+            # Keyword args from here on: these two constructions were positional,
+            # which is how `duration_s` silently went missing in the first place.
             if ok:
                 child.done(message or "done")
                 root.inc_success()
-                outcomes.append(StepOutcome(step.id, COMPLETED, message, returncode, process_id))
+                outcomes.append(StepOutcome(
+                    step.id, COMPLETED, message=message, returncode=returncode,
+                    process_id=acted.process_id, duration_s=time.monotonic() - step_started,
+                    probes=tuple(probes),
+                ))
             else:
                 child.fail(message or "failed")
                 root.inc_error(message or "failed", ref=step.id)
-                outcomes.append(StepOutcome(step.id, FAILED, message, returncode, process_id))
+                outcomes.append(StepOutcome(
+                    step.id, FAILED, message=message, returncode=returncode,
+                    process_id=acted.process_id, duration_s=time.monotonic() - step_started,
+                    probes=tuple(probes),
+                ))
                 if step.on_fail == ON_FAIL_ABORT:
                     aborted_at = step.id
 

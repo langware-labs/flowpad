@@ -398,7 +398,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           fsRef={fsRef}
           typeLabel="wizard"
           resolvedEntity={typeIdEntity as Wizard | undefined}
-          render={(wizard) => <WizardViewer wizard={wizard} />}
+          render={(wizard) => <WizardViewer fsRef={fsRef} wizard={wizard} />}
         />
       );
     case AssetEditor.MCP:

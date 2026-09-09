@@ -131,7 +131,7 @@ async def test_an_unattended_run_leaves_a_durable_record():
     Worse for a parked run: its trigger is `fire_once` and will never fire again,
     so `set-input` is the only way back and it reads `awaiting` from this file.
     """
-    from flow_sdk.core.wizard.state import clear_inputs, read_state
+    from flow_sdk.core.wizard.state import read_state, reset_run
     from flow_sdk.server.builtin_triggers import _run_wizard_trigger
 
     wizard = Wizard(name="dev-toolchain", asset_ref=str(SHIPPED))
@@ -152,5 +152,5 @@ async def test_an_unattended_run_leaves_a_durable_record():
         )
         assert state.get("outcomes"), "a run with steps must record what each step did"
     finally:
-        clear_inputs(str(wizard.id))
+        reset_run(str(wizard.id))
         await _cleanup(wizard)

@@ -36,7 +36,7 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 from __future__ import annotations
 
 import sys
-from typing import Annotated, Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Optional, Union
 
 from pydantic import ConfigDict, StringConstraints, model_validator
 
@@ -297,6 +297,71 @@ class WizardSpec(DataSpec):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class WizardStepProbeSpec(DataSpec):
+    """One command a step ran, and what it did.
+
+    A step runs up to THREE commands — precondition, action, verify — so the
+    record is a list, not a set of flat fields. A flat `command` would have to
+    pick one, which is the lie the outcome's `returncode` already tells: it is
+    the action's, unless verify failed, in which case verify's silently replaces
+    it. Naming the phase makes the verdict attributable to the command that
+    produced it.
+
+    Served ONLY by `Wizard.run-detail`, never on `run_state` — see the strip in
+    `flow_sdk/builtin/wizard.py`.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.probe"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: ``precondition`` | ``action`` | ``verify``.
+    phase: str
+    #: The command as RESOLVED for this machine's platform. Never recorded
+    #: before; without it a failing step cannot be reproduced by hand.
+    command: str = ""
+    returncode: Optional[int] = None
+    timed_out: bool = False
+    duration_s: float = 0.0
+    stdout: str = ""
+    stderr: str = ""
+    #: The streams are tail-capped at `PROBE_OUTPUT_CAP`; this says so, so the
+    #: UI can show that it is not the whole output rather than implying it is.
+    truncated: bool = False
+
+
+class WizardIssueSpec(DataSpec):
+    """One problem with a wizard document.
+
+    `loc` is pydantic's own — ``["steps", 3, "command", "commands"]`` addresses a
+    field the form is already rendering, which is the whole reason validation
+    goes to the backend instead of being duplicated in the frontend.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.issue"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    loc: list[Union[str, int]] = []
+    msg: str
+    type: str = ""
+    #: ``error`` blocks the write; ``warning`` is advisory. A warning is for a
+    #: document that is legal but will not do what its author expects.
+    severity: str = "error"
+
+
+class WizardValidationSpec(DataSpec):
+    """The verdict on a candidate document."""
+
+    spec_kind: ClassVar[str] = "wizard.validation"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ok: bool
+    issues: list[WizardIssueSpec] = []
+    #: A shipped wizard cannot be edited here. The frontend takes this answer
+    #: from the backend rather than deciding it itself.
+    read_only: bool = False
+    read_only_reason: str = ""
+
+
 class WizardStepOutcomeSpec(DataSpec):
     """What ONE step did."""
 
@@ -309,6 +374,9 @@ class WizardStepOutcomeSpec(DataSpec):
     returncode: Optional[int] = None
     process_id: Optional[str] = None
     duration_s: float = 0.0
+    #: Every command this step ran. Additive with a default, so a `run.json`
+    #: written before probes existed still validates under `extra="forbid"`.
+    probes: list[WizardStepProbeSpec] = []
 
 
 class WizardAwaitingInputSpec(DataSpec):
@@ -327,3 +395,25 @@ class WizardAwaitingInputSpec(DataSpec):
     label: str = ""
     description: str = ""
 
+
+
+class WizardRunDetailSpec(DataSpec):
+    """The whole run record for ONE wizard, probes included.
+
+    The counterpart of `Wizard.run_state`, which is deliberately probe-less
+    because it rides every row of a list and every WS push. This is fetched for
+    one wizard a person is actively looking at, so it can afford the output.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.run_detail"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: str = ""
+    message: str = ""
+    inputs: dict[str, Any] = {}
+    awaiting: list[WizardAwaitingInputSpec] = []
+    outcomes: list[WizardStepOutcomeSpec] = []
+    #: Filenames of previous runs this wizard's resets archived, newest first.
+    #: Their presence is what tells a reader the current record is not the whole
+    #: history — the files themselves are read from disk, not served here.
+    archived: list[str] = []
