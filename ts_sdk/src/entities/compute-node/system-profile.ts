@@ -764,6 +764,33 @@ export async function openExternalFromComputeNode(
   );
 }
 
+/** One harness's (or the plain shell's) interactive launch line for a folder. */
+export interface WorkerLaunchCommand {
+  /** The vendor's `worker_type` (`claude_code`, `codex`, …), or `shell`. */
+  key: string;
+  /** The shell line, `cd`-prefixed and quoted for the node's own platform. */
+  command: string;
+}
+
+/**
+ * The commands this machine would run to start each harness — and a bare shell
+ * — interactively in `cwd`.
+ *
+ * Asked of the backend rather than composed here ON PURPOSE: the lines are
+ * rendered from the vendors' real `AgentOptions`, so they cannot drift from
+ * what the spawn path actually runs. Pair with `openTerminalFromComputeNode` to
+ * run one outside the app.
+ */
+export async function workerLaunchCommandsFromComputeNode(
+  computeNodeId: string,
+  cwd: string,
+): Promise<WorkerLaunchCommand[]> {
+  const actionInfo = new ActionInfo('worker-launch-commands', 'compute_node', computeNodeId, 'POST');
+  actionInfo.bodyParameters = { cwd };
+  const data = await dataManager.callAction<{ cwd: string }, { commands?: WorkerLaunchCommand[] } | null>(actionInfo);
+  return data?.commands ?? [];
+}
+
 /**
  * Open an OS terminal and run a command via compute node.
  * Used for resuming Claude Code sessions from the UI.

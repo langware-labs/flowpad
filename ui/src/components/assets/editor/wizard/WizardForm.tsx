@@ -173,15 +173,6 @@ export function WizardForm({
 }
 
 /**
- * What invokes this wizard, and a way to go look at it.
- *
- * Read-only, deliberately: a declared trigger is reconciled into a real
- * `Trigger` row at STARTUP only, so an editor here would promise a change that
- * does not happen until the next restart. What is missing today is not editing
- * — it is being able to see the thing at all, and to reach the row that holds
- * whether it has actually fired.
- */
-/**
  * What invokes this wizard — its trigger CHILD ASSETS.
  *
  * Read-only here: a trigger is its own asset with its own row, and that row
