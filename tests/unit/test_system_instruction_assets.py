@@ -251,6 +251,69 @@ async def test_no_declared_persona_renders_a_flat_catalogue(records_root, tmp_pa
     assert "Do the thing." in claude_text
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? a persona that is DECLARED but not
+#       embedded must lose the identity, not hand it to whoever is there - and it must SAY
+#       so. Read this tag's rules before touching _render_agents_instruction_block.
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_declared_persona_that_is_not_embedded_loses_the_identity(
+    records_root, tmp_path, monkeypatch, caplog
+):
+    """The divergence branch — declared, but the materialized file is gone or no
+    longer parses. This is the one that silently costs a live session its
+    identity, and the pre-fix code handled it by handing the directive to
+    whichever agent happened to be there (`len == 1`): the exact shape of the
+    reported bug, where `data-integrations` answered as the persona because
+    `vibe.md` had failed to embed. It must render the FLAT catalogue instead,
+    and log which persona went missing — a session that loses its identity with
+    no trace anywhere is what made this expensive to diagnose."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    layer_md = tmp_path / "layer-probe.md"
+    layer_md.write_text(
+        "---\nname: layer-probe\ndescription: A layered specialist\n---\n\nConnect a data source.\n",
+        encoding="utf-8",
+    )
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+    assert (await process.load_embedded_subagent_action(str(layer_md))).status == "SUCCESS"
+
+    # The persona the frontend declared, whose own embed failed: nothing wrote
+    # `.claude/agents/vibe-probe.md`, so it is not among the embedded agents.
+    process.process_persona_path = ".claude/agents/vibe-probe.md"
+
+    with caplog.at_level("WARNING", logger="flow_sdk.builtin.agentic_process.agentic_process"):
+        assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+
+    # The missing persona does NOT get a directive it cannot back ...
+    assert "# You are the 'vibe-probe' agent" not in claude_text
+    # ... and, the actual bug, neither does the agent that IS there.
+    assert "# You are the 'layer-probe' agent" not in claude_text
+    assert "# Sub-agents available to you" not in claude_text
+    assert "# Embedded agent specs" in claude_text
+    assert "Connect a data source." in claude_text
+
+    # And it is not silent: the log names the persona that went missing.
+    warning = "\n".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+    assert "vibe-probe" in warning
+    assert "layer-probe" in warning
+
+
 @pytest.mark.asyncio
 async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, monkeypatch):
     """Vibe-display RCA: the embed request and the prompt/launch request run on
