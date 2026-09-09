@@ -90,17 +90,21 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid gap-1.5">
+    // `min-w-0`: a grid/flex item defaults to `min-width: auto`, so without this
+    // the widest descendant (the repo table, an invitation row) floors this
+    // column and it paints straight past the dialog's padding box. The dialog's
+    // own `grid-cols-[minmax(0,1fr)]` pins the TRACK, not the item in it.
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid min-w-0 gap-1.5">
         <Label htmlFor="git-remote-url">{urlLabel ?? t`Repository URL`}</Label>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Input
             id="git-remote-url"
             value={value.url}
             onChange={(e) => onChange({ url: e.target.value, branch: value.branch })}
             placeholder={urlPlaceholder ?? 'https://github.com/owner/repo.git'}
             autoComplete="off"
-            className="flex-1 font-mono text-xs"
+            className="min-w-0 flex-1 font-mono text-xs"
             data-testid="git-remote-url"
           />
           {value.branch ? (
