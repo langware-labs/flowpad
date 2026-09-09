@@ -1,7 +1,7 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { VIEWER_REGISTRY, ViewType } from '@src/types/ViewType';
-import { tabHasRecency, tabInProject, tabIsProcess, tabManager } from '@sdk';
+import { ContextEntitiesEnum, dataContext, tabHasRecency, tabInProject, tabIsProcess, tabManager } from '@sdk';
 
 /** Whether a view keeps one tab per scope (Assets, Explorer, Desktop) — the
  *  browse surfaces that translate across projects by swapping the scope. */
@@ -39,7 +39,37 @@ export async function dockForScopeEntry(
       projectId == null ? allScope() : projectScope(projectId),
     );
   }
-  return projectId == null ? DockPointer.forHome() : DockPointer.forProject(projectId);
+  // Global entry states its scope EXPLICITLY, Home included — every other
+  // branch above already does. An unscoped context-neutral dock is the one
+  // shape `adoptScopeProject` reads as "restore the remembered project", so a
+  // bare Home would pull the caller back into the project they asked to leave.
+  return projectId == null
+    ? DockPointer.forHome().withScopeFilter(allScope())
+    : DockPointer.forProject(projectId);
+}
+
+/**
+ * Leave the current project scope: resolve the Global destination, then drop
+ * the project from context. Returns the dock for the caller to navigate to.
+ *
+ * The context write lives here, not in the destination's loader, because the
+ * URL cannot carry the distinction. `adoptScopeProject` never writes the
+ * project for a globally-scoped dock, and it cannot start: `scope-mode=all` on
+ * a browse surface is also what its own "All" scope chip produces, and clearing
+ * there would eject a user who merely widened a filter — and disable the chip
+ * that takes them back. Nor does "is the view scope-keyed" separate the two:
+ * leaving a project FROM Assets/Explorer/Desktop deliberately stays on that
+ * surface re-scoped (see above), so both arrive as the same scope-keyed,
+ * all-scoped dock. No loader will ever own this write; the verb that ends the
+ * membership does, and it is named so the next "leave the project" affordance
+ * calls it instead of rediscovering it.
+ */
+export async function leaveProjectScope(currentDock?: DockPointer | null): Promise<DockPointer> {
+  // Resolve while the caller's rows still exist, and clear BEFORE it navigates,
+  // so no loader races the write.
+  const dock = await dockForGlobalEntry(currentDock);
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+  return dock;
 }
 
 /** Enter a project scope. Thin alias of {@link dockForScopeEntry}. */
