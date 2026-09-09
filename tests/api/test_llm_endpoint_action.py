@@ -18,18 +18,33 @@ INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
 BIND = {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
 
 
-@pytest.fixture
-def hub_login(monkeypatch):
-    """A box the hub has logged in: ``resolve_hub_api_key`` answers with a key.
-    Patched at the resolver, not the store, because the API suite's instance
-    settings are process-cached and must not be reset under other tests."""
+def _patch_hub_key(monkeypatch, key: str | None) -> None:
+    """Make ``resolve_hub_api_key`` answer ``key``.
+
+    Patched at the resolver, not the store, because the API suite's instance settings are
+    process-cached and must not be reset under other tests. The double mirrors the real
+    keyword-only signature: callers that must know whether this box can act on the hub *now*
+    pass ``require_live=True``, and a double that cannot take it turns their call into a 500
+    rather than an answer. One helper, so the next argument added to the resolver is a
+    one-line edit here instead of a four-site sweep -- which is exactly what the last one was.
+    """
     monkeypatch.setattr(
         "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
-        # Mirrors the real keyword-only signature: callers that must know whether this box
-        # can act on the hub *now* pass ``require_live=True``, and a double that cannot take
-        # it turns their call into a 500 rather than a logged-in answer.
-        lambda *, require_live=False: "fp-hub-key",
+        lambda *, require_live=False: key,
     )
+
+
+@pytest.fixture
+def hub_login(monkeypatch):
+    """A box the hub has logged in."""
+    _patch_hub_key(monkeypatch, "fp-hub-key")
+    yield
+
+
+@pytest.fixture
+def hub_logged_out(monkeypatch):
+    """A box with no hub login -- the precondition every ``*_without_login_is_409`` test states."""
+    _patch_hub_key(monkeypatch, None)
     yield
 
 
@@ -87,11 +102,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
 
 
 @pytest.mark.asyncio
-async def test_bind_without_login_is_409(bootstrapped_client, monkeypatch):
-    monkeypatch.setattr(
-        "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
-        lambda *, require_live=False: None,
-    )
+async def test_bind_without_login_is_409(bootstrapped_client, hub_logged_out):
     r = await bootstrapped_client.post(PATH, json=BIND)
     body = r.json()
     assert body["status"] == "FAIL"
@@ -179,11 +190,7 @@ async def test_test_forwards_to_the_hub_and_returns_the_verdict(bootstrapped_cli
 
 
 @pytest.mark.asyncio
-async def test_test_without_login_is_409(bootstrapped_client, monkeypatch, hub_test_call):
-    monkeypatch.setattr(
-        "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
-        lambda *, require_live=False: None,
-    )
+async def test_test_without_login_is_409(bootstrapped_client, hub_logged_out, hub_test_call):
     r = await bootstrapped_client.post(TEST_PATH, json={"endpoint_typeid": "ep1"})
     assert r.json()["status"] == "FAIL"
     assert r.json().get("status_code") == 409 or r.status_code == 409
@@ -239,11 +246,7 @@ async def test_chain_reports_which_root_holds_the_key(bootstrapped_client, hub_l
 
 
 @pytest.mark.asyncio
-async def test_chain_without_login_is_409(bootstrapped_client, monkeypatch, hub_chain_call):
-    monkeypatch.setattr(
-        "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
-        lambda *, require_live=False: None,
-    )
+async def test_chain_without_login_is_409(bootstrapped_client, hub_logged_out, hub_chain_call):
     r = await bootstrapped_client.get(f"{PATH}/chain/ep1")
     assert r.json()["status"] == "FAIL"
     assert r.json().get("status_code") == 409 or r.status_code == 409
