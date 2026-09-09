@@ -233,6 +233,12 @@ class HubWsBridge:
         # detached inbound materializer may already be in flight when DELETE
         # lands; this set lets it abort before write or roll its write back.
         self._deleted_conv_ids: set[str] = set()
+        # The subset of the above owned by the CURRENT cloud session rather than
+        # by a real delete: logout's bulk wipe tombstones every hub conversation
+        # to protect its purge, but those conversations still exist on the hub.
+        # Tracked separately so the next login can release exactly these and
+        # leave a genuine delete's tombstone standing.
+        self._session_deleted_conv_ids: set[str] = set()
 
     def install(self) -> None:
         """Register inbound handlers on the manager. Idempotent."""
@@ -250,14 +256,37 @@ class HubWsBridge:
         if conversation_id:
             self._hub_conv_ids.add(conversation_id)
 
-    def suppress_conversation_materialization(self, conversation_id: str) -> None:
-        """Prevent queued Hub children from recreating a locally deleted parent."""
+    def suppress_conversation_materialization(self, conversation_id: str, *, session_scoped: bool = False) -> None:
+        """Prevent queued Hub children from recreating a locally deleted parent.
+
+        ``session_scoped`` marks a tombstone that belongs to the current cloud
+        session instead of to a real delete — logout's wipe sets it, and the next
+        login releases exactly those. Default False: a genuine delete's tombstone
+        outlives any number of logins, as it must.
+        """
         if conversation_id:
             self._deleted_conv_ids.add(conversation_id)
             self._hub_conv_ids.discard(conversation_id)
+            if session_scoped:
+                self._session_deleted_conv_ids.add(conversation_id)
 
     def conversation_materialization_suppressed(self, conversation_id: str) -> bool:
         return conversation_id in self._deleted_conv_ids
+
+    def release_session_conversation_suppressions(self) -> None:
+        """Release the tombstones logout's wipe set — call when a cloud session begins.
+
+        The tombstone is an in-flight guard, not an account-scoped one: it stops a
+        queued hub materializer from recreating a parent a delete just removed.
+        Logout's bulk wipe (``clear_inbox``) borrows the same guard, but logout is
+        not delete — those conversations still exist on the hub and the next login's
+        catch-up pulls them back. The tombstones are memory-only and nothing else
+        clears them, so a stale one silently drops every future inbound frame for
+        that conversation, the catch-up's own backlog included, for the rest of the
+        process. Only the session-scoped ids go: a genuine delete keeps its guard.
+        """
+        self._deleted_conv_ids -= self._session_deleted_conv_ids
+        self._session_deleted_conv_ids.clear()
 
     def _dispatch_event(
         self,
