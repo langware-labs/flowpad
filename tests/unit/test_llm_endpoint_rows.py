@@ -81,7 +81,12 @@ def test_an_unknown_provider_is_left_alone_rather_than_guessed(env):
 @pytest.mark.asyncio
 async def test_the_hub_listing_forces_the_hub_kind_whatever_the_hub_sent(env, monkeypatch):
     """``kind`` is ours. A hub field of the same name must not reclassify a budget."""
+    from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.instance_settings import llm_endpoint as settings
+
+    # The listing is gated on a live hub login -- a signed-out box answers ``[]`` without asking,
+    # so there would be no row to classify.
+    set_api_key("fp-hub-key")
 
     row = {"id": "11111111-2222-4333-8444-555555555555", "name": "b", "provider": "openai", "kind": "api_key"}
 
