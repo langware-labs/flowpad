@@ -328,7 +328,7 @@ Class: `AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProc
 
 **Stream** — `loadHistory(options?)`, `output()` (async generator of FlowData), `getOutputs()`, `appendUserMessage(content)`, `onLine(handler)`, `wait()`, `waitForReady(options?)`, `waitForComplete()`.
 
-**Assets / dirs** — `addDir(path)`, `removeDir(path)`, `loadEmbeddedSubagent(sourcePath)`, `loadEmbeddedSkill(sourcePath)`, `getAssets()`, `enableAssistant()` / `setAssistantEnabled(enabled)`.
+**Assets / dirs** — `addDir(path)`, `removeDir(path)`, `loadEmbeddedSubagent(sourcePath, setApPersona)`, `loadEmbeddedSkill(sourcePath)`, `getAssets()`, `enableAssistant()` / `setAssistantEnabled(enabled)`.
 
 **Misc** — `setVisible(visible)` (optimistic + latch), `setGraphContext(graphContextId)`, `recoverProject()`, `getPlan()`, `getPrompts()`, `getTranscript()`, `executePlan(filePath, options?)`, `updatePlan(filePath)`, `createCollaborationRoom(...)`, `shell()`.
 

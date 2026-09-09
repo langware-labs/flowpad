@@ -17,11 +17,14 @@ description: A vibe session answered as data-integrations, or as no one at all (
 tag: breadcrumb.test.declared_persona.rules
 sites:
   - rel_path: "tests/unit/test_system_instruction_assets.py"
-    line: 150
+    line: 159
     note: "FAILING? the persona is DECLARED via set_ap_persona, never inferred from how many agents are embedded - read this tag's rules before touching _render_agents_instruction_block or process_persona_path"
   - rel_path: "tests/unit/test_system_instruction_assets.py"
-    line: 213
+    line: 222
     note: "FAILING? an UNDECLARED agent must never inherit the 'you are this agent' directive - a failed persona embed loses the identity, it does not hand it to whoever is there. Read this tag's rules."
+  - rel_path: "tests/unit/test_system_instruction_assets.py"
+    line: 263
+    note: "FAILING? a persona that is DECLARED but not embedded must lose the identity, not hand it to whoever is there - and it must SAY so. Read this tag's rules before touching _render_agents_instruction_block."
 ```
 
 ## Expected behavior
@@ -41,7 +44,7 @@ embedded agents render as a flat, co-equal catalogue.
 ## Internals
 
 * **Identity is a field, not a count.** `AgenticProcess.process_persona_path`
-  (`flow_sdk/builtin/agentic_process/agentic_process.py:1149`) holds the
+  (`flow_sdk/builtin/agentic_process/agentic_process.py:1182`) holds the
   assets-dir-relative path of the materialized sub-agent that IS the process's
   persona (e.g. `.claude/agents/vibe.md`); `None` means no persona.
 
@@ -51,23 +54,39 @@ embedded agents render as a flat, co-equal catalogue.
   rewrite. A TypeId would be both unavailable and unstable. The filename stem is
   the agent name, which is exactly how `agents_json` is keyed.
 
-* **The caller declares it.** `load_embedded_subagent_action`
-  (`:5224`) takes `set_ap_persona: bool = False` and writes
-  `self.process_persona_path = rel.as_posix()` at `:5277` only when it is true.
-  The frontend passes it for the two base personas and *not* for the layers:
-  `embedVibeSubagent` (`ui/src/pages/flow-page/use-start-vibe-session.ts:69`)
-  and `embedStandardAgent` (`ui/src/navigation/embed-standard-agent.ts:36`) pass
-  `true`; `systemVibeKindSubagentRefs` (`use-start-vibe-session.ts:95`) and the
-  per-agent embed at `:106` do not. `AgenticProcess.loadEmbeddedSubagent`
-  (`ts_sdk/src/process/agentic-process.ts:2232`) is the seam that carries the
-  flag over the wire as `set_ap_persona`.
+* **The caller declares it, and every caller must.** `load_embedded_subagent_action`
+  (`:5309`) takes `set_ap_persona: bool = False` and writes
+  `self.process_persona_path = rel.as_posix()` at `:5368` only when it is true.
+  `AgenticProcess.loadEmbeddedSubagent`
+  (`ts_sdk/src/process/agentic-process.ts:2247`) is the seam that carries the
+  flag over the wire as `set_ap_persona`, and it takes it as a **required**
+  parameter — not a defaulted one. Every embed site in the UI therefore states
+  which side it is on:
+
+  | call site | declares |
+  | --- | --- |
+  | `embedVibeSubagent` — `ui/src/pages/flow-page/use-start-vibe-session.ts:69` | `true` |
+  | `embedStandardAgent` — `ui/src/navigation/embed-standard-agent.ts:36` | `true` |
+  | `startWizardProcess` — `ui/src/components/wizard/start-wizard-process.ts:145` | `true` |
+  | `RunAutomationPanel` — `ui/src/components/graph-context/RunAutomationPanel.tsx:67` | `true` |
+  | `HelpdeskAsk` — `ui/src/components/helpdesk/HelpdeskAsk.tsx:36` | `true` |
+  | SDK-shipped `kind: vibe` layers — `use-start-vibe-session.ts:97` | `false` |
+  | project `kind: vibe` layers — `use-start-vibe-session.ts:108` | `false` |
+
+  The `true` rows are not just the two base personas: a wizard's driving agent,
+  a help-desk support agent and a picked automation are each the only agent
+  their process embeds and each means it as the identity. They used to receive
+  the directive from the count-based rule, so removing that rule without
+  converting them would have moved the bug rather than fixed it. The required
+  parameter is what keeps a sixth call site from repeating it — a defaulted
+  flag is a decision a caller can skip without noticing.
 
 * **The renderer promotes the named agent and nests the rest.**
-  `_render_agents_instruction_block(agents_json, persona_path)` (`:5644`)
+  `_render_agents_instruction_block(agents_json, persona_path)` (`:5735`)
   resolves `persona = Path(persona_path).stem`, then splits:
-  `_render_persona_section` (`:5570`) emits the `# You are the '<name>' agent`
+  `_render_persona_section` (`:5661`) emits the `# You are the '<name>' agent`
   directive plus that agent's description and instructions;
-  `_render_subagent_sections` (`:5599`) emits everything else under
+  `_render_subagent_sections` (`:5690`) emits everything else under
   `# Sub-agents available to you`, whose preamble states explicitly that those
   blocks do NOT replace the persona and must never be introduced as the
   speaker's identity.
@@ -79,8 +98,17 @@ embedded agents render as a flat, co-equal catalogue.
   embed degrades to.
 
 * **Call site.** `prepare_system_instruction_assets` reaches the renderer
-  through `:5724`, passing `self.process_persona_path` alongside the merged
-  `agents` dict built at `:5723`.
+  through `:5822`, passing `self.process_persona_path` alongside the merged
+  `agents` dict built at `:5821`.
+
+* **The stem and the frontmatter name are the same string by construction.**
+  `agents_json` is keyed by the frontmatter `name` (`subagent_to_cli_json`) and
+  the persona resolves as `Path(process_persona_path).stem`. They agree because
+  ONE expression writes both: the embed action builds
+  `.claude/agents/<name>.md` from the same `name` it stores. That coupling is a
+  constraint on any future rewrite of the materialized path — let the filename
+  and the frontmatter name diverge and the persona silently stops resolving.
+  The render-time warning below is what would announce it.
 
 ## Invariants
 
@@ -91,7 +119,7 @@ embedded agents render as a flat, co-equal catalogue.
   (`data-integrations` < `vibe`) are no longer correctness hazards.
 
 * **A declared-but-absent persona loses the identity; it never hands it over.**
-  When `persona not in agents_json` (`:5658`) the renderer logs and falls back to
+  When `persona not in agents_json` (`:5751`) the renderer logs and falls back to
   `persona = None` — the flat catalogue. A failed embed must **lose** the
   identity, not promote whichever agent happens to be there.
 
@@ -101,13 +129,13 @@ embedded agents render as a flat, co-equal catalogue.
 
 * **Failures are audible.** Both embed failures — file missing and unparseable —
   log a warning naming the process, the path, and `(persona NOT set)`
-  (`:5259`, `:5266`), as does the render-time divergence. A session used to lose
+  (`:5345`, `:5352`), as does the render-time divergence. A session used to lose
   its persona leaving no trace anywhere except the model's own self-description;
   that silence is what made this expensive to diagnose.
 
 ## Failure modes
 
-The proven on/off lever is the persona resolution at `:5657`. Replacing
+The proven on/off lever is the persona resolution at `:5750`. Replacing
 
 ```python
 persona = Path(persona_path).stem if persona_path else None

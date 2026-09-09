@@ -79,7 +79,7 @@ describe('AgenticProcess loadEmbeddedSubagent', () => {
   it('records the SubAgent entity ref in embedded_asset_refs (persisted)', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
-    await proc.loadEmbeddedSubagent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath, true);
 
     // Fetch fresh from server to confirm persistence. Backend persists the
     // ref then pushes the updated entity via WebSocket; the cached entity
@@ -120,7 +120,7 @@ describe('AgenticProcess loadEmbeddedSubagent', () => {
 
   it('executeInstruction produces CHAT/TEXT output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
-    await proc.loadEmbeddedSubagent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath, true);
     await proc.watch();
 
     const collectPromise = collectOutput(proc, 160_000);
@@ -182,7 +182,7 @@ describe('AgenticProcess loadEmbeddedSubagent', () => {
 
   it('multi-turn: second executeInstruction on the same process produces output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
-    await proc.loadEmbeddedSubagent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath, true);
     await proc.watch();
 
     // Turn 1 — collect output via output() generator

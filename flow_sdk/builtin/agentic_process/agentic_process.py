@@ -5355,6 +5355,12 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=f"Could not parse agent file: {abs_path}")
         assets = self.ensure_embedded_assets()
         name = agent.name or abs_path.stem
+        # `name` is the frontmatter name (`subagent_to_cli_json` keys
+        # `agents_json` by it) and it is also this file's stem, so the persona's
+        # `Path(...).stem` resolves back to the same key. They coincide because
+        # ONE expression writes both -- keep it that way. If a future rewrite
+        # ever lets the filename and the frontmatter name diverge, the persona
+        # stops resolving; the render-time warning is what announces it.
         rel = Path(".claude") / "agents" / f"{name}.md"
         assets.load_asset(rel, content=render_subagent_markdown(agent))
         # The caller declares the persona; it is never inferred from embed order.
@@ -5739,6 +5745,8 @@ class AgenticProcess(Entity):
         if not agents_json:
             return ""
 
+        # The stem IS the frontmatter name: `load_embedded_subagent_action`
+        # writes `<name>.md` from the same `name` that keys `agents_json`.
         persona = Path(persona_path).stem if persona_path else None
         if persona not in agents_json:
             if persona is not None:
@@ -5766,14 +5774,19 @@ class AgenticProcess(Entity):
             subagent_to_cli_json,
         )
 
-        # Emit sub-agents in EMBED order, not filename order. Each sub-agent
-        # is materialized by a sequential `load_asset` write, so file mtime
-        # tracks embed order: the standard vibe sub-agent is embedded first
-        # (earliest mtime), then the kind==vibe sub-agents in the created-date
-        # order the frontend embedded them. Insertion order into `agents` is the
-        # render order (see _render_agents_instruction_block), so mtime-sort
-        # pins the vibe sub-agent first and lays the vibe sub-agents after it.
-        # (name is the tiebreaker for same-tick writes.)
+        # Emit sub-agents in EMBED order, not filename order -- READING ORDER
+        # ONLY. Each sub-agent is materialized by a sequential `load_asset`
+        # write, so file mtime tracks embed order, and insertion order into
+        # `agents` is the order the ## blocks come out in
+        # (_render_agents_instruction_block). So the kind==vibe layers read in
+        # the created-date order the frontend embedded them, which is the order
+        # a reader expects. (name is the tiebreaker for same-tick writes.)
+        #
+        # It carries NO identity: which agent is the persona is declared in
+        # `process_persona_path` and promoted out of this dict regardless of
+        # where it sorts. That is deliberate -- position used to decide the
+        # persona, which made a concurrent write or an alphabetical tiebreak a
+        # correctness hazard. Reordering this is now a cosmetic change.
         def _sort_key(p: "Path") -> tuple:
             try:
                 return (p.stat().st_mtime_ns, p.name)

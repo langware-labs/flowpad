@@ -139,7 +139,10 @@ export async function startWizardProcess<T = unknown>(
   // Embed the driving sub-agent before the prompt so it handles the turn.
   // `agentRef` was resolved above, so a failure here is a real embed failure
   // (a deleted asset, a backend error) rather than an unknown name.
-  await process.loadEmbeddedSubagent(agentRef);
+  // `true` -- the wizard's declared agent IS the process's persona. It is the
+  // only agent here, so it used to get the identity directive from the old
+  // count-based rule; now it has to say so.
+  await process.loadEmbeddedSubagent(agentRef, true);
 
   // `result` resolves on the FIRST of:
   //  - `wizard.closed` — the agent closed with its verdict (preferred; carries data);
