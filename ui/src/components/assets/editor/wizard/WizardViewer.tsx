@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
 import {
   ActionInfo,
   dataManager,
+  FSRef,
   TypeId,
   Wizard,
   type WizardAwaiting,
@@ -16,6 +17,17 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
+import { AdvancedOnly } from '@src/components/view-mode';
+import { useJsonDoc } from '@src/hooks/use-json-doc';
+
+import { WizardDebugger } from './WizardDebugger';
+import { WizardForm } from './WizardForm';
+import { useWizardDoc } from './useWizardDoc';
+import { useWizardRun } from './useWizardRun';
+import { LIVE_STATE, type WizardDoc } from './wizard-doc';
+
+/** The document beside `wizard.json` — the file the editor owns. */
+const MAIN_FILE = 'wizard.json';
 
 /** Per-outcome presentation. `satisfied` is a real success — the machine was
  *  already in the state the step wanted — so it reads as done, not as skipped
@@ -33,7 +45,41 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
 
 const WizardIcon = iconForType(Wizard.type);
 
-export function WizardViewer({ wizard }: { wizard: Wizard }) {
+export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
+  const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
+  const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
+  // Keyed on the path so a different wizard remounts with its own draft rather
+  // than carrying the previous one's fields into it. The body renders BEFORE
+  // the document arrives — the run panel is readable from the entity payload
+  // alone, and a wizard whose document is broken is exactly the one someone
+  // needs to open.
+  //
+  // The key is the PATH only. Folding "has the read landed" into it would
+  // remount when the file arrives and discard anything already on screen — an
+  // open approval panel, a half-typed answer — because the read resolves a tick
+  // or two after the first paint. `useWizardDoc` adopts the document instead.
+  return (
+    <WizardViewerBody
+      key={mainRef.path}
+      wizard={wizard}
+      mainRef={mainRef}
+      initial={doc}
+      docError={error}
+    />
+  );
+}
+
+function WizardViewerBody({
+  wizard,
+  mainRef,
+  initial,
+  docError,
+}: {
+  wizard: Wizard;
+  mainRef: FSRef;
+  initial: WizardDoc | null;
+  docError: string | null;
+}) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -43,13 +89,47 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
   // duplicate and weaker (plain `string` where the SDK has the union).
   const state = wizard.run_state ?? {};
   const awaiting: WizardAwaiting[] = state.awaiting ?? [];
-  const outcomes: WizardStepOutcome[] = state.outcomes ?? [];
   const pending = state.status === 'pending';
   const conversational = Boolean(wizard.agent);
+  // What a previous run was told. Persisting these is what lets a PARKED run
+  // resume without re-asking — but it also means a SETTLED run re-runs with the
+  // same answers, silently, producing a result identical to the last one. So a
+  // settled run has to show them and offer a way to change them.
+  const answers = Object.entries(state.inputs ?? {});
+  const settled = !pending && (state.outcomes?.length ?? 0) > 0;
+
+  // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
+  // changes what is rendered, never which hooks execute or what data is
+  // fetched. (docs/viewmodes.md; `AdvancedOnly` is documented the same way.)
+  const editor = useWizardDoc({ wizard, mainRef, initial });
+  const runView = useWizardRun(wizard);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // The DOCUMENT is the source of the step list, not `state.outcomes`. A wizard
+  // that has never run used to show no steps at all; and an outcome list is the
+  // shape of the last run, which may predate the document being read here.
+  const doc = editor.doc ?? initial;
+  const stepIds = (doc?.steps ?? []).map((step) => step.id);
+  const { steps: joinedSteps, orphaned } = runView.join(stepIds);
 
   const refresh = useCallback(async () => {
     await dataManager.refreshByTypeId(new TypeId(Wizard.type, wizard.id)).catch(() => null);
   }, [wizard.id]);
+
+  const reset = useCallback(async () => {
+    setResetting(true);
+    setResetError(null);
+    try {
+      await wizard.resetRun();
+      await refresh();
+      await runView.loadDetail();
+    } catch (e) {
+      setResetError(errorMessage(e, t`The run could not be reset`));
+    } finally {
+      setResetting(false);
+    }
+  }, [refresh, runView, t, wizard]);
 
   const call = useCallback(
     async (action: string, body: Record<string, unknown>) => {
@@ -57,12 +137,10 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
       try {
         const info = new ActionInfo(action, Wizard.type, wizard.id, 'POST');
         info.bodyParameters = body;
-        const result = await dataManager.callAction<Record<string, unknown>, { status?: string; message?: string }>(info);
+        await dataManager.callAction<Record<string, unknown>, unknown>(info);
         await refresh();
-        return result;
       } catch (e) {
         notify.error({ title: t`The wizard could not run`, message: errorMessage(e, t`The wizard could not run`) });
-        return null;
       } finally {
         setBusy(false);
       }
@@ -86,8 +164,12 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
       setAskApproval(true);
       return;
     }
+    // Drain any in-flight blur write first: the backend runs the FILE, so
+    // starting a run mid-write would execute the previous document and report
+    // a result for a wizard that no longer exists on disk.
+    await editor.flush();
     await call('run', {});
-  }, [call, state.approved, wizard]);
+  }, [call, editor, state.approved, wizard]);
 
   const approveAndRun = useCallback(async () => {
     setAskApproval(false);
@@ -96,12 +178,15 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
 
   const submit = useCallback(
     async (name: string) => {
-      const value = values[name];
-      if (value === undefined || value === '') return;
+      // What the field SHOWS, which may be the previous answer offered back and
+      // never touched. Reading `values` alone would make Continue a no-op until
+      // the user typed something, on a form that already looks filled in.
+      const value = values[name] ?? String(state.inputs?.[name] ?? '');
+      if (value === '') return;
       await call('set-input', { name, value });
       setValues((prev) => ({ ...prev, [name]: '' }));
     },
-    [call, values],
+    [call, values, state.inputs],
   );
 
   return (
@@ -171,13 +256,16 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
                 <Input
                   id={`wz-${item.name}`}
                   data-testid={`wizard-input-${item.name}`}
-                  value={values[item.name] ?? ''}
+                  // Offer the previous answer back rather than making it be
+                  // retyped: a fresh run ASKS, but it should not pretend the
+                  // wizard has never been told anything.
+                  value={values[item.name] ?? String(state.inputs?.[item.name] ?? '')}
                   onChange={(e) => setValues((prev) => ({ ...prev, [item.name]: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === 'Enter') void submit(item.name); }}
                 />
                 <Button
                   variant="secondary"
-                  disabled={busy || !values[item.name]}
+                  disabled={busy || !(values[item.name] ?? state.inputs?.[item.name])}
                   onClick={() => void submit(item.name)}
                   data-testid={`wizard-submit-${item.name}`}
                 >
@@ -189,24 +277,39 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
         </section>
       ) : null}
 
-      {outcomes.length > 0 ? (
+      {/* The reader SWALLOWS a malformed document — one bad file must not wedge
+          an indexer walking a hundred assets — which made "I saved it and my
+          wizard disappeared" indistinguishable from "there was never a wizard
+          here". This is the diagnostic. */}
+      {wizard.document_error || docError ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive" data-testid="wizard-document-error">
+          {wizard.document_error || docError}
+        </p>
+      ) : null}
+
+      {joinedSteps.length > 0 ? (
         <section data-testid="wizard-steps">
           <ul className="flex flex-col gap-1">
-            {outcomes.map((o) => {
-              const style = STEP_STYLE[o.status] ?? STEP_STYLE.not_reached;
+            {joinedSteps.map(({ step_id, live, outcome }) => {
+              // Live wins while the run is in flight — it is the fresher of the
+              // two — and the durable outcome takes over once it settles.
+              const status = live && runView.live ? LIVE_STATE[live.state]?.status : outcome?.status;
+              const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
+              // A running step maps to `awaiting_input` in LIVE_STATE, so this
+              // one test covers both the live and the parked case.
+              const spin = status === 'awaiting_input';
               return (
-                <li key={o.step_id} className="flex items-center gap-2 text-sm" data-testid={`wizard-step-${o.step_id}`}>
-                  <Icon className={`h-4 w-4 shrink-0 ${style.className}`} />
-                  <span className="font-mono text-xs text-muted-foreground">{o.step_id}</span>
-                  {o.message ? <span className="text-muted-foreground">— {o.message}</span> : null}
+                <li key={step_id} className="flex items-center gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
+                  <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
+                  <span className="font-mono text-xs text-muted-foreground">{step_id}</span>
+                  {live?.current || outcome?.message ? (
+                    <span className="text-muted-foreground">— {live?.current || outcome?.message}</span>
+                  ) : null}
                 </li>
               );
             })}
           </ul>
-          {state.message ? (
-            <p className="mt-2 text-xs text-muted-foreground">{state.message}</p>
-          ) : null}
         </section>
       ) : conversational ? (
         <p className="text-sm text-muted-foreground">
@@ -217,8 +320,59 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          <Trans>This wizard has not run on this machine yet.</Trans>
+          <Trans>This wizard declares no steps.</Trans>
         </p>
+      )}
+
+      {/* What the RUN did, which is not a fact about the document's steps. This
+          used to live inside the step list, and re-sourcing that list from the
+          document made a completed run's answers vanish for any wizard whose
+          steps had since changed. */}
+      {state.message ? <p className="text-xs text-muted-foreground">{state.message}</p> : null}
+
+      {settled && answers.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2" data-testid="wizard-answers">
+          <span className="text-xs text-muted-foreground">
+            <Trans>Answered with</Trans>
+          </span>
+          {answers.map(([name, value]) => (
+            <span
+              key={name}
+              className="rounded border border-border px-1.5 py-0.5 font-mono text-xs"
+              data-testid={`wizard-answer-${name}`}
+            >
+              {name}: {typeof value === 'string' ? value : JSON.stringify(value)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
+          focusable in Standard view, which is wrong for a form — you would tab
+          into fields nobody can see. */}
+      {conversational ? null : (
+        <AdvancedOnly reserve={false} className="flex flex-col gap-4">
+          {doc ? (
+            <WizardForm
+              doc={doc}
+              commit={editor.commit}
+              validation={editor.validation}
+              saveError={editor.saveError}
+              saving={editor.saving}
+              readOnly={editor.readOnly}
+            />
+          ) : null}
+          <WizardDebugger
+            steps={joinedSteps}
+            orphaned={orphaned}
+            live={runView.live}
+            loadingDetail={runView.loadingDetail}
+            onExpand={() => void runView.loadDetail()}
+            onReset={() => void reset()}
+            resetting={resetting}
+            resetError={resetError}
+          />
+        </AdvancedOnly>
       )}
     </div>
   );
