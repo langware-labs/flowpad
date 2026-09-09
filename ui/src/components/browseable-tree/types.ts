@@ -258,11 +258,22 @@ export interface BrowseableTreeProps {
    *  pointer sweeping down a menu stamps nothing it merely crosses. */
   hoverSeenMs?: number;
 
-  /** Rendered as the last row of EVERY level: once at the root ('') and once at
-   *  the end of each expanded folder's children (its id). Its use is a build-
-   *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
-   *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
-  levelFooter?: (parentId: string) => ReactNode;
+  /** Rendered as the FIRST row of every level: once above the roots ('') and
+   *  once at the head of each expanded folder's children (its id). Its use is a
+   *  build-as-you-browse toolbar — "add into THIS level" — so the parent id is
+   *  handed in, and returning null opts a level out. Leading the level (rather
+   *  than trailing it) is what keeps nested footers apart: a trailing one
+   *  renders after the whole expanded subtree, so several open levels pile
+   *  their footers up together at the bottom with nothing to distinguish them.
+   *
+   *  The tree's own `mirrored` is handed in too, because the footer sits inside
+   *  a wrapper the tree indents on the MIRRORED edge — a footer laid out
+   *  leading-first ignores that indent and draws at the same x on every level.
+   *  Passing it beats asking each author to remember to thread the flag through
+   *  from wherever the tree got it.
+   *
+   *  Undefined ⇒ no footer, unchanged for ordinary navigators. */
+  levelFooter?: (parentId: string, mirrored: boolean) => ReactNode;
 
   /**
    * Lay the rows out mirrored — for a menu that grows against the reading
