@@ -426,7 +426,7 @@ function WizardViewerBody({
         <AdvancedOnly reserve={false}>
           <WizardForm
             doc={doc}
-            assetRef={wizard.asset_ref ?? ''}
+            wizard={wizard}
             commit={editor.commit}
             validation={editor.validation}
             saveError={editor.saveError}
