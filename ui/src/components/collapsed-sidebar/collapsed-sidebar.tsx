@@ -18,8 +18,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { AgenticProcess, DataSource, PageId, RagIndex } from '@sdk';
+import { AgenticProcess, DataSource, PageId, RagIndex, dataContext } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
@@ -225,8 +226,10 @@ export function CollapsedSidebar() {
     }
   };
 
-  /** One desk rail entry, wrapped in its menu item. */
-  const renderRailItem = (spec: RailSpec) => {
+  /** One desk rail entry, wrapped in its menu item. The entry at index 0 sits
+   *  on the tab strip's line, so it carries the strip's own height — rail and
+   *  tabs start AND end together under the nav bar. */
+  const renderRailItem = (spec: RailSpec, index = 1) => {
     const meta = navMeta[spec.id];
     if (!meta) return null;
     const Icon = meta.icon;
@@ -238,7 +241,7 @@ export function CollapsedSidebar() {
           {...tagAttrs(railTag(spec.id), 'button')}
           isActive={isActiveId(spec.id)}
           onClick={() => handleRailClick(spec.id)}
-          className="relative w-full justify-center px-2"
+          className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
           <NavBadge count={badgeForId(spec.id)} />
@@ -248,7 +251,7 @@ export function CollapsedSidebar() {
   };
 
   /** One hub rail entry. The hub rail is a fixed list with its own active rule. */
-  const renderHubItem = (item: HubItem) => {
+  const renderHubItem = (item: HubItem, index = 1) => {
     const Icon = item.icon;
     return (
       <SidebarMenuItem key={`${item.id}:${item.pointer ?? ''}`}>
@@ -257,7 +260,7 @@ export function CollapsedSidebar() {
           isActive={hubActive(item)}
           onClick={() => handleClick(item.viewType, item.pointer)}
           data-rail-item={item.id}
-          className="relative w-full justify-center px-2"
+          className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
         </SidebarMenuButton>
