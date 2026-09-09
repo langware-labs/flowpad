@@ -51,6 +51,13 @@ const side = vi.hoisted(() => ({
   select: vi.fn(),
   toggle: vi.fn(),
 }));
+/** The trigger section links into the Events dock, so the form now reads dock
+ *  navigation — which is URL-first and needs a Router the unit tier has not
+ *  got. The link target has its own test. */
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
+}));
+
 vi.mock('@src/navigation/useSideWindows', () => ({
   useSideWindows: () => ({ ...side, active: side.windows[side.windows.length - 1] ?? null }),
 }));

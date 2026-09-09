@@ -35,15 +35,6 @@ export interface WizardProcessDoc {
   shape?: unknown;
 }
 
-/** What invokes a wizard without a person clicking Run. */
-export interface WizardTriggerDoc {
-  on: string;
-  /** At most once per machine, ever — the Trigger row's counter is the record. */
-  fire_once?: boolean;
-  /** Only fire for events about this target (`type:id`, trailing `*` allowed). */
-  target?: string;
-}
-
 export interface WizardStepDoc {
   id: string;
   label?: string;
@@ -63,7 +54,6 @@ export interface WizardDoc {
   version?: string;
   agent?: string;
   steps?: WizardStepDoc[];
-  triggers?: WizardTriggerDoc[];
   [key: string]: unknown;
 }
 
@@ -199,18 +189,3 @@ export const LIVE_STATE: Record<string, { status: string; label: string }> = {
   cancelled: { status: 'not_reached', label: 'cancelled' },
   interrupted: { status: 'failed', label: 'stopped' },
 };
-
-/**
- * The uname the backend's reconciler mints for a wizard's Nth declared trigger.
- *
- * A mirror of `_wizard_slug` in `flow_sdk/server/builtin_triggers.py`: the
- * wizard's FOLDER name, lowercased, every non-alphanumeric character replaced
- * by `_`. It is the only join between a trigger a document declares and the row
- * that records whether it has fired, so the two spellings have to agree —
- * deriving it from the display name instead silently matched nothing.
- */
-export function wizardTriggerUname(assetRef: string, index: number): string {
-  const folder = (assetRef.split('/').filter(Boolean).pop() ?? 'wizard').toLowerCase();
-  const slug = folder.replace(/[^a-z0-9]/g, '_').replace(/^_+|_+$/g, '') || 'wizard';
-  return `wizard_${slug}_${index}`;
-}
