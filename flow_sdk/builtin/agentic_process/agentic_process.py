@@ -2048,6 +2048,8 @@ class AgenticProcess(Entity):
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
+        if self.remote:
+            return await self._relay_json("exit", body={})
         worker = _PROMPT_WORKERS.get(self.id)
         turn = _PROMPT_TASKS.get(self.id)
         if worker is not None or turn is not None:
@@ -2219,6 +2221,8 @@ class AgenticProcess(Entity):
         mid-turn (409): tearing the worker down while a prompt turn is in flight
         would drop the in-flight turn.
         """
+        if self.remote:
+            return self._remote_refusal("restart")
         if (resp := self._reject_if_turn_in_flight()) is not None:
             return resp
         exit_result = await self.exit()
@@ -2228,6 +2232,8 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="self-restart")
     async def http_self_restart(self) -> ApiSuccessResponse:
+        if self.remote:
+            return self._remote_refusal("self-restart")
         """Detached restart — safe to call from *inside* the running worker.
 
         The intended caller is the worker itself: ``flow process restart`` run
@@ -2436,14 +2442,31 @@ class AgenticProcess(Entity):
             logger.exception("AgenticProcess %s fork_action error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
 
-    async def wait(self, timeout: float | None = None) -> None:
+    async def wait(
+        self,
+        timeout: float | None = None,
+        *,
+        on_status: "Callable[[Any], None] | None" = None,
+    ) -> None:
         """Block until worker_status reaches a terminal state (complete / error / interrupted).
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
+
+        ``on_status`` observes the status this loop ALREADY reads on every
+        iteration. It exists so a caller that blocks here for up to half an hour
+        — a wizard step running an agent — can say what is happening instead of
+        showing a frozen row. It adds no second loop and no new wait budget: it
+        is called from this poll, at this interval, and an observer that raises
+        is logged and ignored, because reporting must never fail the work.
         """
         deadline = (time.monotonic() + timeout) if timeout else None
         while True:
             worker_status = self.fetch_worker_status()
+            if on_status is not None:
+                try:
+                    on_status(worker_status)
+                except Exception:  # noqa: BLE001
+                    logger.debug("wait() status observer failed", exc_info=True)
             if worker_status and is_worker_terminal(worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
@@ -2524,6 +2547,8 @@ class AgenticProcess(Entity):
 
     def _schedule_queue_drain(self, source: str) -> None:
         """Fire-and-forget a drain attempt; never block the caller."""
+        if self.remote:
+            return  # the queue lives with the worker, on the deployment machine
         try:
             # Common-case skip: a process that never enqueued has no queue
             # file — don't pay the drain's lock + JSON read + drain_check log
@@ -2598,6 +2623,8 @@ class AgenticProcess(Entity):
         One entry per call. Pop-persists the head BEFORE injecting so a re-fired
         ready edge can never re-inject it. Runs under a per-process lock.
         """
+        if self.remote:
+            return  # never inject or cold-start a route row: its worker is elsewhere
         q = self.queue
         async with _QUEUE_LOCKS[self.id]:
             state = q.read()
@@ -2653,6 +2680,8 @@ class AgenticProcess(Entity):
         prompt = (body.get("prompt") or "").strip()
         if not prompt:
             return ApiFailResponse(message="prompt is required")
+        if self.remote:
+            return await self._relay_json("enqueue", body=body)
         self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
@@ -2662,6 +2691,8 @@ class AgenticProcess(Entity):
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kick a drain without adding a prompt (unlike ``set-queue-enabled``, touches
         nothing else). Idempotent: an empty or busy queue is a no-op."""
+        if self.remote:
+            return self._remote_refusal("drain-queue")
         self._schedule_queue_drain("ui")
         return ApiSuccessResponse(data=self.queue.read())
 
@@ -2673,12 +2704,16 @@ class AgenticProcess(Entity):
         ident = body.get("id", body.get("index"))
         if ident is None:
             return ApiFailResponse(message="id or index is required")
+        if self.remote:
+            return await self._relay_json("dequeue", body=body)
         self.queue.dequeue(ident)
         await self.notify_updated()
         return ApiSuccessResponse(data=self.queue.read())
 
     @action.post(action_name="clear-queue")
     async def _clear_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        if self.remote:
+            return await self._relay_json("clear-queue", body={})
         self.queue.clear()
         await self.notify_updated()
         return ApiSuccessResponse(data=self.queue.read())
@@ -2689,6 +2724,8 @@ class AgenticProcess(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         enabled = bool(body.get("enabled", True))
+        if self.remote:
+            return await self._relay_json("set-queue-enabled", body=body)
         self.queue.set_enabled(enabled)
         await self.notify_updated()
         if enabled:
@@ -3839,6 +3876,8 @@ class AgenticProcess(Entity):
         body = await request_info.get_post_data()
         if not isinstance(body, dict):
             return ApiFailResponse(message="Expected JSON object body")
+        if self.remote:
+            return await self._relay_stream("prompt", body, marks_busy=True)
         message = (body.get("message") or "").strip()
         if not message:
             return ApiFailResponse(message="message is required")
@@ -4052,6 +4091,8 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="cancel-prompt")
     async def _http_cancel_prompt(self) -> ApiSuccessResponse | ApiFailResponse:
+        if self.remote:
+            return await self._relay_json("cancel-prompt", body={})
         """Cancel the in-flight turn — ONE stop interface for every transport.
 
         Print-mode (CLI) turn: kill the registered stream worker (SIGTERM → 5s
@@ -4730,6 +4771,8 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="observe-turn")
     async def observe_turn(self, after_entry_id: str | None = None) -> Any:
+        if self.remote:
+            return await self._relay_stream("observe-turn", {"after_entry_id": after_entry_id})
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
 
@@ -6980,7 +7023,12 @@ class AgenticProcess(Entity):
         successful ``start_pty()`` also clears it by re-capturing the hash.
         """
         await self._preserve_latest_display_pin()
-        if not self._is_in_start_lifecycle() and self.status == ProcessStatus.RUNNING.value and self.last_started_hash:
+        if (
+            not self.remote  # a route row's hash belongs to the worker's own tier
+            and not self._is_in_start_lifecycle()
+            and self.status == ProcessStatus.RUNNING.value
+            and self.last_started_hash
+        ):
             # Compare against a hash RECOMPUTED from the persisted snapshot,
             # not the stored one. The hashed payload is normalized by
             # `_comparable_restart_payload`, which began stripping
@@ -7009,6 +7057,8 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
+        if self.remote:
+            return await self._relay_json("get-history", method="GET")
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
@@ -7190,7 +7240,14 @@ class AgenticProcess(Entity):
         and an unended root stays on the footer chip as live work.
         """
         end_process_activity(self.id, message="deleted")
-        if delete_chats:
+        if self.remote:
+            # The hub removes the process on the machine and its own route; a
+            # failure there keeps this handle so the delete can be retried —
+            # the hub applies the same rule one tier down.
+            relayed = await self._relay_json(None, method="DELETE")
+            if isinstance(relayed, ApiFailResponse):
+                raise RuntimeError(f"deployed agent process delete failed: {relayed.message}")
+        if delete_chats and not self.remote:  # a route row owns no transcript here
             self._delete_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
@@ -7261,6 +7318,202 @@ class AgenticProcess(Entity):
         """Return the full CLI command string that would be used to launch this process."""
         return self.cli_options.to_shell_string()
 
+    # ── hub relay for remote route rows ───────────────────────────────────
+    # The same shape the hub uses to reach a process on its box
+    # (``flowpad/hub/builtin/agentic_process.py``), one tier up: every public
+    # action branches at the top on ``self.remote`` and forwards to the hub,
+    # which forwards to the machine. The client never learns where the process
+    # runs — ``AgenticProcess.getById/prompt/enqueue/...`` are unchanged. The
+    # credential is this machine's own cloud login, the way ``Deployment.pause``
+    # and ``Conversation.add_message`` already relay.
+
+    _REMOTE_STREAM_HEADERS: ClassVar[frozenset[str]] = frozenset(
+        ("content-type", "cache-control", "x-accel-buffering")
+    )
+
+    def _remote_refusal(self, verb: str) -> ApiFailResponse:
+        """A verb that only makes sense next to the worker (PTY open, restart)."""
+        return ApiFailResponse(
+            message=f"this process runs on a remote deployment; {verb} is not available from here",
+            status_code=409,
+        )
+
+    def _hub_client(self):
+        """A hub client as this machine's user, or the 401 to hand back."""
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return ApiFailResponse(message="Cloud login required to reach a deployed agent", status_code=401)
+        return FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key)
+
+    def _hub_path(self, action: str | None = None) -> str:
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        return build_hub_url(self, action=action)
+
+    async def _refresh_remote_projection(self, client) -> None:
+        """Re-read the hub's projection and broadcast it if it moved.
+
+        The save is the point: it is the WS ``data_op`` the chat panel watches
+        for busy/ready, so a relayed turn ends on the client the same way a
+        local one does. Best-effort — a projection that cannot be read leaves
+        the last one standing rather than failing the action that succeeded.
+        """
+        try:
+            descriptor = await client.get(self._hub_path())
+        except Exception:  # noqa: BLE001
+            logger.debug("remote projection refresh failed for %s", self.id, exc_info=True)
+            return
+        if isinstance(descriptor, dict) and self.apply_remote_projection(descriptor):
+            await self.save(notify=True)
+
+    async def _relay_json(self, action: str | None, *, method: str = "POST", body: dict | None = None):
+        """Forward one JSON action to the hub and hand its data back unchanged."""
+        from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError  # noqa: PLC0415
+
+        client = self._hub_client()
+        if isinstance(client, ApiFailResponse):
+            return client
+        try:
+            async with client:
+                if method == "GET":
+                    data = await client.get(self._hub_path(action))
+                elif method == "DELETE":
+                    data = client._unwrap(await client.request("DELETE", self._hub_path(action)))
+                else:
+                    data = await client.post(self._hub_path(action), body or {})
+                await self._refresh_remote_projection(client)
+        except HubAuthExpiredError:
+            return ApiFailResponse(message="Cloud login expired; sign in again", status_code=401)
+        except Exception as exc:  # noqa: BLE001 — the hub's refusal or an unreachable hub, as a service error
+            return ApiFailResponse(message=f"could not reach deployed agent process: {exc}", status_code=503)
+        return ApiSuccessResponse(data=data)
+
+    async def _relay_stream(self, action: str, body: dict | None, *, marks_busy: bool = False):
+        """Forward a streaming action and relay the hub's bytes verbatim.
+
+        Only the three streaming headers cross; a hub-side refusal (non-2xx) is
+        returned as the failure it is rather than streamed. ``marks_busy`` makes
+        the projection say busy for the life of the stream, refreshed from the
+        hub when it closes — mirroring the hub's own ``_set_busy`` /
+        ``_refresh_projection`` around its relay to the box.
+        """
+        from starlette.responses import StreamingResponse  # noqa: PLC0415 — app-layer dep
+
+        client = self._hub_client()
+        if isinstance(client, ApiFailResponse):
+            return client
+        try:
+            stream = await client.open_stream("POST", self._hub_path(action), json=body or {})
+            remote = await stream.__aenter__()
+        except Exception as exc:  # noqa: BLE001
+            await client.close()
+            return ApiFailResponse(message=f"could not reach deployed agent process: {exc}", status_code=503)
+        if not 200 <= remote.status_code < 300:
+            try:
+                text = (await remote.aread()).decode("utf-8", "replace")
+            finally:
+                await stream.__aexit__(None, None, None)
+                await client.close()
+            return ApiFailResponse(message=text or f"hub refused {action}", status_code=remote.status_code)
+
+        if marks_busy:
+            projection = {**self.remote_projection, "busy": True, "ready_for_input": False}
+            self.context_data = {**(self.context_data or {}), "remote_projection": projection}
+            await self.save(notify=True)
+
+        async def _close() -> None:
+            try:
+                await stream.__aexit__(None, None, None)
+            finally:
+                try:
+                    await self._refresh_remote_projection(client)
+                finally:
+                    await client.close()
+
+        async def _body():
+            try:
+                async for chunk in remote.aiter_bytes():
+                    yield chunk
+            finally:
+                # A client that drops the stream mid-turn (a closed tab, a
+                # `curl | head`) cancels this generator. The projection refresh
+                # is what clears ``busy`` for everyone else watching the row, so
+                # it is shielded from that cancellation and left to finish.
+                await asyncio.shield(_close())
+
+        return StreamingResponse(
+            _body(),
+            status_code=remote.status_code,
+            headers={k: v for k, v in remote.headers.items() if k.lower() in self._REMOTE_STREAM_HEADERS},
+        )
+
+    # ── remote route rows ─────────────────────────────────────────────────
+    # A process opened on a REMOTE deployment lives on that machine. The local
+    # row is a same-id routing handle adopted from the hub — ``remote=True`` —
+    # that carries the hub's PROJECTION of the process and never a worker. The
+    # three status axes, the queue and the cost are therefore read from that
+    # projection, not derived from a transcript this machine does not have, and
+    # every caller-less mechanism that acts on process rows (the boot orphan
+    # sweep, the queue drain, headless reuse, the transcript subscriber, the
+    # restart-hash recompute in ``save()``) skips the row. The hub keeps the
+    # same shape for its own route rows (``_PROJECTED_FIELDS`` there).
+
+    #: The derived axes a route row persists instead of computing.
+    REMOTE_PROJECTION_KEYS: ClassVar[tuple[str, ...]] = (
+        "worker_status",
+        "worker_status_detail",
+        "worker_status_detail_id",
+        "busy",
+        "ready_for_input",
+        "queue",
+        "total_cost_usd",
+    )
+
+    @property
+    def remote_projection(self) -> dict:
+        """The hub's last projection of a route row (empty for a local process)."""
+        if not self.remote:
+            return {}
+        value = (self.context_data or {}).get("remote_projection")
+        return dict(value) if isinstance(value, dict) else {}
+
+    def apply_remote_projection(self, descriptor: dict) -> bool:
+        """Adopt the hub's descriptor of a route row; True when something changed.
+
+        Real fields (``status``, ``session_id``, ``last_active_at``) land on the
+        row; the derived axes land in ``context_data["remote_projection"]`` so
+        the serializer can answer them without a worker. Nothing here is
+        client-writable — the caller is the relay, never a request body.
+        """
+        changed = False
+        for name in ("status", "session_id", "last_active_at"):
+            if name in descriptor and getattr(self, name, None) != descriptor[name]:
+                setattr(self, name, descriptor[name])
+                changed = True
+        projection = {k: descriptor.get(k) for k in self.REMOTE_PROJECTION_KEYS if k in descriptor}
+        current = dict(self.context_data or {})
+        if current.get("remote_projection") != projection:
+            current["remote_projection"] = projection
+            self.context_data = current
+            changed = True
+        return changed
+
+    def _dump_remote_projection(self, data: dict) -> dict:
+        """The serializer's answer for a route row: projection, no local I/O."""
+        projection = self.remote_projection
+        for key in self.REMOTE_PROJECTION_KEYS:
+            data[key] = projection.get(key)
+        if data.get("queue") is None:
+            data["queue"] = {"enabled": True, "entries": []}
+        data["busy"] = bool(data.get("busy"))
+        data["ready_for_input"] = bool(data.get("ready_for_input"))
+        data["status"] = self.status
+        data["supports_plan_mode"] = False
+        return data
+
     @model_serializer(mode="wrap")
     def api_json_serializer(self, nxt, info: SerializationInfo):
         data = super().api_json_serializer(nxt, info)
@@ -7268,6 +7521,8 @@ class AgenticProcess(Entity):
             return data
         if data is None:
             return None
+        if self.remote:
+            return self._dump_remote_projection(data)
         # Emit all three status axes fresh (nothing here is persisted — the
         # skip_api_serializer path took the early-return above). See
         # docs/agent/agentic_process_statuses.md for the model.
@@ -7338,6 +7593,12 @@ class AgenticProcess(Entity):
         the value more than once should fetch once and pass it along (e.g.
         ``is_ready_for_input(self, worker_status=...)``).
         """
+        if self.remote:
+            raw = self.remote_projection.get("worker_status")
+            try:
+                return WorkerStatus(raw) if raw else None
+            except ValueError:
+                return None
         if self.status == ProcessStatus.NEW.value:
             return None
         if self.status == ProcessStatus.STOPPED.value:
@@ -7414,6 +7675,8 @@ class AgenticProcess(Entity):
         (nullable), and the derived ``ready_for_input``. Same derivation the
         serializer applies, so an on-demand poll and a broadcast can never
         disagree."""
+        if self.remote:
+            return await self._relay_json("status", method="GET")
         worker_status = self.fetch_worker_status()
         busy = is_turn_busy(self, worker_status)
         return ApiSuccessResponse(
@@ -8042,6 +8305,8 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="open")
     async def _http_open(self) -> ApiSuccessResponse | ApiFailResponse:
+        if self.remote:
+            return self._remote_refusal("open")
         """HTTP: invoke :meth:`start_pty` and move lifecycle status to starting/running.
 
         Action name kept as ``open`` for back-compat with existing UI / TS SDK
@@ -8198,6 +8463,26 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="os-status")
     async def os_status(self) -> ApiSuccessResponse:
+        if self.remote:
+            # No PTY, no PID, no shell on this machine. ``ready`` keys on the
+            # projected lifecycle so the SDK's relaunch loop leaves the row alone.
+            alive = self.status in (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value)
+            return ApiSuccessResponse(
+                data={
+                    "process_id": self.id,
+                    "process_status": self.status,
+                    "shell_id": None,
+                    "shell_status": None,
+                    "session_id": self.session_id,
+                    "pty_pid": None,
+                    "worker_pid": None,
+                    "worker_name": None,
+                    "pty_alive": False,
+                    "worker_alive": alive,
+                    "ready": alive,
+                    "remote": True,
+                }
+            )
         """OS-level status snapshot for this AgenticProcess.
 
         Single source of truth for "is this thing alive?". Combines:
@@ -8221,6 +8506,8 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
+        if self.remote:
+            return self._remote_refusal("close")
         """HTTP: Permanent teardown — kill worker + delete shell entity.
 
         Keeps ``shell_id`` on the AgenticProcess as the reserved tab identity.

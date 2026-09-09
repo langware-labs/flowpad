@@ -178,26 +178,59 @@ def archived_runs(wizard_id: str) -> list[str]:
     return sorted((p.name for p in history.glob("run-*.json")), reverse=True)
 
 
-def strip_probes(state: dict[str, Any]) -> dict[str, Any]:
-    """The run record WITHOUT per-command probes.
+def read_outputs(wizard_id: str) -> dict[str, Any]:
+    """What this run's agentic steps returned, by declared name."""
+    values = read_state(wizard_id).get("outputs")
+    return dict(values) if isinstance(values, dict) else {}
+
+
+def record_outputs(wizard_id: str, outputs: dict[str, Any]) -> None:
+    """Persist what the agents returned.
+
+    A SEPARATE dict from `inputs`, and the separation is visible in two places:
+    the form offers stored inputs back as editable answers, and an agent's
+    return value is not the user's answer to re-edit; and a fresh run drops
+    inputs so "run it again" re-asks — outputs must go the same way.
+
+    Required, not optional: a resumed run SKIPS a satisfied step, so a value
+    that is not persisted is never re-derived.
+    """
+    if not outputs:
+        return
+
+    def merge(state: dict) -> dict:
+        return {"outputs": {**(state.get("outputs") or {}), **outputs}}
+
+    _mutate(wizard_id, merge)
+
+
+def strip_heavy(state: dict[str, Any]) -> dict[str, Any]:
+    """The run record WITHOUT per-command probes or returned values.
 
     `Wizard.run_state` is a computed field, so it rides the payload of every row
-    of ``GET /graph/wizard`` and every WS entity push. Probes are for one wizard
-    a person is actively debugging; putting them on the list payload would make
-    every list pay for them. They are served by ``run-detail`` instead.
+    of ``GET /graph/wizard`` and every WS entity push. Probes and an agent's
+    returned value are for one wizard a person is actively debugging; putting
+    them on the list payload would make every list pay for them. Both are
+    served by ``run-detail`` instead.
+
+    Named for what it does rather than for one of the two things it drops: a
+    `strip_probes` that also stripped results is exactly how the next reader
+    misses the second one.
     """
+    state = {k: v for k, v in state.items() if k != "outputs"}
     outcomes = state.get("outcomes")
     if not isinstance(outcomes, list):
         return state
     # The overwhelmingly common case — an input-only step, or any run recorded
     # before probes existed. A scan is free; rebuilding the whole record to
     # produce an identical value is not, and this runs on every serialization.
-    if not any(isinstance(o, dict) and "probes" in o for o in outcomes):
+    heavy = ("probes", "result")
+    if not any(isinstance(o, dict) and any(k in o for k in heavy) for o in outcomes):
         return state
     return {
         **state,
         "outcomes": [
-            {k: v for k, v in o.items() if k != "probes"} if isinstance(o, dict) else o
+            {k: v for k, v in o.items() if k not in heavy} if isinstance(o, dict) else o
             for o in outcomes
         ],
     }

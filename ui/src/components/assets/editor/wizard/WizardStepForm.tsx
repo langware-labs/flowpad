@@ -123,9 +123,55 @@ function CommandsField({
  * form does not render — a `satisfied_codes`, a `timeout_seconds` — survives an
  * edit to the field beside it.
  */
+function AgentField({
+  value,
+  agents,
+  onCommit,
+  readOnly,
+  testId,
+}: {
+  value: string;
+  agents: string[];
+  onCommit: (next: string) => void;
+  readOnly?: boolean;
+  testId: string;
+}) {
+  const known = agents.length === 0 || agents.includes(value);
+  return (
+    <>
+      {/* A datalist, not a Select: a document written elsewhere may name an
+          agent this machine does not have, and a Select would silently show it
+          as empty — erasing the name on the next save. The list OFFERS what is
+          installed; the field still accepts anything. */}
+      <input
+        key={value}
+        list={`${testId}-options`}
+        defaultValue={value}
+        readOnly={readOnly}
+        data-testid={testId}
+        className="h-8 w-full rounded-md border border-input bg-transparent px-3 font-mono text-xs"
+        onBlur={(e) => {
+          if (!readOnly && e.target.value !== value) onCommit(e.target.value);
+        }}
+      />
+      <datalist id={`${testId}-options`}>
+        {agents.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      {value && !known ? (
+        <p className="text-[11px] text-amber-600 dark:text-amber-500" data-testid={`${testId}-unknown`}>
+          <Trans>No agent named "{value}" on this machine — the step will fail when it runs.</Trans>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export function WizardStepForm({
   step,
   index,
+  agents,
   expanded,
   onToggle,
   onSet,
@@ -137,6 +183,8 @@ export function WizardStepForm({
 }: {
   step: WizardStepDoc;
   index: number;
+  /** Agents installed here, to OFFER — never to restrict. */
+  agents: string[];
   expanded: boolean;
   onToggle: () => void;
   onSet: (path: (string | number)[], value: unknown) => void;
@@ -260,12 +308,59 @@ export function WizardStepForm({
           )}
 
           {kind === 'process' && (
-            <p className="text-xs text-muted-foreground">
-              <Trans>
-                This step launches an agent. Editing a process step is not supported here yet —
-                change it in the file.
-              </Trans>
-            </p>
+            <>
+              <Section title={t`Agent`}>
+                <AgentField
+                  readOnly={readOnly}
+                  value={step.process?.agent ?? ''}
+                  agents={agents}
+                  testId={`wizard-step-agent-${step.id}`}
+                  onCommit={(v) => v.trim() && onSet(at('process', 'agent'), v.trim())}
+                />
+                <IssueList issues={issuesAt(at('process', 'agent'))} />
+              </Section>
+
+              <Section title={t`Ask it to`}>
+                {/* A prompt is paragraphs, not a line. The same commit-on-blur
+                    rule as every other field — a keystroke-level write would
+                    validate and reindex on every character. */}
+                <textarea
+                  key={step.process?.prompt ?? ''}
+                  defaultValue={step.process?.prompt ?? ''}
+                  readOnly={readOnly}
+                  rows={5}
+                  data-testid={`wizard-step-prompt-${step.id}`}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs"
+                  onBlur={(e) => {
+                    if (!readOnly && e.target.value !== (step.process?.prompt ?? '')) {
+                      onSet(at('process', 'prompt'), e.target.value);
+                    }
+                  }}
+                />
+                <IssueList issues={issuesAt(at('process', 'prompt'))} />
+              </Section>
+
+              <Section title={t`Returns`}>
+                <CommitField
+                  mono
+                  readOnly={readOnly}
+                  value={step.process?.output ?? ''}
+                  testId={`wizard-step-output-${step.id}`}
+                  placeholder={t`a name — leave empty and the step only reports that the agent stopped`}
+                  onCommit={(v) =>
+                    v.trim() ? onSet(at('process', 'output'), v.trim()) : onRemove(at('process', 'output'))
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {/* Says what naming it BUYS, because the field is opt-in and
+                      its value is entirely in the consequences. */}
+                  <Trans>
+                    Named, the agent must report its result — and the step fails if it reports a
+                    failure, or reports nothing. Later steps read it as an input.
+                  </Trans>
+                </p>
+              </Section>
+            </>
           )}
 
           <Section title={t`Skip if`}>

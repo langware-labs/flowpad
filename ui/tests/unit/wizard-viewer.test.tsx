@@ -14,6 +14,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ callAction: vi.fn(), refreshByTypeId: vi.fn() }));
 
+/** The form lists installed agents and looks up trigger rows. Neither is what
+ *  these tests are about, and both would otherwise reach for a backend. */
+vi.mock('@src/hooks/entity-hooks', () => ({
+  useEntitiesQuery: () => ({ data: [], isLoading: false, error: null }),
+  useEntity: () => ({ data: null, isLoading: false, error: null }),
+}));
+
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {

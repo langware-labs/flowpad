@@ -63,6 +63,15 @@ export interface WizardStepOutcome {
   /** Every command this step ran. Present ONLY on `runDetail()` — `run_state`
    *  strips them, because it rides every row of a list and every WS push. */
   probes?: WizardStepProbe[];
+  /** The name an AGENTIC step declared as its output. Stays on `run_state`, so
+   *  a list can say the step produced something without carrying what. */
+  output?: string;
+  /** What the agent returned under that name. Like `probes`, present ONLY on
+   *  `runDetail()`. */
+  result?: unknown;
+  /** Where the agent wrote it — kept even where `result` is stripped, so a
+   *  person can go and read the value on disk. */
+  result_path?: string;
 }
 
 /** The whole run record for one wizard, probes included. */
@@ -75,6 +84,8 @@ export interface WizardRunDetail {
   /** Filenames of runs previous resets archived, newest first. Their presence
    *  is what tells a reader the current record is not the whole history. */
   archived?: string[];
+  /** What this run's agentic steps returned, by declared output name. */
+  outputs?: Record<string, unknown>;
 }
 
 /**

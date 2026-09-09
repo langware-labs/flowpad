@@ -76,16 +76,20 @@ export function useWizardRun(wizard: Wizard) {
   // a gesture and can therefore be older than the entity — letting it win
   // wholesale meant an empty detail left over from a reset hid the outcomes of
   // the run that followed. So detail contributes the one thing only it has:
-  // the probes, matched per step.
+  // the two things `strip_heavy` removes on its way to the entity — the
+  // probes and an agent's returned value — matched per step.
   const recorded: WizardStepOutcome[] = wizard.run_state?.outcomes ?? NO_OUTCOMES;
-  const probesByStep = detail?.outcomes;
+  const detailed = detail?.outcomes;
   const outcomes: WizardStepOutcome[] = useMemo(() => {
-    if (!probesByStep?.length) return recorded;
-    const probes = new Map(probesByStep.map((o) => [o.step_id, o.probes]));
-    return recorded.map((o) =>
-      probes.has(o.step_id) ? { ...o, probes: probes.get(o.step_id) } : o,
-    );
-  }, [recorded, probesByStep]);
+    if (!detailed?.length) return recorded;
+    const heavy = new Map(detailed.map((o) => [o.step_id, o]));
+    return recorded.map((o) => {
+      const from = heavy.get(o.step_id);
+      // Only the stripped fields are taken back: everything else on the
+      // entity's outcome is fresher than this fetch.
+      return from ? { ...o, probes: from.probes, result: from.result } : o;
+    });
+  }, [recorded, detailed]);
 
   /** Steps in DOCUMENT order — the order they will run, which is the order a
    *  person reading the editor beside this expects. Outcomes for steps the

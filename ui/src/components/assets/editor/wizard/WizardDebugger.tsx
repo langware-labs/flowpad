@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
 import type { WizardStepOutcome } from '@sdk';
 
 import { WizardStepInspector } from './WizardStepInspector';
-import { LIVE_STATE } from './wizard-doc';
+import { LIVE_STATE, type WizardStepDoc } from './wizard-doc';
 import type { WizardRunStep } from './useWizardRun';
 
 /**
@@ -21,13 +21,18 @@ export function WizardDebugger({
   orphaned,
   loadingDetail,
   onExpand,
+  docSteps = [],
 }: {
   steps: WizardRunStep[];
   orphaned: WizardStepOutcome[];
   loadingDetail: boolean;
   onExpand: () => void;
+  /** The DOCUMENT's steps, so the inspector can tell an agentic step from a
+   *  command one — the outcome alone cannot say which it was. */
+  docSteps?: WizardStepDoc[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const docById = useMemo(() => new Map(docSteps.map((s) => [s.id, s])), [docSteps]);
 
   const toggle = (stepId: string) => {
     const next = open === stepId ? null : stepId;
@@ -74,7 +79,11 @@ export function WizardDebugger({
               </button>
               {open === step_id && (
                 <div className="pb-1 pl-2 pt-1">
-                  <WizardStepInspector outcome={outcome} />
+                  <WizardStepInspector
+                    outcome={outcome}
+                    step={docById.get(step_id)}
+                    live={liveNode}
+                  />
                 </div>
               )}
             </li>

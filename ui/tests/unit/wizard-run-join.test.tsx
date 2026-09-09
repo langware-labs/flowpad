@@ -153,4 +153,29 @@ describe('useWizardRun.join', () => {
     expect(steps[0].outcome?.message).toBe('did it');
     expect(steps[0].outcome?.probes?.[0].command).toBe('true');
   });
+
+  it('takes BOTH stripped fields back from run-detail, not just probes', async () => {
+    // `strip_heavy` removes two things on the way to the entity — the probes
+    // and an agent's returned value. A merge that restored only the probes left
+    // the returned value undefined, and the run panel drew an empty box for the
+    // one fact the whole agentic step exists to report.
+    const wizard = {
+      activity_path: 'wizard-demo',
+      typeId: { toString: () => SUBJECT },
+      run_state: { outcomes: [{ step_id: 'a', status: 'completed', output: 'version' }] },
+      runDetail: async () => ({
+        outcomes: [{
+          step_id: 'a', status: 'completed', output: 'version', result: 'Python 3.10.17',
+          probes: [{ phase: 'action', command: 'true' }],
+        }],
+      }),
+    } as never;
+
+    const { result } = renderHook(() => useWizardRun(wizard));
+    await act(async () => { await result.current.loadDetail(); });
+
+    const { steps } = result.current.join(['a']);
+    expect(steps[0].outcome?.result).toBe('Python 3.10.17');
+    expect(steps[0].outcome?.probes?.[0].command).toBe('true');
+  });
 });

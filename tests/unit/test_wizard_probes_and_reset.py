@@ -235,6 +235,33 @@ def test_document_error_names_the_broken_step(tmp_path, monkeypatch):
 
 # --- the payload guard ------------------------------------------------------
 
+def test_an_agents_returned_value_never_rides_run_state(tmp_path, monkeypatch):
+    """A returned value is as heavy as a probe and just as private.
+
+    `run_state` is a computed field on every row of `GET /graph/wizard` and
+    every WS push; `run-detail` is fetched for the ONE wizard a person opened.
+    """
+    from flow_sdk.core.wizard.state import record_outputs, record_result
+
+    wizard = _wizard(tmp_path, monkeypatch)
+    record_result(str(wizard.id), status="completed", awaiting=[], message="", outcomes=[{
+        "step_id": "a", "status": "completed", "output": "release",
+        "result": {"version": "3.12.4", "path": "/usr/local/bin/python3"},
+    }])
+    record_outputs(str(wizard.id), {"release": {"version": "3.12.4"}})
+
+    listed = wizard.run_state
+    assert "result" not in listed["outcomes"][0]
+    assert "outputs" not in listed
+    # The rest of the outcome — including WHICH name it returned — survives, so
+    # a list can still say the step produced something.
+    assert listed["outcomes"][0]["output"] == "release"
+
+    detail = asyncio.run(wizard.run_detail_action()).data
+    assert detail["outcomes"][0]["result"]["version"] == "3.12.4"
+    assert detail["outputs"] == {"release": {"version": "3.12.4"}}
+
+
 def test_probes_ride_run_detail_and_never_run_state(tmp_path, monkeypatch):
     """`run_state` is a computed field on every row of a list and every WS push."""
     from flow_sdk.core.wizard.state import record_result

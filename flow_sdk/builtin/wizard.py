@@ -154,15 +154,16 @@ class Wizard(Entity):
         One file per wizard is enough because the lock is one run per NAMED
         wizard: there is no second concurrent run to tell apart, so no run id.
         """
-        from flow_sdk.core.wizard.state import read_state, strip_probes  # noqa: PLC0415
+        from flow_sdk.core.wizard.state import read_state, strip_heavy  # noqa: PLC0415
 
         default = {"status": "", "inputs": {}, "awaiting": [], "outcomes": [], "message": ""}
         if not self.id:
             return default
         try:
-            # WITHOUT probes: this rides every row of `GET /graph/wizard` and
-            # every WS push. The debugger fetches them from `run-detail`.
-            state = strip_probes(read_state(str(self.id)))
+            # WITHOUT probes or returned values: this rides every row of
+            # `GET /graph/wizard` and every WS push. The debugger fetches both
+            # from `run-detail`.
+            state = strip_heavy(read_state(str(self.id)))
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
             return default
         return {**default, **state} if state else default
@@ -406,7 +407,9 @@ class Wizard(Entity):
         rides every row of a list and every WS push; a person debugging one
         wizard asks for them here.
         """
-        from flow_sdk.core.wizard.state import archived_runs, read_state  # noqa: PLC0415
+        from flow_sdk.core.wizard.state import (  # noqa: PLC0415
+            archived_runs, read_outputs, read_state,
+        )
         from flow_sdk.schema.data_spec.wizard_spec import WizardRunDetailSpec  # noqa: PLC0415
 
         state = read_state(str(self.id))
@@ -418,6 +421,7 @@ class Wizard(Entity):
                 awaiting=state.get("awaiting") or [],
                 outcomes=state.get("outcomes") or [],
                 archived=archived_runs(str(self.id)),
+                outputs=read_outputs(str(self.id)),
             )
         except Exception as exc:  # noqa: BLE001
             # A record written by an older shape must not make the debugger the

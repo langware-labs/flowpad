@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import read_inputs, record_result, run_dir
+from flow_sdk.core.wizard.state import read_inputs, read_outputs, record_outputs, record_result, run_dir
 
 if TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
@@ -100,7 +100,11 @@ async def execute_wizard(
             # result identical to the last one — the button read as dead, and
             # there was no way to answer differently. The values stay on disk so
             # the form can offer them back; they are simply not assumed.
-            inputs=read_inputs(wizard_id) if resume else {},
+            # Stored OUTPUTS ride alongside the answers on a resume, for the
+            # same reason: a resumed run skips a satisfied step, so a value the
+            # agent returned last time is never re-derived. A fresh run drops
+            # both — "run it again" must not silently reuse either.
+            inputs={**read_inputs(wizard_id), **read_outputs(wizard_id)} if resume else {},
         )
     finally:
         lock.release()
@@ -117,6 +121,7 @@ async def execute_wizard(
         outcomes=[outcome.to_payload() for outcome in result.outcomes],
         message=result.message,
     )
+    record_outputs(wizard_id, result.outputs)
     return result
 
 
