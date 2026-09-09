@@ -273,7 +273,7 @@ export function CollapsedSidebar() {
           deliberately (z-[60]), since it opens on the far side of the window. */}
       <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-e`}>
         <SidebarContent className="flex-1">
-          <SidebarGroup className="px-0 py-2">
+          <SidebarGroup className="px-0 pb-2 pt-0">
             <SidebarMenu>
               {hubMode ? hubItems.map(renderHubItem) : topItems.map(renderRailItem)}
 
