@@ -7,7 +7,7 @@ import { CopyableCommand } from '@src/components/version-popover/version-popover
  * there: the last one is the shell form of the Install button, running the
  * same desk code the Add-asset dialog does.
  */
-function installSnippet(typeid: string): string[] {
+export function installSnippet(typeid: string): string[] {
   return ['uv tool install flowpad', 'flow start', 'flow auth login', `flow asset install ${typeid}`];
 }
 

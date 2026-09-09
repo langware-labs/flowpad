@@ -5,12 +5,15 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@src/componen
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 import { InstallButton } from '@src/components/install/InstallButton';
+import { installSnippet } from '@src/components/install/InstallSnippetDialog';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { TypeId, type AnyEntity, type Project, type PublishedRow, type PublishedState, type UnpublishedRow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { FolderOpen, Grid2x2, Loader2, PackageCheck, Search, Trash2 } from 'lucide-react';
+import { FolderOpen, Grid2x2, Loader2, PackageCheck, Search, Terminal, Trash2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -83,9 +86,9 @@ function StateChip({ state }: { state: PublishedState }) {
       title: t`The asset is here and indexed`,
     },
     install: {
-      label: t`Install`,
+      label: t`Installable`,
       tone: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-      title: t`On disk but not indexed yet — pulled via git`,
+      title: t`Not indexed here yet — install it from its origin`,
     },
     stale: {
       label: t`Changed since publish`,
@@ -138,8 +141,11 @@ function AssetCard({
   const hub = isHubOnly();
   const published = item.state !== null;
   // The toggle needs the live entity (it adopts the canonical row the action
-  // returns). A `missing` row has none, and gets "Remove from manifest" instead.
-  const cardTypeId = useMemo(() => (item.state === 'missing' ? null : new TypeId(item.type, item.id)), [item.type, item.id, item.state]);
+  // returns). Only a row that HAS one is asked for: not on the hub (no toggle
+  // there, and a 401 for an entity the hub never held reads as credential
+  // loss), and not a `missing` / `install` row, which has no local entity yet.
+  const hasLocalRow = !hub && item.state !== 'missing' && item.state !== 'install';
+  const cardTypeId = useMemo(() => (hasLocalRow ? new TypeId(item.type, item.id) : null), [hasLocalRow, item.type, item.id]);
   const entity = useEntity<AnyEntity>(cardTypeId).data ?? null;
   return (
     <article
@@ -165,7 +171,19 @@ function AssetCard({
         <TypeBadge type={item.type} />
         {item.state && <StateChip state={item.state} />}
         <span className="ms-auto" onClick={(e) => e.stopPropagation()}>
-          {hub && published && <InstallButton project={project} typeid={item.typeid} name={item.name} />}
+          {hub && published && (
+            <span className="inline-flex items-center gap-1">
+              <InstallButton project={project} typeid={item.typeid} name={item.name} />
+              <CopyButton
+                value={`flow asset install ${item.typeid}`}
+                icon={Terminal}
+                title={t`Copy the terminal command: flow asset install ${item.typeid}`}
+                className="h-7 rounded-md border border-border bg-muted px-2 text-xs text-muted-foreground hover:text-foreground"
+                testId="discover-copy-cli"
+                stopPropagation
+              />
+            </span>
+          )}
           {!hub && entity && <PublishedToggle entity={entity} projectId={project.id} variant="row" onChanged={onChanged} />}
           {!hub && !entity && published && onRemove && (
             <button
@@ -237,6 +255,22 @@ function DetailPanel({ item, onClose }: { item: DiscoverItem; onClose: () => voi
               )}
             </div>
           </section>
+
+          {item.state && (
+            <section data-testid="discover-cli-snippet">
+              <h3 className={`mb-2 ${SECTION_TITLE}`}>
+                <Trans>Install from a terminal</Trans>
+              </h3>
+              <p className="mb-2 text-xs text-muted-foreground">
+                <Trans>On a machine with Flowpad already running and signed in, the last line alone is enough.</Trans>
+              </p>
+              <div className="space-y-1.5">
+                {installSnippet(item.typeid).map((line) => (
+                  <CopyableCommand key={line} command={line} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </SheetContent>
     </Sheet>
