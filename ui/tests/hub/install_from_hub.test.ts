@@ -13,14 +13,15 @@
  * Requires the local hub + `scripts/instance_ctl.sh launch dev-1` (+ dev-2 for
  * the rig contract). Skips otherwise.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createSdkRealm, type OwnedSdkRealm } from '../_sdk_realm';
 import { testEntityName } from '../_cleanup';
 import { HUB_URL, getAliceCreds, hubAvailable, hubJson, hubLogin, localBackendIsCloudLoggedIn } from './_hub';
-import { HUB_INST_1 as INST_1, getInstance, instanceAvailable, jsonApi, postApi, type ResolvedInstance } from './_instances';
+import { HUB_INST_1 as INST_1, WORKTREE_ROOT, getInstance, instanceAvailable, jsonApi, postApi, type ResolvedInstance } from './_instances';
 
 let skipReason: string | null = null;
 let dev1: ResolvedInstance;
@@ -30,6 +31,8 @@ let sourceId = '';
 let targetId = '';
 let sourceRoot = '';
 let targetRoot = '';
+let cliRoot = '';
+let cliTargetId = '';
 let skillId = '';
 const skillName = testEntityName('skill').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
 
@@ -47,8 +50,10 @@ beforeAll(async () => {
   const ws = path.join(homedir(), 'Flowpad workspace');
   sourceRoot = path.join(ws, testEntityName('pubsrc'));
   targetRoot = path.join(ws, testEntityName('pubdst'));
+  cliRoot = path.join(ws, testEntityName('pubcli'));
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(targetRoot, { recursive: true });
+  mkdirSync(cliRoot, { recursive: true });
   const src = await postApi(dev1.apiUrl, '/graph/project', { type: 'project', name: path.basename(sourceRoot), fs_storage_mount_path: sourceRoot });
   const dst = await postApi(dev1.apiUrl, '/graph/project', { type: 'project', name: path.basename(targetRoot), fs_storage_mount_path: targetRoot });
   sourceId = src.data.id;
@@ -82,8 +87,9 @@ afterAll(async () => {
     if (token && sourceId) await hubJson(token, `/graph/project/${sourceId}`, undefined, 'DELETE').catch(() => undefined);
     if (dev1 && sourceId) await jsonApi(dev1.apiUrl, `/graph/project/${sourceId}`, 'DELETE');
     if (dev1 && targetId) await jsonApi(dev1.apiUrl, `/graph/project/${targetId}`, 'DELETE');
+    if (dev1 && cliTargetId) await jsonApi(dev1.apiUrl, `/graph/project/${cliTargetId}`, 'DELETE');
   } finally {
-    for (const p of [sourceRoot, targetRoot]) if (p && existsSync(p)) rmSync(p, { recursive: true, force: true });
+    for (const p of [sourceRoot, targetRoot, cliRoot]) if (p && existsSync(p)) rmSync(p, { recursive: true, force: true });
   }
 });
 
@@ -140,5 +146,22 @@ describe('one-click install: hub → desktop → browser SDK → install', () =>
     // A dependency is not something the target published.
     const targetView = await jsonApi(dev1.apiUrl, `/graph/project/${targetId}/published`);
     expect(targetView.data.rows).toEqual([]);
+  }, 30_000);
+
+  it('`flow asset install <typeid>` — the snippet\'s last line — walks the same desk path from a bare typeid', () => {
+    // The CLI holds a typeid and nothing else: the desk asks the hub who
+    // published it (project/published_asset), then installs exactly as the
+    // dialog does. Run from the CLI project's folder, so cwd is the target.
+    const typeid = `skill-${skillId}`;
+    const env = { ...process.env, FLOW_INSTANCE: INST_1, FLOWPAD_HUB_URL: HUB_URL };
+    // `--project`: uv must resolve THIS checkout's flow, not whatever cwd implies.
+    const out = execFileSync('uv', ['run', '--project', WORKTREE_ROOT, 'flow', 'asset', 'install', typeid], { cwd: cliRoot, env, encoding: 'utf8' });
+    const result = JSON.parse(out.trim().split('\n').pop() as string);
+    expect(result.ok).toBe(true);
+    cliTargetId = result.project_id;
+    expect(result.id).toBe(skillId);
+    expect(existsSync(path.join(cliRoot, '.claude', 'skills', skillName, 'SKILL.md'))).toBe(true);
+    const deps = JSON.parse(readFileSync(path.join(cliRoot, 'agentic-assets', 'project_manifest', 'deps.json'), 'utf8'));
+    expect(deps.entries[0].source_project_id).toBe(sourceId);
   }, 30_000);
 });

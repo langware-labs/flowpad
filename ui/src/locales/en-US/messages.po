@@ -11818,8 +11818,12 @@ msgid "No log file found"
 msgstr "No log file found"
 
 #: src/components/install/InstallSnippetDialog.tsx
-msgid "No logged-in desktop was found. Run these three lines, then click Install again."
-msgstr "No logged-in desktop was found. Run these three lines, then click Install again."
+msgid "No logged-in desktop was found. Paste these lines into a terminal — the last one installs the asset."
+msgstr "No logged-in desktop was found. Paste these lines into a terminal — the last one installs the asset."
+
+#: src/components/install/InstallSnippetDialog.tsx
+#~ msgid "No logged-in desktop was found. Run these three lines, then click Install again."
+#~ msgstr "No logged-in desktop was found. Run these three lines, then click Install again."
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No logs available"
