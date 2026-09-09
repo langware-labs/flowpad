@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { Loader2 } from 'lucide-react';
 import type { WizardStepOutcome } from '@sdk';
-
-import { Button } from '@src/components/ui/button';
 
 import { WizardStepInspector } from './WizardStepInspector';
 import { LIVE_STATE } from './wizard-doc';
@@ -21,23 +19,14 @@ import type { WizardRunStep } from './useWizardRun';
 export function WizardDebugger({
   steps,
   orphaned,
-  live,
   loadingDetail,
   onExpand,
-  onReset,
-  resetting,
-  resetError,
 }: {
   steps: WizardRunStep[];
   orphaned: WizardStepOutcome[];
-  live: boolean;
   loadingDetail: boolean;
   onExpand: () => void;
-  onReset: () => void;
-  resetting: boolean;
-  resetError: string | null;
 }) {
-  const { t } = useLingui();
   const [open, setOpen] = useState<string | null>(null);
 
   const toggle = (stepId: string) => {
@@ -50,39 +39,14 @@ export function WizardDebugger({
   };
 
   return (
-    <section className="rounded-md border border-border p-3" data-testid="wizard-debugger">
-      <div className="mb-2 flex items-center gap-2">
-        <h3 className="flex-1 text-sm font-medium">
-          <Trans>Run detail</Trans>
-        </h3>
-        {loadingDetail && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 gap-1.5"
-          // A reset landing mid-run would have the runner write its outcomes
-          // into the record just cleared; the backend refuses with a 409 and
-          // this keeps the button from inviting it.
-          disabled={resetting || live}
-          onClick={onReset}
-          title={t`Archive this run and start the record fresh`}
-          data-testid="wizard-reset"
-        >
-          {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-          <Trans>Reset</Trans>
-        </Button>
-      </div>
+    <section className="flex h-full flex-col overflow-y-auto p-3" data-testid="wizard-debugger">
+      {loadingDetail && (
+        <Loader2 className="mb-2 h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+      )}
 
-      <p className="mb-2 text-xs text-muted-foreground">
-        {/* Says what reset does NOT do. Approval records that a person trusts
-            this wizard to run shell here — a fact about the wizard, not about
-            one run's answers — so revoking it would be a different verb. */}
-        <Trans>Reset archives this run and clears its answers. It stays approved to run.</Trans>
-      </p>
-
-      {resetError && (
-        <p className="mb-2 text-xs text-destructive" data-testid="wizard-reset-error">
-          {resetError}
+      {steps.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          <Trans>This wizard declares no steps.</Trans>
         </p>
       )}
 
