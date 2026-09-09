@@ -66,6 +66,11 @@ msgstr ""
 msgid "· pick a branch"
 msgstr "· בחר ענף"
 
+#. placeholder {0}: wizard.name
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
+msgstr ""
+
 #. placeholder {0}: tooBig[0]
 #: src/components/conversation/MessageComposer.tsx
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
@@ -2841,6 +2846,7 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/connections-manager/credential-value-form.tsx
@@ -4126,6 +4132,8 @@ msgstr "תהליך הקשר"
 msgid "context tokens"
 msgstr "אסימוני Context"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
@@ -15299,6 +15307,7 @@ msgid "Rules"
 msgstr "חוקים"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -15354,6 +15363,10 @@ msgstr "הפעל מהטרמינל שלך, ואז הפעל את Flowpad מחדש:
 #: src/components/version-popover/version-popover.tsx
 msgid "Run from your terminal:"
 msgstr "הפעל מהטרמינל שלך:"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Run it"
+msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
@@ -18285,6 +18298,11 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 msgid "The value is written to this project's .env.local and stays on this machine."
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "The wizard could not run"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
 msgstr "קוסם הניקיון דיווח על שגיאה."
@@ -18767,6 +18785,14 @@ msgstr "ליעד Wiki זה אין תוכן קריא."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.claude/debug/</0> ואת כל רשומות השגיאות שנותחו."
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "This wizard has not run on this machine yet."
+msgstr ""
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "This wizard needs something from you"
+msgstr ""
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
