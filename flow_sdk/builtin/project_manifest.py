@@ -94,7 +94,7 @@ async def origin_for_asset(asset_ref: str):
     return origin or local_origin_for_path(asset_ref)
 
 
-async def set_published(entity: Entity, *, published: bool, project_id: str | None = None) -> Entity:
+async def set_published(entity: Entity, *, published: bool, project_id: str | None = None, actor=None) -> Entity:
     """The whole verb. Publish = make sure the asset carries its id, then write
     the row; unpublish = drop the row. Either way the manifest is re-indexed so
     the ``published`` cache on this row follows the file. Returns the canonical
@@ -156,6 +156,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
         )
         await ensure_manifest_indexed(project)
         reflect_manifest_to_hub_soon(project)
+        publish_body_to_hub_soon(entity, project, actor)
     else:
         await drop_row(project, typeid)
 
@@ -331,6 +332,82 @@ def reflect_manifest_to_hub_soon(project) -> None:
     task.add_done_callback(_REFLECTIONS.discard)
 
 
+# ── the document itself, on the hub ──────────────────────────────────────────
+#
+# The manifest row says WHAT was published and WHERE its bytes are; the hub can
+# only render the document when it holds the tree. That is the git share path
+# (``publish_git_asset``: commit the asset to the project's ``flow-cloud``
+# branch, register it under the hub project) plus the hub's own snapshot
+# (``gitops/materialize``). Both are best-effort here: a publish is a manifest
+# fact and never waits on GitHub.
+
+_BODY_TASKS: set[asyncio.Task] = set()
+#: What the last publish did about the hub body, per typeid — read by the desk's
+#: published view so the row can say why the document is (not) on the hub.
+_HUB_BODY: dict[str, dict] = {}
+
+
+async def publish_body_to_hub(entity: Entity, project, actor) -> str | None:
+    """Put the asset's document on the hub, or say in one code why not.
+
+    Gates in order — the first that fails is the answer: the type must be
+    git-publishable, the project linked to the cloud, and the actor connected
+    to GitHub. Then the share path pushes ``flow-cloud`` and registers the
+    asset; then the hub snapshots the tree. ``None`` means the hub holds it."""
+    from flow_sdk.assets.git_publish import AssetPublishError, publish_git_asset  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entity.get_type())
+    if info is None or not info.git_publishable:
+        return "type_not_git"
+    if getattr(project, "remote", False) is not True:
+        return "project_not_linked"
+    if actor is None or not await get_github_token(actor):
+        return "github_not_connected"
+    try:
+        await publish_git_asset(entity, actor)
+    except AssetPublishError as exc:
+        return str(getattr(exc.code, "value", exc.code))
+    try:
+        await hub_post(entity.get_type(), {}, str(entity.id), action="gitops", sub_path="materialize")
+    except Exception as exc:  # noqa: BLE001 — logged below; the row still says what happened
+        logger.info("[project_manifest] hub materialize skipped for %s: %s", entity.typeid, exc)
+        return "materialize_failed"
+    return None
+
+
+def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:
+    """Run ``publish_body_to_hub`` in the background and remember its outcome."""
+    typeid = str(entity.typeid)
+
+    async def _run() -> None:
+        try:
+            code = await publish_body_to_hub(entity, project, actor)
+        except Exception as exc:  # noqa: BLE001 — never into the toggle
+            logger.warning("[project_manifest] hub body publish failed for %s: %s", typeid, exc)
+            code = "publish_failed"
+        if code is None:
+            _HUB_BODY[typeid] = {"status": "published", "code": None}
+        elif code in ("type_not_git", "project_not_linked", "github_not_connected"):
+            _HUB_BODY[typeid] = {"status": "skipped", "code": code}
+        else:
+            _HUB_BODY[typeid] = {"status": "failed", "code": code}
+
+    task = asyncio.create_task(_run())
+    _BODY_TASKS.add(task)
+    task.add_done_callback(_BODY_TASKS.discard)
+
+
+async def drain_hub_tasks() -> None:
+    """Await every background hub task — a test seam, so an assertion can read
+    the outcome the toggle deliberately did not wait for."""
+    pending = list(_REFLECTIONS | _BODY_TASKS)
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def drop_row(project, typeid: str):
     """Remove one row from the project's manifest (the shared half of unpublish
     and of the `missing`-row removal): drop, re-index so caches follow, reflect."""
@@ -437,6 +514,7 @@ async def published_view(project) -> dict:
                 "origin": entry.origin.model_dump(mode="json") if entry.origin is not None else None,
                 "posix_path": str(mount / entry.rel_path) if on_disk else None,
                 "indexed": ent is not None,
+                "hub_body": _HUB_BODY.get(entry.typeid),
             }
         )
 
@@ -490,8 +568,10 @@ async def _http_set_published(self: Entity):
         return body
     published = bool(body.get("published", True))
     project_id = body.get("project_id") or None
+    request_info = get_current_request_info()
+    actor = request_info.someone_typeid if request_info is not None else None
     try:
-        canonical = await set_published(self, published=published, project_id=project_id)
+        canonical = await set_published(self, published=published, project_id=project_id, actor=actor)
     except PublishRefused as exc:
         return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
     return ApiSuccessResponse(data=canonical.model_dump(mode="json"))
