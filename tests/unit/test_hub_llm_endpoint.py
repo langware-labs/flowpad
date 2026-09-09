@@ -7,7 +7,6 @@ instance singleton + SOD_ENC_KEY so the credential store resolves headlessly.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -79,9 +78,18 @@ async def _reset_harness_auth_mode():
 
 
 def _login() -> None:
+    """Both halves of a real hub login, because the box asks about both.
+
+    ``cloud_login.complete_login`` writes the credential AND the user record (``set_user``), and
+    sign-out clears the record. Writing only the credential produced a state the product never
+    has -- ``resolve_hub_api_key`` answered a key while ``hub_auth_available`` / ``is_logged_in``
+    said signed out -- so any gate built on the cheap predicate read these tests as logged out.
+    """
+    from flow_sdk.cli.app_config import set_user
     from flow_sdk.cli.auth.hub_login import set_api_key
 
     set_api_key("fp-hub-key")
+    set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
 
 
 # ── settings ────────────────────────────────────────────────────────────────
@@ -403,24 +411,6 @@ async def test_fetch_is_empty_when_logged_out(env, monkeypatch) -> None:
     monkeypatch.setattr(hub_http, "hub_get", _boom)
 
     assert await fetch_hub_llm_endpoints() == []
-
-    # And a memo left over from a session that HAS ended is not an answer either. The gate sits
-    # ahead of the cache on purpose: a failed refresh keeps the last good list (a hub blip must
-    # not empty the picker), but a sign-out is not a blip -- none of those budgets is spendable
-    # by nobody, so the picker is empty rather than stale.
-    import flow_sdk.instance_settings.llm_endpoint as settings
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.instance_settings import get_instance_settings
-
-    settings._list_cache[get_instance_settings().instance_name] = (
-        time.monotonic(),
-        [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="from the last session")],
-    )
-    try:
-        assert await fetch_hub_llm_endpoints() == []
-    finally:
-        # The suite shares one memo dict; a fresh entry left behind would answer a later test.
-        settings._list_cache.pop(get_instance_settings().instance_name, None)
 
 
 async def test_status_carries_what_the_user_may_spend(env) -> None:

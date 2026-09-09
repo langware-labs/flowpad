@@ -225,29 +225,8 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     nothing and makes a hub-side call depend on a second hub-side call completing.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-    # A budget is a thing a hub USER may spend, so with nobody signed in there is no question to
-    # ask. Asking anyway is what produced the "Cloud Request Failed ... 401: Forbidden access"
-    # warning on an idle box: every surface that lists endpoints (the Assets tree root, the funding
-    # chip, the picker) drives this read on open, each 401 was reported verbatim by
-    # ``client_hooks._on_response``, and enough of them in one window pulled the "hub errors
-    # suppressed" toast in behind it. Same gate, same reason as ``handle_conversation_list``.
-    #
-    # ``require_live`` rather than the cheaper ``hub_auth_available``, because the state that
-    # actually reaches users here is an EXPIRED login, not an absent one -- the box still holds a
-    # credential, ``_on_request`` still attaches it, and the hub still answers 401. A predicate
-    # that only asks "is a login on file" would keep sending exactly the request this gate exists
-    # to stop. The keychain read it costs is one the request itself was about to make anyway.
-    #
-    # Deliberately ahead of the memo, and deliberately NOT its stale list: a failed refresh keeps
-    # the last good list (a hub blip must not empty the picker), but signed out is not a blip --
-    # none of those budgets is spendable, and "none" is the answer this function documents for that
-    # state. The verdict is not cached either, so a fresh login is picked up on the next call
-    # rather than at the end of a TTL.
-    if not resolve_hub_api_key(require_live=True):
-        return []
 
     name = get_instance_settings().instance_name
     cached = _list_cache.get(name)
@@ -257,6 +236,32 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SECONDS:
         return stale
     if cached_only:
+        return stale
+
+    # A budget is a thing a hub USER may spend, so with nobody signed in there is no question to
+    # ask. Asking anyway is what put "Cloud Request Failed ... 401: Forbidden access" on an idle
+    # box: every surface that lists endpoints (the Assets tree root, the funding chip, the picker)
+    # drives this read on open, ``client_hooks._on_response`` reports every 401 verbatim, and
+    # enough of them in one window pull the "hub errors suppressed" toast in behind it. Same
+    # predicate, same reason, as the gates in ``handle_conversation_list`` and ``inbox.catchup``.
+    #
+    # BELOW the memo deliberately, so a cache hit still costs nothing -- the comment above stays
+    # true, and the ``cached_only`` spawn path (documented as never calling out, and already
+    # resolving the key for itself in ``llm_source._hub_logged_in``) does not pay a second
+    # credential read for a request it was never going to make.
+    #
+    # ``hub_auth_available`` and not ``resolve_hub_api_key(require_live=True)``: the expensive one
+    # buys nothing here. Its extra check is ``creds.is_expired``, which is the SAME check
+    # ``_on_request`` already makes before attaching the key -- and on a hit that raises
+    # ``HubAuthExpiredError`` instead of sending, so a locally-expired login never reached the hub
+    # to be 401'd in the first place. A hub-side expiry, meanwhile, leaves ``expires_at`` None
+    # (``is_expired`` answers False) and passes both predicates alike. Signed out is the state
+    # this gate can actually see, and the cheap predicate sees it exactly as well.
+    #
+    # ``stale`` (``[]`` on a cold box) rather than a bare ``[]``, for the same reason the failure
+    # paths below return it: the memo above already answers from it for a TTL, so emptying the
+    # picker here would only make the list blink out at an arbitrary 30s boundary.
+    if not hub_auth_available():
         return stale
 
     # ``hub_get`` rather than a hand-built client: it is the one chokepoint that honours Local
