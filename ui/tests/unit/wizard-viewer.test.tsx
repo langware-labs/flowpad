@@ -296,3 +296,68 @@ describe('the document arrives asynchronously', () => {
     expect(screen.getByTestId('wizard-inspect-alpha')).toBeTruthy();
   });
 });
+
+describe('starting a run reveals what it is doing', () => {
+  it('opens the run-detail window when Run is clicked', async () => {
+    view.advanced = true;
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+
+    fireEvent.click(screen.getByTestId('wizard-run'));
+
+    // A navigation, not a local toggle: the drawer renders from the URL.
+    await waitFor(() => expect(side.open).toHaveBeenCalledWith('wizard-run'));
+  });
+
+  it('opens it on the approval path too', async () => {
+    view.advanced = true;
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+
+    fireEvent.click(screen.getByTestId('wizard-run'));
+    fireEvent.click(await screen.findByTestId('wizard-approve'));
+
+    await waitFor(() => expect(side.open).toHaveBeenCalledWith('wizard-run'));
+  });
+
+  it('opens it when an answer resumes a parked run', async () => {
+    view.advanced = true;
+    render(
+      <WizardViewer
+        fsRef={fsRef()}
+        wizard={wizard({
+          status: 'pending',
+          approved: true,
+          awaiting: [{ name: 'marker' }],
+          inputs: { marker: 'proof.txt' },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('wizard-submit-marker'));
+
+    // `set-input` runs the wizard again, so it is a run start as well.
+    await waitFor(() => expect(side.open).toHaveBeenCalledWith('wizard-run'));
+  });
+
+  it('does not push again when the window is already open', async () => {
+    view.advanced = true;
+    side.windows = ['wizard-run'];
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+
+    fireEvent.click(screen.getByTestId('wizard-run'));
+
+    // `open` pushes unconditionally, so re-running with the panel already up
+    // would add a history entry per click for a URL that never changed.
+    await waitFor(() => expect(h.callAction).toHaveBeenCalled());
+    expect(side.open).not.toHaveBeenCalled();
+  });
+
+  it('stamps no side-window id in Standard, where nothing renders it', async () => {
+    view.advanced = false;
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+
+    fireEvent.click(screen.getByTestId('wizard-run'));
+
+    await waitFor(() => expect(h.callAction).toHaveBeenCalled());
+    expect(side.open).not.toHaveBeenCalled();
+  });
+});

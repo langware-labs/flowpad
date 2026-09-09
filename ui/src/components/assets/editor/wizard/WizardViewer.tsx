@@ -170,6 +170,22 @@ function WizardViewerBody({
     [refresh, t, wizard.id],
   );
 
+  /** Starting a run REVEALS what it is doing.
+   *
+   *  Opening it is a navigation, not a local toggle — `open` pushes the dock
+   *  with `?sideWindows=…`, and the drawer renders from the URL. That keeps the
+   *  click handler URL-first like every other one in the app, and it means the
+   *  panel a run opened is still there after a reload or a Back.
+   *
+   *  Only in Advanced, where the window is registered: stamping the id in
+   *  Standard would put a param in the URL that nothing renders. And only when
+   *  it is not already open — `open` pushes unconditionally, so re-running with
+   *  the panel up would leave a history entry per click for a URL that never
+   *  changed. */
+  const revealRunDetail = useCallback(() => {
+    if (isAdvanced && !windows.includes(RUN_DETAIL_WINDOW)) open(RUN_DETAIL_WINDOW);
+  }, [isAdvanced, open, windows]);
+
   /** A wizard that is not shipped with Flowpad runs shell on this machine, so
    *  the backend refuses it without an explicit approval. The prompt is rendered
    *  IN the page, never `window.confirm`: a native modal blocks the whole
@@ -190,13 +206,15 @@ function WizardViewerBody({
     // starting a run mid-write would execute the previous document and report
     // a result for a wizard that no longer exists on disk.
     await editor.flush();
+    revealRunDetail();
     await call('run', {});
-  }, [call, editor, state.approved, wizard]);
+  }, [call, editor, revealRunDetail, state.approved, wizard]);
 
   const approveAndRun = useCallback(async () => {
     setAskApproval(false);
+    revealRunDetail();
     await call('run', { approved: true });
-  }, [call]);
+  }, [call, revealRunDetail]);
 
   const submit = useCallback(
     async (name: string) => {
@@ -205,10 +223,12 @@ function WizardViewerBody({
       // the user typed something, on a form that already looks filled in.
       const value = values[name] ?? String(state.inputs?.[name] ?? '');
       if (value === '') return;
+      // `set-input` runs the wizard again, so this is a run start too.
+      revealRunDetail();
       await call('set-input', { name, value });
       setValues((prev) => ({ ...prev, [name]: '' }));
     },
-    [call, values, state.inputs],
+    [call, revealRunDetail, values, state.inputs],
   );
 
   const main = (
