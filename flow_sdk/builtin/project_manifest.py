@@ -347,13 +347,23 @@ _BODY_TASKS: set[asyncio.Task] = set()
 _HUB_BODY: dict[str, dict] = {}
 
 
-async def publish_body_to_hub(entity: Entity, project, actor) -> str | None:
-    """Put the asset's document on the hub, or say in one code why not.
+def _skipped(code: str) -> dict:
+    return {"status": "skipped", "code": code}
 
-    Gates in order — the first that fails is the answer: the type must be
-    git-publishable, the project linked to the cloud, and the actor connected
-    to GitHub. Then the share path pushes ``flow-cloud`` and registers the
-    asset; then the hub snapshots the tree. ``None`` means the hub holds it."""
+
+def _failed(code: str) -> dict:
+    return {"status": "failed", "code": code}
+
+
+async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
+    """Put the asset's document on the hub, and say what happened as
+    ``{status: published|skipped|failed, code}`` — the row's ``hub_body``.
+
+    Gates in order — the first that fails is the answer (``skipped``): the
+    type must be git-publishable, the project linked to the cloud, and the
+    actor connected to GitHub. Then the share path pushes ``flow-cloud`` and
+    registers the asset; then the hub snapshots the tree (either refusal is
+    ``failed``)."""
     from flow_sdk.assets.git_publish import AssetPublishError, publish_git_asset  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
     from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
@@ -361,21 +371,21 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> str | None:
 
     info = SchemaRegistry.get(entity.get_type())
     if info is None or not info.git_publishable:
-        return "type_not_git"
+        return _skipped("type_not_git")
     if getattr(project, "remote", False) is not True:
-        return "project_not_linked"
+        return _skipped("project_not_linked")
     if actor is None or not await get_github_token(actor):
-        return "github_not_connected"
+        return _skipped("github_not_connected")
     try:
         await publish_git_asset(entity, actor)
     except AssetPublishError as exc:
-        return str(getattr(exc.code, "value", exc.code))
+        return _failed(str(getattr(exc.code, "value", exc.code)))
     try:
         await hub_post(entity.get_type(), {}, str(entity.id), action="gitops", sub_path="materialize")
     except Exception as exc:  # noqa: BLE001 — logged below; the row still says what happened
         logger.info("[project_manifest] hub materialize skipped for %s: %s", entity.typeid, exc)
-        return "materialize_failed"
-    return None
+        return _failed("materialize_failed")
+    return {"status": "published", "code": None}
 
 
 def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:
@@ -384,16 +394,10 @@ def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:
 
     async def _run() -> None:
         try:
-            code = await publish_body_to_hub(entity, project, actor)
+            _HUB_BODY[typeid] = await publish_body_to_hub(entity, project, actor)
         except Exception as exc:  # noqa: BLE001 — never into the toggle
             logger.warning("[project_manifest] hub body publish failed for %s: %s", typeid, exc)
-            code = "publish_failed"
-        if code is None:
-            _HUB_BODY[typeid] = {"status": "published", "code": None}
-        elif code in ("type_not_git", "project_not_linked", "github_not_connected"):
-            _HUB_BODY[typeid] = {"status": "skipped", "code": code}
-        else:
-            _HUB_BODY[typeid] = {"status": "failed", "code": code}
+            _HUB_BODY[typeid] = _failed("publish_failed")
 
     task = asyncio.create_task(_run())
     _BODY_TASKS.add(task)
@@ -417,6 +421,7 @@ async def drop_row(project, typeid: str):
     if mount is None:
         raise PublishRefused("no_project", "the project has no folder")
     spec = unpublish(mount, typeid)
+    _HUB_BODY.pop(typeid, None)
     await ensure_manifest_indexed(project)
     reflect_manifest_to_hub_soon(project)
     return spec

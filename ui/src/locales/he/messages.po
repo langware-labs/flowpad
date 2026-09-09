@@ -1,10 +1,17 @@
-#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
-"{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
-"{childPath}"
+"POT-Creation-Date: 2026-06-29 01:00+0300\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: he\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -1794,9 +1801,9 @@ msgstr "כבר קיים"
 msgid "already running"
 msgstr "כבר פעיל"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Already signed in elsewhere? Check again"
+#~ msgstr "כבר התחברת במקום אחר? בדוק שוב"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2102,8 +2109,8 @@ msgstr "ארכיב את כל המשימות"
 msgid "Archive task"
 msgstr "ארכיבון משימה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/assets/editor/wizard/WizardDebugger.tsx
+#~ msgid "Archive this run and start the record fresh"
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -3095,9 +3102,9 @@ msgstr ""
 msgid "Changes"
 msgstr "שינויים"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#~ msgid "Changes ({0})"
+#~ msgstr "שינויים ({0})"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -5010,6 +5017,10 @@ msgstr "לא ניתן לטעון את התמליל"
 msgid "Couldn’t load your repos."
 msgstr "לא הצלחנו לטעון את הריפוזיטוריים שלך."
 
+#: src/components/terminal/project-launch-bar.tsx
+msgid "Couldn't open a terminal"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
 msgstr "לא ניתן לפתוח את מרכז העזרה"
@@ -5044,6 +5055,10 @@ msgstr "לא ניתן לקרוא את מצב ה-Git של הפרויקט הזה."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Couldn't read this team's people."
+msgstr ""
+
+#: src/components/terminal/project-launch-bar.tsx
+msgid "Couldn't resolve the launch commands for this folder"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -5141,8 +5156,8 @@ msgstr "יש ליצור חשבון חינמי כדי להמשיך את השיח�
 msgid "Create a new {0}."
 msgstr "צור {0} חדש."
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/project-home/ProjectGitSetupDialog.tsx
+#~ msgid "Create a new repository for this project"
 #~ msgstr ""
 
 #: src/components/git/CreatePrivateRepoForm.tsx
@@ -8380,8 +8395,8 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/project-home/ProjectGitSetupDialog.tsx
+#~ msgid "Give <0>{projectPath}</0> a Git remote so this project can be shared."
 #~ msgstr ""
 
 #: src/components/project-home/ProjectHome.tsx
@@ -9745,7 +9760,7 @@ msgstr "שפה"
 msgid "Large"
 msgstr "גדול"
 
-#. placeholder {0}: new Date(liveOrTrigger.last_triggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+#. placeholder {0}: new Date((liveOrTrigger.last_triggered || liveOrTrigger.last_run) as string | Date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "last {0}"
 msgstr "הפעלה אחרונה {0}"
@@ -11309,9 +11324,9 @@ msgstr "קובץ חדש"
 msgid "New File"
 msgstr "קובץ חדש"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#~ msgid "New Files ({0})"
+#~ msgstr "קבצים חדשים ({0})"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -11751,6 +11766,10 @@ msgstr "אין ישויות."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "No errors found"
 msgstr "לא נמצאו שגיאות"
+
+#: src/components/triggers-view/TriggersList.tsx
+msgid "No event triggers visible. A wizard declares one as a child asset; most are system-scoped, so toggle <0>Include system</0> above to see them."
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "No events captured"
@@ -12582,6 +12601,10 @@ msgstr "הערה (אופציונלי)"
 msgid "Note: File is missing"
 msgstr "הערה: הקובץ חסר"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
+msgstr ""
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr ""
@@ -12767,6 +12790,10 @@ msgstr "פעיל"
 msgid "On agent hook"
 msgstr "בעת agent hook"
 
+#: src/components/triggers-view/TriggersList.tsx
+msgid "On an event"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "On Disk"
 msgstr "בדיסק"
@@ -12870,6 +12897,10 @@ msgstr ""
 msgid "Open {title} install page"
 msgstr "פתח דף התקנה של {title}"
 
+#: src/components/terminal/project-launch-bar.tsx
+msgid "Open {vendorLabel} in an OS terminal here"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
@@ -12906,6 +12937,10 @@ msgstr ""
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
 msgstr "פתח הכל"
+
+#: src/components/terminal/project-launch-bar.tsx
+msgid "Open an OS terminal here"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Open analysis"
@@ -12953,10 +12988,10 @@ msgstr "פתח חיצונית"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Open externally\n"
 "{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
+"פתח חיצונית\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -14564,8 +14599,8 @@ msgstr "דחפו & הודיעו"
 msgid "Push failed"
 msgstr "דחיפה נכשלה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/project-home/ProjectGitSetupDialog.tsx
+#~ msgid "Push this project to a repository that already exists"
 #~ msgstr ""
 
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -14629,9 +14664,9 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "זיכרון RAM:"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/llm-sources/LlmSourcesView.tsx
+#~ msgid "Re-check"
+#~ msgstr "בדוק שוב"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -15392,8 +15427,8 @@ msgstr "סורקים מחדש…"
 msgid "Reset"
 msgstr "איפוס"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/assets/editor/wizard/WizardDebugger.tsx
+#~ msgid "Reset archives this run and clears its answers. It stays approved to run."
 #~ msgstr ""
 
 #: src/components/account/settings-section.tsx
@@ -15435,6 +15470,10 @@ msgstr "שנה גודל ניווט"
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
 msgstr "מחפשת [[{name}]]..."
+
+#: src/components/terminal/project-launch-bar.tsx
+msgid "Resolving launch commands…"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Respect .gitignore when searching files"
@@ -15600,10 +15639,10 @@ msgstr "הצג ב-Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Reveal in Finder/Explorer\n"
 "{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
+"הצג ב-Finder/Explorer\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -16840,9 +16879,9 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 msgid "Set up a git-backed context folder for this project."
 msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/assets/AddGitFolderDialog.tsx
+#~ msgid "Set up an existing git repository as the context folder"
+#~ msgstr "הגדירו מאגר git קיים כתיקיית ההקשר"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
@@ -17954,9 +17993,9 @@ msgstr "עדיין לא ניתן לקשר את הפרויקט הזה"
 msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/llm-sources/use-llm-sources.ts
+#~ msgid "Still signed out — please re-authenticate"
+#~ msgstr "עדיין מנותק — יש להתחבר מחדש"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18297,11 +18336,7 @@ msgid "Takes ~4 seconds"
 msgstr "לוקח ~4 שניות"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "takes effect after a restart"
-msgstr ""
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#~ msgid "takes effect after a restart"
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -19255,8 +19290,8 @@ msgstr "פעולה זו מפעילה את המכונה וטוענת את התצ�
 msgid "This step has not run."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#~ msgid "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
@@ -19329,8 +19364,8 @@ msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.clau
 msgid "This wizard declares no steps."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "This wizard has not run on this machine yet."
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -19342,8 +19377,8 @@ msgstr ""
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "This wizard runs itself on an event. Trigger changes take effect after a restart."
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -20606,6 +20641,7 @@ msgid "What is a context folder?"
 msgstr "מהי תיקיית הקשר?"
 
 #: src/components/status-bar.tsx
+#: src/components/terminal/project-list-menu.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"
 msgstr "מה זה פרויקט Flowpad?"
@@ -20880,11 +20916,11 @@ msgid "You"
 msgstr "אתה"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#~ msgid "you are {role}"
 #~ msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
+#~ msgid "You are not in any team in this organization yet."
 #~ msgstr ""
 
 #: src/components/organization/organization-page.tsx

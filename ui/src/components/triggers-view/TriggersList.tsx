@@ -65,6 +65,16 @@ export function TriggersList({
   const fsopGrouped = groupByScope(fsopTriggers);
   const tagGrouped = groupByScope(tagTriggers);
 
+  const renderTrigger = (trigger: Trigger) => (
+    <TriggerListItem
+      key={trigger.id || trigger.name}
+      trigger={trigger}
+      isSelected={selectedTrigger?.id === trigger.id}
+      onSelect={() => onSelect(trigger)}
+      onOpenLog={() => onOpenLog(trigger)}
+    />
+  );
+
   return (
     <div>
       {/* Schedule Triggers section (always rendered — empty state shows a "Create one" affordance). */}
@@ -83,15 +93,7 @@ export function TriggersList({
             <Plus className="h-3 w-3" />
           </Button>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
         emptyState={
           !isCreatingSchedule && (
             <div className="px-3 py-3 text-[11px] text-muted-foreground">
@@ -119,15 +121,7 @@ export function TriggersList({
             </Trans>
           </div>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
       />
 
       {/* FSOp + Hook sections — always rendered (even when empty) so the
@@ -143,15 +137,7 @@ export function TriggersList({
             <Trans>No FSOp triggers visible. Toggle <em>Include system</em> above to see system-installed watchers.</Trans>
           </div>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
       />
       <TypeSection
         title={t`On agent hook`}
@@ -165,15 +151,7 @@ export function TriggersList({
               <em>?</em> above to discover.</Trans>
           </div>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
       />
     </div>
   );

@@ -209,7 +209,12 @@ def extract_trigger(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     if spec is not None:
         if spec.description:
             rec_kwargs["description"] = spec.description
-        rec_kwargs["metadata"] = row_fields(spec)
+        # TOP LEVEL, not under `metadata`. `meta_dict` emits every non-system
+        # attribute flat, and `Entity.from_record` lifts a NESTED `metadata`
+        # only for names a type's `meta_model` declares — TRIGGER has none, so
+        # nested fields stayed nested and the row kept its defaults. Verified
+        # the hard way: the trigger indexed, and came back `trigger_type=hook`.
+        rec_kwargs.update(row_fields(spec))
     rec = FSRecord(**rec_kwargs)
     object.__setattr__(rec, "_asset_ref", FSRef(path.resolve()))
     return [rec]

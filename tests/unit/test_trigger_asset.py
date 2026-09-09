@@ -127,6 +127,23 @@ def test_a_broken_document_still_emits_a_row_and_says_why(tmp_path):
     assert records[0].name == "broken"
 
 
+def test_the_row_fields_ride_the_record_FLAT(tmp_path):
+    """`Entity.from_record` lifts a NESTED `metadata` onto entity fields only
+    for names the type's `meta_model` declares — TRIGGER declares none. So a
+    nested payload stays nested and the row silently keeps its DEFAULTS.
+
+    Caught in a container: the trigger indexed cleanly, produced a row, and the
+    row came back `trigger_type='hook'` — the enum default — with a tag pattern
+    nowhere. Nothing errored, which is what makes it worth a test."""
+    from flow_sdk.fs_store.fs_ref import FSRef
+
+    rec = extract_trigger(FSRef(_write(tmp_path, TAG_DOC)), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")[0]
+    flat = rec.meta_dict()
+    assert flat["trigger_type"] == TriggerType.TAG, "the kind must not fall back to the default"
+    assert flat["tag_pattern"] == "app.ready"
+    assert flat["fire_once"] is True
+
+
 def test_the_asset_ref_is_the_folder_not_the_document(tmp_path):
     from flow_sdk.fs_store.fs_ref import FSRef
 
