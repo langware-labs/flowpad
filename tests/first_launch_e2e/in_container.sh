@@ -62,7 +62,50 @@ banner "C  fund the installer agent"
 # the container by reading the worker's own /proc environ. So a run that means
 # to spend an OpenRouter key must NOT log in.
 if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-  pass "funding the agent directly through OpenRouter (no cloud login)"
+  # STORE the key; do not merely export it. A worker spawn resolves its funding
+  # with `allow_environment=False` on purpose — an environment variable is a
+  # convenience for in-process calls, not a statement about what this box is
+  # configured to spend — so a bare OPENROUTER_API_KEY funds exactly nothing and
+  # the agent dies with "Not logged in · Please run /login". Storing it is what
+  # makes the api_key source ELIGIBLE (`_key_sources` keys off the stored
+  # secret; there is no row to create, the endpoint is projected).
+  #
+  # Written THROUGH THE BACKEND, not from a second process. The store is one
+  # file that the server holds a full copy of: a write from any other process is
+  # clobbered by the server's next write of a copy that never had the key.
+  # Seeding after boot survived to here and then vanished mid-run (step 1's
+  # agent spawned, step 2 died with "no openrouter key is stored"); seeding
+  # before boot was gone by the time the server finished starting. The only
+  # writer that cannot lose the race is the server itself.
+  curl -fsS -X POST "${API}/graph/compute_node/secrets" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"lm_api.openrouter\",\"value\":\"${OPENROUTER_API_KEY}\",\"description\":\"first-launch e2e\"}" \
+    >/dev/null 2>&1
+
+  # And read back through the backend too, for the same reason.
+  SEEDED=$(curl -fsS "${API}/graph/compute_node/secrets" 2>/dev/null \
+    | jq_ '((d.data||d).secrets||(d.data||d)||[]).filter(x=>(x.name||x)==="lm_api.openrouter").length ? "yes" : "no"')
+  [ "$SEEDED" = "yes" ] && pass "OpenRouter key stored and read back — the agent has a source to spend" \
+                        || fail "the key did not survive the round trip; the installer agent has no funding"
+  [ "$SEEDED" = "yes" ] || { echo; echo "RESULT: FAIL (no funding)"; exit 1; }
+
+  # RESTART so the server loads the store it now has. Writing through the
+  # backend gets the key onto disk, but the funding resolver reads a view taken
+  # at startup: the FIRST agent spawn died with "Not logged in · Please run
+  # /login" having run zero commands, while the SECOND — after something had
+  # refreshed that view — installed fine. Same symptom every run, always the
+  # first step, which is what gives it away as staleness rather than flakiness.
+  #
+  # This also matches how a real machine gets here: the key is configured, and
+  # THEN the app runs. `app.ready` is emitted on every boot and the trigger has
+  # not fired yet, so the chain below is unaffected.
+  flow stop >/dev/null 2>&1 || true
+  sleep 3
+  flow start service
+  for i in $(seq 1 90); do curl -fsS "${API}/health/status" >/dev/null 2>&1 && break; sleep 1; done
+  curl -fsS "${API}/health/status" >/dev/null 2>&1 \
+    && pass "backend restarted with the key in its store" \
+    || { fail "backend did not come back after seeding"; echo "RESULT: FAIL"; exit 1; }
 elif [ -n "${FLOWPAD_CLOUD_USER_EMAIL:-}" ]; then
   curl -fsS -X POST "${API}/cloud/login" -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1
   WHO=$(curl -fsS "${API}/cloud/status" 2>/dev/null | jq_ 'd.data.user.email')
@@ -104,10 +147,13 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   if [ -z "$CHIP_SAW_IT" ]; then
     curl -fsS "${API}/activity" 2>/dev/null | grep -q "dev-toolchain" && CHIP_SAW_IT=yes
   fi
-  [ "$(have python3)" = "yes" ] && [ "$(have git)" = "yes" ] && break
-  # A SETTLED run also ends the wait. Without this a run that fails — the normal
-  # outcome when the endpoint will not serve the installer's model — burns the
-  # whole budget before reporting, which reads as a hang rather than a verdict.
+  # NOT "python3 and git exist" — the binaries appear the moment the last step's
+  # command lands, which is BEFORE the run stamps its record, so breaking there
+  # read `run_state` while it was still empty and called a successful run
+  # unrecorded. The run SETTLING is the only thing that means the run is over.
+  # A settled run ends the wait, whether it completed or failed. Without this a
+  # failing run burns the whole budget before reporting, which reads as a hang
+  # rather than a verdict.
   WIZ=$(curl -fsS "${API}/graph/wizard" 2>/dev/null)
   SETTLED=$(printf '%s' "$WIZ" | jq_ "(d.data||d).filter(w=>w.name===\"${WIZARD_NAME}\").map(w=>(w.run_state||{}).status)[0]")
   [ -n "$SETTLED" ] && break
