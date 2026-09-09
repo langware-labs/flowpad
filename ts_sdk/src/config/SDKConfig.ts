@@ -41,6 +41,27 @@ export class SDKConfig implements ISDKConfig {
     return `${this.apiUrl}${API_PREFIX}`;
   }
 
+  /**
+   * HTTP base URL for the axios client (the single base consumer).
+   *
+   * In local dev the FE (Vite dev server) and BE run on different ports, so an
+   * absolute `serverUrl` makes every non-simple POST cross-origin and pays a
+   * CORS preflight OPTIONS round-trip. Returning the RELATIVE `/api/v1` prefix
+   * keeps HTTP requests same-origin — Vite's `server.proxy` forwards them to the
+   * backend (the pattern already proven by `dep_graph`) — eliminating preflights.
+   *
+   * This relaxation is dev-only. Packaged/non-local builds (`deploy_env` other
+   * than `local`) and Electron/realm builds (which pin an absolute backend via
+   * `globalThis.__FLOWPAD_API_URL__`) keep the absolute `serverUrl`. `wsUrl`,
+   * `apiUrl` and `serverUrl` are intentionally left untouched.
+   */
+  get httpBaseUrl(): string {
+    const hasRuntimeOverride =
+      typeof globalThis !== 'undefined' &&
+      typeof (globalThis as { __FLOWPAD_API_URL__?: unknown }).__FLOWPAD_API_URL__ === 'string';
+    return this.isLocal && this.api_host === 'localhost' && !hasRuntimeOverride ? API_PREFIX : this.serverUrl;
+  }
+
   get wsUrl(): string {
     const wsProtocol = this.api_protocol === 'https' ? 'wss' : 'ws';
     const portSuffix = this.needsPortInUrl() ? `:${this.api_port}` : '';

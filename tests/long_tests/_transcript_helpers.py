@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import NoReturn
+
+import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -83,3 +86,33 @@ async def safe_exit(process: AgenticProcess) -> None:
         await process.exit()
     except Exception:
         pass
+
+
+def _who(worker: str | None) -> str:
+    return f"{worker}: " if worker else ""
+
+
+def fail_worker_timeout(exc: BaseException, worker: str | None = None) -> NoReturn:
+    """A worker turn that timed out FAILS the test — it is never a skip.
+
+    The one home for this decision, so a new long test can't quietly reinvent
+    the old "skip on TimeoutError" idiom. A timeout is a RESULT: the
+    deterministic ``start_pty`` staleness bug (three months old, fixed
+    2026-09-07) presented for its whole life as exactly this signature, and
+    survived because each site downgraded it to a skip — as did the
+    ``pytest_runtest_makereport`` hook removed in a51406a87.
+
+    Deliberately called EXPLICITLY at each site rather than reinstated as a
+    pytest hook: a hook reclassifies invisibly and across every test at once,
+    which is the property that let the bug hide. If a budget is genuinely too
+    tight, MEASURE it and raise it deliberately — never relabel the outcome.
+    """
+    pytest.fail(f"{_who(worker)}worker turn timed out: {exc}", pytrace=False)
+
+
+def fail_no_transcript(deadline_s: float, worker: str | None = None) -> NoReturn:
+    """No transcript within the deadline FAILS — same reasoning as above."""
+    pytest.fail(
+        f"{_who(worker)}no usable transcript within {deadline_s:g}s — the worker never produced one",
+        pytrace=False,
+    )

@@ -9,4 +9,4 @@ export { assetScope, type AssetScope } from './asset-scope';
 // `displayLabelForDescriptor`, not the typeid form: it threads the descriptor's
 // on-disk `name` fallback, without which a not-yet-indexed asset renders as a
 // raw `skill-<uuid>`.
-export { displayLabelForDescriptor, descriptorKey, basename } from './asset-row-helpers';
+export { displayLabelForDescriptor, descriptorKey, basename, parseTypeid } from './asset-row-helpers';

@@ -252,8 +252,15 @@ class FlowpadClient:
         *,
         files: Any = None,
         timeout: float | httpx.Timeout | None = None,
+        idempotent: bool = False,
     ) -> Any:
-        """Make a POST request and return the unwrapped response data."""
+        """Make a POST request and return the unwrapped response data.
+
+        ``idempotent=True`` treats a 409 ("already exist") as success and
+        returns ``None`` instead of raising — for create-or-no-op paths where
+        the post-condition (the row exists on the hub) is already satisfied,
+        e.g. re-sharing an already-shared entity to invite another member.
+        """
         response = await self.request(
             "POST",
             path,
@@ -261,6 +268,8 @@ class FlowpadClient:
             files=files,
             timeout=timeout,
         )
+        if idempotent and response.status_code == 409:
+            return None
         return self._unwrap(response)
 
     async def put(

@@ -9,8 +9,10 @@ import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
+import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
+import { NewChatButton } from './NewChatButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
@@ -40,6 +42,8 @@ export function TopNavBar() {
   // need the dock's target, and resolving it twice would double the work on
   // every click.
   const { crumbs, targetTypeId, targetTitle } = useEntityBreadcrumbs(currentDock);
+  // The OS window title mirrors the address — same crumbs, no second resolve.
+  useDocumentTitle(windowTitleFor(crumbs));
 
   return (
     <div
@@ -88,6 +92,11 @@ export function TopNavBar() {
         <AddressField crumbs={crumbs} onSearch={() => setSearching(true)} />
       )}
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
+      {/* Quick launch, last in the row: unlike the actions beside it, it acts
+          on nothing the bar is addressing — it starts somewhere new. One click,
+          no picker; the harness is the last one used and the mode is the
+          current one. */}
+      <NewChatButton />
     </div>
   );
 }

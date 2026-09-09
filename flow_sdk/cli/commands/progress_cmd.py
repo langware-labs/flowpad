@@ -16,7 +16,7 @@ The address sits behind ``report`` rather than directly after ``progress`` becau
 ``flow progress <path>`` cannot be told apart from a subcommand — an activity legitimately
 called ``list`` or ``show`` would shadow one. Verb-first also matches ``flow record index``.
 
-An agent running inside an AgenticProcess needs no ``--scope``: it defaults to that
+An agent running inside an AgenticProcess needs no ``--subject``: it defaults to that
 process, read from ``FLOWPAD_EXECUTION_SCOPE`` the same way ``flow record`` resolves its
 target, so an agent's progress lands on its own row in the footer chip.
 
@@ -81,8 +81,8 @@ def _url(path: str, *parts: str) -> str:
     return f"http://localhost:{port}{BASE}" + ("/" + "/".join(segments) if segments else "")
 
 
-def _default_scope(explicit: "Optional[str]") -> "Optional[str]":
-    """``--scope`` wins; otherwise the calling AgenticProcess, if there is one.
+def _default_subject(explicit: "Optional[str]") -> "Optional[str]":
+    """``--subject`` wins; otherwise the calling AgenticProcess, if there is one.
 
     An agent reporting its own progress should not have to know its own id, and a plain
     shell on the box should get the instance-wide default. Both fall out of this.
@@ -90,16 +90,16 @@ def _default_scope(explicit: "Optional[str]") -> "Optional[str]":
     return explicit or _current_process_typeid()
 
 
-def _scope_params(scope: "Optional[str]") -> "dict[str, Any]":
-    """Query params for a read. An absent scope is OMITTED, not sent empty: a query string
-    cannot carry ``None``, and ``scope=`` asks for an activity in a scope literally named
+def _subject_params(subject_entity: "Optional[str]") -> "dict[str, Any]":
+    """Query params for a read. An absent subject entity is OMITTED, not sent empty: a query string
+    cannot carry ``None``, and ``subject_entity=`` asks for an activity in a subject_entity literally named
     "" — a different address from the instance-wide one, which always misses."""
-    resolved = _default_scope(scope)
-    return {"scope": resolved} if resolved else {}
+    resolved = _default_subject(subject_entity)
+    return {"subject_entity": resolved} if resolved else {}
 
 
-def _body(verb: str, arg: "Optional[str]", *, ref, code, counter, n, scope) -> "dict[str, Any]":
-    body: "dict[str, Any]" = {"n": n, "scope": scope, "ref": ref, "code": code, "counter": counter}
+def _body(verb: str, arg: "Optional[str]", *, ref, code, counter, n, subject_entity) -> "dict[str, Any]":
+    body: "dict[str, Any]" = {"n": n, "subject_entity": subject_entity, "ref": ref, "code": code, "counter": counter}
     if arg is not None and verb not in _BARE_VERBS:
         body["message" if verb in _MESSAGE_VERBS else "value"] = arg
     return {k: v for k, v in body.items() if v is not None}
@@ -144,11 +144,14 @@ def report(
     ref: Annotated[Optional[str], typer.Option("--ref", help="What an error is ABOUT — a path, a TypeId.")] = None,
     code: Annotated[Optional[str], typer.Option("--code", help="Machine-readable error code.")] = None,
     counter: Annotated[Optional[str], typer.Option("--counter", help="Counter name for 'inc'.")] = None,
-    scope: Annotated[Optional[str], typer.Option("--scope", help="TypeId this activity belongs to. Defaults to the calling process.")] = None,
+    subject_entity: Annotated[Optional[str], # `--scope` stays as an alias: agents and prompts already written against it
+        # keep working, and a rename that silently breaks a running worker is not a
+        # rename, it is a regression.
+        typer.Option("--subject", "--scope", help="TypeId this activity belongs to. Defaults to the calling process.")] = None,
     read_stdin: Annotated[bool, typer.Option("--stdin", help="Read one 'verb arg' per line — one process for a whole loop.")] = False,
 ) -> None:
     """Apply one verb (or a stream of them) to the activity at ``path``."""
-    resolved_scope = _default_scope(scope)
+    resolved_subject = _default_subject(subject_entity)
 
     if read_stdin:
         last: dict = {}
@@ -159,7 +162,7 @@ def report(
             parts = line.split(" ", 1)
             stream_verb = _canonical_verb(parts[0])
             stream_arg = parts[1].strip() if len(parts) > 1 else None
-            last = _post(path, stream_verb, _body(stream_verb, stream_arg, ref=ref, code=code, counter=counter, n=n, scope=resolved_scope))
+            last = _post(path, stream_verb, _body(stream_verb, stream_arg, ref=ref, code=code, counter=counter, n=n, subject_entity=resolved_subject))
         _ok({"activity": last})
         return
 
@@ -167,25 +170,25 @@ def report(
         _fail(EXIT_INVALID_ARG, "NO_VERB", "a verb is required: flow progress report <path> <verb> [arg]")
 
     canonical = _canonical_verb(verb)
-    _ok({"activity": _post(path, canonical, _body(canonical, arg, ref=ref, code=code, counter=counter, n=n, scope=resolved_scope))})
+    _ok({"activity": _post(path, canonical, _body(canonical, arg, ref=ref, code=code, counter=counter, n=n, subject_entity=resolved_subject))})
 
 
 @progress_app.command("show")
 def show(
     path: Annotated[str, typer.Argument(help="Activity address.")],
-    scope: Annotated[Optional[str], typer.Option("--scope")] = None,
+    subject_entity: Annotated[Optional[str], typer.Option("--subject", "--scope")] = None,
 ) -> None:
     """Print one activity tree — the same state the footer chip renders."""
-    _ok({"activity": _request("GET", _url(path), params=_scope_params(scope))})
+    _ok({"activity": _request("GET", _url(path), params=_subject_params(subject_entity))})
 
 
 @progress_app.command("list")
 def list_activities(
-    scope: Annotated[Optional[str], typer.Option("--scope")] = None,
-    all_scopes: Annotated[bool, typer.Option("--all", help="Every scope, not just this one.")] = False,
+    subject_entity: Annotated[Optional[str], typer.Option("--subject", "--scope")] = None,
+    all_subjects: Annotated[bool, typer.Option("--all", help="Every subject entity, not just this one.")] = False,
 ) -> None:
     """What is running on this box right now. Live work only — a finished root is gone."""
-    params = {"all": "true"} if all_scopes else _scope_params(scope)
+    params = {"all": "true"} if all_subjects else _subject_params(subject_entity)
     _ok({"activities": _request("GET", _url(""), params=params) or []})
 
 

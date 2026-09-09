@@ -48,6 +48,7 @@ _FLOW_VERBS = frozenset(
         "diagnose",
         "hooks",
         "instance",
+        "llm",
         "log",
         "migrate",
         "navigate",

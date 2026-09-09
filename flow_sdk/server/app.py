@@ -63,6 +63,7 @@ from .routes import (
     graph_workflows_router,
     hooks_router,
     ingest_router,
+    agents_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
@@ -131,8 +132,6 @@ async def _on_server_startup():
             "server_pid": os.getpid(),
             "server_create_time": psutil.Process(os.getpid()).create_time(),
             "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
-            "webhook_path": "/api/v1/webhook/listen",
-            "health_path": "/api/v1/health/status",
         }
     )
     print(f"  server.json:   {settings.server_json_path}")
@@ -251,6 +250,92 @@ async def _on_server_startup():
     # types and invalidate schema memos. Warming earlier made the first cache
     # expiry rebuild every schema on the HTTP path (~500 ms).
     await initialize_bootstrap()
+    await _start_app_ready_signal()
+
+
+async def _start_app_ready_signal() -> None:
+    """Spawn the detached `app.ready` emitter. Never blocks startup."""
+    try:
+        import asyncio as _asyncio
+
+        _asyncio.create_task(_app_ready_signal(), name="app-ready-signal")
+        print("  App-ready signal: scheduled (background)")
+    except Exception:
+        logging.getLogger(__name__).exception("App-ready signal: failed to start")
+
+
+async def _app_ready_signal() -> None:
+    """Emit ``app.ready`` once this boot, when the app is genuinely usable.
+
+    The four steps below are ordered, and the order is the whole design.
+
+    1. ``first_bootstrap_served`` — "ready" means somebody asked for their
+       world, not merely that the port is open. Only ``/api/v1/graph/bootstrap``
+       sets it, so a health probe does not count.
+    2. Await the system-content index. A wizard shipped in a system project is
+       discovered ONLY by that detached walk.
+    3. Reconcile the wizard triggers, so anything the walk just found is armed.
+    4. Emit.
+
+    Steps 2 and 3 are what make the event mean anything. The bus has no
+    durability: an unarmed subscriber at emit time does not get the event late,
+    it never gets it at all — and nothing anywhere would say why the wizard did
+    not run. Never reorder these.
+
+    It is tempting to also await ``capabilities.ensure_discovered()`` here, so a
+    wizard step that hands work to an agent finds its harness resolved. DON'T —
+    it was tried and it wedges this signal. A sweep runs ``registry.test()`` per
+    capability, which spawns real CLI probes (including a PTY running the claude
+    binary), so the wait is unbounded in practice: measured at over three minutes
+    on a developer machine, and on one where a probe hangs the event never fires
+    at all. It is also unnecessary: ``resolve_default_worker_type`` is a
+    SELECTION lookup over the seeded ``reference_kind``, not an availability
+    probe, and ``Capability.ensure_seeded()`` has already run synchronously
+    above. A harness that is genuinely absent is then reported by the step, which
+    is where that failure belongs.
+
+    Detached and non-raising: the app is already serving by the time this runs,
+    and no failure here may change that.
+    """
+    log = logging.getLogger(__name__)
+    try:
+        from flow_sdk._version import __version__
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.server.builtin_triggers import reconcile_wizard_triggers
+        from flow_sdk.server.routes.bootstrap import first_bootstrap_served
+        from flow_sdk.tags import target_of
+        from flow_sdk.tags.bus import make_tag_event, publish_tag
+        from flow_sdk.utils.machine_id import local_entity_id
+
+        await first_bootstrap_served.wait()
+
+        if _system_content_index_task is not None:
+            import asyncio as _asyncio
+
+            await _asyncio.gather(_system_content_index_task, return_exceptions=True)
+
+        await reconcile_wizard_triggers()
+
+        # make+publish rather than emit: `emit` returns None when nothing is
+        # subscribed, and this line wants a stable event id in the log either
+        # way — it is the join key the trigger log records as `cause_event_id`.
+        event = publish_tag(make_tag_event(
+            "app.ready",
+            target_of("compute_node", local_entity_id("compute_node")),
+            {
+                "version": __version__,
+                "instance": get_instance_settings().instance_name,
+            },
+        ))
+        log.info("[app.ready] emitted event_id=%s", event.id)
+    except Exception:
+        log.exception("App-ready signal failed")
+
+
+#: The detached system-content index task. Held so the app-ready signal can
+#: AWAIT it — a wizard shipped in a system project is only discovered by that
+#: walk, and its trigger is only armed once the row exists.
+_system_content_index_task = None
 
 
 async def _start_system_content_index() -> None:
@@ -263,7 +348,10 @@ async def _start_system_content_index() -> None:
 
         from flow_sdk.server.routes.bootstrap import index_system_content
 
-        _asyncio.create_task(index_system_content(), name="system-content-index")
+        global _system_content_index_task
+        _system_content_index_task = _asyncio.create_task(
+            index_system_content(), name="system-content-index"
+        )
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
@@ -583,6 +671,7 @@ server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
+server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)

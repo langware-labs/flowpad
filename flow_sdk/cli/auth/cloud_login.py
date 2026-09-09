@@ -299,9 +299,13 @@ async def _broadcast_oauth_error(message: str) -> None:
 async def clear_cloud_credentials(reason: str | None = None) -> None:
     """Stop the hub WS, clear keyring + user JSON, broadcast LOGGED_OUT + DISCONNECTED.
 
-    Single owner used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``,
-    the legacy ``flowpad_cloud/disconnect`` action handler, and
+    Single owner used by ``/api/v1/cloud/logout_callback`` and
     ``invalidate_hub_login`` (which forwards a non-empty reason).
+
+    Credentials ONLY. An EXPLICIT logout wants ``clear_user_data``, which adds
+    the local-data purge on top; this one stays purge-free precisely because
+    ``invalidate_hub_login`` calls it — an expired or hub-rejected token must
+    not cost the user their inbox.
     """
     from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.cloud_client.auth_state import set_connection_status, set_login_status
@@ -328,3 +332,26 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
 
     await set_login_status(HubLoginStatus.LOGGED_OUT, reason=reason)
     await set_connection_status(HubConnectionStatus.DISCONNECTED)
+
+
+async def clear_user_data() -> None:
+    """EXPLICIT logout: drop the credentials AND the hub's copy of the inbox.
+
+    The purge deliberately does NOT live inside ``clear_cloud_credentials``,
+    because ``invalidate_hub_login`` calls that one: a token expiring on
+    wake-from-sleep, or a hub hiccup rejecting a socket, must clear credentials
+    without destroying local data. Only a user who asked to log out gets here —
+    which is why there is no ``reason`` to forward; a reason means the machine
+    decided, and the machine never purges.
+
+    Credentials go first: they are the security-relevant half, and the purge is
+    best-effort on top. A row that refuses to delete must never be the reason
+    someone cannot log out.
+    """
+    from flow_sdk.inbox.clear import clear_inbox
+
+    await clear_cloud_credentials()
+    try:
+        await clear_inbox()
+    except Exception:  # noqa: BLE001
+        logger.warning("logout: clearing local hub data failed", exc_info=True)

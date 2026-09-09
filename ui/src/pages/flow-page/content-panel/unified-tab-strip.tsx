@@ -13,8 +13,8 @@
  * the Tab. Every chip — terminal or content — is keyed by its `dockPointer.tabHash`,
  * so there is no kind-branching here.
  *
- * The controller is kept ONLY for the surrounding controls: leading/trailing
- * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
+ * The controller is kept ONLY for the surrounding controls: the trailing
+ * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
 import { dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
@@ -321,7 +321,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         onReorderCancel={() => void tabManager.refresh()}
         newTabMenuItems={controller.newTabMenuItems}
         closeShortcutLabel={controller.closeShortcutLabel}
-        leading={controller.leading}
         trailing={controller.trailing}
       />
       {controller.modals}

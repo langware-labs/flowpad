@@ -50,11 +50,17 @@ def scaffold_graph_workflow_folder(
     if not display.exists():
         display.write_text(DISPLAY_STUB, encoding="utf-8")
     if entity.id:
-        capsule = folder / ".flow"
-        capsule.mkdir(exist_ok=True)
-        id_file = capsule / "id"
-        if not id_file.exists():
-            id_file.write_text(entity.id, encoding="utf-8")
+        # Stamp through the carrier that OWNS folder identity rather than
+        # writing the capsule here: it alone knows the Found/Foreign policy —
+        # an existing id wins, and a RETIRED `<folder>/.flow/id` raises
+        # ForeignId instead of being silently shadowed by a second identity.
+        # (This used to write that retired form itself, which left a freshly
+        # scaffolded folder un-adoptable — the carrier reads it back as
+        # Foreign — and raised a `foreign_id` scan issue against bytes the
+        # scaffold had just written.)
+        from flow_sdk.fs_store.identity_carrier import Sidecar  # noqa: PLC0415
+
+        Sidecar().stamp(folder, entity.id)
     entity.asset_ref = str(folder)
     return folder
 

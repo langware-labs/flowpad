@@ -5,6 +5,7 @@ export { NewProjectFromGitDialog, type NewProjectFromGitDialogProps } from './Ne
 export { projectListToSelectorItems } from './project-items';
 export {
   canonicalPath,
+  isOpenableProjectPath,
   selectProjectContext,
   useCloneGitProjectAndOpen,
   useEnsureProject,

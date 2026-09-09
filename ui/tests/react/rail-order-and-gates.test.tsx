@@ -46,6 +46,13 @@ vi.mock('@src/hooks/use-has-conversations', () => ({ useHasConversations: () => 
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
+// The fourth cluster button at the foot of the rail. Mocked for the same reason as
+// its three siblings above — it carries `data-testid`, not `data-rail-item`, so it is
+// outside the order contract this file asserts — and for one more: its gate reaches
+// react-query (useHasOrgOrTeam -> useTokenPlan), which this tree has no provider for.
+// Rendering it here would make every rail-placement test depend on a hub aggregation.
+// Its own behaviour is covered by tests/unit/org-teams-button.test.tsx.
+vi.mock('@src/components/collapsed-sidebar/OrgTeamsButton', () => ({ OrgTeamsButton: () => null }));
 vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },

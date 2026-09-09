@@ -2167,14 +2167,33 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       return `${pagePrefix}${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
-    // Pointer-folding views (e.g. Preferences) collapse all their category/field
-    // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
-    // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
-    // check above) instead of hardcoding viewTypes here.
-    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
-      return `${pagePrefix}${this.viewType}|`;
+    // The two pointer-REDUCING folds (Preferences drops the pointer entirely,
+    // Conversation/Apps keep the host segment). Both emit `plainKey`'s own shape
+    // over a reduced pointer, so they share one arm — see `foldedPointer`.
+    const folded = this.foldedPointer;
+    if (folded !== null) {
+      return `${pagePrefix}${this.viewType}|${folded}`;
     }
     return this.plainKey;
+  }
+
+  /**
+   * The pointer TAB IDENTITY uses, for the two folds that merely reduce it:
+   * `''` when the whole viewType is one tab (`foldsPointer`), the host segment
+   * when each host is one tab (`foldsSubPointer`), and `null` when this view
+   * does not fold at all — the signal to fall through to the plain form.
+   *
+   * Shared by `tabHash` and `toJSON` so the key and the persisted JSON cannot
+   * disagree about which pointer a folded view is keyed on. The `scopeKeyed`
+   * and active-display arms stay separate: their `toJSON` also carries
+   * `options` / `tabHash` / `workspaceContent`, so they are not this shape.
+   */
+  private get foldedPointer(): string | null {
+    const meta = this.viewType ? VIEWER_REGISTRY[this.viewType] : undefined;
+    if (meta?.foldsPointer) return '';
+    // First segment only: `<conversationId>/message/<id>` → `<conversationId>`.
+    if (meta?.foldsSubPointer) return (this.pointer ?? '').split('/')[0];
+    return null;
   }
 
   /** Identity for a dock that none of `tabHash`'s special arms claim: the page
@@ -2269,11 +2288,14 @@ export class DockPointer implements IDockPointer {
         workspaceContent: workspaceContent || undefined,
       });
     }
-    // Pointer-folding views (Preferences, …) persist a constant identity: pointer
-    // normalized to '' so the backend mints ONE Tab row regardless of which
-    // category was last viewed (same intent as the ASSETS scope-folding above).
-    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
-      return JSON.stringify({ viewType: this.viewType, pointer: '' });
+    // Pointer-folding views persist a constant identity: pointer normalized to the
+    // folded form so the backend mints ONE row per fold unit — regardless of which
+    // category was last viewed (Preferences), or which message / in-app route
+    // happened to materialize the row (Conversation, Apps). Same intent as the
+    // ASSETS scope-folding above, and the same reduction `tabHash` keys on.
+    const folded = this.foldedPointer;
+    if (folded !== null) {
+      return JSON.stringify({ viewType: this.viewType, pointer: folded });
     }
     return this.plainJSON;
   }

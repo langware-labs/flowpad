@@ -122,6 +122,21 @@ class CapabilitySpec(BaseModel):
     # Prompt the install agentic process runs with. None → the registry's
     # DEFAULT_INSTALL_PROMPT.
     install_prompt: str | None = None
+    #: May the PASSIVE discovery sweep call this capability's ``test()``?
+    #:
+    #: True for the ordinary case: a test that shells out to `--version`,
+    #: reads a token file, or asks a driver what it already knows. Those are
+    #: cheap, offline and side-effect-free, which is what lets the sweep keep
+    #: every badge fresh for free.
+    #:
+    #: False when ``test()`` costs real work or has side effects — spawning a
+    #: vendor CLI, driving an agent, spending tokens. Those answer only to an
+    #: explicit user verb (the Test button, ``registry.test`` from a route);
+    #: a background sweep must never run them. ``chrome_authenticated`` is
+    #: the case in point: its test launches a real Claude agent to browse a
+    #: probe page, so every passive sweep was starting a worker and waiting
+    #: on it, which is a badge refresh costing a live agent run.
+    sweepable_test: bool = True
     # One-liner that installs this capability from nothing, keyed by
     # ``sys.platform`` ("darwin" / "linux" / "win32"). TYPED INTO a Flowpad
     # terminal for the user to press Enter on — never run on their behalf, which

@@ -21,6 +21,7 @@ import pytest
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError, WorkerStatus
 from flow_sdk.transcript_analyzer.counters import ProcessCounters, ProcessStatusReport
 from tests.test_settings import test_service_config
+from tests.long_tests._transcript_helpers import fail_worker_timeout
 
 pytestmark = [
     pytest.mark.skipif(
@@ -61,13 +62,13 @@ async def test_status_report_matches_transcript_exactly(
         # headless_prompt. send() is raw PTY-stdin and requires start_pty().
         await ap.prompt("build me hello world webapp")
         await ap.wait()
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip(f"{worker_id} API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        fail_worker_timeout(exc, worker_id)
 
     # The one ground truth: re-parse the session transcript the worker wrote.
     transcript = ap._load_transcript()
     if transcript is None or not transcript.entries:
-        pytest.skip(f"{worker_id}: no transcript produced (worker unavailable?)")
+        pytest.fail(f"{worker_id}: the worker produced no transcript entries", pytrace=False)
 
     reference = ProcessCounters.from_transcript(transcript)
     # The run genuinely did work — copilot only reports output tokens, so gate
