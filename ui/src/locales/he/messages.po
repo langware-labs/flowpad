@@ -18599,6 +18599,10 @@ msgstr "הפרויקט הזה לא קיים או כבר אינו זמין."
 msgid "This project has no assets yet."
 msgstr "לפרויקט הזה עדיין אין נכסים."
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "This project has no folder on disk and can't be opened."
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
 msgstr "עדיין לא הוגדרו סודות לפרויקט זה."
