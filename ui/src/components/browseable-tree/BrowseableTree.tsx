@@ -196,6 +196,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
         </div>
       )}
       <div className="flex-1 space-y-0.5 overflow-auto p-1">
+        {levelFooter?.('', mirrored)}
         {roots.map((root) => (
           <BrowseableRow
             key={root.id}
@@ -218,7 +219,6 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             onDragEnd={() => setDragData(null)}
           />
         ))}
-        {levelFooter?.('')}
       </div>
     </div>
   );
@@ -263,7 +263,7 @@ interface RowProps {
   hoverExpandMs?: number;
   /** Dwell (ms) before hover fires this row's `onHoverSeen`. Undefined ⇒ never. */
   hoverSeenMs?: number;
-  levelFooter?: (parentId: string) => React.ReactNode;
+  levelFooter?: (parentId: string, mirrored: boolean) => React.ReactNode;
   /** Flip the direction cues for a leftward-growing menu — see BrowseableTreeProps. */
   mirrored?: boolean;
 }
@@ -684,6 +684,17 @@ function BrowseableRow({
 
       {expanded && (
         <div className="space-y-0.5">
+          {/* This level's footer — new items file into `node.id`. FIRST row of
+              the level, directly under the row that owns it, NOT last: a footer
+              placed after the children lands after the whole expanded subtree,
+              so N nested open levels stack N footers into one anonymous pile at
+              the bottom of the panel with nothing to say which level each one
+              belongs to (the bookmarks menu showed three). Leading the level
+              binds each footer to its own row by position. Aligned with the
+              children (same (level+1)*14 indent). */}
+          {loadState.status === 'ready' && levelFooter && (
+            <div style={{ [indentSide]: `${(level + 1) * 14}px` }}>{levelFooter(node.id, mirrored)}</div>
+          )}
           {loadState.status === 'loading' && children.length === 0 && (
             <div className="p-1 text-xs text-muted-foreground" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
               <Trans>Loading…</Trans>
@@ -723,11 +734,6 @@ function BrowseableRow({
               onDragEnd={onDragEnd}
             />
           ))}
-          {/* This folder's footer — new items file into node.id. Aligned with
-              the children (they carry the same (level+1)*14 indent). */}
-          {loadState.status === 'ready' && levelFooter && (
-            <div style={{ [indentSide]: `${(level + 1) * 14}px` }}>{levelFooter(node.id)}</div>
-          )}
         </div>
       )}
     </div>
