@@ -204,8 +204,9 @@ export function CollapsedSidebar() {
   const handleRailClick = (id: RailItemId) => {
     switch (id) {
       case 'discover':
-        // Full-page marketplace: a top-level route, not a dock tab.
-        void navigate('/discover');
+        // Full-page marketplace: a top-level route, not a dock tab — but still
+        // through `navigation`, so every entry point builds the same URL.
+        navigation.openDiscover(dataContext.project?.id ?? null);
         return;
       case 'chats':
         // Vibe has no chats list — resume the last real UI chat in the project.

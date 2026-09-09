@@ -3,20 +3,60 @@ import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@src/components/ui/sheet';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
-import { FolderOpen, Grid2x2, Loader2, Search } from 'lucide-react';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
+import { InstallButton } from '@src/components/install/InstallButton';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { notify } from '@src/notifications';
+import { errorMessage } from '@src/lib/error-message';
+import { TypeId, type AnyEntity, type Project, type PublishedRow, type PublishedState, type UnpublishedRow } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { FolderOpen, Grid2x2, Loader2, PackageCheck, Search, Trash2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useProjectPackage, type PackageItem } from './useProjectPackage';
+import { usePublishedManifest } from './usePublishedManifest';
 
 /* ────────────────────────── metadata ────────────────────────── */
 
 const SECTION_TITLE = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
 
-// Human-friendly label for a record scope. Falls through to the raw token for
-// any scope this bundle predates.
-const SCOPE_LABELS: Record<string, string> = { project: 'Project', user: 'Global', system: 'System' };
-const scopeLabel = (scope: string) => SCOPE_LABELS[scope] ?? scope;
+/** One card, from either section. A published row carries a manifest state; a candidate has none. */
+interface DiscoverItem {
+  typeid: string;
+  type: string;
+  id: string;
+  name: string;
+  description: string;
+  path: string | null;
+  state: PublishedState | null;
+  publishedAt: string | null;
+}
+
+function fromPublished(r: PublishedRow): DiscoverItem {
+  return {
+    typeid: r.typeid,
+    type: r.type,
+    id: r.id,
+    name: r.name || '(untitled)',
+    description: r.description || '',
+    path: r.posix_path ?? r.rel_path ?? null,
+    state: r.state,
+    publishedAt: r.published_at || null,
+  };
+}
+
+function fromUnpublished(r: UnpublishedRow): DiscoverItem {
+  return {
+    typeid: r.typeid,
+    type: r.type,
+    id: new TypeId(r.typeid).id,
+    name: r.name || '(untitled)',
+    description: '',
+    path: r.posix_path,
+    state: null,
+    publishedAt: null,
+  };
+}
 
 /* ────────────────────────── small building blocks ────────────────────────── */
 
@@ -33,30 +73,45 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-function ScopeBadge({ scope }: { scope: string }) {
+/** The manifest state of a published row, as a chip. */
+function StateChip({ state }: { state: PublishedState }) {
+  const { t } = useLingui();
+  const copy: Record<PublishedState, { label: string; tone: string; title: string }> = {
+    in_use: {
+      label: t`In use`,
+      tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+      title: t`The asset is here and indexed`,
+    },
+    install: {
+      label: t`Install`,
+      tone: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+      title: t`On disk but not indexed yet — pulled via git`,
+    },
+    stale: {
+      label: t`Changed since publish`,
+      tone: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+      title: t`The file is newer than its published row`,
+    },
+    missing: {
+      label: t`Missing`,
+      tone: 'border-destructive/40 bg-destructive/10 text-destructive',
+      title: t`Named by the manifest but gone from disk`,
+    },
+  };
+  const c = copy[state];
   return (
-    <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      {scopeLabel(scope)}
+    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${c.tone}`} title={c.title} data-state={state}>
+      {c.label}
     </span>
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? 'border-transparent bg-primary text-primary-foreground'
-          : 'border-border bg-muted text-muted-foreground hover:text-foreground'
+        active ? 'border-transparent bg-primary text-primary-foreground' : 'border-border bg-muted text-muted-foreground hover:text-foreground'
       }`}
     >
       {children}
@@ -66,10 +121,32 @@ function FilterChip({
 
 /* ────────────────────────── asset card ────────────────────────── */
 
-function AssetCard({ item, onOpen }: { item: PackageItem; onOpen: () => void }) {
+function AssetCard({
+  item,
+  project,
+  onOpen,
+  onChanged,
+  onRemove,
+}: {
+  item: DiscoverItem;
+  project: Project;
+  onOpen: () => void;
+  onChanged: () => void;
+  onRemove?: () => void;
+}) {
+  const { t } = useLingui();
+  const hub = isHubOnly();
+  const published = item.state !== null;
+  // The toggle needs the live entity (it adopts the canonical row the action
+  // returns). A `missing` row has none, and gets "Remove from manifest" instead.
+  const cardTypeId = useMemo(() => (item.state === 'missing' ? null : new TypeId(item.type, item.id)), [item.type, item.id, item.state]);
+  const entity = useEntity<AnyEntity>(cardTypeId).data ?? null;
   return (
     <article
       onClick={onOpen}
+      data-testid="discover-card"
+      data-typeid={item.typeid}
+      data-published={published ? 'true' : 'false'}
       className="group flex cursor-pointer flex-col rounded-xl border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="flex items-center gap-2.5">
@@ -82,13 +159,27 @@ function AssetCard({ item, onOpen }: { item: PackageItem; onOpen: () => void }) 
         </div>
       </div>
 
-      {item.description && (
-        <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
-      )}
+      {item.description && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
 
       <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-4">
         <TypeBadge type={item.type} />
-        <ScopeBadge scope={item.scope} />
+        {item.state && <StateChip state={item.state} />}
+        <span className="ms-auto" onClick={(e) => e.stopPropagation()}>
+          {hub && published && <InstallButton project={project} typeid={item.typeid} name={item.name} />}
+          {!hub && entity && <PublishedToggle entity={entity} projectId={project.id} variant="row" onChanged={onChanged} />}
+          {!hub && !entity && published && onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-muted px-2 text-xs font-medium text-muted-foreground hover:text-destructive"
+              title={t`Remove this row from the manifest`}
+              data-testid="discover-remove-row"
+            >
+              <Trash2 className="h-3 w-3" />
+              <Trans>Remove</Trans>
+            </button>
+          )}
+        </span>
       </div>
     </article>
   );
@@ -96,30 +187,26 @@ function AssetCard({ item, onOpen }: { item: PackageItem; onOpen: () => void }) 
 
 /* ────────────────────────── detail slide-over ────────────────────────── */
 
-function DetailPanel({ item, onClose }: { item: PackageItem; onClose: () => void }) {
+function DetailPanel({ item, onClose }: { item: DiscoverItem; onClose: () => void }) {
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full max-w-2xl flex-col gap-0 bg-card p-0 sm:max-w-2xl">
-        {/* header */}
         <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-card/85 px-6 py-4 pe-12 backdrop-blur-xl">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary/80 to-primary/40 text-primary-foreground">
             <TypeGlyph type={item.type} className="h-5 w-5" />
           </span>
           <div className="min-w-0">
             <SheetTitle className="truncate text-lg font-semibold leading-tight tracking-tight">{item.name}</SheetTitle>
-            <SheetDescription className="truncate text-xs text-muted-foreground">
-              {labelForType(item.type)}
-            </SheetDescription>
+            <SheetDescription className="truncate text-xs text-muted-foreground">{labelForType(item.type)}</SheetDescription>
           </div>
         </div>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={item.type} />
-            <ScopeBadge scope={item.scope} />
+            {item.state && <StateChip state={item.state} />}
           </div>
 
-          {/* DETAILS */}
           <section>
             <h3 className={`mb-2 ${SECTION_TITLE}`}>
               <Trans>Details</Trans>
@@ -137,9 +224,15 @@ function DetailPanel({ item, onClose }: { item: PackageItem; onClose: () => void
                   <span className={SECTION_TITLE}>
                     <Trans>Path</Trans>
                   </span>
-                  <code className="ms-auto break-all text-end font-mono text-xs text-muted-foreground">
-                    {item.path}
-                  </code>
+                  <code className="ms-auto break-all text-end font-mono text-xs text-muted-foreground">{item.path}</code>
+                </div>
+              )}
+              {item.publishedAt && (
+                <div className="flex items-start gap-2 border-t pt-3">
+                  <span className={SECTION_TITLE}>
+                    <Trans>Published</Trans>
+                  </span>
+                  <code className="ms-auto font-mono text-xs text-muted-foreground">{item.publishedAt}</code>
                 </div>
               )}
             </div>
@@ -155,27 +248,40 @@ function DetailPanel({ item, onClose }: { item: PackageItem; onClose: () => void
 export default function DiscoverPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
-  const { projectId, projectName, items, isLoading } = useProjectPackage();
+  const { project, projectName, view, rows, unpublished, isLoading, refresh } = usePublishedManifest();
+  const hub = isHubOnly();
 
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const [openItem, setOpenItem] = useState<PackageItem | null>(null);
+  const [openItem, setOpenItem] = useState<DiscoverItem | null>(null);
 
-  // Type facets present in this project's box, with counts.
+  const published = useMemo(() => rows.map(fromPublished), [rows]);
+  const candidates = useMemo(() => (hub ? [] : unpublished.map(fromUnpublished)), [hub, unpublished]);
+
+  // Type facets across both sections, with counts.
   const typeFacets = useMemo(() => {
     const counts = new Map<string, number>();
-    items.forEach((i) => counts.set(i.type, (counts.get(i.type) ?? 0) + 1));
+    [...published, ...candidates].forEach((i) => counts.set(i.type, (counts.get(i.type) ?? 0) + 1));
     return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count);
-  }, [items]);
+  }, [published, candidates]);
 
-  const list = useMemo(() => {
+  const matches = (i: DiscoverItem) => {
     const q = query.trim().toLowerCase();
-    return items.filter(
-      (i) =>
-        (!typeFilter || i.type === typeFilter) &&
-        (!q || i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)),
-    );
-  }, [items, query, typeFilter]);
+    return (!typeFilter || i.type === typeFilter) && (!q || i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q));
+  };
+  const publishedList = published.filter(matches);
+  const candidateList = candidates.filter(matches);
+
+  const removeRow = async (item: DiscoverItem) => {
+    if (!project) return;
+    try {
+      await project.unpublish(item.typeid);
+      notify.success({ title: item.name, message: t`Removed from the manifest.` });
+      refresh();
+    } catch (error) {
+      notify.error({ title: t`Could not remove the row`, message: errorMessage(error, t`The manifest was not changed.`) });
+    }
+  };
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -196,9 +302,7 @@ export default function DiscoverPage() {
           <section className="relative overflow-hidden pb-8 pt-12">
             <div
               className="pointer-events-none absolute inset-0 opacity-60"
-              style={{
-                background: 'radial-gradient(600px 280px at 30% -20%, hsl(var(--primary) / 0.12), transparent 70%)',
-              }}
+              style={{ background: 'radial-gradient(600px 280px at 30% -20%, hsl(var(--primary) / 0.12), transparent 70%)' }}
             />
             <div className="relative">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs text-muted-foreground">
@@ -209,16 +313,13 @@ export default function DiscoverPage() {
                 <Trans>What&apos;s in the box.</Trans>
               </h1>
               <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-                <Trans>Every skill, agent, spec, and document this project ships.</Trans>
+                <Trans>What this project has published — its skills, agents, servers and documents — for everyone with access to use.</Trans>
               </p>
             </div>
           </section>
 
-          {projectId == null ? (
-            <EmptyState
-              icon={<FolderOpen className="mx-auto mb-3 h-8 w-8 opacity-50" />}
-              text={t`Open a project to see its assets.`}
-            />
+          {project == null ? (
+            <EmptyState icon={<FolderOpen className="mx-auto mb-3 h-8 w-8 opacity-50" />} text={t`Open a project to see its assets.`} />
           ) : (
             <>
               {/* ── filter bar ── */}
@@ -235,11 +336,7 @@ export default function DiscoverPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {typeFacets.map(({ type, count }) => (
-                      <FilterChip
-                        key={type}
-                        active={typeFilter === type}
-                        onClick={() => setTypeFilter(typeFilter === type ? null : type)}
-                      >
+                      <FilterChip key={type} active={typeFilter === type} onClick={() => setTypeFilter(typeFilter === type ? null : type)}>
                         <TypeGlyph type={type} className="h-3 w-3" /> {labelForType(type)}
                         <span className="opacity-60">{count}</span>
                       </FilterChip>
@@ -247,32 +344,66 @@ export default function DiscoverPage() {
                   </div>
                   <div className="ms-auto flex items-center gap-2">
                     <span className="font-mono text-xs text-muted-foreground">
-                      {list.length} {list.length === 1 ? t`asset` : t`assets`}
+                      {publishedList.length} {t`published`}
                     </span>
                   </div>
                 </div>
               </section>
 
-              {/* ── grid ── */}
-              <section className="pb-12">
-                {isLoading ? (
-                  <EmptyState
-                    icon={<Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin opacity-50" />}
-                    text={t`Loading…`}
-                  />
-                ) : list.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {list.map((i) => (
-                      <AssetCard key={`${i.type}:${i.id}`} item={i} onOpen={() => setOpenItem(i)} />
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={<Grid2x2 className="mx-auto mb-3 h-8 w-8 opacity-50" />}
-                    text={items.length === 0 ? t`This project has no assets yet.` : t`No assets match those filters.`}
-                  />
-                )}
-              </section>
+              {isLoading ? (
+                <EmptyState icon={<Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin opacity-50" />} text={t`Loading…`} />
+              ) : (
+                <>
+                  {/* ── Published ── */}
+                  <section className="pb-10" data-testid="discover-published">
+                    <h2 className={`mb-3 flex items-center gap-2 ${SECTION_TITLE}`}>
+                      <PackageCheck className="h-3.5 w-3.5" />
+                      <Trans>Published</Trans>
+                      <span className="opacity-60">{publishedList.length}</span>
+                    </h2>
+                    {publishedList.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {publishedList.map((i) => (
+                          <AssetCard key={i.typeid} item={i} project={project} onOpen={() => setOpenItem(i)} onChanged={refresh} onRemove={() => void removeRow(i)} />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={<Grid2x2 className="mx-auto mb-3 h-8 w-8 opacity-50" />}
+                        text={
+                          published.length === 0
+                            ? hub
+                              ? t`This project has not published anything yet.`
+                              : t`Nothing published yet — publish an asset below, or from its editor.`
+                            : t`No published assets match those filters.`
+                        }
+                      />
+                    )}
+                  </section>
+
+                  {/* ── Not yet published (desk only) ── */}
+                  {!hub && (
+                    <section className="pb-12" data-testid="discover-unpublished">
+                      <h2 className={`mb-3 flex items-center gap-2 ${SECTION_TITLE}`}>
+                        <Trans>Not yet published</Trans>
+                        <span className="opacity-60">{candidateList.length}</span>
+                      </h2>
+                      {candidateList.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {candidateList.map((i) => (
+                            <AssetCard key={i.typeid} item={i} project={project} onOpen={() => setOpenItem(i)} onChanged={refresh} />
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyState
+                          icon={<Grid2x2 className="mx-auto mb-3 h-8 w-8 opacity-50" />}
+                          text={candidates.length === 0 ? t`Everything in this project is published.` : t`No assets match those filters.`}
+                        />
+                      )}
+                    </section>
+                  )}
+                </>
+              )}
             </>
           )}
 
@@ -281,7 +412,7 @@ export default function DiscoverPage() {
             <span>
               <Trans>The assets published with this project — its skills, agents, specs, and docs.</Trans>
             </span>
-            <span className="font-mono">{projectName ?? <Trans>discover</Trans>}</span>
+            <span className="font-mono">{view?.manifest.rel_path || (projectName ?? <Trans>discover</Trans>)}</span>
           </footer>
         </div>
       </main>

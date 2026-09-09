@@ -46,6 +46,8 @@ export enum RecordType {
   /** FlowPad's own authored MCP asset — see the `Mcp` entity for the MCP_SERVER distinction. */
   MCP = 'mcp',
   MCP_SERVER = 'mcp_server',
+  /** The per-project ledger of published assets (agentic-assets/project_manifest/). */
+  PROJECT_MANIFEST = 'project_manifest',
   SUBAGENT = 'subagent',
   /** The launchable agent (agentic-assets/agent/<name>/agent.md).
    *  Distinct from SUBAGENT, the provider-owned .claude/agents/<name>.md. */

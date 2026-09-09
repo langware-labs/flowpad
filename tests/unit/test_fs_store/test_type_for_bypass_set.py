@@ -87,7 +87,11 @@ def test_the_undeclared_set_is_exactly_the_walked_types_type_for_cannot_place(tm
         candidates: list[Path] = []
         mounts = set(info.scan_mounts) or {""}
         if isinstance(shape, Folder) and shape.main:
-            candidates.extend(tmp_path / mount / "one" / shape.main for mount in mounts)
+            # A singleton's type dir IS the asset: ``<mount>/<main>``, no ``<name>``.
+            candidates.extend(
+                (tmp_path / mount / shape.main) if info.singleton else (tmp_path / mount / "one" / shape.main)
+                for mount in mounts
+            )
         elif isinstance(shape, File):
             names = shape.names or tuple(f"one{ext}" for ext in shape.exts)
             candidates.extend(tmp_path / mount / name for mount in mounts for name in names)

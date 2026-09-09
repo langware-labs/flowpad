@@ -13,6 +13,7 @@ import {
 } from '@src/components/ui/select';
 import { ReportAssetShell } from '@src/components/assets/editor/ReportAssetShell';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 /** The on-disk shape — `McpSpec` (flow_sdk/schema/data_spec/mcp_spec.py). Taken
  *  off the entity so the two cannot drift; the row mirrors the file's fields. */
@@ -274,6 +275,7 @@ export function McpViewer({ fsRef, mcp }: { fsRef: FSRef; mcp: Mcp }) {
       testId="mcp-viewer"
       loading={loading}
       error={error}
+      actions={<PublishedToggle entity={mcp} />}
     >
       {/* Keyed on the path so a different asset remounts with its own state
           rather than showing the previous one's fields. */}

@@ -2,6 +2,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
+import { useCopied } from '@src/components/ui/copy-button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import apiClient from '@sdk/client';
@@ -253,22 +254,13 @@ function CopyableUrlField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CopyableCommand({ command }: { command: string }) {
+export function CopyableCommand({ command }: { command: string }) {
   const { t } = useLingui();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
-    }
-  }, [command]);
+  const { copied, copy } = useCopied();
   return (
     <button
       type="button"
-      onClick={() => void handleCopy()}
+      onClick={() => void copy(command).catch(() => undefined)}
       className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
       title={t`Copy to clipboard`}
     >

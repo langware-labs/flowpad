@@ -18,6 +18,7 @@ import { useEntityOps } from '@sdk/react/hooks';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
 import { History } from 'lucide-react';
 import { AssetCollisionProvider } from '../AssetCollisionUI';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 interface PlainMarkdownAssetEditorProps {
   /** FSRef to the .md file. */
@@ -134,6 +135,7 @@ export function PlainMarkdownAssetEditor({
       <MarkdownEditor
         fsRef={editorRef}
         editEntity={entity}
+        headerLeading={entity ? <PublishedToggle entity={entity} /> : null}
         chatTarget={chatTarget}
         extraSideTabs={[translationsTab, runsTab]}
         onDelete={deletable?.delete ? onDelete : undefined}

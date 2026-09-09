@@ -53,6 +53,16 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
                 continue
             record_type = EntityType(info.type_name)
             wanted = requested_types is None or record_type in requested_types
+            if info.singleton:
+                # The type dir IS the asset (``agentic-assets/<type>/<main>``);
+                # verify its main file and emit it, then recurse for children.
+                layout = info.layout_of(type_dir, verify=True)
+                if layout.kind is LayoutKind.FOLDER:
+                    ref = FSRef(layout.root, record_type=record_type, parent=parent_ref, layout=layout)
+                    if wanted:
+                        out.append(ref)
+                    scan(type_dir, ref, depth + 1)
+                continue
             for entry in sorted(type_dir.iterdir()):
                 # The type's own classifier is the "is this really an asset?"
                 # gate (marker file present, right extension); ``layout.root`` is
