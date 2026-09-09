@@ -107,6 +107,14 @@ class TriggerAction(BaseModel):
     script_filename: Optional[str] = None
     # CALLBACK delivery: name registered via `@trigger_callbacks.register("name")`.
     callback_name: Optional[str] = None
+    # WHAT the action acts on, as a TypeId (`wizard-<uuid>`).
+    #
+    # A callback used to name only a Python function, so "run a wizard" had to
+    # carry its subject on the TRIGGER's generic `path` — a field a HOOK trigger
+    # uses for its record.json, and which is Sharing.PRIVATE, so a shared trigger
+    # lost its target entirely. An action that cannot say what it acts on cannot
+    # be validated, cannot be searched for, and reads as "callback" in the UI.
+    target_type_id: Optional[str] = None
 
 
 class ExecutedAction(BaseModel):

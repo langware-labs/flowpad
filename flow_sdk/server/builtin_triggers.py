@@ -176,38 +176,17 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
 
 
 async def _register_post_save(entity: Trigger) -> None:
-    """Mirror the post-save registration step that the public create_action
-    route runs (`flow_sdk/builtin/trigger.py:432`) — needed because the entity
-    save alone doesn't tell APScheduler / the FSOp watcher about the trigger."""
-    try:
-        if entity.trigger_type == TriggerType.SCHEDULE:
-            await entity._register_schedule_job()
-        elif entity.trigger_type == TriggerType.FSOP:
-            # FSOp triggers are picked up by the watcher's startup walk
-            # (set_service_triggers runs BEFORE fsop_watcher.start), so we
-            # don't need to spawn the awatch task here — the boot order
-            # covers it. The factory-reset path has no such walk following it,
-            # so it re-arms explicitly via `fsop_watcher.start(catch_up=False)`.
-            from flow_sdk.server.fsop_watcher import fsop_watcher
+    """Mirror the post-save registration the public create route runs — the
+    entity save alone does not tell APScheduler / the FSOp watcher / the bus
+    about the trigger.
 
-            if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:
-                await fsop_watcher.on_trigger_saved(entity)
-        elif entity.trigger_type == TriggerType.TAG:
-            # Unlike FSOp, boot order does NOT cover this. The TAG boot sweep
-            # (`start_tag_triggers`, app.py:305) runs once, and any trigger
-            # seeded afterwards — every wizard trigger, because the system
-            # content index is detached and lands later — would sit unarmed
-            # until the next restart. The bus has no durability, so an unarmed
-            # subscriber at emit time means the event is simply gone, with
-            # nothing anywhere saying why the wizard never ran.
-            #
-            # `register_tag_trigger` unregisters-then-registers, so this is
-            # correct on create and on update alike.
-            from flow_sdk.builtin.tag_triggers import register_tag_trigger
+    Delegates to `arm_trigger`, which the INDEX path also calls: a trigger that
+    arrives as an asset must end up as live as one that was seeded, and two
+    copies of that logic is how one of them silently stops matching.
+    """
+    from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
 
-            register_tag_trigger(entity)
-    except Exception:
-        _log.exception("Post-save registration failed for trigger %r", entity.uname)
+    await arm_trigger(entity)
 
 
 async def seed_service_entities() -> None:
