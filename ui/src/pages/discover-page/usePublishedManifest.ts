@@ -28,7 +28,9 @@ export interface UsePublishedManifestResult {
 export function usePublishedManifest(): UsePublishedManifestResult {
   const project = dataContext.project ?? null;
   const projectId = project?.typeId?.id ?? null;
-  const projectName = project?.getDisplayName() ?? null;
+  // ``displayName`` is the composed label; ``getDisplayName()`` alone is the
+  // subclass hook and answers null for a plain name.
+  const projectName = project?.displayName ?? null;
 
   const [view, setView] = useState<PublishedView | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!!projectId);

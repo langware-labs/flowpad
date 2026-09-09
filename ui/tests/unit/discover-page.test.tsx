@@ -32,7 +32,7 @@ vi.mock('@sdk', async (importOriginal) => {
     typeId: { type: 'project', id: mocks.PROJECT_ID },
     name: 'proj',
     fs_storage_mount_path: '/p',
-    getDisplayName: () => 'proj',
+    displayName: 'proj',
     getPublished: vi.fn(() => Promise.resolve(mocks.view)),
     unpublish: vi.fn(() => Promise.resolve([])),
   };

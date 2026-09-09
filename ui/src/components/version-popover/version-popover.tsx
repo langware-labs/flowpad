@@ -264,7 +264,7 @@ export function CopyableCommand({ command }: { command: string }) {
       className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
       title={t`Copy to clipboard`}
     >
-      <span>{command}</span>
+      <span className="break-all text-start">{command}</span>
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
     </button>
   );
