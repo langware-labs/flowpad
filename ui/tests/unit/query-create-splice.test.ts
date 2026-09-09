@@ -81,6 +81,46 @@ describe('DataManager: CREATE splices into live queries locally (X5a)', () => {
     unsub();
   });
 
+  it('splices a SELF-created entity, whose ref is still saveInFlight', async () => {
+    // The regression this file's first test did not cover. `saveInFlight` is
+    // true exactly when THIS client called save() — the common case — and the
+    // create data-op then takes the buffering branch, which used to `break`
+    // before the splice ran. Field merging is handled there by
+    // applyPendingUpdate, but LIST MEMBERSHIP is not a field merge and cannot
+    // wait for it: an entity you had just created was missing from your own
+    // live query until something unrelated refetched.
+    //
+    // Seen end-to-end as tests/api/project_id_sync.test.ts — find-or-create
+    // queried, did not see the project it had just written, and minted a
+    // second one for the same work dir.
+    vi.spyOn(apiClient, 'get').mockResolvedValue([tabJson(ID_A, true)] as any);
+    const request = new QueryRequest({
+      type: Tab.type,
+      scope: [],
+      name: 'test:visibleTabs:selfCreated',
+      query: new QueryFilter({ match: { visible: true, lane: 'self' } }),
+      callback: () => {},
+    });
+    const unsub = await dataManager.watchQuery(request);
+    const wq = watchedFor(request);
+    const before = wq.results.length;
+
+    // Register a ref for ID_B and mark it mid-save, exactly as save() does.
+    const typeId = new TypeId('tab', ID_B);
+    const entity = (dataManager as any).castAndDeepAssign(tabJson(ID_B, true, { lane: 'self' }));
+    (dataManager as any).register_new_entity(typeId, entity);
+    const ref = (dataManager as any).entities.get(typeId);
+    ref.saveInFlight = true;
+
+    fireCreate(ID_B, tabJson(ID_B, true, { lane: 'self' }));
+
+    expect(wq.results.length).toBe(before + 1);
+    expect(wq.results.some((e: any) => e.typeId.equals(typeId))).toBe(true);
+
+    ref.saveInFlight = false;
+    unsub();
+  });
+
   it('does NOT add a create that fails the query.validate scope gate', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue([tabJson(ID_A, true)] as any);
     const request = new QueryRequest({

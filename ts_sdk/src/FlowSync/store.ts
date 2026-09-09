@@ -650,6 +650,25 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // Buffer instead; fetchByTypeId/save flush it via applyPendingUpdate
           // once the request resolves, so the create's fields win.
           this.bufferPendingUpdate(existingRef, data);
+          // ...but LIST MEMBERSHIP is not a field merge and must not wait for
+          // that flush. This is the self-created case — the client called
+          // save(), so its own ref is mid-flight — and it is the common one:
+          // skipping the splice here left an entity the caller had just created
+          // missing from its own live queries until something unrelated
+          // refetched. `find-or-create` then queried, did not see the row it had
+          // just written, and minted a SECOND project for the same work dir
+          // (tests/api/project_id_sync.test.ts).
+          //
+          // The pre-splice code did a full network LIST refetch from a branch
+          // ABOVE this switch, so it ran whatever the ref's state was; moving
+          // the work inside the switch is what put it behind this guard.
+          //
+          // Splices the ref's existing entity, not `data`: that object is the
+          // one the caller holds, and applyPendingUpdate merges the buffered
+          // create into it in place once the save resolves.
+          if (existingRef.entity) {
+            this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, existingRef.entity, data);
+          }
           break;
         }
         const entity = this.castAndDeepAssign(data);
