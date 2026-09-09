@@ -33,7 +33,7 @@ INDEXED_TYPES = {
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "usage_report", "whiteboard", "wizard", "workflow_run",
+    "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
@@ -46,7 +46,7 @@ FOLDER_PORTABLE = (
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
 #: published-asset ledger: a singleton folder whose main is JSON.
-FOLDER_NO_LEGACY = ("mcp", "project_manifest")
+FOLDER_NO_LEGACY = ("mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
@@ -109,7 +109,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # carrier says the id is NOT in the file, so the type still owes an
     # install-independent key. See
     # `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (21, 3, 17)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 3, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
