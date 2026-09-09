@@ -86,6 +86,18 @@ RUN if command -v python3 || command -v git; then \
 # `FLOWPAD_CLAUDE_HOME` exists for exactly this (see test_settings.py).
 ENV FLOWPAD_CLAUDE_HOME=/root/.claude
 
+# The secret store, unlocked headlessly. `set_lm_api` writes the installer
+# agent's provider key into it, and the BACKEND has to read the same store when
+# it spawns a worker — so this belongs in the image environment rather than in
+# the one shell that seeds it.
+#
+# It must be a real FERNET key (32 url-safe base64 bytes), not a memorable
+# string: anything else fails the write with "Fernet key must be 32 url-safe
+# base64-encoded bytes" — and that error is logged, not raised, so the seeding
+# step happily reported success while nothing had been stored. Throwaway value
+# for a throwaway container; it guards nothing that outlives the run.
+ENV SOD_ENC_KEY=spQrMo85xjLmJcrhJXBh8j7el8f7ZDny3dUW2yKw7jU=
+
 ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
     FLOWPAD_NO_BROWSER=1 \
     IS_SANDBOX=1 \
