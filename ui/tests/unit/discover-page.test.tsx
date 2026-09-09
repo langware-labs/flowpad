@@ -65,5 +65,7 @@ describe('DiscoverPage', () => {
     expect(await screen.findByText('rca')).toBeInTheDocument();
     expect(screen.queryByTestId('discover-unpublished')).not.toBeInTheDocument();
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
+    // The CLI form is on the page itself, not only behind Install.
+    expect(screen.getByTestId('discover-copy-cli')).toBeInTheDocument();
   });
 });

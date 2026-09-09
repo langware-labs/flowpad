@@ -1,17 +1,10 @@
+#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
+"Share to a conversation\n"
+"{childPath}"
 msgstr ""
-"POT-Creation-Date: 2026-06-29 01:00+0300\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"X-Generator: @lingui/cli\n"
-"Language: en-US\n"
-"Project-Id-Version: \n"
-"Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: \n"
-"Last-Translator: \n"
-"Language-Team: \n"
-"Plural-Forms: \n"
+"Share to a conversation\n"
+"{childPath}"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -1790,9 +1783,9 @@ msgstr "already present"
 msgid "already running"
 msgstr "already running"
 
-#: src/components/llm-sources/LlmSourcesView.tsx
-#~ msgid "Already signed in elsewhere? Check again"
-#~ msgstr "Already signed in elsewhere? Check again"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2098,9 +2091,9 @@ msgstr "Archive all todos"
 msgid "Archive task"
 msgstr "Archive task"
 
-#: src/components/assets/editor/wizard/WizardDebugger.tsx
-#~ msgid "Archive this run and start the record fresh"
-#~ msgstr "Archive this run and start the record fresh"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Archive this run and start the record fresh. It stays approved to run."
@@ -3090,9 +3083,9 @@ msgstr "Changed since publish"
 msgid "Changes"
 msgstr "Changes"
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "Changes ({0})"
-#~ msgstr "Changes ({0})"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -4405,6 +4398,11 @@ msgstr "Copy Provider ID"
 msgid "Copy the full error"
 msgstr "Copy the full error"
 
+#. placeholder {0}: item.typeid
+#: src/pages/discover-page/discover-page.tsx
+msgid "Copy the terminal command: flow asset install {0}"
+msgstr "Copy the terminal command: flow asset install {0}"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
 msgstr "Copy this file's path to the clipboard"
@@ -4992,10 +4990,6 @@ msgstr "Couldn’t load transcript"
 msgid "Couldn’t load your repos."
 msgstr "Couldn’t load your repos."
 
-#: src/components/terminal/project-launch-bar.tsx
-#~ msgid "Couldn't open a terminal"
-#~ msgstr "Couldn't open a terminal"
-
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
 msgstr "Couldn't open the help desk"
@@ -5031,10 +5025,6 @@ msgstr "Couldn't read this project's Git status."
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Couldn't read this team's people."
 msgstr "Couldn't read this team's people."
-
-#: src/components/terminal/project-launch-bar.tsx
-#~ msgid "Couldn't resolve the launch commands for this folder"
-#~ msgstr "Couldn't resolve the launch commands for this folder"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -5131,9 +5121,9 @@ msgstr "Create a free account to continue your conversation and save your progre
 msgid "Create a new {0}."
 msgstr "Create a new {0}."
 
-#: src/components/project-home/ProjectGitSetupDialog.tsx
-#~ msgid "Create a new repository for this project"
-#~ msgstr "Create a new repository for this project"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Create a private GitHub repository"
@@ -8344,9 +8334,9 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr "Give <0>{0}</0> a Git remote so this project can be shared."
 
-#: src/components/project-home/ProjectGitSetupDialog.tsx
-#~ msgid "Give <0>{projectPath}</0> a Git remote so this project can be shared."
-#~ msgstr "Give <0>{projectPath}</0> a Git remote so this project can be shared."
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Give this project a Git remote so it can be shared."
@@ -9278,7 +9268,6 @@ msgstr "Insert table"
 
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Install"
 msgstr "Install"
 
@@ -9300,6 +9289,10 @@ msgstr "Install failed."
 #: src/components/install/InstallSnippetDialog.tsx
 msgid "Install Flowpad on your computer first"
 msgstr "Install Flowpad on your computer first"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Install from a terminal"
+msgstr "Install from a terminal"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
@@ -9324,6 +9317,10 @@ msgstr "Install this asset on your desktop"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install v{0} and restart Flowpad?"
 msgstr "Install v{0} and restart Flowpad?"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Installable"
+msgstr "Installable"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -11252,9 +11249,9 @@ msgstr "New file"
 msgid "New File"
 msgstr "New File"
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "New Files ({0})"
-#~ msgstr "New Files ({0})"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -12429,6 +12426,10 @@ msgstr "not fired yet"
 msgid "Not found"
 msgstr "Not found"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Not indexed here yet — install it from its origin"
+msgstr "Not indexed here yet — install it from its origin"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not installed"
 msgstr "Not installed"
@@ -12678,6 +12679,10 @@ msgstr "Older"
 msgid "on"
 msgstr "on"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
+msgstr "On a machine with Flowpad already running and signed in, the last line alone is enough."
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "On agent hook"
 msgstr "On agent hook"
@@ -12687,8 +12692,8 @@ msgid "On Disk"
 msgstr "On Disk"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "On disk but not indexed yet — pulled via git"
-msgstr "On disk but not indexed yet — pulled via git"
+#~ msgid "On disk but not indexed yet — pulled via git"
+#~ msgstr "On disk but not indexed yet — pulled via git"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "On file change"
@@ -12785,10 +12790,6 @@ msgstr "Open {title}"
 msgid "Open {title} install page"
 msgstr "Open {title} install page"
 
-#: src/components/terminal/project-launch-bar.tsx
-#~ msgid "Open {vendorLabel} in an OS terminal here"
-#~ msgstr "Open {vendorLabel} in an OS terminal here"
-
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
@@ -12825,10 +12826,6 @@ msgstr "Open agent"
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
 msgstr "Open all"
-
-#: src/components/terminal/project-launch-bar.tsx
-#~ msgid "Open an OS terminal here"
-#~ msgstr "Open an OS terminal here"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Open analysis"
@@ -12876,10 +12873,10 @@ msgstr "Open externally"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Open externally\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
-"Open externally\n"
+"Share to a conversation\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -14463,9 +14460,9 @@ msgstr "Push & notify"
 msgid "Push failed"
 msgstr "Push failed"
 
-#: src/components/project-home/ProjectGitSetupDialog.tsx
-#~ msgid "Push this project to a repository that already exists"
-#~ msgstr "Push this project to a repository that already exists"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
@@ -14528,9 +14525,9 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "RAM:"
 
-#: src/components/llm-sources/LlmSourcesView.tsx
-#~ msgid "Re-check"
-#~ msgstr "Re-check"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -15287,9 +15284,9 @@ msgstr "Rescanning…"
 msgid "Reset"
 msgstr "Reset"
 
-#: src/components/assets/editor/wizard/WizardDebugger.tsx
-#~ msgid "Reset archives this run and clears its answers. It stays approved to run."
-#~ msgstr "Reset archives this run and clears its answers. It stays approved to run."
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
@@ -15330,10 +15327,6 @@ msgstr "Resize navigator"
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
 msgstr "Resolving [[{name}]]…"
-
-#: src/components/terminal/project-launch-bar.tsx
-#~ msgid "Resolving launch commands…"
-#~ msgstr "Resolving launch commands…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Respect .gitignore when searching files"
@@ -15499,10 +15492,10 @@ msgstr "Reveal in Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Reveal in Finder/Explorer\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
-"Reveal in Finder/Explorer\n"
+"Share to a conversation\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -16735,9 +16728,9 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 msgid "Set up a git-backed context folder for this project."
 msgstr "Set up a git-backed context folder for this project."
 
-#: src/components/assets/AddGitFolderDialog.tsx
-#~ msgid "Set up an existing git repository as the context folder"
-#~ msgstr "Set up an existing git repository as the context folder"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
@@ -17844,9 +17837,9 @@ msgstr "Still can't link this project"
 msgid "Still signed in"
 msgstr "Still signed in"
 
-#: src/components/llm-sources/use-llm-sources.ts
-#~ msgid "Still signed out — please re-authenticate"
-#~ msgstr "Still signed out — please re-authenticate"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -19125,9 +19118,9 @@ msgstr "This starts the machine and sets up whatever it was created with."
 msgid "This step has not run."
 msgstr "This step has not run."
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
-#~ msgid "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
-#~ msgstr "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step ran no commands."
@@ -19195,9 +19188,9 @@ msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all par
 msgid "This wizard declares no steps."
 msgstr "This wizard declares no steps."
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
-#~ msgid "This wizard has not run on this machine yet."
-#~ msgstr "This wizard has not run on this machine yet."
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
@@ -19208,9 +19201,9 @@ msgstr "This wizard needs something from you"
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr "This wizard runs as a conversation with {0}, started from wherever it is offered."
 
-#: src/components/assets/editor/wizard/WizardForm.tsx
-#~ msgid "This wizard runs itself on an event. Trigger changes take effect after a restart."
-#~ msgstr "This wizard runs itself on an event. Trigger changes take effect after a restart."
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "This wizard ships with Flowpad and cannot be edited here."
@@ -20725,12 +20718,12 @@ msgid "You"
 msgstr "You"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "you are {role}"
-#~ msgstr "you are {role}"
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "You are not in any team in this organization yet."
-#~ msgstr "You are not in any team in this organization yet."
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20926,3 +20919,4 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
