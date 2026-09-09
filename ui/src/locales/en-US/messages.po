@@ -18798,6 +18798,11 @@ msgstr "This wizard has not run on this machine yet."
 msgid "This wizard needs something from you"
 msgstr "This wizard needs something from you"
 
+#. placeholder {0}: wizard.agent
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
+msgstr "This wizard runs as a conversation with {0}, started from wherever it is offered."
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
 msgstr "This worker cannot continue the chat right now."

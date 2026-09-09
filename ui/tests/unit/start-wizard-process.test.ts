@@ -18,9 +18,18 @@ let resolveClosed: (r: unknown) => void;
 let fakeProcess: any;
 
 // Hoisted spies so the vi.mock factory (hoisted above module consts) can use them.
-const h = vi.hoisted(() => ({ getById: vi.fn(), awaitWizardResult: vi.fn(), apiGet: vi.fn() }));
+const h = vi.hoisted(() => ({
+  getById: vi.fn(),
+  awaitWizardResult: vi.fn(),
+  apiGet: vi.fn(),
+  systemSubagentRef: vi.fn(),
+}));
 
 const AGENT_REF = '/sys/agentic-assets/agent/task-analyze';
+
+vi.mock('@src/pages/flow-page/vibe-personas', () => ({
+  systemSubagentRef: h.systemSubagentRef,
+}));
 
 vi.mock('@sdk', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
@@ -61,7 +70,15 @@ beforeEach(() => {
   // as a generic assistant and never closed the wizard. The resolver now throws,
   // so the happy path has to supply a match like the real backend does.
   clearWizardAgentRefCache();
-  h.apiGet.mockResolvedValue([{ name: 'task-analyze', asset_ref: AGENT_REF }]);
+  // TWO hops now, and the stub has to answer them separately: the wizard ASSET
+  // names the agent that drives it, and only then is the agent looked up. The
+  // wizard name and the agent name are deliberately DIFFERENT here — they were
+  // the same string under the old one-hop assumption, which is precisely what
+  // made the indirection untestable.
+  routeApi({
+    wizards: [{ name: 'task-analyze', agent: 'task-analyze-agent' }],
+    agents: [{ name: 'task-analyze-agent', asset_ref: AGENT_REF }],
+  });
   h.getById.mockResolvedValue({ createProcess: vi.fn().mockResolvedValue(fakeProcess) });
   h.awaitWizardResult.mockReturnValue(
     new Promise((res) => {
@@ -69,6 +86,17 @@ beforeEach(() => {
     }),
   );
 });
+
+/** The two hops, stubbed at the seams the resolver actually uses: the wizard
+ *  listing over `apiClient`, and `systemSubagentRef` for the agent — which is
+ *  the shared resolver (it filters `scope === 'system'`, so a project sub-agent
+ *  cannot shadow a shipped one) rather than a second listing fetch of our own. */
+function routeApi({ wizards, agents }: { wizards: unknown[]; agents: { name: string; asset_ref: string }[] }) {
+  h.apiGet.mockResolvedValue(wizards);
+  h.systemSubagentRef.mockImplementation((name: string) =>
+    Promise.resolve(agents.find((a) => a.name === name)?.asset_ref ?? null),
+  );
+}
 
 describe('startWizardProcess', () => {
   it('headless: resolves {done,null} when the turn ends without a close (no hang)', async () => {
@@ -105,7 +133,7 @@ describe('startWizardProcess', () => {
 describe('an unknown wizard name', () => {
   it('throws before spawning anything, rather than prompting an unprimed agent', async () => {
     clearWizardAgentRefCache();
-    h.apiGet.mockResolvedValue([]); // nothing matches the requested name
+    routeApi({ wizards: [], agents: [] }); // nothing matches the requested name
     const createProcess = vi.fn();
     h.getById.mockResolvedValue({ createProcess });
 
@@ -115,13 +143,32 @@ describe('an unknown wizard name', () => {
     expect(createProcess).not.toHaveBeenCalled();
   });
 
+  it('a wizard naming an agent that does not exist is also unknown', async () => {
+    // The half-resolved case the second hop introduces: the wizard document is
+    // indexed and names its agent, but that agent is not installed. Embedding
+    // nothing and prompting anyway is the exact soft failure the throw exists to
+    // prevent, so this must be as fatal as an unknown wizard name.
+    clearWizardAgentRefCache();
+    routeApi({ wizards: [{ name: 'orphan', agent: 'gone' }], agents: [] });
+    const createProcess = vi.fn();
+    h.getById.mockResolvedValue({ createProcess });
+
+    await expect(startWizardProcess({ wizardName: 'orphan' })).rejects.toThrow(
+      /No wizard named "orphan" is installed/,
+    );
+    expect(createProcess).not.toHaveBeenCalled();
+  });
+
   it('does not cache the miss, so a wizard indexed afterwards resolves', async () => {
     clearWizardAgentRefCache();
-    h.apiGet.mockResolvedValue([]);
+    routeApi({ wizards: [], agents: [] });
     h.getById.mockResolvedValue({ createProcess: vi.fn() });
     await expect(startWizardProcess({ wizardName: 'later' })).rejects.toThrow();
 
-    h.apiGet.mockResolvedValue([{ name: 'later', asset_ref: '/x/later' }]);
+    routeApi({
+      wizards: [{ name: 'later', agent: 'later-agent' }],
+      agents: [{ name: 'later-agent', asset_ref: '/x/later' }],
+    });
     h.getById.mockResolvedValue({ createProcess: vi.fn().mockResolvedValue(fakeProcess) });
     await expect(startWizardProcess({ wizardName: 'later' })).resolves.toBeTruthy();
     expect(fakeProcess.loadEmbeddedSubagent).toHaveBeenCalledWith('/x/later');

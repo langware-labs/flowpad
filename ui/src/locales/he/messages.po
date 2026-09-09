@@ -18798,6 +18798,11 @@ msgstr ""
 msgid "This wizard needs something from you"
 msgstr ""
 
+#. placeholder {0}: wizard.agent
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
+msgstr ""
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
 msgstr "העובד הזה לא יכול להמשיך את השיחה כרגע."

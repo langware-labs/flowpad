@@ -92,6 +92,25 @@ class Wizard(Entity):
 
     @computed_field
     @property
+    def agent(self) -> str:
+        """The agent that drives this CONVERSATIONAL wizard, or "".
+
+        Declared at the top of the document, not inferred from a step. The row
+        otherwise carries only what a list needs (name, description, step count)
+        — the document is the source of truth for what a wizard does — but a
+        launcher has to know which sub-agent to embed before it spawns anything,
+        and reading the whole document from the frontend to learn one string
+        would put the parse in the wrong tier.
+
+        Empty for a stepped wizard: those are run by the backend runner, which
+        reads each step's own agent as it reaches it. The two shapes are mutually
+        exclusive and `WizardSpec` refuses a document that is both.
+        """
+        spec = self.spec()
+        return spec.agent if spec is not None else ""
+
+    @computed_field
+    @property
     def run_state(self) -> dict:
         """This wizard's last/current run — inputs given, status, what it waits for.
 
@@ -188,6 +207,19 @@ class Wizard(Entity):
             )
         if not spec.enabled or not self.enabled:
             return ApiFailResponse(message=f"Wizard {self.name!r} is disabled", status_code=409)
+        if spec.agent:
+            # A CONVERSATIONAL wizard has no steps to run. Its agent talks to the
+            # person, and the caller supplies the prompt and the payload when it
+            # launches — none of which exist here. Running it "anyway" would spawn
+            # the agent against no payload at all, and because a shipped wizard
+            # needs no approval, nothing would stop it.
+            return ApiFailResponse(
+                message=(
+                    f"{self.name or 'This wizard'} is run by its agent from where it is "
+                    "offered, not from here — it needs the caller's request to do anything."
+                ),
+                status_code=409,
+            )
 
         from flow_sdk.core.wizard.state import is_approved, record_approval  # noqa: PLC0415
 

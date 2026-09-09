@@ -45,6 +45,7 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
   const awaiting: WizardAwaiting[] = state.awaiting ?? [];
   const outcomes: WizardStepOutcome[] = state.outcomes ?? [];
   const pending = state.status === 'pending';
+  const conversational = Boolean(wizard.agent);
 
   const refresh = useCallback(async () => {
     await dataManager.refreshByTypeId(new TypeId(Wizard.type, wizard.id)).catch(() => null);
@@ -116,10 +117,16 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
             <p className="text-sm text-muted-foreground">{wizard.description}</p>
           ) : null}
         </div>
-        <Button onClick={run} disabled={busy} data-testid="wizard-run">
-          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          {pending ? <Trans>Continue</Trans> : <Trans>Run</Trans>}
-        </Button>
+        {/* A CONVERSATIONAL wizard has no steps and cannot be run from here: its
+            agent needs the caller's prompt and payload, which only the surface
+            offering it has. The backend refuses such a run, so offering the
+            button would be offering a guaranteed error. */}
+        {conversational ? null : (
+          <Button onClick={run} disabled={busy} data-testid="wizard-run">
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {pending ? <Trans>Continue</Trans> : <Trans>Run</Trans>}
+          </Button>
+        )}
       </header>
 
       {askApproval ? (
@@ -201,6 +208,13 @@ export function WizardViewer({ wizard }: { wizard: Wizard }) {
             <p className="mt-2 text-xs text-muted-foreground">{state.message}</p>
           ) : null}
         </section>
+      ) : conversational ? (
+        <p className="text-sm text-muted-foreground">
+          <Trans>
+            This wizard runs as a conversation with {wizard.agent}, started from wherever it
+            is offered.
+          </Trans>
+        </p>
       ) : (
         <p className="text-sm text-muted-foreground">
           <Trans>This wizard has not run on this machine yet.</Trans>
