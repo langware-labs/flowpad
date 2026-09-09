@@ -32,3 +32,13 @@ describe('NavigationActions.openDiscover', () => {
     expect(navigate).toHaveBeenCalledWith('/discover');
   });
 });
+
+describe('NavigationActions.openDiscoverAsset', () => {
+  it('routes to /discover/<typeid> with the project as the scope', () => {
+    const navigate = vi.fn();
+    new NavigationActions(navigate, null).openDiscoverAsset('skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', PROJECT_ID);
+    const url = String(navigate.mock.calls[0][0]);
+    expect(url.startsWith('/discover/skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb?')).toBe(true);
+    expect(DockPointer.root().withOptionsFromUrl(url).scopeProjectId).toBe(PROJECT_ID);
+  });
+});

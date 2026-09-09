@@ -10,7 +10,8 @@ import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // the entity layer. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
 import DiscoverPage from '@src/pages/discover-page/discover-page';
-import { loadDiscover } from '@src/routes/loaders/load-discover';
+import DiscoverDetailPage from '@src/pages/discover-page/DiscoverDetailPage';
+import { loadDiscover, loadDiscoverDetail } from '@src/routes/loaders/load-discover';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
@@ -143,6 +144,7 @@ export const router = createBrowserRouter(
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
       <Route path="discover" element={<DiscoverPage />} loader={loadDiscover} />
+      <Route path="discover/:typeid" element={<DiscoverDetailPage />} loader={loadDiscoverDetail} />
       {/* Entry journeys — full-screen pages the hub BACKEND sends users to
           (invite emails, accept-flow redirects, post-accept landings). Inside
           RootLayout so initSdk/bootstrap has run, outside the dock subtrees so

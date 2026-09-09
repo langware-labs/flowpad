@@ -1,19 +1,10 @@
-# : src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
+#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
+"Share to a conversation\n"
+"{childPath}"
 msgstr ""
-"Share to a conversation: \n"
-"{childPath}sgstr "Share to a conversation: \n"
-"{childPath}": \n"
-"Project-Id-Version: \n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: \n"
-"PO-Revision-Date: \n"
-"Last-Translator: \n"
-"Language: \n"
-"Language-Team: \n"
-"Content-Type: \n"
-"Content-Transfer-Encoding: \n"
-"Plural-Forms: \n"
+"Share to a conversation\n"
+"{childPath}"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -1676,6 +1667,8 @@ msgstr "All observed deployments are current"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "All projects"
 msgstr "All projects"
@@ -1683,6 +1676,10 @@ msgstr "All projects"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All Projects"
 msgstr "All Projects"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "All published assets"
+msgstr "All published assets"
 
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
@@ -1796,6 +1793,10 @@ msgstr "already present"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "already running"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2101,6 +2102,10 @@ msgstr "Archive all todos"
 msgid "Archive task"
 msgstr "Archive task"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Archive this run and start the record fresh. It stays approved to run."
 msgstr "Archive this run and start the record fresh. It stays approved to run."
@@ -2201,6 +2206,7 @@ msgid "asset"
 msgstr "asset"
 
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Asset"
 msgstr "Asset"
 
@@ -2501,7 +2507,7 @@ msgstr "Back"
 msgid "Back to full graph"
 msgstr "Back to full graph"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Back to home"
 msgstr "Back to home"
 
@@ -3081,13 +3087,17 @@ msgstr "changed"
 msgid "Changed"
 msgstr "Changed"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Changed since publish"
 msgstr "Changed since publish"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "Changes"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -4061,6 +4071,10 @@ msgstr "Connect GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "Connect GitHub and the gh CLI with a guided setup."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Connect GitHub to link this project to the cloud."
 msgstr "Connect GitHub to link this project to the cloud."
@@ -4400,10 +4414,14 @@ msgstr "Copy Provider ID"
 msgid "Copy the full error"
 msgstr "Copy the full error"
 
-#. placeholder {0}: item.typeid
+#. placeholder {0}: installCommand(item.typeid)
 #: src/pages/discover-page/discover-page.tsx
-msgid "Copy the terminal command: flow asset install {0}"
-msgstr "Copy the terminal command: flow asset install {0}"
+msgid "Copy the terminal command: {0}"
+msgstr "Copy the terminal command: {0}"
+
+#: src/pages/discover-page/discover-page.tsx
+#~ msgid "Copy the terminal command: flow asset install {0}"
+#~ msgstr "Copy the terminal command: flow asset install {0}"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -5122,6 +5140,10 @@ msgstr "Create a free account to continue your conversation and save your progre
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Create a new {0}."
 msgstr "Create a new {0}."
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Create a private GitHub repository"
@@ -5966,7 +5988,6 @@ msgstr "Detail"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "Details"
 
@@ -6198,10 +6219,11 @@ msgid "Disconnected"
 msgstr "Disconnected"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "discover"
-msgstr "discover"
+#~ msgid "discover"
+#~ msgstr "discover"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Discover"
 msgstr "Discover"
 
@@ -6286,8 +6308,17 @@ msgid "document"
 msgstr "document"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Document"
 msgstr "Document"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: connect GitHub on this desk, then publish again."
+msgstr "Document not on the hub: connect GitHub on this desk, then publish again."
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: link the project to the cloud first."
+msgstr "Document not on the hub: link the project to the cloud first."
 
 #: src/components/docs-viewer/DocsNavigator.tsx
 msgid "Documentation"
@@ -7055,6 +7086,10 @@ msgstr "Everything this budget is tuned with beyond its total and its allowed mo
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
 msgstr "Everything you can reach, as a live graph."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Everything you can see"
+msgstr "Everything you can see"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "everywhere"
@@ -7835,6 +7870,14 @@ msgstr "First prompt to send when the project opens…"
 msgid "First selection"
 msgstr "First selection"
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "First time on this machine?"
+msgstr "First time on this machine?"
+
+#: src/pages/discover-page/CommandBlock.tsx
+msgid "First time? Install Flowpad, then hover a row for its install line."
+msgstr "First time? Install Flowpad, then hover a row for its install line."
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr "Fit (f)"
@@ -7882,7 +7925,7 @@ msgid "Flow Message"
 msgstr "Flow Message"
 
 #: src/components/version-popover/version-popover.tsx
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
 msgstr "Flowpad"
 
@@ -8068,6 +8111,11 @@ msgstr "from"
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "From"
 msgstr "From"
+
+#. placeholder {0}: item.sourceProjectName
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "from {0}"
+msgstr "from {0}"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "From {senderName}"
@@ -8332,6 +8380,10 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr "Give <0>{0}</0> a Git remote so this project can be shared."
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Give this project a Git remote so it can be shared."
 msgstr "Give this project a Git remote so it can be shared."
@@ -8407,6 +8459,10 @@ msgstr "Go up"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
+msgstr "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
 
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -9075,7 +9131,7 @@ msgstr "in total"
 msgid "in use"
 msgstr "in use"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "In use"
 msgstr "In use"
 
@@ -9285,8 +9341,8 @@ msgid "Install Flowpad on your computer first"
 msgstr "Install Flowpad on your computer first"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Install from a terminal"
-msgstr "Install from a terminal"
+#~ msgid "Install from a terminal"
+#~ msgstr "Install from a terminal"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
@@ -9312,7 +9368,7 @@ msgstr "Install this asset on your desktop"
 msgid "Install v{0} and restart Flowpad?"
 msgstr "Install v{0} and restart Flowpad?"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Installable"
 msgstr "Installable"
 
@@ -10872,7 +10928,7 @@ msgstr "Minor"
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
 msgstr "Missing"
 
@@ -10992,6 +11048,11 @@ msgstr "More"
 msgid "More actions"
 msgstr "More actions"
 
+#. placeholder {0}: item.sourceProjectName ?? t`this project`
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "More from {0}"
+msgstr "More from {0}"
+
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
@@ -11075,6 +11136,7 @@ msgstr "N/A"
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
 msgstr "Name"
@@ -11111,8 +11173,8 @@ msgid "name@example.com"
 msgstr "name@example.com"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Named by the manifest but gone from disk"
-msgstr "Named by the manifest but gone from disk"
+#~ msgid "Named by the manifest but gone from disk"
+#~ msgstr "Named by the manifest but gone from disk"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
@@ -11138,6 +11200,10 @@ msgstr "Neighbors (<0>{0}</0>)"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "net"
 msgstr "net"
+
+#: src/pages/discover-page/DiscoverRow.tsx
+msgid "never"
+msgstr "never"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Never"
@@ -11242,6 +11308,10 @@ msgstr "New file"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New File"
 msgstr "New File"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -11364,6 +11434,10 @@ msgstr "New team"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "New Terminal"
+
+#: src/pages/discover-page/DiscoverToolbar.tsx
+msgid "Newest first"
+msgstr "Newest first"
 
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
@@ -11623,8 +11697,8 @@ msgid "No description yet."
 msgstr "No description yet."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "No description."
-msgstr "No description."
+#~ msgid "No description."
+#~ msgstr "No description."
 
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
@@ -11641,6 +11715,10 @@ msgstr "No docs found"
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "No Document Selected"
 msgstr "No Document Selected"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "No document to show here."
+msgstr "No document to show here."
 
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "no edges"
@@ -12045,6 +12123,10 @@ msgstr "No prompts yet — create one below."
 msgid "No PTY events have fired yet."
 msgstr "No PTY events have fired yet."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "No published asset with that id is visible to you."
+msgstr "No published asset with that id is visible to you."
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No published assets match those filters."
 msgstr "No published assets match those filters."
@@ -12417,8 +12499,8 @@ msgid "Not found"
 msgstr "Not found"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Not indexed here yet — install it from its origin"
-msgstr "Not indexed here yet — install it from its origin"
+#~ msgid "Not indexed here yet — install it from its origin"
+#~ msgstr "Not indexed here yet — install it from its origin"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not installed"
@@ -12435,6 +12517,10 @@ msgstr "Not logged in · Please run /login"
 #: src/components/install/AddAssetDialog.tsx
 msgid "Not now"
 msgstr "Not now"
+
+#: src/pages/discover-page/DiscoverRow.tsx
+msgid "Not published"
+msgstr "Not published"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
@@ -12548,6 +12634,10 @@ msgstr "Nothing open to bookmark"
 #: src/pages/discover-page/discover-page.tsx
 msgid "Nothing published yet — publish an asset below, or from its editor."
 msgstr "Nothing published yet — publish an asset below, or from its editor."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Nothing published yet by the projects you can see."
+msgstr "Nothing published yet by the projects you can see."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
@@ -12670,8 +12760,8 @@ msgid "on"
 msgstr "on"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
-msgstr "On a machine with Flowpad already running and signed in, the last line alone is enough."
+#~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
+#~ msgstr "On a machine with Flowpad already running and signed in, the last line alone is enough."
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "On agent hook"
@@ -12863,10 +12953,10 @@ msgstr "Open externally"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Open externally\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
-"Open externally\n"
+"Share to a conversation\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -13142,6 +13232,10 @@ msgstr "Open the project and use \"Link to cloud\" to finish setting it up."
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "Open the rendered index.md."
+
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "Open the repository"
+msgstr "Open the repository"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
@@ -13516,6 +13610,10 @@ msgstr "Paste API key"
 msgid "Paste code from browser"
 msgstr "Paste code from browser"
 
+#: src/pages/discover-page/CommandBlock.tsx
+msgid "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
+msgstr "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Paste it again below."
 msgstr "Paste it again below."
@@ -13536,7 +13634,6 @@ msgstr "path"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Path"
 msgstr "Path"
 
@@ -14066,6 +14163,7 @@ msgstr "project"
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/i18n/type-labels.ts
+#: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "Project"
@@ -14378,14 +14476,14 @@ msgid "Publish this agent to the cloud and give it a machine that logs in as its
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "published"
-msgstr "published"
+#~ msgid "published"
+#~ msgstr "published"
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
 #: src/pages/discover-page/discover-page.tsx
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Published"
 msgstr "Published"
 
@@ -14397,6 +14495,14 @@ msgstr "Published assets of this project"
 #: src/components/install/AddAssetDialog.tsx
 msgid "Published by {0} — install a copy into one of yours."
 msgstr "Published by {0} — install a copy into one of yours."
+
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "Published from a folder on the publisher's machine"
+msgstr "Published from a folder on the publisher's machine"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Published from a folder that isn't linked to the cloud, so only its row is here."
+msgstr "Published from a folder that isn't linked to the cloud, so only its row is here."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Published to the project."
@@ -14458,6 +14564,10 @@ msgstr "Push & notify"
 msgid "Push failed"
 msgstr "Push failed"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
 msgstr "Push to {branch} — optionally tell people about it."
@@ -14518,6 +14628,10 @@ msgstr "RAM (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "RAM:"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -14851,6 +14965,10 @@ msgstr "Refreshing…"
 #: src/i18n/pref-labels.ts
 msgid "Regenerate onboarding assets on next start"
 msgstr "Regenerate onboarding assets on next start"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Registered on the hub, but its files were not snapshotted yet."
+msgstr "Registered on the hub, but its files were not snapshotted yet."
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -15274,6 +15392,10 @@ msgstr "Rescanning…"
 msgid "Reset"
 msgstr "Reset"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "Reset failed"
@@ -15478,10 +15600,10 @@ msgstr "Reveal in Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Reveal in Finder/Explorer\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
-"Reveal in Finder/Explorer\n"
+"Share to a conversation\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -16188,6 +16310,10 @@ msgstr "Search nodes…"
 msgid "Search projects…"
 msgstr "Search projects…"
 
+#: src/pages/discover-page/DiscoverToolbar.tsx
+msgid "Search published assets…"
+msgstr "Search published assets…"
+
 #: src/components/record-search-bar/RecordSearchBar.tsx
 msgid "Search records..."
 msgstr "Search records..."
@@ -16222,8 +16348,8 @@ msgid "Search the docs…"
 msgstr "Search the docs…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Search this project…"
-msgstr "Search this project…"
+#~ msgid "Search this project…"
+#~ msgstr "Search this project…"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Search transcript…"
@@ -16713,6 +16839,10 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Set up a git-backed context folder for this project."
 msgstr "Set up a git-backed context folder for this project."
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
@@ -17371,6 +17501,10 @@ msgstr "Skills and sub-agents invoked in this session"
 msgid "Skills folder only"
 msgstr "Skills folder only"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Skills, agents, servers and documents published by projects you can read."
+msgstr "Skills, agents, servers and documents published by projects you can read."
+
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "Skip"
@@ -17482,6 +17616,7 @@ msgstr "Sound"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
 msgstr "Source"
 
@@ -17818,6 +17953,10 @@ msgstr "Still can't link this project"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18161,6 +18300,10 @@ msgstr "Takes ~4 seconds"
 msgid "takes effect after a restart"
 msgstr "takes effect after a restart"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "target"
@@ -18374,8 +18517,8 @@ msgid "The artifact has been removed successfully."
 msgstr "The artifact has been removed successfully."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The asset is here and indexed"
-msgstr "The asset is here and indexed"
+#~ msgid "The asset is here and indexed"
+#~ msgstr "The asset is here and indexed"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "The asset is now available to project members."
@@ -18392,8 +18535,8 @@ msgid "The asset was not added."
 msgstr "The asset was not added."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The assets published with this project — its skills, agents, specs, and docs."
-msgstr "The assets published with this project — its skills, agents, specs, and docs."
+#~ msgid "The assets published with this project — its skills, agents, specs, and docs."
+#~ msgstr "The assets published with this project — its skills, agents, specs, and docs."
 
 #: src/components/connections-manager/harness-connection-rows.tsx
 msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
@@ -18435,6 +18578,14 @@ msgstr "The credential was removed from your account."
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "The document could not be put on the hub the last time it was published."
+msgstr "The document could not be put on the hub the last time it was published."
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "The document could not be read."
+msgstr "The document could not be read."
+
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
 msgstr "The endpoint was not removed."
@@ -18448,8 +18599,8 @@ msgid "The fetch failed. Retry once the backend is up."
 msgstr "The fetch failed. Retry once the backend is up."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The file is newer than its published row"
-msgstr "The file is newer than its published row"
+#~ msgid "The file is newer than its published row"
+#~ msgstr "The file is newer than its published row"
 
 #: src/components/assets/editor/MissingAssetCard.tsx
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
@@ -18882,6 +19033,10 @@ msgstr "This live session was declined."
 msgid "This live-session URL is malformed or unavailable."
 msgstr "This live-session URL is malformed or unavailable."
 
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "this machine"
+msgstr "this machine"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr "this minute"
@@ -18946,6 +19101,10 @@ msgstr "This process has stopped."
 msgid "This process points to a deleted project."
 msgstr "This process points to a deleted project."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "this project"
+msgstr "this project"
+
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
 msgstr "This project doesn't exist or is no longer available."
@@ -18963,8 +19122,8 @@ msgid "This project has no secrets declared yet."
 msgstr "This project has no secrets declared yet."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "This project has not published anything yet."
-msgstr "This project has not published anything yet."
+#~ msgid "This project has not published anything yet."
+#~ msgstr "This project has not published anything yet."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."
@@ -19096,6 +19255,10 @@ msgstr "This starts the machine and sets up whatever it was created with."
 msgid "This step has not run."
 msgstr "This step has not run."
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step ran no commands."
 msgstr "This step ran no commands."
@@ -19124,6 +19287,10 @@ msgstr "This transcript could not be read."
 #: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
 msgid "This transcript has no messages."
 msgstr "This transcript has no messages."
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "This type's document isn't stored on the hub yet."
+msgstr "This type's document isn't stored on the hub yet."
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by a cloud sandbox you opened."
@@ -19162,6 +19329,10 @@ msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all par
 msgid "This wizard declares no steps."
 msgstr "This wizard declares no steps."
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
 msgstr "This wizard needs something from you"
@@ -19170,6 +19341,10 @@ msgstr "This wizard needs something from you"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr "This wizard runs as a conversation with {0}, started from wherever it is offered."
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "This wizard ships with Flowpad and cannot be edited here."
@@ -19602,6 +19777,7 @@ msgstr "Two quick steps in your browser:"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Type"
 msgstr "Type"
 
@@ -20411,6 +20587,10 @@ msgstr "What do you need help with?"
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "What does Published do?"
+msgstr "What does Published do?"
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "What Flowpad found when it checked this project's Git setup."
@@ -20454,6 +20634,10 @@ msgstr "What is this secret used for?"
 msgid "What it worked on"
 msgstr "What it worked on"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "What Published does"
+msgstr "What Published does"
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
@@ -20463,8 +20647,12 @@ msgid "What this machine's assistants are funded by right now"
 msgstr "What this machine's assistants are funded by right now"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
-msgstr "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+#~ msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+#~ msgstr "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "What this project has published, and what it could."
+msgstr "What this project has published, and what it could."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
@@ -20488,8 +20676,8 @@ msgid "What would you like to work on?"
 msgstr "What would you like to work on?"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "What's in the box."
-msgstr "What's in the box."
+#~ msgid "What's in the box."
+#~ msgstr "What's in the box."
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "When"
@@ -20498,6 +20686,10 @@ msgstr "When"
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
+msgstr "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/credential-value-form.tsx
@@ -20651,6 +20843,10 @@ msgstr "Would you like to launch a sandbox for this repository?"
 msgid "Write it here"
 msgstr "Write it here"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
+msgstr "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
+
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Writing"
 msgstr "Writing"
@@ -20682,6 +20878,14 @@ msgstr "Yesterday"
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"
 msgstr "You"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr "Your teams"
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20877,3 +21081,4 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+

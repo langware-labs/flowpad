@@ -114,4 +114,12 @@ describe('PublishedToggle', () => {
     render(<PublishedToggle entity={entity({ scope: 'system' }) as any} />);
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
   });
+
+  it('carries an info glyph that explains what Published does', async () => {
+    render(<PublishedToggle entity={entity() as any} />);
+    await userEvent.click(screen.getByTestId('published-info'));
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('project_manifest.json');
+    expect(text).toContain('flow asset install');
+  });
 });

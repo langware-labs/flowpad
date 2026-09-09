@@ -1,19 +1,10 @@
-# : src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
+#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
+"Share to a conversation\n"
+"{childPath}"
 msgstr ""
-"Share to a conversation: \n"
-"{childPath}sgstr "שתף עם שיחה: \n"
-"{childPath}": \n"
-"Project-Id-Version: \n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: \n"
-"PO-Revision-Date: \n"
-"Last-Translator: \n"
-"Language: \n"
-"Language-Team: \n"
-"Content-Type: \n"
-"Content-Transfer-Encoding: \n"
-"Plural-Forms: \n"
+"שתף עם שיחה\n"
+"{childPath}"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -1676,6 +1667,8 @@ msgstr "כל הפריסות עדכניות"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "All projects"
 msgstr "כל הפרויקטים"
@@ -1683,6 +1676,10 @@ msgstr "כל הפרויקטים"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All Projects"
 msgstr "כל הפרויקטים"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "All published assets"
+msgstr ""
 
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
@@ -1796,6 +1793,10 @@ msgstr "כבר קיים"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "כבר פעיל"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2101,6 +2102,10 @@ msgstr "ארכיב את כל המשימות"
 msgid "Archive task"
 msgstr "ארכיבון משימה"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Archive this run and start the record fresh. It stays approved to run."
 msgstr ""
@@ -2201,6 +2206,7 @@ msgid "asset"
 msgstr "נכס"
 
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Asset"
 msgstr ""
 
@@ -2501,7 +2507,7 @@ msgstr "חזור"
 msgid "Back to full graph"
 msgstr "חזרה לגרף המלא"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Back to home"
 msgstr "חזרה לעמוד הבית"
 
@@ -3081,13 +3087,17 @@ msgstr "השתנה"
 msgid "Changed"
 msgstr "השתנה"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Changed since publish"
 msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "שינויים"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -4061,6 +4071,10 @@ msgstr "חבר את GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "תהליך הגדרה מודרך יחבר את GitHub ויגדיר את ה-CLI של gh."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+msgstr ""
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Connect GitHub to link this project to the cloud."
 msgstr ""
@@ -4400,10 +4414,14 @@ msgstr "העתק מזהה ספק"
 msgid "Copy the full error"
 msgstr "העתק את השגיאה המלאה"
 
-#. placeholder {0}: item.typeid
+#. placeholder {0}: installCommand(item.typeid)
 #: src/pages/discover-page/discover-page.tsx
-msgid "Copy the terminal command: flow asset install {0}"
+msgid "Copy the terminal command: {0}"
 msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+#~ msgid "Copy the terminal command: flow asset install {0}"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy this file's path to the clipboard"
@@ -5122,6 +5140,10 @@ msgstr "יש ליצור חשבון חינמי כדי להמשיך את השיח�
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Create a new {0}."
 msgstr "צור {0} חדש."
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Create a private GitHub repository"
@@ -5966,7 +5988,6 @@ msgstr "פרטים"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "פרטים"
 
@@ -6198,10 +6219,11 @@ msgid "Disconnected"
 msgstr "התנתק"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "discover"
-msgstr "גילוי"
+#~ msgid "discover"
+#~ msgstr "גילוי"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Discover"
 msgstr "גלה"
 
@@ -6286,8 +6308,17 @@ msgid "document"
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Document"
 msgstr "מסמך"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: connect GitHub on this desk, then publish again."
+msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: link the project to the cloud first."
+msgstr ""
 
 #: src/components/docs-viewer/DocsNavigator.tsx
 msgid "Documentation"
@@ -7055,6 +7086,10 @@ msgstr ""
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
 msgstr "כל מה שניתן להגיע אליו, כגרף חי."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Everything you can see"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "everywhere"
@@ -7835,6 +7870,14 @@ msgstr ""
 msgid "First selection"
 msgstr "בבחירה הראשונה"
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "First time on this machine?"
+msgstr ""
+
+#: src/pages/discover-page/CommandBlock.tsx
+msgid "First time? Install Flowpad, then hover a row for its install line."
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr "התאמה (f)"
@@ -7882,7 +7925,7 @@ msgid "Flow Message"
 msgstr "הודעת זרימה"
 
 #: src/components/version-popover/version-popover.tsx
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
 msgstr "Flowpad"
 
@@ -8067,6 +8110,11 @@ msgstr ""
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "From"
+msgstr ""
+
+#. placeholder {0}: item.sourceProjectName
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "from {0}"
 msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
@@ -8332,6 +8380,10 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr ""
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Give this project a Git remote so it can be shared."
 msgstr ""
@@ -8407,6 +8459,10 @@ msgstr "עלה כיוון למעלה"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "קיבלנו ref שנראה יחסי עם מקטעים מרובים: <0>{ref}</0>"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
+msgstr ""
 
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -9075,7 +9131,7 @@ msgstr ""
 msgid "in use"
 msgstr "בשימוש"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "In use"
 msgstr ""
 
@@ -9285,8 +9341,8 @@ msgid "Install Flowpad on your computer first"
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Install from a terminal"
-msgstr ""
+#~ msgid "Install from a terminal"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
@@ -9312,7 +9368,7 @@ msgstr ""
 msgid "Install v{0} and restart Flowpad?"
 msgstr "התקן v{0} והפעל מחדש את Flowpad?"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Installable"
 msgstr ""
 
@@ -10872,7 +10928,7 @@ msgstr "קל"
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
 msgstr ""
 
@@ -10992,6 +11048,11 @@ msgstr "עוד"
 msgid "More actions"
 msgstr "פעולות נוספות"
 
+#. placeholder {0}: item.sourceProjectName ?? t`this project`
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "More from {0}"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
@@ -11075,6 +11136,7 @@ msgstr "לא זמין"
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
 msgstr "שם"
@@ -11111,8 +11173,8 @@ msgid "name@example.com"
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Named by the manifest but gone from disk"
-msgstr ""
+#~ msgid "Named by the manifest but gone from disk"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
@@ -11137,6 +11199,10 @@ msgstr "שכנים (<0>{0}</0>)"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "net"
+msgstr ""
+
+#: src/pages/discover-page/DiscoverRow.tsx
+msgid "never"
 msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
@@ -11242,6 +11308,10 @@ msgstr "קובץ חדש"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New File"
 msgstr "קובץ חדש"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -11364,6 +11434,10 @@ msgstr ""
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "טרמינל חדש"
+
+#: src/pages/discover-page/DiscoverToolbar.tsx
+msgid "Newest first"
+msgstr ""
 
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
@@ -11623,8 +11697,8 @@ msgid "No description yet."
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "No description."
-msgstr "אין תיאור."
+#~ msgid "No description."
+#~ msgstr "אין תיאור."
 
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
@@ -11641,6 +11715,10 @@ msgstr ""
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "No Document Selected"
 msgstr "אין מסמך נבחר"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "No document to show here."
+msgstr ""
 
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "no edges"
@@ -12045,6 +12123,10 @@ msgstr "אין פרומפטים עדיין — צור אחד למטה."
 msgid "No PTY events have fired yet."
 msgstr "לא הופעלו אירועי PTY עדיין."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "No published asset with that id is visible to you."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No published assets match those filters."
 msgstr ""
@@ -12417,8 +12499,8 @@ msgid "Not found"
 msgstr "לא נמצא"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Not indexed here yet — install it from its origin"
-msgstr ""
+#~ msgid "Not indexed here yet — install it from its origin"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not installed"
@@ -12434,6 +12516,10 @@ msgstr "לא מחוברים · הריצו /login"
 
 #: src/components/install/AddAssetDialog.tsx
 msgid "Not now"
+msgstr ""
+
+#: src/pages/discover-page/DiscoverRow.tsx
+msgid "Not published"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -12547,6 +12633,10 @@ msgstr "אין דבר פתוח לסימון"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Nothing published yet — publish an asset below, or from its editor."
+msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Nothing published yet by the projects you can see."
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -12670,8 +12760,8 @@ msgid "on"
 msgstr "פעיל"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
-msgstr ""
+#~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "On agent hook"
@@ -12863,9 +12953,11 @@ msgstr "פתח חיצונית"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Open externally\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
+"שתף עם שיחה\n"
+"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
@@ -13140,6 +13232,10 @@ msgstr ""
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "פתח את ה-index.md המעובד."
+
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "Open the repository"
+msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
@@ -13514,6 +13610,10 @@ msgstr "הדביקו מפתח API"
 msgid "Paste code from browser"
 msgstr "יש להדביק כאן את הקוד מהדפדפן"
 
+#: src/pages/discover-page/CommandBlock.tsx
+msgid "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Paste it again below."
 msgstr ""
@@ -13534,7 +13634,6 @@ msgstr "נתיב"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Path"
 msgstr "נתיב"
 
@@ -14064,6 +14163,7 @@ msgstr "פרויקט"
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/i18n/type-labels.ts
+#: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "פרויקט"
@@ -14376,14 +14476,14 @@ msgid "Publish this agent to the cloud and give it a machine that logs in as its
 msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המתחברת כעצמה."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "published"
-msgstr ""
+#~ msgid "published"
+#~ msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
 #: src/pages/discover-page/discover-page.tsx
-#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Published"
 msgstr "פורסם"
 
@@ -14394,6 +14494,14 @@ msgstr ""
 #. placeholder {0}: request.source_project_name || t`another project`
 #: src/components/install/AddAssetDialog.tsx
 msgid "Published by {0} — install a copy into one of yours."
+msgstr ""
+
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "Published from a folder on the publisher's machine"
+msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Published from a folder that isn't linked to the cloud, so only its row is here."
 msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -14456,6 +14564,10 @@ msgstr "דחפו & הודיעו"
 msgid "Push failed"
 msgstr "דחיפה נכשלה"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
 msgstr "דחיפה ל-{branch} — אפשר גם להודיע לאנשים על כך."
@@ -14516,6 +14628,10 @@ msgstr "RAM (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "זיכרון RAM:"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -14849,6 +14965,10 @@ msgstr "מתבצע רענון…"
 #: src/i18n/pref-labels.ts
 msgid "Regenerate onboarding assets on next start"
 msgstr "צור מחדש את נכסי ההכנה הראשונית בהפעלה הבאה"
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Registered on the hub, but its files were not snapshotted yet."
+msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -15272,6 +15392,10 @@ msgstr "סורקים מחדש…"
 msgid "Reset"
 msgstr "איפוס"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "איפוס נכשל"
@@ -15476,9 +15600,11 @@ msgstr "הצג ב-Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Reveal in Finder/Explorer\n"
+"Share to a conversation\n"
 "{childPath}"
 msgstr ""
+"שתף עם שיחה\n"
+"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Reveal in Finder/Explorer: {childPath}"
@@ -16184,6 +16310,10 @@ msgstr "חפש צמתים…"
 msgid "Search projects…"
 msgstr "חיפוש פרויקטים…"
 
+#: src/pages/discover-page/DiscoverToolbar.tsx
+msgid "Search published assets…"
+msgstr ""
+
 #: src/components/record-search-bar/RecordSearchBar.tsx
 msgid "Search records..."
 msgstr "חפש רשומות..."
@@ -16218,8 +16348,8 @@ msgid "Search the docs…"
 msgstr "חיפוש במסמכים…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Search this project…"
-msgstr "חיפוש בפרויקט הזה…"
+#~ msgid "Search this project…"
+#~ msgstr "חיפוש בפרויקט הזה…"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Search transcript…"
@@ -16709,6 +16839,10 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 #: src/hooks/use-add-context-folder.tsx
 msgid "Set up a git-backed context folder for this project."
 msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
@@ -17367,6 +17501,10 @@ msgstr "סקילים ותתי-אגנטים שהופעלו בסשן זה"
 msgid "Skills folder only"
 msgstr "תיקיית Skills בלבד"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Skills, agents, servers and documents published by projects you can read."
+msgstr ""
+
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "דילוג"
@@ -17478,6 +17616,7 @@ msgstr "צליל"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
 msgstr "מקור"
 
@@ -17814,6 +17953,10 @@ msgstr "עדיין לא ניתן לקשר את הפרויקט הזה"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18157,6 +18300,10 @@ msgstr "לוקח ~4 שניות"
 msgid "takes effect after a restart"
 msgstr ""
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "target"
@@ -18370,8 +18517,8 @@ msgid "The artifact has been removed successfully."
 msgstr "הקובץ הוסר בהצלחה."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The asset is here and indexed"
-msgstr ""
+#~ msgid "The asset is here and indexed"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "The asset is now available to project members."
@@ -18388,8 +18535,8 @@ msgid "The asset was not added."
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The assets published with this project — its skills, agents, specs, and docs."
-msgstr "הנכסים שפורסמו עם הפרויקט הזה — הכישורים, הסוכנים, המפרטים והמסמכים שלו."
+#~ msgid "The assets published with this project — its skills, agents, specs, and docs."
+#~ msgstr "הנכסים שפורסמו עם הפרויקט הזה — הכישורים, הסוכנים, המפרטים והמסמכים שלו."
 
 #: src/components/connections-manager/harness-connection-rows.tsx
 msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
@@ -18431,6 +18578,14 @@ msgstr "האישור הוסר מחשבונך."
 msgid "The default — what you want 99% of the time."
 msgstr "ברירת המחדל — מה שאתה רוצה 99% של הזמן."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "The document could not be put on the hub the last time it was published."
+msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "The document could not be read."
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
 msgstr ""
@@ -18444,8 +18599,8 @@ msgid "The fetch failed. Retry once the backend is up."
 msgstr "הבקשה נכשלה. נסו שוב לאחר שהשרת יעלה."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "The file is newer than its published row"
-msgstr ""
+#~ msgid "The file is newer than its published row"
+#~ msgstr ""
 
 #: src/components/assets/editor/MissingAssetCard.tsx
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
@@ -18878,6 +19033,10 @@ msgstr "הסשן החי נדחה."
 msgid "This live-session URL is malformed or unavailable."
 msgstr "כתובת הסשן החי אינה תקינה או אינה זמינה."
 
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "this machine"
+msgstr ""
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr ""
@@ -18942,6 +19101,10 @@ msgstr "התהליך הזה נעצר."
 msgid "This process points to a deleted project."
 msgstr "התהליך הזה מצביע על פרויקט שנמחק."
 
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "this project"
+msgstr ""
+
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
 msgstr "הפרויקט הזה לא קיים או כבר אינו זמין."
@@ -18959,8 +19122,8 @@ msgid "This project has no secrets declared yet."
 msgstr "עדיין לא הוגדרו סודות לפרויקט זה."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "This project has not published anything yet."
-msgstr ""
+#~ msgid "This project has not published anything yet."
+#~ msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."
@@ -19092,6 +19255,10 @@ msgstr "פעולה זו מפעילה את המכונה וטוענת את התצ�
 msgid "This step has not run."
 msgstr ""
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step ran no commands."
 msgstr ""
@@ -19120,6 +19287,10 @@ msgstr "לא ניתן לקרוא את התמליל הזה."
 #: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
 msgid "This transcript has no messages."
 msgstr "אין הודעות בתמליל הזה."
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "This type's document isn't stored on the hub yet."
+msgstr ""
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by a cloud sandbox you opened."
@@ -19158,6 +19329,10 @@ msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.clau
 msgid "This wizard declares no steps."
 msgstr ""
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
 msgstr ""
@@ -19166,6 +19341,10 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "This wizard ships with Flowpad and cannot be edited here."
@@ -19598,6 +19777,7 @@ msgstr "שני צעדים מהירים בדפדפן:"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
+#: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Type"
 msgstr "סוג"
 
@@ -20407,6 +20587,10 @@ msgstr "עם מה אתה צריך עזרה?"
 msgid "What do you want to work on"
 msgstr "על מה תרצו לעבוד?"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "What does Published do?"
+msgstr ""
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "מה ש־Flowpad מצא כשבדק את הגדרות Git בפרויקט הזה."
@@ -20450,6 +20634,10 @@ msgstr "למה משמש הסוד הזה?"
 msgid "What it worked on"
 msgstr "על מה עבד"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "What Published does"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
@@ -20459,7 +20647,11 @@ msgid "What this machine's assistants are funded by right now"
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+#~ msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+#~ msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "What this project has published, and what it could."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
@@ -20484,8 +20676,8 @@ msgid "What would you like to work on?"
 msgstr "על מה היית רוצה לעבוד?"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "What's in the box."
-msgstr "מה יש בחבילה."
+#~ msgid "What's in the box."
+#~ msgstr "מה יש בחבילה."
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "When"
@@ -20494,6 +20686,10 @@ msgstr "מתי"
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את סימניית קבלת הפנים ואת רשומת הפיד, ולאחר מכן מכבה הגדרה זו."
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
+msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/credential-value-form.tsx
@@ -20647,6 +20843,10 @@ msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
 msgid "Write it here"
 msgstr ""
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
+msgstr ""
+
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Writing"
 msgstr "כותב"
@@ -20678,6 +20878,14 @@ msgstr "אתמול"
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"
 msgstr "אתה"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20873,3 +21081,4 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+

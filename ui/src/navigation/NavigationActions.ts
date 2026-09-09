@@ -663,6 +663,15 @@ export class NavigationActions {
     void this.navigate(query ? `/discover?${query}` : '/discover');
   }
 
+  /** One published asset's page (`/discover/<typeid>`), scoped to its project the same way. */
+  openDiscoverAsset(typeid: string, projectId?: string | null): void {
+    const root = DockPointer.root();
+    const dock = projectId ? root.withScopeFilter(projectScope(projectId)) : root;
+    const query = dock.toSearchParams().toString();
+    const path = `/discover/${encodeURIComponent(typeid)}`;
+    void this.navigate(query ? `${path}?${query}` : path);
+  }
+
   openProject(
     projectId?: string,
     sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null; sessionId?: string | null },
