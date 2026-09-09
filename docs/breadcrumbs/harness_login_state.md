@@ -1,7 +1,13 @@
 ---
+id: 35bc6735-fdea-4467-bfdb-19dca62eb0ee
 title: Signed-in harness reported as signed out
-tags: [breadcrumb.test.harness_login_state.rules]
-description: The footer warned "a coding agent CLI is installed but not signed in" over a CLI that was both. The auth probe distinguishes four verdicts, but the capability mirrored them into two — filing NOT_INSTALLED and UNKNOWN as login_state "idle", the same value a real sign-out writes. A probe that never reached a verdict was being reported as one.
+tags:
+- breadcrumb.test.harness_login_state.rules
+description: The footer warned "a coding agent CLI is installed but not signed in"
+  over a CLI that was both. The auth probe distinguishes four verdicts, but the capability
+  mirrored them into two — filing NOT_INSTALLED and UNKNOWN as login_state "idle",
+  the same value a real sign-out writes. A probe that never reached a verdict was
+  being reported as one.
 ---
 
 # Signed-in harness reported as signed out
@@ -113,9 +119,3 @@ mistake, so an undecided probe stays silent.
   returned `NOT_INSTALLED` before checking what it was filed as. Without that
   guard it goes green whenever the environment happens to resolve the CLI, and
   proves nothing.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 35bc6735-fdea-4467-bfdb-19dca62eb0ee
-flowpad:endcapsule identity -->

@@ -1,9 +1,10 @@
 ---
-type: "workflow"
-name: "navigate_to_shell_via_sidebar"
-description: "Navigate from the landing page to the Shell view via the sidebar chevron + Shell button, validating route + terminal mount."
-asset_id: "0e7cc968-cbe8-4a40-b617-db209a7e54fe"
-tags: "[terminal, navigation, smoke]"
+id: 0e7cc968-cbe8-4a40-b617-db209a7e54fe
+type: workflow
+name: navigate_to_shell_via_sidebar
+description: Navigate from the landing page to the Shell view via the sidebar chevron
+  + Shell button, validating route + terminal mount.
+tags: '[terminal, navigation, smoke]'
 ---
 
 # Navigate to Shell via Sidebar
@@ -49,4 +50,3 @@ tags: "[terminal, navigation, smoke]"
 * validate an active terminal panel exists with xterm.js rendered
 
 * validate the Shell sidebar icon is shown as active
-

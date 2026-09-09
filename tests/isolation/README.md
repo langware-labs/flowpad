@@ -1,3 +1,7 @@
+---
+id: 31a24fef-1685-4b10-b948-cc16b31a485c
+---
+
 # Isolation: a machine with no agent harness
 
 `no_harness_check.py` asserts that spawning a worker where **nothing is

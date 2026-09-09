@@ -1,9 +1,10 @@
 ---
-type: "workflow"
-name: "terminal_clear_and_scrollback"
-description: "Type three echo commands, run `clear`, validate visible area is cleared, then check scrollback still has prior output."
-asset_id: "3a308a73-fd3b-4dd6-8208-bf4c0301a65b"
-tags: "[terminal, scrollback, smoke]"
+id: 3a308a73-fd3b-4dd6-8208-bf4c0301a65b
+type: workflow
+name: terminal_clear_and_scrollback
+description: Type three echo commands, run `clear`, validate visible area is cleared,
+  then check scrollback still has prior output.
+tags: '[terminal, scrollback, smoke]'
 ---
 
 # Terminal Clear + Scrollback
@@ -55,4 +56,3 @@ tags: "[terminal, scrollback, smoke]"
 * scroll up in the terminal (if scrollback is supported)
 
 * validate scrollback buffer still contains previous output
-

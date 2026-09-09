@@ -1,3 +1,7 @@
+---
+id: ccc675f6-bb79-4733-a90b-809ca8361d4c
+---
+
 # DataSpec — shape as Pydantic, the spec as the layout
 
 Two things the schema layer needed and did not have: a way to describe data

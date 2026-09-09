@@ -1,0 +1,1403 @@
+diff --git a/flow_sdk/builtin/deployment.py b/flow_sdk/builtin/deployment.py
+index 03662dca3..0de25bf02 100644
+--- a/flow_sdk/builtin/deployment.py
++++ b/flow_sdk/builtin/deployment.py
+@@ -30,6 +30,7 @@ converges through :meth:`find_existing`, never through a key baked into the id.
+ 
+ from __future__ import annotations
+ 
++import logging
+ from datetime import datetime
+ from typing import TYPE_CHECKING, Any, Optional
+ 
+@@ -434,6 +435,7 @@ class Deployment(Entity):
+             **options,
+         )
+         _prepare_output_folder(process)
++        await _materialize_declared_skills(agent, process)
+         return process
+ 
+     async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
+@@ -549,6 +551,35 @@ class Deployment(Entity):
+         return value
+ 
+ 
++async def _materialize_declared_skills(agent: "Agent", process: "AgenticProcess") -> None:
++    """Copy the agent's declared ``skills`` into the process it is launching.
++
++    ``agent.skills`` is INTENT; a skill reaches a worker only through a process,
++    so resolution happens here. Recording each ref in ``embedded_asset_refs`` is
++    what makes the copy visible — ``resolved_add_dirs`` gates ``--add-dir`` of
++    the assets dir on it. Not via ``cli_config``: that would flip
++    ``restart_required`` on every running process.
++    """
++    declared = list(getattr(agent, "skills", None) or [])
++    if not declared:
++        return
++
++    assets_dir = await process._assets_dir_path()
++    refs = list(process.embedded_asset_refs or [])
++    for ref in declared:
++        try:
++            name = await process._materialize_entity(ref, assets_dir)
++        except Exception as exc:  # noqa: BLE001 — one bad ref must not fail the launch
++            logging.warning("[deployment] agent %r declares unresolvable skill %s — skipped (%s)", agent.name, ref, exc)
++            continue
++        if name is None:
++            logging.warning("[deployment] agent %r declares %s, which is not an embeddable type — skipped", agent.name, ref)
++            continue
++        if not any(r.type == ref.type and r.id == ref.id for r in refs):
++            refs.append(ref)
++    process.embedded_asset_refs = refs
++
++
+ def _prepare_output_folder(process: "AgenticProcess") -> None:
+     """Give a non-flow run the same output convention a flow node gets.
+ 
+diff --git a/flow_sdk/builtin/faas/mcp_reconcile.py b/flow_sdk/builtin/faas/mcp_reconcile.py
+index c56cf4f8c..6a732a3a4 100644
+--- a/flow_sdk/builtin/faas/mcp_reconcile.py
++++ b/flow_sdk/builtin/faas/mcp_reconcile.py
+@@ -25,7 +25,11 @@ import subprocess
+ # `claude mcp list` rows look like:
+ #   "<name>: <launch> - ✔ Connected"   /   "<name>: <launch> - �’ Failed to connect"
+ # Capture the name and the launch line; tolerate the trailing " - <status>".
+-_CLI_ROW = re.compile(r"^(?P<name>[^:]+):\s*(?P<launch>.*?)(?:\s+-\s+[^-]*)?$")
++#
++# The name is GREEDY to the last colon *followed by whitespace*: plugin servers
++# are named "plugin:<plugin>:<server>", which a first-colon split truncates to
++# "plugin"; requiring \s+ keeps "https://" and "127.0.0.1:64655" out of it.
++_CLI_ROW = re.compile(r"^(?P<name>.+):\s+(?P<launch>.*?)(?:\s+-\s+[^-]*)?$")
+ 
+ # Hard cap on the CLI probe (user-approved, mirrors the capability env-probe).
+ _CLI_TIMEOUT_SECONDS = 10.0
+diff --git a/flow_sdk/core/entity/entity_model.py b/flow_sdk/core/entity/entity_model.py
+index c200a0a1d..f75101bd9 100644
+--- a/flow_sdk/core/entity/entity_model.py
++++ b/flow_sdk/core/entity/entity_model.py
+@@ -697,32 +697,55 @@ class Entity(DBEntity):
+         folder in ``opts.search_dirs``.
+ 
+         Pushdown: each search dir becomes a half-open lex range
+-        ``asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`` against
+-        ``json_extract(data, '$.asset_ref')`` (`/` is `0x2F`, next codepoint
+-        is `0`). Multiple dirs are OR'd. The query is dispatched per type
+-        because the SQL driver mandates a type filter — when ``opts.types``
++        ``asset_ref >= "<dir><sep>" AND asset_ref < "<dir><sep+1>"`` against
++        ``json_extract(data, '$.asset_ref')`` — the character after the
++        separator bounds the range (POSIX `/` is `0x2F`, so `0`; Windows `\\` is
++        `0x5C`, so `]`). Multiple dirs are OR'd. The query is dispatched per
++        type because the SQL driver mandates a type filter — when ``opts.types``
+         is None, every registered type is queried. Results are union'd,
+         sorted by ``asset_ref``, then paged.
++
++        **A range is emitted per separator form, and they are OR'd.** The
++        comparison is lexical, so it only matches rows written in the same
++        form, and both are in the data on Windows: the indexer writes
++        ``asset_ref`` through pathlib (backslashes) while other producers
++        write ``canonical_posix_path``. POSIX-only matched nothing here.
+         """
+-        from flow_sdk.fs_store.path_utils import canonical_posix_path
++        import os  # noqa: PLC0415
++
++        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+ 
+         if not opts.search_dirs:
+             return []
+ 
++        def _range(folder: str, sep: str) -> ExpressionNode | None:
++            if folder.endswith(sep):
++                folder = folder[: -len(sep)]
++            # A bare drive root ("C:\") strips to "C:", which would match the
++            # whole drive rather than nothing — but that IS the whole drive, so
++            # the range stays correct; an empty folder is the only bad input.
++            if not folder:
++                return None
++            return ExpressionNode(
++                op=QueryOp.AND,
++                operands=[
++                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", folder + sep]),
++                    # The codepoint after the separator closes the half-open
++                    # range: "/" (0x2F) -> "0", "\" (0x5C) -> "]".
++                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", folder + chr(ord(sep) + 1)]),
++                ],
++            )
++
+         folder_terms: list[ExpressionNode] = []
+         for d in opts.search_dirs:
+-            f = canonical_posix_path(d).rstrip("/")
+-            if not f:
+-                continue
+-            folder_terms.append(
+-                ExpressionNode(
+-                    op=QueryOp.AND,
+-                    operands=[
+-                        ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
+-                        ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
+-                    ],
+-                )
+-            )
++            seen: set[tuple[str, str]] = set()
++            for folder, sep in ((str(Path(d)), os.sep), (canonical_posix_path(d), "/")):
++                if (folder, sep) in seen:
++                    continue
++                seen.add((folder, sep))
++                term = _range(folder, sep)
++                if term is not None:
++                    folder_terms.append(term)
+         if not folder_terms:
+             return []
+ 
+diff --git a/ui/src/components/agent-resources/AgentResourcesBody.tsx b/ui/src/components/agent-resources/AgentResourcesBody.tsx
+new file mode 100644
+index 000000000..2d9a9dceb
+--- /dev/null
++++ b/ui/src/components/agent-resources/AgentResourcesBody.tsx
+@@ -0,0 +1,257 @@
++import { useMemo, useState, type ReactNode } from 'react';
++import { Trans, useLingui } from '@lingui/react/macro';
++import { Plus } from 'lucide-react';
++import { Markdown, type AssetDescriptor } from '@sdk';
++import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
++import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
++import { lucideByName } from '@src/lib/lucide-by-name';
++import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
++import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
++import { useProjectDocs } from './useProjectDocs';
++import { useWirableSkills } from './useWirableSkills';
++import { useWirableMcpServers } from './useWirableMcpServers';
++import { useAgentDocument } from './useAgentDocument';
++import { useAgentListWiring } from './useAgentListWiring';
++
++/** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
++ *  pane never caches Skill entities); a skill's identity IS its folder, so the
++ *  basename is the answer — applied only on that give-up path. */
++function labelForAsset(d: AssetDescriptor): string {
++  const label = displayLabelForDescriptor(d);
++  return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
++}
++
++/** A `user_dir` skill is already discovered by the vendor CLI every session, so
++ *  copying it in only duplicates it. Project and context-folder skills reach a
++ *  worker only if something puts them where it looks. */
++function isSelectableSkill(d: AssetDescriptor): boolean {
++  return d.source !== 'user_dir';
++}
++
++/** Muted one-liner for a section with nothing in it. */
++function Empty({ children }: { children: ReactNode }) {
++  return <div className="px-3 py-2 text-xs italic text-muted-foreground">{children}</div>;
++}
++
++/** Muted one-liner under a section header, explaining where its rows come from. */
++function Note({ children }: { children: ReactNode }) {
++  return <p className="px-2 pb-1 text-[11px] text-muted-foreground">{children}</p>;
++}
++
++/** The `+` in a section header. Sized to sit on the header's own line without
++ *  growing it — the label and the caret set that height. */
++function SectionAddButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
++  return (
++    <button
++      type="button"
++      onClick={onClick}
++      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
++      title={label}
++      aria-label={label}
++      data-testid={testId}
++    >
++      <Plus className="h-3.5 w-3.5" />
++    </button>
++  );
++}
++
++/** Read-only row, MCP only: what a worker reaches is decided by the vendor's
++ *  config files, so a control would be a box you cannot uncheck. Skills ARE
++ *  per-agent intent and use `AssetRow`, whose control writes `agent.skills`. */
++function ResourceRow({
++  icon: Icon,
++  label,
++  hint,
++  testId,
++}: {
++  icon: React.ComponentType<{ className?: string }>;
++  label: string;
++  hint?: string;
++  testId: string;
++}) {
++  return (
++    <div
++      className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground"
++      title={hint ? `${label} — ${hint}` : label}
++      data-testid={testId}
++    >
++      <Icon className="h-3.5 w-3.5 flex-shrink-0" />
++      <span className="truncate">{label}</span>
++    </div>
++  );
++}
++
++/**
++ * The four-section body of the agent-resources navigator. An inventory with one
++ * editable axis: Skills rows select into `agent.skills`, which
++ * `Deployment.build` copies into every session. The rest are read-only.
++ */
++export function AgentResourcesBody() {
++  const { t } = useLingui();
++
++  const { descriptors: skillDescriptors, isLoading: skillsLoading } = useWirableSkills();
++  // Both lists are scoped to the worker the agent is set to; the editor's
++  // worker field commits to `agent.md`, which is what this observes. The same
++  // document is the write surface for the declared skills.
++  const doc = useAgentDocument();
++  const workerType = doc.workerType;
++  const workerLoading = doc.isLoading;
++  const { declared: declaredSkills, pendingId: pendingSkillId, toggle: toggleSkill } = useAgentListWiring(doc, 'skills');
++  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
++  const { docs, isLoading: docsLoading } = useProjectDocs();
++
++  const [addSourceOpen, setAddSourceOpen] = useState(false);
++
++  const docIcon = iconForType(Markdown.type);
++  // MCP servers have no per-type registry glyph of their own.
++  const mcpIcon = lucideByName('Plug');
++
++  // Resolved once here, not per render — the same split `AssetManagerPopover`'s
++  // list memo makes. NOT deduped by name: one row per (typeid, source) is the
++  // point, and collapsing would hide the distinction the scope chip shows.
++  const skillRows = useMemo(
++    () =>
++      skillDescriptors.map((d) => ({
++        descriptor: d,
++        key: descriptorKey(d),
++        scope: assetScope(d),
++        label: labelForAsset(d),
++        selected: declaredSkills.has(d.typeid),
++        selectable: isSelectableSkill(d),
++      })),
++    [skillDescriptors, declaredSkills],
++  );
++
++  return (
++    <div className="flex flex-col py-1">
++      {/* Deliberately listless. What this section used to render was the
++          installed `DataSourceSpec` CATALOG — the nine provider types the
++          machine can connect, not anything this agent has or could be given.
++          They were neither viewable (no row opened anything) nor selectable
++          (the Agent has no data-sources field, and adding one is out of
++          scope), so every row was decoration. The one real affordance is
++          connecting a source, which is what `+` does.
++          `itemCount={0}` also means the section settles collapsed — the `+`
++          stays reachable in the header regardless. */}
++      <NavigatorSection
++        id="data-sources"
++        label={t`Data sources`}
++        itemCount={0}
++        action={
++          <SectionAddButton
++            label={t`Add data source`}
++            onClick={() => setAddSourceOpen(true)}
++            testId="agent-resource-add-data-source"
++          />
++        }
++        emptyState={
++          <Empty>
++            <Trans>Connect a data source to make it available here</Trans>
++          </Empty>
++        }
++      />
++
++      {/* The project's own add-source form, reused verbatim — `editing` unset
++          is its create mode. Mounted here rather than behind a navigation so
++          the pane never loses the agent being edited. */}
++      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
++
++      <NavigatorSection
++        id="mcp-servers"
++        label={t`MCP servers`}
++        isLoading={mcpLoading || workerLoading}
++        itemCount={mcpServers.length}
++        emptyState={
++          // Two different empty states, because they mean different things and
++          // the fix for each differs: with no worker resolved the list is
++          // unanswerable, whereas with one resolved it is a real answer — that
++          // worker genuinely has none configured.
++          workerType ? (
++            <Empty>
++              <Trans>No MCP servers found</Trans>
++            </Empty>
++          ) : (
++            <Empty>
++              <Trans>Select a worker to see the MCP servers available to it</Trans>
++            </Empty>
++          )
++        }
++      >
++        <Note>
++          <Trans>Configured for the {workerType} worker — not selected per agent.</Trans>
++        </Note>
++        {mcpServers.map((server) => (
++          <ResourceRow
++            key={server.id}
++            icon={mcpIcon}
++            label={server.name}
++            hint={server.workerType}
++            testId={`agent-resource-mcp-${server.name}`}
++          />
++        ))}
++      </NavigatorSection>
++
++      <NavigatorSection
++        id="skills"
++        label={t`Skills`}
++        isLoading={skillsLoading}
++        itemCount={skillRows.length}
++        emptyState={
++          <Empty>
++            <Trans>No skills found</Trans>
++          </Empty>
++        }
++      >
++        <Note>
++          <Trans>Selected skills are copied into each session this agent starts. Your global skills are always available and need no selection.</Trans>
++        </Note>
++        {/* Both callbacks supplied = the select control FLIPS: `+` to import,
++            `X` to drop it again. `AssetRow` deliberately does not gate that
++            control on the source being read-only — "read-only describes whether
++            the asset FILE can be edited, not whether the user's own selection
++            can be undone" — which is load-bearing here, since every row is a
++            read-only global or context-folder source. */}
++        {skillRows.map((row) => (
++          <AssetRow
++            key={row.key}
++            descriptor={row.descriptor}
++            scope={row.scope}
++            label={row.label}
++            selected={row.selected}
++            improvable={false}
++            busy={pendingSkillId === row.descriptor.typeid}
++            // Offered only where selecting DOES something. A row that is
++            // already selected keeps its un-select control regardless, so a
++            // stale entry can always be cleared — withholding it there would
++            // strand the value with no way to remove it.
++            onPick={row.selectable ? (d) => void toggleSkill(d.typeid, true) : undefined}
++            onUnpick={
++              row.selectable || row.selected ? (d) => void toggleSkill(d.typeid, false) : undefined
++            }
++          />
++        ))}
++      </NavigatorSection>
++
++      <NavigatorSection
++        id="docs"
++        label={t`Docs`}
++        isLoading={docsLoading}
++        itemCount={docs.length}
++        emptyState={
++          <Empty>
++            <Trans>No docs found</Trans>
++          </Empty>
++        }
++      >
++        {docs.map((doc) => (
++          <ResourceRow
++            key={doc.id}
++            icon={docIcon}
++            label={doc.title || doc.name || ''}
++            testId={`agent-resource-doc-${doc.id}`}
++          />
++        ))}
++      </NavigatorSection>
++    </div>
++  );
++}
+diff --git a/ui/src/components/agent-resources/AgentResourcesNavigator.tsx b/ui/src/components/agent-resources/AgentResourcesNavigator.tsx
+new file mode 100644
+index 000000000..68cfbb91e
+--- /dev/null
++++ b/ui/src/components/agent-resources/AgentResourcesNavigator.tsx
+@@ -0,0 +1,23 @@
++import { useLingui } from '@lingui/react/macro';
++import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
++import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
++import { AgentResourcesBody } from './AgentResourcesBody';
++
++/**
++ * Zone B while an agent is edited: what the agent can draw on, not a file tree.
++ * Renders as the panel's `customBody`, so collapse/resize stay with the panel.
++ */
++export function AgentResourcesNavigator() {
++  const { t } = useLingui();
++
++  const descriptor: NavigatorDescriptor = {
++    // Its own persistence keys, so collapsing this pane doesn't collapse the
++    // assets tree the user returns to.
++    id: 'agent-resources',
++    // Required: NavigatorPanel hangs the collapse control off `header`.
++    header: { title: t`Agent resources` },
++    customBody: <AgentResourcesBody />,
++  };
++
++  return <NavigatorPanel descriptor={descriptor} />;
++}
+diff --git a/ui/src/components/agent-resources/useAgentDocument.ts b/ui/src/components/agent-resources/useAgentDocument.ts
+new file mode 100644
+index 000000000..e4f9c2d9f
+--- /dev/null
++++ b/ui/src/components/agent-resources/useAgentDocument.ts
+@@ -0,0 +1,138 @@
++import { useCallback, useMemo, useRef } from 'react';
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { Agent, FSRef, TypeId, VFSPath } from '@sdk';
++import { useEntityOps } from '@sdk/react/hooks';
++import {
++  patchAgentDocument,
++  readAgentDocumentList,
++  type AgentDocumentListKey,
++  type AgentDocumentPatch,
++} from '@src/components/assets/editor/agent-profile/agent-document';
++import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
++import { AssetRoutingMethod } from '@src/navigation/asset-doc-types';
++import { DockPointer } from '@src/navigation/DockPointer';
++import { useDockNavigation } from '@src/navigation/useDockNavigation';
++import { useEntity } from '@src/hooks/entity-hooks';
++import { ViewType } from '@src/types/ViewType';
++
++/** Module-scope: `useEntityOps` keys its effect on the array's IDENTITY. */
++const WATCHED_TYPES = ['agent'];
++
++export interface AgentDocument {
++  /** True once the document is readable, i.e. edits can be committed. */
++  ready: boolean;
++  isLoading: boolean;
++  /** `worker_type:` — drives which MCP servers and skills apply. */
++  workerType: string;
++  /** Read one frontmatter list (e.g. the declared `skills`). */
++  list: (key: AgentDocumentListKey) => string[];
++  /** Losslessly commit a frontmatter patch. Serialized against itself. */
++  commit: (patch: AgentDocumentPatch) => Promise<void>;
++}
++
++/** The `worker_type:` scalar, without pulling a YAML parser in for one key. */
++function readWorkerType(source: string): string {
++  const fence = source.indexOf('\n---', 4);
++  const yaml = source.startsWith('---') && fence > 0 ? source.slice(4, fence) : '';
++  const line = yaml.split('\n').find((l) => /^worker_type\s*:/.test(l));
++  return line ? line.split(':').slice(1).join(':').trim().replace(/^['"]|['"]$/g, '') : '';
++}
++
++/**
++ * `agent.md` as the pane's read/write surface — the file is the record, so edits
++ * stay lossless and work unindexed. The `typeid` route still resolves the entity
++ * (only its record says where the main file lives). Refetches on agent ops.
++ */
++export function useAgentDocument(): AgentDocument {
++  const { currentDock } = useDockNavigation();
++  const queryClient = useQueryClient();
++
++  // A project-shell asset URL carries the asset pointer one level in.
++  const effectivePointer =
++    currentDock?.viewType === ViewType.PROJECT
++      ? DockPointer.splitProjectPointer(currentDock?.pointer).assetSubPointer
++      : (currentDock?.pointer ?? '');
++
++  const ptr = useMemo(() => {
++    try {
++      return AssetDocPointer.parse(effectivePointer);
++    } catch {
++      return null;
++    }
++  }, [effectivePointer]);
++
++  // vfs: the pointer NAMES the agent's own file, so it IS the main ref.
++  // Memoized on the stable pointer string — a fresh FSRef per render churns
++  // every query keyed on it (this pane has been frozen once by exactly that).
++  const vfsRef = useMemo(() => {
++    if (ptr?.method !== AssetRoutingMethod.VFS) return null;
++    const vfs = VFSPath.parse(ptr.value);
++    return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
++  }, [ptr]);
++
++  // typeid: the record carries both the path and the filesystem authority.
++  const typeId = useMemo(
++    () => (ptr?.method === AssetRoutingMethod.TYPEID ? new TypeId(ptr.value) : null),
++    [ptr],
++  );
++  const { data: agent } = useEntity<Agent>(typeId);
++  const { data: record } = useQuery({
++    queryKey: ['agent-resources', 'record', typeId?.toString() ?? ''],
++    queryFn: () => agent!.record(),
++    enabled: !!agent && ptr?.method === AssetRoutingMethod.TYPEID,
++    staleTime: Infinity,
++  });
++
++  const mainRef: FSRef | null = ptr?.method === AssetRoutingMethod.VFS ? vfsRef : (record?.mainRef ?? null);
++  const path = mainRef?.path ?? '';
++
++  const docKey = useMemo(() => ['agent-resources', 'doc', path] as const, [path]);
++  const { data: source, isLoading } = useQuery({
++    queryKey: docKey,
++    queryFn: () => mainRef!.read(),
++    enabled: !!mainRef,
++  });
++
++  const onAgentOp = useCallback(() => {
++    void queryClient.invalidateQueries({ queryKey: ['agent-resources', 'doc'] });
++  }, [queryClient]);
++  useEntityOps(WATCHED_TYPES, onAgentOp as never);
++
++  const list = useCallback(
++    (key: AgentDocumentListKey) => (source ? readAgentDocumentList(source, key) : []),
++    [source],
++  );
++
++  // Chained, not concurrent: two toggles in quick succession must not both
++  // read the same source and have the second write clobber the first.
++  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
++  const commit = useCallback(
++    (patch: AgentDocumentPatch): Promise<void> => {
++      if (!mainRef) return Promise.resolve();
++      const operation = queueRef.current
++        .catch(() => undefined)
++        .then(async () => {
++          const current = await mainRef.read();
++          const next = patchAgentDocument(current, patch);
++          if (next !== current) {
++            await mainRef.write(next);
++            // Seed the cache with what we just wrote rather than refetching:
++            // the backend resyncs the row from this write, and a refetch here
++            // would race that resync.
++            queryClient.setQueryData(docKey, next);
++          }
++        });
++      queueRef.current = operation;
++      return operation;
++    },
++    [mainRef, queryClient, docKey],
++  );
++
++  return {
++    ready: !!mainRef && source !== undefined,
++    isLoading: !!mainRef && isLoading,
++    workerType: source ? readWorkerType(source) : '',
++    list,
++    commit,
++  };
++}
+diff --git a/ui/src/components/agent-resources/useAgentListWiring.ts b/ui/src/components/agent-resources/useAgentListWiring.ts
+new file mode 100644
+index 000000000..04b7e18c1
+--- /dev/null
++++ b/ui/src/components/agent-resources/useAgentListWiring.ts
+@@ -0,0 +1,53 @@
++import { useCallback, useMemo, useState } from 'react';
++import { useLingui } from '@lingui/react/macro';
++import type { AgentDocumentListKey, AgentDocumentPatch } from '@src/components/assets/editor/agent-profile/agent-document';
++import { notify } from '@src/notifications';
++import type { AgentDocument } from './useAgentDocument';
++
++export interface ListWiring {
++  /** Serialized TypeIds currently declared in the document. */
++  declared: Set<string>;
++  /** The one row whose write is in flight, or null. */
++  pendingId: string | null;
++  /** Attach/detach by serialized TypeId. No-op until the document is readable. */
++  toggle: (id: string, next: boolean) => Promise<void>;
++}
++
++/**
++ * Read/write of one declared list on `agent.md`. The stored value is always a
++ * serialized TypeId, never a name: the model types these `list[TypeId]`, and a
++ * bare name breaks indexing. Document-derived, not optimistic.
++ */
++export function useAgentListWiring(doc: AgentDocument, key: AgentDocumentListKey): ListWiring {
++  const { t } = useLingui();
++  const [pendingId, setPendingId] = useState<string | null>(null);
++
++  const declaredList = doc.list(key);
++  // Memoized on the joined ids: consumers use this in their own `useMemo` deps,
++  // and a fresh Set each render would defeat every one of them.
++  const declaredKey = declaredList.join(' ');
++  const declared = useMemo(() => new Set(declaredKey ? declaredKey.split(' ') : []), [declaredKey]);
++
++  const toggle = useCallback(
++    async (id: string, next: boolean) => {
++      if (!doc.ready || !id) return;
++
++      setPendingId(id);
++      try {
++        const current = doc.list(key);
++        const updated = next ? [...current, id] : current.filter((entry) => entry !== id);
++        await doc.commit({ [key]: updated } as AgentDocumentPatch);
++      } catch (err) {
++        notify.error({
++          title: t`Couldn't update the agent`,
++          message: err instanceof Error ? err.message : String(err),
++        });
++      } finally {
++        setPendingId(null);
++      }
++    },
++    [doc, key, t],
++  );
++
++  return { declared, pendingId, toggle };
++}
+diff --git a/ui/src/components/agent-resources/useProjectDocs.ts b/ui/src/components/agent-resources/useProjectDocs.ts
+new file mode 100644
+index 000000000..1859329b2
+--- /dev/null
++++ b/ui/src/components/agent-resources/useProjectDocs.ts
+@@ -0,0 +1,38 @@
++import { useMemo } from 'react';
++import { ExpressionNode, Markdown, QueryFilter, QueryRequest } from '@sdk';
++import { useEntitiesQuery } from '@src/hooks/entity-hooks';
++import { useProject } from '@src/hooks/useProject';
++
++/** Bounded because the pane is a picker, not a browser — the Docs section is a
++ *  short list to choose from, and an unbounded project doc corpus would make it
++ *  unusable long before it made it slow. */
++const DOC_LIMIT = 500;
++
++/**
++ * The project's docs. Unlike `skill`, `markdown` carries `project_id`, so the
++ * live query is correct. `order_by`/`limit` go INSIDE `QueryFilter` — a
++ * top-level key folds into `match` and becomes a predicate matching nothing.
++ */
++export function useProjectDocs(): { docs: Markdown[]; isLoading: boolean } {
++  const { project } = useProject();
++  const projectId = project?.id;
++
++  const request = useMemo(
++    () =>
++      new QueryRequest({
++        type: Markdown.type,
++        scope: [],
++        name: 'agentResources:docs',
++        query: new QueryFilter({
++          match: new ExpressionNode({ project_id: projectId ?? '' }),
++          order_by: { title: 'asc' },
++          limit: DOC_LIMIT,
++        }),
++      }),
++    [projectId],
++  );
++
++  const { data: docs = [], isLoading } = useEntitiesQuery<Markdown>(request, { enabled: !!projectId });
++
++  return { docs, isLoading: !!projectId && isLoading };
++}
+diff --git a/ui/src/components/agent-resources/useWirableMcpServers.ts b/ui/src/components/agent-resources/useWirableMcpServers.ts
+new file mode 100644
+index 000000000..e9aaed1a4
+--- /dev/null
++++ b/ui/src/components/agent-resources/useWirableMcpServers.ts
+@@ -0,0 +1,83 @@
++import { useCallback, useMemo } from 'react';
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { apiClient } from '@sdk';
++import { useEntityOps } from '@sdk/react/hooks';
++import { toDriverKey } from '@src/components/assets/editor/agent-profile/agent-vocabularies';
++
++const QUERY_KEY = ['agent-resources', 'mcp-servers'] as const;
++
++/** Module-scope: `useEntityOps` keys its effect on the array's IDENTITY. */
++const WATCHED_TYPES = ['capability'];
++
++interface CapabilityRow {
++  id?: string;
++  kind?: string;
++  name?: string;
++}
++
++export interface McpServerRow {
++  /** Capability kind — unique per (service, worker), so it keys the row. */
++  id: string;
++  name: string;
++  /** The worker this server is configured for (`claude_code`, `codex`, …). */
++  workerType: string;
++}
++
++/**
++ * MCP servers available to a worker. Read from CAPABILITY rows, whose kind is
++ * `<service>.mcp.<worker_type>` — the only source carrying a worker dimension.
++ * `include_system=true` is required: every capability row is system-scoped.
++ */
++export function useWirableMcpServers(workerType: string): { servers: McpServerRow[]; isLoading: boolean } {
++  const queryClient = useQueryClient();
++
++  const { data = [], isLoading } = useQuery<CapabilityRow[]>({
++    queryKey: QUERY_KEY,
++    queryFn: async () =>
++      (await apiClient.get<CapabilityRow[]>('/graph/capability?include_system=true')) ?? [],
++    staleTime: 30_000,
++  });
++
++  // A server added to a vendor config mid-edit should appear once the probe
++  // picks it up. Invalidate on ops rather than polling.
++  const onOp = useCallback(() => {
++    void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
++  }, [queryClient]);
++  useEntityOps(WATCHED_TYPES, onOp as never);
++
++  const servers = useMemo(() => {
++    // No worker, no list. Every row here is worker-specific, so showing all of
++    // them while the worker is unresolved would assert availability that is
++    // false for whichever worker the agent turns out to use — the caller
++    // renders an explanatory empty state instead.
++    if (!workerType) return [];
++
++    // Both sides folded to the driver short-id first. A capability kind spells
++    // the worker in the `worker_type` vocabulary (`claude_code`) while
++    // `agent.md` declares the driver key (`claude`), so comparing them raw
++    // matched nothing for Claude — the exact two-vocabulary trap
++    // `agent-vocabularies` warns about.
++    const selected = toDriverKey(workerType);
++
++    const rows: McpServerRow[] = [];
++    for (const row of data) {
++      const parts = (row.kind ?? '').split('.');
++      // `<service>.mcp.<worker_type>` — exactly three segments. Anything else
++      // is a different capability family (`harness.claude.cli`, `browsing.…`).
++      if (parts.length !== 3 || parts[1] !== 'mcp') continue;
++      if (toDriverKey(parts[2]) !== selected) continue;
++      const worker = parts[2];
++      rows.push({
++        id: row.kind ?? '',
++        // The capability's display name is "<server> (MCP / <worker>)"; the
++        // suffix is the row's own context here, so it is stripped rather than
++        // repeated on every line.
++        name: (row.name ?? parts[0]).replace(/\s*\(MCP\s*\/\s*[^)]*\)\s*$/, ''),
++        workerType: worker,
++      });
++    }
++    return rows.sort((a, b) => a.name.localeCompare(b.name));
++  }, [data, workerType]);
++
++  return { servers, isLoading };
++}
+diff --git a/ui/src/components/agent-resources/useWirableSkills.ts b/ui/src/components/agent-resources/useWirableSkills.ts
+new file mode 100644
+index 000000000..cbbd439cd
+--- /dev/null
++++ b/ui/src/components/agent-resources/useWirableSkills.ts
+@@ -0,0 +1,27 @@
++import { useMemo } from 'react';
++import { dataContext, Skill, type AssetDescriptor } from '@sdk';
++import { useProcessAssets } from '@src/components/asset-manager';
++
++/** Stable identity — an inline literal would rebuild the hook's fetch each render. */
++const SKILL_TYPES = [Skill.type] as const;
++
++/**
++ * Skills a process started in this project would see, via the staging read
++ * `useProcessAssets(null, …)` — rows arrive already attributed to a `source`.
++ * NOT a type listing: `/graph/skill` has no location filter (77 rows, 10 real).
++ */
++export function useWirableSkills(): { descriptors: AssetDescriptor[]; isLoading: boolean } {
++  // The pane rides the active project; `useProcessAssets` falls back to
++  // `@local` on its own when there is none, so this stays undefined rather
++  // than guessing an id here.
++  const projectId = dataContext.project?.typeId?.id;
++
++  const options = useMemo(
++    () => ({ projectId, types: SKILL_TYPES as readonly string[] }),
++    [projectId],
++  );
++
++  const { descriptors, isLoading } = useProcessAssets(null, options);
++
++  return { descriptors, isLoading };
++}
+diff --git a/ui/src/components/asset-manager/index.ts b/ui/src/components/asset-manager/index.ts
+index 49631913a..ee69dc9dd 100644
+--- a/ui/src/components/asset-manager/index.ts
++++ b/ui/src/components/asset-manager/index.ts
+@@ -1,3 +1,15 @@
+ export { AssetManagerButton } from './AssetManagerButton';
+ export { AssetManagerPopover } from './AssetManagerPopover';
+ export { useProcessAssets } from './useProcessAssets';
++
++// The row and the pieces needed to build its props, for surfaces that want the
++// asset list WITHOUT the popover's chrome (search box, type bar, overlay) —
++// the agent-resources navigator renders these inline in its own sections.
++// Exported through the barrel rather than deep-imported so the module keeps one
++// public face.
++export { AssetRow } from './AssetManagerPopover';
++export { assetScope } from './asset-scope';
++// `displayLabelForDescriptor`, not the typeid form: it threads the descriptor's
++// on-disk `name` fallback, without which a not-yet-indexed asset renders as a
++// raw `skill-<uuid>`.
++export { displayLabelForDescriptor, descriptorKey, basename } from './asset-row-helpers';
+diff --git a/ui/src/components/asset-manager/useProcessAssets.ts b/ui/src/components/asset-manager/useProcessAssets.ts
+index 8c8f07c0b..5f466323c 100644
+--- a/ui/src/components/asset-manager/useProcessAssets.ts
++++ b/ui/src/components/asset-manager/useProcessAssets.ts
+@@ -25,11 +25,17 @@ const STAGING_ASSET_LIMIT = 1000;
+ export function useProcessAssets(
+   process: AgenticProcess | null,
+   /** `projectId` is for projectless callers: it names the project to ask
+-   *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`). */
+-  options?: { enabled?: boolean; projectId?: string },
++   *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`).
++   *  `types` narrows the staging scan to those entity types (server-side);
++   *  omit it for the default set. */
++  options?: { enabled?: boolean; projectId?: string; types?: readonly string[] },
+ ): UseProcessAssetsResult {
+   const enabled = options?.enabled !== false;
+   const explicitProjectId = options?.projectId;
++  // Depend on the CONTENT, not the array identity: a caller passing an inline
++  // `['skill']` would otherwise rebuild `refresh` every render, and the layout
++  // effect below would re-fetch on each one.
++  const typesKey = options?.types?.join(',') ?? '';
+ 
+   const [descriptors, setDescriptors] = useState<AssetDescriptor[]>([]);
+   const [isLoading, setIsLoading] = useState<boolean>(enabled);
+@@ -48,7 +54,10 @@ export function useProcessAssets(
+         // Staging: the active project's discoverable assets, computed
+         // server-side; projectless surfaces fall back to the local project.
+         const projectId = explicitProjectId ?? dataContext.project?.typeId?.id ?? '@local';
+-        const result = await Project.getAssetsById(projectId, { limit: STAGING_ASSET_LIMIT });
++        const result = await Project.getAssetsById(projectId, {
++          limit: STAGING_ASSET_LIMIT,
++          ...(typesKey ? { types: typesKey.split(',') } : {}),
++        });
+         if (tickRef.current === tick) setDescriptors(result);
+       }
+     } catch (err) {
+@@ -57,7 +66,7 @@ export function useProcessAssets(
+     } finally {
+       if (tickRef.current === tick) setIsLoading(false);
+     }
+-  }, [process, enabled, explicitProjectId]);
++  }, [process, enabled, explicitProjectId, typesKey]);
+ 
+   // Re-fetch when the process identity changes (or the hook becomes enabled).
+   // Layout effect, not a passive one: `refresh` sets isLoading synchronously
+diff --git a/ui/src/components/assets/AssetsNavigatorSwitch.tsx b/ui/src/components/assets/AssetsNavigatorSwitch.tsx
+new file mode 100644
+index 000000000..7172efded
+--- /dev/null
++++ b/ui/src/components/assets/AssetsNavigatorSwitch.tsx
+@@ -0,0 +1,14 @@
++import { AgentResourcesNavigator } from '@src/components/agent-resources/AgentResourcesNavigator';
++import { AssetEditor } from '@src/navigation/asset-doc-types';
++import { useDockNavigation } from '@src/navigation/useDockNavigation';
++import { AssetsNavigator } from './AssetsNavigator';
++
++/**
++ * Zone B for asset views: the tree, except while an agent is being edited. A
++ * switch component, not a branch inside `AssetsNavigator` — its top-level
++ * `useAssetsModel()` would become conditional. Pure URL read, no lookup.
++ */
++export function AssetsNavigatorSwitch() {
++  const { currentDock } = useDockNavigation();
++  return currentDock?.assetEditor === AssetEditor.AGENT ? <AgentResourcesNavigator /> : <AssetsNavigator />;
++}
+diff --git a/ui/src/components/assets/editor/agent-profile/AgentProfileEditor.tsx b/ui/src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+index 0f6353093..5167403dc 100644
+--- a/ui/src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
++++ b/ui/src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+@@ -18,7 +18,7 @@ import { Button } from '@src/components/ui/button';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
+ 
+ import { AgentDeploymentsSection } from './AgentDeploymentsSection';
+-import { AgentListField, AgentSelectField } from './AgentProfileFields';
++import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
+ import { useProject } from '@sdk/react/hooks';
+ import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
+ import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
+@@ -293,11 +293,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
+ 
+             <TabsContent value="runtime" className="mt-4">
+               <div className="grid grid-cols-2 gap-3">
+-                <AgentSelectField
++                <AgentChoiceField
+                   label={t`Worker`}
+                   value={agent.worker_type}
+                   options={AGENT_WORKER_TYPES}
+-                  placeholder={t`claude`}
+                   onCommit={(v) => void save({ worker_type: v })}
+                 />
+                 <AgentSelectField
+@@ -363,16 +362,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
+                     value={agent.subagents}
+                     onCommit={(v) => void save({ subagents: v ?? [] })}
+                   />
+-                  <AgentListField
+-                    label={t`Skills`}
+-                    value={agent.skills}
+-                    onCommit={(v) => void save({ skills: v ?? [] })}
+-                  />
+-                  <AgentListField
+-                    label={t`MCP servers`}
+-                    value={agent.mcp_servers}
+-                    onCommit={(v) => void save({ mcp_servers: v ?? [] })}
+-                  />
++                  {/* Skills and MCP servers are wired in the agent-resources
++                      pane (Zone B), which lists what actually exists instead of
++                      asking for typed ids. They are deliberately not duplicated
++                      here — two editors for one field is how they drift. */}
+                   <AgentListField
+                     label={t`Additional directories`}
+                     value={agent.additional_dirs}
+diff --git a/ui/src/components/assets/editor/agent-profile/AgentProfileFields.tsx b/ui/src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+index 1b18c1aa4..cd4e423c8 100644
+--- a/ui/src/components/assets/editor/agent-profile/AgentProfileFields.tsx
++++ b/ui/src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+@@ -1,6 +1,61 @@
+ import { useEffect, useState } from 'react';
++import { useLingui } from '@lingui/react/macro';
+ 
+ import { Input } from '@src/components/ui/input';
++import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
++
++/** Sentinel for "no value": Radix reserves `''` for the placeholder state, so
++ *  an empty-string `SelectItem` throws rather than rendering a clear option. */
++const UNSET = '__unset__';
++
++/**
++ * A CLOSED choice field. `worker_type` is the exception to `AgentSelectField`:
++ * the drivers are a fixed four, so free text only produces a broken agent. A
++ * value outside `options` still renders as its own item rather than be dropped.
++ */
++export function AgentChoiceField({
++  label,
++  value,
++  options,
++  onCommit,
++}: {
++  label: string;
++  value?: string | null;
++  options: readonly string[];
++  onCommit: (value: string | undefined) => void;
++}) {
++  const { t } = useLingui();
++  const current = value ?? '';
++  const items = current && !options.includes(current) ? [...options, current] : options;
++  return (
++    <label className="block space-y-1.5">
++      <span className="text-xs text-muted-foreground">{label}</span>
++      <Select
++        value={current || UNSET}
++        onValueChange={(next) => onCommit(next === UNSET ? undefined : next)}
++      >
++        <SelectTrigger aria-label={label}>
++          <SelectValue />
++        </SelectTrigger>
++        <SelectContent>
++          {/* Clearing must stay reachable: the field is optional, and the
++              backend falls back to its own default when it is absent. Named
++              for the STATE, not for whichever value the backend would pick —
++              showing the default's name here reads as though it were selected,
++              which is a different thing from the key being absent. */}
++          <SelectItem value={UNSET}>
++            <span className="text-muted-foreground">{t`Unset`}</span>
++          </SelectItem>
++          {items.map((o) => (
++            <SelectItem key={o} value={o}>
++              {o}
++            </SelectItem>
++          ))}
++        </SelectContent>
++      </Select>
++    </label>
++  );
++}
+ 
+ /**
+  * A suggestion-backed text field: the vocabulary is advisory, so the control
+@@ -50,14 +105,9 @@ export function AgentSelectField({
+ }
+ 
+ /**
+- * Comma-separated list editor for a DECLARED-ONLY field.
+- *
+- * `tools`, `disallowed_tools`, `skills`, `mcp_servers` and `subagents`
+- * round-trip through `agent.md` and show on the agent's card, but nothing
+- * projects them into the worker yet — no `AgentOptions` subclass has a field
+- * to carry them. An earlier version of this control offered
+- * "inherited / revoke all", which claimed a gate the system does not apply.
+- * It says what is true instead, and the affordance returns with enforcement.
++ * Comma-separated editor for a DECLARED-ONLY field. `tools`,
++ * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
++ * worker yet; `skills`/`mcp_servers` moved to the agent-resources pane.
+  */
+ export function AgentListField({
+   label,
+diff --git a/ui/src/components/assets/editor/agent-profile/agent-document.ts b/ui/src/components/assets/editor/agent-profile/agent-document.ts
+index 08039e7f7..8ab024633 100644
+--- a/ui/src/components/assets/editor/agent-profile/agent-document.ts
++++ b/ui/src/components/assets/editor/agent-profile/agent-document.ts
+@@ -51,6 +51,33 @@ function splitFrontmatter(source: string): FrontmatterDocument {
+   };
+ }
+ 
++/** Frontmatter keys whose value is a plain list of strings. */
++export type AgentDocumentListKey = 'skills' | 'mcp_servers' | 'subagents' | 'additional_dirs';
++
++/**
++ * Read one list field out of `agent.md`'s frontmatter — the read half of
++ * `patchAgentDocument`, so an unindexed agent stays editable. Returns `[]` for a
++ * missing key, non-list value, or bad frontmatter: it feeds a list, not a throw.
++ */
++export function readAgentDocumentList(source: string, key: AgentDocumentListKey): string[] {
++  let yaml: string;
++  try {
++    ({ yaml } = splitFrontmatter(source));
++  } catch {
++    return [];
++  }
++  if (!yaml) return [];
++  try {
++    const document = parseDocument(yaml);
++    if (document.errors.length > 0 || !isMap(document.contents)) return [];
++    const node = document.get(key, true) as { toJSON?: () => unknown } | undefined;
++    const value = typeof node?.toJSON === 'function' ? node.toJSON() : document.get(key);
++    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
++  } catch {
++    return [];
++  }
++}
++
+ /**
+  * Losslessly patch the known Agent fields in agent.md.
+  *
+diff --git a/ui/src/components/assets/editor/agent-profile/agent-vocabularies.ts b/ui/src/components/assets/editor/agent-profile/agent-vocabularies.ts
+index 82b363b86..a3006f41f 100644
+--- a/ui/src/components/assets/editor/agent-profile/agent-vocabularies.ts
++++ b/ui/src/components/assets/editor/agent-profile/agent-vocabularies.ts
+@@ -24,6 +24,16 @@ import { WORKER_TYPES } from '@src/hooks/useWorkerHistory';
+  */
+ export const AGENT_WORKER_TYPES = WORKER_TYPES;
+ 
++/**
++ * Fold either worker vocabulary onto the DRIVER short-id so both spellings
++ * compare equal. `claude` alone differs (`worker_type` is `claude_code`), and
++ * comparing raw silently matches nothing for it. Mirrors `VENDORS` (vendors.py).
++ */
++export function toDriverKey(worker: string | null | undefined): string {
++  const value = (worker ?? '').trim();
++  return value === 'claude_code' ? 'claude' : value;
++}
++
+ /** Size tiers. `Agent.model` also accepts a concrete model id, so this is a
+  *  suggestion list, not a constraint. */
+ export const AGENT_MODEL_TIERS = Object.values(WorkerModelTier);
+diff --git a/ui/src/components/navigator-panel/NavigatorSection.tsx b/ui/src/components/navigator-panel/NavigatorSection.tsx
+new file mode 100644
+index 000000000..3a9741e9a
+--- /dev/null
++++ b/ui/src/components/navigator-panel/NavigatorSection.tsx
+@@ -0,0 +1,72 @@
++import { useEffect, useRef, useState, type ReactNode } from 'react';
++import { ChevronDown, ChevronRight } from 'lucide-react';
++import { cn } from '@src/lib/utils';
++
++export interface NavigatorSectionProps {
++  /** Stable id — `data-testid="navigator-section-<id>"`. Deliberately NOT a
++   *  persistence key: open/closed is derived per mount from the data (below),
++   *  so a remembered state would fight the default-open rule. */
++  id: string;
++  /** Header label. Already translated by the caller. */
++  label: string;
++  /** Rows still loading. The default-open rule waits for this to clear. */
++  isLoading?: boolean;
++  /** How many rows `children` will render. Drives the default-open rule ONLY —
++   *  it is never displayed. Section headers carry no count badge by design. */
++  itemCount: number;
++  /** Rendered in place of `children` when settled and empty. */
++  emptyState?: ReactNode;
++  /** Trailing header control. A SIBLING of the collapse button, never inside
++   *  it: nesting an interactive element in a `<button>` is invalid and the click
++   *  would also toggle. Stays visible while collapsed. */
++  action?: ReactNode;
++  children?: ReactNode;
++}
++
++/**
++ * One collapsible section of a navigator body. Expanded iff non-empty, decided
++ * ONCE when data settles — not on first render, where a cold cache reports 0 for
++ * every section and would collapse them all permanently. Then it is the user's.
++ */
++export function NavigatorSection({
++  id,
++  label,
++  isLoading,
++  itemCount,
++  emptyState,
++  action,
++  children,
++}: NavigatorSectionProps) {
++  const [open, setOpen] = useState(false);
++  const settled = useRef(false);
++
++  useEffect(() => {
++    if (settled.current || isLoading) return;
++    settled.current = true;
++    setOpen(itemCount > 0);
++  }, [isLoading, itemCount]);
++
++  const Chevron = open ? ChevronDown : ChevronRight;
++  const isEmpty = !isLoading && itemCount === 0;
++
++  return (
++    <div className="flex flex-col">
++      <div className="group flex w-full items-center hover:bg-muted/60">
++        <button
++          type="button"
++          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-start"
++          onClick={() => setOpen((v) => !v)}
++          aria-expanded={open}
++          data-testid={`navigator-section-${id}`}
++        >
++          {/* Only the COLLAPSED caret points along the reading direction, so only
++              it mirrors in RTL; the open one points down. */}
++          <Chevron className={cn('h-3.5 w-3.5 flex-shrink-0 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
++          <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{label}</span>
++        </button>
++        {action && <div className="flex flex-shrink-0 items-center pe-1">{action}</div>}
++      </div>
++      {open && <div className="pb-1">{isEmpty ? emptyState : children}</div>}
++    </div>
++  );
++}
+diff --git a/ui/src/navigation/DockPointer.ts b/ui/src/navigation/DockPointer.ts
+index 188714650..43cd9d31e 100644
+--- a/ui/src/navigation/DockPointer.ts
++++ b/ui/src/navigation/DockPointer.ts
+@@ -23,6 +23,7 @@ import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAd
+ import { isValidView } from './validators';
+ import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
+ import {
++  assetEditorOf,
+   assetEditorValue,
+   assetWikiValue,
+   normalizeAssetVfsPath,
+@@ -2351,6 +2352,15 @@ export class DockPointer implements IDockPointer {
+     return parseAssetWikiRef(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
+   }
+ 
++  /**
++   * The asset EDITOR this route opens, or null. Answers WHICH EDITOR, not what
++   * subject: the segment is in the URL for both routing methods, so a caller
++   * learns it with no entity resolution and no async gap.
++   */
++  get assetEditor(): AssetEditor | null {
++    return assetEditorOf(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
++  }
++
+   /**
+    * True when this dock addresses the PROJECT ITSELF, not something inside it.
+    *
+diff --git a/ui/src/navigation/asset-doc-pointer-grammar.ts b/ui/src/navigation/asset-doc-pointer-grammar.ts
+index b4136f008..10bf95435 100644
+--- a/ui/src/navigation/asset-doc-pointer-grammar.ts
++++ b/ui/src/navigation/asset-doc-pointer-grammar.ts
+@@ -77,6 +77,21 @@ export function assetEditorValue(
+   }
+ }
+ 
++/**
++ * The `<editor>` segment of an `editor/…` pointer, else null. Pure — no entity
++ * resolution: the segment is in the URL for BOTH routing methods, which is what
++ * lets a navigator swap itself synchronously on first render.
++ */
++export function assetEditorOf(pointer: string | null | undefined): AssetEditor | null {
++  if (!pointer) return null;
++  try {
++    const parsed = parseAssetDocPointer(pointer);
++    return parsed.mode === AssetMode.EDITOR ? (parsed.editor ?? null) : null;
++  } catch {
++    return null;
++  }
++}
++
+ export function assetWikiValue(name: string, space: string = DEFAULT_WIKI_SPACE): string {
+   return `${space}/${name}`;
+ }
+diff --git a/ui/src/navigation/navigatorRegistry.tsx b/ui/src/navigation/navigatorRegistry.tsx
+index 631e1a1cf..afee03ed7 100644
+--- a/ui/src/navigation/navigatorRegistry.tsx
++++ b/ui/src/navigation/navigatorRegistry.tsx
+@@ -1,7 +1,7 @@
+ import type { ComponentType } from 'react';
+ import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
+ import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
+-import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
++import { AssetsNavigatorSwitch } from '@src/components/assets/AssetsNavigatorSwitch';
+ import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
+ import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
+ import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
+@@ -19,8 +19,10 @@ import { GraphWorkflowsNavigator } from '@src/components/graph-workflows/GraphWo
+  */
+ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
+   [ViewType.DOCS]: DocsNavigator,
+-  [ViewType.ASSETS]: AssetsNavigator,
+-  [ViewType.PROJECT]: AssetsNavigator,
++  // The switch, not the tree directly: an agent editor rides these same two
++  // view types and swaps in its own resource pane (AssetsNavigatorSwitch).
++  [ViewType.ASSETS]: AssetsNavigatorSwitch,
++  [ViewType.PROJECT]: AssetsNavigatorSwitch,
+   // The merged Events screen and its URL aliases, derived from the one set so
+   // adding or retiring an alias is a single edit.
+   ...Object.fromEntries([...EVENTS_VIEW_TYPES].map((v) => [v, TriggersNavigator])),
+diff --git a/ui/tests/unit/navigation/asset-editor-of.test.ts b/ui/tests/unit/navigation/asset-editor-of.test.ts
+new file mode 100644
+index 000000000..8009b600b
+--- /dev/null
++++ b/ui/tests/unit/navigation/asset-editor-of.test.ts
+@@ -0,0 +1,67 @@
++import { describe, expect, it } from 'vitest';
++import { TypeId } from '@sdk';
++import { assetEditorOf } from '@src/navigation/asset-doc-pointer-grammar';
++import { AssetEditor } from '@src/navigation/asset-doc-types';
++import { DockPointer } from '@src/navigation/DockPointer';
++import { ViewType } from '@src/types/ViewType';
++
++const V4 = 'd864c29b-69fc-4b8d-b748-1526a83f598a';
++
++/**
++ * `assetEditorOf` / `DockPointer.assetEditor` answer WHICH EDITOR a route opens
++ * without resolving the entity. Zone B swaps on that, so agent-vs-subagent and
++ * the project-rebased form are the cases that matter.
++ */
++describe('assetEditorOf', () => {
++  it('reads the editor off a vfs pointer', () => {
++    expect(assetEditorOf('editor/agent/vfs/compute_node-@local/a/agent.md')).toBe(AssetEditor.AGENT);
++  });
++
++  it('reads the editor off a typeid pointer', () => {
++    expect(assetEditorOf(`editor/agent/typeid/agent-${V4}`)).toBe(AssetEditor.AGENT);
++  });
++
++  it('distinguishes subagent from agent', () => {
++    expect(assetEditorOf(`editor/subagent/typeid/subagent-${V4}`)).toBe(AssetEditor.SUBAGENT);
++  });
++
++  it('returns null for a wiki pointer', () => {
++    expect(assetEditorOf('wiki/space/Word')).toBeNull();
++  });
++
++  it('returns null for a malformed or empty pointer', () => {
++    expect(assetEditorOf('editor/not-an-editor/typeid/x')).toBeNull();
++    expect(assetEditorOf('nonsense')).toBeNull();
++    expect(assetEditorOf('')).toBeNull();
++    expect(assetEditorOf(null)).toBeNull();
++    expect(assetEditorOf(undefined)).toBeNull();
++  });
++});
++
++describe('DockPointer.assetEditor', () => {
++  it('resolves on a plain ASSETS dock', () => {
++    const dock = new DockPointer(ViewType.ASSETS, `editor/agent/typeid/agent-${V4}`);
++    expect(dock.assetEditor).toBe(AssetEditor.AGENT);
++  });
++
++  it('resolves through the project-rebased form', () => {
++    const plain = new DockPointer(ViewType.ASSETS, `editor/agent/typeid/agent-${V4}`);
++    const rebased = DockPointer.rebaseAssetsOntoProject(plain, 'project-id');
++    expect(rebased.viewType).toBe(ViewType.PROJECT);
++    expect(rebased.assetEditor).toBe(AssetEditor.AGENT);
++  });
++
++  it('is null for a non-asset dock and for a bare project dock', () => {
++    expect(new DockPointer(ViewType.SHELL, `agentic_process-${V4}`).assetEditor).toBeNull();
++    expect(new DockPointer(ViewType.PROJECT, 'project-id').assetEditor).toBeNull();
++  });
++
++  it('is null for an asset LIST dock, so the tree keeps the list view', () => {
++    expect(DockPointer.forAssetList('skill').assetEditor).toBeNull();
++  });
++
++  it('reports the markdown editor for a doc route', () => {
++    const dock = DockPointer.forAssetEditorByTypeId('markdown', new TypeId('markdown', V4));
++    expect(dock.assetEditor).toBe(AssetEditor.MARKDOWN);
++  });
++});
+diff --git a/ui/tests/unit/navigator-section.test.tsx b/ui/tests/unit/navigator-section.test.tsx
+new file mode 100644
+index 000000000..6e097184a
+--- /dev/null
++++ b/ui/tests/unit/navigator-section.test.tsx
+@@ -0,0 +1,80 @@
++import '@testing-library/jest-dom/vitest';
++
++import { cleanup, render, screen, waitFor } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { afterEach, describe, expect, it } from 'vitest';
++
++import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
++
++// The unit tier has no global RTL cleanup (unlike the react tier's setup file).
++afterEach(cleanup);
++
++function Section(props: { isLoading?: boolean; itemCount: number }) {
++  return (
++    <NavigatorSection
++      id="demo"
++      label="Demo"
++      isLoading={props.isLoading}
++      itemCount={props.itemCount}
++      emptyState={<span>nothing here</span>}
++    >
++      <span>a row</span>
++    </NavigatorSection>
++  );
++}
++
++describe('NavigatorSection', () => {
++  it('opens when the data settles non-empty', async () => {
++    render(<Section itemCount={3} />);
++    await waitFor(() => expect(screen.getByText('a row')).toBeInTheDocument());
++    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true');
++  });
++
++  it('stays collapsed when the data settles empty', async () => {
++    render(<Section itemCount={0} />);
++    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false'));
++    expect(screen.queryByText('nothing here')).not.toBeInTheDocument();
++  });
++
++  it('shows the empty state once an empty section is expanded', async () => {
++    render(<Section itemCount={0} />);
++    await userEvent.click(screen.getByTestId('navigator-section-demo'));
++    expect(screen.getByText('nothing here')).toBeInTheDocument();
++  });
++
++  // The rule fires on SETTLE, not first render: a cold cache reports 0 for a
++  // frame, and deciding then would collapse every section permanently.
++  it('waits for isLoading to clear before deciding', async () => {
++    const { rerender } = render(<Section isLoading itemCount={0} />);
++    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
++
++    rerender(<Section isLoading={false} itemCount={5} />);
++    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
++  });
++
++  it('does not re-collapse when a settled section later empties', async () => {
++    const { rerender } = render(<Section itemCount={2} />);
++    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
++
++    rerender(<Section itemCount={0} />);
++    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true');
++  });
++
++  it('never overrides a manual toggle', async () => {
++    const { rerender } = render(<Section itemCount={2} />);
++    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
++
++    await userEvent.click(screen.getByTestId('navigator-section-demo'));
++    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
++
++    rerender(<Section itemCount={7} />);
++    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
++  });
++
++  it('renders no count badge', async () => {
++    render(<Section itemCount={42} />);
++    await waitFor(() => expect(screen.getByText('a row')).toBeInTheDocument());
++    expect(screen.queryByText('42')).not.toBeInTheDocument();
++    expect(screen.queryByText('(42)')).not.toBeInTheDocument();
++  });
++});

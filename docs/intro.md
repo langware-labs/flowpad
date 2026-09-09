@@ -1,6 +1,6 @@
 ---
-asset_id: "8762a20a-148a-4780-a05a-7a4c48c245dc"
-title: "intro"
+id: 8762a20a-148a-4780-a05a-7a4c48c245dc
+title: intro
 ---
 
 # Flowpad 

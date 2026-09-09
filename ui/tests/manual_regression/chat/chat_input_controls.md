@@ -1,9 +1,10 @@
 ---
-type: "workflow"
-name: "chat_input_controls_opener_menu"
-description: 'Verify the shell tab opener "+" menu exposes Claude Code and Terminal rows'
-asset_id: "aefe262f-b53a-4707-9158-f7e120125561"
-tags: "[chat, terminal, smoke]"
+id: aefe262f-b53a-4707-9158-f7e120125561
+type: workflow
+name: chat_input_controls_opener_menu
+description: Verify the shell tab opener "+" menu exposes Claude Code and Terminal
+  rows
+tags: '[chat, terminal, smoke]'
 ---
 
 # Tab Opener Menu Exposes Claude and Terminal Rows
@@ -53,4 +54,3 @@ tags: "[chat, terminal, smoke]"
 * wait 1 second
 
 * validate terminal is still visible and responsive
-
