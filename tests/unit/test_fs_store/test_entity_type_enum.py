@@ -42,6 +42,7 @@ EXPECTED = {
     "COMMAND": "command",
     "MCP": "mcp",
     "MCP_SERVER": "mcp_server",
+    "PROJECT_MANIFEST": "project_manifest",
     "MCP_SERVER_SOURCE": "mcp_server_source",
     "PLUGIN": "plugin",
     "CLAUDE_MD": "claude_md",

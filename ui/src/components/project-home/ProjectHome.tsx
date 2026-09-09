@@ -2,7 +2,8 @@ import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
-import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
+import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import apiClient from '@sdk/client';
@@ -198,11 +199,15 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         >
           <div className="flex min-w-0 items-center gap-3">
             {cloudMode ? (
-              <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+              <>
+                <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+                <ProjectPublishedButton projectId={projectTypeId.id} />
+              </>
             ) : (
               <>
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
-                {project && <ProjectPublishButton project={project} />}
+                {project && <ProjectCloudLinkButton project={project} />}
+                <ProjectPublishedButton projectId={projectTypeId.id} />
               </>
             )}
           </div>

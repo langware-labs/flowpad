@@ -647,6 +647,22 @@ export class NavigationActions {
     );
   }
 
+  /**
+   * Open the Discover page — a TOP-LEVEL route, not a dock tab — for one
+   * project. The project rides as `?scope-project=<id>` (the one URL grammar
+   * for "this surface is about project X"); the route's loader adopts it, so
+   * a hard load or a bookmark lands on the same state as this click. Without
+   * a project the page falls back to the active one.
+   */
+  openDiscover(projectId?: string | null): void {
+    // The scope rides in the URL the way every dock carries it — through
+    // `withScopeFilter`, never a hand-built `scope-*` literal.
+    const root = DockPointer.root();
+    const dock = projectId ? root.withScopeFilter(projectScope(projectId)) : root;
+    const query = dock.toSearchParams().toString();
+    void this.navigate(query ? `/discover?${query}` : '/discover');
+  }
+
   openProject(
     projectId?: string,
     sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null; sessionId?: string | null },

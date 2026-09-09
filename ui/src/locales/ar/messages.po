@@ -1,17 +1,10 @@
+#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
+"Share to a conversation\n"
+"{childPath}"
 msgstr ""
-"POT-Creation-Date: 2026-06-29 01:00+0300\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"X-Generator: @lingui/cli\n"
-"Language: ar\n"
-"Project-Id-Version: \n"
-"Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: \n"
-"Last-Translator: \n"
-"Language-Team: \n"
-"Plural-Forms: \n"
+"مشاركة في محادثة\n"
+"{childPath}"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -1200,6 +1193,10 @@ msgstr ""
 msgid "Add Artifact"
 msgstr "إضافة عنصر"
 
+#: src/components/install/AddAssetDialog.tsx
+msgid "Add asset"
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add at least one email address."
 msgstr ""
@@ -1341,6 +1338,7 @@ msgid "Add to Private Context"
 msgstr "إضافة إلى السياق الخاص"
 
 #: src/components/connections-manager.tsx
+#: src/components/install/AddAssetDialog.tsx
 msgid "Add to project"
 msgstr "إضافة إلى المشروع"
 
@@ -1356,6 +1354,10 @@ msgstr "إضافة إلى الطابور"
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Add to the running session"
 msgstr "إضافة إلى الجلسة الجارية"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Add to this project's manifest so others can discover it"
+msgstr ""
 
 #: src/components/hooks-manager/index.tsx
 msgid "Add Trigger"
@@ -1376,6 +1378,10 @@ msgstr ""
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0}, but the key was not saved"
+msgstr ""
+
+#: src/components/install/AddAssetDialog.tsx
+msgid "Added to the project."
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -1755,9 +1761,9 @@ msgstr "موجود بالفعل"
 msgid "already running"
 msgstr "قيد التشغيل بالفعل"
 
-#: src/components/llm-sources/LlmSourcesView.tsx
-#~ msgid "Already signed in elsewhere? Check again"
-#~ msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -1896,6 +1902,10 @@ msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا 
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
+msgstr ""
+
+#: src/components/install/AddAssetDialog.tsx
+msgid "another project"
 msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
@@ -2055,6 +2065,10 @@ msgstr "أرشفة جميع المهام"
 msgid "Archive task"
 msgstr "أرشفة المهمة"
 
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
+
 #: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
 msgid "Archived"
@@ -2139,9 +2153,12 @@ msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr "يُرجى الطلب من الشخص الذي شاركه بدء تشغيله أو إرسال رابط جديد."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "asset"
 msgstr "أصل"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Asset"
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
@@ -2173,8 +2190,8 @@ msgid "asset_ref is unset — has this MarkdownIndex ever been built?"
 msgstr "asset_ref لم يُعيّن — هل تم بناء MarkdownIndex من قبل؟"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "assets"
-msgstr "الموارد"
+#~ msgid "assets"
+#~ msgstr "الموارد"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -3020,13 +3037,17 @@ msgstr "معدّل"
 msgid "Changed"
 msgstr "معدّل"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Changed since publish"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "التغييرات"
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "Changes ({0})"
-#~ msgstr "التغييرات ({0})"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -3128,7 +3149,7 @@ msgstr "جارٍ التحقق من جاهزية {folderName} للمشاركة."
 msgid "checking…"
 msgstr "جارٍ التحقق…"
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "جاري التحقق…"
@@ -3144,6 +3165,10 @@ msgstr ""
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Choose a document from the sidebar to view its contents"
 msgstr "يمكن اختيار مستند من الشريط الجانبي لعرض محتوياته"
+
+#: src/components/install/AddAssetDialog.tsx
+msgid "Choose a project"
+msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
@@ -4436,9 +4461,9 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Could not connect GitHub"
 msgstr "تعذر الاتصال بـ GitHub"
 
@@ -4566,8 +4591,8 @@ msgstr ""
 msgid "Could not link asset to cloud"
 msgstr "تعذّر ربط الأصل بالسحابة"
 
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Could not link project to cloud"
 msgstr "تعذر ربط المشروع بالسحابة"
 
@@ -4616,6 +4641,10 @@ msgstr "تعذّر فتح المهارة"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not pause"
 msgstr "تعذر الإيقاف المؤقت"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Could not publish"
+msgstr ""
 
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/DataSourceRow.tsx
@@ -4670,6 +4699,10 @@ msgstr "تعذّر حذف ملفات مكتب المساعدة"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not remove the key"
+msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Could not remove the row"
 msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -4754,10 +4787,14 @@ msgstr ""
 msgid "Could not send report to the Flowpad team"
 msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
+#: src/components/install/InstallButton.tsx
+msgid "Could not send the install"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/hooks/use-git-share-gate.ts
 #: src/hooks/use-git-share-gate.ts
 msgid "Could not set up Git"
@@ -4833,6 +4870,10 @@ msgstr "تعذّر تبديل المصدر"
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
 msgstr "تعذّر التبديل إلى Terminal."
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Could not unpublish"
+msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
@@ -5195,6 +5236,7 @@ msgstr "المجلد الحالي"
 msgid "Current directory (click to refresh)"
 msgstr "المجلد الحالي (انقر للتحديث)"
 
+#: src/components/install/AddAssetDialog.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 msgid "Current project"
 msgstr "المشروع الحالي"
@@ -6891,8 +6933,8 @@ msgid "Every selection"
 msgstr "عند كل تحديد"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Every skill, agent, spec, and document this project ships."
-msgstr "جميع المهارات والوكلاء والمواصفات والوثائق التي يوفرها هذا المشروع."
+#~ msgid "Every skill, agent, spec, and document this project ships."
+#~ msgstr "جميع المهارات والوكلاء والمواصفات والوثائق التي يوفرها هذا المشروع."
 
 #. placeholder {0}: org.name
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -6922,6 +6964,10 @@ msgstr ""
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Everything available is already connected."
+msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Everything in this project is published."
 msgstr ""
 
 #: src/lib/publish-state.ts
@@ -8109,7 +8155,7 @@ msgid "Git is required to share files"
 msgstr "Git مطلوب لمشاركة الملفات"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Git is set up"
 msgstr "تم إعداد Git"
 
@@ -8131,16 +8177,16 @@ msgstr "مستودع Git"
 msgid "Git repository ready"
 msgstr "مستودع Git جاهز"
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Git setup cancelled"
 msgstr "تم إلغاء إعداد Git"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Git setup failed."
 msgstr "فشل إعداد Git."
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Git setup finished, but the project still isn't ready to link."
 msgstr "تم إعداد Git، لكن المشروع ما زال غير جاهز للربط."
 
@@ -8160,9 +8206,9 @@ msgstr "عنوان Git URL"
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "GitHub authorization did not complete."
 msgstr "لم تكتمل عملية التفويض مع GitHub."
 
@@ -8935,6 +8981,10 @@ msgstr ""
 msgid "in use"
 msgstr "قيد الاستخدام"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "In use"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "In-app only"
 msgstr "داخل التطبيق فقط"
@@ -9116,6 +9166,12 @@ msgstr "إدراج رمز تعبيري"
 msgid "Insert table"
 msgstr "إدراج جدول"
 
+#: src/components/install/AddAssetDialog.tsx
+#: src/components/install/InstallButton.tsx
+#: src/pages/discover-page/discover-page.tsx
+msgid "Install"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "التثبيت وإعادة التشغيل"
@@ -9131,6 +9187,10 @@ msgstr "فشل التثبيت"
 msgid "Install failed."
 msgstr "فشل التثبيت."
 
+#: src/components/install/InstallSnippetDialog.tsx
+msgid "Install Flowpad on your computer first"
+msgstr ""
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
 msgstr "تثبيت gh"
@@ -9145,6 +9205,10 @@ msgstr "تثبيت عالمياً"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "تثبيت في المشروع"
+
+#: src/components/install/InstallButton.tsx
+msgid "Install this asset on your desktop"
+msgstr ""
 
 #. placeholder {0}: r.version
 #: src/components/version-popover/version-popover.tsx
@@ -9774,28 +9838,28 @@ msgstr "تم نسخ الرابط إلى الحافظة."
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Link to cloud"
 msgstr "ربط بالسحابة"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Linked to cloud"
 msgstr "تم الربط بالسحابة"
 
 #. placeholder {0}: project.name ?? 'this project'
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Linking {0} to the cloud…"
 msgstr "جاري ربط {0} بالسحابة…"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Linking failed."
 msgstr "فشل الربط."
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Linking…"
 msgstr "جاري الربط…"
 
@@ -9811,6 +9875,10 @@ msgstr "قائمة النماذج المتاحة للاختيار"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "List view"
 msgstr "عرض القائمة"
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Listed in this project's manifest — click to unpublish"
+msgstr ""
 
 #. placeholder {0}: source.name || source.provider
 #: src/components/inbox-view/AttachedChannelsBar.tsx
@@ -10695,6 +10763,10 @@ msgstr "طفيفة"
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Missing"
+msgstr ""
+
 #: src/pages/keychain-approval.tsx
 msgid "Missing API key — please retry the deep link from the source page."
 msgstr "مفتاح API مفقود — يرجى إعادة محاولة الرابط العميق من صفحة المصدر."
@@ -10928,6 +11000,10 @@ msgstr "الاسم:"
 msgid "name@example.com"
 msgstr ""
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Named by the manifest but gone from disk"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "يتطلب مراجعة"
@@ -11049,9 +11125,9 @@ msgstr "ملف جديد"
 msgid "New File"
 msgstr "ملف جديد"
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "New Files ({0})"
-#~ msgstr "الملفات الجديدة ({0})"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
@@ -11610,6 +11686,10 @@ msgstr "لا يوجد مصدر LLM يموّل هذا الإطار"
 msgid "No log file found"
 msgstr "لم يتم العثور على ملف سجل"
 
+#: src/components/install/InstallSnippetDialog.tsx
+msgid "No logged-in desktop was found. Run these three lines, then click Install again."
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No logs available"
 msgstr "لا توجد سجلات متاحة"
@@ -11842,6 +11922,10 @@ msgstr "لا توجد أوامر نصية بعد — يمكن إنشاء واح�
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
 msgstr "لم تُطلق أي أحداث PTY بعد."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "No published assets match those filters."
+msgstr ""
 
 #: src/pages/hub-project/HubProjectPage.tsx
 msgid "No published assets yet."
@@ -12218,6 +12302,10 @@ msgstr "غير مسجّل الدخول"
 msgid "Not logged in · Please run /login"
 msgstr "غير مسجّل الدخول · شغّل /login"
 
+#: src/components/install/AddAssetDialog.tsx
+msgid "Not now"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
 msgstr "غير قابل للوصول"
@@ -12260,6 +12348,10 @@ msgstr "لم يُستخدم بعد"
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "not visible"
+msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Not yet published"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
@@ -12322,6 +12414,10 @@ msgstr "لا يوجد جديد للإرسال — تم إرسال الرسالة
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
 msgstr "لا يوجد عنصر مفتوح لإضافته إلى الإشارات المرجعية"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Nothing published yet — publish an asset below, or from its editor."
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
@@ -12450,6 +12546,10 @@ msgstr "عند خطاف الوكيل"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "On Disk"
 msgstr "على القرص"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "On disk but not indexed yet — pulled via git"
+msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "On file change"
@@ -12812,7 +12912,7 @@ msgstr "فتح المشروع"
 msgid "Open project home"
 msgstr "فتح الصفحة الرئيسية للمشروع"
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Open project in cloud"
 msgstr "فتح المشروع في السحابة"
 
@@ -13861,7 +13961,7 @@ msgid "Project is fixed after the first message — start a new session to chang
 msgstr "المشروع ثابت بعد الرسالة الأولى — يمكن بدء جلسة جديدة لتغييره."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Project linked to cloud"
 msgstr "تم ربط المشروع بالسحابة"
 
@@ -14102,6 +14202,10 @@ msgstr "وقت PTY"
 msgid "PTY Viewer"
 msgstr "عارض PTY"
 
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Publish"
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Publish hit a conflict"
 msgstr "حدث تعارض أثناء النشر"
@@ -14110,9 +14214,31 @@ msgstr "حدث تعارض أثناء النشر"
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهازاً يسجّل دخوله بنفسه."
 
+#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/discover-page.tsx
+msgid "published"
+msgstr ""
+
+#: src/components/assets/editor/PublishedToggle.tsx
+#: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
+#: src/pages/discover-page/discover-page.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Published"
 msgstr "تم النشر"
+
+#: src/components/project-home/ProjectPublishedButton.tsx
+msgid "Published assets of this project"
+msgstr ""
+
+#. placeholder {0}: request.source_project_name || t`another project`
+#: src/components/install/AddAssetDialog.tsx
+msgid "Published by {0} — install a copy into one of yours."
+msgstr ""
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Published to the project."
+msgstr ""
 
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Pull"
@@ -14231,9 +14357,9 @@ msgstr "ذاكرة الوصول العشوائي (MB)"
 msgid "RAM:"
 msgstr "ذاكرة الوصول العشوائي:"
 
-#: src/components/llm-sources/LlmSourcesView.tsx
-#~ msgid "Re-check"
-#~ msgstr "تحقّق مرة أخرى"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -14597,6 +14723,7 @@ msgstr "جلسة العامل البعيد"
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Remove"
 msgstr "إزالة"
 
@@ -14702,6 +14829,10 @@ msgstr ""
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "إزالة هذا الملف من الـ commit القادم (git restore --staged)"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Remove this row from the manifest"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
@@ -14720,6 +14851,14 @@ msgstr "تمت الإزالة من السحابة لجميع المشاركين"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "تمت الإزالة لك فقط؛ الأعضاء الآخرون يحتفظون بها"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Removed from the manifest."
+msgstr ""
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "Removed from the project's published assets."
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Removed vibe agent"
@@ -14782,6 +14921,10 @@ msgstr ""
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "استبدال"
+
+#: src/components/install/AddAssetDialog.tsx
+msgid "Replace existing"
+msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
@@ -14967,6 +15110,10 @@ msgstr "جارٍ إعادة الفحص…"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset"
 msgstr "إعادة تعيين"
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
@@ -16180,6 +16327,10 @@ msgstr "جارٍ الإرسال…"
 msgid "Sent"
 msgstr "تم الإرسال"
 
+#: src/components/install/InstallButton.tsx
+msgid "Sent to your desktop — confirm it there."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Seq #"
 msgstr "رقم التسلسل #"
@@ -16402,7 +16553,7 @@ msgstr ""
 msgid "Set up Git"
 msgstr "إعداد Git"
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Set up Git for cloud linking"
 msgstr "إعداد Git للربط السحابي"
 
@@ -17481,7 +17632,7 @@ msgstr "الخطوات المتخذة"
 msgid "sticky for you"
 msgstr ""
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Still can't link this project"
 msgstr "ما زال ربط هذا المشروع غير ممكن"
 
@@ -17489,9 +17640,9 @@ msgstr "ما زال ربط هذا المشروع غير ممكن"
 msgid "Still signed in"
 msgstr "الجلسة ما زالت نشطة"
 
-#: src/components/llm-sources/use-llm-sources.ts
-#~ msgid "Still signed out — please re-authenticate"
-#~ msgstr "ما زلت غير مسجّل الدخول — يرجى تسجيل الدخول من جديد"
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -18043,6 +18194,10 @@ msgstr "تم إرفاق الصورة المُعلَّق عليها، إلا أن
 msgid "The artifact has been removed successfully."
 msgstr "تمت إزالة الملف بنجاح."
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "The asset is here and indexed"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "The asset is now available to project members."
 msgstr "الأصل متاح الآن لأعضاء المشروع."
@@ -18052,6 +18207,10 @@ msgstr "الأصل متاح الآن لأعضاء المشروع."
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "The asset matches HEAD."
 msgstr "الأصل مطابق لـHEAD."
+
+#: src/components/install/AddAssetDialog.tsx
+msgid "The asset was not added."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "The assets published with this project — its skills, agents, specs, and docs."
@@ -18109,6 +18268,10 @@ msgstr ""
 msgid "The fetch failed. Retry once the backend is up."
 msgstr "فشل الجلب. أعد المحاولة بعد تشغيل الخادم."
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "The file is newer than its published row"
+msgstr ""
+
 #: src/components/assets/editor/MissingAssetCard.tsx
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 msgstr "قد يكون الملف محذوفاً أو منقولاً أو لا يطابق صيغة {typeLabel}."
@@ -18143,6 +18306,10 @@ msgstr "الدعم الفني غير متاح حالياً. يُرجى المح�
 
 #: src/components/conversation/SessionCard.tsx
 msgid "the host"
+msgstr ""
+
+#: src/components/install/InstallButton.tsx
+msgid "The hub did not accept the request."
 msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
@@ -18185,6 +18352,11 @@ msgstr ""
 msgid "The logout did not complete."
 msgstr ""
 
+#: src/components/assets/editor/PublishedToggle.tsx
+#: src/pages/discover-page/discover-page.tsx
+msgid "The manifest was not changed."
+msgstr ""
+
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "تم إنشاء مهام الأعضاء؛ {messageFailures} رسالة إشعار لم تصل."
@@ -18197,7 +18369,7 @@ msgstr ""
 msgid "the other participant"
 msgstr ""
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "The project was not linked to the cloud."
 msgstr "لم يتم ربط المشروع بالسحابة."
 
@@ -18596,8 +18768,8 @@ msgid "This project doesn't exist or is no longer available."
 msgstr "هذا المشروع غير موجود أو لم يعد متاحًا."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "This project has no assets yet."
-msgstr "لا يحتوي هذا المشروع على موارد بعد."
+#~ msgid "This project has no assets yet."
+#~ msgstr "لا يحتوي هذا المشروع على موارد بعد."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
@@ -18607,7 +18779,11 @@ msgstr ""
 msgid "This project has no secrets declared yet."
 msgstr "لم يتم التصريح عن أي أسرار في هذا المشروع بعد."
 
-#: src/components/project-home/ProjectPublishButton.tsx
+#: src/pages/discover-page/discover-page.tsx
+msgid "This project has not published anything yet."
+msgstr ""
+
+#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."
 msgstr "أصبح هذا المشروع متاحًا الآن في السحابة."
 
@@ -18793,6 +18969,10 @@ msgstr "سيؤدي هذا إلى حذف جميع سجلات التصحيح من 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard has not run on this machine yet."
 msgstr ""
+
+#: src/components/organization/budgets/MemberStanding.tsx
+#~ msgid "Your teams"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
@@ -20078,6 +20258,10 @@ msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
 msgid "What this machine's assistants are funded by right now"
 msgstr ""
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
 msgstr "ما ينبغي الانتباه إليه"
@@ -20497,3 +20681,4 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+

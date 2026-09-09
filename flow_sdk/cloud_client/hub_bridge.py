@@ -245,6 +245,7 @@ class HubWsBridge:
         if self._installed:
             return
         self.manager.register_handler("data_op_msg", self._on_data_op)
+        self.manager.register_handler("install_request", self._on_install_request)
         self._installed = True
 
     def is_hub_conversation(self, conversation_id: str) -> bool:
@@ -316,6 +317,30 @@ class HubWsBridge:
             parent_id,
             str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None,
         )
+
+    async def _on_install_request(self, message: dict) -> None:
+        """Hub → this desktop: "install this published asset". The hub only
+        relays the row (typeid + origin + provenance); nothing is fetched or
+        written here. Every open window gets a ``ui_command`` that opens the
+        Add-asset dialog — the person picks the project and confirms there —
+        plus a desktop notification for a window that is not in front."""
+        from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+        from flow_sdk.notifications.ui_command import broadcast_ui_command  # noqa: PLC0415
+
+        envelope = {"message_type", "message_id", "instance_id"}
+        request = {k: v for k, v in (message or {}).items() if k not in envelope}
+        if not request.get("typeid"):
+            logger.warning("[hub-bridge] install_request without a typeid: %s", message)
+            return
+        await broadcast_ui_command("install_request", request=request)
+        try:
+            await notify_desktop(
+                "install",
+                title=f"Install {request.get('name') or request.get('typeid')}",
+                body=f"from {request.get('source_project_name') or 'a project'} — open Flowpad to add it",
+            )
+        except Exception:  # noqa: BLE001 — the dialog is the real surface
+            logger.debug("[hub-bridge] desktop notification skipped", exc_info=True)
 
     async def _on_data_op(self, message: dict) -> None:
         """Inbound data_op_msg dispatcher.
