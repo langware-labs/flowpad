@@ -1,11 +1,12 @@
 """The whole chain, in one process:
 
-    indexed wizard -> derived trigger -> armed -> app.ready -> fire -> wizard runs
+    trigger.json -> indexed row -> armed -> app.ready -> fire -> wizard runs
 
 Each link is separately covered elsewhere; this asserts they are actually joined.
-It is the test that fails if `_register_post_save` stops arming TAG triggers, if
-the reconcile stops deriving them, or if the callback stops resolving the wizard
-from `trigger.path` — three wiring bugs that every per-link test would still pass.
+It is the test that fails if the extractor stops flattening the document, if
+arming stops happening for a trigger that arrives by INDEXING rather than by
+seeding, or if the callback stops resolving the wizard from the action that
+names it — three wiring bugs that every per-link test would still pass.
 
 The wizard used is the REAL shipped one, and its steps run for real. On a
 developer machine python3 and git are already present, so both preconditions
@@ -13,6 +14,7 @@ report `satisfied` and no installer is spawned — which is exactly the shape th
 "already provisioned" half of the container proof takes.
 """
 import asyncio
+import uuid
 
 import pytest
 
@@ -20,10 +22,7 @@ from flow_sdk.builtin import tag_triggers
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.config import system_projects_root
-from flow_sdk.server.builtin_triggers import (
-    WIZARD_TRIGGER_UNAME_PREFIX,
-    reconcile_wizard_triggers,
-)
+from flow_sdk.server.builtin_triggers import WIZARD_TRIGGER_UNAME_PREFIX
 from flow_sdk.tags import emit_tag, target_of
 from tests.conftest import async_context
 
@@ -32,7 +31,37 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 SHIPPED = (
     system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "dev-toolchain"
 )
+#: The shipped wizard's trigger, as a child asset — the standard shape.
+SHIPPED_TRIGGER = SHIPPED / "agentic-assets" / "trigger" / "on-app-ready"
 UNAME = f"{WIZARD_TRIGGER_UNAME_PREFIX}dev_toolchain_0"
+
+
+async def _index_trigger(wizard) -> Trigger:
+    """Stand in for the indexer: document -> row -> armed.
+
+    Goes through the REAL extractor and the REAL arming seam, so what is proved
+    is the path a trigger actually takes off disk, not a hand-built row.
+    """
+    from flow_sdk.builtin.trigger_arming import arm_trigger
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.trigger import extract_trigger, read_trigger, row_fields
+
+    spec = read_trigger(SHIPPED_TRIGGER)
+    assert spec is not None, f"the shipped trigger asset did not parse at {SHIPPED_TRIGGER}"
+    record = extract_trigger(FSRef(SHIPPED_TRIGGER), str(uuid.uuid4()))[0]
+
+    trigger = Trigger(
+        id=record.id,
+        uname=UNAME,
+        asset_ref=str(SHIPPED_TRIGGER),
+        # `parent_type_id` is what the indexer stamps from the enclosure, and
+        # what makes `run_wizard: ""` mean "the wizard I live inside".
+        parent_type_id=str(wizard.typeid),
+        **row_fields(spec, parent_type_id=str(wizard.typeid)),
+    )
+    await trigger.save()
+    await arm_trigger(trigger)
+    return trigger
 _MAX_DRAIN_ROUNDS = 50
 
 
@@ -64,10 +93,9 @@ async def test_app_ready_runs_the_shipped_wizard_through_its_declared_trigger():
     try:
         assert wizard.is_system(), "the shipped wizard must be trusted, or it will refuse to run"
 
-        # 2. TRIGGER DERIVED + ARMED from what the document declares.
-        await reconcile_wizard_triggers()
-        trigger = await Trigger.get_by_uname(UNAME)
-        assert trigger is not None, "the wizard's declared trigger was not created"
+        # 2. THE TRIGGER ASSET, indexed and armed — no derivation, no restart.
+        trigger = await _index_trigger(wizard)
+        assert trigger is not None, "the wizard's trigger asset produced no row"
         assert trigger.tag_pattern == "app.ready"
         assert trigger.fire_once is True
         assert trigger.id in tag_triggers._subscriptions, (
@@ -137,9 +165,7 @@ async def test_an_unattended_run_leaves_a_durable_record():
     wizard = Wizard(name="dev-toolchain", asset_ref=str(SHIPPED))
     await wizard.save()
     try:
-        await reconcile_wizard_triggers()
-        trigger = await Trigger.get_by_uname(UNAME)
-        assert trigger is not None
+        trigger = await _index_trigger(wizard)
 
         assert read_state(str(wizard.id)).get("status", "") == "", "precondition: no run yet"
 

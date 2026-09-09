@@ -233,28 +233,6 @@ class WizardStepSpec(DataSpec):
         return self.label or self.id
 
 
-class WizardTriggerSpec(DataSpec):
-    """A bus subscription the wizard declares for itself.
-
-    Reconciled into a real ``Trigger`` row (see
-    ``flow_sdk/server/builtin_triggers.py``) rather than an in-memory
-    subscription, because ``fire_once`` needs a counter that survives a restart
-    and an in-memory subscription has nowhere to keep one.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.trigger"
-
-    #: Bus tag pattern. Validated by ``tag_pattern_problem`` at reconcile time.
-    on: NonBlank
-    #: Fire at most once per machine, ever. The Trigger row's ``counter`` is
-    #: the durable record — which is why this is a trigger property and not a
-    #: property of the event that fires it.
-    fire_once: bool = False
-    #: Optional target filter (``type:id``, trailing ``*`` allowed). Unset ⇒
-    #: fire regardless of what the event is about.
-    target: str = ""
-
-
 class WizardSpec(DataSpec):
     """``wizard.json`` — the whole document."""
 
@@ -278,7 +256,6 @@ class WizardSpec(DataSpec):
     #: wizard needs no approval.
     agent: str = ""
     steps: list[WizardStepSpec] = []
-    triggers: list[WizardTriggerSpec] = []
 
     @model_validator(mode="after")
     def _conversational_or_stepped(self) -> "WizardSpec":
