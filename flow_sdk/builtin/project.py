@@ -1383,14 +1383,21 @@ class Project(Entity):
         return ApiSuccessResponse(data={"typeids": sorted(spec.typeids)})
 
     @action.post(action_name="install-published")
-    async def install_published_action(self, request: dict | None = None, overwrite: bool = False):
+    async def install_published_action(self, request: dict | None = None, typeid: str = "", overwrite: bool = False):
         """Install one published row (as the hub's ``install_request`` relays
         it) into THIS project: copy from its origin, index keeping the
-        publisher's id, record in ``deps.json``. Refusals are 400 with a code."""
-        from flow_sdk.builtin.project_manifest import PublishRefused, install_published  # noqa: PLC0415
+        publisher's id, record in ``deps.json``. A bare ``typeid`` (the CLI's
+        ``flow asset install``) is resolved on the hub first. Refusals are 400
+        with a code."""
+        from flow_sdk.builtin.project_manifest import (  # noqa: PLC0415
+            PublishRefused,
+            install_published,
+            resolve_published_row,
+        )
 
         try:
-            return ApiSuccessResponse(data=await install_published(self, request or {}, overwrite=bool(overwrite)))
+            row = request or await resolve_published_row(str(typeid or ""))
+            return ApiSuccessResponse(data=await install_published(self, row, overwrite=bool(overwrite)))
         except PublishRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
 

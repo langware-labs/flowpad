@@ -14,7 +14,7 @@ from pathlib import Path
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
-from flow_sdk.schema.data_spec.project_manifest_spec import PROJECT_MANIFEST_SCHEMA, PublishedAssetSpec
+from flow_sdk.schema.data_spec.project_manifest_spec import PROJECT_MANIFEST_SCHEMA, PublishedAssetSpec, split_typeid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,26 @@ async def _source_root(origin) -> Path:
     if joined is None:
         raise PublishRefused("missing", f"the origin's path {origin.rel_path!r} escapes its checkout")
     return joined
+
+
+async def resolve_published_row(typeid: str) -> dict:
+    """A bare typeid → its published row plus publisher, from the hub's
+    ``project/published_asset`` lookup — the ``install_request`` shape, so the
+    CLI's ``flow asset install <typeid>`` walks the same path as the dialog."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    try:
+        split_typeid(typeid)
+    except ValueError as exc:
+        raise PublishRefused("bad_request", str(exc)) from exc
+    data = await hub_get("project", None, action="published_asset", params={"typeid": typeid})
+    if not isinstance(data, dict) or not data.get("typeid"):
+        raise PublishRefused(
+            "not_published",
+            f"the hub knows no published asset {typeid} you can see — publish it, share its project, "
+            "or check this desktop is logged in",
+        )
+    return data
 
 
 async def install_published(project, request: dict, *, overwrite: bool = False) -> dict:

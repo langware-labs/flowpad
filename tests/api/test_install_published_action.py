@@ -4,6 +4,7 @@ publisher's id, recorded in B's ``deps.json``."""
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -92,3 +93,36 @@ async def test_refusals(bootstrapped_client, tmp_path):
     assert gone.status_code == 400 and gone.json()["data"]["code"] == "missing"
     same = await _install(bootstrapped_client, a, {**row, "source_project_id": a})
     assert same.status_code == 400 and same.json()["data"]["code"] == "same_project"
+
+
+async def test_a_bare_typeid_is_resolved_on_the_hub_and_installed_the_same_way(bootstrapped_client, tmp_path, monkeypatch):
+    """``flow asset install <typeid>`` sends only the typeid; the desk asks the
+    hub for the row (patched here — the hub's lookup has its own test) and then
+    walks the very same install path the dialog does."""
+    import flow_sdk.builtin.project_manifest as pm
+
+    a, _a_root, skill, row = await _publish_a_skill(bootstrapped_client, tmp_path)
+    b_root = tmp_path / "b"
+    b_root.mkdir()
+    b = await project(bootstrapped_client, b_root)
+    typeid = f"skill-{skill['id']}"
+    asked = []
+
+    async def fake_lookup(t):
+        asked.append(t)
+        return {**row, "source_project_id": a, "source_project_name": "a"}
+
+    monkeypatch.setattr(pm, "resolve_published_row", fake_lookup)
+    resp = await _install(bootstrapped_client, b, None, typeid=typeid)
+    assert resp.status_code == 200, resp.text
+    assert asked == [typeid]
+    assert (b_root / ".claude" / "skills" / "rca" / "SKILL.md").exists()
+    (dep,) = json.loads((b_root / DEPS).read_text())["entries"]
+    assert dep["source_project_id"] == a
+
+    async def unknown(t):
+        raise pm.PublishRefused("not_published", "nobody published that")
+
+    monkeypatch.setattr(pm, "resolve_published_row", unknown)
+    resp = await _install(bootstrapped_client, b, None, typeid=f"skill-{uuid.uuid4()}")
+    assert resp.status_code == 400 and resp.json()["data"]["code"] == "not_published"

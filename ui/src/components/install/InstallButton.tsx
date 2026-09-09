@@ -47,7 +47,7 @@ export function InstallButton({ project, typeid, name }: { project: Project; typ
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
         {t`Install`}
       </button>
-      <InstallSnippetDialog open={snippet} onOpenChange={setSnippet} />
+      <InstallSnippetDialog open={snippet} onOpenChange={setSnippet} typeid={typeid} />
     </>
   );
 }
