@@ -295,6 +295,16 @@ class Trigger(Entity):
     tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
     max_fires_per_minute: int = APIField(default=STORM_CAP_PER_MINUTE, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
     confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TAG only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
+    # ONCE-per-machine, expressed where the durable counter already lives.
+    #
+    # The alternative was a bespoke "has this fired here" file beside the
+    # emitter, which would gate ONE event for ONE feature. Putting it here
+    # instead means the emitter needs no gate at all — an ordinary lifecycle
+    # event can fire on every boot, and any trigger that wants to answer it
+    # only the first time says so itself. `counter` is the record; an
+    # in-memory subscription could not hold one, which is why a wizard's
+    # declared trigger is a row.
+    fire_once: bool = APIField(default=False, description="Fire at most once ever (TAG only). The trigger's own counter is the durable record; a spent trigger is suppressed, not deleted, so the Triggers screen still shows that it ran.")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []

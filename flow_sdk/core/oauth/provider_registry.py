@@ -30,6 +30,15 @@ logger = logging.getLogger(__name__)
 
 GITHUB = "github"
 ANTHROPIC = "anthropic"
+#: FlowPad's own account, connected through FlowPad's own OAuth grant.
+#:
+#: Deliberately NOT the same name as ``OAuthProvider.FLOWPAD_CLOUD``
+#: (``"flowpad_cloud"``), which is the pre-existing api-key sign-in and is not a
+#: registered provider at all. The two are separate rows on purpose: they are two
+#: ways to authenticate the same account, both offered, and a user who has done
+#: one can still do the other. Collapsing them onto one name would make the
+#: Connections table unable to say which one is connected.
+FLOWPAD = "flowpad"
 SLACK = "slack"
 GOOGLE = "google"
 ATLASSIAN = "atlassian"
@@ -86,6 +95,18 @@ class OAuthProbeSpec:
     identity_fields: tuple[str, ...] = ()
     account_key_fields: tuple[str, ...] = ()
     account_key_parts: tuple[str, ...] = ()
+    #: What ``success_field`` must equal for the response to count as a success.
+    #:
+    #: Slack answers HTTP 200 with ``{"ok": false}``, so ``success_field`` has
+    #: always existed — it was just hard-wired to compare against ``True``. The
+    #: hub needs the same mechanism with a different value: ``/current-user`` is a
+    #: PUBLIC path, so a token it does not accept comes back 200 carrying
+    #: ``{"status": "FAIL", "message": ...}`` rather than a 401, and a probe
+    #: reading only the status code would call that verified. Naming the expected
+    #: value lets the hub reuse the existing flag instead of adding a second,
+    #: weaker one — and, because ``error_field`` comes along with it, the failure
+    #: reports what the provider actually said.
+    success_value: Any = True
 
 
 @dataclass(frozen=True)
@@ -400,6 +421,79 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         hub_required=True,
         copy_hub_credential=False,
     ),
+    FLOWPAD: LocalOAuthProvider(
+        name=FLOWPAD,
+        # Named for the method, because the account already has a row: the
+        # api-key sign-in renders as "FlowPad" (flowpad-connection-row.tsx). Two
+        # rows reading "FlowPad" would be a puzzle; this one says how it connects.
+        display_name="FlowPad (OAuth)",
+        user_credentials_name="flowpad_credentials",
+        # PLACEHOLDER, not a design choice: the brands pack has no `flowpad.svg`,
+        # so "Flowpad" resolved to nothing and the icon fence failed
+        # (test_icon_spec: "icon names nothing serves exactly"). A served lucide
+        # name keeps the row rendering — the hub IS the cloud side of this
+        # connection, so it is at least honest — but the FlowPad mark belongs
+        # here. Swap this for "Flowpad" the moment artwork lands in
+        # flow_sdk/server/icons/brands/ with a matching icon_pack.json entry;
+        # only a logo.png exists today and inventing a vector from it is a
+        # brand decision, not a build fix.
+        icon="Cloud",
+        # A real authorization-code grant against the hub's own
+        # /api/v1/oauth/authorize + /oauth/token, redirected to a loopback port —
+        # RFC 8252, the same grant Google and Microsoft use here. NOT
+        # OAuthFlowKind.CODE: that means "the hub runs this flow against a third
+        # party on our behalf", and here the hub is the authorization server
+        # itself, so the flow is ours to run.
+        kind=OAuthFlowKind.LOOPBACK,
+        # `{hub}` is expanded at lookup time against the configured hub — prod,
+        # staging or a local one. Every other provider is a fixed third party and
+        # so carries literal URLs; FlowPad's authorization server is whichever hub
+        # this instance points at, and a literal here would hard-wire one
+        # environment into a table that is otherwise environment-free. Keeping it
+        # a template means the URLs still live in this table, where a reader looks
+        # for them. See `_with_hub_endpoints`.
+        endpoints=OAuthEndpoints(
+            authorize_url="{hub}/oauth/authorize",
+            token_url="{hub}/oauth/token",
+        ),
+        # Scopes are not modelled yet: the hub issues one credential carrying the
+        # user's own authority, exactly as the api-key login does. An empty tuple
+        # is the honest statement, and inventing scope names the server does not
+        # enforce would be worse than none.
+        scopes=(),
+        # A public client (RFC 8252 §8.5): a desktop binary ships no secret,
+        # because a secret inside a distributed binary is not one. PKCE is what
+        # authenticates the exchange. The id is a fixed, PUBLIC identifier — so
+        # unlike Google/Microsoft it carries a default and needs no setup, and
+        # the env var is here only to point a dev build at a differently
+        # configured hub.
+        client_id_env="FLOWPAD_OAUTH_CLIENT_ID",
+        client_id_default="flowpad-desktop",
+        pkce=True,
+        # The hub's token response is `{access_token, token_type, scope}` — no
+        # refresh token, because the credential it returns does not expire (the
+        # same non-expiring key the api-key login has always minted). Stored as
+        # a dict anyway so that when the hub does start issuing an expiry and a
+        # refresh token, the stored shape does not have to change under it.
+        token_shape=TokenShape.CREDENTIAL_DICT,
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="{hub}/current-user",
+            # The hub answers in its `{status, message, data}` envelope, so the
+            # verdict is the envelope's own status and every other field is
+            # addressed under `data.`. Reading the envelope rather than inferring
+            # from a missing id also means a rejection reports the hub's message.
+            success_field="status",
+            success_value="SUCCESS",
+            error_field="message",
+            identity_fields=("data.email", "data.name"),
+            account_key_fields=("data.id",),
+        ),
+        # The whole point is that this credential lives on THIS machine and is
+        # never fetched from the hub — the hub is the issuer, not a holder.
+        hub_required=False,
+        copy_hub_credential=False,
+    ),
     GITLAB: LocalOAuthProvider(
         name=GITLAB,
         display_name="GitLab",
@@ -441,14 +535,65 @@ def client_id_for(name: str) -> Optional[str]:
     return provider.client_id_default
 
 
+def _with_hub_endpoints(provider: LocalOAuthProvider) -> LocalOAuthProvider:
+    """Expand ``{hub}`` in a provider's URLs against the configured hub.
+
+    The placeholder IS the predicate — a provider whose URLs carry no ``{hub}``
+    is returned untouched, so this costs one substring check for the fixed third
+    parties and needs no per-provider flag to say which kind it is.
+
+    Resolved at every lookup rather than baked into the table at import, because
+    the hub is per-instance configuration. Note what that does and does not buy:
+    ``ApiConfig`` reads ``default_service_config.flowpad_hub_url`` at call time,
+    but that config object is itself built when ``flow_sdk.config`` is imported —
+    so setting ``FLOWPAD_HUB_URL`` after import changes nothing (it has to be in
+    the process env before start). What this is NOT is a live re-read; do not
+    rely on it as one.
+
+    A hub URL that cannot be resolved leaves the placeholder unexpanded and
+    returns the provider as-is, which surfaces through the ordinary "cannot start
+    a flow" path rather than as a half-built URL.
+    """
+    from dataclasses import replace  # noqa: PLC0415
+
+    endpoints, probe = provider.endpoints, provider.probe
+    urls = [u for u in (getattr(endpoints, "authorize_url", None), getattr(endpoints, "token_url", None),
+                        getattr(probe, "url", None)) if u]
+    if not any("{hub}" in u for u in urls):
+        return provider
+    try:
+        from flow_sdk.cloud_client import ApiConfig  # noqa: PLC0415
+
+        base = (ApiConfig.from_env().api_base_url or "").rstrip("/")
+    except Exception:  # noqa: BLE001 — an unresolvable hub is "no local flow", not a crash
+        logger.debug("provider_registry: could not resolve the hub base URL", exc_info=True)
+        return provider
+    if not base:
+        return provider
+
+    def _expand(url: Optional[str]) -> Optional[str]:
+        return url.replace("{hub}", base) if url else url
+
+    if endpoints is not None:
+        endpoints = replace(
+            endpoints,
+            authorize_url=_expand(endpoints.authorize_url),
+            token_url=_expand(endpoints.token_url) or "",
+        )
+    if probe is not None:
+        probe = replace(probe, url=_expand(probe.url) or "")
+    return replace(provider, endpoints=endpoints, probe=probe)
+
+
 def get_local_provider(name: str) -> Optional[LocalOAuthProvider]:
     """Look up a provider by name, case-insensitively. ``None`` when unknown."""
-    return _PROVIDERS.get((name or "").strip().lower())
+    provider = _PROVIDERS.get((name or "").strip().lower())
+    return _with_hub_endpoints(provider) if provider is not None else None
 
 
 def local_providers() -> list[LocalOAuthProvider]:
     """Every locally-known provider, in a stable order."""
-    return [_PROVIDERS[name] for name in sorted(_PROVIDERS)]
+    return [_with_hub_endpoints(_PROVIDERS[name]) for name in sorted(_PROVIDERS)]
 
 
 def publishable_local_providers() -> list[LocalOAuthProvider]:

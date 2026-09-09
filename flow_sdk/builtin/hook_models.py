@@ -8,12 +8,12 @@ import asyncio
 import inspect
 import logging
 import os
-import signal
 import stat
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 from flow_sdk._compat import StrEnum
 from typing import Any, Optional
 
@@ -35,29 +35,14 @@ _SCRIPT_OUTPUT_CAP = 8192
 # which solves the same failure mode for CLI workers: that one is keyed on a
 # per-launch run_id marker and knows about npm wrapper processes, neither of
 # which a one-shot trigger script has, and it sits a layer above this module.
-_CAN_KILLPG = hasattr(os, "killpg")
-
-
 def _kill_script_tree(proc) -> None:
     """SIGKILL the timed-out script AND everything it forked.
 
-    ``proc.kill()`` alone reaps the script's own process only. Its children
-    inherit the stdout/stderr pipes, so they keep the write end open and the
-    follow-up ``communicate()`` blocks for as long as they run — a 1s timeout
-    on a script that forks a 10s ``sleep`` returned after 10s. Killing the
-    whole group is what makes ``timeout_seconds`` a real bound.
+    The rule and the reason it exists now live in one place — see
+    ``flow_sdk/utils/process_tree``; the wizard runner needs the same discipline
+    and cannot import this module (it holds entities).
     """
-    if _CAN_KILLPG:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            return
-        except OSError:
-            # Group already gone, or we never got one — fall through.
-            pass
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        pass
+    kill_process_tree(proc)
 
 
 @dataclass
@@ -286,7 +271,7 @@ async def _exec_script(
             cwd=str(Path(script_path).parent),
             # Own process GROUP so a timeout can kill the whole tree — see
             # _kill_script_tree() for why the child alone is not enough.
-            start_new_session=_CAN_KILLPG,
+            start_new_session=CAN_KILLPG,
         )
         t0 = time.monotonic()
         timed_out = False

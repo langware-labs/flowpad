@@ -7,6 +7,7 @@ import { getViewMode } from '@src/contexts/view-mode-context';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
+import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 
 /**
  * Ensure compute node is loaded for the current project

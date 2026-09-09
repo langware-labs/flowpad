@@ -21,6 +21,7 @@ import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
+import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
 import { devToDockPath } from '@src/navigation/url-builder';
 import {
   createBrowserRouter,
@@ -29,6 +30,7 @@ import {
   Outlet,
   Route,
   useLocation,
+  useParams,
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
 import { bindHistoryPosition } from '@src/navigation/history-position-store';
@@ -41,6 +43,29 @@ import { bindHistoryPosition } from '@src/navigation/history-position-store';
  * stale links, or hand-typed URLs. Without this redirect, the root catch-all
  * NotFound swallows them — surprising and unhelpful.
  */
+/**
+ * `/dock/skills` — the standalone Skills view was folded into the Assets
+ * browser. Without this the slug falls through to the full Home dashboard, so
+ * a stale link silently lands somewhere unrelated rather than where it says.
+ * `ViewType.SKILLS` stays in the SDK enum for persisted-DockPointer
+ * back-compat; only the route-level redirect is added here. The target comes
+ * from the DockPointer grammar, never hand-concatenated.
+ */
+function SkillsRedirect() {
+  return <Navigate to={skillsRedirectTarget()} replace />;
+}
+
+/**
+ * `/dock/markdown/<id>` — a bare markdown pointer renders an empty "No
+ * markdown file selected" state. Redirect to the canonical asset-editor URL,
+ * or NotFound when `<id>` cannot form a valid markdown TypeId.
+ */
+function MarkdownRedirect() {
+  const { id } = useParams();
+  const target = markdownRedirectTarget(id);
+  return target ? <Navigate to={target} replace /> : <NotFound />;
+}
+
 function DevToDockRedirect() {
   const location = useLocation();
   const target = `${devToDockPath(location.pathname)}${location.search}${location.hash}`;
@@ -143,6 +168,10 @@ export const router = createBrowserRouter(
         errorElement={<ErrorScreen />}
       >
         <Route index element={<Navigate to="/" replace />} />
+        {/* Dead/legacy slugs → canonical asset routes. Static segments outrank
+            the `:viewType` dynamic match, so these must stay above it. */}
+        <Route path="skills" element={<SkillsRedirect />} />
+        <Route path="markdown/:id" element={<MarkdownRedirect />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>

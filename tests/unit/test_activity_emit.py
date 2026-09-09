@@ -16,7 +16,7 @@ from flow_sdk.activity.emit import (
     PROGRESS_ELEMENT,
     ActivityEmitter,
     envelope,
-    local_scope_typeid,
+    local_subject_typeid,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 INTERVAL = 0.02
 
 #: Resolved once: the address every box-scoped activity must be broadcast to.
-LOCAL_SCOPE_TYPEID = local_scope_typeid()
+LOCAL_SUBJECT_TYPEID = local_subject_typeid()
 
 
 @pytest.fixture()
@@ -34,7 +34,7 @@ def sent(monkeypatch):
     """Capture what would go on the socket, without a socket.
 
     Patches the transport call, not the emitter: everything above ``broadcast_progress``
-    — coalescing, scope routing, the envelope shape — is what these tests are about.
+    — coalescing, subject_entity routing, the envelope shape — is what these tests are about.
     """
     captured: list = []
 
@@ -181,19 +181,19 @@ async def test_a_terminal_snapshot_reaches_the_wire_before_eviction(emitter, sen
 
 
 async def test_an_unscoped_activity_is_addressed_to_the_instance(emitter, sent):
-    """No scope means the work belongs to the box — an index, a walk, a docs scan — so
+    """No subject_entity means the work belongs to the box — an index, a walk, a docs scan — so
     every connection gets it, watcher list or not."""
     Activity.get("index").block("x")
     await asyncio.sleep(0)
 
-    assert sent[0][0] == f"*broadcast*{local_scope_typeid()}"
+    assert sent[0][0] == f"*broadcast*{local_subject_typeid()}"
 
 
 async def test_a_scoped_activity_is_addressed_to_its_entity(emitter, sent):
     """Scope is the routing key: a scoped activity goes to that entity's WATCHERS, not
     to everyone. Broadcasting a process's activity to every connection is a volume
     problem on a busy box and, on a shared hub, a privacy one."""
-    Activity.get("run", scope="agentic_process-abc").block("x")
+    Activity.get("run", subject_entity="agentic_process-abc").block("x")
     await asyncio.sleep(0)
 
     assert sent[0][0] == "agentic_process-abc", "watcher-filtered send, not broadcast"
@@ -275,14 +275,14 @@ async def test_many_transitions_do_not_leak_task_references(emitter, sent):
     assert len(sent) == 20
 
 
-@pytest.mark.parametrize("scope", [None, "agentic_process-abc"])
-async def test_every_frame_is_addressed_to_something_that_parses_as_a_typeid(emitter, sent, scope):
+@pytest.mark.parametrize("subject_entity", [None, "agentic_process-abc"])
+async def test_every_frame_is_addressed_to_something_that_parses_as_a_typeid(emitter, sent, subject_entity):
     """The client DROPS a flow_data message whose ``to_entity`` will not parse as a TypeId
     (``ConnectionManager.onFlowDataMessage``), warns to the console and moves on. So an
     empty address is not "broadcast to nobody in particular" — it is a frame nobody ever
     sees, which is exactly what happened: every activity tick was emitted correctly and
     silently discarded in the browser."""
-    Activity.get("index", scope=scope).block("x")
+    Activity.get("index", subject_entity=subject_entity).block("x")
     await asyncio.sleep(0)
 
     to_entity = sent[0][0].replace("*broadcast*", "")
@@ -327,18 +327,18 @@ async def test_a_producer_reporting_from_a_worker_thread_still_reaches_the_wire(
 
 
 async def test_an_activity_scoped_to_this_machines_compute_node_is_broadcast(emitter, sent):
-    """Legacy producers scope their work to ``str(compute_node.typeid)``, which says "this
-    box" — the same thing an absent scope says. Routing it as "one entity" sends it only to
+    """Legacy producers subject_entity their work to ``str(compute_node.typeid)``, which says "this
+    box" — the same thing an absent subject_entity says. Routing it as "one entity" sends it only to
     clients watching the node, which is none of them, and an index shows in no browser at
     all. Found live: the backend activity advanced correctly and the chip stayed empty."""
-    Activity.get("index", scope=LOCAL_SCOPE_TYPEID).block("x")
+    Activity.get("index", subject_entity=LOCAL_SUBJECT_TYPEID).block("x")
     await asyncio.sleep(0)
 
-    assert sent[0][0] == f"*broadcast*{LOCAL_SCOPE_TYPEID}"
+    assert sent[0][0] == f"*broadcast*{LOCAL_SUBJECT_TYPEID}"
 
 
 async def test_another_entitys_activity_is_still_watcher_filtered(emitter, sent):
-    Activity.get("run", scope="agentic_process-abc").block("x")
+    Activity.get("run", subject_entity="agentic_process-abc").block("x")
     await asyncio.sleep(0)
 
     assert sent[0][0] == "agentic_process-abc"

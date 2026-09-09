@@ -12,7 +12,7 @@ one shape, ``ActivityProgressSpec``::
     Activity.get("index/pdf").inc_error("encrypted", ref="a.pdf")
     Activity.get("index").done("indexed 5,000")
 
-    async with Activity.claim("index", scope=node, timeout_seconds=600, queue=True) as act:
+    async with Activity.claim("index", subject_entity=node, timeout_seconds=600, queue=True) as act:
         act.total(5000)     # single-flight: the address IS the slot
 
     monitor.list()          # what is live right now

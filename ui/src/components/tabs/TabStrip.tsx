@@ -102,8 +102,6 @@ export interface TabStripProps {
   newTabMenuItems?: TabStripContextMenuItem[];
   /** Shortcut label for the Close entry (e.g. "Ctrl+W"). */
   closeShortcutLabel?: string;
-  /** Leading fixed node (e.g. ProjectsCounterChip). */
-  leading?: React.ReactNode;
   /** Trailing fixed node (opener toolbar) — sits after the tab row, never
    *  overlaps or shrinks; the chips share whatever width remains. */
   trailing?: React.ReactNode;
@@ -142,7 +140,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
   onPopout,
   newTabMenuItems,
   closeShortcutLabel,
-  leading,
   trailing,
   hideCloseAllButton,
   onReorderPreview,
@@ -597,8 +594,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // background in every theme) that the active chip lifts out of into the
     // body. min-w-0/max-w-full: the strip must never size its host to content.
     <div className="flex min-w-0 max-w-full items-end bg-muted" data-testid={testId}>
-      {leading}
-
       {/* Tab row — chips share this width equally and are ALL always visible
           (Chrome model). overflow-hidden only matters past the 40px/chip floor
           (~25+ tabs at 1000px), where the row clips instead of scrolling. */}

@@ -35,6 +35,7 @@ import { loadDockPointer } from './load-dock-pointer';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: feature-owned redirect resolvers register themselves.
 import '@src/journey/journey-load-redirect';
+import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };

@@ -14,6 +14,11 @@ export interface GraphPalette {
   defaultNodeColor: string;
   defaultEdgeColor: string;
   edgeKindColor: Record<EdgeKind, string>;
+  /** An edge whose role mapping is NOT the `('*','*')` pass-through — i.e. a
+   *  parent whose child access has been overridden. Deliberately warmer and more
+   *  opaque than every inherited edge: the point of showing it is that it is the
+   *  exception. */
+  overrideEdgeColor: string;
   hoverEdgeColor: string;
   hoverEdgeSize: number;
   dimEdgeColor: string;
@@ -33,6 +38,7 @@ const DARK: GraphPalette = {
     context_private: 'rgba(245, 158, 11, 0.75)',
     parent: 'rgba(167, 139, 250, 0.55)',
   },
+  overrideEdgeColor: 'rgba(251, 146, 60, 0.95)',
   hoverEdgeColor: 'rgba(255,255,255,0.55)',
   hoverEdgeSize: 1.4,
   dimEdgeColor: 'rgba(255,255,255,0.04)',
@@ -52,6 +58,7 @@ const LIGHT: GraphPalette = {
     context_private: 'rgba(180, 83, 9, 0.75)',
     parent: 'rgba(124, 58, 237, 0.55)',
   },
+  overrideEdgeColor: 'rgba(194, 65, 12, 0.95)',
   hoverEdgeColor: 'rgba(15,23,42,0.6)',
   hoverEdgeSize: 1.4,
   dimEdgeColor: 'rgba(15,23,42,0.05)',

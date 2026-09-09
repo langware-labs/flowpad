@@ -214,6 +214,11 @@ class EntityType(StrEnum):
     JOURNEY = "journey"
     # A user's private progress through a Journey (DB-only, one per user+journey).
     JOURNEY_JOURNAL = "journey_journal"
+    # A folder-backed AUTONOMOUS setup document (wizard.json of ordered steps).
+    # The counterpart of JOURNEY, and the distinction is the reason both exist:
+    # a Journey PRESENTS a step and waits for a person; a Wizard DECIDES and
+    # executes. So a wizard step carries an exit-code map, not a waitFor.
+    WIZARD = "wizard"
     # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
     # hub project that owns the ticket queue. A repo declares itself a help desk
     # by shipping one, so cloning it as a context folder is what gives a project

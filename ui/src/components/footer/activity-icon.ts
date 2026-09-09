@@ -8,7 +8,7 @@
  *
  *   1. an explicit `.icon(...)` from the producer, resolved by `lucideByName` (which takes
  *      a lucide export name OR a backend-served path, so a bespoke glyph needs no code);
- *   2. the scope entity's `TypeInfo.icon`, via the registry `iconForType` reads;
+ *   2. the subject entity's `TypeInfo.icon`, via the registry `iconForType` reads;
  *   3. `Activity`, the generic "something is happening" glyph.
  *
  * On the hub, step 2 degrades to step 3: the hub's bootstrap ships no `types`, so the
@@ -29,17 +29,17 @@ import { TypeId, isTypeId } from '@sdk';
  * id contains dashes, so the type came back as `agentic_process-<most-of-the-uuid>`, the
  * registry lookup missed, and every scoped activity fell silently to the generic glyph.
  */
-export function typeOfScope(scope?: string | null): string | null {
-  if (!scope || !isTypeId(scope)) return null;
-  return new TypeId(scope).type;
+export function typeOfSubject(subject_entity?: string | null): string | null {
+  if (!subject_entity || !isTypeId(subject_entity)) return null;
+  return new TypeId(subject_entity).type;
 }
 
-export function iconForActivity(spec: Pick<ActivityProgressSpec, 'icon' | 'scope'>): LucideIcon {
+export function iconForActivity(spec: Pick<ActivityProgressSpec, 'icon' | 'subject_entity'>): LucideIcon {
   if (spec.icon) {
     const explicit = lucideByName(spec.icon);
     if (explicit) return explicit;
   }
-  const type = typeOfScope(spec.scope);
+  const type = typeOfSubject(spec.subject_entity);
   if (type) {
     const fromRegistry = iconForType(type);
     if (fromRegistry) return fromRegistry;

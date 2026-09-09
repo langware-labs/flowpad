@@ -39,10 +39,10 @@ def _fail(error_code: str, message: str) -> ApiFailResponse:
     return ApiFailResponse(message=message, data={"error_code": error_code})
 
 
-def _scope(raw: Optional[str]) -> Optional[str]:
+def _subject(raw: Optional[str]) -> Optional[str]:
     """Empty is absent. A query string cannot carry ``None``, so a caller that always
-    serialises the parameter sends ``scope=`` — which must mean the instance-wide scope,
-    not an activity in a scope literally named ""."""
+    serialises the parameter sends ``subject_entity=`` — which must mean the instance-wide subject_entity,
+    not an activity whose subject entity is literally named ""."""
     return raw or None
 
 
@@ -59,7 +59,7 @@ class VerbBody(BaseModel):
     ref: Optional[str] = None
     code: Optional[str] = None
     counter: Optional[str] = None
-    scope: Optional[str] = None
+    subject_entity: Optional[str] = None
 
 
 def _message(body: VerbBody) -> "Optional[str]":
@@ -97,8 +97,8 @@ VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
 
 @router.get("/api/v1/activity")
 async def list_activities(
-    scope: Optional[str] = Query(default=None),
-    all_scopes: bool = Query(default=False, alias="all"),
+    subject_entity: Optional[str] = Query(default=None),
+    all_subjects: bool = Query(default=False, alias="all"),
 ):
     """Live roots. This is the replay a client uses on connect and after a WS gap.
 
@@ -109,14 +109,14 @@ async def list_activities(
     but leaves a LIST of them alone, and the envelope's unparametrised ``data: T`` then
     validates the whole list away to ``null``.
     """
-    rows = monitor.list(scope=_scope(scope), all_scopes=all_scopes)
+    rows = monitor.list(subject_entity=_subject(subject_entity), all_subjects=all_subjects)
     return ApiResponse.success([spec.model_dump(mode="json") for spec in rows])
 
 
 @router.get("/api/v1/activity/{path:path}")
-async def get_activity(path: str, scope: Optional[str] = Query(default=None)):
+async def get_activity(path: str, subject_entity: Optional[str] = Query(default=None)):
     """One tree, children included, or a ``NOT_LIVE`` refusal once it is gone."""
-    spec = monitor.get(path, scope=_scope(scope))
+    spec = monitor.get(path, subject_entity=_subject(subject_entity))
     if spec is None:
         return _fail("NOT_LIVE", f"no live activity at {path!r}")
     return ApiResponse.success(spec.model_dump(mode="json"))
@@ -131,7 +131,7 @@ async def report(path: str, verb: str, body: VerbBody = Body(default=VerbBody())
             "UNKNOWN_VERB", f"unknown activity verb {verb!r}; expected one of {', '.join(VERB_TABLE)}"
         )
     try:
-        act = Activity.get(path, scope=_scope(body.scope))
+        act = Activity.get(path, subject_entity=_subject(body.subject_entity))
     except ValueError as exc:  # empty path, or past the depth cap
         return _fail("BAD_PATH", str(exc))
 

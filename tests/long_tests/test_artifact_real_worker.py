@@ -97,10 +97,11 @@ def _run_turn(worker: str, options, tmp_path: Path) -> str:
             timeout=_TURN_GUARD_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        # An external model that never came back is infra, not a derivation
-        # bug. Classified as a skip — NOT worked around by widening the guard,
-        # which would only hide a genuinely stalling path later.
-        pytest.skip(f"{worker} turn exceeded {_TURN_GUARD_SECONDS}s — external API/infra")
+        # A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
+        pytest.fail(
+            f"{worker}: turn exceeded {_TURN_GUARD_SECONDS}s — the worker never returned",
+            pytrace=False,
+        )
     if not result.stdout.strip():
         pytest.skip(f"{worker} CLI could not run a turn (auth/env): {result.stderr[:400]}")
     return result.stdout
