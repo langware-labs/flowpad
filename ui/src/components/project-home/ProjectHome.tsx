@@ -276,7 +276,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             )
           }
           submitLabel={<Trans>Set up Git</Trans>}
-          nameSeed={project.name}
+          nameSeed={project.name ?? undefined}
           urlLabel={t`Remote repository`}
           testIdPrefix="project-git-setup"
           awaitSubmit
