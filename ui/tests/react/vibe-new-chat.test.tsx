@@ -6,8 +6,13 @@ import { VIBE_MODEL_DEFAULT } from '@src/pages/flow-page/vibe-model-select';
 
 const startVibe = vi.fn();
 
+// `useStartVibeSession` returns a `StartVibeSession` object, not a bare function:
+// the harness-install dialog rides along with `start` so a caller that drops it
+// loses the only recovery a failed start has. Mocking it as a function made
+// VibeNewChat's `const { start: startVibe } = ...` destructure to undefined, so
+// submitting threw instead of calling this spy.
 vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
-  useStartVibeSession: () => startVibe,
+  useStartVibeSession: () => ({ start: startVibe, installDialog: null }),
 }));
 
 // Stable identity, like the real hook — a fresh object per render would
