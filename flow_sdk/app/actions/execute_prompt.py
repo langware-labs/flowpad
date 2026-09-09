@@ -151,7 +151,7 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-    existing = await AgenticProcess.get_all({"target_typeid_str": target_typeid_str})
+    existing = await AgenticProcess.local_rows({"target_typeid_str": target_typeid_str})
     candidates = [p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value]
     candidates.sort(key=lambda p: str(getattr(p, "created_date", "") or ""), reverse=True)
     if candidates:
