@@ -147,6 +147,14 @@ async def test_load_embedded_subagent_materializes_into_instruction_assets(recor
     assert "Always answer as PERSONA_PROBE." in claude_text
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? the persona is DECLARED via set_ap_persona,
+#       never inferred from how many agents are embedded - read this tag's rules before
+#       touching _render_agents_instruction_block or process_persona_path
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_declared_persona_survives_a_second_embedded_agent(records_root, tmp_path, monkeypatch):
     """Vibe mode embeds the `vibe` persona AND every kind==vibe layer on top of
@@ -202,6 +210,14 @@ async def test_declared_persona_survives_a_second_embedded_agent(records_root, t
     assert claude_text.index("# You are the 'vibe-probe' agent") < claude_text.index("# Sub-agents available to you")
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? an UNDECLARED agent must never
+#       inherit the 'you are this agent' directive - a failed persona embed loses the
+#       identity, it does not hand it to whoever is there. Read this tag's rules.
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_no_declared_persona_renders_a_flat_catalogue(records_root, tmp_path, monkeypatch):
     """A process with no declared persona (a terminal process is the normal
