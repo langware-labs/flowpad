@@ -631,8 +631,7 @@ async def run_session_turn(
                 return ApiFailResponse(message="project has no workdir")
 
             # Consume BEFORE the (long) run so a re-delivered op can't double-run.
-            fm.prompt_auto_handled = True
-            await fm.save(someone_typeid)
+            await consume_prompt(fm, someone_typeid)
 
             prompt_text = await build_merged_prompt(fm)
             if not prompt_text:
@@ -750,6 +749,30 @@ async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str])
     return queued
 
 
+async def _local_actor(local_user=None) -> tuple[Optional[str], str]:
+    """``(local_user_id, someone_typeid)`` — who this machine writes rows as.
+
+    Pass an already-resolved ``local_user`` to skip the lookup; the session paths
+    all need the same pair and each was re-deriving it.
+    """
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    if local_user is None:
+        local_user = await get_or_create_local_user()
+    local_id = local_user.id if local_user else None
+    return local_id, (str(TypeId(type="user", id=local_id)) if local_id else "")
+
+
+async def consume_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
+    """Mark one inbound prompt as handled, so no drain picks it up again.
+
+    The single writer of ``prompt_auto_handled``: both the pre-run consume and the
+    paused bounce go through here.
+    """
+    fm.prompt_auto_handled = True
+    await fm.save(someone_typeid)
+
+
 async def redrive_session_prompts(
     session: "RemoteWorkerSession",
     *,
@@ -763,7 +786,6 @@ async def redrive_session_prompts(
     the lock and drains, the rest find nothing left. Selection happens under
     the lock, so a prompt can never be picked twice."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
     if not session.conversation_id:
         return
@@ -771,16 +793,20 @@ async def redrive_session_prompts(
         conv = await Conversation.get_one({"id": session.conversation_id})
     if not conv:
         return
-    if local_user is None:
-        local_user = await get_or_create_local_user()
-    local_id = local_user.id if local_user else None
-    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+    local_id, someone_typeid = await _local_actor(local_user)
     async with _session_lock(session):
+        # A drain never runs the same message twice, whatever the DB marker says.
+        # Selection reads ``prompt_auto_handled``, which is a row a concurrent
+        # writer can roll back; this keeps one drain honest regardless. Ordering
+        # and arrival semantics are unchanged.
+        ran: set[str] = set()
         while True:
-            queued = await _queued_turns(session, local_id)
+            queued = [fm for fm in await _queued_turns(session, local_id) if fm.id not in ran]
             if not queued:
                 return
-            await run_session_turn(session, queued[0], conv, someone_typeid=someone_typeid, _locked=True)
+            fm = queued[0]
+            ran.add(fm.id)
+            await run_session_turn(session, fm, conv, someone_typeid=someone_typeid, _locked=True)
 
 
 # ── the inbound gate (receive hook) ─────────────────────────────────────────
@@ -852,8 +878,7 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if decision is InboundDecision.IGNORE:
             return
         if decision is InboundDecision.BOUNCE_PAUSED:
-            fm.prompt_auto_handled = True
-            await fm.save(someone_typeid)
+            await consume_prompt(fm, someone_typeid)
             try:
                 await emit_session_event(session, "prompt_bounced", someone_typeid)
             except Exception as e:  # noqa: BLE001
