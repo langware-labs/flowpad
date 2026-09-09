@@ -851,10 +851,22 @@ class Project(Entity):
             include_temp=True,
         ):
             return None
-        canonical_mp = canonical_posix_path(mount_path) if mount_path else None
-        existing: Project | None = None
-        if canonical_mp:
-            existing = await cls.find_by_cwd(canonical_mp)
+
+        # A record with no path is LOCATIONLESS — never fall through to a
+        # construction from `name`. `set_fs_storage_mount_path`'s simple-name
+        # branch would root it at `<AGENT_MOUNT_FOLDER>/<name>`, which for any
+        # project living outside the agent workspace silently RELOCATES it
+        # there; the next PTY spawn (`os.makedirs(cwd)`) then materializes that
+        # folder, so deleting it never sticks. A project whose record lost its
+        # `cwd` must stay unresolved and be repaired at the source, not be
+        # given an invented home. (Deriving a mount from a name is a
+        # create-time affordance for a project the user is naming — never for
+        # adopting a record that already describes one on disk.)
+        if not mount_path:
+            return None
+
+        canonical_mp = canonical_posix_path(mount_path)
+        existing = await cls.find_by_cwd(canonical_mp)
 
         if existing is not None:
             # Update in place — apply meta fields the entity understands.
@@ -897,8 +909,7 @@ class Project(Entity):
         # stamped with ``derive_id_for_path(cwd)`` still resolve via the record
         # alias, so the entity id no longer needs to equal that derived value.
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
-        if canonical_mp:
-            create_kwargs["fs_storage_mount_path"] = canonical_mp
+        create_kwargs["fs_storage_mount_path"] = canonical_mp
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.

@@ -18599,6 +18599,10 @@ msgstr "This project doesn't exist or is no longer available."
 msgid "This project has no assets yet."
 msgstr "This project has no assets yet."
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "This project has no folder on disk and can't be opened."
+msgstr "This project has no folder on disk and can't be opened."
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
 msgstr "This project has no secrets declared yet."
