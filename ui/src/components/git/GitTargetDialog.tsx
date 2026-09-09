@@ -120,7 +120,9 @@ export function GitTargetDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="sm:max-w-lg" data-testid={`${testIdPrefix}-dialog`}>
+      {/* Wider than a stock dialog: the existing-repo step hosts a five-column
+          repo table and an invitations strip, which are cramped at `max-w-lg`. */}
+      <DialogContent className="sm:max-w-2xl" data-testid={`${testIdPrefix}-dialog`}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -150,7 +152,7 @@ export function GitTargetDialog({
           </div>
         )}
 
-        <div className="grid gap-1.5 py-1">
+        <div className="grid min-w-0 gap-1.5 py-1">
           {mode === 'existing' ? (
             <GitRemoteField value={remote} onChange={setRemote} onStepChange={setInBranchPicker} urlLabel={urlLabel} />
           ) : (
