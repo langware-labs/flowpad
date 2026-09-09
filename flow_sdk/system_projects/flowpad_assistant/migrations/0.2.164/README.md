@@ -28,12 +28,14 @@ So the bump must do both: DELETE this directory if it is still empty, and open
 the next one. If a migration was written here, keep it — it shipped — and just
 open the next slot.
 
-This slot has now been through that failure twice. The 0.2.160 one was released
-empty in 83c986c27, survived its own release, and read as stranded ever after;
-it was removed rather than back-filled, since an empty slot carries nothing to
-run. The 0.2.163 one that replaced it went the same way — `chore(release):
-0.2.163` (169271b87) shipped without advancing it, and the three guards in
-`tests/unit/test_migration_recipes_ship_with_their_version.py` went red on
-release/v0.2, which also blocks the e2e job behind them. It was advanced to
-0.2.164 rather than back-filled, for the same reason. The bump is what has to
-change: the release step must advance this slot, or the next release repeats it.
+This slot exists because the 0.2.163 one did not get that treatment: it was
+released empty by the 0.2.163 deploy, survived its own release, and turned
+release/v0.2 red on three migration tests. It was removed rather than
+back-filled, since an empty slot carries nothing to run — the same call made for
+0.2.160 before it.
+
+**This is the third time.** 0.2.160, then 0.2.163. The step is written down here
+and in no other place the deploy path actually reads, which is why it keeps being
+missed: `scripts/deploy_to_github.sh` bumps the version without ever looking at
+this directory. Rotating the slot belongs in the deploy script, not in a README
+that only gets read after CI goes red.
