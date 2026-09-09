@@ -1,10 +1,19 @@
-#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
+# : src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
-"{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
-"{childPath}"
+"Share to a conversation: \n"
+"{childPath}sgstr "שתף עם שיחה: \n"
+"{childPath}": \n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language: \n"
+"Language-Team: \n"
+"Content-Type: \n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -201,6 +210,11 @@ msgstr ""
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: labelFor(key)
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{0} — current project"
+msgstr ""
 
 #. placeholder {0}: outcome.already.join(', ')
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -1783,10 +1797,6 @@ msgstr "כבר קיים"
 msgid "already running"
 msgstr "כבר פעיל"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "פתח גם חלון Terminal נלווה של מערכת ההפעלה"
@@ -2090,10 +2100,6 @@ msgstr "ארכיב את כל המשימות"
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Archive task"
 msgstr "ארכיבון משימה"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Archive this run and start the record fresh. It stays approved to run."
@@ -3082,10 +3088,6 @@ msgstr ""
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "שינויים"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -5120,10 +5122,6 @@ msgstr "יש ליצור חשבון חינמי כדי להמשיך את השיח�
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Create a new {0}."
 msgstr "צור {0} חדש."
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Create a private GitHub repository"
@@ -8334,10 +8332,6 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/project-home/ProjectHome.tsx
 msgid "Give this project a Git remote so it can be shared."
 msgstr ""
@@ -11249,10 +11243,6 @@ msgstr "קובץ חדש"
 msgid "New File"
 msgstr "קובץ חדש"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -12873,11 +12863,9 @@ msgstr "פתח חיצונית"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Open externally\n"
 "{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
-"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
@@ -13377,6 +13365,10 @@ msgstr "מערכת הפעלה:"
 msgid "Other paths with this asset identity"
 msgstr "נתיבים נוספים עם אותה זהות נכס"
 
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "Other project"
+msgstr ""
+
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Other projects"
 msgstr "פרויקטים אחרים"
@@ -13640,6 +13632,10 @@ msgstr "בקשת הרשאה"
 #: src/components/settings-view/settings-utils.ts
 msgid "Permissions"
 msgstr "הרשאות"
+
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "Personal"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
@@ -14460,10 +14456,6 @@ msgstr "דחפו & הודיעו"
 msgid "Push failed"
 msgstr "דחיפה נכשלה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
 msgstr "דחיפה ל-{branch} — אפשר גם להודיע לאנשים על כך."
@@ -14524,10 +14516,6 @@ msgstr "RAM (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "זיכרון RAM:"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -15284,10 +15272,6 @@ msgstr "סורקים מחדש…"
 msgid "Reset"
 msgstr "איפוס"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "איפוס נכשל"
@@ -15492,11 +15476,9 @@ msgstr "הצג ב-Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Reveal in Finder/Explorer\n"
 "{childPath}"
 msgstr ""
-"שתף עם שיחה\n"
-"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Reveal in Finder/Explorer: {childPath}"
@@ -16728,10 +16710,6 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 msgid "Set up a git-backed context folder for this project."
 msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
 msgstr "הגדירו בשם הזה"
@@ -17836,10 +17814,6 @@ msgstr "עדיין לא ניתן לקשר את הפרויקט הזה"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -19118,10 +19092,6 @@ msgstr "פעולה זו מפעילה את המכונה וטוענת את התצ�
 msgid "This step has not run."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step ran no commands."
 msgstr ""
@@ -19188,10 +19158,6 @@ msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.clau
 msgid "This wizard declares no steps."
 msgstr ""
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
 msgstr ""
@@ -19200,10 +19166,6 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr ""
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "This wizard ships with Flowpad and cannot be edited here."
@@ -20717,14 +20679,6 @@ msgstr "אתמול"
 msgid "You"
 msgstr "אתה"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr ""
-
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr ""
@@ -20919,4 +20873,3 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
-

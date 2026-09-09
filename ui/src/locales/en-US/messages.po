@@ -1,10 +1,19 @@
-#: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
+# : src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
-"{childPath}"
 msgstr ""
-"Share to a conversation\n"
-"{childPath}"
+"Share to a conversation: \n"
+"{childPath}sgstr "Share to a conversation: \n"
+"{childPath}": \n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language: \n"
+"Language-Team: \n"
+"Content-Type: \n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
 
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
@@ -201,6 +210,11 @@ msgstr "{0, plural, one {# team} other {# teams}}"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: labelFor(key)
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{0} — current project"
+msgstr "{0} — current project"
 
 #. placeholder {0}: outcome.already.join(', ')
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -1783,10 +1797,6 @@ msgstr "already present"
 msgid "already running"
 msgstr "already running"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -2090,10 +2100,6 @@ msgstr "Archive all todos"
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Archive task"
 msgstr "Archive task"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Archive this run and start the record fresh. It stays approved to run."
@@ -3082,10 +3088,6 @@ msgstr "Changed since publish"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "Changes"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Changes committed and pushed"
@@ -5120,10 +5122,6 @@ msgstr "Create a free account to continue your conversation and save your progre
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Create a new {0}."
 msgstr "Create a new {0}."
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Create a private GitHub repository"
@@ -8334,10 +8332,6 @@ msgstr "gitignore"
 msgid "Give <0>{0}</0> a Git remote so this project can be shared."
 msgstr "Give <0>{0}</0> a Git remote so this project can be shared."
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/project-home/ProjectHome.tsx
 msgid "Give this project a Git remote so it can be shared."
 msgstr "Give this project a Git remote so it can be shared."
@@ -11249,10 +11243,6 @@ msgstr "New file"
 msgid "New File"
 msgstr "New File"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -12873,10 +12863,10 @@ msgstr "Open externally"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Open externally\n"
 "{childPath}"
 msgstr ""
-"Share to a conversation\n"
+"Open externally\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -13377,6 +13367,10 @@ msgstr "OS:"
 msgid "Other paths with this asset identity"
 msgstr "Other paths with this asset identity"
 
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "Other project"
+msgstr "Other project"
+
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Other projects"
 msgstr "Other projects"
@@ -13640,6 +13634,10 @@ msgstr "Permission Request"
 #: src/components/settings-view/settings-utils.ts
 msgid "Permissions"
 msgstr "Permissions"
+
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "Personal"
+msgstr "Personal"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
@@ -14460,10 +14458,6 @@ msgstr "Push & notify"
 msgid "Push failed"
 msgstr "Push failed"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
 msgstr "Push to {branch} — optionally tell people about it."
@@ -14524,10 +14518,6 @@ msgstr "RAM (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "RAM:"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
@@ -15284,10 +15274,6 @@ msgstr "Rescanning…"
 msgid "Reset"
 msgstr "Reset"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "Reset failed"
@@ -15492,10 +15478,10 @@ msgstr "Reveal in Finder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
-"Share to a conversation\n"
+"Reveal in Finder/Explorer\n"
 "{childPath}"
 msgstr ""
-"Share to a conversation\n"
+"Reveal in Finder/Explorer\n"
 "{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
@@ -16728,10 +16714,6 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 msgid "Set up a git-backed context folder for this project."
 msgstr "Set up a git-backed context folder for this project."
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
 msgstr "Set up as this name"
@@ -17836,10 +17818,6 @@ msgstr "Still can't link this project"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
@@ -19118,10 +19096,6 @@ msgstr "This starts the machine and sets up whatever it was created with."
 msgid "This step has not run."
 msgstr "This step has not run."
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step ran no commands."
 msgstr "This step ran no commands."
@@ -19188,10 +19162,6 @@ msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all par
 msgid "This wizard declares no steps."
 msgstr "This wizard declares no steps."
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard needs something from you"
 msgstr "This wizard needs something from you"
@@ -19200,10 +19170,6 @@ msgstr "This wizard needs something from you"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard runs as a conversation with {0}, started from wherever it is offered."
 msgstr "This wizard runs as a conversation with {0}, started from wherever it is offered."
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "This wizard ships with Flowpad and cannot be edited here."
@@ -20717,14 +20683,6 @@ msgstr "Yesterday"
 msgid "You"
 msgstr "You"
 
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
-#: src/components/organization/budgets/MemberStanding.tsx
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
-
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."
 msgstr "You are not part of an organization. Once you join or create one, its teams appear here."
@@ -20919,4 +20877,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
