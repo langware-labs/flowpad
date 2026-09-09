@@ -6,7 +6,7 @@ import { useGitRepos } from '@src/hooks/use-git-providers';
 import { formatRelative } from './relative-time';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 interface RepoPickerProps {
   provider: GitProvider;
@@ -46,8 +46,12 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * Searchable, sorted table of repositories the user can access for the given
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
+ *
+ * Memoized: hosts render this beside their own inputs, so without it every
+ * keystroke in a sibling URL box re-diffs a table that can hold hundreds of
+ * rows. Its props are stable (a literal provider, `useCallback`'d handlers).
  */
-export function RepoPicker({
+function RepoPickerImpl({
   provider,
   onSelect,
   enabled = true,
@@ -193,5 +197,7 @@ export function RepoPicker({
     </div>
   );
 }
+
+export const RepoPicker = memo(RepoPickerImpl);
 
 export default RepoPicker;
