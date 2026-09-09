@@ -180,6 +180,12 @@ export const assetDefinitions = {
     load: async (p: { provider: GitProvider }) => (await import('../services/git-providers')).fetchRepos(p.provider),
   }),
   [LazyAsset.GitBranches]: defineAsset({
+    // Key on exactly what is SENT, not on the whole params object: the same repo
+    // reaches this hook as a full `RepoSummary` (browsed) and as a synthesized
+    // `{git_origin}` (pasted URL). Keyed by identity those are two cache entries
+    // for one request, and any unrelated `RepoSummary` churn (a new `pushed_at`
+    // after a repo-list refresh) would silently drop the branches.
+    key: (p: { git_origin: GitOrigin }) => [p.git_origin.provider, p.git_origin.owner, p.git_origin.name],
     load: async (p: { git_origin: GitOrigin }) => (await import('../services/git-providers')).fetchBranches(p),
   }),
   [LazyAsset.GitInvitations]: defineAsset({
