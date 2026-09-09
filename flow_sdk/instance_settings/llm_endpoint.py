@@ -225,7 +225,29 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     nothing and makes a hub-side call depend on a second hub-side call completing.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    # A budget is a thing a hub USER may spend, so with nobody signed in there is no question to
+    # ask. Asking anyway is what produced the "Cloud Request Failed ... 401: Forbidden access"
+    # warning on an idle box: every surface that lists endpoints (the Assets tree root, the funding
+    # chip, the picker) drives this read on open, each 401 was reported verbatim by
+    # ``client_hooks._on_response``, and enough of them in one window pulled the "hub errors
+    # suppressed" toast in behind it. Same gate, same reason as ``handle_conversation_list``.
+    #
+    # ``require_live`` rather than the cheaper ``hub_auth_available``, because the state that
+    # actually reaches users here is an EXPIRED login, not an absent one -- the box still holds a
+    # credential, ``_on_request`` still attaches it, and the hub still answers 401. A predicate
+    # that only asks "is a login on file" would keep sending exactly the request this gate exists
+    # to stop. The keychain read it costs is one the request itself was about to make anyway.
+    #
+    # Deliberately ahead of the memo, and deliberately NOT its stale list: a failed refresh keeps
+    # the last good list (a hub blip must not empty the picker), but signed out is not a blip --
+    # none of those budgets is spendable, and "none" is the answer this function documents for that
+    # state. The verdict is not cached either, so a fresh login is picked up on the next call
+    # rather than at the end of a TTL.
+    if not resolve_hub_api_key(require_live=True):
+        return []
 
     name = get_instance_settings().instance_name
     cached = _list_cache.get(name)

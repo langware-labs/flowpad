@@ -7,6 +7,7 @@ instance singleton + SOD_ENC_KEY so the credential store resolves headlessly.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -384,11 +385,42 @@ def test_the_entity_mirrors_a_hub_payload_and_ignores_what_it_does_not_model() -
     )
 
 
-async def test_fetch_is_empty_when_logged_out(env) -> None:
-    """A signed-out box has nothing to offer, and says so instead of raising."""
+async def test_fetch_is_empty_when_logged_out(env, monkeypatch) -> None:
+    """A signed-out box has nothing to offer, and does not ASK before saying so.
+
+    Answering ``[]`` was never the whole contract. Every surface that lists budgets drives this
+    read on open, and while logged out each one used to reach the hub anyway: the hub answered
+    ``401: Forbidden access``, ``client_hooks._on_response`` reported it verbatim, and the user
+    got a "Cloud Request Failed" warning on an idle box -- with "hub errors suppressed" behind it
+    once enough surfaces opened at once. So the call itself is what this pins.
+    """
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
 
+    async def _boom(*args, **kwargs):
+        raise AssertionError("the hub must not be asked while logged out")
+
+    monkeypatch.setattr(hub_http, "hub_get", _boom)
+
     assert await fetch_hub_llm_endpoints() == []
+
+    # And a memo left over from a session that HAS ended is not an answer either. The gate sits
+    # ahead of the cache on purpose: a failed refresh keeps the last good list (a hub blip must
+    # not empty the picker), but a sign-out is not a blip -- none of those budgets is spendable
+    # by nobody, so the picker is empty rather than stale.
+    import flow_sdk.instance_settings.llm_endpoint as settings
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings import get_instance_settings
+
+    settings._list_cache[get_instance_settings().instance_name] = (
+        time.monotonic(),
+        [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="from the last session")],
+    )
+    try:
+        assert await fetch_hub_llm_endpoints() == []
+    finally:
+        # The suite shares one memo dict; a fresh entry left behind would answer a later test.
+        settings._list_cache.pop(get_instance_settings().instance_name, None)
 
 
 async def test_status_carries_what_the_user_may_spend(env) -> None:
