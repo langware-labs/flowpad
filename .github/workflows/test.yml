@@ -61,19 +61,26 @@ jobs:
   # Isolation is safe — jobs are separate VMs, and tests/conftest.py roots the
   # DB/records/home under a per-process mkdtemp anyway.
   backend-unit:
-    # Two shards, same 15-minute cap each, same `--long` coverage between them.
+    # Four shards, same 15-minute cap each, same `--long` coverage between them.
+    #
     # The tier outgrew ONE runner: 12m09s green on 2026-09-06 with three
-    # minutes of headroom, then killed at the cap on every branch since — the
-    # test code grew 3% while CI's throughput dropped ~19%, so the fix is to
-    # halve the work, not to widen the budget.
-    name: backend (pytest unit) ${{ matrix.shard }}/2
+    # minutes of headroom, then killed at the cap on every branch since. Two
+    # shards fixed that (9m03s / 7m09s) and then stopped being enough within a
+    # day — shard 2 hit 15m16s once this branch grew, because the split is
+    # round-robin over directory atoms and directories are not equal: it was
+    # already 3555 vs 5097 tests, and the new work landed on the heavy side.
+    #
+    # Four is not a guess at the current size, it is headroom for the next
+    # growth. Widening timeout-minutes is still the wrong lever: the cap is
+    # what reported both times that the tier had outgrown its runner.
+    name: backend (pytest unit) ${{ matrix.shard }}/4
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,7 +95,7 @@ jobs:
         with:
           tier: unit
           shard: ${{ matrix.shard }}
-          shards: '2'
+          shards: '4'
 
   backend-api:
     name: backend (pytest api)
