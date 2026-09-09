@@ -1,5 +1,13 @@
 import { Trans } from '@lingui/react/macro';
-import type { WizardStepOutcome, WizardStepProbe } from '@sdk';
+import { ExternalLink } from 'lucide-react';
+import { AgenticProcess, TypeId, type WizardStepOutcome, type WizardStepProbe } from '@sdk';
+import type { ActivityProgressSpec } from '@sdk/activity';
+
+import { Button } from '@src/components/ui/button';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useEntity } from '@src/hooks/entity-hooks';
+
+import { actionKindOf, LIVE_STATE, type WizardStepDoc } from './wizard-doc';
 
 /** Phase → the plain-language question that phase answers. The vocabulary is
  *  the form's ("Skip if" / "Runs" / "Proved by"), so the debugger and the editor
@@ -10,7 +18,7 @@ const PHASE_LABEL: Record<string, string> = {
   verify: 'Proved by',
 };
 
-function Stream({ label, text, truncated }: { label: string; text: string; truncated?: boolean }) {
+export function Stream({ label, text, truncated }: { label: string; text: string; truncated?: boolean }) {
   if (!text) return null;
   return (
     <div className="mt-1">
@@ -67,7 +75,96 @@ function ProbeRow({ probe }: { probe: WizardStepProbe }) {
  * outcome's single `returncode` was never enough to debug from: it is the
  * action's, unless verify failed, in which case it is silently verify's.
  */
-export function WizardStepInspector({ outcome }: { outcome: WizardStepOutcome | null }) {
+/**
+ * What an AGENTIC step did.
+ *
+ * A process step runs no shell commands, so its probe list is empty and this
+ * panel used to say "this step ran no commands" — true, and useless for the one
+ * kind of step whose work is hardest to see.
+ */
+function AgenticStep({
+  step,
+  outcome,
+  live,
+}: {
+  step: WizardStepDoc;
+  outcome: WizardStepOutcome | null;
+  live?: ActivityProgressSpec | null;
+}) {
+  const { navigation } = useDockNavigation();
+  const processId = outcome?.process_id ?? '';
+  // The process entity exists only once the step settled and recorded its id;
+  // while it runs, the live activity child is the only channel there is.
+  // `null` until there is an id — the hook takes a TypeId, and a step that has
+  // not run has no process to look up.
+  const { data: process } = useEntity<AgenticProcess>(
+    processId ? new TypeId(AgenticProcess.type, processId) : null,
+  );
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="wizard-process-step">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          <Trans>Agent</Trans>
+        </span>
+        <code className="font-mono text-xs">{step.process?.agent || '—'}</code>
+        {live ? (
+          <span className="font-mono text-[11px] text-muted-foreground" data-testid="wizard-process-live">
+            {live.current || LIVE_STATE[live.state]?.label || live.state}
+          </span>
+        ) : null}
+      </div>
+
+      <Stream label="prompt" text={step.process?.prompt ?? ''} />
+
+      {/* The RETURNED VALUE — the reason this step type was unreadable. Served
+          only by `run-detail`, so it lands when the panel fetches. */}
+      {outcome?.output ? (
+        <div data-testid="wizard-process-result">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <Trans>Returned {outcome.output}</Trans>
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px]">
+            {typeof outcome.result === 'string' ? outcome.result : JSON.stringify(outcome.result, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+
+      {outcome?.message ? <p className="text-xs text-muted-foreground">{outcome.message}</p> : null}
+
+      {/* `process_id` has ridden the wire since this panel's first version and
+          was rendered nowhere. The transcript is the account of what the agent
+          actually did, and it already has a viewer. */}
+      {process ? (
+        <div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 gap-1 px-1.5 text-[11px]"
+            data-testid="wizard-process-transcript"
+            onClick={() => navigation.openDock(process.transcriptDockPointer)}
+          >
+            <ExternalLink className="h-3 w-3" />
+            <Trans>Open transcript</Trans>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function WizardStepInspector({
+  outcome,
+  step,
+  live,
+}: {
+  outcome: WizardStepOutcome | null;
+  step?: WizardStepDoc;
+  live?: ActivityProgressSpec | null;
+}) {
+  if (step && actionKindOf(step) === 'process') {
+    return <AgenticStep step={step} outcome={outcome} live={live} />;
+  }
   if (!outcome) {
     return (
       <p className="text-xs text-muted-foreground">

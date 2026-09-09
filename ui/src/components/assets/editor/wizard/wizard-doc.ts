@@ -20,13 +20,37 @@ export interface WizardCheckDoc {
   timeout_seconds?: number;
 }
 
+/** An agentic step's action — it hands the work to an agent.
+ *
+ *  `output` is what makes the agent's answer READABLE: declare a name and the
+ *  runner adds a result contract to the prompt, reads what the agent wrote, and
+ *  fails the step if the agent says it failed. Leave it empty and the step is
+ *  what it always was — "the agent stopped". */
+export interface WizardProcessDoc {
+  agent?: string;
+  prompt?: string;
+  name?: string;
+  timeout_seconds?: number;
+  output?: string;
+  shape?: unknown;
+}
+
+/** What invokes a wizard without a person clicking Run. */
+export interface WizardTriggerDoc {
+  on: string;
+  /** At most once per machine, ever — the Trigger row's counter is the record. */
+  fire_once?: boolean;
+  /** Only fire for events about this target (`type:id`, trailing `*` allowed). */
+  target?: string;
+}
+
 export interface WizardStepDoc {
   id: string;
   label?: string;
   description?: string;
   precondition?: WizardCheckDoc;
   command?: { commands?: WizardCommandMap; timeout_seconds?: number };
-  process?: Record<string, unknown>;
+  process?: WizardProcessDoc;
   input?: { name: string; shape?: unknown; label?: string; description?: string };
   verify?: WizardCheckDoc;
   on_fail?: string;
@@ -39,7 +63,7 @@ export interface WizardDoc {
   version?: string;
   agent?: string;
   steps?: WizardStepDoc[];
-  triggers?: { on: string; [key: string]: unknown }[];
+  triggers?: WizardTriggerDoc[];
   [key: string]: unknown;
 }
 
@@ -117,7 +141,9 @@ export function setStepAction(doc: WizardDoc, index: number, kind: ActionKind): 
   const next: WizardStepDoc = { ...step };
   for (const existing of ACTION_KINDS) delete next[existing];
   if (kind === 'command') next.command = { commands: {} };
-  else if (kind === 'process') next.process = {};
+  // Seeded with the fields the form edits, so a freshly switched step renders
+  // its inputs instead of an empty panel.
+  else if (kind === 'process') next.process = { agent: '', prompt: '' };
   else next.input = { name: '', shape: 'string' };
   return setIn(doc, ['steps', index], next);
 }
@@ -173,3 +199,18 @@ export const LIVE_STATE: Record<string, { status: string; label: string }> = {
   cancelled: { status: 'not_reached', label: 'cancelled' },
   interrupted: { status: 'failed', label: 'stopped' },
 };
+
+/**
+ * The uname the backend's reconciler mints for a wizard's Nth declared trigger.
+ *
+ * A mirror of `_wizard_slug` in `flow_sdk/server/builtin_triggers.py`: the
+ * wizard's FOLDER name, lowercased, every non-alphanumeric character replaced
+ * by `_`. It is the only join between a trigger a document declares and the row
+ * that records whether it has fired, so the two spellings have to agree —
+ * deriving it from the display name instead silently matched nothing.
+ */
+export function wizardTriggerUname(assetRef: string, index: number): string {
+  const folder = (assetRef.split('/').filter(Boolean).pop() ?? 'wizard').toLowerCase();
+  const slug = folder.replace(/[^a-z0-9]/g, '_').replace(/^_+|_+$/g, '') || 'wizard';
+  return `wizard_${slug}_${index}`;
+}

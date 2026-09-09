@@ -426,6 +426,7 @@ function WizardViewerBody({
         <AdvancedOnly reserve={false}>
           <WizardForm
             doc={doc}
+            assetRef={wizard.asset_ref ?? ''}
             commit={editor.commit}
             validation={editor.validation}
             saveError={editor.saveError}
@@ -475,6 +476,7 @@ function WizardViewerBody({
             [RUN_DETAIL_WINDOW]: (
               <WizardDebugger
                 steps={joinedSteps}
+                docSteps={doc?.steps ?? []}
                 orphaned={orphaned}
                 loadingDetail={runView.loadingDetail}
                 onExpand={() => void runView.loadDetail()}

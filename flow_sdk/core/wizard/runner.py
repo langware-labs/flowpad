@@ -104,6 +104,10 @@ class ActionResult:
     returncode: Optional[int] = None
     process_id: Optional[str] = None
     probe: Optional[StepProbe] = None
+    #: What an AGENTIC step's agent returned, under the name the step declared.
+    output: str = ""
+    value: Any = None
+    result_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,9 @@ class StepOutcome:
     process_id: Optional[str] = None
     duration_s: float = 0.0
     probes: tuple[StepProbe, ...] = ()
+    output: str = ""
+    value: Any = None
+    result_path: str = ""
 
     @property
     def skipped(self) -> bool:
@@ -137,6 +144,7 @@ class StepOutcome:
             # act on, and the raw float would churn `run.json` on every re-run.
             duration_s=round(self.duration_s, 3),
             probes=[p.to_payload() for p in self.probes],
+            output=self.output, result=self.value, result_path=self.result_path,
         ).model_dump(mode="json")
 
 
@@ -171,6 +179,9 @@ class WizardRunResult:
     outcomes: list[StepOutcome] = field(default_factory=list)
     message: str = ""
     awaiting: list[AwaitingInput] = field(default_factory=list)
+    #: What the agentic steps returned, by declared name. Persisted by
+    #: `execute_wizard` so a resumed run does not have to re-derive them.
+    outputs: dict = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -233,6 +244,7 @@ async def _act(
     platform: str,
     env: dict,
     subject_entity: str,
+    on_status: Optional[Callable[[Any], None]] = None,
 ) -> ActionResult:
     """Run the step's one action, and record what it ran."""
     if step.command is not None:
@@ -262,16 +274,70 @@ async def _act(
         return ActionResult(True, "", result.returncode, None, probe)
 
     assert step.process is not None, "spec validator guarantees exactly one action"
+    from flow_sdk.core.wizard.step_result import (  # noqa: PLC0415
+        clear_receipt, read_step_result, receipt_path, result_contract,
+    )
+
+    declared = step.process.output
+    prompt = step.process.prompt
+    path = receipt_path(workdir, step.id)
+    if declared:
+        # BEFORE the launch, always. A previous run's receipt read as this run's
+        # result would report the last run's success for a step that did
+        # nothing — invisible, and the worst failure this design can have.
+        clear_receipt(path)
+        prompt = prompt + result_contract(path, declared, step.process.shape)
+
     outcome: ProcessResult = await launch(
         agent=step.process.agent,
-        prompt=step.process.prompt,
+        prompt=prompt,
         name=step.process.name or step.display_label,
         workdir=workdir,
         context_data={"wizard_step": step.id},
         target_typeid_str=subject_entity,
         timeout_seconds=step.process.timeout_seconds,
+        on_status=on_status,
     )
-    return ActionResult(outcome.ok, "" if outcome.ok else outcome.message, None, outcome.process_id)
+    if not outcome.ok:
+        return ActionResult(False, outcome.message, None, outcome.process_id)
+    if not declared:
+        # No contract was asked for, so there is nothing to read and the verdict
+        # is what it has always been: the agent stopped. `verify` is still the
+        # only thing that can prove the work landed.
+        return ActionResult(True, outcome.message, None, outcome.process_id)
+
+    said = read_step_result(path, output=declared)
+    return ActionResult(
+        said.ok,
+        # The agent's own words either way — its summary when it worked, its
+        # explanation when it did not. Reporting "agent finished" over either
+        # is what made this step unreadable.
+        said.summary if said.ok else said.error,
+        None, outcome.process_id,
+        output=declared if said.ok else "",
+        value=said.value,
+        result_path=said.path,
+    )
+
+
+def _step_progress(child: Any) -> Callable[[Any], None]:
+    """Mirror an agent's ticks onto the step's OWN activity child.
+
+    Returns a callback, because the runner holds the child and the process code
+    holds the ticks, and neither should have to know the other's shape. Never
+    raises: a progress line is not a reason to fail a step that is working.
+    """
+    def write(progress: Any) -> None:
+        try:
+            text = getattr(progress, "text", "") or str(progress or "")
+            if text:
+                child.current(text)
+            for name, count in (getattr(progress, "counters", None) or {}).items():
+                child.set_counter(name, count)
+        except Exception:  # noqa: BLE001 — reporting must never fail a producer
+            logger.debug("wizard step progress write failed", exc_info=True)
+
+    return write
 
 
 async def run_wizard(
@@ -402,12 +468,25 @@ async def run_wizard(
             acted = await _act(
                 step, shell=shell, launch=launch, workdir=workdir,
                 platform=platform, env=env, subject_entity=subject_entity or "",
+                # An agentic step blocks for up to its timeout — half an hour by
+                # default. Without this the row sits frozen for all of it, so
+                # the agent's ticks are mirrored onto the child the runner
+                # already owns. A projection: the process keeps its own activity
+                # root under its own subject, and subject IS the WS routing key.
+                on_status=_step_progress(child),
             )
             # Only these three are reassigned below (by the verify block);
             # everything else is read off `acted` where it is used.
             ok, message, returncode = acted.ok, acted.message, acted.returncode
             if acted.probe is not None:
                 probes.append(acted.probe)
+            if acted.output:
+                # One namespace with the answers a person gave: a later step's
+                # author should not have to know whether a value came from a
+                # human or an agent. `input_env` JSON-encodes and never
+                # interpolates, so its injection argument covers these too.
+                values[acted.output] = acted.value
+                input_environment = input_env(values)
 
             # ── prove ──
             if ok and step.verify is not None:
@@ -436,6 +515,7 @@ async def run_wizard(
                     step.id, COMPLETED, message=message, returncode=returncode,
                     process_id=acted.process_id, duration_s=time.monotonic() - step_started,
                     probes=tuple(probes),
+                    output=acted.output, value=acted.value, result_path=acted.result_path,
                 ))
             else:
                 child.fail(message or "failed")
@@ -444,6 +524,7 @@ async def run_wizard(
                     step.id, FAILED, message=message, returncode=returncode,
                     process_id=acted.process_id, duration_s=time.monotonic() - step_started,
                     probes=tuple(probes),
+                    result_path=acted.result_path,
                 ))
                 if step.on_fail == ON_FAIL_ABORT:
                     aborted_at = step.id
@@ -469,4 +550,9 @@ async def run_wizard(
             # a failed run does not have to raise to be reported as failed.
             root.fail(message)
 
-    return WizardRunResult(status=status, outcomes=outcomes, message=message, awaiting=awaiting)
+    return WizardRunResult(
+        status=status, outcomes=outcomes, message=message, awaiting=awaiting,
+        # Only what THIS run's agents returned: `values` also holds the answers
+        # a person gave, and those are already persisted as inputs.
+        outputs={o.output: o.value for o in outcomes if o.output},
+    )

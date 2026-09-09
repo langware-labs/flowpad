@@ -1,20 +1,25 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Loader2, Plus } from 'lucide-react';
-import type { WizardIssue, WizardValidation } from '@sdk';
+import { ExternalLink, Loader2, Plus, Zap } from 'lucide-react';
+import { Agent, QueryRequest, Trigger, type WizardIssue, type WizardValidation } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 import { WizardStepForm, CommitField } from './WizardStepForm';
 import {
   blankStep,
   issuesByLoc,
   orphanIssues,
+  wizardTriggerUname,
   removeIn,
   setIn,
   setStepAction,
   type ActionKind,
   type WizardDoc,
+  type WizardTriggerDoc,
 } from './wizard-doc';
 
 /**
@@ -32,8 +37,11 @@ export function WizardForm({
   saveError,
   saving,
   readOnly,
+  assetRef,
 }: {
   doc: WizardDoc;
+  /** The wizard's folder on disk — the trigger uname is derived from it. */
+  assetRef: string;
   commit: (edit: (previous: WizardDoc) => WizardDoc) => Promise<void>;
   validation: WizardValidation | null;
   saveError: string | null;
@@ -43,6 +51,16 @@ export function WizardForm({
   const { t } = useLingui();
   const [expanded, setExpanded] = useState<string | null>(null);
   const steps = doc.steps ?? [];
+
+  // Installed agents, to OFFER in the agentic step's picker. A failure here
+  // costs the datalist and nothing else — the field still accepts any name.
+  const { data: agentRows } = useEntitiesQuery<Agent>(
+    useMemo(() => new QueryRequest({ type: Agent.type, name: 'wizard editor agents' }), []),
+  );
+  const agents = useMemo(
+    () => (agentRows ?? []).map((a: Agent) => a.name ?? '').filter(Boolean).sort(),
+    [agentRows],
+  );
 
   const byLoc = issuesByLoc(validation?.issues);
   const rendered = new Set<string>();
@@ -102,6 +120,7 @@ export function WizardForm({
             onToggle={() => setExpanded(expanded === step.id ? null : step.id)}
             onSet={set}
             onRemove={remove}
+            agents={agents}
             onSetAction={(kind: ActionKind) =>
               void commit((previous) => setStepAction(previous, index, kind))
             }
@@ -130,15 +149,7 @@ export function WizardForm({
         </div>
       )}
 
-      {doc.triggers?.length ? (
-        <p className="text-xs text-muted-foreground">
-          {/* Reconciled at startup only, so saying "saved" without this would be
-              a lie about when the change takes effect. */}
-          <Trans>
-            This wizard runs itself on an event. Trigger changes take effect after a restart.
-          </Trans>
-        </p>
-      ) : null}
+      {doc.triggers?.length ? <TriggerRows triggers={doc.triggers} assetRef={assetRef} /> : null}
 
       {/* Issues addressing a field no longer rendered still have to be shown —
           an error nothing displays is worse than a clumsily placed one. */}
@@ -159,5 +170,83 @@ export function WizardForm({
       )}
       {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
     </div>
+  );
+}
+
+/**
+ * What invokes this wizard, and a way to go look at it.
+ *
+ * Read-only, deliberately: a declared trigger is reconciled into a real
+ * `Trigger` row at STARTUP only, so an editor here would promise a change that
+ * does not happen until the next restart. What is missing today is not editing
+ * — it is being able to see the thing at all, and to reach the row that holds
+ * whether it has actually fired.
+ */
+function TriggerRows({ triggers, assetRef }: { triggers: WizardTriggerDoc[]; assetRef: string }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+
+  const { data: rows } = useEntitiesQuery<Trigger>(
+    useMemo(() => new QueryRequest({ type: Trigger.type, name: 'wizard triggers' }), []),
+  );
+
+  return (
+    <section className="flex flex-col gap-1" data-testid="wizard-triggers">
+      <span className="text-xs uppercase tracking-wider text-muted-foreground">
+        <Trans>Runs itself when</Trans>
+      </span>
+      {triggers.map((trigger, index) => {
+        const uname = wizardTriggerUname(assetRef, index);
+        const row = (rows ?? []).find((r: Trigger) => r.uname === uname);
+        return (
+          <div
+            key={`${trigger.on}-${index}`}
+            className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2 py-1.5"
+            data-testid={`wizard-trigger-${index}`}
+          >
+            <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <code className="font-mono text-xs">{trigger.on}</code>
+            {trigger.target ? (
+              <span className="text-[11px] text-muted-foreground">
+                <Trans>about</Trans> <code className="font-mono">{trigger.target}</code>
+              </span>
+            ) : null}
+            {trigger.fire_once ? (
+              <span className="rounded border border-border px-1 text-[11px] text-muted-foreground">
+                <Trans>once per machine</Trans>
+              </span>
+            ) : null}
+            <span className="flex-1" />
+            {/* The DECLARATION is in the document; whether it has actually
+                fired lives on the Trigger row, which is why this links there
+                rather than restating a counter it would have to keep in sync. */}
+            <span className="text-[11px] text-muted-foreground" data-testid={`wizard-trigger-fired-${index}`}>
+              {row?.counter
+                ? t`fired ${row.counter}×`
+                : row
+                  ? t`not fired yet`
+                  : t`takes effect after a restart`}
+            </span>
+            {row ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 gap-1 px-1.5 text-[11px]"
+                data-testid={`wizard-trigger-open-${index}`}
+                onClick={() =>
+                  // `system: true` is required, not decorative: a wizard's
+                  // trigger is scoped `system`, so the Events screen hides it
+                  // without this and the link lands on an empty list.
+                  navigation.openDock(DockPointer.forEvents(row.id, { system: true }))
+                }
+              >
+                <ExternalLink className="h-3 w-3" />
+                <Trans>Open trigger</Trans>
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+    </section>
   );
 }

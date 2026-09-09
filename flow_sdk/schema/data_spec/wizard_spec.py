@@ -147,6 +147,18 @@ class WizardProcessActionSpec(DataSpec):
     #: Display name for the spawned process. Falls back to the step label.
     name: str = ""
     timeout_seconds: float = 1800.0
+    #: The name this step's agent RETURNS a value under.
+    #:
+    #: Empty ⇒ the step declares no output: no result contract is added to the
+    #: prompt, nothing is read back, and the verdict is what it was before this
+    #: field existed — the agent reached a terminal state. Opt-in on purpose, a
+    #: contract nobody asked for cannot silently fail a wizard that ships.
+    output: str = ""
+    #: The value's shape, in the AUTHORING form — the same ``SpecType`` field
+    #: ``WizardInputActionSpec.shape`` and ``AgentSpec.input`` use, so a step
+    #: declares what it RETURNS the way a wizard declares what it is GIVEN.
+    #: Shown to the agent in the contract; not enforced (see the reader).
+    shape: Optional[SpecType] = None
 
 
 class WizardInputActionSpec(DataSpec):
@@ -377,6 +389,15 @@ class WizardStepOutcomeSpec(DataSpec):
     #: Every command this step ran. Additive with a default, so a `run.json`
     #: written before probes existed still validates under `extra="forbid"`.
     probes: list[WizardStepProbeSpec] = []
+    #: The name this step declared as its output, when it was an agentic step.
+    output: str = ""
+    #: What the agent RETURNED under that name. Served only by ``run-detail``,
+    #: never on ``run_state`` — the same rule as `probes`, and for the same
+    #: reason: that payload rides every row of a list and every WS push.
+    result: Optional[Any] = None
+    #: Where the agent wrote it. Survives the strip, so a person reading a list
+    #: payload can still go and find the value on disk.
+    result_path: str = ""
 
 
 class WizardAwaitingInputSpec(DataSpec):
@@ -417,3 +438,7 @@ class WizardRunDetailSpec(DataSpec):
     #: Their presence is what tells a reader the current record is not the whole
     #: history — the files themselves are read from disk, not served here.
     archived: list[str] = []
+    #: What this run's agentic steps returned, by declared output name. Whole
+    #: here, stripped from `run_state` — this action is the one place they are
+    #: served, because it is fetched for ONE wizard a person is looking at.
+    outputs: dict[str, Any] = {}
