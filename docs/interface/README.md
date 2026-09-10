@@ -69,10 +69,14 @@ violations are flagged inline as debt.
    **both** directions, and on `restart`. The guard
    (`_reject_if_turn_in_flight`) sits in `switch_mode` above the branch and keys
    on `is_turn_busy` — the same predicate the wire `busy` flag derives from, so
-   the 409 and the client's own gate can never disagree. (The old
-   →CLI-only asymmetry is fixed; the frontend still declines rather than firing
-   a call it knows will 409, and it splits its own predicate by direction —
-   readiness to enter a PTY, busy to leave one.)
+   the 409 and the client's own gate can never disagree. The frontend still
+   declines rather than firing a call it knows will 409
+   (`surfaceTransportGate`), keyed on that same `busy`. Both the →CLI-only
+   backend asymmetry and the client-side one it produced are fixed: the UI's
+   →terminal direction used to route at `open`, which has no such guard, so the
+   gate mirrored an unguarded route (FLOWPAD-2130). `open` itself is still
+   unguarded, by design — loaders, the watchdog and auto-recovery call it — and
+   tightening THAT is FLOWPAD-2117.
 
 4. **`restart_required` is a snapshot-hash contract.** `save()` while RUNNING
    compares the worker-config snapshot (MD5 of generic + finalized CLI options,

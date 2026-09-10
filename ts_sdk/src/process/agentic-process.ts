@@ -46,6 +46,7 @@ import {
   ProcessIconKey,
   ProcessStatus,
   WorkerMode,
+  type SwitchModeBody,
   WorkerStatus,
   isBusy,
   isProcessRunning,
@@ -2981,6 +2982,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       'process_load',
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
+    return this.adoptOpenPayload(result, options);
+  }
+
+  /**
+   * Client half of a PTY launch: adopt the server's open payload and attach.
+   * Shared by {@link start} (`open`) and {@link switchMode}'s Interactive
+   * direction (`switch-mode`), which return the same `_build_open_payload`.
+   * That parity is what lets the toggle avoid `open`, which has no mid-turn
+   * guard and so let a switch put two workers on one transcript (FLOWPAD-2130).
+   */
+  private async adoptOpenPayload(
+    result: {
+      shell_id: string;
+      pty_id: string;
+      session_id: string | null;
+      status?: string;
+      shell: Record<string, unknown>;
+    } | null,
+    options?: { cols?: number; rows?: number; ptyTimeout?: number },
+  ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
       this.status = result.status as ProcessStatus;
@@ -3089,55 +3110,56 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
-   * Standardized transport switch — the single way to flip a session between the
-   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
-   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
-   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
-   * intent is persisted so a reload keeps the chosen transport.
-   *
-   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
-   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
-   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
-   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
-   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
-   * (backend 409); the caller disables the toggle while a turn is in flight.
+   * Flip a session between PTY terminal and headless CLI — one logical session,
+   * durable `pty_mode`, ONE route both ways (`switch-mode`, which 409s
+   * mid-turn). Interactive used to take the unguarded `open` (FLOWPAD-2130).
+   * Only pre/post work differs: Interactive attaches via {@link adoptOpenPayload}
+   * and emits `restarted`; CLI must NOT (it would re-attach a dead PTY).
    */
-  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
-    if (mode === WorkerMode.Interactive) {
-      const restoreTransport = this.stageTransportIntent({ pty_mode: true, visible: true });
-      try {
-        await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-        this.emit('restarted', { process: this });
-      } catch (error) {
-        // The open action rejected, so the optimistic transport intent never
-        // became durable. Restore the durable fields and their stale-wire
-        // latch in one scoped step; otherwise later headless broadcasts are
-        // discarded and the UI stays pinned to a terminal that never started.
-        restoreTransport();
-        throw error;
+  async switchMode(
+    mode: WorkerMode,
+    /** Client-only xterm grid, NOT wire data: it seeds `attachPty` so the
+     *  worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+    opts?: { cols?: number; rows?: number },
+  ): Promise<void> {
+    const wantPty = mode === WorkerMode.Interactive;
+    if (!wantPty) {
+      this._userInitiatedStop = true;
+      const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+      if (shell) {
+        shell.status = ShellStatus.CLOSING;
+        dataManager.notifyEntityChanged(shell);
       }
-      return;
     }
-    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
-    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
-    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
-    this._userInitiatedStop = true;
-    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
-    if (shell) {
-      shell.status = ShellStatus.CLOSING;
-      dataManager.notifyEntityChanged(shell);
-    }
-    // Stage the desired CLI transport BEFORE the request, symmetric with the
-    // Interactive branch above. Backend exit/final-save broadcasts happen
-    // before the HTTP response; keeping the prior PTY latch during that window
-    // can discard the authoritative false frame as stale. Roll back both the
-    // fields and latch if the action is rejected.
-    const restoreTransport = this.stageTransportIntent({ pty_mode: false, visible: false });
+    // Staged BEFORE the request: backend broadcasts land before the response,
+    // and the prior latch would discard the authoritative frame as stale.
+    const restoreTransport = this.stageTransportIntent({ pty_mode: wantPty, visible: wantPty });
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { mode };
+    // Theme is sampled per launch (the CLI reads it at startup) and belongs to
+    // the Interactive arm only — the union makes putting it on CLI a type error.
+    const theme = wantPty ? hostTerminalTheme() : undefined;
+    const body: SwitchModeBody = wantPty
+      ? { mode: WorkerMode.Interactive, ...(theme ? { theme } : {}) }
+      : { mode: WorkerMode.CLI };
+    actionInfo.bodyParameters = body;
     try {
-      await dataManager.callAction(actionInfo);
+      const result = await dataManager.callAction<
+        unknown,
+        {
+          shell_id: string;
+          pty_id: string;
+          session_id: string | null;
+          status?: string;
+          shell: Record<string, unknown>;
+        } | null
+      >(actionInfo);
+      if (wantPty) {
+        await this.adoptOpenPayload(result, { cols: opts?.cols, rows: opts?.rows });
+        this.emit('restarted', { process: this });
+      }
     } catch (error) {
+      // Rejected (409 mid-turn, or a launch failure) — the intent never became
+      // durable, so roll fields and latch back or the UI stays pinned to it.
       restoreTransport();
       throw error;
     }
