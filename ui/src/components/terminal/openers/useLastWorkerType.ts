@@ -23,12 +23,20 @@ const OPENER_TO_WORKER: Partial<Record<OpenerId, WorkerType>> = {
   opencode: 'opencode',
 };
 
-const WORKER_TO_OPENER: Record<WorkerType, OpenerId> = {
+// `as const satisfies` rather than a plain `Record<WorkerType, OpenerId>`
+// annotation: the checked shape is the same, but the values stay LITERAL, so
+// `workerToOpener` can hand back the four vendor ids rather than the whole
+// opener union (which also carries `terminal` / `sandbox` and can't index a
+// vendor-keyed table).
+const WORKER_TO_OPENER = {
   claude_code: 'claude',
   codex: 'codex',
   copilot: 'copilot',
   opencode: 'opencode',
-};
+} as const satisfies Record<WorkerType, OpenerId>;
+
+/** The opener ids that name a worker vendor — the image of {@link workerToOpener}. */
+export type WorkerOpenerId = (typeof WORKER_TO_OPENER)[WorkerType];
 
 /** Coerce a stored opener id to a worker vendor — null for non-worker openers. */
 export function openerToWorker(id: OpenerId | null): WorkerType | null {
@@ -36,7 +44,7 @@ export function openerToWorker(id: OpenerId | null): WorkerType | null {
 }
 
 /** Coerce a worker vendor to its opener id (for shared persistence). */
-export function workerToOpener(worker: WorkerType): OpenerId {
+export function workerToOpener(worker: WorkerType): WorkerOpenerId {
   return WORKER_TO_OPENER[worker];
 }
 

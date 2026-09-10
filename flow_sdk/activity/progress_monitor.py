@@ -50,20 +50,20 @@ def _norm(path: str) -> str:
     return SEP.join(split_path(path))
 
 
-def _norm_scope(scope: "Optional[str]") -> "Optional[str]":
-    """This machine's own ComputeNode IS the instance, so it normalises to no scope.
+def _norm_subject(subject_entity: "Optional[str]") -> "Optional[str]":
+    """This machine's own ComputeNode IS the instance, so it normalises to no subject entity.
 
-    Two spellings of one place would otherwise be two addresses: a legacy producer scopes
-    its index to ``str(compute_node.typeid)`` while ``flow progress index`` scopes to
+    Two spellings of one place would otherwise be two addresses: a legacy producer points
+    its index to ``str(compute_node.typeid)`` while ``flow progress index`` names
     nothing, and the same job would run twice under one name without either seeing the
-    other. Collapsing here also means "belongs to the box" is structurally ``scope is
+    other. Collapsing here also means "belongs to the box" is structurally ``subject_entity is
     None`` everywhere downstream, instead of a comparison each consumer has to remember.
     """
-    if scope is None:
+    if subject_entity is None:
         return None
-    from flow_sdk.activity.emit import local_scope_typeid  # lazy: emit imports the monitor
+    from flow_sdk.activity.emit import local_subject_typeid  # lazy: emit imports the monitor
 
-    return None if scope == local_scope_typeid() else scope
+    return None if subject_entity == local_subject_typeid() else subject_entity
 
 
 def _is_held(node: "Optional[Activity]") -> bool:
@@ -74,7 +74,7 @@ class ActivityProgressMonitor:
     """Tracks every live activity on this box. One instance, module-level below."""
 
     def __init__(self) -> None:
-        #: ``(scope, root_path) -> root Activity``. Roots only; children are reached
+        #: ``(subject_entity, root_path) -> root Activity``. Roots only; children are reached
         #: through their root, which is what makes eviction a single delete.
         self._roots: "dict[tuple[Optional[str], str], Activity]" = {}
         #: Every node by full address, for O(1) ``get`` on a deep path.
@@ -88,8 +88,8 @@ class ActivityProgressMonitor:
 
     # ------------------------------------------------------------------ addressing
 
-    def activity(self, path: str, scope: Optional[str] = None) -> Activity:
-        """Find-or-create the node at ``(scope, path)``, creating ancestors as needed.
+    def activity(self, path: str, subject_entity: Optional[str] = None) -> Activity:
+        """Find-or-create the node at ``(subject_entity, path)``, creating ancestors as needed.
 
         Addressing a deep path directly is the same as walking to it, so a producer
         three modules from the root needs no handle passed down.
@@ -97,39 +97,39 @@ class ActivityProgressMonitor:
         segs = split_path(path)
         if not segs:
             raise ValueError("activity path must have at least one segment")
-        scope = _norm_scope(scope)
+        subject_entity = _norm_subject(subject_entity)
         with self._lock:
-            key = (scope, SEP.join(segs))
+            key = (subject_entity, SEP.join(segs))
             existing = self._nodes.get(key)
             if existing is not None:
                 return existing
-            root = self._root(segs[0], scope)
+            root = self._root(segs[0], subject_entity)
             node = root
             for seg in segs[1:]:
                 node = node._child_segment(seg)
             return node
 
-    def _root(self, name: str, scope: Optional[str]) -> Activity:
-        key = (scope, name)
+    def _root(self, name: str, subject_entity: Optional[str]) -> Activity:
+        key = (subject_entity, name)
         root = self._roots.get(key)
         if root is None:
-            root = Activity(monitor=self, path=name, scope=scope)
+            root = Activity(monitor=self, path=name, subject_entity=subject_entity)
             self._roots[key] = root
             self._nodes[key] = root
         return root
 
     def _register_node(self, node: Activity) -> None:
         """Called by ``Activity._child_segment`` so deep addresses stay O(1)."""
-        self._nodes[(node.scope, node.path)] = node
+        self._nodes[(node.subject_entity, node.path)] = node
 
     def _unregister_node(self, node: Activity) -> None:
         for desc in node.descendants():
-            self._nodes.pop((desc.scope, desc.path), None)
-        self._nodes.pop((node.scope, node.path), None)
+            self._nodes.pop((desc.subject_entity, desc.path), None)
+        self._nodes.pop((node.subject_entity, node.path), None)
 
     # ------------------------------------------------------------------ single flight
 
-    def holder(self, path: str, scope: Optional[str] = None) -> "Optional[Activity]":
+    def holder(self, path: str, subject_entity: Optional[str] = None) -> "Optional[Activity]":
         """Who holds this address for single-flight work, or ``None`` when it is free.
 
         Free means exactly what the registry this replaces meant: nobody is tracked here
@@ -138,18 +138,18 @@ class ActivityProgressMonitor:
         whether the address is taken, so both go through :func:`_is_held`.
         """
         with self._lock:
-            node = self._nodes.get((_norm_scope(scope), _norm(path)))
+            node = self._nodes.get((_norm_subject(subject_entity), _norm(path)))
         return node if _is_held(node) else None
 
     def try_claim(
         self,
         path: str,
-        scope: Optional[str] = None,
+        subject_entity: Optional[str] = None,
         *,
         timeout_seconds: int = 600,
     ) -> Activity:
         """Take an address, or raise ``RuntimeError`` naming the job that holds it."""
-        key = (_norm_scope(scope), _norm(path))
+        key = (_norm_subject(subject_entity), _norm(path))
         with self._lock:
             existing = self._nodes.get(key)
             if _is_held(existing):
@@ -158,8 +158,8 @@ class ActivityProgressMonitor:
             # is gone, and a claimant inheriting them would report someone else's work.
             if existing is not None:
                 existing.release_waiters()
-                self.drop(key[1], scope=key[0])
-            node = self.activity(key[1], scope=key[0])
+                self.drop(key[1], subject_entity=key[0])
+            node = self.activity(key[1], subject_entity=key[0])
             node.claim_deadline = time.monotonic() + timeout_seconds
             return node
 
@@ -208,31 +208,31 @@ class ActivityProgressMonitor:
         self._notify(node, transition=True)
         if node.is_root:
             with self._lock:
-                self._roots.pop((node.scope, node.path), None)
+                self._roots.pop((node.subject_entity, node.path), None)
                 self._unregister_node(node)
 
     # ------------------------------------------------------------------ reading
 
-    def get(self, path: str, scope: Optional[str] = None) -> Optional[ActivityProgressSpec]:
+    def get(self, path: str, subject_entity: Optional[str] = None) -> Optional[ActivityProgressSpec]:
         """The tree at an address, or ``None`` once it is gone.
 
         ``None`` is the honest answer for a completed root: the monitor holds live work,
         and asking it about finished work is asking the wrong component.
         """
         with self._lock:
-            node = self._nodes.get((_norm_scope(scope), _norm(path)))
+            node = self._nodes.get((_norm_subject(subject_entity), _norm(path)))
         return node.spec() if node is not None else None
 
-    def node(self, path: str, scope: Optional[str] = None) -> Optional[Activity]:
+    def node(self, path: str, subject_entity: Optional[str] = None) -> Optional[Activity]:
         """The live node without creating one. For callers that must not mint."""
         with self._lock:
-            return self._nodes.get((_norm_scope(scope), _norm(path)))
+            return self._nodes.get((_norm_subject(subject_entity), _norm(path)))
 
-    def list(self, scope: Optional[str] = None, *, all_scopes: bool = False) -> "list[ActivityProgressSpec]":
-        """Live roots, newest activity first. ``all_scopes`` ignores the scope filter."""
+    def list(self, subject_entity: Optional[str] = None, *, all_subjects: bool = False) -> "list[ActivityProgressSpec]":
+        """Live roots, newest activity first. ``all_subjects`` ignores the subject-entity filter."""
         with self._lock:
-            wanted = _norm_scope(scope)
-            roots = [r for (s, _p), r in self._roots.items() if all_scopes or s == wanted]
+            wanted = _norm_subject(subject_entity)
+            roots = [r for (s, _p), r in self._roots.items() if all_subjects or s == wanted]
         # A timezone-AWARE floor: every real stamp is aware, and mixing the two raises
         # rather than sorting. A root can genuinely have neither stamp — it was addressed
         # but never mutated — so the floor has to be reachable.
@@ -242,13 +242,13 @@ class ActivityProgressMonitor:
             reverse=True,
         )
 
-    def count(self, scope: Optional[str] = None, *, all_scopes: bool = True) -> int:
+    def count(self, subject_entity: Optional[str] = None, *, all_subjects: bool = True) -> int:
         """How many roots are live. Roots, not nodes: the chip counts activities, and a
         cycle with twelve phases is one activity to a person looking at a badge."""
         with self._lock:
-            if all_scopes:
+            if all_subjects:
                 return len(self._roots)
-            wanted = _norm_scope(scope)
+            wanted = _norm_subject(subject_entity)
             return sum(1 for (s, _p) in self._roots if s == wanted)
 
     def stale(self, seconds: float) -> "list[ActivityProgressSpec]":
@@ -265,11 +265,11 @@ class ActivityProgressMonitor:
             roots = list(self._roots.values())
         return [r.spec() for r in roots if (r.updated_at or r.started_at or now) < cutoff]
 
-    def drop(self, path: str, scope: Optional[str] = None) -> bool:
+    def drop(self, path: str, subject_entity: Optional[str] = None) -> bool:
         """Force-untrack a root whose producer died without a terminal. Rare by design:
         the honest default is that such a root goes stale and says so."""
         with self._lock:
-            key = (_norm_scope(scope), _norm(path))
+            key = (_norm_subject(subject_entity), _norm(path))
             root = self._roots.pop(key, None)
             if root is None:
                 return False

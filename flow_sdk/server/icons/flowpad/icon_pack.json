@@ -5,6 +5,15 @@
   "license": "Flowpad — MIT, with the rest of this repo.",
   "icons": [
     {
+      "kind": "flowpad",
+      "asset": "flowpad.svg",
+      "tintable": false,
+      "aliases": [
+        "Flowpad"
+      ],
+      "source": "Flowpad's own logomark"
+    },
+    {
       "kind": "wiki",
       "asset": "wiki.svg",
       "aliases": [

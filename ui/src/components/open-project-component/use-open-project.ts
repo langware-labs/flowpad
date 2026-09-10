@@ -1,6 +1,6 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
+import { canonicalPath, isOpenableProjectPath, selectProjectContext } from '@src/components/project-selector';
 import { projectScope } from '@src/lib/scope-filter';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -149,12 +149,15 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
       if (!dataContext.someone) throw new Error(t`You must be logged in`);
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
+      if (!normalizedPath || !isOpenableProjectPath(normalizedPath)) {
+        throw new Error(t`Please provide a valid project path`);
+      }
 
       const pathKey = canonicalPath(normalizedPath);
       const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
+      // Dedup on the mount path alone — a name is not a location.
       let targetProject =
-        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || p.name || '') === pathKey) || null;
+        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || '') === pathKey) || null;
       const openedExisting = !!targetProject;
 
       if (!targetProject) {

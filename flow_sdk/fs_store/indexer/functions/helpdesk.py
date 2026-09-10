@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import main_file_mtime
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -103,10 +104,7 @@ def helpdesk_asset_hash(ref: FSRef) -> float:
     hashes; folding them in here would re-extract the desk on every doc edit
     without changing anything this record holds.
     """
-    try:
-        return (ref._path / HELPDESK_JSON).stat().st_mtime
-    except OSError:
-        return 0.0
+    return main_file_mtime(ref, HELPDESK_JSON)
 
 
 def extract_helpdesk(ref: FSRef, resolved_id: str) -> list[FSRecord]:

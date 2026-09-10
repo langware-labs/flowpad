@@ -18,6 +18,13 @@ from typing import Optional
 
 FLOWPAD_APP_NAME = "FlowPad"
 
+# Route constants. They never vary per instance, so they are not persisted in
+# server.json; every reader takes them from here. Kept local rather than
+# imported from flow_sdk.config: this module sits on the hook path and must
+# stay stdlib-only.
+DEFAULT_WEBHOOK_PATH = "/api/v1/webhook/listen"
+DEFAULT_HEALTH_PATH = "/api/v1/health/status"
+
 # Rate limiting constants
 MAX_FAILURES_PER_HOUR = 3
 HOUR_IN_SECONDS = 3600
@@ -32,20 +39,21 @@ def _server_json_path() -> Path:
 
 @dataclass
 class FlowpadServerInfo:
-    """Server connection information from port file.
-
-    Note this is a *different* type from ``flow_sdk.config.FlowpadServerInfo``
-    (a pydantic model that writes the file); this one is the read side and
-    carries only what discovery consumers need.
-    """
+    """Server connection information from port file: the read side, carrying
+    only what discovery consumers need."""
 
     port: int
-    webhook_path: str
-    health_path: str
-    url: str  # Computed: http://localhost:{port}{webhook_path}
     #: Optional: absent from files written by older servers. Used to tell a
     #: live entry from one left behind by a crashed backend.
     server_pid: Optional[int] = None
+
+    @property
+    def url(self) -> str:
+        return f"http://localhost:{self.port}{DEFAULT_WEBHOOK_PATH}"
+
+    @property
+    def health_url(self) -> str:
+        return f"http://localhost:{self.port}{DEFAULT_HEALTH_PATH}"
 
 
 class FlowpadStatus:
@@ -66,21 +74,21 @@ class FlowpadDiscoveryResult:
 
 
 def _parse_server_json(path: Path) -> Optional[FlowpadServerInfo]:
-    """Read one server.json and return its info, or None if missing/corrupt."""
+    """Read one server.json and return its info, or None if missing/corrupt.
+
+    Only ``port`` is required: a file the monitor wrote before the backend's
+    startup hook ran has nothing but ``port`` and the monitor's own keys, and
+    it still names a real instance.
+    """
     try:
         data = json.loads(path.read_text())
+        port = int(data["port"])
         try:
             server_pid = int(data["server_pid"])
         except (KeyError, TypeError, ValueError):
             server_pid = None
-        return FlowpadServerInfo(
-            port=data["port"],
-            webhook_path=data["webhook_path"],
-            health_path=data["health_path"],
-            url=f"http://localhost:{data['port']}{data['webhook_path']}",
-            server_pid=server_pid,
-        )
-    except (json.JSONDecodeError, KeyError, OSError):
+        return FlowpadServerInfo(port=port, server_pid=server_pid)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, OSError):
         return None
 
 
@@ -201,32 +209,6 @@ def get_port_file_path() -> Path:
     return _active_state()._path
 
 
-def write_server_info(
-    port: int,
-    webhook_path: str = "/api/v1/webhook/listen",
-    health_path: str = "/api/v1/health/status",
-) -> Path:
-    """Write server.json with connection info for external tools.
-
-    Args:
-        port: The port the server is running on.
-        webhook_path: Webhook endpoint path (default: /api/v1/webhook/listen).
-        health_path: Health check endpoint path (default: /api/v1/health/status).
-
-    Returns:
-        Path to the written server.json file.
-    """
-    port_file = get_port_file_path()
-    port_file.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "port": port,
-        "webhook_path": webhook_path,
-        "health_path": health_path,
-    }
-    port_file.write_text(json.dumps(data, indent=2))
-    return port_file
-
-
 def read_server_info() -> Optional[FlowpadServerInfo]:
     """Read the active server JSON and return info if valid.
 
@@ -282,7 +264,7 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     Returns:
         True if health check succeeds (HTTP 200), False otherwise.
     """
-    health_url = f"http://localhost:{server_info.port}{server_info.health_path}"
+    health_url = server_info.health_url
     try:
         req = urllib.request.Request(health_url, method="GET")
         # Carry the cookie-gate secret when this instance is armed. Without it a
@@ -458,6 +440,6 @@ if __name__ == "__main__":
     print(f"Status: {result.status}")  # noqa: T201
     if result.server_info:
         print(f"Server URL: {result.server_info.url}")  # noqa: T201
-        print(f"Health URL: http://localhost:{result.server_info.port}{result.server_info.health_path}")  # noqa: T201
+        print(f"Health URL: {result.server_info.health_url}")  # noqa: T201
     if result.error:
         print(f"Error: {result.error}")  # noqa: T201

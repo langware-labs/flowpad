@@ -151,7 +151,7 @@ class ComputeNode(
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         """Claim the single-flight slot for ``job_name``, or raise if it is held.
 
-        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        The slot IS an ``Activity`` at ``(subject_entity=typeid, path=job_name)`` — one activity per
         address is the same statement this registry used to make, so the single-flight
         decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
         survives only as the carrier for the legacy ``IndexProgressTable`` payload while
@@ -160,7 +160,7 @@ class ComputeNode(
         from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
+        claimed = Activity.try_claim(job_name, subject_entity=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
@@ -187,7 +187,7 @@ class ComputeNode(
         """
         from flow_sdk.activity import monitor  # noqa: PLC0415
 
-        if monitor.holder(job_name, scope=str(self.typeid)) is None:
+        if monitor.holder(job_name, subject_entity=str(self.typeid)) is None:
             return None
         return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
@@ -1455,6 +1455,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             chain_hub_llm_endpoint,
             check_llm_source,
             hub_llm_endpoint_status,
+            llm_binding,
             select_llm_source,
             test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
@@ -1490,12 +1491,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # desktop screen has no other way to reach that action.
                 if sub_path == "test":
                     return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
+                # ``binding`` materializes ONE source for a terminal. A POST, like ``test``,
+                # because it is the one route here that hands back a CREDENTIAL -- for a stored
+                # key that is a secret out of the sod the caller does not otherwise hold, and a
+                # secret does not belong on a cacheable GET. Body forwarded whole, like its
+                # siblings, so the payload whitelist lives in one place.
+                if sub_path == "binding":
+                    return ApiSuccessResponse(data=await llm_binding(body))
                 # ``test-source`` is the PER-ROW check: the same verdict shape, but dispatched
                 # on the source kind, so a device login and a stored key are each asked the
                 # question that can actually fail for them. ``test`` above stays the hub-only
                 # pass-through it has always been.
                 if sub_path == "test-source":
                     return ApiSuccessResponse(data=await check_llm_source(body))
+                if sub_path:
+                    # An unknown sub-action is a mistake, not a bind. Falling through used to
+                    # turn any misspelled or newer-client POST into "the hub is binding this
+                    # box", which fails with a message about the WRONG operation -- observed as
+                    # a new client's POST .../binding answering "invoke_path must be a
+                    # hub-relative path" against an older server.
+                    return ApiFailResponse(message=f"Unknown llm-endpoint action {sub_path!r}", status_code=404)
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())

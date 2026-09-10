@@ -49,7 +49,6 @@ vi.mock('@src/tabs/useTerminalStripController', () => ({
     tabsProjectId: null,
     newTabMenuItems: [],
     closeShortcutLabel: 'Alt+W',
-    leading: null,
     trailing: null,
     modals: null,
     handleStartTerminal: vi.fn(),

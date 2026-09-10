@@ -24,6 +24,9 @@ export enum AssetEditor {
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey', // guided onboarding — overview + Start, opens the journey tray
+  // An autonomous setup document: its steps, their live state, and the form
+  // for whatever value the run is currently blocked on.
+  WIZARD = 'wizard',
   MCP = 'mcp', // an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
   // A hub LLM budget, rendered READ-ONLY: what this person may spend, which
   // models it lets through, and a Test button. Entity-backed but never
@@ -115,6 +118,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
+  [AssetEditor.WIZARD]: [RecordType.WIZARD],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],

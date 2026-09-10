@@ -573,6 +573,63 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
     return list;
   }, [scopedConversations, searchActive, matchIds]);
 
+  // ── Batch-hydrate the per-row first+latest FlowMessages (X2) ────────────────
+  // Each ``ConversationListRow`` resolves its first + latest FlowMessage by id
+  // to render the sender/snippet/unread cues. Left to itself every row would
+  // fire its own ``getByTypeId`` GET (N+1 — 73 GETs for 73 conversations). We
+  // instead collect every first+latest pointer id across the *visible* list and
+  // warm the DataManager cache with ONE ``$IN`` query; the rows' ``useEntity``
+  // calls then hit ``getByTypeIdFromCache`` and issue no network at all. The
+  // single ``watchQuery`` subscription replaces the would-be per-row watches.
+  const flowMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const conv of sorted) {
+      const pointers = conv.conversationMessageIds ?? [];
+      const first = pointers[0]?.id;
+      const last = pointers[pointers.length - 1]?.id;
+      if (first) ids.add(first);
+      if (last) ids.add(last);
+    }
+    return [...ids];
+  }, [sorted]);
+  const flowMessageBatchRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        query: { match: { op: '$IN', operands: ['id', flowMessageIds] } },
+        name: 'inbox row hydration',
+      }),
+    [flowMessageIds],
+  );
+  // The warming query is fire-and-forget for the rows, but we also read its
+  // result here to discover which first-messages carry an invitation context —
+  // those ids drive a SECOND batch ``$IN`` so the per-row
+  // ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
+  const { data: batchedMessages = [] } = useEntitiesQuery<FlowMessage>(
+    flowMessageBatchRequest,
+    { enabled: flowMessageIds.length > 0 },
+  );
+  const invitationIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const msg of batchedMessages) {
+      const tid = msg.firstContextOfType?.('invitation');
+      if (tid?.id) ids.add(tid.id);
+    }
+    return [...ids];
+  }, [batchedMessages]);
+  const invitationBatchRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: Invitation.type,
+        query: { match: { op: '$IN', operands: ['id', invitationIds] } },
+        name: 'inbox invitation hydration',
+      }),
+    [invitationIds],
+  );
+  useEntitiesQuery<Invitation>(invitationBatchRequest, {
+    enabled: invitationIds.length > 0,
+  });
+
   const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
     setVisibleIds((prev) => {
       const has = prev.has(convId);

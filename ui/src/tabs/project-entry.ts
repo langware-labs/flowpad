@@ -12,7 +12,7 @@ function isScopeKeyedView(viewType: string | null | undefined): viewType is View
 /**
  * The dock to navigate to when ENTERING a scope — a project (`projectId`) or the
  * Global scope (`projectId === null`). The single "switch scope" resolver shared
- * by every switcher (the strip's `ProjectsCounterChip`, the footer
+ * by every switcher (the nav bar's `RuntimeChip` project list, the footer
  * `OpenProjectComponent` modal).
  *
  * Resolution order:

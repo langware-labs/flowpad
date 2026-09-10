@@ -98,6 +98,8 @@ class TestInstanceSettings(BaseInstanceSettings):
             server_json_path=flow_home / "server.json",
             server_pid_path=flow_home / "server.pid",
             server_lock_path=flow_home / "server.lock",
+            monitor_pid_path=flow_home / "server.monitor.pid",
+            monitor_lock_path=flow_home / "server.monitor.lock",
             server_log_path=flow_home / "server.log",
             flow_home=flow_home,
             records_root=records_root,

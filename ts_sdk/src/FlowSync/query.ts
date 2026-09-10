@@ -48,6 +48,13 @@ export class ExpressionNode {
       // nodes that pass `instanceof` casts but lack `op`/`operands`.
       this.operands = data.operands.map((operand: any) => {
         if (operand instanceof ExpressionNode) return operand;
+        // A literal value-list operand (e.g. the id array of an ``$IN`` /
+        // ``$NIN`` leaf) is NOT a sub-expression — it must pass through
+        // unchanged. Without this guard ``typeof [] === 'object'`` sent the
+        // array down the plain-map branch, where ``Object.keys`` turned its
+        // indices into a bogus nested ``$AND``/``$EQ`` tree and the backend
+        // ``ids`` filter silently matched everything.
+        if (Array.isArray(operand)) return operand;
         if (typeof operand !== 'object' || operand === null) return operand;
         return new ExpressionNode(operand);
       });

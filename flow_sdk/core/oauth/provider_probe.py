@@ -153,7 +153,7 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
             code="invalid_response",
         )
     body = payload
-    if probe.success_field and _field(body, probe.success_field) is not True:
+    if probe.success_field and _field(body, probe.success_field) != probe.success_value:
         error = _field(body, probe.error_field) if probe.error_field else None
         return ProbeResult(
             ok=False,

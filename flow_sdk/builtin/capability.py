@@ -176,37 +176,52 @@ class Capability(Entity):
         db = cls._db
         if db in cls._seeded_dbs:
             return []
-        seeded: list[Capability] = []
-        for spec in get_default_capability_specs():
-            expected = cls.from_spec(spec)
-            existing = await db.get_by_id(expected.id, cls.get_type())
-            if existing is None:
-                seeded.append(await expected.save(notify=False))
-                continue
-            changed = False
-            for field in (
-                "name",
-                "kind",
-                "description",
-                "icon",
-                "homepage_url",
-                "value_type",
-                "dependent_capability_kinds",
-                "runnable",
-                "install_prompt",
-                # Platform-resolved, so it MUST reconcile: a row seeded on one
-                # machine (or before the command existed) otherwise keeps a
-                # command for the wrong OS forever.
-                "install_command",
-                "uname",
-                "system",
-            ):
-                expected_value = getattr(expected, field)
-                if getattr(existing, field) != expected_value:
-                    setattr(existing, field, expected_value)
-                    changed = True
-            seeded.append(await existing.save(notify=False) if changed else existing)
+        # Marked BEFORE the sweep, not after, because the sweep RE-ENTERS this
+        # method: `expected.save()` below goes through the entity machinery
+        # (save -> _merge_stored_context_links -> a Capability accessor ->
+        # ensure_seeded), and while the mark was set only at the end, every
+        # nested call found the guard clear and redid the whole spec loop —
+        # which redid it again, and so on. Profiling one API test showed
+        # 10,602,371 calls to this method from 92,865 entries, ~5.6s of a ~9s
+        # first-request cost, on every process that touches a capability.
+        #
+        # Discarded again if the sweep raises, so a failed seed is retried
+        # rather than latched as done.
         cls._seeded_dbs.add(db)
+        seeded: list[Capability] = []
+        try:
+            for spec in get_default_capability_specs():
+                expected = cls.from_spec(spec)
+                existing = await db.get_by_id(expected.id, cls.get_type())
+                if existing is None:
+                    seeded.append(await expected.save(notify=False))
+                    continue
+                changed = False
+                for field in (
+                    "name",
+                    "kind",
+                    "description",
+                    "icon",
+                    "homepage_url",
+                    "value_type",
+                    "dependent_capability_kinds",
+                    "runnable",
+                    "install_prompt",
+                    # Platform-resolved, so it MUST reconcile: a row seeded on one
+                    # machine (or before the command existed) otherwise keeps a
+                    # command for the wrong OS forever.
+                    "install_command",
+                    "uname",
+                    "system",
+                ):
+                    expected_value = getattr(expected, field)
+                    if getattr(existing, field) != expected_value:
+                        setattr(existing, field, expected_value)
+                        changed = True
+                seeded.append(await existing.save(notify=False) if changed else existing)
+        except Exception:
+            cls._seeded_dbs.discard(db)
+            raise
         return seeded
 
     @classmethod

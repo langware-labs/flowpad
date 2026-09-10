@@ -61,6 +61,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [name, setName] = useState(agent?.name ?? '');
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
+  const [intro, setIntro] = useState(agent?.intro ?? '');
+  const [autoLaunchPrompt, setAutoLaunchPrompt] = useState(agent?.auto_launch_prompt ?? '');
   const [avatarRevision, setAvatarRevision] = useState(0);
   // The ACTIVE project is the one a session opened from here acts in — an
   // agent supplied by an attached help desk lives in the desk's checkout, and
@@ -78,7 +80,17 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
     setName(agent?.name ?? '');
     setDescription(agent?.description ?? '');
     setPrompt(agent?.system_prompt ?? '');
-  }, [agentKey, agent.description, agent.name, agent.system_prompt, agent.title]);
+    setIntro(agent?.intro ?? '');
+    setAutoLaunchPrompt(agent?.auto_launch_prompt ?? '');
+  }, [
+    agentKey,
+    agent.auto_launch_prompt,
+    agent.description,
+    agent.intro,
+    agent.name,
+    agent.system_prompt,
+    agent.title,
+  ]);
 
   const save = useCallback(
     (patch: AgentDocumentPatch): Promise<boolean> => {
@@ -288,6 +300,29 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
             aria-label={t`System prompt`}
             className="min-h-40 flex-1 resize-none font-mono text-sm leading-relaxed"
           />
+          {/* The intro is what the USER sees first, not what the model reads:
+              a welcome placeholder so a fresh session is never an empty pane.
+              Kept beside the prompt because authors write the two together —
+              one says who the agent is, the other tells the user what to
+              expect from it. */}
+          <div className="mb-2 mt-5 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">
+              <Trans>Intro</Trans>
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              <Trans>Shown as the agent's first message. Not sent to the model.</Trans>
+            </span>
+          </div>
+          <Textarea
+            value={intro}
+            onChange={(e) => setIntro(e.target.value)}
+            onBlur={() => commit('intro', intro.trim(), agent.intro ?? '')}
+            placeholder={t`Welcome! Tell the user what this agent can do and how to start…`}
+            aria-label={t`Intro`}
+            data-testid="agent-intro-field"
+            className="min-h-20 resize-none text-sm leading-relaxed"
+            rows={3}
+          />
         </section>
 
         <aside className="min-h-0 overflow-y-auto border-t border-border px-4 py-4 lg:border-s lg:border-t-0">
@@ -341,6 +376,38 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                   onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
                   aria-label={t`Load Flowpad assistant`}
                 />
+              </div>
+              {/* Project auto-launch: fires ONCE per project, the first time the
+                  project this agent lives in is opened. The prompt rides the
+                  process queue. Oldest agent wins when several set it. */}
+              <div className="mt-4 rounded-md border border-border px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">
+                    <Trans>Auto-launch on project open</Trans>
+                  </span>
+                  <Switch
+                    checked={agent.auto_launch}
+                    onCheckedChange={(v) => void save({ auto_launch: v })}
+                    aria-label={t`Auto-launch on project open`}
+                    data-testid="agent-auto-launch"
+                  />
+                </div>
+                {agent.auto_launch ? (
+                  <Textarea
+                    value={autoLaunchPrompt}
+                    onChange={(e) => setAutoLaunchPrompt(e.target.value)}
+                    onBlur={() => commit('auto_launch_prompt', autoLaunchPrompt.trim(), agent.auto_launch_prompt ?? '')}
+                    placeholder={t`First prompt to send when the project opens…`}
+                    aria-label={t`Auto-launch prompt`}
+                    data-testid="agent-auto-launch-prompt"
+                    className="mt-2 min-h-16 resize-none text-sm"
+                    rows={2}
+                  />
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <Trans>Once per project, the first time it is opened. Oldest agent wins if several set this.</Trans>
+                  </p>
+                )}
               </div>
               {/* Runtime, not Advanced: unlike the declared-only fields there,
                   this one REACHES the worker — create_process attaches each id

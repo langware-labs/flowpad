@@ -21,7 +21,7 @@ import {
 function spec(over: Partial<ActivityProgressSpec> = {}): ActivityProgressSpec {
   return {
     activity_id: 'a1',
-    scope: null,
+    subject_entity: null,
     path: 'index',
     name: 'index',
     label: null,
@@ -79,9 +79,9 @@ describe('activity store', () => {
     expect(getActivity('index')?.done).toBe(10);
   });
 
-  it('keeps scope as part of the address', () => {
+  it('keeps subject_entity as part of the address', () => {
     handleActivitySnapshot(spec({ done: 1 }));
-    handleActivitySnapshot(spec({ activity_id: 'a2', scope: 'agentic_process-x', done: 7 }));
+    handleActivitySnapshot(spec({ activity_id: 'a2', subject_entity: 'agentic_process-x', done: 7 }));
 
     expect(getActivity('index')?.done).toBe(1);
     expect(getActivity('index', 'agentic_process-x')?.done).toBe(7);
