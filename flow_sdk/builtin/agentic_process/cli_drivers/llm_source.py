@@ -112,6 +112,47 @@ class Candidate(NamedTuple):
     endpoint: "LLMEndpoint"
     source: LLMSource
 
+    @property
+    def unverified(self) -> bool:
+        """Whether this verdict rests on a device login NOBODY HAS PROBED.
+
+        The one fact a consumer cannot derive from ``source`` alone, because it needs the
+        endpoint's KIND as well -- which is why it lives here, on the pair, rather than on
+        either half. Published on the wire so the CLI and the frontend read ONE verdict instead
+        of each re-deriving the rule and drifting apart on it.
+
+        Deliberately NOT spelled as a positive next to ``eligible``: the two are subtly
+        different and two positive booleans would invite exactly the confusion this exists to
+        end. ``eligible`` says the row itself is usable; this says whether we have any evidence
+        for that claim. An un-probed device login is ``eligible=True, unverified=True`` -- the
+        resolver is right to try it when there is nothing better, and a caller asking "is this
+        box set up" is right to refuse to count it.
+
+        ``PRESUMED`` means two unrelated things depending on kind, and conflating them is the
+        bug this closes:
+
+        * on a **device login** it means nobody asked -- and the probe leaves ``login_state``
+          unset when it cannot reach a verdict, INCLUDING when the CLI is not installed at all,
+          so a presumed device login is routinely one that cannot exist. Observed: a box with
+          claude signed out and copilot/opencode absent reported "codex device login funds
+          codex" and offered no way to fix it.
+        * on a **hub endpoint** it is the honest local ceiling: the chain's credentials live on
+          the hub and only the hub finds out, at invoke time. Treating those as unverified
+          would reject the very source a fresh FlowPad login exists to produce.
+
+        A probed device login is ``CACHED`` either way (signed in or signed out), so this flags
+        only the un-asked.
+        """
+        from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+        if str(getattr(self.endpoint, "kind", "") or "") != LLMEndpointKind.DEVICE:
+            return False
+        return self.source.authority == LLMSourceAuthority.PRESUMED
+
+    def to_wire(self) -> dict:
+        """The verdict as a client reads it: the source, plus the verdict-about-the-verdict."""
+        return {**self.source.model_dump(mode="json"), "unverified": self.unverified}
+
 
 class LLMSourceError(Exception):
     """No source can fund this spawn. Carries every candidate's reason.

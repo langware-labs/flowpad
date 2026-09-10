@@ -155,7 +155,7 @@ class DesktopOAuthSession:
 
                 # Send error notification via WebSocket
                 try:
-                    await _broadcast_llm_config_msg(
+                    await broadcast_llm_config_msg(
                         is_configured=False,
                         auth_method="none",
                         oauth_request_id=self.state,
@@ -196,7 +196,7 @@ class DesktopOAuthSession:
 
             # Send timeout notification via WebSocket
             try:
-                await _broadcast_llm_config_msg(
+                await broadcast_llm_config_msg(
                     is_configured=False,
                     auth_method="none",
                     oauth_request_id=self.state,
@@ -212,14 +212,25 @@ class DesktopOAuthSession:
 _desktop_oauth_sessions: dict[str, DesktopOAuthSession] = {}
 
 
-async def _broadcast_llm_config_msg(
+async def broadcast_llm_config_msg(
     is_configured: bool,
     auth_method: str,
     oauth_request_id: Optional[str] = None,
     status: Optional[OAuthMessageStatus] = None,
     auth_data: Optional[dict] = None,
 ) -> None:
-    """Broadcast LlmConfigMessage to all connected WebSocket clients."""
+    """Broadcast LlmConfigMessage to all connected WebSocket clients.
+
+    Public because it is the ONE producer of this frame. ``select_llm_source`` emits it too --
+    picking a funding source IS an "LLM config changed" event, and ``flow llm set auto`` blocks
+    on this frame rather than polling a status. A second constructor in the picker's module
+    would be a second author of the same message.
+
+    ``auth_method`` is matched verbatim by ``oauth-service.ts``'s completion handler, which
+    treats a frame naming its provider as its flow finishing. So a caller that is NOT an OAuth
+    grant must pass a value that can never equal a registered provider id (``llm_source``), and
+    put the detail in ``auth_data``.
+    """
     try:
         from flow_sdk.server.routes.websocket import broadcast
 
@@ -723,7 +734,7 @@ async def _poll_device_until_done(
     started_monotonic = time.monotonic()
 
     async def _broadcast_error(message: str) -> ApiResponse:
-        await _broadcast_llm_config_msg(
+        await broadcast_llm_config_msg(
             is_configured=False,
             auth_method="github",
             oauth_request_id=session.state,
@@ -801,7 +812,7 @@ async def _poll_device_until_done(
             # through github.com.
             session.pending_access_token = result["access_token"]
             saved = await _save_token_for_session_user(session.user_id, session.provider, result["access_token"])
-            await _broadcast_llm_config_msg(
+            await broadcast_llm_config_msg(
                 is_configured=saved,
                 auth_method="github",
                 oauth_request_id=session.state,
@@ -981,7 +992,7 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             # Two messages, two meanings: the config change, and the flow ending.
             # The second is what closes the popup and triggers the attach.
             try:
-                await _broadcast_llm_config_msg(
+                await broadcast_llm_config_msg(
                     is_configured=True,
                     auth_method="anthropic",
                     oauth_request_id=state,
