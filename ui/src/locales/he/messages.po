@@ -1810,6 +1810,10 @@ msgstr "כבר פעיל"
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "כבר התחברת במקום אחר? בדוק שוב"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "פתח גם חלון Terminal נלווה של מערכת ההפעלה"
@@ -5018,8 +5022,12 @@ msgid "Couldn't close the project's tabs"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "הכנת ארגז החול לא הושלמה"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "הכנת ארגז החול לא הושלמה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -9896,7 +9904,6 @@ msgstr "להפעיל את {0}?"
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
@@ -9904,6 +9911,10 @@ msgstr "הפעלת ארגז חול"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "הפעילו את סביבת העבודה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -13316,6 +13327,7 @@ msgid "Open the repository"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "פתיחת ארגז החול"
 
@@ -14108,8 +14120,8 @@ msgid "Preparing your workspace…"
 msgstr "מכינים את סביבת העבודה…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "מתכונן…"
+#~ msgid "Preparing…"
+#~ msgstr "מתכונן…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -17372,6 +17384,14 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
@@ -17399,6 +17419,10 @@ msgstr "התחברו ל-Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17490,6 +17514,10 @@ msgstr ""
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "מתבצעת התחברות"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -20941,8 +20969,8 @@ msgid "WorldView"
 msgstr "תצוגת עולם"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21154,8 +21182,12 @@ msgid "Your questions"
 msgstr "השאלות שלך"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "ארגז החול שלך מוכן"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "ארגז החול שלך מוכן"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"
