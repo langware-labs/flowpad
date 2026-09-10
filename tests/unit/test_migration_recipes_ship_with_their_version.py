@@ -135,6 +135,13 @@ def never_shipped(released, tmp_path_factory) -> dict[str, str]:
     return {v: c for v, c in released.items() if not _shipped_in_own_wheel(v, c, tmp)}
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.migration_slot.rules: RED? The release consumed the open recipe
+#       slot. Advance it to the next unreleased version before touching this test.
+# flowpad:endcapsule tag
 def test_no_recipe_is_stranded(never_shipped) -> None:
     covered = _catch_up_coverage(never_shipped)
     stranded = [
