@@ -7601,6 +7601,7 @@ msgstr "כישלון בהתחלת חיבור GitHub"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/spec-editor/SpecEditor.tsx
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הסשן"
 
@@ -13370,6 +13371,10 @@ msgstr "פתח תמליל"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
+msgstr ""
+
+#: src/components/spec-editor/SpecEditor.tsx
+msgid "Open with:"
 msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
