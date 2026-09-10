@@ -35,6 +35,25 @@ import {
   makeLoginSlot,
 } from './cloud_status';
 
+/** Static page a popup sign-in lands on — `ui/public/auth-popup-done.html`. */
+const LOGIN_POPUP_CALLBACK = '/auth-popup-done.html';
+/** Named so a second click reuses the window it already opened. */
+const LOGIN_POPUP_NAME = 'flowpad-login';
+const LOGIN_POPUP_FEATURES = 'popup=yes,width=520,height=680';
+/** Stamped by the callback page. THE completion signal — see `_awaitLoginPopup`. */
+const LOGIN_POPUP_STORAGE_KEY = 'flowpad_login_complete';
+/** How often the opener asks whether the popup went away. There is no event for
+ *  `window.closed`, and a user who dismisses the window sends nothing. */
+const LOGIN_POPUP_POLL_MS = 300;
+
+/** What a popup sign-in attempt did.
+ *
+ *  Three states rather than a boolean because the caller must treat two of the
+ *  failures differently: `blocked` means the popup never opened and a full-page
+ *  navigation is still owed, while `cancelled` means the user closed it — and
+ *  redirecting them anyway would override the choice they just made. */
+export type LoginPopupOutcome = 'signed-in' | 'cancelled' | 'blocked';
+
 type DataManagerRef = (typeof import('../APIEntity'))['dataManager'];
 let _dataManagerCache: DataManagerRef | null = null;
 async function _dataManager(): Promise<DataManagerRef> {
@@ -146,8 +165,16 @@ class CloudManager extends EventEmitter {
   private _initialized = false;
   private _subscriptions: Promise<void> | null = null;
 
-  /** Adopt known identity without fetching status or starting live services. */
-  async seedBootstrap(bootstrap: CloudBootstrapSeed) {
+  /** Adopt known identity without fetching status or starting live services.
+   *
+   *  `allowAnonymous` suppresses the hub's sign-out redirect for the routes that
+   *  are meant to be reachable by a stranger — today the `/launch` landing,
+   *  which has to be able to SHOW the repository it is offering before it can
+   *  ask anyone to sign in for it. The caller decides, because the route table
+   *  is the app's and not the SDK's; `main-loader` already draws the same line
+   *  for the dock ("entry routes … stay reachable anonymously") and this is what
+   *  makes that true one layer earlier. */
+  async seedBootstrap(bootstrap: CloudBootstrapSeed, opts?: { allowAnonymous?: boolean }) {
     if (this._initialized) return;
     this._initialized = true;
 
@@ -172,7 +199,12 @@ class CloudManager extends EventEmitter {
         // The hub surface has no anonymous mode: a session-less load (first
         // visit, expired or cleared cookie, post-logout reload) goes straight
         // to the provider login instead of rendering a signed-out shell.
-        window.location.assign(this._hubLoginUrl());
+        //
+        // Except on the entry routes that exist to be opened by someone who is
+        // not signed in yet. Those render, and start the login from a CLICK —
+        // which is the only place a popup can be opened, so it is also the only
+        // way the user keeps this tab and the URL that brought them here.
+        if (!opts?.allowAnonymous) window.location.assign(this._hubLoginUrl());
       }
       return;
     }
@@ -297,15 +329,155 @@ class CloudManager extends EventEmitter {
    *  `email-verification.html`, which stored it, and this line then replaced it
    *  with `/?success=true&message=…`. `resolveLoginCallbackUrl` is what hands it
    *  back. */
-  private _hubLoginUrl(): string {
+  private _hubLoginUrl(popup = false): string {
     const here = `${window.location.pathname || ''}${window.location.search || ''}`;
     const target = resolveLoginCallbackUrl(here);
+    // A popup must NOT be sent to the app: the SPA would boot a second copy
+    // inside a 520px window, bootstrapping as the user who has just appeared.
+    // It lands on the static callback page instead, which closes itself. The
+    // real destination rides along as `next` so that page can put it back into
+    // `loginCallbackUrl` — `email-verification.html` overwrites that key with
+    // whatever `target_path` it was handed, which here is the callback page.
+    if (popup) {
+      const next = !target || target === '/' ? '/' : target;
+      return `${API_PREFIX}/login?${new URLSearchParams({
+        target_path: `${LOGIN_POPUP_CALLBACK}?${new URLSearchParams({ next })}`,
+      })}`;
+    }
     if (!target || target === '/') return `${API_PREFIX}/login`;
     return `${API_PREFIX}/login?${new URLSearchParams({ target_path: target })}`;
   }
 
-  async login(): Promise<CloudLoginResult | void> {
+  /**
+   * Hub-mode sign-in that keeps the caller's tab.
+   *
+   * MUST be called synchronously from a user gesture: `window.open` without
+   * transient activation is refused, and that is reported as `'blocked'` so the
+   * caller can still owe the full-page navigation. It is deliberately NOT wired
+   * into `seedBootstrap` for exactly this reason — that path runs from
+   * `initSdk` inside the root loader, where a cold page load has no activation
+   * and every popup would be blocked.
+   *
+   * On success the page RELOADS by default — the tab and URL survive, which is
+   * the point: a `/launch` link's `?repo=` is its entire payload. With
+   * `refresh: 'session'` it instead adopts the session in place
+   * (`refreshSession`): one fresh bootstrap, the user-dependent context re-applied,
+   * no reload. Opt-in because views that loaded their data anonymously are only
+   * right afterwards if they re-query on a user change; any failure there falls
+   * back to the reload.
+   */
+  async loginPopup(opts?: { refresh?: 'reload' | 'session' }): Promise<LoginPopupOutcome> {
+    if (!isHubOnly()) return 'blocked';
+    const startedAt = Date.now();
+    let popup: Window | null = null;
+    try {
+      popup = window.open(this._hubLoginUrl(true), LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
+    } catch {
+      popup = null;
+    }
+    if (!popup || popup.closed) return 'blocked';
+    if (!(await this._awaitLoginPopup(popup, startedAt))) return 'cancelled';
+    // Opt-in: adopt the session in place instead of reloading. Lazily imported —
+    // session-refresh imports this module, so a static import would be a cycle.
+    // Any failure falls through to the reload, which is the known-good path.
+    if (opts?.refresh === 'session') {
+      const { refreshSession } = await import('../session-refresh');
+      if (await refreshSession()) return 'signed-in';
+    }
+    window.location.reload();
+    return 'signed-in';
+  }
+
+  /**
+   * Resolve true once the callback page reports a completed sign-in.
+   *
+   * The contract is the localStorage stamp, not an event. The callback page
+   * writes it synchronously BEFORE it closes, and a same-origin write is
+   * visible to this document the moment it lands — so observing `popup.closed`
+   * and then re-reading the key cannot miss a sign-in that happened. That is
+   * what removes the race a message-passing design would have here, where
+   * `postMessage`/`BroadcastChannel` delivery and window teardown are two
+   * independent queues and the close can win.
+   *
+   * The `storage` listener is a latency shortcut on top of that, not the
+   * contract — it saves up to one poll interval and nothing depends on it.
+   *
+   * KNOWN GAP: this believes the popup reached `auth-popup-done.html`. It does
+   * not when a second `/api/v1/login` from any other tab overwrites the OAuth
+   * `state` in the one browser-wide session cookie Authlib keeps it in — the
+   * popup's callback then fails CSRF and the hub sends it to `/` instead. The
+   * sign-in itself SUCCEEDS (the hub logs `callback, Success`); nothing writes
+   * the stamp, so this reports a cancel and the opener does not reload.
+   */
+  private _awaitLoginPopup(popup: Window, startedAt: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const stamped = (): boolean => {
+        try {
+          const at = Number(window.localStorage.getItem(LOGIN_POPUP_STORAGE_KEY));
+          return Number.isFinite(at) && at >= startedAt;
+        } catch {
+          // Storage unavailable (private mode): the stamp can never be read, so
+          // a sign-in is indistinguishable from a dismissal. Report the
+          // dismissal — the user is signed in either way, and the next load
+          // picks it up; claiming success would reload on a genuine cancel.
+          return false;
+        }
+      };
+
+      let settled = false;
+      const finish = (signedIn: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearInterval(poll);
+        window.removeEventListener('storage', onStorage);
+        try {
+          if (signedIn) window.localStorage.removeItem(LOGIN_POPUP_STORAGE_KEY);
+        } catch {
+          // Nothing to clear if it could not be written in the first place.
+        }
+        // Close it from HERE. `window.close()` lives only in the callback page,
+        // so a popup that drifted anywhere else — the app root, after the CSRF
+        // bounce above — stays open forever, showing a whole second copy of the
+        // app in a 520px window. This side opened it and is same-origin with
+        // it, so this side is allowed to close it, and unlike the page's own
+        // close this does not depend on where it landed.
+        if (signedIn && !popup.closed) {
+          try {
+            popup.close();
+          } catch {
+            // Blocked by the browser: the user closes it, the flow is unharmed.
+          }
+        }
+        resolve(signedIn);
+      };
+
+      const onStorage = (e: StorageEvent) => {
+        if (e.key === LOGIN_POPUP_STORAGE_KEY && stamped()) finish(true);
+      };
+      window.addEventListener('storage', onStorage);
+
+      const poll = window.setInterval(() => {
+        if (stamped()) finish(true);
+        else if (popup.closed) finish(false);
+      }, LOGIN_POPUP_POLL_MS);
+    });
+  }
+
+  /**
+   * @param opts.popup Hub mode: try a popup before navigating away. Defaults to
+   *   true, which is right for every caller that is a CLICK — the popup keeps
+   *   their tab and its URL. A caller that is not a click passes `false`: it has
+   *   no activation to spend, and a caller that has already committed to going
+   *   away (`main-loader` halts its load on the promise) would otherwise leave
+   *   the page stuck behind a window it did not expect.
+   */
+  async login(opts?: { popup?: boolean; refresh?: 'reload' | 'session' }): Promise<CloudLoginResult | void> {
     if (isHubOnly()) {
+      // Popup first, so a sign-in started by a click keeps the tab the user is
+      // looking at. Only `'blocked'` falls through to the navigation: a popup
+      // the user dismissed is a decision, and redirecting past it would take
+      // the page away from them anyway — the outcome they just declined.
+      if (opts?.popup !== false && (await this.loginPopup({ refresh: opts?.refresh })) !== 'blocked') return;
       window.location.assign(this._hubLoginUrl());
       return;
     }
@@ -564,6 +736,13 @@ class CloudManager extends EventEmitter {
       await this._pushFailureWarning(message);
       reject(new Error(message));
     }
+  }
+
+  /** Adopt a user the hub has just authenticated, without a page reload — what
+   *  `refreshSession` calls once the fresh bootstrap names the user. Public
+   *  wrapper so nothing outside this class reaches into `_setLoggedIn`. */
+  adoptSignedInUser(userDict: Record<string, unknown>): Promise<User> {
+    return this._setLoggedIn(userDict);
   }
 
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
