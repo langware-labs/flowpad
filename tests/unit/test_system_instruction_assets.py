@@ -122,7 +122,7 @@ async def test_load_embedded_subagent_materializes_into_instruction_assets(recor
     )
     process = _process(WorkerType.CLAUDE_CODE, tmp_path)
 
-    result = await process.load_embedded_subagent_action(str(agent_md))
+    result = await process.load_embedded_subagent_action(str(agent_md), set_ap_persona=True)
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
@@ -145,6 +145,173 @@ async def test_load_embedded_subagent_materializes_into_instruction_assets(recor
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'persona-probe' agent" in claude_text
     assert "Always answer as PERSONA_PROBE." in claude_text
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? the persona is DECLARED via set_ap_persona,
+#       never inferred from how many agents are embedded - read this tag's rules before
+#       touching _render_agents_instruction_block or process_persona_path
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_declared_persona_survives_a_second_embedded_agent(records_root, tmp_path, monkeypatch):
+    """Vibe mode embeds the `vibe` persona AND every kind==vibe layer on top of
+    it. The persona directive must survive that second embed: it used to be
+    emitted only when EXACTLY ONE agent was embedded, so the second one dropped
+    the identity and the session fell back to the harness ("I am Claude Code").
+    The persona is declared via set_ap_persona, so the layer never claims it."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    persona_md = tmp_path / "vibe-probe.md"
+    persona_md.write_text(
+        "---\nname: vibe-probe\ndescription: The base persona\n---\n\n"
+        "Always run flow show after every deliverable.\n",
+        encoding="utf-8",
+    )
+    layer_md = tmp_path / "layer-probe.md"
+    layer_md.write_text(
+        "---\nname: layer-probe\ndescription: A layered specialist\n---\n\n"
+        "Connect a data source and show a sample.\n",
+        encoding="utf-8",
+    )
+
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+
+    # Embed order is the real one: the persona first, then the layer on top.
+    assert (await process.load_embedded_subagent_action(str(persona_md), set_ap_persona=True)).status == "SUCCESS"
+    assert (await process.load_embedded_subagent_action(str(layer_md))).status == "SUCCESS"
+    assert process.process_persona_path == ".claude/agents/vibe-probe.md"
+
+    assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+
+    # The persona keeps the identity ...
+    assert "# You are the 'vibe-probe' agent" in claude_text
+    assert "Always run flow show after every deliverable." in claude_text
+    # ... the second agent rides underneath and never claims it ...
+    assert "# You are the 'layer-probe' agent" not in claude_text
+    assert "# Sub-agents available to you" in claude_text
+    assert "Connect a data source and show a sample." in claude_text
+    # ... and the flat co-equal catalogue (which had no persona at all) is gone.
+    assert "# Embedded agent specs" not in claude_text
+    assert claude_text.index("# You are the 'vibe-probe' agent") < claude_text.index("# Sub-agents available to you")
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? an UNDECLARED agent must never
+#       inherit the 'you are this agent' directive - a failed persona embed loses the
+#       identity, it does not hand it to whoever is there. Read this tag's rules.
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_no_declared_persona_renders_a_flat_catalogue(records_root, tmp_path, monkeypatch):
+    """A process with no declared persona (a terminal process is the normal
+    case) must NOT have one inferred for it: no agent may claim the identity."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    agent_md = tmp_path / "solo-probe.md"
+    agent_md.write_text(
+        "---\nname: solo-probe\ndescription: A plain sub-agent\n---\n\nDo the thing.\n",
+        encoding="utf-8",
+    )
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+    assert (await process.load_embedded_subagent_action(str(agent_md))).status == "SUCCESS"
+    assert process.process_persona_path is None
+
+    assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+    assert "# You are the 'solo-probe' agent" not in claude_text
+    assert "# Embedded agent specs" in claude_text
+    assert "Do the thing." in claude_text
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? a persona that is DECLARED but not
+#       embedded must lose the identity, not hand it to whoever is there - and it must SAY
+#       so. Read this tag's rules before touching _render_agents_instruction_block.
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_declared_persona_that_is_not_embedded_loses_the_identity(
+    records_root, tmp_path, monkeypatch, caplog
+):
+    """The divergence branch — declared, but the materialized file is gone or no
+    longer parses. This is the one that silently costs a live session its
+    identity, and the pre-fix code handled it by handing the directive to
+    whichever agent happened to be there (`len == 1`): the exact shape of the
+    reported bug, where `data-integrations` answered as the persona because
+    `vibe.md` had failed to embed. It must render the FLAT catalogue instead,
+    and log which persona went missing — a session that loses its identity with
+    no trace anywhere is what made this expensive to diagnose."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    layer_md = tmp_path / "layer-probe.md"
+    layer_md.write_text(
+        "---\nname: layer-probe\ndescription: A layered specialist\n---\n\nConnect a data source.\n",
+        encoding="utf-8",
+    )
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+    assert (await process.load_embedded_subagent_action(str(layer_md))).status == "SUCCESS"
+
+    # The persona the frontend declared, whose own embed failed: nothing wrote
+    # `.claude/agents/vibe-probe.md`, so it is not among the embedded agents.
+    process.process_persona_path = ".claude/agents/vibe-probe.md"
+
+    with caplog.at_level("WARNING", logger="flow_sdk.builtin.agentic_process.agentic_process"):
+        assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+
+    # The missing persona does NOT get a directive it cannot back ...
+    assert "# You are the 'vibe-probe' agent" not in claude_text
+    # ... and, the actual bug, neither does the agent that IS there.
+    assert "# You are the 'layer-probe' agent" not in claude_text
+    assert "# Sub-agents available to you" not in claude_text
+    assert "# Embedded agent specs" in claude_text
+    assert "Connect a data source." in claude_text
+
+    # And it is not silent: the log names the persona that went missing.
+    warning = "\n".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+    assert "vibe-probe" in warning
+    assert "layer-probe" in warning
 
 
 @pytest.mark.asyncio
@@ -180,7 +347,7 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
 
     # Instance A: the request that handled load-embedded-subagent (UI embed call).
     proc_a = make_process()
-    result = await proc_a.load_embedded_subagent_action(str(agent_md))
+    result = await proc_a.load_embedded_subagent_action(str(agent_md), set_ap_persona=True)
     assert result.status == "SUCCESS"
 
     # Instance B: the fresh instance the prompt/launch request operates on,
@@ -189,6 +356,7 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     proc_b = make_process(
         embedded_asset_refs=[str(r) for r in proc_a.embedded_asset_refs],
         additional_dirs=list(proc_a.additional_dirs or []),
+        process_persona_path=proc_a.process_persona_path,
     )
     assert proc_b.embedded_assets is None
 
