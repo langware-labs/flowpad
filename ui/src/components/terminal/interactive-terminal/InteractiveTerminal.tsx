@@ -106,6 +106,7 @@ import {
   FONT_SIZE_PX,
   applyRtlGridContract,
   openTerminalLink,
+  confirmTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { workerCliVendor } from './process-cli-presentation';
@@ -787,6 +788,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
 
       const term = new XTerm({
+        linkHandler: { activate: confirmTerminalLink },
         scrollback: 50000,
         convertEol: true,
         cursorBlink: true,
