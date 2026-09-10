@@ -9,6 +9,8 @@ import {
   PageId,
   QueryRequest,
   Shell,
+  tabManager,
+  tabForDockKey,
   toplog,
   TypeId,
   VFSPath,
@@ -27,6 +29,10 @@ import { isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
+import { dockForDisplayTarget } from './display-target-pointer';
+import { presentDockTab } from './present-dock-tab';
+import { notify } from '@src/notifications/notify';
+import { t } from '@lingui/core/macro';
 
 // Always returns a record (possibly empty) so consumers can read keys without
 // optional-chaining. An earlier version returned `undefined` for empty input,
@@ -695,6 +701,33 @@ export class NavigationActions {
    */
   openFile(path: string, options?: FileOptions): void {
     this.openDock(dockPointerForFile(path, options));
+  }
+
+  /** Resolve on activation, then open using the same presentation as an agent show. */
+  async openLink(link: string, source: Shell | null): Promise<void> {
+    const origin = this.here;
+    try {
+      if (!source) throw new Error(t`The terminal is not ready yet`);
+      // An app URL copied from this browser is an internal address, not an iframe.
+      if (/^https?:\/\//i.test(link)) {
+        const url = new URL(link);
+        if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
+          link = url.pathname + url.search;
+        }
+      }
+      const [target, tabs] = await Promise.all([source.resolveDisplayTarget(link), tabManager.listAll()]);
+      const dock = dockForDisplayTarget(target);
+      if (!dock) throw new Error(t`This link has no available viewer`);
+      const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
+      const placed = await presentDockTab(dock, {
+        projectId: source.project_id ?? anchor?.project_id,
+        afterTabId: anchor?.id ?? null,
+        parentTabId: anchor?.parent_tab_id ?? null,
+      });
+      this.openDock(placed);
+    } catch (error) {
+      notify.error({ title: t`Could not open link`, message: String(error), forceToast: true });
+    }
   }
 
   /**

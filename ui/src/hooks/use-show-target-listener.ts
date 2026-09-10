@@ -4,7 +4,7 @@ import { useEntityOps } from '@sdk/react/hooks';
 import { useIsVibe } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
-import { highlightTab } from '@src/tabs/tab-highlight';
+import { presentDockTab } from '@src/navigation/present-dock-tab';
 
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -79,43 +79,11 @@ export function useShowTargetListener(): void {
     const processHash = DockPointer.forShell(`${AgenticProcess.type}-${processId}`).tabHash;
     const anchor = tabForDockKey(tabs, processHash);
 
-    // Rebase onto the process's project — load-bearing, not cosmetic.
-    //
-    // A bare ASSETS dock is SCOPE-keyed: `tabHash` folds every sub-pointer of a
-    // scope into ONE tab (`DockPointer.ts`, the `scopeKeyed` branch), so showing
-    // a document would hijack that scope's existing Assets tab and rename it
-    // rather than open its own. The project-rebased form (`/dock/project/<id>/
-    // editor/…`) is NOT scope-keyed, so each document keeps its own identity —
-    // the same shape a task/doc opened from a conversation chip gets
-    // (`EntityChip`, `AssetReviewDialog`, `ConversationContextPanel` all rebase
-    // at the call site exactly like this). The project id rides denormalized on
-    // the anchor row, so this costs no extra fetch, and the helper passes
-    // non-ASSETS pointers through untouched.
-    const placed = DockPointer.rebaseAssetsOntoProject(dock, anchor?.project_id ?? null);
-
-    // `tabManager.ensureDock`, not raw `newTab`: because nothing navigates, no
-    // route loader will ever fill in the chip's denormalized display fields.
-    // This is what resolves the target, icon, name and project scope, so the
-    // chip lands complete instead of as an unlabelled stub.
-    //
-    // Deliberately NOT `setupTab`/`setupTabAndAdopt` — those stamp
-    // `tabManager.activate`, which would mark a tab the user never opened as the
-    // most-recently-active one and poison both scope-entry and the default
-    // placement anchor for the next tab.
-    //
-    // `parentTabId` only in vibe, and only for a SCREEN. Outside vibe a show is
-    // a top-level tab (standard mode registers no workspace parent). In vibe a
-    // shown screen belongs to the session that opened it, so it joins the
-    // workspace's child strip beside the Display — which keeps the agent's
-    // pinned deliverable instead of evicting it, and gives the screen full
-    // width when its chip is clicked.
-    const parentTabId = isVibe && target.kind === 'dock' ? (anchor?.id ?? null) : null;
-    await tabManager.ensureDock(placed, { afterTabId: anchor?.id ?? null, parentTabId });
-    // `getFromDockPointer` returns the PROJECT-SCOPED list, which must never be
-    // adopted globally (it would erase every other project's tabs). Re-read the
-    // unscoped list for adoption, exactly as `materializeTab` does.
-    tabManager.adoptGlobal(await tabManager.listAll());
-    if (placed.tabHash) highlightTab(placed.tabHash);
+    await presentDockTab(dock, {
+      projectId: anchor?.project_id,
+      afterTabId: anchor?.id ?? null,
+      parentTabId: isVibe && target.kind === 'dock' ? (anchor?.id ?? null) : null,
+    });
   }, [isVibe]);
 
   const handle = useCallback(
