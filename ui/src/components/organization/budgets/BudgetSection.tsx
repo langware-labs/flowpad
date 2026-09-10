@@ -36,7 +36,7 @@
  * authorization rule — and an org admin's standing on a budget row is derived by the hub from the
  * scope it hangs under, which the browser cannot see at all.
  */
-import { TypeId, dataManager, type MemberBudget, type ScopeBudget } from '@sdk';
+import { TypeId, dataManager, type MemberBudget, type OrgPerson, type ScopeBudget } from '@sdk';
 import { ChevronDown, ChevronRight, Hash, Loader2, Mail, Pencil, Send, Trash2, UserPlus, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -57,6 +57,7 @@ import { notify } from '@src/notifications';
 import { AddPeopleDialog } from './AddPeopleDialog';
 import { inviteToTeamByEmail, type TeamInviteOutcome } from './invite-to-team';
 import { AdvancedButton } from './AdvancedEndpointDialog';
+import { BudgetHistoryButton } from './BudgetHistoryDialog';
 import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
 import { ShareOrgButton } from './OrgSharePanel';
@@ -211,12 +212,20 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
           <EndpointControls endpointId={org.endpoint_id} scope="org" testIdPrefix="org" manage={org.can_configure} />
           {/* Read-only for an admin: the per-window ceilings and rate caps in here are the org's
               total wearing a different hat, so they follow it rather than `can_allocate`. */}
-          <AdvancedButton
-            endpointId={org.endpoint_id}
-            scopeLabel={org.name}
-            testId="org-advanced"
-            readOnly={!org.can_configure}
-          />
+          <div className="flex items-center gap-1">
+            {/* Beside the money it is the record of. Offered to whoever may configure the pool,
+                which is the standing the hub gates the read at — showing it to a reader would only
+                ever produce a refusal. */}
+            {org.can_configure && (
+              <BudgetHistoryButton endpointId={org.endpoint_id} scopeLabel={org.name} testId="org-history" />
+            )}
+            <AdvancedButton
+              endpointId={org.endpoint_id}
+              scopeLabel={org.name}
+              testId="org-advanced"
+              readOnly={!org.can_configure}
+            />
+          </div>
         </div>
       )}
 
@@ -258,6 +267,9 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
             ))}
           </div>
         )}
+        {/* ``?? []`` because the app and the hub ship on their own cadences: an app running against
+            a hub that predates this field must render the page, not crash on the whole org. */}
+        <OrgPeopleSection orgId={orgId} people={data.people ?? []} />
         {!canAddTeam ? null : createTeam.open ? (
           <div className="flex items-center gap-2">
             <input
@@ -455,6 +467,66 @@ function MemberRow({
 
 /** `team` is the org's own summary of it (name, total, spent) — cheap, always known, so the row
  *  renders fully before anything about its PEOPLE is ever fetched. */
+/**
+ * The organization's OWN people — the ones who are in none of its teams.
+ *
+ * The page reaches people through their team, so somebody granted the organization directly (an
+ * admin invited to the org, an owner who never joined a class) was on no list anywhere: the roster
+ * that would have shown them is a team's. This is that gap, closed for VISIBILITY only — no budget
+ * column, no invite control, nothing to press. Adding people stays where it already is (the org's
+ * Share button, the WorldView drawer), and the money stays on the pool a person draws from.
+ *
+ * Collapsed like a team's roster, and hidden entirely when the section would be empty — which is
+ * the ordinary case for an organization run entirely through its teams, and an empty accordion
+ * saying "nobody" is noise on every one of them.
+ */
+function OrgPeopleSection({ orgId, people }: { orgId: string; people: readonly OrgPerson[] }) {
+  const [open, setOpen] = useState(false);
+  if (people.length === 0) return null;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 self-start px-1.5"
+          data-testid={`org-people-toggle-${orgId}`}
+        >
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          <Trans>People with no team</Trans>
+          <span className="text-muted-foreground">({people.length})</span>
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2">
+        <Table data-testid={`org-people-${orgId}`}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                <Trans>Name</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Email</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Role</Trans>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {people.map((person) => (
+              <TableRow key={person.user_id} data-testid={`org-person-${person.user_id}`}>
+                <TableCell>{person.name}</TableCell>
+                <TableCell className="text-muted-foreground">{person.email ?? ''}</TableCell>
+                <TableCell className="text-muted-foreground">{person.role ?? ''}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function TeamUnit({
   team,
   onChanged,
@@ -616,12 +688,17 @@ function TeamUnit({
             testIdPrefix={`team-${team.id}`}
             manage={team.can_configure}
           />
-          <AdvancedButton
-            endpointId={poolId}
-            scopeLabel={team.name}
-            testId={`team-advanced-${team.id}`}
-            readOnly={!team.can_configure}
-          />
+          <div className="flex items-center gap-1">
+            {team.can_configure && (
+              <BudgetHistoryButton endpointId={poolId} scopeLabel={team.name} testId={`team-history-${team.id}`} />
+            )}
+            <AdvancedButton
+              endpointId={poolId}
+              scopeLabel={team.name}
+              testId={`team-advanced-${team.id}`}
+              readOnly={!team.can_configure}
+            />
+          </div>
         </div>
       )}
 

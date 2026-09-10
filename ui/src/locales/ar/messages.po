@@ -1771,6 +1771,10 @@ msgstr ""
 msgid "Always Thinking Enabled"
 msgstr "التفكير الموسّع مفعّل دائمًا"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Amount"
+msgstr ""
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "<0>يتيم</0> هو صف في فهرس البحث ملفه المصدر غير موجود على القرص. يكتشفه الفهرس في كل تشغيل ويضع عليه علامة <1>orphan_since</1>. الملف محذوف بالفعل؛ التنظيف فقط يزيل الصف القديم من نتائج البحث لإبقائها نظيفة."
@@ -2633,6 +2637,7 @@ msgid "Browse…"
 msgstr "استعراض…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget"
 msgstr ""
@@ -2736,6 +2741,10 @@ msgstr "قائمة نقطية"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Bundle ready — download started."
 msgstr "الحزمة جاهزة — بدأ التنزيل."
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "By"
+msgstr ""
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
@@ -4630,6 +4639,10 @@ msgstr "تعذر الوصول إلى الدعم"
 msgid "Could not reach the backend. Try again in a moment."
 msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة مرة أخرى بعد قليل."
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Could not read this budget's history."
+msgstr ""
+
 #: src/routes/loaders/process-load-error-resolution.ts
 msgid "Could not recover this session's project."
 msgstr "تعذّر استرجاع مشروع هذه الجلسة."
@@ -6513,6 +6526,7 @@ msgstr "مستوى الجهد"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Email"
 msgstr ""
 
@@ -6873,6 +6887,10 @@ msgstr "الأحداث"
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
 msgstr "كل صف من {scopeType} له ملف مصدر على القرص."
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every indexed row has a source file on disk."
@@ -8435,6 +8453,10 @@ msgstr "الحالة الصحية"
 msgid "Health:"
 msgstr ""
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Held by"
+msgstr ""
+
 #: src/components/footer.tsx
 #: src/components/footer.tsx
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
@@ -8544,9 +8566,15 @@ msgstr "تم اكتشاف استخدام مرتفع للذاكرة"
 msgid "Highlight changes since the last stamp"
 msgstr "تمييز التغييرات منذ آخر ختم"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "History"
 msgstr "السجل"
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "History of {scopeLabel}’s budget"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10889,6 +10917,7 @@ msgstr "غير متاح"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -12291,6 +12320,10 @@ msgstr "لا يوجد خيار مؤهل"
 msgid "Nothing found."
 msgstr ""
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Nothing has been given out or changed here yet."
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
 msgstr "لم يتم تضييق الوصول بعد، لذا تشاهد هذه الآلة كل الأسرار أدناه."
@@ -13362,6 +13395,10 @@ msgstr ""
 msgid "People & teams"
 msgstr ""
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "People with no team"
+msgstr ""
+
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 msgstr ""
@@ -14271,6 +14308,10 @@ msgstr ""
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "يقرأ"
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Reading the history…"
+msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Reading this team's people…"
@@ -15227,6 +15268,7 @@ msgid "Right-to-left paragraph"
 msgstr "فقرة من اليمين إلى اليسار"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 #: src/components/organization/member-list.tsx
 msgid "Role"
@@ -17215,6 +17257,10 @@ msgstr ""
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Spent"
+msgstr ""
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Spent then"
 msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
@@ -20008,6 +20054,10 @@ msgstr "إشارة الترحيب المرجعية ومدخل الخلاصة، �
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr ""
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "What"
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "ماذا يمكن لـ Flowpad أن يفعله لك؟"
@@ -20104,6 +20154,7 @@ msgid "What's in the box."
 msgstr "ما بداخل الصندوق."
 
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "When"
 msgstr "متى"
 
@@ -20144,6 +20195,10 @@ msgstr "لوحات بيضاء"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Who this agent is — its system prompt."
+msgstr ""
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Who was given how much, and by whom"
 msgstr ""
 
 #: src/components/token-plan/MembersTable.tsx
