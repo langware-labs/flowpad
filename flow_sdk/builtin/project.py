@@ -1025,6 +1025,39 @@ class Project(Entity):
         await self.save()
         return True
 
+    async def _assert_hub_row_is_reachable(self, client) -> None:
+        """Check that the row a 409 collided with is one this account can reach.
+
+        Treating the conflict as a no-op is right when the row is OURS — a Project
+        published from another instance, or one whose local publication markers
+        were lost while the hub kept the row. It is wrong when the id came from
+        someone else's checkout: a Project id lives in the folder's ``.flow/id``,
+        so cloning a repo carries the ORIGINAL author's id, and silently adopting
+        that row would mark this Project published against an entity we cannot
+        write — every later push would fail with no hint why.
+
+        A GET settles it without leaking anything, because the hub answers it only
+        for a caller holding a role on the row. Note what a refusal does and does
+        not prove: the hub deliberately does not distinguish "no such row" from
+        "not yours", so this reports only what is certain — publishing from here
+        cannot work — and does not diagnose which.
+        """
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        try:
+            await client.get(build_hub_url(self))
+        # ``get`` reports any non-200 as ValueError (``FlowpadClient._unwrap``).
+        # Narrow on purpose: a transport failure raises httpx's own error and an
+        # expired session raises ``HubAuthExpiredError``, and both must propagate
+        # as themselves — answering a hub outage with "it isn't yours" would be a
+        # fabricated diagnosis.
+        except ValueError as unreachable:
+            raise RuntimeError(
+                f"A project already exists in the cloud at id {self.id}, and this account "
+                "cannot reach it, so this folder cannot be linked from here. Link it from "
+                "the account that owns it, or give this folder a new project id."
+            ) from unreachable
+
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
 
@@ -1078,7 +1111,15 @@ class Project(Entity):
         body["shared_secret_origins"] = await self._shared_secret_origin_payload()
 
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(build_hub_url(self.get_type()), body)
+            # Idempotent, restoring the contract of the ``Entity.share`` this
+            # overrides (``entity_model.py`` passes the same flag): a 409 means the
+            # hub already holds a row at this id, so the create's post-condition is
+            # already satisfied. Without it the publish DEAD-ENDS — the flip below
+            # never runs, the local row never learns it is published, and the only
+            # remediation the UI offers is the same POST that just 409'd.
+            created = await client.post(build_hub_url(self.get_type()), body, idempotent=True)
+            if created is None:
+                await self._assert_hub_row_is_reachable(client)
             if "remote" in type(self).model_fields:
                 self.remote = True
             # Publication marker. Receiver materialization also sets ``remote``,
