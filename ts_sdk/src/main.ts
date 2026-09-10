@@ -69,20 +69,30 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // dataContext into entities — see utils/hub-runtime.ts).
       setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
-      // Known identity and privacy are required for the first render. No probes
-      // or subscriptions run here; asyncSdkInit owns those after UI paint.
-      await cloudManager.seedBootstrap(bootstrapInfo);
-      privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
-
-
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)
+      //
+      // BEFORE seeding the login, not after. `seedBootstrap` hydrates the signed-in
+      // User and marks it expanded, which reads the schema — with the registry still
+      // empty that logged "Schema not found for user" and silently dropped the
+      // `blobs` expansion. Harmless for `user` (it declares no blob fields) but not
+      // in general: the same window would drop blobs for any blob-carrying entity,
+      // and `APIEntity.hasBlobs` throws rather than degrading. Same class of bug the
+      // route loaders already guard against (see main-loader's initSdk await).
+      //
+      // Safe to move: this only reads `bootstrapInfo.types`, already in hand, and
+      // does no fetching when handed the array.
       await dataManager.loadTypes(bootstrapInfo.types || []);
 
       // The icon vocabulary rides the same payload as the types that reference
       // it: a `TypeInfo.icon` name is only renderable if the pack it lives in
       // is loaded too, so the two are seeded together or not at all.
       loadIconPacks((bootstrapInfo as { icon_packs?: IconPackSpec[] }).icon_packs);
+
+      // Known identity and privacy are required for the first render. No probes
+      // or subscriptions run here; asyncSdkInit owns those after UI paint.
+      await cloudManager.seedBootstrap(bootstrapInfo);
+      privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {

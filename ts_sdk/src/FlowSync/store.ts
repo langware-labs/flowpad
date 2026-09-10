@@ -212,6 +212,13 @@ export interface Manageable {
   isDbField(fieldName: string): boolean;
 }
 
+/**
+ * Types we have already reported as having no client entity constructor. Bounded
+ * by the number of backend types, and never reset: the answer cannot change
+ * within a session because the entity registry is populated at import.
+ */
+const loggedMissingCtorTypes = new Set<string>();
+
 export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
 
@@ -580,7 +587,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const ctor = EntityFactory.getEntityConstructor(typeId.type);
     if (!ctor) {
-      console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
+      // Expected, not exceptional. The backend broadcasts ops for every
+      // api-visible type, and a dozen of those are deliberately not modelled as
+      // client entities — `secret_origin` reaches the UI as a summary on
+      // Project, `helpdesk` as bare actions, and so on. `api_visible` is the
+      // only dial the backend has and it also gates the schema payload the UI
+      // needs for each type's label and icon, so these frames cannot simply be
+      // switched off.
+      //
+      // Debug, and once per type: an index sweep re-broadcasts every row, which
+      // turned this into a warn storm that buried real signal. The type name
+      // stays so a genuinely missing constructor is still findable.
+      if (!loggedMissingCtorTypes.has(typeId.type)) {
+        loggedMissingCtorTypes.add(typeId.type);
+        console.debug(`Data op ignored: no client entity for type '${typeId.type}' (expected for server-only types)`);
+      }
       return;
     }
     // Bus wake-up BEFORE the branchy cache handling below: several branches
