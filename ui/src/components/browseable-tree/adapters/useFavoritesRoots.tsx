@@ -89,6 +89,8 @@ export function useFavoritesRoots(opts?: {
    *  and folders that get rendered; children are filtered too. Lookups for drag
    *  targets still use the full favorite set. Default (unset) renders all. */
   filter?: (b: Bookmark) => boolean;
+  /** Navigation menus contain only paths to visible favorite links. */
+  hideEmptyFolders?: boolean;
   /** Icon sizing. Defaults to the 64px desktop tile's `h-6 w-6`; a tree menu
    *  passes `h-4 w-4` — its rows are `text-xs` with `h-3` chevrons, so a 24px
    *  icon would tower over every row. */
@@ -111,6 +113,7 @@ export function useFavoritesRoots(opts?: {
   ) => Promise<void>;
 } {
   const filter = opts?.filter ?? PASS_ALL;
+  const hideEmptyFolders = opts?.hideEmptyFolders ?? false;
   const iconClassName = opts?.iconClassName ?? 'h-6 w-6';
   const { navigation } = useDockNavigation();
   // navigation's identity changes on every dock change (it carries
@@ -150,8 +153,27 @@ export function useFavoritesRoots(opts?: {
     // the overlapping filter/leaf paths would otherwise re-run it several times
     // per leaf per render — resolve it once per favorite into a lookup set.
     const navigableIds = new Set(favorites.filter(canNavigateFavorite).map((b) => b.id));
+    const populatedFolders = new Set<string>();
+    if (hideEmptyFolders) {
+      const byId = new Map(folders.map((folder) => [folder.id, folder]));
+      for (const favorite of favorites) {
+        if (!filter(favorite) || !navigableIds.has(favorite.id)) continue;
+        const seen = new Set<string>();
+        let parent = favorite.parent_id;
+        while (parent && !seen.has(parent)) {
+          seen.add(parent);
+          const folder = byId.get(parent);
+          if (!folder || !filter(folder)) break;
+          populatedFolders.add(parent);
+          parent = folder.parent_id;
+        }
+      }
+    }
     const isVisible = (b: Bookmark): boolean =>
-      filter(b) && (b.bookmark_type === BookmarkType.FAVORITE_FOLDER || navigableIds.has(b.id));
+      filter(b) &&
+      (b.bookmark_type === BookmarkType.FAVORITE_FOLDER
+        ? !hideEmptyFolders || populatedFolders.has(b.id ?? '')
+        : navigableIds.has(b.id));
     const asLeaf = (b: Bookmark): Browseable => {
       const summary = summaryForBookmark(b, summaries);
       const title = b.name || summary?.name || b.displayName;
@@ -350,6 +372,7 @@ export function useFavoritesRoots(opts?: {
     deleteFolder,
     reorder,
     filter,
+    hideEmptyFolders,
     iconClassName,
     t,
   ]);
@@ -403,7 +426,7 @@ export function useFavoritesProjectRoots(): {
    */
   addParentFor: (levelId: string) => string | null;
 } {
-  const { roots, favorites, folders } = useFavoritesRoots({ iconClassName: 'h-4 w-4' });
+  const { roots, favorites, folders } = useFavoritesRoots({ iconClassName: 'h-4 w-4', hideEmptyFolders: true });
   // dataContext, NOT `useProject()`: the tree's `defaultExpandedIds` is read
   // ONCE, when `useBrowseableTree` seeds its state on mount. `useProject`
   // resolves the project entity through a fetch, so it is still null on that
@@ -478,10 +501,6 @@ export function useFavoritesProjectRoots(): {
     }
 
     const currentBucket = favoritesBucketId(currentProjectId);
-    // The project you are IN always has a desk, even an empty one — it is the
-    // row the "add here" footer hangs off, so a project with no favorites yet
-    // still has somewhere to put its first one.
-    if (!buckets.has(currentBucket)) buckets.set(currentBucket, []);
     const labelFor = (key: string): string =>
       key === FAVORITES_PERSONAL_BUCKET
         ? t`Personal`
@@ -498,9 +517,7 @@ export function useFavoritesProjectRoots(): {
           ) : (
             <FolderOpen className="h-4 w-4" />
           ),
-        // The current project's desk is expandable even when empty — its level
-        // carries the "add here" footer, which is the only way to fill it.
-        hasChildren: children.length > 0 || key === currentBucket,
+        hasChildren: children.length > 0,
         listChildren: () => Promise.resolve(children),
         pointer: null,
         selectionKey: key,
