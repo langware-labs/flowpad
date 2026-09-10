@@ -11,6 +11,23 @@ export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
 }
 
+/**
+ * True when `path` names a LOCATION, so a path-keyed ensure may act on it.
+ *
+ * A bare NAME must never reach one: `Project`'s validator roots a slash-free
+ * name at `<workspace>/<name>`, minting a stray project at a folder the user
+ * never chose — and the next PTY spawn (`os.makedirs(cwd)`) re-creates that
+ * folder, so deleting it never sticks. One separator is enough to tell the two
+ * apart: the New Project dialogs build VFS-relative paths from
+ * `desktop_info.paths.workspace` (`Users/alice/Flowpad workspace/...`, no
+ * leading slash), which the validator maps to the OS root, so requiring an
+ * absolute path here would reject legitimate creation. Hub projects are pure
+ * entities with no folder at all, so there anything goes.
+ */
+export function isOpenableProjectPath(path: string): boolean {
+  return isHubOnly() || path.includes('/');
+}
+
 /** Make `project` the active project context — current-project pointer,
  *  refreshed project snapshot, workdir. Shared by the select flows below and
  *  by callers that adopt a project without navigating to it. */
@@ -43,7 +60,9 @@ export function useEnsureProject() {
     async (rawPath: string, options?: { select?: boolean }): Promise<Project> => {
       if (!dataContext.someone) throw new Error('You must be logged in');
       const normalized = rawPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
-      if (!normalized) throw new Error('Please provide a valid project path');
+      if (!normalized || !isOpenableProjectPath(normalized)) {
+        throw new Error('Please provide a valid project path');
+      }
       const pathKey = canonicalPath(normalized);
 
       const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);

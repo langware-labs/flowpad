@@ -1,6 +1,6 @@
 """``Activity`` — the handle a producer holds, and the node the monitor tracks.
 
-Addressed globally by ``(scope, path)`` and found-or-created at every level, so code
+Addressed globally by ``(subject_entity, path)`` and found-or-created at every level, so code
 deep inside a walk never needs a handle threaded down to it::
 
     Activity.get("index").label("Indexing").total(5000)
@@ -51,6 +51,12 @@ if TYPE_CHECKING:
 SEP = "/"
 
 
+#: A claim deadline in the far past — the spelling of "released but still live".
+#: ``claim_expired`` is ``deadline is not None and now > deadline``, so this makes
+#: a node claimable again without terminating it or dropping its state.
+_RELEASED = float("-inf")
+
+
 def _now() -> datetime:
     """The one clock. Patch this in tests rather than sleeping."""
     return datetime.now(timezone.utc)
@@ -86,7 +92,7 @@ class Activity:
         "_root_node",
         "_depth",
         "activity_id",
-        "scope",
+        "subject_entity",
         "path",
         "name",
         "label_text",
@@ -113,7 +119,7 @@ class Activity:
         *,
         monitor: "ActivityProgressMonitor",
         path: str,
-        scope: Optional[str] = None,
+        subject_entity: Optional[str] = None,
         parent: "Optional[Activity]" = None,
     ) -> None:
         self._monitor = monitor
@@ -126,7 +132,7 @@ class Activity:
         segments = split_path(path)
         self._depth = max(len(segments) - 1, 0)
         self.activity_id = mint_uuid()
-        self.scope = scope
+        self.subject_entity = subject_entity
         self.path = path
         self.name = segments[-1] if segments else path
         self.label_text: Optional[str] = None
@@ -160,26 +166,26 @@ class Activity:
     # ------------------------------------------------------------------ address
 
     @classmethod
-    def get(cls, path: str, scope: Optional[str] = None) -> "Activity":
+    def get(cls, path: str, subject_entity: Optional[str] = None) -> "Activity":
         """The node at ``path``, created if nobody has touched it yet.
 
         ``Activity.get("a/b")`` and ``Activity.get("a").child("b")`` are the same node.
         """
         from flow_sdk.activity.progress_monitor import monitor
 
-        return monitor.activity(path, scope=scope)
+        return monitor.activity(path, subject_entity=subject_entity)
 
     @classmethod
     def try_claim(
         cls,
         path: str,
-        scope: Optional[str] = None,
+        subject_entity: Optional[str] = None,
         *,
         timeout_seconds: int = 600,
     ) -> "Activity":
         """Take the address for single-flight work, or raise if somebody holds it.
 
-        The address IS the slot: one activity per ``(scope, path)`` is the same statement
+        The address IS the slot: one activity per ``(subject_entity, path)`` is the same statement
         as one job of that name per entity. A holder that has finished is already evicted,
         and one past its ``timeout_seconds`` is taken over — the two cases the registry
         this replaces spelled out as ``is_complete`` and ``is_timed_out``.
@@ -188,14 +194,14 @@ class Activity:
         """
         from flow_sdk.activity.progress_monitor import monitor
 
-        return monitor.try_claim(path, scope=scope, timeout_seconds=timeout_seconds)
+        return monitor.try_claim(path, subject_entity=subject_entity, timeout_seconds=timeout_seconds)
 
     @classmethod
     @asynccontextmanager
     async def claim(
         cls,
         path: str,
-        scope: Optional[str] = None,
+        subject_entity: Optional[str] = None,
         *,
         timeout_seconds: int = 600,
         queue: bool = False,
@@ -204,7 +210,7 @@ class Activity:
         """Hold an address for the duration of a block, then end and release it.
 
         ``queue=True`` waits for the holder instead of raising. A caller who wants THIS
-        scope's work done cannot be served by the run already going — a boot pass covers
+        subject_entity's work done cannot be served by the run already going — a boot pass covers
         the system's own roots, not the folder somebody just asked for — so the honest
         answer is "after you", not a refusal. The wait is bounded by the holder's own
         remaining budget, never a new one, and the loop re-claims rather than assuming it
@@ -212,12 +218,12 @@ class Activity:
         """
         while True:
             try:
-                act = cls.try_claim(path, scope=scope, timeout_seconds=timeout_seconds)
+                act = cls.try_claim(path, subject_entity=subject_entity, timeout_seconds=timeout_seconds)
                 break
             except RuntimeError:
                 from flow_sdk.activity.progress_monitor import monitor
 
-                holder = monitor.holder(path, scope=scope) if queue else None
+                holder = monitor.holder(path, subject_entity=subject_entity) if queue else None
                 if holder is None:
                     raise
                 await holder.wait_released()
@@ -274,7 +280,7 @@ class Activity:
         node = Activity(
             monitor=self._monitor,
             path=f"{self.path}{SEP}{seg}",
-            scope=self.scope,
+            subject_entity=self.subject_entity,
             parent=self,
         )
         self._children[seg] = node
@@ -548,6 +554,25 @@ class Activity:
             self._released = asyncio.Event()
         self._released.set()
 
+    def release(self) -> "Activity":
+        """Give the address up without ending the work.
+
+        For a producer that has stopped but is NOT finished — a wizard parked on
+        a value it needs from a person. The node stays exactly as it is (BLOCKED
+        is not terminal, so it keeps showing in the chip as somebody's), but it
+        no longer holds its address, so the run it belongs to can be resumed
+        with a fresh ``try_claim`` and nothing else is wedged behind it.
+
+        Without this a caller has to reach in and set ``claim_deadline``: a
+        live node reads as HELD (``claim_expired`` is false when the deadline is
+        ``None``), so simply returning would leave the address taken until the
+        budget ran out — and the only alternative, holding it while a person
+        thinks, means a wizard nobody answers blocks every later run of it.
+        """
+        self.claim_deadline = None if self.is_terminal else _RELEASED
+        self.release_waiters()
+        return self
+
     @property
     def claim_expired(self) -> bool:
         """A claimed holder that outlived its budget, and is therefore claimable again.
@@ -600,7 +625,7 @@ class Activity:
         seq = self.root.seq if _seq is None else _seq
         return ActivityProgressSpec(
             activity_id=self.activity_id,
-            scope=self.scope,
+            subject_entity=self.subject_entity,
             path=self.path,
             name=self.name,
             label=self.label_text,

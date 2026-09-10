@@ -34,6 +34,8 @@ from flow_sdk.transcript_analyzer import EntryKind
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
+    fail_worker_timeout,
     safe_exit,
 )
 from tests.test_settings import test_service_config
@@ -123,13 +125,13 @@ async def test_worker_mounts_context_folder(
             ),
             deadline_s=90,
         )
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip(f"{worker_id} API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        fail_worker_timeout(exc, worker_id)
     finally:
         await safe_exit(ap)
 
     if transcript is None:
-        pytest.skip(f"{worker_id} produced no transcript within 90s — infra/LLM latency")
+        fail_no_transcript(90, worker_id)
     unavailable = _worker_unavailable(transcript)
     if unavailable is not None:
         pytest.skip(

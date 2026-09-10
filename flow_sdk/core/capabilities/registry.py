@@ -954,6 +954,9 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             description="Agent-driven Chrome browsing with authenticated browser state.",
             icon="Globe",
             dependent_capability_kinds=[CapabilityKind.CLAUDE_CLI.value],
+            # Its test() drives a REAL Claude agent through a browse-and-report
+            # round trip. That is an explicit-verb probe, not a badge refresh.
+            sweepable_test=False,
         ),
         CapabilitySpec(
             name="GitHub",

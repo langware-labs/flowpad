@@ -38,8 +38,8 @@ export interface ActivityError {
 export interface ActivityProgressSpec {
   activity_id: string;
   /** TypeId this activity belongs to; `null` means it belongs to the instance. */
-  scope?: string | null;
-  /** Address within the scope: `index`, `index/pdf`, `qa.cycle`. */
+  subject_entity?: string | null;
+  /** Address within the subject_entity: `index`, `index/pdf`, `qa.cycle`. */
   path: string;
   name: string;
   label?: string | null;

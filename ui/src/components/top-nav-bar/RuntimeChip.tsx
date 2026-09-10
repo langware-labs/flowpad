@@ -12,10 +12,12 @@ import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import {
   ProjectCountBadge,
   ProjectCountsSummary,
+  ProjectListOpenDialog,
   ProjectListPopoverContent,
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
+import { useState } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
@@ -25,8 +27,7 @@ import { RUNTIME_APPEARANCE } from './runtime-appearance';
  * Two facts on one pill: WHICH MACHINE serves this UI (the color and the
  * glyph — the safety signal) and WHICH PROJECT you are in (the name). It is a
  * split chip: the project-glyph segment opens the project's home, the name
- * segment opens the shared project list (`project-list-menu`, the same list
- * the advanced tab strip's chip shows). Hovering explains the runtime in a sentence and links
+ * segment opens the shared project list (`project-list-menu`). Hovering explains the runtime in a sentence and links
  * to the "Runtime environments" wiki page, peeked in the wiki modal.
  *
  * It DETECTS NOTHING. The kind is resolved by the backend and arrives on
@@ -106,6 +107,18 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   const { t } = useLingui();
   const menu = useProjectListMenu({ currentProjectId: project?.id, currentProjectName: project?.displayName });
 
+  // The hover card is controlled so it can never sit on top of the open list:
+  // while the list is open (the popover hangs right under the pill, so the
+  // pointer crosses the trigger on its way in), the card is forced shut and
+  // Radix's hover-to-open is ignored. Uncontrolled, the card would re-open
+  // over the list and hide it.
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const hoverCardOpen = hoverOpen && !menu.open;
+  const setListOpen = (open: boolean) => {
+    if (open) setHoverOpen(false);
+    menu.setOpen(open);
+  };
+
   const homeLabel = t`Open project home`;
   const { className: runtimeClass, heading } = RUNTIME_APPEARANCE[kind];
 
@@ -114,10 +127,13 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   const ProjectIcon = iconForType(Project.type);
 
   return (
-    // The hover card is left uncontrolled: Radix closes it when the trigger
-    // blurs, which opening the list (focus moves into the popover) does.
-    <HoverCard openDelay={RUNTIME_HOVER_OPEN_DELAY_MS} closeDelay={100}>
-      <Popover open={menu.open} onOpenChange={menu.setOpen}>
+    <HoverCard
+      open={hoverCardOpen}
+      onOpenChange={(open) => setHoverOpen(open && !menu.open)}
+      openDelay={RUNTIME_HOVER_OPEN_DELAY_MS}
+      closeDelay={100}
+    >
+      <Popover open={menu.open} onOpenChange={setListOpen}>
         <PopoverAnchor asChild>
           {/* A div, not a button: it holds two controls, and a button inside
               a button is invalid HTML (the nav-bar test pins that). The list
@@ -168,7 +184,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <span className="hidden max-w-[10rem] truncate sm:inline">
                     {menu.projectName ?? <RuntimeLabel kind={kind} />}
                   </span>
-                  <ProjectCountBadge menu={menu} hairlineClassName="bg-white/40" iconClassName="opacity-80" />
+                  <ProjectCountBadge menu={menu} />
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>
               </PopoverTrigger>
@@ -227,6 +243,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>
       </Popover>
+      <ProjectListOpenDialog menu={menu} />
     </HoverCard>
   );
 }

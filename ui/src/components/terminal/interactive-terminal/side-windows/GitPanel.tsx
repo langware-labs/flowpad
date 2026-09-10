@@ -6,6 +6,9 @@ import {
   Check,
   Copy,
   Eye,
+  FileMinus,
+  FilePen,
+  FilePlus,
   GitBranch,
   type LucideIcon,
   PlusSquare,
@@ -97,6 +100,25 @@ const UNDO_VARIANTS: Record<string, { standard: MessageDescriptor; advanced: Mes
     icon: Undo2,
   },
 };
+
+// The panel's three buckets. `bucketOf` is the ONE place a status char maps to
+// a bucket, and BUCKETS carries that bucket's chrome — so the summary chips and
+// the file lists below are driven by a single table, in this order. (Row-level
+// colour stays finer-grained: `statusColor` still gives a rename its own hue
+// even though it buckets as a change.)
+type BucketKey = 'new' | 'changed' | 'removed';
+
+function bucketOf(status: string): BucketKey {
+  if (status === '?') return 'new';
+  if (status === 'D') return 'removed';
+  return 'changed';
+}
+
+const BUCKETS: { key: BucketKey; label: MessageDescriptor; icon: LucideIcon; tone: string }[] = [
+  { key: 'new', label: msg`New`, icon: FilePlus, tone: 'border-green-500/40 bg-green-500/10 text-green-500' },
+  { key: 'changed', label: msg`Changed`, icon: FilePen, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-500' },
+  { key: 'removed', label: msg`Removed`, icon: FileMinus, tone: 'border-red-500/40 bg-red-500/10 text-red-500' },
+];
 
 function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const view: GitAction = {
@@ -389,8 +411,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
     );
   };
 
-  const changed = data?.files.filter((f) => f.status !== '?') ?? [];
-  const newFiles = data?.files.filter((f) => f.status === '?') ?? [];
+  // One pass over the files, split by BUCKETS' own classifier — the chips and
+  // the sections below both read these, so a count can never disagree with its
+  // list.
+  const buckets = BUCKETS.map((b) => ({
+    ...b,
+    label: i18n._(b.label),
+    files: data?.files.filter((f) => bucketOf(f.status) === b.key) ?? [],
+  }));
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -469,6 +497,24 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
           </div>
         </div>
 
+        {/* Summary chips — new / changed / removed, at a glance */}
+        {data && !data.error && (
+          <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+            {buckets.map((b) => (
+              <div
+                key={b.key}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
+                  b.files.length > 0 ? b.tone : 'border-border bg-muted/40 text-muted-foreground'
+                }`}
+              >
+                <b.icon className="h-4 w-4 shrink-0" />
+                <span className="text-lg font-semibold leading-none tabular-nums">{b.files.length}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-1">
           {loading && !data ? (
@@ -502,22 +548,16 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              {changed.length > 0 && (
-                <div>
-                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    <Trans>Changes ({changed.length})</Trans>
-                  </p>
-                  <div className="flex flex-col gap-0.5">{changed.map((f, i) => renderFileRow(f, i))}</div>
-                </div>
-              )}
-              {newFiles.length > 0 && (
-                <div>
-                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    <Trans>New Files ({newFiles.length})</Trans>
-                  </p>
-                  <div className="flex flex-col gap-0.5">{newFiles.map((f, i) => renderFileRow(f, i))}</div>
-                </div>
-              )}
+              {buckets
+                .filter((b) => b.files.length > 0)
+                .map((b) => (
+                  <div key={b.key}>
+                    <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {b.label} ({b.files.length})
+                    </p>
+                    <div className="flex flex-col gap-0.5">{b.files.map((f, i) => renderFileRow(f, i))}</div>
+                  </div>
+                ))}
             </div>
           )}
         </div>

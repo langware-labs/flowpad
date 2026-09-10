@@ -387,6 +387,31 @@ async def handle_create_entity(request: Request):
                 )
                 continue
             sanitized_data[key] = value
+        # An `id` that already names a row makes this an UPSERT, and
+        # re-validating a PARTIAL body would re-derive every field the caller
+        # omitted from the model's own defaults — silently overwriting stored
+        # data. `Project` derives `fs_storage_mount_path` from `name`, so a
+        # create carrying id+name and no mount RELOCATED an existing project to
+        # `<AGENT_MOUNT_FOLDER>/<name>`; the next PTY spawn (`os.makedirs(cwd)`)
+        # then materialized that folder, which is why deleting it never stuck.
+        # Merge onto the stored row through the same seam the UPDATE route uses.
+        #
+        # UNSCOPED creates only: a scoped one (`POST /graph/<parent>/<id>/<type>`)
+        # must still reach `_dispatch_create_save` for parenting and hub
+        # auto-share, so returning here would 200 an entity never attached to
+        # its parent.
+        incoming_id = sanitized_data.get("id")
+        if (
+            incoming_id
+            and not request_info.target_entity_typeid
+            and await entity_model.get_by_id(str(incoming_id)) is not None
+        ):
+            merged = await entity_model.update_by_id(
+                str(incoming_id),
+                {k: v for k, v in sanitized_data.items() if k not in ("id", "type")},
+            )
+            return ApiSuccessResponse[entity_model](data=merged)
+
         entity: Entity = entity_model.model_validate(sanitized_data)
         # Assign deterministic ID if entity is new (not yet in DB)
         if not entity.created_by:

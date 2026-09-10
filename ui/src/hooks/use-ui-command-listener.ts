@@ -22,7 +22,15 @@ import {
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
-  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => void;
+  /**
+   * Subscribe to main-process banner clicks. Returns a disposer — but only on a
+   * shell new enough to hand one back: the desktop shell and this UI ship as
+   * SEPARATELY VERSIONED artifacts (an installed shell can be months behind the
+   * UI it loads), so the return is optional and every caller must degrade.
+   */
+  onNotificationClick?: (
+    cb: (data: { clickTarget?: NotificationClickTarget }) => void,
+  ) => (() => void) | void;
 }
 
 /**
@@ -143,13 +151,19 @@ export function useUiCommandListener(): void {
     // click target (URL-first, works for any notify_type — the OS badge is
     // handled separately by useSyncOsBadge, driven by InboxManager.unread).
     const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
-    bridge?.onNotificationClick?.(({ clickTarget }) => {
+    const disposeNotificationClick = bridge?.onNotificationClick?.(({ clickTarget }) => {
       const pointer = dockPointerForClickTarget(clickTarget);
       if (pointer) navigateTo(pointer);
     });
 
     return () => {
       cm.off('on_ui_command', onUiCommand);
+      // Release the bridge subscription too — without this every remount added
+      // another IPC listener (MaxListenersExceededWarning at 11), and each one
+      // navigates, so a single banner click fired `navigateTo` once per leak.
+      // Guarded rather than called blindly: an older shell's preload returns
+      // nothing, and we must stay mountable on it.
+      if (typeof disposeNotificationClick === 'function') disposeNotificationClick();
     };
   }, []);
 }

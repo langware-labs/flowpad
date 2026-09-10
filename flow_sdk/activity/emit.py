@@ -16,8 +16,9 @@ Coalescing keeps a TRAILING edge. A throttled tick that is never followed by ano
 would otherwise leave the last increments invisible until the activity ended, which is
 exactly the state a user stares at when a job slows down.
 
-Routing is by scope. An activity with no scope belongs to the instance and goes to every
-connection; one scoped to an entity goes to that entity's watchers. The old
+Routing is by subject entity. An activity with no subject entity belongs to the
+instance and goes to every connection; one that names an entity goes to that
+entity's watchers. The old
 ``broadcast_progress`` had no watcher filter at all, which was tolerable when the only
 producer was a single instance-wide index and is not once every process has activities.
 """
@@ -47,7 +48,7 @@ PROGRESS_ELEMENT = "progress_report"
 #: same element. Mirrored on the frontend as ``ACTIVITY_KIND``.
 ACTIVITY_KIND = "activity"
 
-def local_scope_typeid() -> str:
+def local_subject_typeid() -> str:
     """Where an instance-wide activity is addressed: this machine's ComputeNode.
 
     The client DROPS any flow_data message whose ``to_entity`` will not parse as a TypeId
@@ -136,7 +137,7 @@ class ActivityEmitter:
         if transition:
             self._emit(root.spec())
             return
-        self._pending[(root.scope, root.path)] = root
+        self._pending[(root.subject_entity, root.path)] = root
         self._schedule()
 
     def _schedule(self) -> None:
@@ -205,18 +206,19 @@ def _running_loop() -> "Optional[asyncio.AbstractEventLoop]":
 
 
 async def _send(spec: ActivityProgressSpec) -> None:
-    """Put one snapshot on the socket, addressed by scope.
+    """Put one snapshot on the socket, addressed by its subject entity.
 
     Two sends, and which one is used IS the routing rule:
 
-    * **No scope** — the work belongs to the box (an index, a walk, a docs scan), so every
+    * **No subject entity** — the work belongs to the box (an index, a walk, a docs scan), so every
       connection gets it; ``broadcast_progress`` has no watcher filter, which is correct
       here and only here. It is still ADDRESSED, because the client drops a frame whose
       ``to_entity`` does not parse as a TypeId. This machine's own ComputeNode normalises
-      to no scope when the address is taken (``_norm_scope``), so a legacy producer that
-      scopes its index to the node lands here too, rather than being hidden from every
+      to no subject entity when the address is taken (``_norm_subject``), so a legacy
+      producer that points its index at the node lands here too, rather than being hidden
+      from every
       client that is not watching it.
-    * **A scope** — the work belongs to one entity, so only that entity's watchers get it.
+    * **A subject entity** — the work belongs to one entity, so only that entity's watchers get it.
       Broadcasting a process's activity to everyone is a volume problem on a busy box
       and, on a shared hub, a privacy one.
 
@@ -224,14 +226,14 @@ async def _send(spec: ActivityProgressSpec) -> None:
     what keeps the core unit-testable without standing one up.
     """
     try:
-        if spec.scope:
+        if spec.subject_entity:
             from flow_sdk.core.network.resource_tracker import send_flow_data_to_entity
 
-            await send_flow_data_to_entity(spec.scope, envelope(spec))
+            await send_flow_data_to_entity(spec.subject_entity, envelope(spec))
         else:
             from flow_sdk.core.network.resource_tracker import broadcast_progress
 
-            await broadcast_progress(local_scope_typeid(), envelope(spec))
+            await broadcast_progress(local_subject_typeid(), envelope(spec))
     except Exception:  # noqa: BLE001 — reporting must never fail a producer
         logger.debug("activity emit failed for %s", spec.path, exc_info=True)
 
@@ -247,7 +249,7 @@ def install() -> None:
 
 __all__ = [
     "ACTIVITY_KIND",
-    "local_scope_typeid",
+    "local_subject_typeid",
     "PROGRESS_ELEMENT",
     "TICK_INTERVAL_S",
     "ActivityEmitter",

@@ -249,7 +249,7 @@ reads this one source and derives its view through SDK selectors:
   hydrates its OWN live entity (`useEntity`) for the transport `shell_id` + PTY
   (URL-first corollary: the view attaches on mount, not via a list-wide join).
   The chrome controller (`useTerminalStripController`) is spawn openers + the
-  new-tab menu + the projects chip + modals — no session list, no active-key, no
+  new-tab menu + modals — no session list, no active-key, no
   close/rename/select handlers.
 
 ## The content panel — one main view + tabbed shell
@@ -806,7 +806,8 @@ only write. This guard exists so loaders never become tab-creators.
   and nothing else; active highlight derives from `currentDock`; explicit
   picks pin `pending-intent`; loaders remain the only context writers;
   self-heal resolves-and-navigates via `resolveActive`, never writes state.
-- **Project switcher chip** (`ProjectsCounterChip`): kind-agnostic —
+- **Project switcher** (the nav bar's `RuntimeChip`, via `project-list-menu`;
+  the strip carries no chip of its own): kind-agnostic —
   `useTabProjectBuckets` lists one row per project with ≥1 open tab of ANY kind
   (it buckets the raw `Tab` entities by `project_id`, never `buildTerminalRows`).
   Selecting a row is a **current-project context switch**, identical to the

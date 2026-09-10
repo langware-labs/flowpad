@@ -57,6 +57,14 @@ export interface WorldViewEdge {
   to: WorldViewEndpoint;
   kind: WorldViewEdgeKind;
   topology: WorldViewEdgeTopology;
+  /**
+   * The source side of the edge's role mapping (`'*'` matches any role). `kind`
+   * is the role CONFERRED, which on its own cannot separate an inherited
+   * `('*','*')` pass-through from an override that happens to confer the same
+   * role — so this is what says whether a child's access has been overridden.
+   * Null on projections that carry no mapping.
+   */
+  from_role: string | null;
 }
 
 export interface WorldViewCounts {
@@ -93,7 +101,7 @@ export interface WorldViewGraph {
 
 const GRAPH_KEYS = ['schema_version', 'projection', 'root', 'nodes', 'edges', 'counts', 'sync'] as const;
 const NODE_KEYS = ['type', 'id', 'key', 'label', 'is_ghost', 'properties'] as const;
-const EDGE_KEYS = ['from', 'to', 'kind', 'topology'] as const;
+const EDGE_KEYS = ['from', 'to', 'kind', 'topology', 'from_role'] as const;
 const ENDPOINT_KEYS = ['type', 'id'] as const;
 const COUNT_KEYS = ['nodes', 'edges'] as const;
 
@@ -173,11 +181,18 @@ function edgeAt(value: unknown, index: number): WorldViewEdge {
   if (edge.topology !== 'hierarchy' && edge.topology !== 'association') {
     throw new Error(`${path}.topology must be hierarchy or association`);
   }
+  if (edge.from_role !== undefined && edge.from_role !== null && typeof edge.from_role !== 'string') {
+    throw new Error(`${path}.from_role must be a string or null`);
+  }
   return {
     from: endpointAt(edge.from, `${path}.from`),
     to: endpointAt(edge.to, `${path}.to`),
     kind: trimmedStringAt(edge.kind, `${path}.kind`),
     topology: edge.topology,
+    // Absent (an older hub, or a projection with no mapping) reads as null
+    // rather than throwing — the field is additive and every consumer treats a
+    // missing mapping as "nothing to show".
+    from_role: (edge.from_role as string | null | undefined) ?? null,
   };
 }
 
@@ -258,7 +273,10 @@ export function parseWorldViewGraph(value: unknown): WorldViewGraph {
     if (!nodeKeys.has(source) || !nodeKeys.has(target)) {
       throw new Error('WorldViewGraph edge endpoints must reference existing nodes');
     }
-    const edgeKey = JSON.stringify([source, target, edge.kind, edge.topology]);
+    // `from_role` is part of the identity: two mappings between one pair can
+    // confer the same role and differ only in what they match on. Without it
+    // that legitimate pair reads as a duplicate and rejects the whole graph.
+    const edgeKey = JSON.stringify([source, target, edge.kind, edge.topology, edge.from_role]);
     if (edgeKeys.has(edgeKey)) throw new Error('duplicate WorldView edge');
     edgeKeys.add(edgeKey);
   }

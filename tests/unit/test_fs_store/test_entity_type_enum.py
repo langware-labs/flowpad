@@ -194,6 +194,9 @@ EXPECTED = {
     # DB-only journal — additive members, no existing value changed.
     "JOURNEY": "journey",
     "JOURNEY_JOURNAL": "journey_journal",
+    # Wizard — the autonomous counterpart of JOURNEY. Additive member; every
+    # existing value stays frozen.
+    "WIZARD": "wizard",
     # Help desk (0.2.114): folder-backed support portal discovered by indexing a
     # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
     # additive member, no existing value changed.

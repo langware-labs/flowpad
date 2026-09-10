@@ -115,4 +115,4 @@ async def test_every_legacy_activity_is_addressed_to_the_box(client, docs_root, 
     for path, _state, _done in observed:
         node = _monitor.node(path)
         if node is not None:
-            assert node.scope is None, f"{path} is entity-scoped and would reach no browser"
+            assert node.subject_entity is None, f"{path} is entity-scoped and would reach no browser"

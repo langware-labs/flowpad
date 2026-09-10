@@ -12,8 +12,27 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.worker_status import WorkerStatus
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _now_iso(timespec: str = "auto") -> str:
+    return datetime.now(timezone.utc).isoformat(timespec=timespec).replace("+00:00", "Z")
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    """Lenient ISO-8601 → timezone-aware datetime (naive values assumed UTC).
+
+    Accepts an already-parsed ``datetime`` and ``Z``-suffixed strings; returns
+    None for anything unparseable.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 class AgenticContext(BaseModel):

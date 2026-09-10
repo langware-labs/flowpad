@@ -1,0 +1,68 @@
+{
+  "name": "Developer toolchain",
+  "description": "Makes sure python3 and git are installed and runnable on this machine.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "triggers": [
+    { "on": "app.ready", "fire_once": true }
+  ],
+  "steps": [
+    {
+      "id": "python3",
+      "label": "Python 3",
+      "description": "python3 must be on PATH and runnable.",
+      "precondition": {
+        "commands": {
+          "darwin": "command -v python3 >/dev/null 2>&1",
+          "linux": "command -v python3 >/dev/null 2>&1",
+          "win32": "if (Get-Command python3 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+        },
+        "timeout_seconds": 15
+      },
+      "process": {
+        "agent": "capability-installer",
+        "name": "Install Python 3",
+        "prompt": "Capability to install: Python 3 (python3 on PATH). Official page with install instructions: https://www.python.org/downloads/\n\nInstall Python 3 on this machine so that `python3 --version` succeeds from a fresh non-login shell. Assume a bare machine: there may be no package manager configured. Prefer the platform's official package manager (apt-get/dnf/apk on Linux, Homebrew on macOS, winget on Windows). Do NOT create virtualenvs, do NOT install any Python packages, and do NOT touch an existing Python installation. Report the version you installed and stop. Proceed autonomously and do not ask for confirmation - nobody is watching this run.",
+        "timeout_seconds": 1800
+      },
+      "verify": {
+        "commands": {
+          "darwin": "python3 --version >/dev/null 2>&1",
+          "linux": "python3 --version >/dev/null 2>&1",
+          "win32": "python3 --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+        },
+        "timeout_seconds": 30
+      },
+      "on_fail": "continue"
+    },
+    {
+      "id": "git",
+      "label": "Git",
+      "description": "git must be on PATH and runnable.",
+      "precondition": {
+        "commands": {
+          "darwin": "command -v git >/dev/null 2>&1",
+          "linux": "command -v git >/dev/null 2>&1",
+          "win32": "if (Get-Command git -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+        },
+        "timeout_seconds": 15
+      },
+      "process": {
+        "agent": "capability-installer",
+        "name": "Install Git",
+        "prompt": "Capability to install: Git (git on PATH). Official page with install instructions: https://git-scm.com/downloads\n\nInstall Git on this machine so that `git --version` succeeds from a fresh non-login shell. Assume a bare machine. Prefer the platform's official package manager (apt-get/dnf/apk on Linux, Homebrew or the Xcode command line tools on macOS, winget on Windows). Do NOT configure user.name or user.email, do NOT set up credentials, and do NOT clone anything. Report the version you installed and stop. Proceed autonomously and do not ask for confirmation - nobody is watching this run.",
+        "timeout_seconds": 1800
+      },
+      "verify": {
+        "commands": {
+          "darwin": "git --version >/dev/null 2>&1",
+          "linux": "git --version >/dev/null 2>&1",
+          "win32": "git --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+        },
+        "timeout_seconds": 30
+      },
+      "on_fail": "continue"
+    }
+  ]
+}

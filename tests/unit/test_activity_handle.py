@@ -52,14 +52,14 @@ def test_child_beyond_the_depth_cap_raises():
 
 def test_scope_is_part_of_the_address():
     local = Activity.get("index")
-    scoped = Activity.get("index", scope="agentic_process-1")
+    scoped = Activity.get("index", subject_entity="agentic_process-1")
 
     assert local is not scoped, "two entities can each have an 'index' activity"
-    assert scoped.scope == "agentic_process-1"
+    assert scoped.subject_entity == "agentic_process-1"
 
 
 def test_children_inherit_their_parents_scope():
-    assert Activity.get("qa", scope="p-1").child("phase-1").scope == "p-1"
+    assert Activity.get("qa", subject_entity="p-1").child("phase-1").subject_entity == "p-1"
 
 
 def test_empty_path_is_rejected():

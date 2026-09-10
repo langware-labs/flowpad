@@ -17,6 +17,9 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Conversation } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
+import '@src/i18n-init';
+import { i18n } from '@lingui/core';
+import { I18nProvider } from '@lingui/react';
 
 vi.mock('@sdk/react/hooks', () => ({
   useAuth: () => ({
@@ -38,6 +41,7 @@ import { ConversationListRow } from '@src/components/inbox-view/InboxView';
 
 function renderRow(conv: Conversation) {
   return render(
+    <I18nProvider i18n={i18n}>
     <TooltipProvider>
       <ConversationListRow
         conv={conv}
@@ -56,7 +60,8 @@ function renderRow(conv: Conversation) {
         attributionFor={() => null}
         refSetter={() => {}}
       />
-    </TooltipProvider>,
+    </TooltipProvider>
+    </I18nProvider>,
   );
 }
 

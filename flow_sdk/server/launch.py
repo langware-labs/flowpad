@@ -18,7 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
+from filelock import FileLock
 
+from flow_sdk import singleton_lock
+from flow_sdk.instance_settings.base_settings import DEFAULT_PROD_PORT
 from flow_sdk.server.memory_probe import memory_snapshot
 from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path
 
@@ -34,10 +37,23 @@ def _logs_base() -> Path:
 # Paths
 # ---------------------------------------------------------------------------
 
-# Marker substring used to validate that a PID actually belongs to our
-# server / monitor (guards against recycled PIDs).
-_SERVER_CMD_MARKER = "flow_sdk.server"
+# Marker substrings used to validate that a PID actually belongs to our
+# server / monitor (guards against recycled PIDs). The server marker is the
+# full module name on purpose: a bare "flow_sdk.server" is a prefix of the
+# monitor's own cmdline, so the monitor would pass the *server* check and
+# could be killed, or restarted around, as if it were the backend.
+_SERVER_CMD_MARKER = "flow_sdk.server.run"
 _MONITOR_CMD_MARKER = "flow_sdk.server.launch"
+
+# The backend this monitor spawned, retained so it can be polled and reaped.
+# Without this the Popen is dropped and every exited child (a crash, or a
+# backend that lost the server singleton lock) lingers as a zombie for the
+# monitor's lifetime -- and a zombie pid still probes as "alive" to the
+# stdlib pid check that discovery uses.
+_server_child: subprocess.Popen | None = None
+
+# Held for the monitor's lifetime; see acquire_monitor_singleton.
+_monitor_lock: FileLock | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -103,10 +119,10 @@ def kill_process(pid: int, timeout: float = 5.0) -> bool:
         return False
 
 
-def start_detached_process(args: list[str], env: dict | None = None, stderr=None) -> int:
+def start_detached_process(args: list[str], env: dict | None = None, stderr=None) -> subprocess.Popen:
     """Launch a fully detached subprocess that survives parent exit.
 
-    Returns the child PID.
+    Returns the Popen so a long-lived parent can poll and reap it.
     """
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
@@ -121,8 +137,7 @@ def start_detached_process(args: list[str], env: dict | None = None, stderr=None
     else:
         kwargs["start_new_session"] = True
 
-    proc = subprocess.Popen(args, **kwargs)
-    return proc.pid
+    return subprocess.Popen(args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +208,43 @@ def start_server_process(port: int) -> int:
 
     server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
     args = [sys.executable, "-m", "flow_sdk.server.run"]
-    pid = start_detached_process(args, env=env, stderr=server_log)
+    global _server_child
+    _server_child = start_detached_process(args, env=env, stderr=server_log)
     server_log.close()
-    log.info("Started server process PID=%d on port %d (stderr → %s)", pid, port, server_log_path)
-    return pid
+    log.info("Started server process PID=%d on port %d (stderr → %s)", _server_child.pid, port, server_log_path)
+    return _server_child.pid
+
+
+def _reap_server_child() -> None:
+    """Collect the spawned backend if it has exited, so it never lingers as a zombie."""
+    global _server_child
+    if _server_child is not None and (rc := _server_child.poll()) is not None:
+        log.warning("Server child PID=%d exited with code %s", _server_child.pid, rc)
+        _server_child = None
+
+
+def _live_server_pid() -> int | None:
+    """The backend to supervise right now, or None if nothing is running.
+
+    ``server_pid`` is read fresh from disk: the backend is its only writer, so
+    the file names whichever process holds the server singleton lock, not
+    merely the one this monitor last spawned. A child still booting has not
+    written the file yet, so a running child is the fallback.
+    """
+    pid = _load_info().get("server_pid")
+    if pid and is_process_alive(pid, expected_name=_SERVER_CMD_MARKER):
+        return pid
+    if _server_child is not None and _server_child.poll() is None:
+        return _server_child.pid
+    return None
+
+
+def _kill_server(pid: int) -> bool:
+    """``kill_process``, then reap *pid* if it is the child this monitor spawned."""
+    killed = kill_process(pid)
+    if _server_child is not None and _server_child.pid == pid:
+        _reap_server_child()
+    return killed
 
 
 def wait_for_server_health(port: int, timeout: float = 10.0) -> bool:
@@ -220,10 +268,53 @@ def _load_info() -> dict:
     return load_server_info()
 
 
-def _save_info(data: dict) -> None:
-    from flow_sdk.config import save_server_info
+def _set_info(data: dict) -> None:
+    """Merge *data* into server.json. The backend writes ``server_pid``,
+    ``server_create_time`` and ``generation`` itself; a whole-file save from a
+    stale snapshot would erase them, so the monitor only ever merges."""
+    from flow_sdk.config import set_server_info
 
-    save_server_info(data)
+    set_server_info(data)
+
+
+# ---------------------------------------------------------------------------
+# Monitor singleton lock
+# ---------------------------------------------------------------------------
+
+
+def _monitor_lock_paths() -> tuple[Path, Path]:
+    from flow_sdk.instance_settings import get_instance_settings
+
+    settings = get_instance_settings()
+    return settings.monitor_lock_path, settings.monitor_pid_path
+
+
+def _monitor_is_alive(pid: int) -> bool:
+    return is_process_alive(pid, expected_name=_MONITOR_CMD_MARKER)
+
+
+def acquire_monitor_singleton() -> bool:
+    """Take the per-instance monitor lock, or report that another monitor holds it.
+
+    The same protocol as the backend's (``flow_sdk.singleton_lock``): this is
+    what keeps two monitors -- from any launcher, whether or not server.json
+    names them -- from supervising one port and racing each other's backends.
+    ``FLOWPAD_SKIP_LOCK=true`` bypasses it, as it does for the server.
+    """
+    if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
+        log.info("Monitor lock skipped (FLOWPAD_SKIP_LOCK=true)")
+        return True
+
+    global _monitor_lock
+    lock_path, pid_path = _monitor_lock_paths()
+    _monitor_lock = singleton_lock.acquire(lock_path, pid_path, _monitor_is_alive, log, "Monitor")
+    return _monitor_lock is not None
+
+
+def _release_monitor_lock() -> None:
+    global _monitor_lock
+    singleton_lock.release(_monitor_lock, _monitor_lock_paths()[1])
+    _monitor_lock = None
 
 
 # ---------------------------------------------------------------------------
@@ -249,21 +340,25 @@ def _is_ancestor(pid: int) -> bool:
     return False
 
 
-def ensure_monitor_singleton(server_info: dict) -> dict:
-    """Kill any stale monitor and claim the monitor_pid slot."""
-    old_pid = server_info.get("monitor_pid")
-    if old_pid and old_pid != os.getpid() and not _is_ancestor(old_pid):
-        if is_process_alive(old_pid, expected_name=_MONITOR_CMD_MARKER):
+def ensure_monitor_singleton(port: int) -> None:
+    """Kill a pre-lock monitor that server.json still names, then record ourselves."""
+    info = _load_info()
+    old_pid = info.get("monitor_pid")
+    log.info("Loaded server info: monitor_pid=%s, server_pid=%s", old_pid, info.get("server_pid"))
+    if old_pid and old_pid != os.getpid():
+        if _is_ancestor(old_pid):
+            log.info("Old monitor PID=%d is our ancestor (trampoline), skipping kill", old_pid)
+        elif _monitor_is_alive(old_pid):
             log.info("Killing old monitor PID=%d", old_pid)
             kill_process(old_pid)
-    elif old_pid and _is_ancestor(old_pid):
-        log.info("Old monitor PID=%d is our ancestor (trampoline), skipping kill", old_pid)
 
-    server_info["monitor_pid"] = os.getpid()
-    server_info["launch_iso_time"] = datetime.now(timezone.utc).isoformat()
-    server_info.setdefault("server_pid", None)  # always present so flow status output is unambiguous
-    _save_info(server_info)
-    return server_info
+    _set_info(
+        {
+            "port": port,
+            "monitor_pid": os.getpid(),
+            "launch_iso_time": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 def monitor_loop(port: int, interval: float = 30.0) -> None:
@@ -281,6 +376,8 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
             time.sleep(backoff)
         else:
             time.sleep(interval)
+
+        _reap_server_child()
 
         # Log resource usage every 10 minutes
         now = time.monotonic()
@@ -323,10 +420,9 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
             memory_snapshot(),
         )
 
-        info = _load_info()
-        server_pid = info.get("server_pid")
+        server_pid = _live_server_pid()
 
-        if server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER):
+        if server_pid:
             if consecutive_failures < restart_failure_threshold:
                 log.warning(
                     "Server PID=%d alive but health check failed — waiting for %d consecutive failures before restart",
@@ -336,13 +432,12 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
                 continue
 
             log.warning("Server PID=%d alive but unhealthy — killing", server_pid)
-            kill_process(server_pid)
+            _kill_server(server_pid)
             time.sleep(1)
 
-        # Restart server
+        # Restart server. The new backend records its own pid in server.json
+        # from its startup hook; the monitor writes nothing here.
         new_pid = start_server_process(port)
-        info["server_pid"] = new_pid
-        _save_info(info)
 
         if wait_for_server_health(port, timeout=10.0):
             log.info("Server restarted successfully (PID=%d)", new_pid)
@@ -356,37 +451,38 @@ def launch_monitor(port: int) -> None:
     _setup_logging()
     log.info("Monitor starting (PID=%d, port=%d)", os.getpid(), port)
 
+    if not acquire_monitor_singleton():
+        return
+
     try:
-        info = _load_info()
-        info.setdefault("port", port)
-        log.info("Loaded server info: monitor_pid=%s, server_pid=%s", info.get("monitor_pid"), info.get("server_pid"))
-        info = ensure_monitor_singleton(info)
+        ensure_monitor_singleton(port)
         log.info("Singleton claimed, checking server health...")
 
-        # Check if server is already healthy
         if check_server_health(port):
-            log.info("Server already healthy on port %d", port)
+            log.info("Server already healthy on port %d — adopting it", port)
         else:
             # Kill any stale server process before starting a fresh one; this
             # frees the port on Windows where TIME_WAIT can block a new bind.
-            server_pid = info.get("server_pid")
-            if server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER):
-                log.warning("Killing stale server PID=%d before restart", server_pid)
-                kill_process(server_pid)
+            stale_pid = _live_server_pid()
+            if stale_pid:
+                log.warning("Killing stale server PID=%d before restart", stale_pid)
+                _kill_server(stale_pid)
                 time.sleep(1)  # allow port to release
 
-            new_pid = start_server_process(port)
-            info["server_pid"] = new_pid
-            _save_info(info)
+            start_server_process(port)
 
             if not wait_for_server_health(port, timeout=15.0):
                 log.error("Server did not become healthy within 15s (check %s)", _logs_base() / "server")
 
-            log.info("Entering monitor loop...")
-            monitor_loop(port)
+        # Unconditionally: a monitor that finds a healthy server must supervise
+        # it, not exit and leave server.json naming a dead monitor.
+        log.info("Entering monitor loop...")
+        monitor_loop(port)
     except Exception:
         log.exception("Monitor crashed with unhandled exception")
         raise
+    finally:
+        _release_monitor_lock()
 
 
 # ---------------------------------------------------------------------------
@@ -397,28 +493,49 @@ def launch_monitor(port: int) -> None:
 def start_monitor_detached(port: int) -> int:
     """Launch the monitor as a detached process. Returns monitor PID.
 
-    NOTE: On Windows, Popen.pid returns the launcher/trampoline PID, not the
-    actual Python process PID.  The monitor writes its own real PID via
-    ensure_monitor_singleton() once it starts.  We intentionally do NOT write
-    monitor_pid here to avoid the singleton guard killing the launcher (which
-    cascades and kills the real monitor).
+    Writes port + launch time before spawning, never ``monitor_pid``: on
+    Windows Popen.pid is the trampoline, not the interpreter, and the monitor
+    records its real pid itself within milliseconds (``get_status`` falls back
+    to the lock sidecar for that window).
     """
-    args = [sys.executable, "-m", "flow_sdk.server.launch", str(port)]
-    pid = start_detached_process(args)
+    _set_info({"port": port, "launch_iso_time": datetime.now(timezone.utc).isoformat()})
+    return start_detached_process([sys.executable, "-m", "flow_sdk.server.launch", str(port)]).pid
 
-    # Write port + launch time so CLI can discover the server,
-    # but leave monitor_pid for the monitor to set itself.
-    from flow_sdk.config import set_server_info
 
-    set_server_info(
-        {
-            "port": port,
-            "monitor_pid": pid,
-            "launch_iso_time": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+def _scan_for_monitors(port: int) -> list[int]:
+    """Pids of every ``flow_sdk.server.launch <port>`` process other than ourselves.
 
-    return pid
+    The fallback that depends on neither server.json nor the sidecar: a
+    monitor from before the lock existed, started by any launcher, is still
+    found here so ``flow stop`` can end it.
+    """
+    me, wanted = os.getpid(), str(port)
+    found: list[int] = []
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmd = proc.info["cmdline"] or []
+            if proc.info["pid"] != me and _MONITOR_CMD_MARKER in cmd:
+                idx = cmd.index(_MONITOR_CMD_MARKER)
+                if idx + 1 < len(cmd) and cmd[idx + 1] == wanted:
+                    found.append(proc.info["pid"])
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return found
+
+
+def _recorded_monitor_pid(info: dict) -> int | None:
+    """The live monitor named by server.json or the lock sidecar, if any."""
+    for pid in (info.get("monitor_pid"), singleton_lock.read_pid(_monitor_lock_paths()[1])):
+        if pid and _monitor_is_alive(pid):
+            return pid
+    return None
+
+
+def _monitor_pids(info: dict, port: int) -> list[int]:
+    """Every live monitor for *port*, recorded or not. Exhaustive, so it scans."""
+    recorded = _recorded_monitor_pid(info)
+    candidates = dict.fromkeys(pid for pid in (recorded, *_scan_for_monitors(port)) if pid)
+    return [pid for pid in candidates if pid == recorded or _monitor_is_alive(pid)]
 
 
 def stop_all() -> tuple[bool, bool]:
@@ -432,12 +549,13 @@ def stop_all() -> tuple[bool, bool]:
 def _stop_all_guarded() -> tuple[bool, bool]:
     """Stop while the caller holds the lifecycle mutation guard."""
     info = _load_info()
+    port = info.get("port", DEFAULT_PROD_PORT)
     monitor_killed = False
     server_killed = False
 
-    monitor_pid = info.get("monitor_pid")
-    if monitor_pid and is_process_alive(monitor_pid, expected_name=_MONITOR_CMD_MARKER):
-        monitor_killed = kill_process(monitor_pid)
+    # Every monitor first, so none of them restarts the server we kill next.
+    for monitor_pid in _monitor_pids(info, port):
+        monitor_killed = kill_process(monitor_pid) or monitor_killed
 
     server_pid = info.get("server_pid")
     if server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER):
@@ -452,16 +570,24 @@ def _stop_all_guarded() -> tuple[bool, bool]:
 
 
 def get_status() -> dict:
-    """Return dict with monitor/server alive booleans, health, PIDs."""
+    """Return dict with monitor/server alive booleans, health, PIDs.
+
+    ``server_pid`` is whatever the backend last wrote. Between the monitor
+    spawning a backend and that backend's startup hook (up to ~15s) the key is
+    absent or stale, so ``flow status`` reports the server as not running for
+    that window rather than naming a pid nobody has verified.
+    """
     info = _load_info()
-    port = info.get("port", 9007)
-    monitor_pid = info.get("monitor_pid")
+    port = info.get("port", DEFAULT_PROD_PORT)
+    # Recorded sources first; the process scan only when neither names a live
+    # monitor, so the common case never pays for it.
+    live_monitor = _recorded_monitor_pid(info) or next(iter(_monitor_pids(info, port)), None)
     server_pid = info.get("server_pid")
 
     return {
         "port": port,
-        "monitor_pid": monitor_pid,
-        "monitor_alive": bool(monitor_pid and is_process_alive(monitor_pid, expected_name=_MONITOR_CMD_MARKER)),
+        "monitor_pid": live_monitor or info.get("monitor_pid"),
+        "monitor_alive": live_monitor is not None,
         "server_pid": server_pid,
         "server_alive": bool(server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER)),
         "server_healthy": check_server_health(port),

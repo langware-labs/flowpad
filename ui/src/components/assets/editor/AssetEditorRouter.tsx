@@ -19,6 +19,7 @@ import {
   UsageReport,
   VFSPath,
   Whiteboard,
+  Wizard,
   type AnyEntity,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -53,6 +54,7 @@ import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAs
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
+import { WizardViewer } from './wizard/WizardViewer';
 import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
@@ -387,6 +389,16 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           typeLabel="journey"
           resolvedEntity={typeIdEntity as Journey | undefined}
           render={(journey) => <JourneyViewer journey={journey} />}
+        />
+      );
+    case AssetEditor.WIZARD:
+      return (
+        <EntityResolutionGate<Wizard>
+          type={Wizard.type}
+          fsRef={fsRef}
+          typeLabel="wizard"
+          resolvedEntity={typeIdEntity as Wizard | undefined}
+          render={(wizard) => <WizardViewer wizard={wizard} />}
         />
       );
     case AssetEditor.MCP:
