@@ -23,14 +23,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const openDock = vi.fn();
-const dockForGlobalEntry = vi.fn(async () => 'GLOBAL_DOCK');
+const leaveProjectScope = vi.fn(async () => 'GLOBAL_DOCK');
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: null, navigation: { openDock, closeDock: vi.fn() } }),
 }));
 vi.mock('@src/tabs/project-entry', () => ({
-  dockForGlobalEntry: (...args: unknown[]) => dockForGlobalEntry(...(args as [])),
+  dockForGlobalEntry: vi.fn(() => Promise.resolve('GLOBAL_DOCK')),
   dockForProjectEntry: vi.fn(async () => 'PROJECT_DOCK'),
+  leaveProjectScope: (...args: unknown[]) => leaveProjectScope(...(args as [])),
 }));
 
 let buckets: TabProjectBucket[] = [];
@@ -60,7 +61,7 @@ beforeEach(() => {
   calls.length = 0;
   openDock.mockReset();
   openDock.mockImplementation((dock: unknown) => calls.push(`openDock:${String(dock)}`));
-  dockForGlobalEntry.mockClear();
+  leaveProjectScope.mockClear();
 });
 
 describe('project row close-all', () => {
@@ -87,6 +88,23 @@ describe('project row close-all', () => {
     // Order is the assertion: leaving first keeps the destination resolvable
     // from live rows (URL-first); closing first would strand the URL.
     expect(calls).toEqual(['openDock:GLOBAL_DOCK', 'closeAll:p1']);
+  });
+
+  it('leaves the project — not merely the view — when the current scope is emptied', async () => {
+    buckets = [bucket('p1'), bucket('p2')];
+    const { result } = renderHook(() => useProjectListMenu({ currentProjectId: 'p1' }));
+
+    await act(async () => {
+      await result.current.handleCloseProject(result.current.buckets[0]);
+      await result.current.handleCloseProject(result.current.buckets[1]);
+    });
+
+    // Emptying the scope you are IN also ends your membership of it, so the
+    // exit goes through `leaveProjectScope` (which drops the project from
+    // context — see its own test) rather than a bare navigation. Emptying any
+    // OTHER project leaves your membership alone.
+    expect(leaveProjectScope).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['openDock:GLOBAL_DOCK', 'closeAll:p1', 'closeAll:p2']);
   });
 
   it('closes a MISSING bucket — recovery cannot help every orphan', async () => {

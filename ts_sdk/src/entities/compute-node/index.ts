@@ -43,9 +43,11 @@ export {
   scanProjectFromComputeNode,
   Scope,
   SystemProfileUtils,
+  workerLaunchCommandsFromComputeNode,
 } from './system-profile';
 export type {
   AccountInfo,
+  WorkerLaunchCommand,
   AgentItem,
   ClaudeMdItem,
   ClaudeContextAgent,

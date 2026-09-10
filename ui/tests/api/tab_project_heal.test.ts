@@ -7,7 +7,7 @@
  * Invariant: a content tab's `project_id` == its target entity's `project_id`.
  *
  * There are now TWO server-side mechanisms that keep this invariant even when the
- * tab is materialized before its target exists (see `_backfill_tab_projects` in
+ * tab is materialized before its target exists (see `_resolve_tab_projects` in
  * flow_sdk/builtin/tab.py, run on every `list`/`list_all`):
  *
  *   1. URL-authority backfill (`_project_from_pointer`): a PROJECT-SCOPED dock

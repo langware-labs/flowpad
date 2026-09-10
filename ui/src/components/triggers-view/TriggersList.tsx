@@ -56,10 +56,24 @@ export function TriggersList({
   const hookTriggers = visibleTriggers.filter((t) => (t.trigger_type ?? 'hook') === 'hook');
   const scheduleTriggers = visibleTriggers.filter((t) => t.trigger_type === 'schedule');
   const fsopTriggers = visibleTriggers.filter((t) => t.trigger_type === 'fsop');
+  // TAG rows matched no bucket at all, so every wizard's trigger — the only
+  // kind of trigger most people have — rendered nowhere on this screen.
+  const tagTriggers = visibleTriggers.filter((t) => t.trigger_type === 'tag');
 
   const hookGrouped = groupByScope(hookTriggers);
   const scheduleGrouped = groupByScope(scheduleTriggers);
   const fsopGrouped = groupByScope(fsopTriggers);
+  const tagGrouped = groupByScope(tagTriggers);
+
+  const renderTrigger = (trigger: Trigger) => (
+    <TriggerListItem
+      key={trigger.id || trigger.name}
+      trigger={trigger}
+      isSelected={selectedTrigger?.id === trigger.id}
+      onSelect={() => onSelect(trigger)}
+      onOpenLog={() => onOpenLog(trigger)}
+    />
+  );
 
   return (
     <div>
@@ -79,15 +93,7 @@ export function TriggersList({
             <Plus className="h-3 w-3" />
           </Button>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
         emptyState={
           !isCreatingSchedule && (
             <div className="px-3 py-3 text-[11px] text-muted-foreground">
@@ -99,6 +105,23 @@ export function TriggersList({
             </div>
           )
         }
+      />
+
+      {/* On an event — a bus subscription. A wizard declares one as a child
+          asset and it lands here like any other rule. */}
+      <TypeSection
+        title={t`On an event`}
+        grouped={tagGrouped}
+        count={tagTriggers.length}
+        emptyState={
+          <div className="px-3 py-3 text-[11px] text-muted-foreground">
+            <Trans>
+              No event triggers visible. A wizard declares one as a child asset; most are
+              system-scoped, so toggle <em>Include system</em> above to see them.
+            </Trans>
+          </div>
+        }
+        renderItem={renderTrigger}
       />
 
       {/* FSOp + Hook sections — always rendered (even when empty) so the
@@ -114,15 +137,7 @@ export function TriggersList({
             <Trans>No FSOp triggers visible. Toggle <em>Include system</em> above to see system-installed watchers.</Trans>
           </div>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
       />
       <TypeSection
         title={t`On agent hook`}
@@ -136,15 +151,7 @@ export function TriggersList({
               <em>?</em> above to discover.</Trans>
           </div>
         }
-        renderItem={(trigger) => (
-          <TriggerListItem
-            key={trigger.id || trigger.name}
-            trigger={trigger}
-            isSelected={selectedTrigger?.id === trigger.id}
-            onSelect={() => onSelect(trigger)}
-            onOpenLog={() => onOpenLog(trigger)}
-          />
-        )}
+        renderItem={renderTrigger}
       />
     </div>
   );

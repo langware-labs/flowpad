@@ -267,6 +267,16 @@ class Entity(DBEntity):
         default=False,
         description="True when this entity has a hub counterpart at the same id; refreshable from the hub",
     )
+    # Cache of the project manifest row (``agentic-assets/project_manifest``):
+    # the FILE is the truth, this flag is reconciled from it after every index
+    # of the manifest. ``persist=TRUE`` keeps it in record metadata across a
+    # disk re-index; it never enters an asset's own (provider-owned) frontmatter.
+    published: bool = APIField(
+        sharing=Sharing.PRIVATE,
+        default=False,
+        persist=Persist.TRUE,
+        description="Listed in its project's manifest (a cache; the manifest file is the truth)",
+    )
     # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
     # Membership is a generic capability of any remote entity — a user always has
     # a hub-set role on it. This field is a pure READ CACHE: the hub is the source

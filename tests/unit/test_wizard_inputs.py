@@ -34,7 +34,7 @@ SPEC = WizardSpec.model_validate({
 })
 
 
-async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp"):
+async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp", resume=True):
     async def _ok(_c, **_kw):
         return ShellResult(returncode=0)
 
@@ -43,7 +43,10 @@ async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp"
 
     return await run_wizard(
         SPEC, subject_entity=None, activity_path=path, trusted=True, workdir=Path(tmp_path),
-        inputs=inputs, shell=shell or _ok, launch=launch or _launch, platform="linux",
+        # `resume` is `execute_wizard`'s decision, expressed here as what it
+        # passes down: the stored answers on a resume, nothing on a fresh run.
+        inputs=(inputs if resume else None),
+        shell=shell or _ok, launch=launch or _launch, platform="linux",
     )
 
 
@@ -213,3 +216,42 @@ def test_a_wizard_that_never_ran_does_not_re_stat_on_every_serialization(tmp_pat
     assert wizard_state.read_state("never-run") == {}
     assert wizard_state.read_state("never-run") == {}
     assert reads["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_run_asks_again_instead_of_reusing_the_last_answer(tmp_path):
+    """"Run it again" must ASK, not silently reuse.
+
+    Reusing made a re-run re-execute with the answer from last time and produce
+    a result identical to the last one, so the button read as dead — and there
+    was no way to answer differently at all.
+    """
+    parked = await _run(tmp_path, inputs={"repo_url": "https://x/one"},
+                        path="wizard-fresh-a", resume=False)
+    assert parked.status == PENDING
+    assert [item.name for item in parked.awaiting] == ["repo_url"]
+    assert parked.outcomes[0].status == AWAITING_INPUT
+
+
+@pytest.mark.asyncio
+async def test_resuming_a_parked_run_still_carries_the_answers(tmp_path):
+    """The other half, and the reason they are persisted at all. `set-input`
+    resumes explicitly; without this, answering a parked wizard would start over
+    and re-ask the value just given."""
+    resumed = await _run(tmp_path, inputs={"repo_url": "https://x/one"},
+                         path="wizard-fresh-b", resume=True)
+    assert resumed.status == COMPLETED
+    assert resumed.awaiting == []
+    assert resumed.outcomes[0].status == SATISFIED
+
+
+@pytest.mark.asyncio
+async def test_an_unattended_run_resumes_by_default(tmp_path):
+    """A trigger fire has nobody to ask, so stored answers are the only way it
+    can get past an input step. `execute_wizard(resume=...)` defaults ON for
+    exactly that caller."""
+    import inspect
+
+    from flow_sdk.core.wizard.execute import execute_wizard
+
+    assert inspect.signature(execute_wizard).parameters["resume"].default is True

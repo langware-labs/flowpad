@@ -25,8 +25,14 @@ import { useState, type ReactNode } from 'react';
  *  - Current — bookmarks whatever is open: an entity-backed view by its typeid,
  *    anything else (web app, shell, lens) by its dock pointer (restored with
  *    openDock). Only disabled on a full-bleed surface (Home) with no tab.
+ *
+ * `mirrored` must match the hosting tree's: BrowseableTree puts a mirrored
+ * level's indent on the TRAILING edge, so a row whose own content is still
+ * laid out leading-first ignores it and draws at the same x on every level —
+ * which is how three nested add-rows once read as three identical mystery
+ * rows. Reversing the axis here is what makes the indent visible.
  */
-export function FavoritesAddRow({ parentId }: { parentId: string }) {
+export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirrored?: boolean }) {
   const { t } = useLingui();
   const { createFolder, addFavorite } = useFavorites();
   const { activeEntity, activeEntityTypeId } = useContext();
@@ -71,11 +77,15 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
   };
 
   return (
-    <div className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground">
+    <div
+      className={`flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground ${
+        mirrored ? 'flex-row-reverse' : ''
+      }`}
+    >
       {/* A green "+" marks the row as a create toolbar. Not a button — no
           hover, default cursor. `text-green-500` is the app's cross-theme green
           (reads on both light and dark). */}
-      <Plus className="me-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
+      <Plus className="mx-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
 
       {folderName !== null ? (
         <input

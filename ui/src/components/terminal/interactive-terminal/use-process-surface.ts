@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useEffect, useRef, useState } from 'react';
-import { isBusy, isReadyForInput, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
+import { isBusy, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { usePreferenceResolved } from '@src/hooks/use-preference';
 import { useViewMode, viewModePtyMode, ViewMode } from '@src/contexts/view-mode-context';
@@ -40,6 +40,43 @@ export function resetSurfaceReconcileState(): void {
   lastReconciledMode.clear();
 }
 
+/** The backend action a transport change lands on. The two directions do NOT
+ *  share a route, and they do not share a guard either — see the gate below. */
+export type TransportRoute = 'open' | 'switch-mode';
+
+/** What a mode selection would have to do to a session's transport, and whether
+ *  the server would accept it right now. */
+export interface SurfaceTransportGate {
+  /** The mode implies a transport change (a worker spawn or a PTY kill). */
+  needsSwitch: boolean;
+  /** Which backend action that change is issued against, or null for no-op. */
+  route: TransportRoute | null;
+  /** …and that route refuses it right now. */
+  blocked: boolean;
+}
+
+/**
+ * ONE predicate for "can this session change transport now", read by both the
+ * reconcile effect below and the footer `ViewToggle`'s greyed-out state, so the
+ * control cannot offer a switch the effect would refuse. It mirrors the SERVER
+ * per route: `→CLI` is `switch-mode`, which 409s while `is_turn_busy`; `→PTY` is
+ * `start()`/`open`, which has no mid-turn guard, so neither has the client.
+ * Hence BUSY, not readiness — readiness is also false for a FAILED session and a
+ * `/exit`-ed PTY, the two states whose recovery needs these very clicks.
+ * Rules: docs/breadcrumbs/surface_transcript_reconcile.md
+ */
+export function surfaceTransportGate(
+  process: AgenticProcess | null | undefined,
+  viewMode: ViewMode,
+): SurfaceTransportGate {
+  if (!process) return { needsSwitch: false, route: null, blocked: false };
+  const wantPty = viewModePtyMode(viewMode);
+  const ptyMode = !(process.isHeadless ?? false);
+  if (wantPty === ptyMode) return { needsSwitch: false, route: null, blocked: false };
+  const route: TransportRoute = wantPty ? 'open' : 'switch-mode';
+  return { needsSwitch: true, route, blocked: route === 'switch-mode' && isBusy(process) };
+}
+
 /**
  * Keep one process's TRANSPORT aligned with the view mode — the whole of what a
  * session needs beyond rendering, now that the footer `ViewToggle` is the single
@@ -51,13 +88,25 @@ export function resetSurfaceReconcileState(): void {
  * screen and the reconcile happens however the mode changed — the footer toggle,
  * a `?viewMode=` URL, or `window.setView()`.
  *
- * Reconciliation is ONE-DIRECTIONAL: **a terminal surface requires a PTY; chat
- * and vibe require nothing.** They render the session's stream, which is
- * transport-independent — `SimpleChatPane` binds to `flowDataStream`, a composer
- * send routes to PTY stdin through `_run_pty_prompt`, and a turn this client did
- * not start arrives via `useObservedTurn`. Killing a healthy worker to enter chat
- * bought nothing, and when the backend refused it mid-turn (409) the kill was
- * silently queued to fire minutes later.
+ * Reconciliation is BIDIRECTIONAL: **the surface owns the transport in both
+ * directions** — a terminal surface requires a PTY, and chat/vibe require the
+ * headless one. Chat and vibe can *render* either (`SimpleChatPane` binds to
+ * `flowDataStream`, a composer send routes to PTY stdin through
+ * `_run_pty_prompt`, and a turn this client did not start arrives via
+ * `useObservedTurn`), but `pty_mode` is the session's DURABLE transport intent,
+ * and leaving it true after the user walked out of the terminal made it a
+ * one-way latch: nothing in `ui/src` ever wrote it back, not even a reload, so
+ * a session that had once visited a terminal stayed on a PTY forever
+ * (FLOWPAD-2105). Chat and vibe now switch it back to `WorkerMode.CLI`.
+ *
+ * The reason it was made one-directional in `bf9b51706` was a kill that fired
+ * on a HEALTHY worker at the wrong moment — a mid-turn switch the backend 409s,
+ * queued to land minutes later. That is a GUARD problem, and the guard is
+ * `surfaceTransportGate` above: the `switch-mode` route is declined while
+ * `busy`, keyed on the same `is_turn_busy` predicate the backend 409s on, so
+ * the two can never disagree. The footer toggle greys its segment on that same
+ * call, so the control cannot offer a switch this effect would refuse — and,
+ * equally, cannot refuse one the server would have honoured.
  *
  * Reconciles on a mode CHANGE only, never on first sight of a process: merely
  * opening a session must not kill or spawn a worker. The one exception is the
@@ -66,7 +115,11 @@ export function resetSurfaceReconcileState(): void {
  * PTY on first sight. `InteractiveTerminal` renders by transport (`isHeadless`
  * → SimpleChatPane) and nothing else on the load path supplies one, so without
  * this the footer says Terminal while the pane shows chat until the user
- * toggles modes by hand.
+ * toggles modes by hand. There is deliberately NO mirror of that exception:
+ * first sight of a PTY-backed session in chat leaves the worker alone, because
+ * "the mode this dock opened in" is not a statement that the user left the
+ * terminal — and with the round trip restored, a session the user actually did
+ * leave already carries `pty_mode=false` when it is next opened.
  *
  * By default it returns the reactive entity it subscribes to; an existing
  * `useEntity` owner can disable that subscription and receive its own process
@@ -90,12 +143,9 @@ export function useProcessSurface({
   });
   const live = liveProcess ?? process ?? null;
   const ptyMode = !(live?.isHeadless ?? false);
-  const awaitingUserInput = isReadyForInput(live ?? {});
-  // NOT `!awaitingUserInput`: the two are not complements. Readiness also
-  // demands a LIVE worker, so a PTY session the user ended (`/exit` -> STOPPED)
-  // is neither busy nor ready. Guarding the transcript reload on readiness
-  // therefore skipped exactly the session whose turns can only be recovered
-  // from disk. `busy` alone asks the one question that branch cares about.
+  // `busy`, NOT `!isReadyForInput` — they are not complements (a FAILED session
+  // and an `/exit`-ed PTY are neither); see `surfaceTransportGate`. Read here so
+  // the effect RE-RUNS when it flips, which is what retries a decline at idle.
   const turnInFlight = isBusy(live ?? {});
   // Guards re-entry with the CURRENT value rather than a closed-over one, and
   // keeps a transport switch from re-rendering every mounted session twice.
@@ -112,63 +162,68 @@ export function useProcessSurface({
     const previous = lastReconciledMode.get(key);
     const wantPty = viewModePtyMode(viewMode);
     // First sight records the mode and never acts — except a terminal mode on
-    // a PTY-less process (see the doc comment), which falls through to the PTY
-    // branch. That branch records only once the switch happened, so a startup
-    // `canSwitch=false` still retries instead of stranding the session.
+    // a PTY-less process (see the doc comment), which falls through to the
+    // switch below. That path records only once the switch happened, so a
+    // startup `canSwitch=false` still retries instead of stranding the session.
     if (previous === undefined && !(wantPty && !ptyMode)) {
       lastReconciledMode.set(key, viewMode);
       return;
     }
     if (previous === viewMode) return;
 
-    // Chat / vibe need no transport of their own — they render the session's
-    // stream, so we never spawn or kill a worker for them (the one-directional
-    // rule in this hook's doc comment). They DO need the TRANSCRIPT, though.
-    // A turn produced on the surface we are leaving never entered this client's
-    // `flowDataStream`: one typed into the xterm has no `prompt()` response
-    // stream carrying it here, and `useObservedTurn` only runs while a pane is
-    // mounted and the turn is live. The incoming pane's mount-time
-    // `loadHistory()` cannot repair that — it is a no-op once `_historyLoaded`
-    // is set, and nothing ever resets that latch. So without a forced reload
-    // the pane renders a list frozen at the last row it happened to see, until
-    // a full page reload (FLOWPAD-2013). Reconcile the same way the PTY branch
-    // below already does.
-    if (!wantPty) {
-      // A forced reload REPLACES the stream with the on-disk transcript, so a
-      // frame not yet persisted would be dropped — only ever do it once the
-      // turn is over, matching `loadHistory`'s documented force-path contract.
-      // The mode is deliberately left unrecorded while a turn is in flight so
-      // this effect retries the moment the worker goes idle rather than
-      // skipping the reconcile outright (same reasoning as the mid-turn guard
-      // below). Gated on `busy`, NOT readiness — see `turnInFlight` above: a
-      // session ended from the xterm (`/exit`) is not ready, and gating on
-      // readiness stranded its last turns off the vibe pane for good.
-      if (turnInFlight) return;
-      lastReconciledMode.set(key, viewMode);
-      void live
-        .loadHistory({ force: true })
-        .catch((err) => console.debug('[sessionSurface] surface reconcile deferred:', err));
-      return;
-    }
     if (wantPty === ptyMode) {
-      lastReconciledMode.set(key, viewMode); // transport already matches
+      // The transport already matches, so there is no worker lifecycle to run.
+      // Chat / vibe still owe the TRANSCRIPT, though. A turn produced on the
+      // surface we are leaving never entered this client's `flowDataStream`:
+      // one typed into the xterm has no `prompt()` response stream carrying it
+      // here, and `useObservedTurn` only runs while a pane is mounted and the
+      // turn is live. The incoming pane's mount-time `loadHistory()` cannot
+      // repair that — it is a no-op once `_historyLoaded` is set, and nothing
+      // ever resets that latch. So without a forced reload the pane renders a
+      // list frozen at the last row it happened to see, until a full page
+      // reload (FLOWPAD-2013). The switch path below reconciles the same way.
+      if (!wantPty) {
+        // A forced reload REPLACES the stream with the on-disk transcript, so a
+        // frame not yet persisted would be dropped — only ever do it once the
+        // turn is over, matching `loadHistory`'s documented force-path contract.
+        // The mode is deliberately left unrecorded while a turn is in flight so
+        // this effect retries the moment the worker goes idle rather than
+        // skipping the reconcile outright (same reasoning as the mid-turn guard
+        // below). Gated on `busy`, NOT readiness — see `turnInFlight` above: a
+        // session ended from the xterm (`/exit`) is not ready, and gating on
+        // readiness stranded its last turns off the vibe pane for good.
+        if (turnInFlight) return;
+        void live
+          .loadHistory({ force: true })
+          .catch((err) => console.debug('[sessionSurface] surface reconcile deferred:', err));
+      }
+      lastReconciledMode.set(key, viewMode);
       return;
     }
     // Keep `previous` unchanged while the owning panel finishes its startup
     // mutation. A URL mode selected during that window is then still a real
     // previous→current transition when readiness flips true.
     if (!canSwitch) return;
-    // The backend 409s a mid-turn switch. Deliberately do NOT record the mode
-    // here: leaving it unrecorded means this effect retries the moment the
-    // worker goes idle, instead of stranding the session on the wrong transport.
-    if (!awaitingUserInput) return;
+    // The backend 409s a mid-turn switch in BOTH directions. Deliberately do NOT
+    // record the mode here: leaving it unrecorded means this effect retries the
+    // moment the worker goes idle, instead of stranding the session on the wrong
+    // transport. The predicate is `surfaceTransportGate` above — the SAME one
+    // the footer toggle greys its segment on, so the control and the effect can
+    // never disagree about what is possible.
+    if (surfaceTransportGate(live, viewMode).blocked) return;
 
     switching.current = true;
     void (async () => {
       let reconciled = false;
       try {
-        // Only ever the PTY direction now — chat/vibe returned above.
-        await live.switchMode(WorkerMode.Interactive, getDims?.());
+        // →PTY routes through `start()`/`open` (it must actually attach a live
+        // PTY); →CLI is the `switch-mode` action, which kills the PTY and
+        // persists `visible=false` + `pty_mode=false`. Dimensions are a terminal
+        // concern only — the headless direction has no grid to size.
+        await live.switchMode(
+          wantPty ? WorkerMode.Interactive : WorkerMode.CLI,
+          wantPty ? getDims?.() : undefined,
+        );
         lastReconciledMode.set(key, viewMode);
         reconciled = true;
         // The transcript reconcile pulls in turns the other mode produced. It is
@@ -182,7 +237,7 @@ export function useProcessSurface({
       } catch (err) {
         console.error('[sessionSurface] mode switch failed', err);
         notify.error({
-          title: t`Could not switch to terminal`,
+          title: wantPty ? t`Could not switch to terminal` : t`Could not switch to chat`,
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {
@@ -190,7 +245,7 @@ export function useProcessSurface({
         if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, awaitingUserInput, turnInFlight, modeResolved, getDims, canSwitch, reconcileRevision]);
+  }, [viewMode, live, ptyMode, turnInFlight, modeResolved, getDims, canSwitch, reconcileRevision]);
 
   return live;
 }

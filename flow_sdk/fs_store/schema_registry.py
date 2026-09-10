@@ -246,6 +246,10 @@ class TypeInfo:
     asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
     harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
     family: str | None = field(default=None, metadata=_MERGE)
+    # A singleton's entity-type directory IS the asset root: ``agentic-assets/
+    # <type>/<main>`` with no ``<name>`` segment, one per scope. The walker,
+    # ``compute_asset_ref`` and ``main_file_owners`` each carry the one branch.
+    singleton: bool = field(default=False, metadata=_MERGE)
     # --- THE shape declaration: ``File(ext)`` | ``Folder(main)``. Not hashed. ---
     shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.schema.layout.Shape
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
@@ -1014,11 +1018,18 @@ class SchemaRegistry:
         candidates = cls._shape_tables().by_main.get(p.name.lower())
         if not candidates:
             return frozenset()
-        parent_parts = p.parent.parent.parts
+        # ``<mount>/<name>/<main>`` for a named asset; a singleton's main file
+        # sits directly in the mount, so its parent IS the mount.
+        named_parts = p.parent.parent.parts
+        singleton_parts = p.parent.parts
         return frozenset(
             info.type_name
             for info in candidates
-            if info.walks_anywhere or any(mount_matches(parent_parts, Path(m).parts) for m in info.scan_mounts)
+            if info.walks_anywhere
+            or any(
+                mount_matches(singleton_parts if info.singleton else named_parts, Path(m).parts)
+                for m in info.scan_mounts
+            )
         )
 
     @classmethod

@@ -11,6 +11,7 @@ import {
 } from './services/cloud_status';
 import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
+import type { InstallRequest } from './models/project-manifest';
 
 type MessageType =
   | 'data_op_msg'
@@ -154,6 +155,8 @@ export interface UiCommandMessage extends BaseMessage {
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
   info?: Record<string, unknown>;
+  /** `kind: 'install_request'` — a published asset the hub asks this desktop to install (opens the Add-asset dialog). */
+  request?: InstallRequest;
 }
 
 export interface LlmConfigMessage extends BaseMessage {

@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import read_inputs, record_result, run_dir
+from flow_sdk.core.wizard.state import read_inputs, read_outputs, record_outputs, record_result, run_dir
 
 if TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
@@ -48,6 +48,11 @@ async def execute_wizard(
     *,
     trusted: bool,
     subject_entity: Optional[str],
+    #: Carry the stored answers into this run. Defaults ON because the
+    #: UNATTENDED caller (a trigger fire) has nobody to ask — stored answers are
+    #: the only way it can get past an input step. The UI passes False for a
+    #: fresh run, so "run it again" asks.
+    resume: bool = True,
 ) -> "WizardRunResult":
     """Run `spec` as the wizard `wizard_id`, and stamp what it did.
 
@@ -83,11 +88,23 @@ async def execute_wizard(
             # pops from `_roots` only, and eviction is "a root's terminal untracks
             # its tree". A shared `wizard/` parent never terminates, so a resumed
             # run would inherit the previous run's counters.
-            activity_path=f"wizard-{_slug(asset_ref) or wizard_id}",
+            activity_path=activity_path_for(wizard_id, asset_ref),
             trusted=trusted,
             workdir=workdir,
-            # The user's values, not the run's. A re-run must not ask twice.
-            inputs=read_inputs(wizard_id),
+            # `resume=True` carries the answers forward: that is what lets a
+            # PARKED run continue without re-asking, and it is the only reason
+            # they are persisted.
+            #
+            # A FRESH run passes none. Reusing them there made "run it again"
+            # re-execute silently with the answer from last time and produce a
+            # result identical to the last one — the button read as dead, and
+            # there was no way to answer differently. The values stay on disk so
+            # the form can offer them back; they are simply not assumed.
+            # Stored OUTPUTS ride alongside the answers on a resume, for the
+            # same reason: a resumed run skips a satisfied step, so a value the
+            # agent returned last time is never re-derived. A fresh run drops
+            # both — "run it again" must not silently reuse either.
+            inputs={**read_inputs(wizard_id), **read_outputs(wizard_id)} if resume else {},
         )
     finally:
         lock.release()
@@ -104,7 +121,18 @@ async def execute_wizard(
         outcomes=[outcome.to_payload() for outcome in result.outcomes],
         message=result.message,
     )
+    record_outputs(wizard_id, result.outputs)
     return result
+
+
+def activity_path_for(wizard_id: str, asset_ref: str) -> str:
+    """This wizard's activity ROOT address.
+
+    A function rather than an f-string at the call site because the frontend has
+    to subscribe to the same address, and two spellings of one address is how a
+    viewer ends up watching a tree nothing writes to.
+    """
+    return f"wizard-{_slug(asset_ref) or wizard_id}"
 
 
 def _slug(asset_ref: str) -> str:

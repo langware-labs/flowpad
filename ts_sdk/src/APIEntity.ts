@@ -1202,6 +1202,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   remote?: boolean;
 
   /**
+   * True when this asset is listed in its project's manifest
+   * (`agentic-assets/project_manifest/project_manifest.json`). Mirrors the
+   * Python `Entity.published` cache; the manifest FILE is the truth, and the
+   * flag is flipped only by adopting the canonical row `setPublished()` returns.
+   */
+  published?: boolean;
+
+  /**
    * Canonical parent reference ("<type>-<id>"). Single source of truth for
    * parentage; supersedes the legacy per-type ``data.parent_id``.
    */
@@ -1718,6 +1726,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const actionInfo = new ActionInfo('set_public_access', this.typeId.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { is_public: isPublic };
     await dataManager.callAction<{ is_public: boolean }, { public: boolean }>(actionInfo);
+  }
+
+  /**
+   * Publish / unpublish this asset into its project's manifest
+   * (`POST /graph/<type>/<id>/set-published`). Resolves to the canonical row the
+   * backend returns after the manifest was re-indexed — adopted into the cache,
+   * which is what flips `published`; this method never writes the flag itself.
+   * Refusals (not publishable, outside the project, …) reject with the backend
+   * message; `code` rides on the error's `data`.
+   */
+  public async setPublished(published: boolean, projectId?: string | null): Promise<T> {
+    const body: Record<string, unknown> = { published };
+    if (projectId) body.project_id = projectId;
+    const json = await this.post<Record<string, unknown>>('set-published', body);
+    return dataManager.updateEntityFromJson<T>(json);
   }
 
   static getLoadingExpansions() {
