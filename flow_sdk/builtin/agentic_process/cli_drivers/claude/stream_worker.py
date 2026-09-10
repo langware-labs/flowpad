@@ -43,6 +43,7 @@ import json
 import logging
 import os
 import time
+from uuid import uuid4
 from typing import AsyncIterator
 
 from flow_sdk import toplog
@@ -449,8 +450,35 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # the pipe stays open as the graceful-interrupt channel.
         argv = opts.cli_cmd(instruction=None, system_prompt_append=context.instructions)
         argv.extend(["--input-format", "stream-json"])
+        # Opt in to summarized thinking BEFORE the first user message.
+        #
+        # On Opus 5 -- and every 5-series / 4.7+ model -- the API defaults
+        # ``thinking.display`` to "omitted", so thinking blocks come back with an
+        # EMPTY ``thinking`` field carrying only a signature. ``event_to_flowdata``
+        # drops an empty block outright (``if not thinking: continue``), so no
+        # REASONING frame is ever minted and the activity line sits on the coarse
+        # "Working..." label for the whole deliberation -- FLOWPAD-2098.
+        #
+        # There is NO CLI flag for this, and ``--settings showThinkingSummaries``
+        # does not reach it: the CLI reads that setting only on the interactive
+        # path (gated behind ``if (!isNonInteractive)``), so under ``-p`` it is
+        # unreachable -- measured, not inferred. The only way in is this control
+        # request on the stream-json input channel, which is already open here
+        # because the prompt itself rides stdin. Ordering matters: it goes out
+        # ahead of the turn, and the CLI answers with a ``control_response``.
+        control_request = {
+            "type": "control_request",
+            "request_id": f"set-thinking-{uuid4().hex[:8]}",
+            "request": {
+                "subtype": "set_max_thinking_tokens",
+                "max_thinking_tokens": context.max_thinking_tokens,
+                "thinking_display": "summarized",
+            },
+        }
         stdin_payload = (
-            json.dumps(
+            json.dumps(control_request)
+            + "\n"
+            + json.dumps(
                 {
                     "type": "user",
                     "message": {"role": "user", "content": [{"type": "text", "text": prompt}]},
