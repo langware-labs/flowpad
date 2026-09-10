@@ -8137,18 +8137,8 @@ class AgenticProcess(Entity):
             return False
         if not self.session_id:
             return False
-        from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
-            WorkerType,
-            _normalize_worker_type,
-            get_worker_session_name,
-        )
+        from flow_sdk.builtin.worker_history import get_worker_session_name  # noqa: PLC0415
 
-        # Only Claude carries an on-file subject (and the first-prompt fallback);
-        # a Codex/Copilot process titles only through its own name, which the
-        # guard above just proved empty — nothing can resolve, so don't pay the
-        # per-flush resolver (a DB lookup) for it.
-        if _normalize_worker_type(self.worker_type) is not WorkerType.CLAUDE:
-            return False
         try:
             # prompt_fallback: see get_worker_session_name — headless sessions
             # have no on-file title, so the first user prompt is the last rung.
