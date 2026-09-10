@@ -1,4 +1,4 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, ComputeNodeSizeLabels, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Mail, Sparkles } from 'lucide-react';
@@ -22,7 +22,14 @@ import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfi
 import { AgentMcpField } from './AgentMcpField';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
-import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
+import {
+  AGENT_DEFAULT_MACHINE_SIZE,
+  AGENT_EFFORTS,
+  AGENT_MACHINE_SIZES,
+  AGENT_MODEL_TIERS,
+  AGENT_PERMISSION_MODES,
+  AGENT_WORKER_TYPES,
+} from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -421,6 +428,19 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
             </TabsContent>
 
             <TabsContent value="deploy" className="mt-4">
+              {/* Read by the hub when it creates this agent's cloud box; a local
+                  launch ignores it. An absent key deploys at the hub's default
+                  (sm), so it shows as sm and there is no Unset to pick. */}
+              <div className="mb-4" data-testid="agent-machine-size">
+                <AgentChoiceField
+                  label={t`Machine size`}
+                  value={agent.machine_size}
+                  options={AGENT_MACHINE_SIZES}
+                  labels={ComputeNodeSizeLabels}
+                  defaultValue={AGENT_DEFAULT_MACHINE_SIZE}
+                  onCommit={(v) => void save({ machine_size: v })}
+                />
+              </div>
               <AgentDeploymentsSection agent={agent} />
             </TabsContent>
 

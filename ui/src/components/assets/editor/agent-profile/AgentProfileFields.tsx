@@ -12,20 +12,27 @@ const UNSET = '__unset__';
  * A CLOSED choice field. `worker_type` is the exception to `AgentSelectField`:
  * the drivers are a fixed four, so free text only produces a broken agent. A
  * value outside `options` still renders as its own item rather than be dropped.
+ * `labels` maps a stored value to its display text; unmapped values show as-is.
  */
 export function AgentChoiceField({
   label,
   value,
   options,
+  labels,
+  defaultValue,
   onCommit,
 }: {
   label: string;
   value?: string | null;
   options: readonly string[];
+  labels?: Readonly<Partial<Record<string, string>>>;
+  /** What an absent value means. When set there is no Unset item: absent and
+   *  the default are the same state, so there is nothing to clear to. */
+  defaultValue?: string;
   onCommit: (value: string | undefined) => void;
 }) {
   const { t } = useLingui();
-  const current = value ?? '';
+  const current = value || defaultValue || '';
   const items = current && !options.includes(current) ? [...options, current] : options;
   return (
     <label className="block space-y-1.5">
@@ -42,13 +49,16 @@ export function AgentChoiceField({
               backend falls back to its own default when it is absent. Named
               for the STATE, not for whichever value the backend would pick —
               showing the default's name here reads as though it were selected,
-              which is a different thing from the key being absent. */}
-          <SelectItem value={UNSET}>
-            <span className="text-muted-foreground">{t`Unset`}</span>
-          </SelectItem>
+              which is a different thing from the key being absent. A field
+              with a `defaultValue` has no such state, so it offers no Unset. */}
+          {defaultValue === undefined && (
+            <SelectItem value={UNSET}>
+              <span className="text-muted-foreground">{t`Unset`}</span>
+            </SelectItem>
+          )}
           {items.map((o) => (
             <SelectItem key={o} value={o}>
-              {o}
+              {labels?.[o] ?? o}
             </SelectItem>
           ))}
         </SelectContent>

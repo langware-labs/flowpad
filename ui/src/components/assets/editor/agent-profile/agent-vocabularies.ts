@@ -1,4 +1,4 @@
-import { WorkerModelTier } from '@sdk';
+import { ComputeNodeSize, WorkerModelTier } from '@sdk';
 import { WORKER_TYPES } from '@src/hooks/useWorkerHistory';
 
 /**
@@ -42,3 +42,13 @@ export const AGENT_MODEL_TIERS = Object.values(WorkerModelTier);
 export const AGENT_PERMISSION_MODES = ['bypassPermissions', 'askUser'] as const;
 
 export const AGENT_EFFORTS = ['low', 'medium', 'high'] as const;
+
+/** Cloud box sizes the hub deploys onto. CLOSED, unlike the lists above: the
+ *  hub's `Agent.machine_size` is the `ComputeNodeSize` enum, so free text
+ *  cannot be deployed. */
+export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
+
+/** What an agent with no `machine_size` deploys onto — the hub's
+ *  `DEFAULT_NODE_SIZE`. Shown as the selection so absent never reads as a
+ *  different state from `sm`. */
+export const AGENT_DEFAULT_MACHINE_SIZE = ComputeNodeSize.SMALL;
