@@ -2226,9 +2226,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Load a sub-agent from a VFS path and embed it into this process.
    * Mirrors the Python `process.load_embedded_subagent()` API.
    * The sub-agent spec is merged into cli_config on the backend and persisted.
+   *
+   * `setApPersona` declares this sub-agent to BE the process's persona: the
+   * backend stores its materialized path as `process_persona_path` and renders
+   * it with the "you are this agent" directive, with every other embedded
+   * sub-agent nested beneath it. Pass `true` for a base persona (`vibe`,
+   * `standard`, a wizard's driving agent, a help-desk support agent, a picked
+   * automation) and `false` for a layered one, which must not claim the
+   * identity. It overwrites any persona already set. With `false` everywhere a
+   * process has no persona and the worker keeps its own identity -- the normal
+   * case for a terminal process.
+   *
+   * REQUIRED, deliberately: a defaulted flag is a decision a caller can skip
+   * without noticing, and skipping it silently drops the identity directive.
+   * That is exactly how three call sites (wizard, help desk, automation) were
+   * left inheriting the old count-based persona and regressed when it was
+   * removed. Making it required moves "which one is the persona?" from
+   * something a call site may forget to something tsc makes it answer.
    */
-  async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
-    await this.post('load-embedded-subagent', { asset_ref: sourcePath });
+  async loadEmbeddedSubagent(sourcePath: string, setApPersona: boolean): Promise<void> {
+    await this.post('load-embedded-subagent', { asset_ref: sourcePath, set_ap_persona: setApPersona });
   }
 
   /**
