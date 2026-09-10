@@ -1,5 +1,5 @@
 import { lazyAssets } from '../lazy/registry';
-import { AxiosError, AxiosResponse } from 'axios';
+import { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { EventEmitter } from 'events';
 import { config, dataManager } from '..';
 import apiClient, { invalidRefreshTokenMessage, invalidTokenMessage } from '../client';
@@ -75,8 +75,29 @@ export function getUtmParams(): Record<string, string> {
   return utm;
 }
 
+/**
+ * Marks the session probe's own request, so its 401 is judged by the probe
+ * rather than re-entering the interceptor and probing again. A request-config
+ * key, not a header: axios carries unknown config keys through to `error.config`
+ * and never sends them, where a custom header would add a CORS preflight.
+ */
+const SESSION_PROBE = '__flowpadSessionProbe';
+
+/**
+ * The one machine-readable denial the hub sends (`AuthErrorCode`, mirrored in
+ * flow_sdk as `HubErrorCode`): the entity doesn't exist OR the caller holds no
+ * role on it. Either way the credential was accepted.
+ */
+function isTargetNotFound(data: { data?: { error_code?: unknown } | null } | undefined) {
+  return data?.data?.error_code === 'target_not_found';
+}
+
 export class AuthManager extends EventEmitter {
   _currentUser: any = null;
+
+  // One probe in flight at a time: a page load fans out one status call per
+  // shared machine, and every codeless 401 in that burst asks the same question.
+  private _sessionProbe: Promise<boolean> | null = null;
 
   // Local login slot — same vocabulary as the hub side, narrower membership.
   // Mutated only via setLoginStatus(); subscribers listen to
@@ -138,24 +159,56 @@ export class AuthManager extends EventEmitter {
     lazyAssets.setScope(scope);
     dataManager.adoptReadScope(scope);
   }
+  /**
+   * Whether the server still accepts this session's credential — the question a
+   * codeless 401 leaves open. The hub answers "your token is invalid" and "your
+   * valid token may not do this" with the same 401, and a policy denial carries
+   * no `error_code`, so ask it directly instead of reading its prose: the check
+   * flow_sdk makes in `hub_email_inbox_driver._hub_login_is_valid`.
+   */
+  private sessionStillValid(): Promise<boolean> {
+    if (!this._sessionProbe) {
+      this._sessionProbe = apiClient
+        .get(config.API_PREFIXES.currentUser, { [SESSION_PROBE]: true } as AxiosRequestConfig)
+        .then(
+          (user) => !!user,
+          () => false,
+        )
+        .finally(() => {
+          this._sessionProbe = null;
+        });
+    }
+    return this._sessionProbe;
+  }
   private async setupClientInterceptor() {
     apiClient.interceptors.response.use(
       function (response: AxiosResponse) {
         return response;
       },
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
         // Skip auth handling for 404s - these are normal "not found" responses
         if (error.response?.status === 404) {
           return Promise.reject(error);
         }
+        // The session probe's own failure is its answer, not a new question.
+        if ((error.config as Record<string, unknown> | undefined)?.[SESSION_PROBE]) {
+          return Promise.reject(error);
+        }
 
-        // Only handle auth-related errors (401, 403, token errors)
+        // AUTHENTICATION failures only — "this session's token is no longer
+        // usable". An AUTHORIZATION answer ("your valid token may not do this
+        // one thing") must NOT end the session: `ops` on a compute_node resolves
+        // for `owner` alone, so a machine shared with you refuses its status
+        // probe on every page load, and treating that as expiry logged the whole
+        // account out (FLOWPAD-2125). Those reject to the caller, which decides
+        // what to render. A 403 is never an expired token; a codeless 401 is
+        // settled by asking whether the credential still works.
         // For server errors (5xx) and other non-auth errors, pass through silently
+        const data = error.response?.data as any;
         const isAuthError =
-          error.response?.status === 401 ||
-          error.response?.status === 403 ||
-          (error.response?.data as any)?.message === invalidRefreshTokenMessage ||
-          error.message === invalidTokenMessage;
+          data?.message === invalidRefreshTokenMessage ||
+          error.message === invalidTokenMessage ||
+          (error.response?.status === 401 && !isTargetNotFound(data) && !(await this.sessionStillValid()));
 
         if (isAuthError) {
           this.currentUser = null;

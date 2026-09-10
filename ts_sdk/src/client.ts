@@ -1,6 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ApiFailResponse, ApiWarning } from './ApiResponse';
-import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
 import { API_PREFIX } from './config/SDKConfig';
@@ -160,9 +159,11 @@ function initApiClient(client: ApiAxiosInstance) {
       if (error.response?.status !== 404) {
         console.log('API call error:', msg);
       }
-      if (error.response?.status === 401) {
-        alert(error.response.statusText, msg, 'warning');
-      }
+      // No popup for a 401. It is not always a session problem: `ops` on a
+      // compute_node resolves for `owner` alone, so a machine merely shared
+      // with you refuses its status probe on EVERY page load — one toast per
+      // denial is noise, and the console line above is the record
+      // (FLOWPAD-2125). The rejection below is what a screen renders from.
       throw error;
       //return Promise.reject(error);
     },
