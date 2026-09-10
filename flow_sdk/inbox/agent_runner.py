@@ -120,7 +120,7 @@ async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: st
 
     target = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation_id))
     deployment = await agent.local_deployment()
-    existing = await AgenticProcess.get_all(
+    existing = await AgenticProcess.local_rows(
         {
             "match": {
                 "target_typeid_str": target,

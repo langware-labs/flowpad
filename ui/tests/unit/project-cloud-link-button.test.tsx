@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OAuthEventType, OAuthStatus, type OAuthFlowCompletePayload, type Project } from '@sdk';
 
-import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 
 const mocks = vi.hoisted(() => ({
   project: {
@@ -142,11 +142,11 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('ProjectPublishButton', () => {
+describe('ProjectCloudLinkButton', () => {
   const project = mocks.project as unknown as Project;
 
   it('cloud-logs in and publishes through the canonical Project share action', async () => {
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
@@ -160,7 +160,7 @@ describe('ProjectPublishButton', () => {
 
   it('does not share when cloud login does not complete', async () => {
     mocks.cloudLogin.mockResolvedValue({ ok: false, error: 'Cloud login required' });
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
@@ -173,7 +173,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.available = false;
     mocks.preflight.code = 'missing-remote';
     mocks.preflight.reason = 'A GitHub origin is required.';
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'setup');
@@ -209,7 +209,7 @@ describe('ProjectPublishButton', () => {
     );
     mocks.preflight.available = false;
     mocks.preflight.code = 'missing-remote';
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
@@ -230,7 +230,7 @@ describe('ProjectPublishButton', () => {
 
     // Cancelled: the publish they asked for is simply not happening.
     mocks.launchWizard.mockResolvedValue({ status: 'cancel' });
-    const first = render(<ProjectPublishButton project={project} />);
+    const first = render(<ProjectCloudLinkButton project={project} />);
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
     await waitFor(() =>
@@ -240,7 +240,7 @@ describe('ProjectPublishButton', () => {
 
     // Finished: say so, and say what happens next.
     mocks.launchWizard.mockResolvedValue({ status: 'done' });
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
     await waitFor(() =>
@@ -256,7 +256,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.code = 'missing-remote';
     mocks.preflight.reason = 'A GitHub origin is required.';
     mocks.launchWizard.mockResolvedValue({ status: 'done' });
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
@@ -277,7 +277,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.available = false;
     mocks.preflight.code = 'dirty';
     mocks.preflight.reason = 'Commit and push the repository.';
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'commit');
@@ -288,7 +288,7 @@ describe('ProjectPublishButton', () => {
 
   it('starts GitHub OAuth and rechecks its status before sharing after authorization', async () => {
     mocks.oauthStatus.mockResolvedValueOnce({ has_token: false });
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
@@ -303,7 +303,7 @@ describe('ProjectPublishButton', () => {
 
   it('renders a Published cloud link and opens it externally', async () => {
     mocks.project.remote = true;
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     const link = screen.getByRole('link', { name: 'Linked to cloud' });
     expect(mocks.hubPageUrl).toHaveBeenCalledWith('https://app.flowpad.test', mocks.project.typeId);
@@ -316,7 +316,7 @@ describe('ProjectPublishButton', () => {
 
   it('is hidden on the Hub Project page', () => {
     mocks.hubMode = true;
-    render(<ProjectPublishButton project={project} />);
+    render(<ProjectCloudLinkButton project={project} />);
 
     expect(screen.queryByTestId('project-publish')).not.toBeInTheDocument();
   });

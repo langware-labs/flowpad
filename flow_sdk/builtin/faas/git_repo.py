@@ -6,12 +6,12 @@ instantiated per-request.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Mapping
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -33,6 +33,25 @@ class _CamelModel(BaseModel):
     """Base for git response models — serializes to camelCase via alias_generator."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
+    """``git --numstat`` lines → ``{path: (insertions, deletions)}``.
+
+    A binary file's counts are ``-``; they stay ``None`` rather than becoming 0,
+    so "no lines" and "lines don't apply" never collapse into the same number.
+    """
+    result: dict[str, tuple[int | None, int | None]] = {}
+    for line in output.splitlines():
+        cols = line.split("\t", 2)
+        if len(cols) == 3:
+            try:
+                ins: int | None = int(cols[0]) if cols[0] != "-" else None
+                dels: int | None = int(cols[1]) if cols[1] != "-" else None
+                result[cols[2]] = (ins, dels)
+            except ValueError:
+                pass
+    return result
 
 
 class GitStatusFile(_CamelModel):
@@ -241,6 +260,54 @@ class GitRepo:
         stdout, _, rc = await self._run_git_io(*args)
         return stdout, rc
 
+    async def _run_git_env(self, env: Mapping[str, str], *args: str) -> tuple[str, int]:
+        """``_run_git`` with an env overlay — (stdout_stripped, returncode).
+
+        Never raises, for the same reason ``_run_git_io`` doesn't.
+        """
+        try:
+            result = await self._folder.git(*args, env=env)
+            return result.stdout.rstrip("\n"), result.returncode
+        except Exception:
+            logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
+            return "", 1
+
+    async def _line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD.
+
+        Untracked files are counted too, which a plain ``git diff --numstat``
+        cannot do — and they are usually the bulk of a change, so leaving them
+        out makes an "added lines" total read near zero for a branch of new
+        files. A THROWAWAY index makes them visible: HEAD is read into it, every
+        path is marked intent-to-add there, and the worktree is diffed against
+        it, so a new file shows up as an addition of its own lines. ``-N``
+        records no blob, so nothing lands in the object store, and the
+        repository's real index is never touched.
+        """
+        git_dir, rc = await self._run_git("rev-parse", "--absolute-git-dir")
+        if rc != 0 or not git_dir:
+            return {}
+        index_path = f"{git_dir.rstrip('/')}/flowpad-status-index-{uuid4().hex}"
+        env = {"GIT_INDEX_FILE": index_path}
+        try:
+            # read-tree HEAD fails in a repo with no commits — there every
+            # tracked path is new, which is exactly what an empty index says.
+            _, read_rc = await self._run_git_env(env, "read-tree", "HEAD")
+            if read_rc != 0:
+                await self._run_git_env(env, "read-tree", "--empty")
+            await self._run_git_env(env, "add", "-A", "-N")
+            # Against HEAD, not against the throwaway index: ``add -A`` really
+            # does record a deletion there, so a worktree-vs-index diff would
+            # count a deleted file as no change at all.
+            args = ("diff", "--numstat") if read_rc != 0 else ("diff", "--numstat", "HEAD")
+            out, diff_rc = await self._run_git_env(env, *args)
+            return _parse_numstat(out) if diff_rc == 0 else {}
+        finally:
+            try:
+                await self._folder.executor.remove(index_path)
+            except Exception:
+                logger.debug("could not remove temporary git index %s", index_path, exc_info=True)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -359,27 +426,9 @@ class GitRepo:
 
         branch, ahead, behind = None, 0, 0
 
-        # Numstat for insertion/deletion counts
-        def parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
-            result: dict[str, tuple[int | None, int | None]] = {}
-            for line in output.splitlines():
-                cols = line.split("\t", 2)
-                if len(cols) == 3:
-                    try:
-                        ins: int | None = int(cols[0]) if cols[0] != "-" else None
-                        dels: int | None = int(cols[1]) if cols[1] != "-" else None
-                        result[cols[2]] = (ins, dels)
-                    except ValueError:
-                        pass
-            return result
-
-        # Independent reads — run concurrently rather than back-to-back.
-        (numstat_unstaged_out, _), (numstat_staged_out, _) = await asyncio.gather(
-            self._run_git("diff", "--numstat"),
-            self._run_git("diff", "--numstat", "--staged"),
-        )
-        numstat_unstaged = parse_numstat(numstat_unstaged_out)
-        numstat_staged = parse_numstat(numstat_staged_out)
+        # One count per path, staged and unstaged and untracked together, so a
+        # file's ``+/-`` is its whole change against HEAD.
+        numstat = await self._line_counts()
 
         # File list comes from the same ``status_out`` above. ``--untracked-files=all``
         # lists each untracked file individually instead of collapsing a wholly-
@@ -407,16 +456,13 @@ class GitRepo:
             # Staged takes priority over unstaged
             if x not in (" ", "?"):
                 status = x
-                ins, dels = numstat_staged.get(lookup_path, (None, None))
             elif y not in (" ", "?"):
                 status = y
-                ins, dels = numstat_unstaged.get(lookup_path, (None, None))
             elif x == "?" and y == "?":
                 status = "?"
-                ins, dels = None, None
             else:
                 status = (x if x != " " else y) or "?"
-                ins, dels = None, None
+            ins, dels = numstat.get(lookup_path, (None, None))
 
             files.append(
                 GitStatusFile(

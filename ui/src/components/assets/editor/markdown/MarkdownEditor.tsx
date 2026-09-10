@@ -103,6 +103,11 @@ interface MarkdownEditorProps {
    * frontmatter key through the single content buffer.
    */
   headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
+  /**
+   * Leading header slot, rendered BEFORE the git pill and regardless of whether
+   * revisions are enabled — the Published toggle lives here.
+   */
+  headerLeading?: React.ReactNode;
   /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** When true, the "Learning" view-mode chip appears in the header strip. */
@@ -175,6 +180,7 @@ export function MarkdownEditor({
   editEntity,
   chatTarget,
   headerExtras,
+  headerLeading,
   extraSideTabs,
   showLearningMode,
   learningPanel,
@@ -194,6 +200,7 @@ export function MarkdownEditor({
       editEntity={editEntity}
       chatTarget={chatTarget}
       headerExtras={headerExtras}
+      headerLeading={headerLeading}
       extraSideTabs={extraSideTabs}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
@@ -251,6 +258,7 @@ function MarkdownEditorContent({
   editEntity,
   chatTarget,
   headerExtras,
+  headerLeading,
   extraSideTabs,
   showLearningMode,
   learningPanel,
@@ -268,6 +276,7 @@ function MarkdownEditorContent({
   editEntity?: MarkdownEditorProps['editEntity'];
   chatTarget: string | null;
   headerExtras?: MarkdownEditorProps['headerExtras'];
+  headerLeading?: MarkdownEditorProps['headerLeading'];
   extraSideTabs?: ExtraSideTab[];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
@@ -717,7 +726,7 @@ function MarkdownEditorContent({
   }
 
   // ── Editor ─────────────────────────────────────────────────────────────────
-  const leadingActions = revisionsEnabled ? (
+  const gitPill = revisionsEnabled ? (
     <AssetGitPill
       version={revisionStatus.version}
       unpushed={revisionStatus.unpushed}
@@ -728,6 +737,15 @@ function MarkdownEditorContent({
       onAfterPublish={revisionStatus.refresh}
     />
   ) : null;
+  // `headerLeading` renders even without a git repo: publishing is a manifest
+  // fact, not a git one.
+  const leadingActions =
+    headerLeading || gitPill ? (
+      <>
+        {headerLeading}
+        {gitPill}
+      </>
+    ) : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

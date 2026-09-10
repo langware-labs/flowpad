@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { TypeId, launchWizard, type Project } from '@sdk';
 import { notify } from '@src/notifications';
-import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { invalidateGitPreflight, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { useGitPush } from '@src/hooks/use-git-push';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { gitShareGateState, type GitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
@@ -88,9 +88,12 @@ export function useGitShareGate(
       notify.error({ title: t`Could not set up Git`, message: String(e) });
     } finally {
       setSetupBusy(false);
+      // This gate's own answer, and every other surface looking at the same
+      // folder — the git state changed on disk, which nothing else announces.
       preflight.refetch();
+      invalidateGitPreflight(ref);
     }
-  }, [folder, project, addPaths, remove, preflight]);
+  }, [folder, project, addPaths, remove, preflight, ref]);
 
   const busy = pushBusy || setupBusy;
   return {

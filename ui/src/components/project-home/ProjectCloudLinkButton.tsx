@@ -17,7 +17,7 @@ import { CheckCircle2, CloudUpload, ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-interface ProjectPublishButtonProps {
+interface ProjectCloudLinkButtonProps {
   project: Project;
 }
 
@@ -29,7 +29,7 @@ interface ProjectPublishButtonProps {
  * and GitHub OAuth seams. The final mutation is still the ordinary
  * `project.share()` action; this component never writes `remote` itself.
  */
-export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
+export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps) {
   const { t } = useLingui();
   const hubMode = isHubOnly();
   const published = project.remote === true;

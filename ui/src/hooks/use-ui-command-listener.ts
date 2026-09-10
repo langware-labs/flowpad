@@ -19,6 +19,7 @@ import {
   type NotificationClickTarget,
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
+import { openInstallRequest } from '@src/components/install/install-request-store';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
@@ -139,6 +140,14 @@ export function useUiCommandListener(): void {
       }
       if (msg.kind === 'desktop_notify') {
         renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
+        return;
+      }
+      // `install_request`: the hub relayed a one-click install to this desktop.
+      // Open the Add-asset dialog with the published row; the person picks the
+      // project and confirms there — nothing is written until then.
+      if (msg.kind === 'install_request') {
+        if (msg.request?.typeid) openInstallRequest(msg.request);
+        else console.warn('[ui_command] install_request without a typeid', msg);
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.

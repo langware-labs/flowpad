@@ -51,7 +51,19 @@ def test_the_two_steps_are_independent(spec):
 
 
 def test_it_runs_itself_once_on_app_ready(spec):
-    assert [(t.on, t.fire_once) for t in spec.triggers] == [("app.ready", True)]
+    # The trigger is an ordinary child asset now, not an inline array — so what
+    # is asserted is the folder, and that it declares the same thing.
+    from flow_sdk.fs_store.indexer.functions.trigger import read_trigger
+
+    child = WIZARD_DIR / "agentic-assets" / "trigger" / "on-app-ready"
+    declared = read_trigger(child)
+    assert declared is not None, "the shipped wizard lost its trigger asset"
+    assert declared.tag is not None and declared.tag.on == "app.ready"
+    assert declared.fire_once is True
+    # And it names the wizard it launches by NOT naming it: empty means "my
+    # parent", which is the folder this asset lives in.
+    assert declared.actions[0].verb == "run_wizard"
+    assert declared.actions[0].run_wizard == ""
 
 
 def test_preconditions_and_verifies_ask_different_questions(spec):

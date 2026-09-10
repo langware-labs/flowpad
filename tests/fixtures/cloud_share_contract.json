@@ -35,6 +35,7 @@
       "private_context_entities_",
       "private_context_entity_data",
       "project_id",
+      "published",
       "remote",
       "scope",
       "shared_context_entity_data",

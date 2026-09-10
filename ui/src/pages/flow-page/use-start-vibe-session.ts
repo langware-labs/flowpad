@@ -64,7 +64,9 @@ type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMo
 export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
   try {
     const vibeRef = await systemSubagentRef('vibe');
-    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef);
+    // `true` -- the vibe sub-agent IS the session's persona; the kind==vibe
+    // layers embedded below must not claim that identity.
+    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef, true);
     else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
     console.warn('[Vibe] failed to embed vibe sub-agent; continuing without persona', e);
@@ -90,7 +92,9 @@ async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
   // SDK-shipped personas first (e.g. `data-integrations`): they ride every vibe
   // session, and only surface with include_system=true — the same raw route
   // the standard vibe persona is resolved through.
-  await Promise.all((await systemVibeKindSubagentRefs()).map((ref) => proc.loadEmbeddedSubagent(ref)));
+  // `false` -- a layer rides ON TOP of the vibe persona and must never claim
+  // the identity. `data-integrations` inheriting it is the reported bug.
+  await Promise.all((await systemVibeKindSubagentRefs()).map((ref) => proc.loadEmbeddedSubagent(ref, false)));
   const projectId = proc.project_id;
   if (!projectId) return;
   const req = new QueryRequest({
@@ -101,7 +105,7 @@ async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
   });
   const agents = await SubAgent.query<SubAgent>(req);
   for (const agent of agents) {
-    if (agent.asset_ref) await proc.loadEmbeddedSubagent(agent.asset_ref);
+    if (agent.asset_ref) await proc.loadEmbeddedSubagent(agent.asset_ref, false);
   }
 }
 

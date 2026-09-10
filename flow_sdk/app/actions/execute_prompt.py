@@ -151,7 +151,7 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-    existing = await AgenticProcess.get_all({"target_typeid_str": target_typeid_str})
+    existing = await AgenticProcess.local_rows({"target_typeid_str": target_typeid_str})
     candidates = [p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value]
     candidates.sort(key=lambda p: str(getattr(p, "created_date", "") or ""), reverse=True)
     if candidates:
@@ -615,7 +615,11 @@ async def run_session_turn(
     """
     import contextlib  # noqa: PLC0415
 
-    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus, ReplyPolicy
+    from flow_sdk.builtin.remote_worker_session import (
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+        ReplyPolicy,
+    )
 
     guard = contextlib.nullcontext() if _locked else _session_lock(session)
     async with guard:
@@ -630,9 +634,18 @@ async def run_session_turn(
             if not workdir:
                 return ApiFailResponse(message="project has no workdir")
 
+            # RUNNING has to be durable BEFORE the consume, not after it. The
+            # marker below means "this prompt is spoken for"; if the host dies
+            # between the two, the prompt is consumed with nothing to show for it
+            # and nothing left to re-kick it — the guest waits forever on a
+            # session that still reads idle. Stamping RUNNING first makes that
+            # crash window detectable at startup, which is what
+            # ``recover_interrupted_sessions`` repairs.
+            session.mark_activity(RemoteWorkerSessionStatus.RUNNING)
+            await session.save()
+
             # Consume BEFORE the (long) run so a re-delivered op can't double-run.
-            fm.prompt_auto_handled = True
-            await fm.save(someone_typeid)
+            await consume_prompt(fm, someone_typeid)
 
             prompt_text = await build_merged_prompt(fm)
             if not prompt_text:
@@ -681,6 +694,18 @@ async def run_session_turn(
                     status,
                 )
                 return ApiFailResponse(message=f"the worker finished ({status}) but produced no readable reply")
+
+            # A turn is long, and the host owns session settings while it runs:
+            # the ``settings`` action writes ``reply_policy`` straight to the row.
+            # Our in-memory copy predates that write, so BOTH the decision below
+            # and this save would roll it back — the guest is told "review before
+            # sending" and then keeps getting auto-sent replies. Re-read the
+            # host-owned setting before deciding, and before the save that would
+            # persist the stale one. Same lost-update shape ``consume_prompt``'s
+            # marker suffered until the bridge stopped rewriting whole rows.
+            fresh = await RemoteWorkerSession.get_one({"id": session.id})
+            if fresh is not None and getattr(fresh, "reply_policy", None):
+                session.reply_policy = fresh.reply_policy
 
             session.mark_activity(RemoteWorkerSessionStatus.IDLE)
             await session.save()
@@ -750,6 +775,159 @@ async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str])
     return queued
 
 
+async def _local_actor(local_user=None) -> tuple[Optional[str], str]:
+    """``(local_user_id, someone_typeid)`` — who this machine writes rows as.
+
+    Pass an already-resolved ``local_user`` to skip the lookup; the session paths
+    all need the same pair and each was re-deriving it.
+    """
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    if local_user is None:
+        local_user = await get_or_create_local_user()
+    local_id = local_user.id if local_user else None
+    return local_id, (str(TypeId(type="user", id=local_id)) if local_id else "")
+
+
+async def consume_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
+    """Mark one inbound prompt as handled, so no drain picks it up again.
+
+    The single writer of ``prompt_auto_handled``: both the pre-run consume and the
+    paused bounce go through here.
+    """
+    fm.prompt_auto_handled = True
+    await fm.save(someone_typeid)
+
+
+async def release_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
+    """Hand a consumed prompt back to the queue — the mirror of ``consume_prompt``.
+
+    Only a turn that died before it answered may do this, which keeps the pair the
+    single writer of ``prompt_auto_handled``.
+    """
+    if not getattr(fm, "prompt_auto_handled", False):
+        return
+    fm.prompt_auto_handled = False
+    await fm.save(someone_typeid)
+
+
+def _is_completion(fm: "FlowMessage") -> bool:
+    """True for a reply message, by the typed ``prompt_completion-<id>`` TYPE_ID
+    attachment ``_emit_prompt_completion`` stamps. Matching the reply's TEXT would
+    tie crash recovery to a display string."""
+    for a in fm.attachment or []:
+        at = a.get("attachment_type") if isinstance(a, dict) else getattr(a, "attachment_type", None)
+        if str(at) != "type_id":
+            continue
+        data = a.get("data") if isinstance(a, dict) else getattr(a, "data", None)
+        if isinstance(data, str) and data.startswith("prompt_completion-"):
+            return True
+    return False
+
+
+async def recover_interrupted_sessions() -> None:
+    """Re-drive prompts that were consented to but never answered. Runs once at startup.
+
+    A turn starts only when something kicks the gate — an inbound frame, or the
+    approval. Die in that window and the prompt is delivered AND approved with
+    nothing left to kick it; die mid-turn and it is worse, because the prompt was
+    consumed before the (long) run so the queue no longer offers it at all. Either
+    way the guest waits forever on a session that still reads healthy, and the hub
+    catch-up cannot help: the message is already local, so there is nothing to
+    re-fetch. Startup is the missing kick.
+
+    Scoped to sessions THIS machine hosts. ``status`` is a snapshot field, so a
+    guest's mirror row legitimately reads RUNNING while the real turn runs on
+    someone else's machine — sweeping those would release the marker on a shared
+    message and re-run a turn that never belonged to us, which is the very
+    lost-update class this engine has been closing.
+    """
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ACTIVE_STATUSES,
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+    )
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    who = await User.current_sender_participant()
+    local_id, someone_typeid = await _local_actor()
+    me = (who or {}).get("user_id") or local_id
+    if not me:
+        return
+
+    sessions = []
+    for status in ACTIVE_STATUSES:
+        sessions.extend(await RemoteWorkerSession.get_all({"status": status.value}) or [])
+    mine = [
+        s for s in sessions
+        if getattr(s, "conversation_id", None) and getattr(s, "host_user_id", None) == me
+    ]
+    if not mine:
+        return
+
+    by_session = await _session_messages({s.id for s in mine})
+    for session in mine:
+        try:
+            if str(getattr(session, "status", "")) == RemoteWorkerSessionStatus.RUNNING.value:
+                await _release_interrupted_turn(session, by_session.get(session.id, []), someone_typeid)
+            await redrive_session_prompts(session)
+        except Exception as e:  # noqa: BLE001 — one bad session must not stop the sweep
+            logger.warning("[session] startup recovery failed for %s: %s", session.id, e)
+
+
+async def _session_messages(session_ids: set) -> dict:
+    """Every message of these sessions in ONE query, grouped by session.
+
+    ``remote_worker_session_id`` lives in the JSON blob with no index, so a
+    per-session lookup is a full scan of the message partition each time — N scans
+    where one does. Same reason ``inbox.clear`` batches its child sweep.
+    """
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    if not session_ids:
+        return {}
+    rows = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["remote_worker_session_id", list(session_ids)])),
+        hydrate=False,
+    ) or []
+    grouped: dict = {}
+    for m in rows:
+        grouped.setdefault(getattr(m, "remote_worker_session_id", None), []).append(m)
+    return grouped
+
+
+async def _release_interrupted_turn(session, msgs: list, someone_typeid: str) -> None:
+    """Give back the one prompt whose turn died with the process.
+
+    Deliberately narrow: the newest consumed prompt of this session, and only when
+    no reply followed it. A turn that DID answer is left alone, so recovery can
+    never re-run completed work.
+    """
+    from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
+
+    def when(m) -> str:
+        return str(getattr(m, "created_date", "") or "")
+
+    prompts = [
+        m for m in msgs
+        if getattr(m, "prompt_auto_handled", False)
+        and not getattr(m, "is_draft", False)
+        and any(_is_prompt_attachment(a) for a in (m.attachment or []))
+    ]
+    if not prompts:
+        return
+    last = max(prompts, key=when)
+    if any(_is_completion(m) and when(m) > when(last) for m in msgs):
+        return
+    await release_prompt(last, someone_typeid)
+    logger.info(
+        "[session] released interrupted turn fm=%s session=%s — host stopped mid-turn",
+        last.id,
+        session.id,
+    )
+
+
 async def redrive_session_prompts(
     session: "RemoteWorkerSession",
     *,
@@ -763,7 +941,6 @@ async def redrive_session_prompts(
     the lock and drains, the rest find nothing left. Selection happens under
     the lock, so a prompt can never be picked twice."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
     if not session.conversation_id:
         return
@@ -771,16 +948,20 @@ async def redrive_session_prompts(
         conv = await Conversation.get_one({"id": session.conversation_id})
     if not conv:
         return
-    if local_user is None:
-        local_user = await get_or_create_local_user()
-    local_id = local_user.id if local_user else None
-    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+    local_id, someone_typeid = await _local_actor(local_user)
     async with _session_lock(session):
+        # A drain never runs the same message twice, whatever the DB marker says.
+        # Selection reads ``prompt_auto_handled``, which is a row a concurrent
+        # writer can roll back; this keeps one drain honest regardless. Ordering
+        # and arrival semantics are unchanged.
+        ran: set[str] = set()
         while True:
-            queued = await _queued_turns(session, local_id)
+            queued = [fm for fm in await _queued_turns(session, local_id) if fm.id not in ran]
             if not queued:
                 return
-            await run_session_turn(session, queued[0], conv, someone_typeid=someone_typeid, _locked=True)
+            fm = queued[0]
+            ran.add(fm.id)
+            await run_session_turn(session, fm, conv, someone_typeid=someone_typeid, _locked=True)
 
 
 # ── the inbound gate (receive hook) ─────────────────────────────────────────
@@ -852,8 +1033,7 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if decision is InboundDecision.IGNORE:
             return
         if decision is InboundDecision.BOUNCE_PAUSED:
-            fm.prompt_auto_handled = True
-            await fm.save(someone_typeid)
+            await consume_prompt(fm, someone_typeid)
             try:
                 await emit_session_event(session, "prompt_bounced", someone_typeid)
             except Exception as e:  # noqa: BLE001

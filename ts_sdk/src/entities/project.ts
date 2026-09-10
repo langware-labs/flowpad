@@ -2,7 +2,19 @@ import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../API
 import type { IEntity } from '../IEntity';
 import apiClient, { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
-import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
+import {
+  ActionInfo,
+  TypeId,
+  gitOriginFromUrl,
+  type GitOrigin,
+  EMPTY_PUBLISHED_DIRECTORY,
+  EMPTY_PUBLISHED_VIEW,
+  type InstallPublishedResult,
+  type PublishedDirectory,
+  type InstallRequest,
+  type PublishedView,
+  type RequestInstallResult,
+} from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
@@ -538,6 +550,69 @@ export class Project extends APIEntity<Project> {
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
     return response?.assets ?? [];
+  }
+
+  /**
+   * What this project has PUBLISHED, joined with local state — the Discover
+   * page's read model (`GET project/<id>/published`). Same contract on the hub,
+   * where `unpublished` is always `[]`.
+   */
+  async getPublished(): Promise<PublishedView> {
+    const actionInfo = new ActionInfo('published', Project.type, this.typeId.id, 'GET');
+    const view = await dataManager.callAction<void, PublishedView | null>(actionInfo);
+    return view ?? EMPTY_PUBLISHED_VIEW;
+  }
+
+  /**
+   * HUB: everything published by the projects the caller can read — the
+   * Discover directory (`GET project/published_directory`), newest first, with
+   * facets over the whole set. `typeid` / `project` / `type` narrow the rows.
+   */
+  static async getPublishedDirectory(opts: { typeid?: string; project?: string; type?: string } = {}): Promise<PublishedDirectory> {
+    const actionInfo = new ActionInfo('published_directory', Project.type, null, 'GET');
+    const params: Record<string, string> = {};
+    if (opts.typeid) params.typeid = opts.typeid;
+    if (opts.project) params.project = opts.project;
+    if (opts.type) params.type = opts.type;
+    if (Object.keys(params).length) actionInfo.queryParameters = params;
+    const directory = await dataManager.callAction<void, PublishedDirectory | null>(actionInfo);
+    return directory ?? EMPTY_PUBLISHED_DIRECTORY;
+  }
+
+  /**
+   * Drop one manifest row by typeid — for a `missing` row whose asset has no
+   * local entity to toggle. Resolves to the typeids still listed.
+   */
+  async unpublish(typeid: string): Promise<string[]> {
+    const actionInfo = new ActionInfo('unpublish', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { typeid };
+    const result = await dataManager.callAction<{ typeid: string }, { typeids?: string[] }>(actionInfo);
+    return result?.typeids ?? [];
+  }
+
+  /**
+   * HUB: ask the hub to push an install request for one published row to the
+   * caller's logged-in desktop(s). `delivered === 0` means no desktop is
+   * connected — the caller shows the install snippet instead.
+   */
+  async requestInstall(typeid: string): Promise<RequestInstallResult> {
+    const actionInfo = new ActionInfo('install', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { typeid };
+    const result = await dataManager.callAction<{ typeid: string }, RequestInstallResult | null>(actionInfo);
+    return result ?? { delivered: 0, request_id: '' };
+  }
+
+  /**
+   * DESK: install one published row (the relayed `InstallRequest`) into THIS
+   * project — copy from its origin, index keeping the publisher's id, record in
+   * `deps.json`. Refusals reject with the backend message (`exists`, `missing`, …).
+   */
+  async installPublished(request: InstallRequest, overwrite = false): Promise<InstallPublishedResult> {
+    const actionInfo = new ActionInfo('install-published', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { request, overwrite };
+    const result = await dataManager.callAction<unknown, InstallPublishedResult | null>(actionInfo);
+    if (!result) throw new Error('install-published returned no result');
+    return result;
   }
 
   /**

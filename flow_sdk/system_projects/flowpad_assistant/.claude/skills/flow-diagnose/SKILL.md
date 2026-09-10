@@ -50,6 +50,37 @@ plain-language "To Summarize:" line.
   looking for whether there IS an issue **and** when establishing the root cause — never conclude
   "healthy" from a live health check alone (the shell can be stuck even when the backend is up).
 
+* **"It works now, so it's fine" is NOT a diagnosis — it is the absence of one.** If the user
+  reported that something went wrong, they are telling you it went wrong *at some point*, and they
+  want to know **why**. A passing health check tells you the current state; it says nothing about
+  the state they described. Never close a run with "no issues found" / "everything looks healthy" /
+  "it seems to be working now" when a symptom was reported. That answer is worthless to the user —
+  the problem will simply come back, still unexplained.
+
+  When the app is healthy *now* but a problem was reported, your job has not shrunk, it has changed
+  shape: **go find the failure in history.** Concretely, and in this order:
+
+  1. **Place it in time.** Get the window from the user's description ("this morning", "when I
+     opened it"); if there is no stated time, use the log evidence itself — the last backend
+     restart, the newest `main_desktop` startup, the most recent error burst.
+  2. **Search that window across ALL rotated files**, not the tail of the newest one:
+     ```bash
+     grep -rn -iE 'error|traceback|exception|failed|refused|timeout' $LOGS/server/*.log | tail -50
+     grep -rn -B5 -A20 '<the error string>' $LOGS/server/*.log
+     grep -rn -E '2026-09-09 1[4-6]:' $LOGS/server/*.log     # a specific hour window
+     ```
+     Files run to hundreds of MB — `grep` them, never `cat` them.
+  3. **Correlate the trees at the same timestamps.** A restart in `$LOGS/monitor/`, a
+     `Backend failed to start within timeout` in `$DESKTOP`, and a traceback in `$LOGS/server/`
+     within the same minute are one event, and the shape of that event IS the root cause.
+  4. **Report the root cause of the past failure** — with the log line and its timestamp — plus
+     whether it self-recovered and whether it will recur. "Recovered on its own" is a legitimate
+     finding; "I didn't look" is not.
+
+  Only if you have genuinely searched the history and found nothing may you say so — and then say
+  exactly that: which windows and which files you searched, and that the evidence is not there.
+  That is an honest negative result. A silent "looks fine to me" is not.
+
 * **Run Python as `"$FLOWPAD_PYTHON"` — always, and nothing else.** That variable is set for you
   in every worker environment and names the one interpreter that can `import flow_sdk`. Do **not**
   use `uv run`: it ignores PATH and resolves an environment by walking up from the working
@@ -89,6 +120,21 @@ PORT=$("$FLOWPAD_PYTHON" -c "import json,os,pathlib; inst=os.environ.get('FLOW_I
 Frontend dev-server port: `${VITE_PORT:-4097}`. Use `$PORT` / `$VITE_PORT` in every URL and port
 check below. (The packaged desktop app uses `9007` and serves the UI on that same port.)
 
+**Resolve the log directory the same way — never hardcode `dev` / `prod`.** Backend logs are
+per-instance, and there are usually more than two (every `instance_ctl.sh launch <name>` mints its
+own). Resolve once and use `$LOGS` everywhere below:
+
+```bash
+INST="${FLOW_INSTANCE:-prod}"          # unset → prod
+LOGS=~/.flow/instances/$INST/logs      # backend: $LOGS/server/, $LOGS/monitor/
+DESKTOP=~/.flow/logs/main_desktop      # Electron shell — global, NOT per-instance
+ls ~/.flow/instances                   # the real list on this machine
+```
+
+The global `~/.flow/logs/server/` and `~/.flow/logs/monitor/` are **dead directories** — empty
+since the backend moved to per-instance logging. Reading them yields nothing and will make you
+conclude "no evidence" while hundreds of MB sit in `$LOGS/`. See the `flowpad_logs` skill.
+
 ### Step 2 — Full diagnostic sweep (no error text given)
 
 Run ALL checks below, collect all results, THEN report. Do not stop at the first finding.
@@ -117,10 +163,15 @@ Consult the **`flowpad_logs`** skill for the full, authoritative list of log loc
 **all** of them — backend instance logs, the Electron desktop logs, and the hub. At minimum:
 
 ```bash
-# macOS/Linux — repeat for server, monitor, main_desktop
-LOGDIR=~/.flow/logs/server
-tail -20 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
+# macOS/Linux — $LOGS and $DESKTOP resolved in Step 1
+for p in "$LOGS/server" "$LOGS/monitor" "$DESKTOP"; do
+  echo "== $p =="; tail -20 "$(ls -t $p/*.log 2>/dev/null | head -1)"
+done
 ```
+
+If any of those prints nothing, say so explicitly and find out why (wrong instance? never
+started?) — an empty directory is NOT the same as a clean log, and treating it as one is how a
+broken app gets reported as healthy.
 
 Look for: `record_error`, `integrity_check`, `EADDRINUSE`, `electron-updater`, `x64` on arm64.
 
@@ -160,9 +211,8 @@ a "Startup Error" even though the backend is healthy *now*. Read the newest `mai
 reason about the shell↔backend timeline:
 
 ```bash
-# macOS/Linux — newest main_desktop log, last ~40 lines
-LOGDIR=~/.flow/logs/main_desktop
-tail -40 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
+# macOS/Linux — newest main_desktop log, last ~40 lines ($DESKTOP from Step 1)
+tail -40 "$(ls -t $DESKTOP/*.log 2>/dev/null | head -1)"
 # Windows (PowerShell)
 Get-Content (Get-ChildItem $HOME\.flow\logs\main_desktop\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
 ```
@@ -288,7 +338,7 @@ kill -0 "$PID" 2>/dev/null && echo "alive" || echo "dead"
 
 If dead → delete `~/.flow/instances/prod/server.lock` and `server.pid`. Tell user to relaunch.
 
-b) DB integrity: look for `record_error` or `integrity_check` in `~/.flow/logs/server/` newest file.
+b) DB integrity: look for `record_error` or `integrity_check` in `$LOGS/server/` newest file.
 If corruption found → backend auto-recovers from `~/.flow/instances/prod/backups/` on next launch.
 List backups: `ls -t ~/.flow/instances/prod/backups/`. Tell user to relaunch.
 
@@ -439,7 +489,7 @@ and report what you found.
 
 1. **Gather evidence** broadly — fit the investigation to the actual symptom, don't stop at a
    generic sweep. Start with: `curl -fsS http://localhost:$PORT/health/status`; the newest files
-   under `~/.flow/logs/{server,monitor,main_desktop}`; instance state in `~/.flow/instances/<name>/`
+   under `$LOGS/{server,monitor}` and `$DESKTOP` (Step 1); instance state in `~/.flow/instances/$INST/`
    (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space. Then go where the symptom
    points — if the user describes unexpected data, wrong UI state, a feature misbehaving, etc., probe
    that directly (query the DB, inspect the relevant entities/records, reproduce the behavior) rather
@@ -448,7 +498,8 @@ and report what you found.
    acting.
 3. **Attempt only a conservative, reversible repair** — never destructive (no DB deletes, no
    `xattr` on unrelated apps, no disabling Gatekeeper/SmartScreen system-wide). If unsure, do
-   nothing and advise the user.
+   nothing and advise the user. "Unsure" limits what you may **repair** — it never licenses
+   skipping the **diagnosis**: still report the root cause and the evidence for it.
 4. Record it with **`--status unrecognized`** in Step 7 (an internal field so the team sees it's a
    not-yet-catalogued case) — but keep that label out of your user-facing prose; the report just
    states the root cause, fix, and validation like any other.
@@ -491,12 +542,17 @@ Always use this structure:
 ```
 == Flowpad Diagnostic Report ==
 Platform: <macOS / Windows / Linux>
+Instance: <$INST>  (logs: <$LOGS>)
 Date:     <timestamp>
 
-[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL>
+Reported symptom: <what the user described, and the time window you searched for it>
+                  <omit this line ONLY when no symptom was reported (bare sweep)>
+
+[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL | SELF-RECOVERED>
   Root cause: <the underlying cause, not the symptom>
-  Proof:      <evidence this is the cause (command output / log line / repro)>
+  Proof:      <evidence this is the cause — quote the log line WITH its timestamp and file>
   Action:     <what you did (if fixed), or exactly what the user must do>
+  Recurrence: <will it happen again? what triggers it?>
   Validation: <the check you re-ran + its result>
 
 [OK] <check name> — no issues
@@ -505,6 +561,11 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
+
+**A report that answers a reported symptom with only `[OK]` lines is a failed run.** If the app is
+healthy now, the `[FOUND]` block still has to explain what happened earlier — status
+`SELF-RECOVERED` — or state explicitly which log windows and files you searched and came up empty.
+Never let "healthy now" stand in for the root cause of what the user reported.
 
 ### Step 7 — Record the result (ALWAYS runs — even when everything is healthy)
 

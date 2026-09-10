@@ -1,5 +1,5 @@
 import { FileText, type LucideIcon } from 'lucide-react';
-import { lucideByName } from '@src/lib/lucide-by-name';
+import { isCustomIconName, lucideByName } from '@src/lib/lucide-by-name';
 import { humanizeType } from '@src/utils/humanize';
 import { translateTypeLabel } from '@src/i18n/type-labels';
 import { dataManager } from '@sdk';
@@ -18,7 +18,10 @@ import { dataManager } from '@sdk';
  */
 export function iconForType(type: string): LucideIcon {
   const name = dataManager?.iconForType?.(type);
-  return (name && lucideByName(name)) || FileText;
+  // `lucideByName` always answers a component — one that draws nothing for a
+  // name the icon packs cannot resolve — so the generic glyph has to be chosen
+  // here, by asking whether the name resolves, not by a falsy check.
+  return (name && isCustomIconName(name) && lucideByName(name)) || FileText;
 }
 
 /**

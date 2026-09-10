@@ -16,6 +16,7 @@ import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -175,6 +176,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
     <MarkdownEditor
       fsRef={editorRef}
       editEntity={skill}
+      headerLeading={skill ? <PublishedToggle entity={skill} /> : null}
       chatTarget={skillKey}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
