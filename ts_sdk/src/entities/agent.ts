@@ -64,6 +64,8 @@ export class Agent extends APIEntity<Agent> {
   model?: string;
   permission_mode?: string;
   effort?: string;
+  /** Cloud box size (`sm`/`md`/`lg`) the hub deploys this agent onto. */
+  machine_size?: string;
   max_turns?: number;
 
   // `null`/undefined is NOT `[]` — an omitted list inherits everything the
@@ -108,6 +110,7 @@ export class Agent extends APIEntity<Agent> {
     this.model = entity.model;
     this.permission_mode = entity.permission_mode;
     this.effort = entity.effort;
+    this.machine_size = entity.machine_size;
     this.max_turns = entity.max_turns;
 
     // Preserve the tri-state: absent stays absent, [] stays [].
