@@ -60,6 +60,11 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_from_busy,
     is_turn_busy,
 )
+from flow_sdk.builtin.agentic_process.switch_mode_spec import (
+    SwitchModeBodyError,
+    SwitchToCliBody,
+    parse_switch_mode_body,
+)
 from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
     backend_restart_requested,
@@ -2189,41 +2194,35 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="switch-mode")
     async def switch_mode(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Standardized transport switch — the single backend seam the frontend
-        ``AgenticProcess.switchMode(mode)`` (and the ribbon chat⇄terminal toggle)
-        calls. POST body: ``{"mode": "interactive" | "cli"[, cols, rows]}`` —
-        ``WorkerMode`` values (``interactive`` is the PTY worker).
-
-          - ``cli``         → headless JSON-stream (kill PTY, visible=False, pty_mode=False)
-          - ``interactive`` → PTY terminal (spawn PTY, visible=True, pty_mode=True)
-
-        Both are the SAME logical session (one ``session_id``/transcript); routing
-        keys on the transport intent ``pty_mode`` (``interactive`` ⇒ ``pty_mode=True``,
-        ``cli`` ⇒ ``pty_mode=False``), independent of tab ``visible``. Rejected
-        mid-turn in BOTH directions (409) so two workers never share the transcript.
+        """Transport switch — the ONE seam both directions take. Body is
+        ``SwitchModeBody``, a union tagged on ``mode``: ``cli`` kills the PTY and
+        goes headless, ``interactive`` spawns it and may pin a ``theme``. Same
+        logical session either way; 409 mid-turn in both, so two workers never
+        share the transcript. INTERACTIVE returns ``_build_open_payload``, so the
+        client attaches off this response instead of the unguarded ``open``.
         """
+        request_info = get_current_request_info()
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
             return body
-        raw = str(body.get("mode", "")).lower()
         try:
-            mode = WorkerMode(raw)
-        except ValueError:
-            return ApiFailResponse(
-                message=f"unknown mode {raw!r} (expected {WorkerMode.INTERACTIVE!r} or {WorkerMode.CLI!r})"
-            )
-        # Mid-turn guard for BOTH directions (hoisted from _enter_cli_mode): a
-        # switch that spawns/kills a worker while a prompt turn is in flight would
-        # put two workers on one transcript.
+            switch = parse_switch_mode_body(body)
+        except SwitchModeBodyError as exc:
+            return ApiFailResponse(message=str(exc))
+        # Both directions: spawning or killing a worker mid-turn would put two
+        # workers on one transcript.
         if (resp := self._reject_if_turn_in_flight()) is not None:
             return resp
-        if mode is WorkerMode.CLI:
+        if isinstance(switch, SwitchToCliBody):
             return await self._enter_cli_mode()
-        # INTERACTIVE (PTY): the canonical open path — spawns the PTY and sets
-        # ``visible=True`` (which persists ``pty_mode=True`` in the open tail).
-        # Route through start_pty rather than its unlocked implementation so a
-        # watchdog/client race cannot launch two workers for the same process.
-        return await self.start_pty(instruction=None, visible=True, retry=True)
+        # INTERACTIVE: locked start_pty (not _perform_open) so a watchdog race
+        # can't double-spawn. Connection id is the one request-scoped value the
+        # body cannot carry — ``_http_open`` picks it up the same way.
+        if request_info and request_info.request_connection_id:
+            self.connection_id = request_info.request_connection_id
+        return await self.start_pty(
+            instruction=None, visible=True, retry=True, terminal_theme=switch.theme
+        )
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:

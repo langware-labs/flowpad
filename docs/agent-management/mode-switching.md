@@ -54,7 +54,9 @@ The current code routes on `pty_mode`:
   `cols`/`rows`; the handler never reads them and `start_pty` has no such params —
   they are frontend-only, consumed by `switchMode`'s `start()` call.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
-  (`ts_sdk/src/process/agentic-process.ts:3077`).
+  (`ts_sdk/src/process/agentic-process.ts`). BOTH directions POST this one
+  action; the Interactive direction used to call `start()`/`open` instead, which
+  has no mid-turn guard (FLOWPAD-2130).
 - **UI caller:** `useProcessSurface`
   (`interactive-terminal/use-process-surface.ts`), driven by the **View mode** —
   the one mode preference, selected in the one control: the footer `ViewToggle`.
@@ -119,11 +121,14 @@ Backend `switch_mode` INTERACTIVE branch (`agentic_process.py:2148`):
   and that assignment is the ONLY thing in the backend that sets `pty_mode` back
   to True. `retry=True` clears any `start_failure` latch.
 
-Frontend `switchMode(Interactive)` (`agentic-process.ts:3078`):
-- optimistically sets `pty_mode=true` + pending latches, calls
-  `start({ visible:true, retry:true, cols, rows })` (the same `open` path, so the
-  live PTY attach happens client-side too), then emits `restarted` so
-  `InteractiveTerminal` clears the xterm and re-attaches to the fresh PTY.
+Frontend `switchMode(Interactive)`:
+- optimistically sets `pty_mode=true` + pending latches, POSTs
+  `switch-mode {mode:"interactive", theme}`, hands the response to the shared
+  `adoptOpenPayload` helper (the same client-side attach `start()` performs —
+  the action returns the identical `_build_open_payload` shape), then emits
+  `restarted` so `InteractiveTerminal` clears the xterm and re-attaches.
+  It carried `cols`/`rows` into `start()` before; the backend never read them on
+  either route, and the authoritative resize is issued by xterm on fit.
 
 ### UI-side reconcile (both directions)
 
@@ -137,13 +142,12 @@ above:
   on the chat skin — the skin preference lags under rapid switching, so a
   skin-keyed test could short-circuit a direction that has not actually landed.
 - Otherwise guards on `canSwitch` (the owning panel's own `/open` still in
-  flight) and then on a **direction-split** mid-turn predicate
-  (`use-process-surface.ts:185`): `→Interactive` waits for readiness
-  (`isReadyForInput`), because it must spawn and attach a worker; `→CLI` waits on
-  `isBusy`, the same `is_turn_busy` the backend 409s on. The two are NOT
-  complements — readiness also demands a live worker — so gating `→CLI` on
-  readiness would permanently strand a PTY the user ended from the xterm
-  (`/exit` → STOPPED: neither busy nor ready) on `pty_mode=true`.
+  flight) and then on ONE mid-turn predicate, `surfaceTransportGate` — `isBusy`,
+  the same `is_turn_busy` the backend 409s on, in **both** directions. It is not
+  readiness: readiness also demands a live worker, so gating on it would
+  permanently strand a PTY the user ended from the xterm (`/exit` → STOPPED:
+  neither busy nor ready) on `pty_mode=true`, and would grey Terminal on a
+  FAILED session — the very click that revives it.
 - Declines leave `lastReconciledMode` **unrecorded**, so the effect retries the
   moment the worker goes idle instead of stranding the session. If the user has
   gone back to a terminal mode by then, `previous === viewMode` makes the retry a
@@ -164,13 +168,21 @@ above:
 A switch is rejected while a **turn is in flight**, in both directions, so two
 workers can never share one transcript. Two layers, keyed on the same predicate:
 
-1. Backend `switch_mode` → `_reject_if_turn_in_flight` (`agentic_process.py:2100`)
-   → **409** "a turn is in flight". It sits in `switch_mode`, above the branch, so
-   it covers `→interactive` as well as `→cli`; `restart` shares it. It keys on
+1. Backend `switch_mode` → `_reject_if_turn_in_flight` → **409** "a turn is in
+   flight". It sits in `switch_mode`, above the branch, so it covers
+   `→interactive` as well as `→cli`; `restart` shares it. It keys on
    `is_turn_busy`, the same predicate the wire `busy` flag derives from — the old
    lock-only check missed a native-xterm turn, which holds no lock.
 2. Frontend `useProcessSurface` declines the reconcile rather than firing a call
-   it knows will 409 (`use-process-surface.ts:185`), and retries at idle.
+   it knows will 409, and retries at idle.
+
+   Layer 1 only actually covered `→interactive` once the frontend stopped
+   routing that direction at `open` (FLOWPAD-2130). While it did, the guard was
+   real but unreachable from the UI, and layer 2 mirrored the unguarded route
+   rather than the risk — a mid-turn switch to Terminal spawned a PTY onto the
+   session a live headless turn was writing, and that turn was lost. `open`
+   itself is still unguarded on purpose (loaders, watchdog, auto-recovery);
+   tightening it is FLOWPAD-2117.
 
 The **`ViewToggle` itself is never disabled** — every mode is always clickable.
 Selecting a mode is pure navigation; it is the transport reconcile behind it that
@@ -235,12 +247,22 @@ so no PtySync attach is attempted for a shell-less process.
 
 ## Known gaps / robustness concerns (for arch review)
 
-1. **~~Asymmetric mid-turn guard.~~ FIXED.** The mid-turn guard
-   (`_reject_if_turn_in_flight`) now runs in `switch_mode` for **both** directions and
+1. **~~Asymmetric mid-turn guard.~~ FIXED (twice).** The guard
+   (`_reject_if_turn_in_flight`) runs in `switch_mode` for **both** directions and
    keys on `status_predicates.is_turn_busy` — the same predicate that produces the
    wire `busy` status and the frontend toggle gate. It catches a native-xterm turn
    (which holds no prompt lock) via the worker status, so the 409 and the toggle can
    never disagree. See [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
+
+   The second half: for a stretch that guard was unreachable from the UI, because
+   `switchMode(Interactive)` routed at `open`, which has none — so a mid-turn
+   →terminal switch went through and put two workers on one transcript
+   (FLOWPAD-2130). Both directions now POST `switch-mode`. **`open` remains
+   unguarded by design** (loaders, the watchdog and auto-recovery all call it
+   unconditionally); adding a busy refusal there is FLOWPAD-2117 and is a wider
+   decision than this one. The rule that falls out: a *transport switch* must
+   never be routed at `open`, and the cross-language fixture
+   `test_fixtures/status_sets.json` asserts it from both sides.
 2. **~~Optimistic FE state before backend confirm.~~ ADDRESSED.** `switchMode`
    still stages `pty_mode`/`visible` locally before the round-trip — it has to,
    because backend exit/final-save broadcasts arrive *before* the HTTP response

@@ -243,6 +243,19 @@ export enum WorkerMode {
   CLI         = 'cli',
 }
 
+/** The two palettes a worker can be pinned to. */
+export type TerminalTheme = 'light' | 'dark';
+
+/**
+ * The `switch-mode` request body, tagged on `mode` — mirrors
+ * `flow_sdk/builtin/agentic_process/switch_mode_spec.py`, whose `extra="forbid"`
+ * rejects a field the other arm owns. PTY dimensions are deliberately absent:
+ * they seed the client's own `attachPty` and no handler has ever read them.
+ */
+export type SwitchModeBody =
+  | { mode: WorkerMode.Interactive; theme?: TerminalTheme }
+  | { mode: WorkerMode.CLI };
+
 /**
  * Portable model **tier** (size) — set as `context.model` instead of a vendor
  * model name. The backend driver maps the tier to its own model family at launch

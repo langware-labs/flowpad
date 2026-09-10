@@ -1,31 +1,18 @@
-"""Python half of the transport-switch gate contract (FLOWPAD-2105).
+"""Python half of the transport-switch gate contract (FLOWPAD-2105/2130).
 
-The frontend greys a `ViewToggle` segment, and declines the reconcile behind it,
-on `surfaceTransportGate(...).blocked`. This file pins the BACKEND side of that
-same question to the shared truth table in `test_fixtures/status_sets.json` —
-the same rows the vitest `ui/tests/unit/transport-switch-gate-contract.test.ts`
-iterates. Editing one side without the other breaks both.
+Pins the BACKEND side of what the client greys on to the shared truth table in
+`test_fixtures/status_sets.json` — the same rows the vitest
+`ui/tests/unit/transport-switch-gate-contract.test.ts` iterates, so editing one
+side without the other breaks both.
 
-The contract has two halves, and the second is an asymmetry worth stating
-plainly rather than papering over:
-
-* **`→cli`** goes through the `switch-mode` action, whose
-  `_reject_if_turn_in_flight` 409s on `is_turn_busy`. The client gate is an
-  exact mirror there — and it is a mirror of the *value*, not a reimplementation:
-  the wire `busy` field IS `is_turn_busy(...)` computed here and serialized, so
-  the TS `isBusy(p)` is `p.busy === true` and the two cannot disagree on logic.
-
-* **`→interactive`** does NOT reach `switch_mode` from the UI at all.
-  `switchMode(Interactive)` calls `start()` → the `open` action → `start_pty`,
-  and that path carries no mid-turn guard. The server accepts a mid-turn open,
-  so the client does not refuse one either — it mirrors the route rather than
-  inventing policy, and `blocked == backend_refuses` on every row.
-
-  That asymmetry is asserted below rather than assumed, so it cannot rot: if a
-  guard is ever added to `open`, these tests fail until BOTH `backend_refuses`
-  and `blocked` are flipped on those fixture rows.
+Both directions go through `switch-mode`, whose `_reject_if_turn_in_flight` 409s
+on `is_turn_busy` — the same value the wire `busy` field carries, so the client
+mirrors it rather than reimplementing it. That symmetry is the FLOWPAD-2130 fix:
+`switchMode(Interactive)` used to call the unguarded `open`, so a →terminal click
+during a live headless turn spawned a PTY onto that turn's own session and lost
+it. `open` itself stays unguarded (FLOWPAD-2117 — loaders, watchdog and recovery
+depend on that); what changed is that no switch is routed at it any more.
 """
-
 import json
 import uuid
 from pathlib import Path
@@ -94,60 +81,82 @@ def test_wire_busy_is_the_backend_predicate_itself(cases):
 
 @pytest.mark.asyncio
 async def test_switch_mode_409s_exactly_when_the_client_blocks(cases):
-    """For every row routed at `switch-mode`, the action's 409 and the client's
-    `blocked` must be the same decision."""
+    """For every switching row — BOTH directions — the action's 409 and the
+    client's `blocked` are the same decision. The row's own transport picks the
+    direction. Before FLOWPAD-2130 only the `cli` half of this loop existed,
+    because the other half never reached this action.
+    """
+    exercised = {"interactive": 0, "cli": 0}
     for row in cases:
         if row["backend_route"] != "switch-mode":
             continue
+        mode = "cli" if row["pty_mode"] else "interactive"
         proc = _proc(row)
         req = MagicMock()
-        req.get_post_data = AsyncMock(return_value={"mode": "cli"})
+        req.get_post_data = AsyncMock(return_value={"mode": mode})
+        req.request_connection_id = None
         with (
             patch(
                 "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
                 return_value=req,
             ),
             patch.object(AgenticProcess, "_enter_cli_mode", new=AsyncMock(return_value="entered")),
+            patch.object(AgenticProcess, "start_pty", new=AsyncMock(return_value="opened")),
         ):
             result = await proc.switch_mode()
 
         refused = isinstance(result, ApiFailResponse) and result.status_code == 409
-        assert refused is row["backend_refuses"], row["label"]
+        assert refused is row["backend_refuses"], f"{mode}: {row['label']}"
         # …and that is exactly what the client greys the segment on.
         assert refused is row["blocked"], f"client/server disagree: {row['label']}"
+        exercised[mode] += 1
+
+    assert exercised["interactive"], "fixture must cover the ->terminal direction"
+    assert exercised["cli"], "fixture must cover the ->chat direction"
 
 
 @pytest.mark.asyncio
-async def test_the_open_route_has_no_mid_turn_guard(cases):
-    """The asymmetry, asserted rather than assumed.
-
-    `→terminal` reaches `start_pty` through the `open` action, which never calls
-    `_reject_if_turn_in_flight`. A mid-turn `open` is therefore accepted by the
-    backend — and the client, mirroring the route, does not refuse it either. If
-    a guard is ever added there, this test fails and BOTH `backend_refuses` and
-    `blocked` must be flipped on the `open` rows (and this docstring rewritten).
+async def test_interactive_switch_409s_mid_turn(use_tmp_records_root):
+    """The FLOWPAD-2130 fix, at the action rather than through a row: a mid-turn
+    `→interactive` is refused BEFORE anything spawns, because the whole failure
+    was a second worker landing on the live turn's own session.
     """
-    open_rows = [r for r in cases if r["backend_route"] == "open"]
-    assert open_rows, "fixture must cover the ->terminal direction"
+    proc = AgenticProcess(id=str(uuid.uuid4()), status="running", pty_mode=False, visible=False)
+    proc._turn_in_flight = True
+    assert is_turn_busy(proc) is True
 
-    for row in open_rows:
-        assert row["backend_refuses"] is False, row["label"]
-        # …and the client mirrors that rather than adding a refusal of its own.
-        assert row["blocked"] is False, row["label"]
+    req = MagicMock()
+    req.get_post_data = AsyncMock(return_value={"mode": "interactive"})
+    req.request_connection_id = None
+    with (
+        patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+            return_value=req,
+        ),
+        patch.object(AgenticProcess, "start_pty", new=AsyncMock(return_value="opened")) as start_pty,
+    ):
+        result = await proc.switch_mode()
 
-    mid_turn = [r for r in open_rows if r["busy"]]
-    assert mid_turn, "fixture must cover a mid-turn ->terminal click"
-    for row in mid_turn:
-        proc = _proc(row)
-        # The guard EXISTS and would fire on this very state — it simply is not
-        # on the route the UI takes. That is the whole asymmetry, in one line.
-        assert proc._reject_if_turn_in_flight() is not None, row["label"]
+    assert isinstance(result, ApiFailResponse) and result.status_code == 409
+    start_pty.assert_not_awaited()
+
+
+def test_transport_switches_never_route_through_open(cases):
+    """`open` is still unguarded, so no transport switch may be routed at it.
+    Guarding `open` itself is FLOWPAD-2117 and deliberately not done here —
+    loaders, the watchdog and auto-recovery all call it unconditionally.
+    """
+    assert not [r for r in cases if r["backend_route"] == "open"], (
+        "a transport switch routed at `open` bypasses _reject_if_turn_in_flight"
+    )
 
 
 @pytest.mark.asyncio
-async def test_open_action_does_not_consult_the_turn_guard(use_tmp_records_root):
-    """Structural companion to the row assertions above: drive the real `open`
-    action on a busy process and prove it reaches `start_pty` regardless."""
+async def test_open_action_still_has_no_mid_turn_guard(use_tmp_records_root):
+    """Pins the deliberate remainder (FLOWPAD-2117) so nobody "fixes" it here:
+    `open` is the internal PTY entry point and a busy refusal there is a wider
+    decision. If that changes deliberately, delete this test.
+    """
     proc = AgenticProcess(id=str(uuid.uuid4()), status="running", pty_mode=False, visible=False)
     proc._turn_in_flight = True
     assert is_turn_busy(proc) is True
