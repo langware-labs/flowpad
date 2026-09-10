@@ -50,9 +50,11 @@ The current code routes on `pty_mode`:
 ### Single seam
 
 - **Backend:** `agentic_process.py` `switch_mode` action (`@action.post("switch-mode")`,
-  `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
+  `:2118`). Body: `{"mode": "interactive" | "cli"}`. The docstring also advertises
+  `cols`/`rows`; the handler never reads them and `start_pty` has no such params —
+  they are frontend-only, consumed by `switchMode`'s `start()` call.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
-  (`ts_sdk/src/process/agentic-process.ts:2360`).
+  (`ts_sdk/src/process/agentic-process.ts:3077`).
 - **UI caller:** `useProcessSurface`
   (`interactive-terminal/use-process-surface.ts`), driven by the **View mode** —
   the one mode preference, selected in the one control: the footer `ViewToggle`.
@@ -74,6 +76,12 @@ an interactive PTY, vibe and chat are headless. That reconcile lives in an
 control, or `window.setView()`). It fires on a mode CHANGE only, never on mount:
 merely opening a session must not kill or spawn a worker.
 
+It is **bidirectional** (FLOWPAD-2105). It was one-directional for a stretch —
+`bf9b51706` through 0.2.16x, chat and vibe leaving a healthy PTY alone — which
+turned `pty_mode` into a one-way latch: a session that had once visited the
+terminal stayed on a PTY forever, reloads included. The round trip is back,
+with the mid-turn guard split by direction (see *Preconditions & gates*).
+
 (Historically this was a 2-state toggle in the bottom ribbon, then a separate
 3-valued "chat mode" preference. The latter could drift out of sync with View
 mode — both carried a `vibe`, and each control wrote only its own — so it was
@@ -81,20 +89,20 @@ folded into View mode.)
 
 ### → CLI (chat / headless)
 
-Backend `_enter_cli_mode` (`agentic_process.py:1268`):
-1. **Mid-turn guard:** if `_get_prompt_lock(self.id).locked()` → **409** ("a prompt
-   turn is in flight; cannot switch mode"). Prevents two workers sharing one transcript.
-2. If a shell exists and `is_running()`, call `exit()` (SIGTERMs the worker + PTY,
+Backend `_enter_cli_mode` (`agentic_process.py:2057`). The mid-turn guard is no
+longer here — it was hoisted into `switch_mode` itself and now covers **both**
+directions (`_reject_if_turn_in_flight`, `:2100`, keyed on `is_turn_busy`):
+1. If a shell exists and `is_running()`, call `exit()` (SIGTERMs the worker + PTY,
    **preserves** `shell_id` + `session_id` + transcript). An `exit()` that raises
    because the PTY is already dead is swallowed — a dead PTY *is* the desired end
    state (`:1288`). A genuine `ApiFailResponse` (other than "No active shell") is returned.
 3. Reload the row (`get_by_id`) so the reset rides on the freshly-saved exit row,
    then set `visible=False` **and** `pty_mode=False`, and `save()`.
-   - Rationale (`:1276`): `exit()` alone can't reset `visible`, because a plain
+   - Rationale: `exit()` alone can't reset `visible`, because a plain
      `restart` (exit+start) must *keep* it True. The reset therefore lives only in
      the explicit mode-switch.
 
-Frontend `switchMode(CLI)` (`agentic-process.ts:2369`):
+Frontend `switchMode(CLI)` (`agentic-process.ts:3093`):
 - sets `_userInitiatedStop = true`, optimistically flips the cached `Shell` to
   `CLOSING`, POSTs `switch-mode {mode:"cli"}`, then sets `visible=false` /
   `pty_mode=false` and clears the pending latches.
@@ -103,12 +111,15 @@ Frontend `switchMode(CLI)` (`agentic-process.ts:2369`):
 
 ### → Interactive (terminal)
 
-Backend `switch_mode` INTERACTIVE branch (`agentic_process.py:1340`):
-- calls `_perform_open(instruction=None, visible=True, retry=True)` — the canonical
-  PTY open path. `visible=True` persists `pty_mode=True` in the open tail
-  (`:991`). `retry=True` clears any `start_failure` latch.
+Backend `switch_mode` INTERACTIVE branch (`agentic_process.py:2148`):
+- calls `start_pty(instruction=None, visible=True, retry=True)` — the canonical
+  PTY open path, entered through the locked `start_pty` rather than its unlocked
+  `_perform_open` implementation so a watchdog/client race cannot launch two
+  workers. `visible=True` persists `pty_mode=True` in the open tail (`:1706`),
+  and that assignment is the ONLY thing in the backend that sets `pty_mode` back
+  to True. `retry=True` clears any `start_failure` latch.
 
-Frontend `switchMode(Interactive)` (`agentic-process.ts:2361`):
+Frontend `switchMode(Interactive)` (`agentic-process.ts:3078`):
 - optimistically sets `pty_mode=true` + pending latches, calls
   `start({ visible:true, retry:true, cols, rows })` (the same `open` path, so the
   live PTY attach happens client-side too), then emits `restarted` so
@@ -125,8 +136,19 @@ above:
   the **transport** (`pty_mode`, held stable by the SDK desired-value latch), NOT
   on the chat skin — the skin preference lags under rapid switching, so a
   skin-keyed test could short-circuit a direction that has not actually landed.
-- Otherwise guards `if (!process || switching || !awaitingUserInput) return;`,
-  mirroring the control's own disabled gate (see below).
+- Otherwise guards on `canSwitch` (the owning panel's own `/open` still in
+  flight) and then on a **direction-split** mid-turn predicate
+  (`use-process-surface.ts:185`): `→Interactive` waits for readiness
+  (`isReadyForInput`), because it must spawn and attach a worker; `→CLI` waits on
+  `isBusy`, the same `is_turn_busy` the backend 409s on. The two are NOT
+  complements — readiness also demands a live worker — so gating `→CLI` on
+  readiness would permanently strand a PTY the user ended from the xterm
+  (`/exit` → STOPPED: neither busy nor ready) on `pty_mode=true`.
+- Declines leave `lastReconciledMode` **unrecorded**, so the effect retries the
+  moment the worker goes idle instead of stranding the session. If the user has
+  gone back to a terminal mode by then, `previous === viewMode` makes the retry a
+  no-op — which is what keeps a refused kill from landing on a terminal the user
+  has returned to.
 - Re-enables the control **immediately** once the transport switch resolves, then
   fires `process.loadHistory({ force: true })` in the **background** to pull in
   turns the *other* mode produced. History reconcile is deliberately not awaited
@@ -139,21 +161,21 @@ above:
 
 ### Mid-turn: rejected
 
-A switch is only legal while the worker is **awaiting user input**
-(`IDLE`/`COMPLETE`/`INTERRUPTED`/`PENDING_USER` — `isAwaitingUserInput`). Enforced
-in three layers:
-1. Backend `_enter_cli_mode` 409s on the prompt lock (`:1280`).
-2. The switch's chat/terminal segments are disabled unless `awaitingUserInput`
-   (the hook derives it from the reactive entity via `isReadyForInput`). Gating
-   is per segment: a pick that needs no transport work — the segment already
-   matching `pty_mode`, and the **vibe** segment, which only navigates — is never
-   gated.
-3. `select` re-checks `awaitingUserInput` as a belt-and-suspenders guard for
-   non-click callers.
+A switch is rejected while a **turn is in flight**, in both directions, so two
+workers can never share one transcript. Two layers, keyed on the same predicate:
 
-Note: the backend mid-turn guard only covers the **→CLI** direction (it lives in
-`_enter_cli_mode`). The →Interactive branch goes straight to `_perform_open` with
-no explicit prompt-lock check — it relies on the UI gate. See "Concerns" below.
+1. Backend `switch_mode` → `_reject_if_turn_in_flight` (`agentic_process.py:2100`)
+   → **409** "a turn is in flight". It sits in `switch_mode`, above the branch, so
+   it covers `→interactive` as well as `→cli`; `restart` shares it. It keys on
+   `is_turn_busy`, the same predicate the wire `busy` flag derives from — the old
+   lock-only check missed a native-xterm turn, which holds no lock.
+2. Frontend `useProcessSurface` declines the reconcile rather than firing a call
+   it knows will 409 (`use-process-surface.ts:185`), and retries at idle.
+
+The **`ViewToggle` itself is never disabled** — every mode is always clickable.
+Selecting a mode is pure navigation; it is the transport reconcile behind it that
+waits. (An older 2-state ribbon toggle did disable its segments; that control is
+gone — `TerminalBottomRibbon.tsx:77`.)
 
 ### `has_resumable_session` — resume vs fresh start
 
@@ -219,15 +241,15 @@ so no PtySync attach is attempted for a shell-less process.
    wire `busy` status and the frontend toggle gate. It catches a native-xterm turn
    (which holds no prompt lock) via the worker status, so the 409 and the toggle can
    never disagree. See [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
-2. **Optimistic FE state before backend confirm.** `switchMode` sets
-   `pty_mode`/`visible` locally before/around the round-trip and relies on
-   `_pendingPtyMode`/`_pendingVisible` latches + `onEntityUpdate` to reconcile a
-   disagreeing wire value. If the backend switch **fails** after the optimistic
-   write (CLI branch sets `visible=false`/`pty_mode=false` only *after* `callAction`,
-   so a throw leaves them unchanged — OK; but the Interactive branch sets
-   `pty_mode=true` *before* `start()`, so a `start()` throw leaves `pty_mode=true`
-   with no live PTY). The UI catch shows a notify.error but does not roll back
-   `pty_mode` — worth verifying the loader/entity broadcast corrects it.
+2. **~~Optimistic FE state before backend confirm.~~ ADDRESSED.** `switchMode`
+   still stages `pty_mode`/`visible` locally before the round-trip — it has to,
+   because backend exit/final-save broadcasts arrive *before* the HTTP response
+   and a stale latch would discard the authoritative frame as stale. But both
+   directions now stage through `stageTransportIntent(...)`, which returns a
+   `restoreTransport()` that rolls the fields AND their stale-wire latch back in
+   one scoped step, and both call it on throw. What remains is a UI question, not
+   a state one: a failed switch shows `notify.error` and nothing else names the
+   transport the session is actually on.
 3. **Background history reconcile can lag / drop silently.** `loadHistory({force})`
    is fire-and-forget with only a `console.debug` on failure; on a large transcript
    the chat pane can show a stale view until the live WS stream fills it. No user-facing
@@ -240,5 +262,3 @@ so no PtySync attach is attempted for a shell-less process.
 5. **Fork is Claude-only.** `pins_resume_cwd`/fork paths are gated to Claude; there
    is no cross-vendor fork-on-switch. Not a switch bug, but any future "switch +
    fork" UI must branch on the driver trait, not the options shape.
-</content>
-</invoke>

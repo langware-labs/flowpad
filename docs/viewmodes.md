@@ -55,39 +55,57 @@ instant, and impossible to break the data layer with.
 
 ### The ONE sanctioned exception — session surface
 
-An agent session's **transport** follows the mode, and this is deliberate — but
-it is ONE-DIRECTIONAL: a **terminal** surface *requires* an interactive PTY
-(`viewModePtyMode`), so selecting Terminal switches the live worker to
-`WorkerMode.Interactive`
+An agent session's **transport** follows the mode, and this is deliberate. It is
+BIDIRECTIONAL (FLOWPAD-2105): a **terminal** surface *requires* an interactive
+PTY (`viewModePtyMode`), so selecting Terminal switches the live worker to
+`WorkerMode.Interactive`; selecting **Chat or Vibe** switches it back to
+`WorkerMode.CLI`
 (`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`).
-**Chat and vibe require nothing** — they render the session's
-transport-independent stream — so they never switch it back to `WorkerMode.CLI`.
-Killing a healthy worker to enter chat bought nothing, and when the backend
-refused it mid-turn (409) the kill was silently queued to fire minutes later.
-The one switch that remains is a real backend mutation driven by view mode — the
-mapping is `surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
+The two directions reach the backend differently, and that asymmetry is real:
+`→Interactive` routes through `start()` / the `open` action (it has to actually
+attach a live PTY), while `→CLI` is the `switch-mode` action, whose
+`_enter_cli_mode` kills the PTY and persists `visible=false` + `pty_mode=false`.
+Both sides are one backend mutation driven by view mode — the mapping is
+`surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
 (`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*
 mode selector rather than a skin. It replaced a second `chat mode` preference
 that drifted out of sync with this one; one enum, one preference, one control.
 
-The consequence: **a chat or vibe surface can legitimately be
-sitting on a PTY worker.** `pty_mode` / `AgenticProcess.isHeadless` therefore
-does NOT correlate 1:1 with the view mode — once a session has visited the
-terminal it stays `pty_mode=true` until something else changes it, including
-after a reload (the intent is durable). Code must not infer "this is the chat
-surface, therefore the worker is headless". That inference led to hidden components
-and broken view for the chat/vibe mode (e.g. AskUserQustion card not showing for sessions
-after visiting the terminal once).
+Chat and vibe can *render* either transport — they bind to the session's
+transport-independent stream — but `pty_mode` is the session's **durable
+transport intent**, and for a while nothing in `ui/src` ever wrote it back. That
+made it a one-way latch: a session that had once visited the terminal stayed on
+a PTY forever, across reloads included. Leaving the terminal now hands the
+worker back.
 
-What chat and vibe DO reconcile on the way in is the **transcript**, not the
-transport: the non-PTY branch forces `loadHistory({ force: true })` when the
-worker is idle, so a turn produced on the surface being left is not missing from
-the incoming pane.
+Why the round trip was once removed, and why it is safe now: the old kill fired
+on a *healthy* worker at the wrong moment — the backend 409s a mid-turn switch,
+and the refused kill was silently queued to land minutes later. That is a guard
+problem, and the guard is now direction-split, because the two directions ask
+different questions:
 
-The exception is scoped to that switch and carries its own rules: the backend
-409s a mid-turn switch, so the reconcile waits for `awaitingUserInput` and
-deliberately leaves the mode unrecorded on refusal, retrying when the worker goes
-idle rather than stranding the session on the wrong transport.
+* `→Interactive` waits for **readiness** (`isReadyForInput`) — it has to spawn a
+  worker and attach to it.
+* `→CLI` waits on **busy** (`isBusy`), the same `is_turn_busy` predicate the
+  backend 409s on, so the client and the server can never disagree. Using
+  readiness here would strand the one session that most needs the switch: a PTY
+  the user ended from the xterm (`/exit` → STOPPED) is neither busy nor ready.
+
+Both directions leave the mode unrecorded on refusal, so the reconcile retries
+the moment the worker goes idle rather than stranding the session on the wrong
+transport. Each also forces `loadHistory({ force: true })` afterwards — the
+**transcript** obligation is separate from the transport one and applies in
+every direction, including chat→vibe where no transport changes at all, so a
+turn produced on the surface being left is not missing from the incoming pane.
+
+One case still leaves the two out of step, deliberately: **first sight never
+mutates.** Opening a dock in chat on a session that is already `pty_mode=true`
+records the mode and leaves the worker alone — "the mode this dock opened in" is
+not a statement that the user left the terminal. So code still must not infer
+"this is the chat surface, therefore the worker is headless"; read `pty_mode` /
+`AgenticProcess.isHeadless` when that is what you mean. That inference led to
+hidden components and a broken chat/vibe view (e.g. the AskUserQuestion card not
+showing for sessions that had visited the terminal once).
 
 ## The toolkit — `@src/components/view-mode`
 
