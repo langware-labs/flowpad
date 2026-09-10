@@ -1771,6 +1771,10 @@ msgstr "Always allow sessions from {guestName}"
 msgid "Always Thinking Enabled"
 msgstr "Always Thinking Enabled"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Amount"
+msgstr "Amount"
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
@@ -2633,6 +2637,7 @@ msgid "Browse…"
 msgstr "Browse…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget"
 msgstr "Budget"
@@ -2736,6 +2741,10 @@ msgstr "Bullet list"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Bundle ready — download started."
 msgstr "Bundle ready — download started."
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "By"
+msgstr "By"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
@@ -4630,6 +4639,10 @@ msgstr "Could not reach support"
 msgid "Could not reach the backend. Try again in a moment."
 msgstr "Could not reach the backend. Try again in a moment."
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Could not read this budget's history."
+msgstr "Could not read this budget's history."
+
 #: src/routes/loaders/process-load-error-resolution.ts
 msgid "Could not recover this session's project."
 msgstr "Could not recover this session's project."
@@ -6513,6 +6526,7 @@ msgstr "Effort"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Email"
 msgstr "Email"
 
@@ -6873,6 +6887,10 @@ msgstr "Events"
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
 msgstr "Every {scopeType} row has a source file on disk."
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
+msgstr "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every indexed row has a source file on disk."
@@ -8435,6 +8453,10 @@ msgstr "Health"
 msgid "Health:"
 msgstr "Health:"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Held by"
+msgstr "Held by"
+
 #: src/components/footer.tsx
 #: src/components/footer.tsx
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
@@ -8544,9 +8566,15 @@ msgstr "High Memory usage detected"
 msgid "Highlight changes since the last stamp"
 msgstr "Highlight changes since the last stamp"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "History"
 msgstr "History"
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "History of {scopeLabel}’s budget"
+msgstr "History of {scopeLabel}’s budget"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10889,6 +10917,7 @@ msgstr "N/A"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -12291,6 +12320,10 @@ msgstr "nothing eligible"
 msgid "Nothing found."
 msgstr "Nothing found."
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Nothing has been given out or changed here yet."
+msgstr "Nothing has been given out or changed here yet."
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
 msgstr "Nothing has been narrowed yet, so this machine sees every secret below."
@@ -13362,6 +13395,10 @@ msgstr "People"
 msgid "People & teams"
 msgstr "People & teams"
 
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "People with no team"
+msgstr "People with no team"
+
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 msgstr "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
@@ -14271,6 +14308,10 @@ msgstr "read only"
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "Reading"
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Reading the history…"
+msgstr "Reading the history…"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Reading this team's people…"
@@ -15227,6 +15268,7 @@ msgid "Right-to-left paragraph"
 msgstr "Right-to-left paragraph"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 #: src/components/organization/member-list.tsx
 msgid "Role"
@@ -17216,6 +17258,10 @@ msgstr "Spending now bills your own {0}."
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Spent"
 msgstr "Spent"
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Spent then"
+msgstr "Spent then"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Spinner Tips Enabled"
@@ -20008,6 +20054,10 @@ msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingS
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr "Welcome! Tell the user what this agent can do and how to start…"
 
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "What"
+msgstr "What"
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
@@ -20104,6 +20154,7 @@ msgid "What's in the box."
 msgstr "What's in the box."
 
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "When"
 msgstr "When"
 
@@ -20145,6 +20196,10 @@ msgstr "Whiteboards"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Who this agent is — its system prompt."
 msgstr "Who this agent is — its system prompt."
+
+#: src/components/organization/budgets/BudgetHistoryDialog.tsx
+msgid "Who was given how much, and by whom"
+msgstr "Who was given how much, and by whom"
 
 #: src/components/token-plan/MembersTable.tsx
 msgid "Who's spending"
