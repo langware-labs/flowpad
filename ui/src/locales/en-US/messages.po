@@ -7592,6 +7592,7 @@ msgstr "Failed to start GitHub connection"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/spec-editor/SpecEditor.tsx
 msgid "Failed to start session"
 msgstr "Failed to start session"
 
@@ -13362,6 +13363,10 @@ msgstr "Open transcript"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr "Open trigger"
+
+#: src/components/spec-editor/SpecEditor.tsx
+msgid "Open with:"
+msgstr "Open with:"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenAI"
