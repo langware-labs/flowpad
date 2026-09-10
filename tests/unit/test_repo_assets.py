@@ -258,3 +258,73 @@ async def test_index_attachments_widens_types_for_repo(tmp_path, monkeypatch):
         owner=None,
     )
     assert captured["types"] == ("markdown",)
+
+
+# ── Singleton: the entity-type dir IS the asset root (no <name> segment) ──────
+SINGLETON_TYPE = "repo_singleton"
+
+
+@pytest.fixture
+def singleton_type():
+    """Register a folder-backed REPO type whose type dir is the asset itself."""
+    SchemaRegistry.register(
+        TypeInfo(
+            type_name=SINGLETON_TYPE,
+            asset_class=AssetClass.REPO,
+            family=SINGLETON_TYPE,
+            singleton=True,
+            shape=Folder(main="node.json"),
+            # A type with no walker never claims a path (``_ShapeTables.build``);
+            # any callable makes this fixture a real, classifying type.
+            from_disk_fn=lambda ref, resolved_id: [],
+        )
+    )
+    try:
+        yield SINGLETON_TYPE
+    finally:
+        SchemaRegistry._types.pop(SINGLETON_TYPE, None)
+
+
+def test_singleton_places_at_the_type_dir_itself(singleton_type, tmp_path):
+    # No <name> tail: <scope_root>/agentic-assets/<type> IS the asset root.
+    ar = FSRecord(type=singleton_type, name="whatever").compute_asset_ref(tmp_path, _entity("whatever"))
+    assert ar._path == tmp_path / AGENTIC_ASSETS_DIR / singleton_type
+
+
+def test_singleton_main_file_is_claimed_by_its_type_not_by_a_named_layout(singleton_type, tmp_path):
+    from pathlib import Path
+
+    main = Path(tmp_path) / AGENTIC_ASSETS_DIR / singleton_type / "node.json"
+    assert singleton_type in SchemaRegistry.main_file_owners(main)
+    # The named form (<type>/<name>/<main>) is NOT this type's placement.
+    named = Path(tmp_path) / AGENTIC_ASSETS_DIR / singleton_type / "some-name" / "node.json"
+    assert singleton_type not in SchemaRegistry.main_file_owners(named)
+
+
+def test_repo_walker_emits_a_singleton_as_the_type_dir(tmp_path, monkeypatch):
+    # Reuse task's real EntityType (the walker coerces type_name → EntityType)
+    # but declare it singleton, so agentic-assets/task/task.md is the asset.
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
+    from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+    from flow_sdk.schema.types import EntityType
+
+    info = TypeInfo(type_name="task", asset_class=AssetClass.REPO, family="task", singleton=True, shape=Folder(main="task.md"))
+    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", lambda: {"task": info})
+    root = tmp_path / AGENTIC_ASSETS_DIR / "task"
+    root.mkdir(parents=True)
+    (root / "task.md").write_text("# the one\n")
+    # A child nested under the singleton is still discovered (recursion is uniform).
+    child = root / AGENTIC_ASSETS_DIR / "task"
+    child.mkdir(parents=True)
+    (child / "task.md").write_text("# child\n")
+
+    refs = repo_assets_fn([FSRef(tmp_path)], IndexerOptions())
+    by_path = {str(r._path): r for r in refs}
+    assert set(by_path) == {str(root), str(child)}
+    assert by_path[str(root)].record_type == EntityType.TASK
+    assert by_path[str(child)]._parent._path == root
+
+    # Without the marker the type dir is not an asset — and is not descended into.
+    (root / "task.md").unlink()
+    assert repo_assets_fn([FSRef(tmp_path)], IndexerOptions()) == []

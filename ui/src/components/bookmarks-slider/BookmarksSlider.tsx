@@ -1,6 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
 import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
-import { useFavoritesScope } from '@src/components/favorites/use-favorites-scope';
 import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
 import { useFavorites } from '@src/hooks/use-favorites';
@@ -45,7 +44,6 @@ export function BookmarksSlider({
   hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
-  const { filter, scopeKey, scopeBar } = useFavoritesScope();
   const { reapDead } = useFavorites();
   useCloseOnNavigate(open, () => onOpenChange(false));
   // Opening the bookmarks menu is when we clean house: hard-delete any dead
@@ -73,9 +71,10 @@ export function BookmarksSlider({
       open={open}
       onOpenChange={onOpenChange}
       title={t`Bookmarks`}
-      // AnchoredMenu documents headerRight as the canonical scope-filter home;
-      // the menu body is rows only.
-      headerRight={scopeBar}
+      // No headerRight: the scope filter that used to live there is gone. The
+      // tree is global and grouped by project, so "which project" is a row you
+      // hover rather than a mode you first have to set — and the header stays a
+      // title and a close button.
       anchorTop={anchorTop}
       anchorEnd={anchorEnd}
       idleMs={null}
@@ -86,7 +85,7 @@ export function BookmarksSlider({
           trailing side, previews opening into the screen rather than off it.
           `mirrored` is LOGICAL — BrowseableTree XORs it with the locale's dir —
           so this stays correct in both directions and must NOT be flipped here. */}
-      <FavoritesTreeMenu key={scopeKey} filter={filter} mirrored />
+      <FavoritesTreeMenu mirrored />
     </AnchoredMenu>
   );
 }

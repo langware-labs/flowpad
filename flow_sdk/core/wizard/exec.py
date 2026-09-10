@@ -35,6 +35,28 @@ logger = logging.getLogger(__name__)
 #: about its own noise, not its outcome.
 OUTPUT_CAP = 8192
 
+#: What a RECORDED probe keeps of each stream, per phase. Smaller than
+#: `OUTPUT_CAP` on purpose: capturing 8 KB is right for deciding an outcome, but
+#: a step records up to three phases × two streams, and `run.json` is rewritten
+#: whole under a lock on every result.
+PROBE_OUTPUT_CAP = 2000
+
+
+def capped(text: str, limit: int = PROBE_OUTPUT_CAP) -> "tuple[str, bool]":
+    """`(text, truncated)`, keeping the END.
+
+    The end is where the error is: a compiler's last line, a traceback's final
+    frame, the shell's complaint. Keeping the head would reliably record the
+    part nobody needs — which is also why `ShellResult.tail` is one of these.
+
+    A module function rather than a static method: it touches nothing on
+    `ShellResult`, and hanging it off the class implied it was part of what a
+    shell result IS.
+    """
+    if len(text) <= limit:
+        return text, False
+    return text[-limit:], True
+
 
 @dataclass(frozen=True)
 class ShellResult:
@@ -52,8 +74,7 @@ class ShellResult:
 
     def tail(self, limit: int = 300) -> str:
         """The most useful line to show a human: stderr if there is any, else stdout."""
-        text = (self.stderr or self.stdout or "").strip()
-        return text[-limit:] if text else ""
+        return capped((self.stderr or self.stdout or "").strip(), limit)[0]
 
 
 async def _spawn(command: str, *, cwd: str, env: dict, platform: str):

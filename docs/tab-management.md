@@ -198,7 +198,7 @@ The pieces, each at the right layer:
   indexing — distinct from `discoverByPath`, which stays only in `useEntityByPath`
   for the editor view's on-mount resolution.
 - The backend `ensure_tab` persists the resolved hint on create/reopen;
-  `_backfill_tab_projects` supplies the read-time target/pointer fallback for old
+  `_resolve_tab_projects` supplies the read-time target/pointer fallback for old
   or still-unresolved rows.
 
 ## One SDK tab manager, views derived locally

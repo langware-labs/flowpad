@@ -184,12 +184,16 @@ CONVERGED_TO_PRIVATE = {
     "project_root",
     "project_name",
 }
-# Fields that carried NO policy at all (bare pydantic `Field`, so they resolved
-# to SHARED and travelled) and are now declared PRIVATE. `fs_storage_provider`
-# was popped from the hub body by hand in `Project._hub_body` — that pop was the
-# policy; `visitor_role` is a per-request auth projection whose declaration even
-# said "Use Field not APIField for security".
-NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "visitor_role"}
+# Declared PRIVATE after `BASE_BUNDLE_EXCLUDE` was frozen, so the literal cannot
+# know about them. Two kinds land here. Converted: fields that carried NO policy
+# at all (bare pydantic `Field`, so they resolved to SHARED and travelled) —
+# `fs_storage_provider` was popped from the hub body by hand in
+# `Project._hub_body`, and that pop was the policy; `visitor_role` is a
+# per-request auth projection whose declaration even said "Use Field not
+# APIField for security". Born private: fields added since, which were PRIVATE
+# from their first line — `published` is a cache of the project manifest row,
+# reconciled from a local FILE that no receiver has.
+NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role"}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 

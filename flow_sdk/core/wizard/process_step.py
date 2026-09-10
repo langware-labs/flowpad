@@ -21,11 +21,60 @@ a legible failed step, not a traceback that takes the whole run with it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ProcessProgress:
+    """One tick of a step's agent, in the wizard's vocabulary.
+
+    Its own type rather than a raw ``WorkerStatus`` so the runner stays free of
+    process imports — the property that keeps its tests in milliseconds.
+    """
+
+    text: str
+    counters: dict = field(default_factory=dict)
+    blocked: bool = False
+
+
+#: Worker states collapse to a handful of words on purpose. A row that flickers
+#: between "thinking" and "using tool" and "working" is noisier than one that
+#: says "working", and the fine-grained labels already exist in the frontend
+#: where there is a real process entity to render them from.
+_VERB_BY_STATE = {
+    "blocked": "waiting for you",
+    "failed": "finishing",
+    "completed": "finishing",
+    "cancelled": "finishing",
+}
+
+
+def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
+    """What to say about the agent right now. Never raises, never mints."""
+    text, counters, blocked = "working", {}, False
+    try:
+        from flow_sdk.activity.progress_monitor import monitor  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.activity_bridge import (  # noqa: PLC0415
+            PROCESS_ACTIVITY_PATH, _state_for, subject_for,
+        )
+
+        state = _state_for(worker_status)
+        blocked = getattr(state, "value", str(state)) == "blocked"
+        text = _VERB_BY_STATE.get(getattr(state, "value", str(state)), "working")
+        # `node`, not `get`: a READ must not mint. Minting here would fabricate
+        # a phantom row on the footer chip for a process that has not reported.
+        node = monitor.node(PROCESS_ACTIVITY_PATH, subject_entity=subject_for(process_id))
+        if node is not None:
+            if getattr(node, "current_item", None):
+                text = f"{text} · {node.current_item}"
+            counters = dict(getattr(node, "counters", {}) or {})
+    except Exception:  # noqa: BLE001 — a status line is never worth a failure
+        logger.debug("could not read agent status for %s", process_id, exc_info=True)
+    return ProcessProgress(text, counters, blocked)
 
 
 @dataclass(frozen=True)
@@ -47,8 +96,14 @@ async def launch_step_process(
     context_data: Optional[dict] = None,
     target_typeid_str: str = "",
     timeout_seconds: float = 1800.0,
+    on_status: Optional[Callable[[ProcessProgress], None]] = None,
 ) -> ProcessResult:
-    """Spawn a headless agent process for one step and wait for it to settle."""
+    """Spawn a headless agent process for one step and wait for it to settle.
+
+    ``on_status`` is called with a `ProcessProgress` as the agent works, so the
+    step's row says what is happening rather than sitting still for the whole
+    timeout. It rides `wait()`'s existing 2s poll — no new budget.
+    """
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
@@ -78,6 +133,10 @@ async def launch_step_process(
         return ProcessResult(None, False, f"Could not start the step's agent: {exc}")
 
     process_id = str(process.id)
+    if on_status is not None:
+        # Immediately: the row should move when the process exists, not two
+        # seconds later when the first poll lands.
+        on_status(ProcessProgress("starting the agent"))
     try:
         start = await process.prompt(prompt)
     except Exception as exc:  # noqa: BLE001
@@ -86,7 +145,13 @@ async def launch_step_process(
         return ProcessResult(process_id, False, getattr(start, "message", "Agent failed to start"))
 
     try:
-        await process.wait(timeout=timeout_seconds)
+        await process.wait(
+            timeout=timeout_seconds,
+            on_status=(
+                (lambda ws: on_status(_progress_for(process_id, ws)))
+                if on_status is not None else None
+            ),
+        )
     except TimeoutError:
         return ProcessResult(process_id, False, f"Agent did not finish within {timeout_seconds:.0f}s")
     except Exception as exc:  # noqa: BLE001

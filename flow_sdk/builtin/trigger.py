@@ -8,7 +8,7 @@ from starlette.requests import Request
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.messages import HttpMethod
 from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.fs_store.type_id import TypeId
@@ -263,8 +263,16 @@ class Trigger(Entity):
     # action in order via its action handler.
     actions: list[TriggerAction] = APIField(default_factory=list, description="List of actions to dispatch on fire")
     enabled: bool = APIField(default=True)
-    last_triggered: Optional[datetime] = APIField(None, description="Timestamp of last trigger match")
-    counter: int = APIField(default=0, description="Counter incremented when trigger action is executed")
+    #: The trigger's folder on disk, when it came from one. Empty for a row the
+    #: rules API or the service seed minted — those stay rowful and fileless.
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+    #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
+    #: home, never the asset folder, never git) rather than leaving them to the
+    #: DB alone: a spent `fire_once` counter has to survive a full index rebuild,
+    #: or rebuilding the index re-arms every one-shot trigger on the machine.
+    #: They are not spec header fields, so they can never reach `trigger.json`.
+    last_triggered: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Timestamp of last trigger match")
+    counter: int = APIField(default=0, persist=Persist.TRUE, description="Counter incremented when trigger action is executed")
     hook_events: list[str] = APIField(default_factory=list)
     log_mode: str = APIField(default="activations")
     path: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
@@ -272,8 +280,8 @@ class Trigger(Entity):
     # Schedule trigger fields
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")
     sched_trigger_type: Optional[str] = APIField(None, description="APScheduler type: cron, interval, date")
-    next_run: Optional[datetime] = APIField(None, description="Next scheduled run (schedule triggers only)")
-    last_run: Optional[datetime] = APIField(None, description="Last scheduled run (schedule triggers only)")
+    next_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Next scheduled run (schedule triggers only)")
+    last_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
     workdir: Optional[str] = APIField(None, description="Working directory for the spawned agentic process (schedule triggers only)")
 
@@ -281,8 +289,8 @@ class Trigger(Entity):
     watch_path: Optional[str] = APIField(None, description="Absolute file or folder path watched (FSOp triggers only)")
     recursive: bool = APIField(default=False, description="For folder watches: descend into subtree (FSOp only)")
     watch_glob: Optional[str] = APIField(None, description="For folder watches: glob filter, e.g. '*.json' (FSOp only)")
-    last_seen_mtime: Optional[float] = APIField(None, description="File mtime at last fire (FSOp file triggers — used for restart catch-up)")
-    last_seen_size: Optional[int] = APIField(None, description="File size at last fire (FSOp file triggers — used for restart catch-up)")
+    last_seen_mtime: Optional[float] = APIField(None, persist=Persist.TRUE, description="File mtime at last fire (FSOp file triggers — used for restart catch-up)")
+    last_seen_size: Optional[int] = APIField(None, persist=Persist.TRUE, description="File size at last fire (FSOp file triggers — used for restart catch-up)")
     step_ms: int = APIField(50, description="awatch poll interval in ms (FSOp only). Lower = snappier; higher = less CPU. Default matches watchfiles' default.")
     debounce_ms: int = APIField(1600, description="awatch debounce in ms — max wait before yielding a coalesced batch (FSOp only). Raise on noisy paths (npm install bursts).")
     respect_gitignore: bool = APIField(default=False, description="If True, walk for .gitignore files under watch_path and drop matching events (FSOp only).")

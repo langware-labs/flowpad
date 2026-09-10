@@ -579,7 +579,7 @@ async def _reap_orphans(
     The reaped target types are exactly ``_DB_BACKED_TARGET_TYPES`` (shell +
     agentic_process): those rows are always DB-backed, so absence == orphan,
     whereas a missing ``markdown``/asset target is a valid unindexed-but-on-disk
-    row (see ``_backfill_tab_projects``) and is left alone.
+    row (see ``_resolve_tab_projects``) and is left alone.
     """
     if not tabs:
         return tabs
@@ -602,7 +602,7 @@ async def _reap_orphans(
             )
 
     # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
-    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # no longer exists. ``_resolve_tab_projects`` may still heal such a tab's
     # ``project_id`` from its TARGET — so the projects chip advertises a live
     # project — but opening the tab, or entering that project via the chip
     # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
@@ -911,7 +911,15 @@ async def ensure_tab(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
-    if (project_id is _UNSET or not project_id) and target_type and target_id:
+    # A SCOPE-KEYED row is the exception: its project is its scope, never its
+    # target's (``_pointer_scope_project``), so the target derivation below must
+    # not run for one. Stamping it at rest — not only on the read path — is what
+    # keeps ``_reap_orphans`` and ``reconcile_tab_project``, which both read the
+    # PERSISTED value, from acting on a project the row never belonged to.
+    scope_keyed, scope_project = _pointer_scope_project(pointer)
+    if scope_keyed:
+        project_id = scope_project
+    elif (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
             project_id = resolved
@@ -1270,8 +1278,47 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     return candidate if await _project_exists(candidate) else None
 
 
-async def _backfill_tab_projects(tabs: list[Tab]) -> None:
-    """Backfill a null ``project_id`` server-side, so the chip renders
+def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
+    """``(is_scope_keyed, the project the SCOPE names)`` for a stored pointer.
+
+    A scope-keyed row (Assets, Explorer) is ONE tab per scope — its identity is
+    the scope filter, not whatever it currently shows — so its project is a
+    property of that scope: ``project:<id>`` owns a project, ``all`` / ``user`` /
+    ``filter:…`` are Global. Deriving it from the row's denormalized TARGET
+    instead pins the single ``assets|all`` row to whichever asset was opened in
+    it first, and the strip (which filters by the active project) then hides the
+    very chip the loader just activated — "no active tab" (RCA 2026-09-09).
+    Read by both writers of ``project_id``: ``ensure_tab`` (at rest) and
+    ``_resolve_tab_projects`` (the read path, for rows never re-minted).
+
+    Discriminated on the scope-key grammar (``scopeFilterKey``,
+    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash": the workspace's
+    active display carries an explicit hash too (``workspaceActive|<host>``) and
+    is NOT scope-keyed — its project legitimately follows its target. Reads the
+    hash through ``_pointer_to_hash`` (the one owner of the pointer-format
+    grammar), like ``_pointer_view_type``; the ``rsplit`` also tolerates the
+    non-desk ``page|vt|scope`` form.
+    """
+    # Cheap substring pre-filter before any parse: only a scope-keyed row stores
+    # an explicit ``tabHash``, so the steady state (shells, processes, editors)
+    # never pays a JSON parse on this read path. Same idiom, same reason, as the
+    # ``"display" in pointer`` guard in ``_reap_orphans``.
+    if pointer and pointer.startswith('{') and '"tabHash"' not in pointer:
+        return (False, None)
+    tab_hash = _pointer_to_hash(pointer or '')
+    if '|' not in tab_hash:
+        return (False, None)
+    scope = tab_hash.rsplit('|', 1)[1]
+    if scope in ('all', 'user') or scope.startswith('filter:'):
+        return (True, None)
+    if scope.startswith('project:'):
+        return (True, scope.removeprefix('project:') or None)
+    return (False, None)
+
+
+async def _resolve_tab_projects(tabs: list[Tab]) -> None:
+    """Resolve each chip's ``project_id`` server-side — a backfill for the null
+    case, and a correction for a scope-keyed row — so the chip renders
     project-colored even for a row the FE re-shows WITHOUT re-minting — an
     existing tab persisted projectless before its project was resolvable (an
     unindexed claude-session lens, an editor on an unindexed markdown), or minted
@@ -1286,10 +1333,20 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Resolution order: the target entity's own project (authoritative — includes
+    Resolution order: for a SCOPE-KEYED row the scope itself (see
+    ``_pointer_scope_project``) — the one case that also CORRECTS a non-null
+    stamp, because a row the client reuses without re-minting (``materializeTab``
+    short-circuits) never reaches ``ensure_tab``'s matching arm; otherwise the
+    target entity's own project (authoritative — includes
     the claude-session on-disk recovery), else the project a project-scoped dock
     URL itself declares (``/dock/project/<id>/...``)."""
     for tab in tabs:
+        # Overrides, not just fills: the stamp it replaces was derived from a
+        # target this row no longer shows.
+        scope_keyed, scope_project = _pointer_scope_project(tab.pointer)
+        if scope_keyed:
+            tab.project_id = scope_project
+            continue
         if tab.project_id:
             continue
         resolved: str | None = None
@@ -1310,7 +1367,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     tabs, target_map = await _visible_tabs_sorted_with_targets()
     # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
     # real project's view rather than staying in the projectless bucket.
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
@@ -1446,7 +1503,7 @@ async def _http_list_all(cls):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs, target_map = await _visible_tabs_sorted_with_targets()
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
     remote_target_map = await _load_remote_targets(tabs, target_map)
     _populate_tab_target_remote(tabs, remote_target_map)

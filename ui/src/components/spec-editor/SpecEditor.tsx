@@ -13,7 +13,7 @@
  * so useContext() provides the agenticProcess for FS access and navigation.
  */
 
-import { AgenticProcess, Bookmark, BookmarkType, Plan, QueryRequest, Spec, TypeId, VFSPath } from '@sdk';
+import { AgenticProcess, ComputeNode, Bookmark, BookmarkType, Plan, QueryRequest, Spec, TypeId, VFSPath } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { useContext, useEntity } from '@sdk/react/hooks';
 import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -30,6 +30,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import './milkdown.css';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import type { WorkerType } from '@src/components/workers/worker-types';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { fileShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
@@ -215,6 +217,37 @@ const PlanFileEditor: React.FC = () => {
     [agenticProcess, filePath, fs, isDirty, navigation, plan],
   );
 
+  const reviewLaunching = useRef(false);
+  const reviewPlan = useCallback(
+    async (workerType: WorkerType) => {
+      if (!filePath || !computeNodeTypeId || !fs || reviewLaunching.current || isExecuting) return;
+      reviewLaunching.current = true;
+      setIsExecuting(true);
+      try {
+        if (isDirty) {
+          await fs.writeBack(filePath);
+          plan?.markEdit();
+        }
+        const computeNode = await ComputeNode.getById<ComputeNode>(computeNodeTypeId.id);
+        if (!computeNode) throw new Error('Plan compute node is unavailable');
+        await AgenticProcess.launch({
+          workerType,
+          computeNode,
+          workdir: canRunPlan ? (agenticProcess?.workdir ?? undefined) : undefined,
+          projectId: canRunPlan ? agenticProcess?.project_id : undefined,
+          launchPrompt: `Review the plan:${filePath}`,
+        });
+      } catch (error) {
+        console.error('[SpecEditor] Plan review launch failed:', error);
+        notify.error({ title: t`Failed to start session` });
+      } finally {
+        reviewLaunching.current = false;
+        setIsExecuting(false);
+      }
+    },
+    [filePath, computeNodeTypeId, fs, isExecuting, isDirty, plan, canRunPlan, agenticProcess, t],
+  );
+
   // Cancel — discard dirty cache and navigate back. Prefer the owning process'
   // terminal; fall back to the inbox when the plan was opened without a process
   // (bookmark / stale link) so Cancel is never a silent no-op.
@@ -274,7 +307,7 @@ const PlanFileEditor: React.FC = () => {
 
       {/* Top action bar */}
       <div className="border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Execute Plan (clear context) */}
           <Button
             size="sm"
@@ -342,11 +375,23 @@ const PlanFileEditor: React.FC = () => {
             <Trans>Cancel</Trans>
           </Button>
 
-          {/* Bookmark toggle — icon-only, pushed to the right */}
+          <div className="ms-auto flex shrink-0 items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              <Trans>Open with:</Trans>
+            </span>
+            <WorkerToolbar
+              mode="all"
+              onLaunch={reviewPlan}
+              starting={isExecuting || fetchState !== 'loaded'}
+              testIdPrefix="plan-review"
+            />
+          </div>
+
+          {/* Bookmark toggle */}
           <Button
             size="sm"
             variant="ghost"
-            className="ms-auto h-8 w-8 p-0"
+            className="h-8 w-8 p-0"
             onClick={() => void handleBookmarkToggle()}
             title={planBookmark ? t`Remove bookmark` : t`Bookmark this plan`}
           >

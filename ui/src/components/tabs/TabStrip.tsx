@@ -35,6 +35,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
+/**
+ * The height of the tab line — the chip's own metrics (`border-t-2` + `py-1.5`
+ * + a 20px `text-sm` line + the 1px bottom border), pinned so the strip is the
+ * same height whether or not it has chips.
+ *
+ * Exported because the rail's first button must be exactly as tall: the two
+ * start on the same line under the nav bar, so they have to END on it too, or
+ * the app's top edge reads as two mismatched steps.
+ */
+export const TAB_LINE_HEIGHT_CLASS = 'h-[35px]';
+
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
  *  transient preview tab all render through this shape. */
 export interface TabStripItem {
@@ -593,14 +604,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // The strip is a muted BAND (theme tokens only — muted contrasts with
     // background in every theme) that the active chip lifts out of into the
     // body. min-w-0/max-w-full: the strip must never size its host to content.
-    <div className="flex min-w-0 max-w-full items-end bg-muted" data-testid={testId}>
+    <div className={`flex min-w-0 max-w-full items-end bg-muted ${TAB_LINE_HEIGHT_CLASS}`} data-testid={testId}>
       {/* Tab row — chips share this width equally and are ALL always visible
           (Chrome model). overflow-hidden only matters past the 40px/chip floor
           (~25+ tabs at 1000px), where the row clips instead of scrolling. */}
       <div
         ref={tabContainerRef}
         data-testid="terminal-tabs-row"
-        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1 ps-2 pt-1"
+        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1"
       >
         {items.map((item, index) => renderChip(item, index, items))}
       </div>

@@ -1624,6 +1624,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def open_terminal_action(self):
         return await self._desktop_open_terminal()
 
+    @action.post(action_name="worker-launch-commands")
+    async def worker_launch_commands_action(self):
+        return await self._desktop_worker_launch_commands()
+
     @action.post(action_name="pick-folder")
     async def pick_folder_action(self):
         return await self._desktop_pick_folder()

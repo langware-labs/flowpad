@@ -39,6 +39,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 
 import { queryClient } from '@sdk/lazy';
 import { PrimaryContentProvider } from '@sdk/react/primary-content';
+import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -146,6 +147,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <RunPreviewRoot />
         <FilePreviewRoot />
         <GlobalEvents />
+        {/* One-click install from the hub lands here — desktop only (it writes files). */}
+        {!isHubOnly() && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}

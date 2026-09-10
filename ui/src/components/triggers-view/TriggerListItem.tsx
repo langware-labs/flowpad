@@ -62,6 +62,8 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
     }
   };
 
+  const lastTriggered = liveOrTrigger.last_triggered || liveOrTrigger.last_run;
+
   return (
     <div
       className={cn(
@@ -159,9 +161,12 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
         <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">
           <Trans>fires: {liveOrTrigger.counter ?? 0}</Trans>
         </Badge>
-        {liveOrTrigger.last_triggered && (
+        {/* A TAG/SCHEDULE trigger stamps `last_run`; a HOOK one stamps
+            `last_triggered`. Reading only the latter showed a wizard trigger's
+            fire COUNT with no time beside it, forever. */}
+        {lastTriggered && (
           <span className="text-[10px] text-muted-foreground">
-            <Trans>last {new Date(liveOrTrigger.last_triggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Trans>
+            <Trans>last {new Date(lastTriggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Trans>
           </span>
         )}
         {liveOrTrigger.enabled === false && (

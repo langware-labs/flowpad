@@ -254,6 +254,15 @@ async def _finalize_login(login_data: LoginData) -> None:
 
     await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
 
+    # Logout tombstoned every hub conversation via ``clear_inbox``. Release those
+    # now, before the pipe reopens and the catch-up below runs, so nothing this
+    # session pulls back is dropped against a tombstone the last session left.
+    # See ``HubWsBridge.release_session_conversation_suppressions`` for why that
+    # is safe, and why a genuine delete's tombstone survives it.
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+
+    hub_ws_bridge.release_session_conversation_suppressions()
+
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 

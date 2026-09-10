@@ -80,16 +80,18 @@ def test_a_document_cannot_be_both_a_conversation_and_a_sequence():
 
 def test_every_shipped_wizard_is_reachable():
     """A wizard is launched from the UI (it declares an agent) or run by the
-    backend (it declares triggers). One that is neither is a wizard nobody can
+    backend (it carries a trigger child asset). One that is neither is a wizard nobody can
     reach — which is the property worth guarding, rather than a hand-kept list
     of names that fails whenever a correct wizard is added."""
     unreachable = []
     for folder in sorted(p for p in WIZARD_ROOT.iterdir() if p.is_dir()):
         spec = read_wizard(folder)
         assert spec is not None, f"{folder.name}/wizard.json does not parse"
-        if not spec.agent and not spec.triggers:
+        has_trigger_child = (folder / "agentic-assets" / "trigger").is_dir()
+        if not spec.agent and not has_trigger_child:
             unreachable.append(folder.name)
     assert not unreachable, (
         f"these wizards can be neither launched nor triggered: {unreachable}. "
-        "Declare an `agent` (launched from a surface) or `triggers` (run by the backend)."
+        "Declare an `agent` (launched from a surface) or a trigger child asset "
+        "(run by the backend)."
     )

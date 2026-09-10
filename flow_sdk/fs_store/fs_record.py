@@ -888,7 +888,9 @@ class FSRecord(Generic[M]):
             return None
         safe = self._safe_name(entity)
         base = Path(scope_root) / subdir
-        if isinstance(info.shape, Folder):
+        if info.singleton:
+            target = base  # the entity-type dir is the asset root; no <name>
+        elif isinstance(info.shape, Folder):
             target = base / safe
         else:
             target = base / f"{safe}{info.shape.ext}"

@@ -111,6 +111,37 @@ class Wizard(Entity):
 
     @computed_field
     @property
+    def document_error(self) -> str:
+        """Why this wizard has no steps, or ``""``.
+
+        `read_wizard` swallows — deliberately, so one bad document cannot wedge
+        an indexer walking a hundred assets — which made a broken `wizard.json`
+        indistinguishable from "no wizard here" at every surface. This is the
+        diagnostic, on the payload the viewer already has.
+        """
+        from flow_sdk.fs_store.indexer.functions.wizard import wizard_document_problem  # noqa: PLC0415
+
+        # Shares its read and its parse with `agent` through the reader's memo,
+        # so asking both questions on every serialization costs one of each.
+        # `wizard_document_problem` is total — every failure mode already comes
+        # back as a string — so there is nothing here left to guard against.
+        return wizard_document_problem(Path(self.asset_ref)) if self.asset_ref else ""
+
+    @computed_field
+    @property
+    def activity_path(self) -> str:
+        """Where this wizard's run reports progress.
+
+        On the payload so the frontend does not re-derive `execute_wizard`'s
+        slug convention — two spellings of one address is how a viewer ends up
+        subscribed to a tree nothing writes to.
+        """
+        from flow_sdk.core.wizard.execute import activity_path_for  # noqa: PLC0415
+
+        return activity_path_for(str(self.id), self.asset_ref or "")
+
+    @computed_field
+    @property
     def run_state(self) -> dict:
         """This wizard's last/current run — inputs given, status, what it waits for.
 
@@ -123,13 +154,16 @@ class Wizard(Entity):
         One file per wizard is enough because the lock is one run per NAMED
         wizard: there is no second concurrent run to tell apart, so no run id.
         """
-        from flow_sdk.core.wizard.state import read_state  # noqa: PLC0415
+        from flow_sdk.core.wizard.state import read_state, strip_heavy  # noqa: PLC0415
 
         default = {"status": "", "inputs": {}, "awaiting": [], "outcomes": [], "message": ""}
         if not self.id:
             return default
         try:
-            state = read_state(str(self.id))
+            # WITHOUT probes or returned values: this rides every row of
+            # `GET /graph/wizard` and every WS push. The debugger fetches both
+            # from `run-detail`.
+            state = strip_heavy(read_state(str(self.id)))
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
             return default
         return {**default, **state} if state else default
@@ -178,10 +212,10 @@ class Wizard(Entity):
         set_input(str(self.id), name, value)
         # The approval that started this run carries forward; answering a question
         # the wizard asked is not a second decision to run it.
-        return await self.run_action(_approved=True)
+        return await self.run_action(_approved=True, _resume=True)
 
     @action.post(action_name="run")
-    async def run_action(self, _approved: bool = False) -> ApiResponse:
+    async def run_action(self, _approved: bool = False, _resume: bool = False) -> ApiResponse:
         """`POST /wizard/<id>/run` — execute this wizard to completion.
 
         The trust gate REFUSES; it never blocks. A non-system wizard needs
@@ -245,11 +279,20 @@ class Wizard(Entity):
             trusted = True
 
         from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+        from flow_sdk.core.wizard.state import read_state  # noqa: PLC0415
+
+        # RESUME or START OVER, decided by what the last run left behind. A
+        # `pending` run is mid-flight and its answers carry forward; anything
+        # else is finished, so this is a new run and it asks again. `set-input`
+        # resumes explicitly (`_resume`) — otherwise answering a parked wizard
+        # would immediately start over and re-ask the value just given.
+        resume = _resume or (read_state(str(self.id)).get("status") == "pending")
 
         try:
             result = await execute_wizard(
                 str(self.id), spec, self.asset_ref or "",
                 trusted=trusted,
+                resume=resume,
                 # Scoped to this wizard: the viewer IS watching, so the tree
                 # goes to its watchers rather than to every connection.
                 subject_entity=str(self.typeid),
@@ -261,3 +304,129 @@ class Wizard(Entity):
             return ApiFailResponse(message=str(exc), status_code=409)
 
         return ApiSuccessResponse(data=result.to_payload())
+
+    @action.post(action_name="validate")
+    async def validate_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/validate` — is this document legal?
+
+        The body carries the CANDIDATE document, so an editor can ask before the
+        bytes hit disk; an empty body validates what is on disk. Either way the
+        answer is **always 200** with the verdict in the payload. `Mcp.test_action`
+        established the rule — a driver must not 500 the button — and there is a
+        second reason here: a non-2xx makes the editor read its error list out of
+        a thrown axios exception, which is where error lists go to be lost.
+        """
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.fs_store.indexer.functions.wizard import (  # noqa: PLC0415
+            WIZARD_JSON,
+            parse_wizard,
+        )
+        from flow_sdk.fs_store.indexer.functions.wizard import document_warnings  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.wizard_spec import WizardSpec  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.wizard_spec import (  # noqa: PLC0415
+            WizardIssueSpec,
+            WizardValidationSpec,
+        )
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+
+        read_only = self.is_system()
+        reason = (
+            "This wizard ships with Flowpad. It is trusted to run commands without asking, "
+            "and an upgrade would overwrite the edit."
+            if read_only else ""
+        )
+
+        # A candidate arrives as a PARSED dict, so it is validated as one —
+        # re-serializing it just to re-parse would cost a JSON round trip on
+        # every blur. Only the disk branch has text to begin with.
+        candidate = (body or {}).get("document")
+        issues: list[WizardIssueSpec] = []
+        try:
+            if candidate is not None:
+                spec = WizardSpec.model_validate(candidate)
+            else:
+                try:
+                    text = (Path(self.asset_ref) / WIZARD_JSON).read_text(encoding="utf-8")
+                except OSError as exc:
+                    return ApiSuccessResponse(data=WizardValidationSpec(
+                        ok=False,
+                        issues=[WizardIssueSpec(msg=f"{WIZARD_JSON} could not be read: {exc}")],
+                        read_only=read_only, read_only_reason=reason,
+                    ).model_dump())
+                spec = parse_wizard(text)
+        except ValidationError as exc:
+            issues = [
+                WizardIssueSpec(
+                    loc=[part for part in err.get("loc", ()) if isinstance(part, (str, int))],
+                    msg=err.get("msg", "is invalid"),
+                    type=err.get("type", ""),
+                )
+                for err in exc.errors(include_url=False)
+            ]
+        except ValueError as exc:
+            issues = [WizardIssueSpec(msg=f"Invalid JSON: {exc}")]
+        else:
+            issues = document_warnings(spec)
+
+        return ApiSuccessResponse(data=WizardValidationSpec(
+            ok=not any(issue.severity == "error" for issue in issues),
+            issues=issues,
+            read_only=read_only,
+            read_only_reason=reason,
+        ).model_dump())
+
+    @action.post(action_name="reset")
+    async def reset_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/reset` — archive this run and start the record fresh.
+
+        Refuses with 409 while a run holds the wizard's lock: a reset landing
+        mid-run would have the runner write its outcomes into the record we just
+        cleared. The activity tree is deliberately untouched — `Activity.get` is
+        find-or-CREATE, so "resetting" a settled run would fabricate a phantom
+        pending root in the footer chip.
+        """
+        from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
+
+        fresh = reset_run(str(self.id))
+        if fresh is None:
+            return ApiFailResponse(
+                message=f"{self.name or 'This wizard'} is running; stop it before resetting.",
+                status_code=409,
+            )
+        return ApiSuccessResponse(data=fresh)
+
+    @action.get(action_name="run-detail")
+    async def run_detail_action(self) -> ApiResponse:
+        """`GET /wizard/<id>/run-detail` — the run record WITH per-command probes.
+
+        The only place probes are served. `run_state` strips them because it
+        rides every row of a list and every WS push; a person debugging one
+        wizard asks for them here.
+        """
+        from flow_sdk.core.wizard.state import (  # noqa: PLC0415
+            archived_runs, read_outputs, read_state,
+        )
+        from flow_sdk.schema.data_spec.wizard_spec import WizardRunDetailSpec  # noqa: PLC0415
+
+        state = read_state(str(self.id))
+        try:
+            detail = WizardRunDetailSpec(
+                status=str(state.get("status") or ""),
+                message=str(state.get("message") or ""),
+                inputs=dict(state.get("inputs") or {}),
+                awaiting=state.get("awaiting") or [],
+                outcomes=state.get("outcomes") or [],
+                archived=archived_runs(str(self.id)),
+                outputs=read_outputs(str(self.id)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            # A record written by an older shape must not make the debugger the
+            # one screen you cannot open to find out what went wrong.
+            return ApiFailResponse(
+                message=f"This wizard's run record could not be read: {exc}", status_code=422
+            )
+        return ApiSuccessResponse(data=detail.model_dump())

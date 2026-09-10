@@ -147,6 +147,28 @@ def bad_response_message(resp: "requests.Response") -> str:
     return f"Bad response (status {resp.status_code}): {resp.text[:200]}"
 
 
+def graph_url(port: int, path: str) -> str:
+    """The local graph endpoint for ``path`` (``"project"``, ``"skill/<id>/show"``, …)."""
+    return f"http://127.0.0.1:{port}/api/v1/graph/{path}"
+
+
+def _graph_json(method: str, url: str, *, timeout: int, on_error: "Callable[[int, dict], NoReturn]", **kwargs: Any) -> Any:
+    import requests
+
+    try:
+        resp = local_request(method, url, timeout=timeout, **kwargs)
+    except requests.exceptions.RequestException as e:
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+    try:
+        body = resp.json()
+    except ValueError:
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", bad_response_message(resp))
+
+    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+        on_error(resp.status_code, body)
+    return body.get("data")
+
+
 def post_graph_json(
     url: str,
     payload: Optional[dict],
@@ -162,20 +184,56 @@ def post_graph_json(
     command keeps its own documented exit-code contract without re-implementing
     the POST/parse/envelope boilerplate.
     """
-    import requests
+    return _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error) or {}
 
-    try:
-        resp = local_post(url, json=payload or {}, timeout=timeout)
-    except requests.exceptions.RequestException as e:
-        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-    try:
-        body = resp.json()
-    except ValueError:
-        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", bad_response_message(resp))
 
-    if resp.status_code != 200 or body.get("status") != "SUCCESS":
-        on_error(resp.status_code, body)
-    return body.get("data") or {}
+def get_graph_json(
+    url: str,
+    *,
+    params: Optional[dict] = None,
+    timeout: int = 15,
+    on_error: "Callable[[int, dict], NoReturn]",
+) -> Any:
+    """GET a graph endpoint and return the SUCCESS envelope's ``data`` — the
+    read twin of ``post_graph_json``, same transport and error contract."""
+    return _graph_json("GET", url, params=params or {}, timeout=timeout, on_error=on_error)
+
+
+def server_error(status_code: int, body: dict) -> NoReturn:
+    """The default ``on_error``: any non-success answer is the server's fault."""
+    fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))
+
+
+def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":
+    """The id of the project whose folder is ``cwd``, or ``None``.
+
+    The natural key is the canonical mount path and it is QUERIED — the list
+    route pushes the ``filter`` down as an indexed EQ — never scanned client
+    side. ``create`` mints the project for a folder that has none, so a second
+    run lands in the same project rather than a twin (``Project.find_by_cwd``'s
+    own upsert rule: find, else save-new).
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
+
+    if not is_valid_project_cwd(cwd, include_temp=True):
+        fail(EXIT_INVALID_ARG, "INVALID_CWD", f"{cwd} cannot be a project folder; pass --project or cd into one")
+    canonical = canonical_posix_path(cwd)
+    rows = get_graph_json(
+        graph_url(port, "project"),
+        params={"filter": json.dumps({"fs_storage_mount_path": canonical})},
+        on_error=server_error,
+    )
+    for row in rows if isinstance(rows, list) else []:
+        if row.get("id"):
+            return str(row["id"])
+    if not create:
+        return None
+    created = post_graph_json(
+        graph_url(port, "project"),
+        {"type": "project", "name": os.path.basename(canonical.rstrip("/")) or canonical, "fs_storage_mount_path": canonical},
+        on_error=server_error,
+    )
+    return str(created["id"]) if created.get("id") else None
 
 
 def current_process_typeid() -> "str | None":
