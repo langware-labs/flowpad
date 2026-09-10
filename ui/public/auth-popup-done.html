@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Signed in | Flowpad</title>
+    <!--
+      Auth-edge terminal page: where a POPUP sign-in lands (see
+      `cloudManager.loginPopup`). It exists so the popup does not land on the
+      app itself, which would boot a second copy of the SPA inside a 520px
+      window, against a backend that has just started answering as someone new.
+
+      Three things happen here, in this order, and all of them are synchronous:
+
+      1. `loginCallbackUrl` is restored to `?next=`. The popup's `target_path`
+         is THIS page, and `email-verification.html` stores whatever
+         `target_path` it was handed — so without this, a verification detour
+         would record the callback page as the place the user was headed.
+      2. `flowpad_login_complete` is stamped. That write is the ACTUAL signal
+         the opener reads: localStorage is synchronous and immediately visible
+         to every same-origin document, so an opener that notices this window
+         close is guaranteed to already see it. The `storage` event it also
+         fires is the fast path, not the contract — nothing here depends on an
+         event arriving before `close()` lands.
+      3. `window.close()`.
+
+      Deliberately NOT `window.opener.postMessage`: the popup reaches here
+      THROUGH the identity provider, and a provider serving
+      `Cross-Origin-Opener-Policy: same-origin` severs `opener` for the rest of
+      this window's life. Same-origin storage does not depend on that link.
+
+      The redirect at the end is for the one case where this page is NOT a
+      popup: after email verification, Auth0 returns the user to the app root in
+      an ordinary tab, and the stored `loginCallbackUrl` sends the next login
+      here. `close()` is a no-op on a window that script did not open, so the
+      navigation runs and the user lands where they were going.
+    -->
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #f9f9f9;
+        color: #555;
+      }
+      .header {
+        font-size: 1.6rem;
+        font-weight: bold;
+        color: #1e024e;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">You're signed in</div>
+    <p>This window closes itself. If it doesn't, you can close it.</p>
+    <script>
+      (function () {
+        var next = new URLSearchParams(window.location.search).get('next') || '/';
+
+        // Re-validated here because this page NAVIGATES to it below: a redirect
+        // target is checked by whoever performs the redirect, not only by
+        // whoever passed it along.
+        //
+        // Resolved against this origin rather than string-matched. A launch
+        // link's destination is `/launch?repo=https://github.com/...`, so a bare
+        // "contains ://" test rejects the very path this page exists to return
+        // to — there the scheme is legitimate DATA in the query, not an escape
+        // from the origin. Parsing asks the question that actually matters:
+        // does this resolve somewhere other than here?
+        try {
+          var resolved = new URL(next, window.location.origin);
+          next = resolved.origin === window.location.origin ? resolved.pathname + resolved.search + resolved.hash : '/';
+        } catch (e) {
+          next = '/';
+        }
+
+        try {
+          localStorage.setItem('loginCallbackUrl', next);
+        } catch (e) {
+          /* private mode: the opener falls back to its own recorded value */
+        }
+        try {
+          localStorage.setItem('flowpad_login_complete', String(Date.now()));
+        } catch (e) {
+          /* private mode: the opener falls back to reporting a cancel */
+        }
+
+        window.close();
+        // Only reached when this is an ordinary tab, not a popup.
+        setTimeout(function () {
+          window.location.replace(next);
+        }, 400);
+      })();
+    </script>
+  </body>
+</html>

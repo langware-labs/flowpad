@@ -158,7 +158,11 @@ export async function loadAgentApp(args: LoaderArgs) {
   // run their own loaders and stay reachable anonymously.
   if (isHubOnly() && !dataContext.bootstrapInfo?.user) {
     t.done(slowThresholdSeconds);
-    void cloudManager.login();
+    // `popup: false` — this load is being HALTED on the promise below, so the
+    // page has nothing left to show. A popup would leave that dead load on
+    // screen behind a window the user did not ask for; the navigation is what
+    // the comment below promises and what this caller is committed to.
+    void cloudManager.login({ popup: false });
     // Halt this load — the browser is navigating away.
     return await new Promise<never>(() => {});
   }
