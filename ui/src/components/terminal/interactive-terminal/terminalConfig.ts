@@ -28,6 +28,13 @@ export function openTerminalLink(_event: MouseEvent, uri: string): void {
   window.open(uri, '_blank', 'noopener');
 }
 
+/** Preserve OSC 8 confirmation while opening the URL directly in Electron. */
+export function confirmTerminalLink(event: MouseEvent, uri: string): void {
+  if (window.confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) {
+    openTerminalLink(event, uri);
+  }
+}
+
 export const FONT_SIZE_PX = 14;
 
 /**

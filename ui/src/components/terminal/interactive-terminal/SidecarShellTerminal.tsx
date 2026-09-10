@@ -12,6 +12,7 @@ import {
   FONT_SIZE_PX,
   applyRtlGridContract,
   openTerminalLink,
+  confirmTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
@@ -60,6 +61,7 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     let fitTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const term = new XTerm({
+      linkHandler: { activate: confirmTerminalLink },
       scrollback: 10000,
       convertEol: true,
       cursorBlink: true,
