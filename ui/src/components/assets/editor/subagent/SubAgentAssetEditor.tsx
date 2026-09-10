@@ -14,6 +14,7 @@ import { Button } from '@src/components/ui/button';
 import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe-session';
 import { notify } from '@src/notifications';
 import { tagAttrs } from '@src/tags/tag-attrs';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 interface SubAgentAssetEditorProps {
   /** FSRef to the subagent .md file. */
@@ -104,6 +105,7 @@ export function SubAgentAssetEditor({
         <MarkdownEditor
           fsRef={editorRef}
           editEntity={agent}
+          headerLeading={agent ? <PublishedToggle entity={agent} /> : null}
           chatTarget={chatTarget}
           onDelete={agent ? onDelete : undefined}
           deleteLabel={agent?.name ?? undefined}

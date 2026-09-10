@@ -9,6 +9,7 @@
  */
 
 import { isNetworkErrorMessage } from '../client';
+import type { ComputeNode } from '../entities/compute-node/compute-node';
 import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
@@ -584,7 +585,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   static async launch(opts: {
     workerType?: WorkerType;
-    workdir: string;
+    /** Omit to use the compute node’s default working directory. */
+    workdir?: string;
+    /** Host of the asset being opened; defaults to the active compute node. */
+    computeNode?: ComputeNode;
     projectId?: string | null;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
@@ -603,7 +607,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
      *  JSON-stream (no PTY/xterm). */
     ptyMode?: boolean;
   }): Promise<AgenticProcess> {
-    const computeNode = dataContext.computeNode;
+    const computeNode = opts.computeNode ?? dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
     const ptyMode = opts.ptyMode !== false;
     const process = await computeNode.createProcess(

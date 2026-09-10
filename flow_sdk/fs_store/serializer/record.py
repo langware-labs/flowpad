@@ -36,6 +36,7 @@ def spec_extractor(type_name: str):
     cycle-guarded imports resolve on the first record, not on every one."""
     from pydantic import ValidationError  # noqa: PLC0415
 
+    from flow_sdk.api.api_types.api_field import Persist, persist_policy  # noqa: PLC0415
     from flow_sdk.capsules.errors import CapsuleError  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef  # noqa: PLC0415
@@ -55,12 +56,26 @@ def spec_extractor(type_name: str):
             logger.warning("[%s] %s rejected: %s", type_name, root, exc)
             return []
         # Record emission, not persistence: every declared field rides the
-        # record (``from_record`` keeps what the row declares); only the two
-        # DB-side denormalizations stay off it.
+        # record (``from_record`` keeps what the row declares) — EXCEPT a
+        # ``Persist.TRUE`` field the parse never set. Those are DB-owned facts
+        # the shadow index carries and the asset file does not (``published``,
+        # ``origin_id``): a re-parse has no opinion on them, and letting the
+        # class default ride would make ``from_record``'s update branch clobber
+        # the row on every re-index. A ``Persist.TRUE`` field the parse DID set
+        # (a derived count) rides as before; so does every DEFAULT-policy field,
+        # defaults included, so a key dropped from the file still resets. The
+        # two DB-side denormalizations stay off it as before.
+        unset_db_owned = {
+            name
+            for name, model_field in type(obj).model_fields.items()
+            if persist_policy(model_field) == Persist.TRUE and name not in obj.model_fields_set
+        }
         blobs = set(obj.get_blob_fields_names())
         fields = {
             k: v
-            for k, v in obj.model_dump(mode="json", exclude={"id", "type", "expand", "asset_occurrences"}).items()
+            for k, v in obj.model_dump(
+                mode="json", exclude={"id", "type", "expand", "asset_occurrences", *unset_db_owned}
+            ).items()
             if v is not None and not (k in blobs and v == "")   # an empty blob is absent, never a store
         }
         fields["status"] = fields.get("status") or "active"

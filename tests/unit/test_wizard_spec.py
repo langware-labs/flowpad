@@ -19,7 +19,6 @@ from flow_sdk.schema.data_spec.wizard_spec import (
     WizardProcessActionSpec,
     WizardSpec,
     WizardStepSpec,
-    WizardTriggerSpec,
 )
 
 pytestmark = pytest.mark.timeout(5)
@@ -37,7 +36,6 @@ def _step(**over) -> dict:
         ("wizard", WizardSpec),
         ("wizard.step", WizardStepSpec),
         ("wizard.check", WizardCheckSpec),
-        ("wizard.trigger", WizardTriggerSpec),
         ("wizard.action.command", WizardCommandActionSpec),
         ("wizard.action.process", WizardProcessActionSpec),
     ],
@@ -97,11 +95,17 @@ def test_display_label_falls_back_to_the_id():
     assert WizardStepSpec.model_validate(_step(label="")).display_label == "s1"
 
 
-def test_a_wizard_declares_its_own_triggers():
-    spec = WizardSpec.model_validate(
-        {"name": "w", "triggers": [{"on": "app.ready", "fire_once": True}], "steps": [_step()]}
-    )
-    assert [(t.on, t.fire_once) for t in spec.triggers] == [("app.ready", True)]
+def test_an_inline_triggers_array_is_refused():
+    """A wizard's trigger is a child asset now, and there is exactly one way to
+    declare one. A document still carrying the old array must fail LOUDLY —
+    silently ignoring it would leave the author with a wizard that never runs
+    and nothing anywhere saying why."""
+    import pytest
+
+    with pytest.raises(ValueError, match="triggers"):
+        WizardSpec.model_validate(
+            {"name": "w", "triggers": [{"on": "app.ready", "fire_once": True}], "steps": [_step()]}
+        )
 
 
 def test_the_run_payloads_are_registered_data_specs():

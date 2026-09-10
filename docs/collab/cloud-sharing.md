@@ -46,12 +46,17 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
 **where the project lives on your disk never leaves your machine.** So do
 `presence`, `session_code` and the other local session state.
+
+`published` is a cache, not a fact about the project. It answers "is this listed
+in the manifest file sitting in my checkout" — a file the receiver does not have,
+so the answer cannot mean anything on their side. Their own manifest reconciles
+their own flag.
 
 `llm_endpoint_typeid` is the non-obvious one, because it names a *hub* entity and
 so looks like it ought to travel. It must not. It is the budget THIS user's

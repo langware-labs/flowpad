@@ -1399,6 +1399,49 @@ class Project(Entity):
         compute_node = await self.get_compute_node()
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
+    @action.get(action_name="published")
+    async def published_action(self):
+        """What this project has PUBLISHED, joined with local state — the read
+        model of the Discover page. Contract and hub equivalence in
+        ``flow_sdk.assets.project_manifest``. Read-only: no mint, no write."""
+        from flow_sdk.builtin.project_manifest import published_view  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await published_view(self))
+
+    @action.post(action_name="unpublish")
+    async def unpublish_action(self, typeid: str = ""):
+        """Drop one row from the manifest by ``typeid`` — for a row whose
+        asset has no local entity to toggle (``missing``). The manifest is
+        re-indexed so every ``published`` cache follows the file."""
+        from flow_sdk.builtin.project_manifest import PublishRefused, drop_row  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            spec = await drop_row(self, typeid)
+        except PublishRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
+        return ApiSuccessResponse(data={"typeids": sorted(spec.typeids)})
+
+    @action.post(action_name="install-published")
+    async def install_published_action(self, request: dict | None = None, typeid: str = "", overwrite: bool = False):
+        """Install one published row (as the hub's ``install_request`` relays
+        it) into THIS project: copy from its origin, index keeping the
+        publisher's id, record in ``deps.json``. A bare ``typeid`` (the CLI's
+        ``flow asset install``) is resolved on the hub first. Refusals are 400
+        with a code."""
+        from flow_sdk.builtin.project_manifest import (  # noqa: PLC0415
+            PublishRefused,
+            install_published,
+            resolve_published_row,
+        )
+
+        try:
+            row = request or await resolve_published_row(str(typeid or ""))
+            return ApiSuccessResponse(data=await install_published(self, row, overwrite=bool(overwrite)))
+        except PublishRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
+
     @action.get(action_name="get-assets")
     async def get_assets_action(
         self,

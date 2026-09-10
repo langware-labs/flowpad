@@ -1159,26 +1159,23 @@ def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[s
         return (None, None)
 
 
-def _claude_first_prompt_sync(jsonl_path: Path) -> Optional[str]:
-    """First real user prompt in a Claude transcript head, whitespace-collapsed.
+def _worker_first_prompt_sync(worker_type: WorkerType, jsonl_path: Path) -> Optional[str]:
+    """First human prompt from the bounded transcript head, using the vendor parser."""
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import _iter_head_json
+    from flow_sdk.transcript_analyzer.entries import UserMessageEntry
+    from flow_sdk.transcript_analyzer.parsers import get_parser_class
 
-    The ``prompt_fallback`` rung of :func:`get_worker_session_name` — see its
-    docstring for why headless sessions need it. Head-bounded like the envelope
-    reads (``_iter_head_json``); returns ``None`` when no user line is found.
-    ``_extract_text`` also rejects ``<``-prefixed text, so synthetic envelopes
-    (``<command-name>`` etc.) can't become a display name.
-    """
+    parser = get_parser_class(worker_type.value)()
     try:
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import _extract_text, _iter_head_json
-
-        for raw in _iter_head_json(jsonl_path):
-            if raw.get("type") != "user" or raw.get("isMeta"):
-                continue
-            text = _extract_text((raw.get("message") or {}).get("content"))
-            if text:
-                return " ".join(text.split())
+        for index, raw in enumerate(_iter_head_json(jsonl_path)):
+            for entry in parser.feed(raw, index):
+                if not isinstance(entry, UserMessageEntry) or entry.is_meta or entry.is_sidechain:
+                    continue
+                text = " ".join(entry.text.split())
+                if text and not text.startswith("<") and text != "[Request interrupted by user for tool use]":
+                    return text
     except OSError as e:
-        logger.debug("[worker_history] claude first-prompt read failed for %s: %s", jsonl_path, e)
+        logger.debug("[worker_history] first-prompt read failed for %s: %s", jsonl_path, e)
     return None
 
 
@@ -1195,9 +1192,9 @@ async def get_worker_session_name(
 
     Priority matches the history collectors: the owning ``AgenticProcess.name``
     first, then — for Claude only — the session's own ``custom_title``/``slug``
-    (Codex/Copilot carry no on-file title, so they name only through an owning
-    process). Returns ``None`` when nothing names it, so the caller can leave the
-    existing label untouched. ``jsonl_path`` (when known) skips a path re-resolve.
+    (other workers use their first prompt when ``prompt_fallback`` is enabled).
+    Returns ``None`` when nothing names it, so the caller can leave the existing
+    label untouched. ``jsonl_path`` (when known) skips a path re-resolve.
 
     ``prompt_fallback=True`` adds a LAST-resort rung: the transcript's first
     user prompt. The history list must NOT use it (it renders name and
@@ -1219,17 +1216,15 @@ async def get_worker_session_name(
     custom_title: Optional[str] = None
     slug: Optional[str] = None
     first_prompt: Optional[str] = None
-    if wt is WorkerType.CLAUDE and jsonl_path is not None:
+    if jsonl_path is not None and not ap_name:
 
         def _read_title_fields() -> tuple[Optional[str], Optional[str], Optional[str]]:
-            title, s = _claude_file_title_sync(jsonl_path)
+            title, s = _claude_file_title_sync(jsonl_path) if wt is WorkerType.CLAUDE else (None, None)
             prompt = None
-            if prompt_fallback and not (ap_name or title or s):
-                prompt = _claude_first_prompt_sync(jsonl_path)
+            if prompt_fallback and not (title or s):
+                prompt = _worker_first_prompt_sync(wt, jsonl_path)
             return title, s, prompt
 
-        # One thread hop for both file reads — the prompt rung only runs when
-        # the title slots came back empty, so it rides the same offload.
         custom_title, slug, first_prompt = await asyncio.to_thread(_read_title_fields)
 
     # Same arg→priority mapping as ``_collect_claude_entries_sync``:

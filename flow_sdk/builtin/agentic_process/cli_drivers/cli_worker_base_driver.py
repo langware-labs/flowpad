@@ -1431,6 +1431,32 @@ def factory(cli_json: dict, worker_type: str) -> AgentOptions:
     return _vendor_module(vendor, "cli").AGENT_OPTIONS.from_json(cli_json)
 
 
+def interactive_launch_command(worker_type: str, workdir: str | None = None) -> str:
+    """The shell line this machine WOULD run to start ``worker_type``'s
+    interactive TUI in ``workdir``.
+
+    Derived, not described: it builds the vendor's real ``AgentOptions`` through
+    :func:`factory` and renders it with ``to_shell_string()`` — the same object
+    and the same renderer the PTY spawn path uses. A vendor that changes a flag
+    changes this line with it, which is the whole point: the caller is a *debug*
+    affordance whose only value is being the command we actually run.
+
+    ``json_stream``/``print_mode`` are the one thing forced. Three vendors
+    default to their HEADLESS shape and the spawn path flips them when
+    ``process.pty_mode``; there is no process here, so the interactive shape is
+    stated instead. Each key reaches only the vendors that serialize it — the
+    rest ignore it, as they ignore any key outside their ``SERIALIZED_FIELDS``.
+
+    What it deliberately does NOT carry is everything that only exists once a
+    process does: ``--add-dir``, ``--agents``, ``--mcp-config``, the session id,
+    and the spawn-time env (``FLOWPAD_EXECUTION_SCOPE``, secrets, the pinned
+    ``flow`` on PATH). A terminal launched from this line is a FRESH session in
+    that folder, not a rehydration of a Flowpad worker.
+    """
+    options = factory({"workdir": workdir or "", "json_stream": False, "print_mode": False}, worker_type)
+    return options.to_shell_string()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Composer-ready gate — vendor-marker detection over the raw PTY stream
 # ─────────────────────────────────────────────────────────────────────────────

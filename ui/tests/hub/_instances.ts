@@ -171,15 +171,19 @@ export async function getInstance(name: string): Promise<ResolvedInstance> {
   return { ...launched, sdk };
 }
 
-/** Raw POST to an instance's /api/v1 — the production HTTP surface the tests
- *  drive for actions the SDK doesn't wrap (add_message with asset_references,
- *  body upload/download, attachment install/uninstall). */
-export const postApi = (apiUrl: string, p: string, body?: unknown) =>
+/** Raw JSON call to an instance's /api/v1 — the production HTTP surface the
+ *  tests drive for routes the SDK doesn't wrap (entity GET/DELETE, actions). */
+export const jsonApi = (apiUrl: string, p: string, method = 'GET', body?: unknown) =>
   fetch(`${apiUrl}/api/v1${p}`, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
+    body: body === undefined ? undefined : JSON.stringify(body),
   }).then((r) => r.json());
+
+/** Raw POST to an instance's /api/v1 — actions the SDK doesn't wrap
+ *  (add_message with asset_references, body upload/download, attachment
+ *  install/uninstall). */
+export const postApi = (apiUrl: string, p: string, body?: unknown) => jsonApi(apiUrl, p, 'POST', body ?? {});
 
 /** MessageAttachment rows for a message, invalidated past the realm's query
  *  cache — install/uninstall land as UPDATEs the cached query won't refetch. */

@@ -201,8 +201,12 @@ class FlowpadClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
+        json: Any = None,
     ):
         """Return an httpx streaming-response context manager.
+
+        ``json`` is the request body for a POST whose RESPONSE streams — a
+        relayed ``prompt`` — and is sent verbatim.
 
         For large downloads consumed chunk-by-chunk (``resp.aiter_bytes()``)
         instead of buffered whole into ``resp.content`` — lets a caller report
@@ -213,7 +217,7 @@ class FlowpadClient:
                     ...
         """
         client = await self._get_client()
-        return client.stream(method, path, params=params, headers=headers, timeout=timeout)
+        return client.stream(method, path, params=params, headers=headers, timeout=timeout, json=json)
 
     @staticmethod
     def _request_path(url_or_path: Any) -> str:

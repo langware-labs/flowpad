@@ -298,6 +298,9 @@ def resolve_destination(
 
     The file-vs-folder / ``main_file`` / ``main_ext`` tail stays in
     ``compute_asset_ref`` — this function only owns root + harness + family.
+
+    For a ``singleton`` type the answer is already the asset root (no
+    ``<name>`` segment is appended by ``compute_asset_ref``).
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
