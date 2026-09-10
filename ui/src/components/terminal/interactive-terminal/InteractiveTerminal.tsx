@@ -1,3 +1,4 @@
+import { registerTerminalLinks, useTerminalLinkHandler } from './terminal-links';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -31,7 +32,6 @@ import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
 import { fetchPtyStream, replayPtyStream } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -105,8 +105,6 @@ import {
   FONT_FAMILY,
   FONT_SIZE_PX,
   applyRtlGridContract,
-  openTerminalLink,
-  confirmTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { workerCliVendor } from './process-cli-presentation';
@@ -216,6 +214,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
+  const activateLink = useTerminalLinkHandler(shellRef);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
@@ -788,7 +787,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
 
       const term = new XTerm({
-        linkHandler: { activate: confirmTerminalLink },
         scrollback: 50000,
         convertEol: true,
         cursorBlink: true,
@@ -803,7 +801,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      term.loadAddon(new WebLinksAddon(openTerminalLink));
+      registerTerminalLinks(term, activateLink);
 
       const fit = new FitAddon();
       term.loadAddon(fit);
