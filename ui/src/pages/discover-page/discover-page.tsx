@@ -5,7 +5,7 @@ import { CopyButton } from '@src/components/ui/copy-button';
 import { errorMessage } from '@src/lib/error-message';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { TypeId, type AnyEntity, type Project } from '@sdk';
+import { Project, TypeId, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { FolderOpen, Grid2x2, Loader2, PackageCheck, Terminal, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -23,7 +23,7 @@ import { useDiscoverDirectory } from './useDiscoverDirectory';
 function HubActions({ item }: { item: DiscoverItem }) {
   const { t } = useLingui();
   const project = useMemo(
-    () => (item.sourceProjectId ? ({ id: item.sourceProjectId, typeId: new TypeId('project', item.sourceProjectId) } as unknown as Project) : null),
+    () => (item.sourceProjectId ? new Project({ id: item.sourceProjectId }) : null),
     [item.sourceProjectId],
   );
   if (!project) return null;
