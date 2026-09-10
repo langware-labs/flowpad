@@ -117,6 +117,7 @@ opens a different screen and reports success.
 | Inbox | `inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
 | LLM sources | `llm-sources` | harness funding |
+| Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |
 | Markdown | `markdown` | document |
 | Organization  *(hub)* | `organization` | people, teams, members |

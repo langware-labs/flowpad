@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, Optional, overload
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Literal, NoReturn, Optional, overload
 
 import typer
 
@@ -152,7 +152,9 @@ def graph_url(port: int, path: str) -> str:
     return f"http://127.0.0.1:{port}/api/v1/graph/{path}"
 
 
-def _graph_json(method: str, url: str, *, timeout: int, on_error: "Callable[[int, dict], NoReturn]", **kwargs: Any) -> Any:
+def _graph_json(
+    method: str, url: str, *, timeout: int, on_error: "Callable[[int, dict], NoReturn]", **kwargs: Any
+) -> Any:
     import requests
 
     try:
@@ -230,7 +232,11 @@ def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":
         return None
     created = post_graph_json(
         graph_url(port, "project"),
-        {"type": "project", "name": os.path.basename(canonical.rstrip("/")) or canonical, "fs_storage_mount_path": canonical},
+        {
+            "type": "project",
+            "name": os.path.basename(canonical.rstrip("/")) or canonical,
+            "fs_storage_mount_path": canonical,
+        },
         on_error=server_error,
     )
     return str(created["id"]) if created.get("id") else None
@@ -277,3 +283,58 @@ def resolve_process_id(process_opt: Optional[str]) -> str:
         "NO_PROCESS",
         "Pass --process or run inside an AgenticProcess (FLOWPAD_EXECUTION_SCOPE)",
     )
+
+
+async def backend_frames(
+    port: int,
+    kinds: "frozenset[str] | set[str]",
+    *,
+    on_connected: "Callable[[], Awaitable[None]] | None" = None,
+) -> "AsyncIterator[dict]":
+    """Yield each WebSocket frame the local backend broadcasts whose ``message_type`` is in
+    *kinds*. Blocks until the socket closes.
+
+    The CLI's answer to "do something in the UI, and tell me when it lands". Every other command
+    here is request/response, which cannot express that: the thing being waited for is a person,
+    and the obvious spelling — poll on an interval with a timeout — is both banned by CLAUDE.md
+    and wrong on the merits, because no number is the right one for a human. The backend already
+    broadcasts on every state change worth waking for, so a caller blocks on the socket instead
+    and needs no budget at all.
+
+    *on_connected* fires AFTER the socket is established and before the first frame is read.
+    That ordering is the whole reason it is a callback rather than something the caller does
+    around this function: a caller that opens a browser first can be beaten by a user who acts
+    instantly, and the frame that mattered is gone before anyone is listening. ``_login_by_window``
+    resets its waiter for the same race.
+
+    A frame is a WAKE-UP, not an answer. "A credential changed" and "the box can now do X" are
+    different claims — a FAILED login broadcasts too — so callers re-ask whatever authority owns
+    the second question rather than reading the frame's payload as a verdict.
+
+    Carries the cookie-gate secret: the gate refuses WebSocket handshakes like everything else
+    ("no path is exempt"), and a CLI is a machine caller, so it uses the header transport rather
+    than the browser's query one.
+    """
+    import json as _json
+    from uuid import uuid4
+
+    import websockets
+
+    from flow_sdk.instance_settings.cookie_gate import gate_headers
+
+    # A fresh connection id per call: the backend keys its connection registry on it, and a
+    # reused id would evict whatever else is listening under that name.
+    url = f"ws://127.0.0.1:{port}/api/v1/connect/ws/flow-cli-{uuid4().hex[:8]}"
+    headers = gate_headers(f"http://127.0.0.1:{port}/")
+
+    async with websockets.connect(url, additional_headers=headers or None) as socket:
+        if on_connected is not None:
+            await on_connected()
+        async for raw in socket:
+            try:
+                frame = _json.loads(raw)
+            except (ValueError, TypeError):
+                # The socket also carries msgpack binary frames (PTY streams). Not ours.
+                continue
+            if isinstance(frame, dict) and frame.get("message_type") in kinds:
+                yield frame

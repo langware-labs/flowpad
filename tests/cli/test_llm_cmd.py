@@ -39,9 +39,12 @@ STATUS = {
             {"endpoint_typeid": EP, "name": "team pool", "rank": 0, "eligible": True, "auto": True},
         ],
     },
+    # ``unverified: False`` because this fixture is a HEALTHY box answered by a CURRENT
+    # backend — the flag is part of every verdict such a backend publishes. Leaving it out
+    # would quietly make the whole fixture test the older-backend path instead.
     "resolved": {
-        "harness.claude.cli": {"endpoint_typeid": EP, "origin": "user"},
-        "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user"},
+        "harness.claude.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
+        "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
     },
     "endpoints": {
         EP: {"kind": "hub", "provider": "openrouter"},
@@ -591,3 +594,444 @@ def test_the_profile_is_the_one_the_users_shell_actually_reads(tmp_path, monkeyp
     monkeypatch.setenv("SHELL", "/bin/bash")
     llm_cmd._write_user_config("copilot", spec)
     assert "export A=1" in (tmp_path / ".bashrc").read_text()
+
+
+# ------------------------------------------------------------------ `set auto`
+
+
+def test_auto_reports_the_resolvers_winner_not_an_auto_eligible_row():
+    """``auto`` promises the source a spawn would really get. ``STATUS``'s device login carries
+    ``auto: True`` and is NOT what resolves, so reading that field would name the wrong row."""
+    row = llm_cmd._auto_source(STATUS)
+
+    assert row is not None
+    assert (row.name, row.typeid) == ("team pool", EP)
+
+
+def test_auto_prefers_the_default_vendors_source():
+    """Any funded row is a truthful answer to "is this box funded", but a person at a prompt is
+    usually about to run THEIR harness, and naming a source that funds a different one reads as
+    a wrong answer."""
+    status = {
+        **STATUS,
+        "resolved": {
+            # Rank order would put the shared pool first; only claude's own row funds claude.
+            # Both verified — this test is about WHICH funded row is named, not about whether
+            # either is usable.
+            "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
+            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "user", "unverified": False},
+        },
+    }
+
+    assert llm_cmd._auto_source(status).typeid == DEVICE
+
+
+def test_auto_finds_nothing_when_nothing_resolves():
+    """The whole trigger for opening the chooser. ``sources`` is still full here — offers are
+    not funding, and answering from them would leave the box unable to issue a call."""
+    assert llm_cmd._auto_source({**STATUS, "resolved": {}}) is None
+    assert llm_cmd._auto_source({}) is None
+
+
+def test_auto_is_matched_exactly_never_as_a_name_prefix():
+    """``_pick`` resolves names by unique prefix, so a source called "Auto top-up" would answer
+    to this word and the box would silently pick a row when it was asked a question."""
+    assert llm_cmd._is_auto("auto") and llm_cmd._is_auto("  AUTO ")
+    assert not llm_cmd._is_auto("auto top-up")
+    assert not llm_cmd._is_auto("automatic")
+
+
+def test_set_auto_reports_the_source_instead_of_looking_up_a_row(monkeypatch):
+    """`flow llm set auto` reaches `_use_shell` as a row reference, because `set` is an alias of
+    `use`. It must be answered as a question — a lookup would fail with NO_SUCH_ROW."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: STATUS)
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+
+    result = runner.invoke(app, ["llm", "set", "auto"])
+
+    assert result.exit_code == 0, result.output
+    assert "team pool" in result.output
+
+
+def test_auto_never_opens_a_browser_when_the_box_is_already_funded(monkeypatch):
+    """The common case, and the one that must cost nothing: a funded box answers from a pure
+    read, with no window and no server."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: STATUS)
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+
+    def _no(*_a, **_k):
+        raise AssertionError("a funded box must not be sent to the chooser")
+
+    monkeypatch.setattr(llm_cmd, "_serve_chooser_here", _no)
+    monkeypatch.setattr(llm_cmd, "_await_funding", _no)
+
+    result = runner.invoke(app, ["llm", "auto", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["source"]["typeid"] == EP
+
+
+def test_auto_with_no_browser_refuses_and_hands_back_the_chooser_url(monkeypatch):
+    """An agent that cannot open a window can still hand the URL to the person who can, so the
+    refusal carries it rather than only saying no."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+    monkeypatch.setattr(llm_cmd, "_backend_port", lambda: None)
+
+    result = runner.invoke(app, ["llm", "auto", "--no-browser"])
+
+    assert result.exit_code == llm_cmd.EXIT_NOT_FOUND, result.output
+    assert llm_cmd._CHOOSER_PATH in result.output
+
+
+def test_the_chooser_path_is_the_address_the_backend_registers():
+    """The CLI hands a user this URL; a view type that does not exist would 404 them."""
+    from flow_sdk.core.dock_address import VIEW_META, PointerRequirement, ViewType, dock_url
+
+    assert llm_cmd._CHOOSER_PATH == dock_url(ViewType.LLM_SETUP)
+    # Pointer NONE: the screen asks one question and has no selection to address.
+    assert VIEW_META[ViewType.LLM_SETUP].pointer is PointerRequirement.NONE
+
+
+def test_a_machine_with_no_browser_is_told_the_url_not_that_one_opened(monkeypatch):
+    """`webbrowser.open` answers False without raising on a headless box (SSH, CI, no display).
+    Ignoring that printed "Opened <url>" over a window that does not exist and then blocked on a
+    socket nobody would satisfy — a lie followed by a hang, the one shape a CLI must not have."""
+    import asyncio
+
+    sent: list[str] = []
+
+    class _Socket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr("webbrowser.open", lambda _url: False)
+    monkeypatch.setattr("websockets.connect", lambda *a, **k: _Socket())
+    monkeypatch.setattr(typer, "echo", lambda msg="", **k: sent.append(str(msg)))
+
+    assert asyncio.run(llm_cmd._await_funding(6001, "http://127.0.0.1:6001/dock/llm-setup")) is None
+
+    said = "\n".join(sent)
+    assert "No browser on this machine" in said and "/dock/llm-setup" in said
+    assert "Opened http" not in said
+
+
+# ------------------------------------------- evidence, not a presumed device login
+
+
+def test_a_presumed_device_login_is_not_evidence_the_box_can_issue_a_call():
+    """The CLI reads the backend's ``unverified`` verdict; it does not re-derive it. WHY a
+    device login is unverified is pinned in ``tests/unit/test_llm_source_resolution.py``,
+    beside ``Candidate.unverified`` — one rule, one owner, one test."""
+    status = {
+        "sources": {"harness.codex.cli": [{"endpoint_typeid": DEVICE, "name": "codex device login", "rank": 0}]},
+        "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True}},
+        "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
+    }
+
+    assert llm_cmd._auto_source(status) is None
+
+
+def test_a_verified_source_is_evidence():
+    status = {
+        "sources": {"harness.codex.cli": [{"endpoint_typeid": DEVICE, "name": "codex device login", "rank": 0}]},
+        "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": False}},
+        "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
+    }
+
+    assert llm_cmd._auto_source(status).name == "codex device login"
+
+
+def test_a_verdict_with_no_flag_is_not_evidence():
+    """A missing ``unverified`` means the backend is older than this CLI — which is the NORMAL
+    state right after an upgrade, because a server keeps the code it loaded at start until
+    something restarts it. Reading that silence as "verified" told a box with codex not
+    installed at all that `codex device login funds codex`; the user finds out when a call
+    fails. Failing safe costs a chooser nobody strictly needed."""
+    older = {
+        **STATUS,
+        "resolved": {
+            kind: {k: v for k, v in (pick or {}).items() if k != "unverified"}
+            for kind, pick in STATUS["resolved"].items()
+        },
+    }
+
+    assert llm_cmd._auto_source(older) is None
+
+
+def test_auto_probes_before_sending_anyone_to_a_browser(monkeypatch):
+    """A device login is only ``cached`` once something probed it, and with NO backend nothing
+    ever has — so requiring evidence alone would send a perfectly good box to the chooser every
+    time. Ask first; a browser is far more expensive than a local subprocess."""
+    unproven = {
+        "sources": {
+            "harness.claude.cli": [
+                {"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0, "unverified": True},
+            ]
+        },
+        "resolved": {"harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True}},
+        "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
+    }
+    probed = {
+        **unproven,
+        "resolved": {
+            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": False},
+        },
+    }
+    calls: list[str] = []
+    seq = [unproven, probed]
+
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: seq[min(len(calls), 1)])
+    monkeypatch.setattr(llm_cmd, "_op", lambda op, payload=None: calls.append(op) or {})
+    monkeypatch.setattr(llm_cmd, "_serve_chooser_here", lambda: pytest.fail("probed box must not open a browser"))
+
+    row = llm_cmd._resolve_or_choose()
+
+    assert calls == ["test_source"], "the un-probed device login was never asked"
+    assert row.name == "claude device login"
+
+
+# ---------------------------------------- reusing the app that is already open
+
+
+def test_an_already_open_app_is_steered_rather_than_a_second_window_opened(monkeypatch):
+    """A second window is the wrong answer when the app is already in front of the user: they
+    end up with two Flowpads, and the one they were looking at is not the one being asked the
+    question."""
+    posted: list[tuple[str, dict]] = []
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: posted.append((url, kw.get("json") or {})) or _Resp())
+    monkeypatch.setattr("webbrowser.open", lambda _u: pytest.fail("a second window was opened"))
+
+    assert llm_cmd._steer_open_app(6060) is True
+    url, body = posted[0]
+    assert url.endswith("/api/v1/agent/navigate/view")
+    assert body == {"view": "llm-setup"}, "must name the chooser's dock address"
+
+
+def test_no_listening_tab_falls_back_to_a_browser(monkeypatch):
+    """`NO_ACTIVE_TAB`, an older server with no such route, a refusal — all mean the same thing
+    to this caller: nobody is home, so open a window."""
+
+    class _Refused:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ok": False, "error_code": "NO_ACTIVE_TAB"}
+
+    monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: _Refused())
+    assert llm_cmd._steer_open_app(6060) is False
+
+    def _boom(*_a, **_k):
+        raise ConnectionError("no such route")
+
+    monkeypatch.setattr(llm_cmd, "_local_post", _boom)
+    assert llm_cmd._steer_open_app(6060) is False, "a transport failure is not fatal here"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `auto` — the answer, in every case
+#
+# One command, one promise: name the source a spawn would REALLY get, or say there is none.
+# Both halves of that are load-bearing and fail in opposite, expensive directions — a false
+# "you are set up" is found out when a call fails, a false "you have nothing" sends a funded
+# box to a browser it did not need. So the truth table is pinned here case by case rather than
+# sampled.
+# ─────────────────────────────────────────────────────────────────────────────
+
+KEY = "llm_endpoint:key-openrouter"
+
+
+def _one(kind: str, *, unverified: bool | None, typeid: str = DEVICE, harness: str = "claude") -> dict:
+    """A status carrying exactly one resolved source of *kind*.
+
+    ``unverified=None`` omits the flag entirely — the shape an older backend sends.
+    """
+    pick: dict = {"endpoint_typeid": typeid, "origin": "default"}
+    if unverified is not None:
+        pick["unverified"] = unverified
+    return {
+        "sources": {f"harness.{harness}.cli": [{"endpoint_typeid": typeid, "name": "the source", "rank": 0}]},
+        "resolved": {f"harness.{harness}.cli": pick},
+        "endpoints": {typeid: {"kind": kind, "provider": "openrouter" if kind == "api_key" else ""}},
+    }
+
+
+@pytest.mark.parametrize(
+    "kind,unverified,expected",
+    [
+        # Verified: every kind of source is a real answer. A hub endpoint is the FlowPad tile's
+        # own outcome, so it failing here would break the headline path.
+        ("hub", False, "the source"),
+        ("device", False, "the source"),
+        ("api_key", False, "the source"),
+        # Unverified: the backend says it cannot vouch for this, whatever kind it is.
+        ("hub", True, None),
+        ("device", True, None),
+        ("api_key", True, None),
+        # No flag at all — an older backend. Fails SAFE: silence is not a yes. Getting this
+        # wrong told a box with codex not installed that `codex device login funds codex`.
+        ("hub", None, None),
+        ("device", None, None),
+        ("api_key", None, None),
+    ],
+)
+def test_auto_answers_each_kind_and_verdict(kind, unverified, expected):
+    row = llm_cmd._auto_source(_one(kind, unverified=unverified))
+
+    assert (row.name if row else None) == expected
+
+
+def test_auto_picks_the_verified_source_over_an_unverified_one():
+    """The common shape on a real box: several offers, only some of them provable."""
+    status = {
+        "sources": {
+            "harness.claude.cli": [{"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0}],
+            "harness.codex.cli": [{"endpoint_typeid": EP, "name": "team pool", "rank": 5}],
+        },
+        "resolved": {
+            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True},
+            "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
+        },
+        "endpoints": {DEVICE: {"kind": "device", "provider": ""}, EP: {"kind": "hub", "provider": "openrouter"}},
+    }
+
+    row = llm_cmd._auto_source(status)
+
+    assert row is not None and row.typeid == EP, "an unverified row outranked a provable one"
+
+
+def test_auto_ignores_a_verdict_naming_a_source_the_listing_never_sent():
+    """A resolved pick carries only a typeid. If the row it names is absent, there is nothing to
+    report — inventing one would put a name in front of the user that no listing backs."""
+    status = {
+        "sources": {},
+        "resolved": {"harness.claude.cli": {"endpoint_typeid": "llm_endpoint:ghost", "unverified": False}},
+        "endpoints": {},
+    }
+
+    assert llm_cmd._auto_source(status) is None
+
+
+def test_auto_falls_back_when_the_default_vendor_is_not_the_funded_one():
+    """The default vendor is a PREFERENCE among funded rows, never a filter. Treating it as a
+    filter would report "nothing" on a box that is demonstrably funded — for another harness."""
+    status = {
+        "sources": {"harness.opencode.cli": [{"endpoint_typeid": KEY, "name": "openrouter key", "rank": 0}]},
+        "resolved": {"harness.opencode.cli": {"endpoint_typeid": KEY, "origin": "user", "unverified": False}},
+        "endpoints": {KEY: {"kind": "api_key", "provider": "openrouter"}},
+    }
+
+    row = llm_cmd._auto_source(status)
+
+    assert row is not None and row.active_for == ["opencode"]
+
+
+def test_auto_answers_nothing_on_an_empty_box():
+    assert llm_cmd._auto_source({}) is None
+    assert llm_cmd._auto_source({"sources": {}, "resolved": {}, "endpoints": {}}) is None
+
+
+# ── what the user actually sees ──────────────────────────────────────────────
+
+
+def test_the_human_line_names_the_source_its_kind_and_what_it_funds(capsys):
+    llm_cmd._report(llm_cmd._rows(STATUS)[0], json_output=False)
+
+    line = capsys.readouterr().out
+    # `endpoint`, not `hub`: `_select_kind` renders the hub kind in the spelling `select`
+    # speaks, and this line is what a person reads.
+    assert "team pool" in line and "endpoint" in line and "claude,codex" in line
+
+
+def test_the_json_form_is_the_whole_row_under_a_stable_key(capsys):
+    """Agents parse this. The envelope (`ok`) and the key (`source`) are the contract."""
+    llm_cmd._report(llm_cmd._rows(STATUS)[0], json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["source"]["typeid"] == EP
+    assert payload["source"]["active_for"] == ["claude", "codex"]
+
+
+# ── the wait, and how it ends ────────────────────────────────────────────────
+
+
+class _Frames:
+    """`_backend_frames` stand-in: yields the given frames, then closes like a real socket."""
+
+    def __init__(self, frames):
+        self._frames = frames
+
+    def __call__(self, port, kinds, *, on_connected=None):
+        async def gen():
+            if on_connected is not None:
+                await on_connected()
+            for frame in self._frames:
+                yield frame
+
+        return gen()
+
+
+def test_the_wait_returns_the_source_as_soon_as_one_appears(monkeypatch):
+    """The frame is a WAKE-UP, never the answer: it says a credential changed, and only the
+    resolver can say whether the box can now fund a call."""
+    import asyncio
+
+    # First wake: a credential changed but nothing is funded yet. Second: funded. Proves the
+    # command keeps waiting through a frame that did not answer the question.
+    seq = iter([{"sources": {}, "resolved": {}, "endpoints": {}}, STATUS])
+    monkeypatch.setattr(llm_cmd, "_backend_frames", _Frames([{"message_type": "llm_config_msg"}] * 2))
+    monkeypatch.setattr(llm_cmd, "_steer_open_app", lambda port: True)
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: next(seq))
+
+    row = asyncio.run(llm_cmd._await_funding(6060, "http://127.0.0.1:6060/dock/llm-setup"))
+
+    assert row is not None and row.typeid == EP
+
+
+def test_the_wait_ends_empty_when_the_socket_closes_with_nothing_chosen(monkeypatch):
+    """`None` means the server went away — the caller turns that into a connection error, not
+    into "you have no sources", which would be a different and wrong message."""
+    import asyncio
+
+    monkeypatch.setattr(llm_cmd, "_backend_frames", _Frames([]))
+    monkeypatch.setattr(llm_cmd, "_steer_open_app", lambda port: True)
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
+
+    assert asyncio.run(llm_cmd._await_funding(6060, "u")) is None
+
+
+def test_a_lost_socket_is_a_connection_error_not_a_missing_source(monkeypatch):
+    """Exit code contract: 5 (CONNECTION_ERROR), not 4 (nothing to act on). An agent retries
+    one and gives up on the other."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
+    monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
+    monkeypatch.setattr("asyncio.run", lambda coro: None)
+
+    result = runner.invoke(app, ["llm", "auto"])
+
+    assert result.exit_code == llm_cmd.EXIT_CONNECTION_ERROR
+    assert "CONNECTION_ERROR" in result.output

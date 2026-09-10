@@ -94,6 +94,19 @@ function TokenCount({ tokens, testIdPrefix }: { tokens: number; testIdPrefix?: s
   );
 }
 
+/**
+ * Is THIS box's own save in flight? One `useSetLifetimeCap` observer is shared by every row in a
+ * section, so a bare `isPending` greys out the whole table while any single row is saving — you
+ * blur one person's box and the next one you click is already disabled. Match on the endpoint the
+ * mutation is actually carrying so only that row waits.
+ */
+function savingCap(
+  setCap: { isPending: boolean; variables?: { endpointId: string } },
+  endpointId: string | null | undefined,
+): boolean {
+  return setCap.isPending && !!endpointId && setCap.variables?.endpointId === endpointId;
+}
+
 // ── organization ──────────────────────────────────────────────────────────────
 
 export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => void }) {
@@ -184,7 +197,7 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
                 value={org.limit_usd}
                 ariaLabel={t`Total budget for ${org.name}`}
                 data-testid="org-total-cap"
-                disabled={setCap.isPending || !org.can_configure}
+                disabled={savingCap(setCap, org.endpoint_id) || !org.can_configure}
                 onCommit={(usd) => setCap.mutate({ endpointId: org.endpoint_id as string, usd })}
               />
             </label>
@@ -642,7 +655,7 @@ function TeamUnit({
                   value={team.limit_usd}
                   ariaLabel={t`Budget for ${team.name}`}
                   data-testid={`team-cap-${team.id}`}
-                  disabled={setCap.isPending || !team.can_configure}
+                  disabled={savingCap(setCap, poolId) || !team.can_configure}
                   onCommit={(usd) => setCap.mutate({ endpointId: poolId, usd }, { onSuccess: onChanged })}
                 />
               </label>
@@ -773,7 +786,7 @@ function TeamUnit({
                           key={member.endpoint_id}
                           member={member}
                           teamName={team.name}
-                          capPending={setCap.isPending}
+                          capPending={savingCap(setCap, member.endpoint_id)}
                           canInvite={team.can_allocate}
                           inviting={!!member.email && invitingEmails.includes(member.email)}
                           onInvite={() => void sendInvites(member.email ? [member.email] : [])}

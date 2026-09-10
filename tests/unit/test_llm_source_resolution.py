@@ -1014,3 +1014,58 @@ def test_both_refusals_open_with_the_sentence_the_frontend_reads() -> None:
     # shape, this is what says the routing went with it.
     reason = "claude is set to use flowpad"
     assert PHRASE in f"claude_code {PHRASE}: {reason}"
+
+
+# ---------------------------------------------- Candidate.unverified (the published verdict)
+
+
+def _candidate(kind: str, authority):
+    """One candidate over an endpoint of *kind*, whose verdict carries *authority*."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource
+
+    endpoint = LLMEndpoint.projection(kind, f"llm_endpoint:{kind}-1", name=f"{kind} source")
+    return Candidate(endpoint, LLMSource(endpoint_typeid=f"llm_endpoint:{kind}-1", authority=authority))
+
+
+def test_an_unprobed_device_login_is_unverified():
+    """``PRESUMED`` on a device login means nobody asked — and the probe leaves ``login_state``
+    unset when it cannot reach a verdict, INCLUDING when the CLI is not installed at all. So a
+    presumed device login is routinely one that cannot exist. Observed before this flag: a box
+    with claude signed out and copilot/opencode absent reported "codex device login funds
+    codex" and offered no way to fix it."""
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
+
+    assert _candidate("device", LLMSourceAuthority.PRESUMED).unverified is True
+
+
+def test_a_probed_device_login_is_verified_either_way():
+    """A probe that reached ANY verdict writes ``CACHED`` — signed in or signed out — so this
+    flags only the un-asked, never a login we have actually looked at."""
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
+
+    assert _candidate("device", LLMSourceAuthority.CACHED).unverified is False
+    assert _candidate("device", LLMSourceAuthority.PROVEN).unverified is False
+
+
+def test_a_presumed_hub_endpoint_is_NOT_unverified():
+    """``PRESUMED`` means something else entirely one kind over: the chain's credentials live
+    on the hub and only the hub finds out, at invoke time. That is the honest local ceiling,
+    not a gap in our diligence — and flagging it would reject the very source a fresh FlowPad
+    login exists to produce."""
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
+
+    assert _candidate("hub", LLMSourceAuthority.PRESUMED).unverified is False
+    assert _candidate("api_key", LLMSourceAuthority.PRESUMED).unverified is False
+
+
+def test_the_flag_rides_the_wire():
+    """Published, because the CLI and the setup screen both need it and neither can derive it
+    from the source alone — it takes the endpoint's kind. One producer, two readers."""
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
+
+    wire = _candidate("device", LLMSourceAuthority.PRESUMED).to_wire()
+
+    assert wire["unverified"] is True
+    assert wire["endpoint_typeid"] == "llm_endpoint:device-1", "the source's own fields survive"
