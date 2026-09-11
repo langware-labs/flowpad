@@ -1810,6 +1810,10 @@ msgstr "already running"
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "Already signed in elsewhere? Check again"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr "Already signed in, launch sandbox"
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -5018,8 +5022,12 @@ msgid "Couldn't close the project's tabs"
 msgstr "Couldn't close the project's tabs"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "Couldn't finish preparing your sandbox"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "Couldn't finish preparing your sandbox"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr "Couldn't finish preparing your sandbox."
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -9896,7 +9904,6 @@ msgstr "Launch {0}?"
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
@@ -9904,6 +9911,10 @@ msgstr "Launch sandbox"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "Launch workspace"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr "Launching runs the steps below against your account."
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -13316,6 +13327,7 @@ msgid "Open the repository"
 msgstr "Open the repository"
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "Open the sandbox"
 
@@ -14108,8 +14120,8 @@ msgid "Preparing your workspace…"
 msgstr "Preparing your workspace…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "Preparing…"
+#~ msgid "Preparing…"
+#~ msgstr "Preparing…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -17372,6 +17384,14 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr "Sign In"
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr "Sign in & launch"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "Sign in first, then this source can fund a run."
@@ -17399,6 +17419,10 @@ msgstr "Sign in to Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr "Sign in to FlowPad Hub first — approving a machine binds it to your account."
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17490,6 +17514,10 @@ msgstr "Signed out"
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "Signing in"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -20941,8 +20969,8 @@ msgid "WorldView"
 msgstr "WorldView"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "Would you like to launch a sandbox for this repository?"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "Would you like to launch a sandbox for this repository?"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21154,8 +21182,12 @@ msgid "Your questions"
 msgstr "Your questions"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "Your sandbox is ready"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "Your sandbox is ready"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr "Your sandbox is ready."
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"

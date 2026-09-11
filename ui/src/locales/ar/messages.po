@@ -1810,6 +1810,10 @@ msgstr "قيد التشغيل بالفعل"
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "سجّلت الدخول في مكان آخر؟ تحقّق مرة أخرى"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "افتح أيضًا نافذة طرفية مرافقة لنظام التشغيل"
@@ -5018,8 +5022,12 @@ msgid "Couldn't close the project's tabs"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "تعذر إكمال تحضير الصندوق الرملي"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "تعذر إكمال تحضير الصندوق الرملي"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -9896,7 +9904,6 @@ msgstr "تشغيل {0}؟"
 msgid "Launch a session first"
 msgstr "يجب بدء جلسة أولاً"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "تشغيل الصندوق الرملي"
@@ -9904,6 +9911,10 @@ msgstr "تشغيل الصندوق الرملي"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "إطلاق مساحة العمل"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -13316,6 +13327,7 @@ msgid "Open the repository"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "فتح الصندوق الرملي"
 
@@ -14108,8 +14120,8 @@ msgid "Preparing your workspace…"
 msgstr "جاري تحضير مساحة العمل…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "جاري التحضير…"
+#~ msgid "Preparing…"
+#~ msgstr "جاري التحضير…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -17372,6 +17384,14 @@ msgstr "عرض Sigma للرسم البياني"
 msgid "Sign in"
 msgstr "تسجيل الدخول"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "سجّل الدخول أولًا، عندها يمكن لهذا المصدر تمويل التشغيل."
@@ -17399,6 +17419,10 @@ msgstr "تسجيل الدخول إلى Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17490,6 +17514,10 @@ msgstr ""
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "جارٍ تسجيل الدخول"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -20941,8 +20969,8 @@ msgid "WorldView"
 msgstr "الرؤية الشاملة"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "هل يمكن تشغيل صندوق رملي لهذا المستودع؟"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "هل يمكن تشغيل صندوق رملي لهذا المستودع؟"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21154,8 +21182,12 @@ msgid "Your questions"
 msgstr "أسئلتك"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "الصندوق الرملي جاهز"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "الصندوق الرملي جاهز"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"
