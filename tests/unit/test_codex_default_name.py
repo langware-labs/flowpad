@@ -6,7 +6,15 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus
 from flow_sdk.builtin.tab import Tab
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+
+
+@pytest.fixture(autouse=True)
+def codex_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    reset_instance_settings()
+    yield
+    reset_instance_settings()
 
 
 @pytest.mark.parametrize("entry_point", ["bind", "idle_flush"])

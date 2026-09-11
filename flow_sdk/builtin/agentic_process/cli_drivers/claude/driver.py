@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agent_hook import HookEventType
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
@@ -107,6 +107,11 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions)
 
     name = VENDOR.key
     supports_process_hooks = True
@@ -484,6 +489,33 @@ class ClaudeDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.assets.worker_inventory.claude import available_assets
+
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.claude_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.claude_home / "agents", recursive=True),
+        ]
+        for directory in project_ancestors(process.workdir):
+            roots.extend([
+                AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".claude/skills", recursive=True),
+                AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".claude/agents", recursive=True),
+            ])
+        # --add-dir discovers skills, but does not register custom subagents.
+        roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".claude/skills", recursive=True)
+                     for directory in process.resolved_add_dirs)
+        return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted

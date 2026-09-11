@@ -51,8 +51,9 @@ class McpSpec(DataSpec):
     #: A server whose CODE ships inside this asset — a path RELATIVE to the asset
     #: folder (``server.py``). Relative is the whole point: the folder travels
     #: with its agent over git, so an absolute path would be wrong on arrival.
-    #: ``Mcp.to_spec`` is what resolves it, because only the row knows
-    #: ``asset_ref``. Empty ⇒ this server is a command or a url, not bundled.
+    #: The filesystem utility ``resolve_mcp_spec`` resolves it against the
+    #: containing asset, for both Entity and process-attachment callers.
+    #: Empty ⇒ this server is a command or a url, not bundled.
     entrypoint: str = ""
 
     @property

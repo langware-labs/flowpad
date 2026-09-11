@@ -241,7 +241,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Login probe (`auth_probe`) | `claude auth status` → JSON `loggedIn` (exit code is 0 either way, so never read it); `verified` | `codex login status` → exit 0 = logged in; `verified` | no status subcommand — heuristic on `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` then a past-login marker in `~/.copilot/config.json`; never `verified` |
 | Login flow (`device_login_spec`) | auth-code + PKCE — the browser shows a code the user pastes back into the CLI | RFC-8628 device flow (URL + one-time code, CLI polls) | RFC-8628 device flow |
 | Config dir | `claude_home` (`FLOWPAD_CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`, default `~/.claude`) with `projects/`, `skills/`, `agents/`, `settings.json`, … | `codex_home` + `codex_sessions_dir`/`codex_config_path` (`CODEX_HOME`) | `copilot_home` + `copilot_session_state_dir`/`copilot_config_path` (`FLOWPAD_COPILOT_HOME` — copilot ships no home env var of its own) |
-| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.github/skills` (mounted via `--add-dir` — copilot reads `.github/skills`, not claude's dot-dir) |
+| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` for discovery; process-local skill attachment is refused | `assets_dir/.github/skills` (mounted via `--add-dir` — copilot reads `.github/skills`, not claude's dot-dir) |
 | Embedded sub-agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
@@ -395,13 +395,11 @@ that skips one silently falls back to Claude's or a generic mark:
 
 Two directory trees matter beyond the vendor's own config dir:
 
-- **Generated instruction assets** — `AgenticProcess.prepare_system_instruction_assets()`
-  materializes one asset dir per process and writes the same instruction body in every
-  vendor's dialect: `CLAUDE.md`, `AGENTS.md`, `.agents`, and
-  `.github/instructions/flowpad.instructions.md` (frontmatter `applyTo: "**"`). The dir is
-  appended to `add_dirs`, so a vendor consumes it either by mounting the dir or by being
-  handed one file. A new vendor either reads one of those four, or gets a fifth written
-  next to them — it never gets its instructions inlined into the user prompt.
+- **Generated instruction assets** — `ProcessAssets` composes the instruction body;
+  `WorkerDriver.prepare_instruction_assets()` writes the canonical `CLAUDE.md`
+  prompt and the driver's discovery file (`AGENTS.md` for Codex/OpenCode or
+  `.github/instructions/flowpad.instructions.md` for Copilot). Other harness
+  formats are not written. The derived assets directory participates in `add_dirs`.
 
   **The seam is `AgentOptions.apply_instruction_assets(assets)`, on the argv class.** The
   default is the directory channel above (`add_dirs` / `custom_instruction_dirs` +
@@ -413,9 +411,10 @@ Two directory trees matter beyond the vendor's own config dir:
   an interactive session simply receives no instructions and no skills.
 - **Skills** — `skills_root(process, assets_dir)` decides where a skill folder is laid
   down: under the mounted assets dir, in the vendor's OWN dot-dir
-  (`.claude/skills` — claude, `.github/skills` — copilot, `.opencode/skills` — opencode), or
-  in a global vendor location (`$CODEX_HOME/skills` — codex). The orchestrator routes all
-  skill materialization through this seam.
+  (`.claude/skills` — claude, `.github/skills` — copilot, `.opencode/skills` — opencode).
+  Codex exposes a global location (`$CODEX_HOME/skills`); process attachment refuses
+  that destination before writing. The orchestrator routes supported materialization
+  through the shared SDK projection utilities.
 
   Laying the files down is only half of it. `load-embedded-skill` and
   `attach-embedded-asset` both record the ref in `embedded_asset_refs`, and that record —
@@ -439,3 +438,24 @@ Short pointers; the walkthroughs live in [./flows.md](./flows.md):
   on `pty_mode`. See [mode-switching.md](../agent-management/mode-switching.md).
 - **Restart-required detection** — `restart_snapshot` hashing and what it excludes. See
   [claude-session-manager.md](../agent-management/claude-session-manager.md#restart-required-detection).
+
+
+### Filesystem asset utilities and worker verification
+
+Asset discovery, native-inventory decoding, instruction-file projection and inventory
+reconciliation live under `flow_sdk/assets/`. Driver adapters select worker-specific
+search roots and transport configuration, then call those utilities. Native inventory
+adapters are in `assets/worker_inventory/`; neither their filesystem results nor
+process attachment references alone establish observed usage.
+
+`skills_root` must return a process-contained destination for process attachment.
+If a worker supplies a global skills directory instead, attachment fails before
+writing. User/project installation is a separate caller-selected exact-path operation.
+Native verification errors remain explicit, including unsupported roots; they never
+become a successful empty inventory. A running PTY uses its captured launch settings.
+
+Native inventories can report physical paths and collapse symlink aliases. Inventory
+reconciliation marks only the exact observed occurrence; filesystem listing and
+transcript usage retain distinct alias paths. Duplicate-name winner precision is
+limited by the provider observation, including OpenCode, rather than guessed from
+all folders that share a name.

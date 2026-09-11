@@ -15,7 +15,7 @@ import pytest
 from flow_sdk.capsules import AssetCapsule, CapsuleData
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identity_carrier import Frontmatter, Sidecar
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import File, Folder
 from tests.fixtures.identity import resolve_id

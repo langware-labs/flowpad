@@ -1,7 +1,7 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { dataManager, FSRef, TypeId } from '@sdk';
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const MARKDOWN_ID = 'd5ee7e25-76c5-4f21-9b22-94cc5f3d65fc';
@@ -10,6 +10,7 @@ const milkdown = vi.hoisted(() => ({
   props: null as null | {
     onChange?: (content: string) => void;
     onUserEdit?: () => void;
+    editorMode?: string;
   },
 }));
 
@@ -83,5 +84,26 @@ describe('MarkdownEditor edit marking', () => {
 
     act(() => milkdown.props?.onUserEdit?.());
     expect(managerMark).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('MarkdownEditor read-only route', () => {
+  it('ignores edit mode, hides mutation controls and refuses editor callbacks', async () => {
+    const markEdit = vi.fn();
+    const fsRef = new MemoryFSRef('/document.md', new TypeId('markdown', MARKDOWN_ID), 'file', true);
+    render(<MemoryRouter initialEntries={['/dock/desk/assets/editor/markdown/typeid/markdown-' + MARKDOWN_ID + '?readOnly=1&editorMode=editor']}>
+      <Routes><Route path="/dock/:page/:viewType/*" element={
+        <MarkdownEditor fsRef={fsRef} chatTarget={null} editEntity={{markEdit}} onDelete={vi.fn()}
+          headerLeading={<button>Publish</button>} headerExtras={() => <button>Mutate header</button>} />
+      } /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => expect(milkdown.props?.editorMode).toBe('view'));
+    expect(screen.queryByTestId('editor-mode-chip-editor')).toBeNull();
+    expect(screen.queryByTestId('markdown-editor-delete')).toBeNull();
+    expect(screen.queryByText('Publish')).toBeNull();
+    expect(screen.queryByText('Mutate header')).toBeNull();
+    act(() => milkdown.props?.onUserEdit?.());
+    expect(markEdit).not.toHaveBeenCalled();
   });
 });

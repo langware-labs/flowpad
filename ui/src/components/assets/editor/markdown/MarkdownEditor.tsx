@@ -296,6 +296,7 @@ function MarkdownEditorContent({
   // power-user affordances (eval/worker buttons, the secondary file toolbar,
   // the project chip, the review/markdown editor modes, the side window).
   const advanced = useIsAdvanced();
+  const readOnly = currentDock?.options?.readOnly === '1' || variant === 'plain';
 
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
   // last-used value from the stored preference; else DEFAULT_MODE. Updating
@@ -307,15 +308,15 @@ function MarkdownEditorContent({
   // In Standard, fall back to 'view' so the body never renders a surface whose
   // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
   // Standard user).
-  const viewMode: ViewMode = !advanced && isAdvancedOnlyMode(rawViewMode) ? 'view' : rawViewMode;
+  const viewMode: ViewMode = readOnly || (!advanced && isAdvancedOnlyMode(rawViewMode)) ? 'view' : rawViewMode;
 
   const setViewMode = useCallback(
     (mode: ViewMode) => {
-      if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
+      if (readOnly || !currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
       if (mode === viewMode) return; // active chips are idempotent; preserve child editor state
       navigation.openDock(currentDock.withOption(EDITOR_MODE_PARAM, mode));
     },
-    [currentDock, navigation, viewMode],
+    [currentDock, navigation, viewMode, readOnly],
   );
 
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.
@@ -374,12 +375,13 @@ function MarkdownEditorContent({
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey, reindexOnSave });
-  const markEntityEdited = useCallback(() => editEntity?.markEdit(), [editEntity]);
+  } = useMarkdownContent(fsRef, { autoSave: !readOnly, autoSaveMs: 2000, reloadKey, reindexOnSave });
+  const markEntityEdited = useCallback(() => { if (!readOnly) editEntity?.markEdit(); }, [editEntity, readOnly]);
   const setEditedField = useCallback((key: string, value: string) => {
+    if (readOnly) return;
     setField(key, value);
     markEntityEdited();
-  }, [markEntityEdited, setField]);
+  }, [markEntityEdited, setField, readOnly]);
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -471,8 +473,8 @@ function MarkdownEditorContent({
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
   const handleBodyChange = useCallback((newBody: string) => {
-    setBodyRef.current(newBody);
-  }, []);
+    if (!readOnly) setBodyRef.current(newBody);
+  }, [readOnly]);
 
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
@@ -494,14 +496,14 @@ function MarkdownEditorContent({
   }, [fsRef, fileName]);
 
   const handleDelete = useMemo(() => {
-    if (!onDelete) return undefined;
+    if (readOnly || !onDelete) return undefined;
     return () => {
       showDeleteAssetModal({
         name: deleteLabel ?? fileName,
         onConfirm: onDelete,
       });
     };
-  }, [onDelete, deleteLabel, fileName]);
+  }, [onDelete, deleteLabel, fileName, readOnly]);
 
   // Plain WikiTips keep the same compact, read-only header through every
   // content state. Dock Wiki pages use the full editor header for both local
@@ -522,6 +524,7 @@ function MarkdownEditorContent({
       <PlainDocumentHeader>{plainHeaderActions?.(shareButton)}</PlainDocumentHeader>
     ) : (
       <EditorHeader
+        readOnly={readOnly}
         dirty={false}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -631,10 +634,10 @@ function MarkdownEditorContent({
             {missingFileCopy?.note ?? <Trans>Note: File is missing</Trans>}
           </p>
           {!missingFileCopy && <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>}
-          <Button variant="outline" size="sm" onClick={() => void recreate()}>
+          {!readOnly && <Button variant="outline" size="sm" onClick={() => void recreate()}>
             <FilePlus2 className="mr-1 h-4 w-4" />
             {missingFileCopy?.actionLabel ?? <Trans>Re-create it</Trans>}
-          </Button>
+          </Button>}
         </div>
       </div>
     );
@@ -740,7 +743,7 @@ function MarkdownEditorContent({
   // `headerLeading` renders even without a git repo: publishing is a manifest
   // fact, not a git one.
   const leadingActions =
-    headerLeading || gitPill ? (
+    !readOnly && (headerLeading || gitPill) ? (
       <>
         {headerLeading}
         {gitPill}
@@ -750,6 +753,7 @@ function MarkdownEditorContent({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
+        readOnly={readOnly}
         dirty={dirty}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -759,7 +763,7 @@ function MarkdownEditorContent({
         leadingActions={leadingActions}
         modeActions={viewMode === 'view' ? <CopyContentButton body={body} /> : null}
         editorToolbarHostRef={setEditorToolbarTarget}
-        nameExtras={headerExtras?.({ fields, setField: setEditedField })}
+        nameExtras={!readOnly ? headerExtras?.({ fields, setField: setEditedField }) : undefined}
         showLearningMode={showLearningMode}
       />
 
@@ -783,6 +787,7 @@ function MarkdownEditorContent({
                   <input
                     className="rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
                     value={value}
+                    readOnly={readOnly}
                     onChange={(e) => {
                       setField(key, e.target.value);
                       if (e.nativeEvent.isTrusted) markEntityEdited();
@@ -921,6 +926,7 @@ function MonacoMarkdownEditor({
 // ── Header ─────────────────────────────────────────────────────────────────────
 
 interface EditorHeaderProps {
+  readOnly?: boolean;
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
@@ -943,6 +949,7 @@ interface EditorHeaderProps {
 // (copy/open-external/download — Delete stays), and the review/markdown
 // editor-mode chips.
 function EditorHeader({
+  readOnly = false,
   dirty,
   viewMode,
   onViewModeChange,
@@ -959,6 +966,7 @@ function EditorHeader({
   const { t } = useLingui();
   const advanced = useIsAdvanced();
   const visibleModes = EDITOR_MODES.filter((m) => {
+    if (readOnly) return m === 'view';
     if (m === 'learning') return !!showLearningMode;
     if (!advanced && isAdvancedOnlyMode(m)) return false;
     return true;

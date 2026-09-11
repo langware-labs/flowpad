@@ -8,7 +8,7 @@ a row pointing at a file that moved (dead route) or a file no row mentions
 import re
 from pathlib import Path
 
-from flow_sdk.fs_store.indexer.functions.skill import parse_skill_yaml_from_dir
+from flow_sdk.assets.types.skill import parse_skill_yaml_from_dir
 
 REPO = Path(__file__).resolve().parents[2]
 DOCIT = REPO / ".claude/skills/docit"

@@ -18,6 +18,7 @@ subfolder_count: 0
 > The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources and their manifests, the record model and on-disk layout, DataSpec and the serializer, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.
 
 ## Files
+- [Asset management](asset-management.md) — Filesystem asset handles, exact-path installation, folder enumeration, and process usage.
 - [Asset capsules](asset-capsules.md) — Asset capsules: named JSON metadata carried inside folders and Markdown files, the flowpad:capsule format, and their role in entity identity resolution.
 - [ComputeNode `fs-records` Action](compute-node-fs-records.md) — The ComputeNode fs-records action: full routing table, type-based CRUD over on-disk records, type-registry lookup on entry, and read-only record handling.
 - [Data source assets](data-source-asset.md) — The data_source.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.

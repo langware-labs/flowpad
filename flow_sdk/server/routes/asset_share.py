@@ -1,6 +1,6 @@
 """`POST /api/v1/assets/share` — share one asset, get back a reviewer's link.
 
-The HTTP face of :mod:`flow_sdk.assets.share_orchestrator`. It lives on the
+The HTTP face of :mod:`flow_sdk.builtin.asset_sharing`. It lives on the
 server rather than in the CLI for the same two reasons ``routes/display.py``
 does: the server owns where the hub is (and which of its two URLs is the
 browser one), and it owns the entity graph the gates read.
@@ -38,7 +38,7 @@ class AssetShareRequest(BaseModel):
 
 @router.post("/api/v1/assets/share")
 async def share_asset(req: AssetShareRequest):
-    from flow_sdk.assets.share_orchestrator import ShareBlocked, share_asset_to_hub
+    from flow_sdk.builtin.asset_sharing import ShareBlocked, share_asset_to_hub
     from flow_sdk.request_context.methods import get_current_request_info
 
     typeid = (req.typeid or "").strip() or None

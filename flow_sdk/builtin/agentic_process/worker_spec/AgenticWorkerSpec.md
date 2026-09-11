@@ -124,7 +124,7 @@ the durable citation.
 
 ### Embedded sub-agents and process instructions
 - **Need:** Deliver per-process instructions and embedded sub-agent persona/body text without mutating the user prompt.
-- **Flowpad mechanism:** materialize `<record_dir>/execution/assets/` through `AssetDir`, write `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md`, then include the assets dir in `additional_dirs`.
+- **Flowpad mechanism:** `ProcessAssets` composes instructions under `<record_dir>/execution/assets/`; `WorkerDriver.prepare_instruction_assets()` writes the canonical `CLAUDE.md` prompt plus its own discovery file (`AGENTS.md` for Codex/OpenCode, `.github/instructions/flowpad.instructions.md` for Copilot). Files are written only for nonempty text; `resolved_add_dirs` includes the mount whenever process assets are active.
 - **Claude:** receives `--append-system-prompt-file <assets>/CLAUDE.md`; legacy `--agents <json>` can still be emitted for existing `cli_config.agents_json`.
 - **Codex:** receives `-c developer_instructions=<generated text>`; embedded sub-agent names may be surfaced as `skill_names` for command visibility.
 - **Copilot:** receives `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>`; the generated `.github/instructions/flowpad.instructions.md` is the custom instruction source.
@@ -1339,7 +1339,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Generated instruction assets (the four dialects)
 - **Need:** One instruction body, written in every vendor's discovery format, under the process's own asset dir — never inlined into the user prompt.
-- **Flowpad mechanism:** `AgenticProcess.prepare_system_instruction_assets()` writes `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md` (frontmatter `applyTo: "**"`, `description: Flowpad process system instructions`) into the process asset dir, then appends that dir to `add_dirs`. The four files are written only when there IS instruction text; the asset dir is mounted whenever the process has assets at all, because that mount is also how embedded skills reach the worker. `SystemInstructionAssets.claude_file` is therefore optional, and `--append-system-prompt-file` is emitted only when it exists.
+- **Flowpad mechanism:** `ProcessAssets` composes instructions under `<record_dir>/execution/assets/`; `WorkerDriver.prepare_instruction_assets()` writes the canonical `CLAUDE.md` prompt plus its own discovery file (`AGENTS.md` for Codex/OpenCode, `.github/instructions/flowpad.instructions.md` for Copilot). Files are written only for nonempty text; `resolved_add_dirs` includes the mount whenever process assets are active.
 - **Claude:** consumes `CLAUDE.md` via `--append-system-prompt-file`; **Codex:** `-c developer_instructions=<text>`; **Copilot:** `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets dir>` → the `.github/instructions/` file.
 - **Required:** Yes
 - **Vendor must expose:** one dependable instruction sink — an existing file convention, a config override, or a custom-instruction directory. A fifth file written next to these four is acceptable; prompt inlining is not.

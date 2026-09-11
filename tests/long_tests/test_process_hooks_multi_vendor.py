@@ -122,15 +122,15 @@ async def test_process_hook_acceptance_uses_real_vendor(
                 assert "prompt" not in report.hook_data
 
         if worker_type == "copilot":
-            plugin = process._process_assets_path() / vendor["plugin_relative_path"]
+            plugin = process.asset_workspace._process_assets_path() / vendor["plugin_relative_path"]
             assert all((plugin / relative).is_file() for relative in vendor["plugin_files"])
             hooks = json.loads((plugin / "hooks.json").read_text(encoding="utf-8"))
             handler = hooks["hooks"][vendor["config_event"]][0]
             selected_command = handler["powershell" if sys.platform == "win32" else "bash"]
             assert f"--process-id {process.id}" in selected_command
         else:
-            assert not (process._process_assets_path() / ".flowpad/plugins/codex").exists()
-            assert not process._process_assets_path().exists()
+            assert not (process.asset_workspace._process_assets_path() / ".flowpad/plugins/codex").exists()
+            assert not process.asset_workspace._process_assets_path().exists()
     finally:
         for event in configured:
             await process.remove_hook(event)

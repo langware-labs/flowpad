@@ -37,7 +37,7 @@ The two transport/visibility axes are the load-bearing ones; the rest support li
 | `shell_mode`                                                       | `bool = False`           | AgenticProcess drives this choice. `False` = direct PTY spawn (default) — the worker PID is set via `shell.set_worker_pid_direct(cmd)` (`start_pty` path, :1144); `True` = legacy zsh intermediary.                                                                                                                                                |
 | `restart_required` (:481)                                          | `bool = False`           | `True` iff a worker-relevant field drifted since the last successful `start_pty()` while `RUNNING`. Set by the save-hook (drift vs `last_started_hash`); surfaced as a UI "Restart" affordance. See claude-session-manager.md.                                                                                                                     |
 | `workdir`                                                          | `str \| None`            | Worker cwd. Frozen once `session_id` is set; derived from the owning project when unset.                                                                                                                                                                                                                                                           |
-| `additional_dirs`                                                  | `list[str]`              | Extra dirs passed to the worker via `--add-dir`. When process instruction/assets are materialized, `<record_dir>/execution/assets` is appended here idempotently.                                                                                                                                                                                  |
+| `additional_dirs`                                                  | `list[str]`              | Extra dirs passed to the worker via `--add-dir`. The process asset root is derived by `resolved_add_dirs` rather than persisted in this list.                                                                                                                                                                                  |
 | `embedded_asset_refs`                                              | `list[TypeId]`           | Entities materialized into `<record_dir>/execution/assets/`, discovered via `--add-dir`.                                                                                                                                                                                                                                                           |
 | `embedded_subagent_ids`                                            | `list[str]`              | Names of embedded sub-agents materialized under `<assets>/.claude/agents/`. Legacy rows persisted under the old `embedded_agent_ids` key are still read.                                                                                                                                                                                           |
 | `project_id`                                                       | `str \| None`            | Owning project. Frozen once `session_id` is set; resolved by `get_project()` from ancestry → workdir → `@local`.                                                                                                                                                                                                                                   |
@@ -103,13 +103,16 @@ Names + one-liners; no bodies.
 
 * `load_skill(skill)` — make a skill folder discoverable (symlink into the worker's skills root).
 
-* `load_embedded_subagent(agent)` — load a sub-agent into the process asset directory so generated instruction files include its persona/body.
+* `load_embedded_subagent(agent)` — legacy in-memory subagent configuration. The `load-embedded-subagent` action imports a document into the process asset directory.
 
 * `embedded_assets` / `ensure_embedded_assets()` — dynamic process-local `AssetDir`; default is `None`, created on demand under `<record_dir>/execution/assets`.
 
-* `prepare_system_instruction_assets()` — materialize `context_data.instructions`, GraphContext summary, and embedded-agent instructions as `CLAUDE.md`, `AGENTS.md`, `.agents`, and Copilot `.github/instructions/flowpad.instructions.md`.
+* `prepare_system_instruction_assets()` — compose instructions through `ProcessAssets`; the driver writes its instruction projection (canonical `CLAUDE.md` prompt plus its own discovery file).
 
-* `get_asset_descriptors()` → `list[AssetDescriptor]` — unified read-only view (embedded + inline + path-scan).
+* `get_asset_folders()` → `list[AssetFolder]` — resolve explicit process, project, user and context roots.
+* `get_embedded_assets()` → `list[Asset]` — installed filesystem occurrences.
+* `get_used_assets(*, transcript=None, bindings=None)` → `list[AssetUsage]` — observed usage with resolved assets or retained unresolved references.
+* `get_asset_descriptors(*, usages=None)` → `list[AssetDescriptor]` — filesystem catalog decorated with attachment and usage evidence.
 
 **Misc**
 
@@ -185,11 +188,45 @@ The `AgenticProcess` ⇄ `Shell` link (see `docs/interface/shell.md`):
 
 ### Helper types
 
+Shared resolution, installation and catalog discovery live in `flow_sdk/assets/`.
+`ProcessAssets` owns attachment receipts and launch preparation. Filesystem projection,
+receipt ownership checks, discovery, usage matching and inventory assembly are SDK
+utilities receiving paths and typed values. Process adapters supply project context,
+transcript evidence and the effective worker launch snapshot. Project catalogs use
+the same filesystem utilities without importing the process implementation.
+
 * `AgenticContext` — backend per-turn execution context (`cli_worker_base_driver.py`): `compute_node`, legacy `instructions`, `system_prompt_file`, `developer_instructions`, `custom_instruction_dirs`, `workdir`, `env_vars`, `model`, `permission_mode`, `resume_session_id`, `fork_session`, `session_id`, `effort`, add-dirs, etc. (A second, prompt-layer `AgenticContext` lives in `_shared.py:19`.)
 
-* `AssetDir` — process-local asset loader (`asset_dir.py`) with `load_asset()` / `loadAsset()`; writes content or copies/symlinks sources under one root while rejecting absolute or escaping paths.
+* `AssetDir` — shared contained filesystem writer (`flow_sdk/assets/directory.py`). Source copies and links use the shared materializer; process attachment policy lives in `ProcessAssets`.
 
-* `AssetDescriptor` (dataclass, :132) — one asset row: `typeid`, `source: AssetSource`, `posix_path`, `source_dir`. `AssetSource` ∈ {EMBEDDED, INLINE, PROJECT\_DIR, USER\_DIR, WORKDIR, ADDITIONAL\_DIR, CONTEXT\_DIR}; the last five are read-only sources.
+* `AssetDescriptor` (`flow_sdk/assets/catalog.py`) — one filesystem occurrence with `typeid`, `source`, `posix_path`, `source_dir`, optional `project_id`, and separate `present`, `attached`, `available`, and `usage` fields. Inline personas remain process configuration.
+
+* `AssetUsage` — a nullable resolved asset, original reference, resolution status and ordered evidence. `AssetEvidence.kind` is `transcript_file_read` or `skill_invoked`; attachment itself is not observed use. Name-only invocation evidence needs an explicit path or captured invocation binding; ambiguous or missing assets remain unresolved records.
+
+`get-assets` returns `assets`, `used_assets`, `unresolved_usage`, `assistant_enabled`
+and `availability_error`. Verification failures preserve historical usage. An occurrence whose carrier changed is retained as `identity_changed` usage rather than attributed to its replacement. A running
+PTY is inspected using its launch snapshot rather than pending configuration.
+
+Asset-list navigation preserves the selected occurrence path and declared type in
+the URL. Read-only views never switch to the primary record of a same-ID copy.
+Skill, subagent, markdown and MCP viewers retain their specialized read-only
+surfaces; other custom editors use a file preview of the registry-declared main
+document. MCP path views read the JSON without requiring an indexed entity;
+entity-bound Publish and Test controls remain on explicit TypeId editor routes.
+
+Attachment filesystem writes go through `assets/process_projection.py`. Receipts
+capture the installed entry path and filesystem ownership; detach refuses to remove
+an externally replaced entry and never deletes a symlink's source. A standalone
+markdown document passed to `load-embedded-subagent` is explicitly imported into the
+declared subagent layout: a valid existing ID is retained, otherwise the new
+occurrence receives a UUID v4. The source document remains unchanged. Already
+registered subagent assets are copied without rewriting their content.
+
+Attached MCP assets retain their complete folder and capsule at
+`<assets>/agentic-assets/mcp/<name>/`. Their specs participate in
+`resolved_mcp_servers()` after explicit process specs (first name wins); bundled
+entrypoints resolve against the installed folder, so support files travel with
+the attachment. Detach removes that contribution along with its owned folder.
 
 * `TranscriptSubpath` (StrEnum, :120) — `plan` / `prompt` / `prompts` / `full`; routes the `transcript` action's sub-path.
 
@@ -200,19 +237,18 @@ The `AgenticProcess` ⇄ `Shell` link (see `docs/interface/shell.md`):
 `AgenticProcess.instructions` is a convenience property over
 `context_data["instructions"]`. At launch/turn time,
 `prepare_system_instruction_assets()` combines those instructions with any bound
-GraphContext summary and embedded-agent persona/body blocks, then writes all
-process-local instruction files under:
+GraphContext summary and embedded-agent persona/body blocks. The driver writes
+the canonical prompt file and only its own discovery format under:
 
 ```text
 <record_dir>/execution/assets/
   CLAUDE.md
-  AGENTS.md
-  .agents
-  .github/instructions/flowpad.instructions.md
+  AGENTS.md                                  # Codex / OpenCode
+  .github/instructions/flowpad.instructions.md # Copilot
 ```
 
-The assets directory is appended to `additional_dirs` through the same generic
-add-dir mechanism used for user-supplied folders. Delivery then depends on the
+The assets directory is derived by `resolved_add_dirs`; it is not persisted in
+the user-owned `additional_dirs` field. Delivery then depends on the
 worker:
 
 | Worker  | Delivery                                                                                                        |
@@ -258,7 +294,7 @@ hook and current drivers pass it through.
 | `attach-embedded-asset`  | POST | `attach_embedded_asset` → `_materialize_entity`                                     | both                  | param `entity_ref` (TypeId) required.                                                                                                                      | Materialize an entity under assets dir + add to `--add-dir` + record in `embedded_asset_refs`.                                                                                                                                                                                                                                                                |
 | `detach-embedded-asset`  | POST | `detach_embedded_asset` → `_unmaterialize_entity`                                   | both                  | param `entity_ref` required.                                                                                                                               | Remove materialized files + drop from `embedded_asset_refs`.                                                                                                                                                                                                                                                                                                  |
 | `list-embedded-assets`   | GET  | `list_embedded_assets`                                                              | both                  | —                                                                                                                                                          | Return `embedded_asset_refs` as serialized TypeId strings.                                                                                                                                                                                                                                                                                                    |
-| `get-assets`             | GET  | `get_assets_action` → `get_asset_descriptors`                                       | both                  | —                                                                                                                                                          | Unified asset list (embedded + inline + path-scan).                                                                                                                                                                                                                                                                                                           |
+| `get-assets`             | GET  | `get_assets_action` → `get_asset_descriptors`                                       | both                  | —                                                                                                                                                          | Filesystem inventory plus separately reported observed and unresolved usage.                                                                                                                                                                                                                                                                                                           |
 | `get-history`            | GET  | `get_history_action` → `driver.load_history`                                        | both                  | Stateless — works after exit.                                                                                                                              | Transcript as a list of FlowData dicts. Empty is success (`history:[]`), not 404.                                                                                                                                                                                                                                                                             |
 | `restart-info`           | GET  | `restart_info_action` → `_diff_snapshot_fields`                                     | both                  | Read-only.                                                                                                                                                 | Diff of last-started launch payload vs current entity snapshot (powers "Command Status").                                                                                                                                                                                                                                                                     |
 | `cmd-line`               | GET  | `cmd_line_action` → `cmd_line`                                                      | both                  | Read-only; failure-tolerant (`cmd_line:None`).                                                                                                             | Live launch command, computed on demand (never serialized).                                                                                                                                                                                                                                                                                                   |

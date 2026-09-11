@@ -1,4 +1,4 @@
-"""Extractor + helpers for SKILL records.
+"""Filesystem parsing, metadata derivation, and record helpers for skills.
 
 A skill is a folder containing ``SKILL.md`` (markdown + YAML frontmatter) and/or
 ``skill.yaml`` / ``skill.yml``. Discovery is the type's declared ``walk``
@@ -22,12 +22,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
+from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
@@ -130,3 +131,20 @@ def derive_skill(data: dict, root: Path, header_raw: dict) -> None:
         data["description"] = fields["description"]
     if fields:
         data["metadata"] = fields
+
+
+def get_skill(uid: str) -> FSRecord | None:
+    """O(1) lookup of a SKILL record by id."""
+    from flow_sdk.fs_store.record_paths import is_record_dir, shadow_dir_for  # noqa: PLC0415
+    folder = shadow_dir_for(RecordType.SKILL, uid)
+    if is_record_dir(folder):
+        try:
+            return load_skill_record(folder)
+        except OSError:
+            return None
+    return None
+
+
+def load_skill_record(path: str | Path) -> FSRecord:
+    """Load a skill record from a live skill folder or a shadow records folder."""
+    return FSRecord.load_record(path)

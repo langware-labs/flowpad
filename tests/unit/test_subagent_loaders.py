@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.fs_store.operations import subagent as ops
+from flow_sdk.assets.types.subagent import extract_subagent_from_path, load_subagent
+from flow_sdk.builtin import subagent_loading as ops
 
 
 def _agent(path: Path, name: str, desc: str) -> None:
@@ -39,3 +40,14 @@ def test_missing_and_unreadable_are_none(homes, tmp_path):
     bad.parent.mkdir(parents=True)
     bad.write_bytes(b"\xff\xfe not utf-8")
     assert ops.load_subagent("bad") is None
+
+
+def test_reading_unstamped_subagent_never_changes_source(tmp_path):
+    path = tmp_path / "joe.md"
+    _agent(path, "joe", "read only")
+    before = path.read_bytes(), path.stat().st_mtime_ns
+    first = extract_subagent_from_path(path)
+    second = load_subagent("joe", [tmp_path])
+    assert first.id == second.id
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["joe.md"]

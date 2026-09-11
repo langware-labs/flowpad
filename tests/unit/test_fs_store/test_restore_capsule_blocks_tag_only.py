@@ -9,7 +9,7 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule, CapsuleData, snapshot_capsule_blocks
 from flow_sdk.fs_store.fs_ref.frontmatter_ref import FrontMatterFsRef
-from flow_sdk.fs_store.indexer._frontmatter import carry_capsules
+from flow_sdk.assets.frontmatter import carry_capsules
 
 pytestmark = pytest.mark.timeout(5)
 

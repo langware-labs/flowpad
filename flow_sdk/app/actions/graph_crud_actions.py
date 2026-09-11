@@ -268,7 +268,7 @@ async def handle_record_action():
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+    from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 
     asset_binding = local_asset_vfs_binding(entity)
     if asset_binding is not None:

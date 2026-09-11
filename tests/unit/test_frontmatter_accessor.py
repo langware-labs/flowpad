@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.skill import Skill
-from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.schema.type_info import register_all
 
 SKILL_MD = """---
