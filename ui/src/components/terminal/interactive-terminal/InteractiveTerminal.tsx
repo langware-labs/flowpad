@@ -1816,6 +1816,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   activeTab={activeSideTab}
                   onActiveTabChange={selectSideTab}
                   onCloseTab={closeSideTab}
+                  onOpenChange={sideWindows.closeAll}
+                  closeLabel={t`Close all side tabs`}
+                  closeText={t`Close all`}
                   truncateLabels
                   scrollableTabs
                 >
