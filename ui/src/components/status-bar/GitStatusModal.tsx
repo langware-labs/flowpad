@@ -24,9 +24,17 @@ export const GitStatusModal: React.FC<GitStatusModalProps> = ({
   workdir,
   onPushed,
 }) => {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
+        ref={dialogRef}
+        onOpenAutoFocus={(event) => {
+          // Keep focus inside the dialog without opening the first button's tooltip.
+          event.preventDefault();
+          dialogRef.current?.focus();
+        }}
         className="flex flex-col p-0"
         style={{ width: '90vw', maxWidth: '1000px', height: '85vh' }}
       >

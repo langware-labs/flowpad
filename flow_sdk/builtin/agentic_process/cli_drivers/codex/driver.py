@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agent_hook import HookEventType
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     render_shell_command,
 )
@@ -123,6 +123,11 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 
 class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions, discovery_file='AGENTS.md')
 
     name = VENDOR.key
     supports_process_hooks = True
@@ -340,6 +345,30 @@ class CodexDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.assets.worker_inventory.codex import available_assets
+
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.codex_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".agents/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=Path("/etc/codex/skills"), recursive=True),
+        ]
+        roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".agents/skills", recursive=True)
+                     for directory in project_ancestors(process.workdir))
+        # --add-dir grants workspace access; it does not register skill roots
+        # or turn Claude markdown subagents into Codex agents.
+        return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Codex discovers skills only from ``$CODEX_HOME/skills`` (a global,

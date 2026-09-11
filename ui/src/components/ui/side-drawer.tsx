@@ -127,6 +127,8 @@ export interface TabbedSideDrawerProps<TabId extends string = string> extends Om
   closeIcon?: ComponentType<SVGProps<SVGSVGElement>>;
   /** Tooltip / aria-label for the close button. Defaults to "Close". */
   closeLabel?: string;
+  /** Optional visible text beside the close icon. */
+  closeText?: string;
   /** Per-tab close handler. A close X renders on a tab only when this is set
    *  AND the tab's descriptor has `closable`. Used by the workspace model
    *  (terminal side windows) where tabs are individually openable/closable. */
@@ -150,6 +152,7 @@ export function TabbedSideDrawer<TabId extends string>({
   tabTestIdPrefix,
   closeIcon: CloseIcon = X,
   closeLabel = 'Close',
+  closeText,
   onCloseTab,
   truncateLabels = false,
   scrollableTabs = false,
@@ -229,14 +232,15 @@ export function TabbedSideDrawer<TabId extends string>({
         {onOpenChange && (
           <Button
             variant="ghost"
-            size="icon"
-            className="ms-1 h-6 w-6 shrink-0"
+            size={closeText ? 'sm' : 'icon'}
+            className={cn('ms-1 h-6 shrink-0', closeText ? 'gap-1 px-1.5 text-[11px]' : 'w-6')}
             onClick={() => onOpenChange(false)}
             aria-label={closeLabel}
             title={closeLabel}
             data-testid={dataTestId ? `${dataTestId}-close` : undefined}
           >
             <CloseIcon className="h-3.5 w-3.5" />
+            {closeText}
           </Button>
         )}
       </div>

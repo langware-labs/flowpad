@@ -86,16 +86,20 @@ async def test_every_legacy_emit_site_goes_through_the_mirroring_seam():
     assert ".latest_table = " not in source, "latest_table is read-only; write via set_table"
 
 
-async def test_the_asset_usage_scan_reports_under_its_own_name(client, observed):
-    """It borrows ``job_name="scan"`` for the legacy pill, like the docs scan, and must not
-    be mistaken for a filesystem scan of the box."""
+async def test_the_asset_usage_action_reports_and_ends_its_scan_activity(client, observed):
+    """The asset IDE calls a sibling action, which owns the box's scan slot."""
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+    node = await ComputeNode.get_local()
     resp = await client.get(
-        "/api/v1/graph/compute_node/@local/fs-records/asset-usage",
+        f"/api/v1/graph/compute_node/{node.id}/asset-usage",
         params={"skill": "e2etest-no-such-skill"},
     )
 
     assert resp.status_code == 200
-    assert any(state.name in ("COMPLETED", "FAILED") for _p, state, _d in observed) or not observed
+    assert resp.json()["data"]["asset"] == "e2etest-no-such-skill"
+    assert any(path == "scan" and state == ActivityState.COMPLETED for path, state, _done in observed)
+    assert monitor.holder("scan", subject_entity=str(node.typeid)) is None
     for path, _state, _done in observed:
         assert monitor.get(path) is None, f"{path} was left running after the scan"
 

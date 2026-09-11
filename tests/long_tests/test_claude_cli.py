@@ -179,7 +179,7 @@ async def test_process_hook_acceptance_uses_real_claude_plugin(
                     assert report.hook_data[discriminator]
                     assert "prompt" not in report.hook_data
 
-            plugin = process._process_assets_path() / _HOOK_CONTRACT["plugin_relative_path"]
+            plugin = process.asset_workspace._process_assets_path() / _HOOK_CONTRACT["plugin_relative_path"]
             assert all((plugin / relative).is_file() for relative in _HOOK_CONTRACT["plugin_files"])
             hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
             assert sorted(hooks["hooks"]) == _HOOK_CONTRACT["expected_persisted_session_events"]

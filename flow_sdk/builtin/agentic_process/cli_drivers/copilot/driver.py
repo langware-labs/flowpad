@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agent_hook import HookEventType
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import render_shell_command
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgentOptions,
@@ -114,6 +114,11 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions, discovery_file='.github/instructions/flowpad.instructions.md', frontmatter='---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n')
 
     name = VENDOR.key
     supports_process_hooks = True
@@ -373,6 +378,35 @@ class CopilotDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.assets.worker_inventory.copilot import available_assets
+
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.copilot_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".agents/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.copilot_home / "agents", recursive=True),
+        ]
+        for directory in project_ancestors(process.workdir):
+            roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / prefix / "skills", recursive=True)
+                         for prefix in (".github", ".agents", ".claude"))
+            roots.append(AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".github/agents", recursive=True))
+        for directory in process.resolved_add_dirs:
+            roots.extend([
+                AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".github/skills", recursive=True),
+                AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=Path(directory) / ".github/agents", recursive=True),
+            ])
+        return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Copilot discovers skills from ``.github/skills`` under a mounted dir.

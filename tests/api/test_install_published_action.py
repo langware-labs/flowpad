@@ -64,7 +64,8 @@ async def test_install_copies_indexes_with_the_same_id_and_records_the_dependenc
     assert dep["installed_at"].endswith("Z")
 
     got = await bootstrapped_client.get(f"/api/v1/graph/skill/{skill['id']}")
-    assert got.json()["data"]["project_id"] == b
+    assert got.json()["data"]["project_id"] == a
+    assert str(dest) in {item["path"] for item in got.json()["data"]["asset_occurrences"]}
     # A dependency is not something B published.
     view = (await bootstrapped_client.get(f"/api/v1/graph/project/{b}/published")).json()["data"]
     assert view["rows"] == []

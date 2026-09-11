@@ -50,18 +50,10 @@ async def test_embedded_assets_default_none_then_materialized(records_root, tmp_
 
     claude_md = assets.assets_dir / "CLAUDE.md"
     agents_md = assets.assets_dir / "AGENTS.md"
-    dot_agents = assets.assets_dir / ".agents"
-    copilot_md = assets.assets_dir / ".github" / "instructions" / "flowpad.instructions.md"
-
-    for path in (claude_md, agents_md, dot_agents, copilot_md):
-        assert path.exists(), path
-
     assert claude_md.read_text(encoding="utf-8") == prompt + "\n"
     assert agents_md.read_text(encoding="utf-8") == prompt + "\n"
-    assert dot_agents.read_text(encoding="utf-8") == prompt + "\n"
-    copilot_text = copilot_md.read_text(encoding="utf-8")
-    assert 'applyTo: "**"' in copilot_text
-    assert prompt in copilot_text
+    assert not (assets.assets_dir / ".agents").exists()
+    assert not (assets.assets_dir / ".github").exists()
 
     kwargs = process._instruction_context_kwargs(assets)
     assert kwargs == {
@@ -127,17 +119,17 @@ async def test_load_embedded_subagent_materializes_into_instruction_assets(recor
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
     # Identity is persisted as the sub-agent's ENTITY ref, not a legacy name entry.
-    from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
-    from flow_sdk.fs_store.record_types import RecordType
-
-    expected_ref = f"subagent-{subagent_peek_entity_id(FSRef(agent_md, record_type=RecordType.SUBAGENT))}"
-    assert result.data["ref"] == expected_ref
+    from flow_sdk.assets.asset import Asset
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    expected_ref = result.data["ref"]
+    assert is_valid_entity_id(expected_ref.removeprefix("subagent-"))
     assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
+    assert "id:" not in agent_md.read_text()  # importing never stamps the source document
     assert not process.embedded_subagent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
+    assert str(Asset.from_path(materialized).typeid) == expected_ref
     assert "Always answer as PERSONA_PROBE." in materialized.read_text(encoding="utf-8")
 
     assets = await process.prepare_system_instruction_assets()
@@ -389,3 +381,18 @@ async def test_pty_seam_never_applies_the_project_language(records_root, tmp_pat
         assert "--settings" not in argv
     if worker_type is WorkerType.CODEX:
         assert cmd.developer_instructions == prompt
+
+@pytest.mark.parametrize(
+    ("worker_type", "discovery_file"),
+    [(WorkerType.CLAUDE_CODE, "CLAUDE.md"), (WorkerType.CODEX, "AGENTS.md"),
+     (WorkerType.OPENCODE, "AGENTS.md"),
+     (WorkerType.COPILOT, ".github/instructions/flowpad.instructions.md")],
+)
+def test_driver_projects_its_instruction_files(tmp_path, worker_type, discovery_file):
+    from flow_sdk.assets.directory import AssetDir
+
+    process = _process(worker_type, tmp_path)
+    prompt_file = process.driver.prepare_instruction_assets(AssetDir(tmp_path), "Follow the task")
+    assert prompt_file.read_text() == "Follow the task\n"
+    assert "Follow the task" in (tmp_path / discovery_file).read_text()
+    assert not (tmp_path / ".agents").exists()

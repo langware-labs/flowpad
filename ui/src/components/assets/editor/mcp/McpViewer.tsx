@@ -14,6 +14,7 @@ import {
 import { ReportAssetShell } from '@src/components/assets/editor/ReportAssetShell';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** The on-disk shape — `McpSpec` (flow_sdk/schema/data_spec/mcp_spec.py). Taken
  *  off the entity so the two cannot drift; the row mirrors the file's fields. */
@@ -71,11 +72,13 @@ function Field({
   label,
   value,
   placeholder,
+  readOnly,
   onCommit,
 }: {
   label: string;
   value: string;
   placeholder?: string;
+  readOnly: boolean;
   onCommit: (next: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -84,11 +87,12 @@ function Field({
       <span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
       <Input
         value={draft}
+        readOnly={readOnly}
         placeholder={placeholder}
         onChange={(e) => setDraft(e.target.value)}
         // A keystroke-level write would rewrite mcp.json on every character.
         onBlur={() => {
-          if (draft !== value) onCommit(draft);
+          if (!readOnly && draft !== value) onCommit(draft);
         }}
       />
     </label>
@@ -109,7 +113,7 @@ function Field({
  * the editor owns the document, and an entity save would round-trip through the
  * indexer to reach the same bytes.
  */
-function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRef; mcp: Mcp }) {
+function McpForm({ initial, mainRef, mcp, readOnly }: { initial: McpSpecDoc; mainRef: FSRef; mcp?: Mcp; readOnly: boolean }) {
   const { t } = useLingui();
   const [spec, setSpec] = useState(initial);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -123,6 +127,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
   const [testing, setTesting] = useState(false);
 
   const runTest = async () => {
+    if (readOnly || !mcp) return;
     setTesting(true);
     setTest(undefined);
     try {
@@ -138,6 +143,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
   };
 
   const commit = (patch: Partial<McpSpecDoc>) => {
+    if (readOnly) return;
     const next = { ...current.current, ...patch };
     current.current = next;
     setSpec(next);
@@ -145,7 +151,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
     queue.current = queue.current
       .catch(() => undefined)
       .then(() => mainRef.write(`${JSON.stringify(next, null, 2)}\n`))
-      .then(() => mcp.markEdit())
+      .then(() => mcp?.markEdit())
       .catch((err) => setSaveError(err instanceof Error ? err.message : String(err)));
   };
 
@@ -154,6 +160,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
   return (
     <div className="flex max-w-2xl flex-col gap-3">
       <Field
+        readOnly={readOnly}
         label={t`Name`}
         value={spec.name}
         // A blank name fails McpSpec's NonBlank on the next index and the asset
@@ -166,6 +173,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
           <Trans>Transport</Trans>
         </span>
         <Select
+          disabled={readOnly}
           value={spec.transport}
           // Clear the branch that no longer applies: the projector drops it
           // anyway, and leaving it makes the file misdescribe the server.
@@ -191,11 +199,12 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
       </label>
 
       {remote ? (
-        <Field label={t`URL`} value={spec.url} onCommit={(v) => commit({ url: v })} />
+        <Field readOnly={readOnly} label={t`URL`} value={spec.url} onCommit={(v) => commit({ url: v })} />
       ) : (
         <>
-          <Field label={t`Command`} value={spec.command} onCommit={(v) => commit({ command: v })} />
+          <Field readOnly={readOnly} label={t`Command`} value={spec.command} onCommit={(v) => commit({ command: v })} />
           <Field
+            readOnly={readOnly}
             label={t`Args`}
             value={spec.args.join(' ')}
             placeholder={t`space separated`}
@@ -237,7 +246,7 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
         </p>
       )}
 
-      <div className="flex items-center gap-3 border-t pt-3">
+      {!readOnly && mcp && <div className="flex items-center gap-3 border-t pt-3">
         <Button
           variant="secondary"
           size="sm"
@@ -259,27 +268,29 @@ function McpForm({ initial, mainRef, mcp }: { initial: McpSpecDoc; mainRef: FSRe
             {test.ok && test.tools.length > 0 && `: ${test.tools.join(', ')}`}
           </span>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
 
-export function McpViewer({ fsRef, mcp }: { fsRef: FSRef; mcp: Mcp }) {
+export function McpViewer({ fsRef, mcp }: { fsRef: FSRef; mcp?: Mcp }) {
+  const { currentDock } = useDockNavigation();
+  const readOnly = fsRef.readOnly || currentDock?.options?.readOnly === '1';
   const mainRef = fsRef.child(MAIN_FILE);
   const { doc, error, loading } = useJsonDoc<Partial<McpSpecDoc>>(mainRef);
 
   return (
     <ReportAssetShell
       fsRef={mainRef}
-      name={doc?.name || mcp.name}
+      name={doc?.name || mcp?.name}
       testId="mcp-viewer"
       loading={loading}
       error={error}
-      actions={<PublishedToggle entity={mcp} />}
+      actions={!readOnly && mcp ? <PublishedToggle entity={mcp} /> : undefined}
     >
       {/* Keyed on the path so a different asset remounts with its own state
           rather than showing the previous one's fields. */}
-      {doc && <McpForm key={mainRef.path} initial={withDefaults(doc)} mainRef={mainRef} mcp={mcp} />}
+      {doc && <McpForm key={mainRef.path} initial={withDefaults(doc)} mainRef={mainRef} mcp={mcp} readOnly={readOnly} />}
     </ReportAssetShell>
   );
 }

@@ -7,7 +7,7 @@
  */
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Project, dataContext, type AssetDescriptor } from '@sdk';
+import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk';
 import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets';
 
 const DESCRIPTORS: AssetDescriptor[] = [
@@ -26,6 +26,22 @@ afterEach(() => {
 });
 
 describe('useProcessAssets — staging (null process)', () => {
+  it('uses the backend resolved assistant setting and preserves usage on verification failure', async () => {
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000002' });
+    vi.spyOn(process, 'getAssetInventory').mockResolvedValue({
+      assets: DESCRIPTORS,
+      assistant_enabled: false,
+      availability_error: 'Cannot inspect this worker',
+      unresolved_usage: [{asset: null, reference: 'plugin:gone', resolution: 'missing', evidence: [{kind: 'skill_invoked'}]}],
+    });
+    const { result } = renderHook(() => useProcessAssets(process));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.assistantEnabled).toBe(false);
+    expect(result.current.error).toBe(true);
+    expect(result.current.descriptors).toEqual(DESCRIPTORS);
+    expect(result.current.unresolvedUsage?.[0].reference).toBe("plugin:gone");
+  });
+
   it('resolves descriptors via Project.getAssetsById, @local fallback when projectless', async () => {
     const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue(DESCRIPTORS);
     // dataContext.project is a non-configurable MobX computed — can't be

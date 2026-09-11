@@ -1234,6 +1234,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     await dataManager.callAction<unknown, unknown>(info);
   }
 
+  /** Resolve a reference relative to this entity through the shared backend resolver. */
+  public async resolveDisplayTarget(link: string): Promise<ShowTarget | null> {
+    const info = new ActionInfo('resolve-display-target', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { link };
+    return (await dataManager.callAction<unknown, ShowTarget>(info)) ?? null;
+  }
+
   /**
    * Open / set up this entity — the reception hook reused for the open-an-existing
    * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget

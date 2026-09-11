@@ -1,22 +1,21 @@
-"""Portable, storage-neutral contracts for file-backed Flowpad assets."""
+"""Filesystem asset utilities; public imports do not initialize application state."""
+from importlib import import_module
 
-from flow_sdk.assets.entity_vfs import LocalAssetVFSBinding, local_asset_vfs_binding
-from flow_sdk.assets.git_origin import PortableGitOrigin
-from flow_sdk.assets.projection import (
-    PORTABLE_ASSET_CONTRACT_VERSION,
-    PortableAssetLayout,
-    PortableAssetProjection,
-    layout_for_origin,
-    project_asset_tree,
-)
+_EXPORTS = {
+    "Asset": "asset",
+    "AssetFolder": "folder",
+    "PORTABLE_ASSET_CONTRACT_VERSION": "projection",
+    "PortableAssetLayout": "projection",
+    "PortableAssetProjection": "projection",
+    "PortableGitOrigin": "git_origin",
+    "layout_for_origin": "projection",
+    "read_asset_tree": "projection",
+}
+__all__ = list(_EXPORTS)
 
-__all__ = [
-    "PORTABLE_ASSET_CONTRACT_VERSION",
-    "PortableAssetLayout",
-    "PortableAssetProjection",
-    "LocalAssetVFSBinding",
-    "PortableGitOrigin",
-    "local_asset_vfs_binding",
-    "layout_for_origin",
-    "project_asset_tree",
-]
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(name)
+    return getattr(import_module(f"flow_sdk.assets.{module}"), name)

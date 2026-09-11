@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+from flow_sdk.assets.catalog import (AssetSource)
 
 SKILL_MD = """---
 name: {name}
@@ -69,10 +69,9 @@ async def unindexed_dir(tmp_path: Path, monkeypatch):
 
 
 async def _rows_for(root: Path) -> list[dict]:
-    """Drive the real HTTP action and return its ``assets`` rows."""
+    """Inspect the catalog independently of native worker availability."""
     proc = AgenticProcess(id=str(uuid.uuid4()), additional_dirs=[str(root)])
-    response = await proc.get_assets_action()
-    return response.data["assets"]
+    return [descriptor.to_row() for descriptor in await proc.get_asset_descriptors()]
 
 
 @pytest.mark.asyncio

@@ -61,6 +61,8 @@ import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { assetOccurrenceMainRef, ReadOnlyAssetPreview } from './ReadOnlyAssetPreview';
 
 const McpAppPreview = lazy(() =>
   import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
@@ -110,6 +112,9 @@ function ConnectingFallback() {
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
 export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
+  const { currentDock } = useDockNavigation();
+  const readOnly = currentDock?.options?.readOnly === '1';
+  const occurrenceType = currentDock?.options?.assetType;
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -167,13 +172,16 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   // FSRef is memoized on the pointer string so the resolve query key is stable.
   // File-only editors (code/html/media) have no entity and never resolve.
   const vfsResolveRef = useMemo<FSRef | null>(() => {
-    if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
+    if (!ptr || !ptr.editor) return null;
+    if (isFileOnlyEditor(ptr.editor) && !readOnly) return null;
     if (ptr.method !== AssetRoutingMethod.VFS) return null;
     const vfs = VFSPath.parse(ptr.value);
     return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointer]);
-  const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(null, vfsResolveRef);
+  }, [pointer, readOnly]);
+  const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(
+    null, readOnly && occurrenceType ? null : vfsResolveRef,
+  );
 
   const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
     if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
@@ -212,9 +220,20 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     );
   }
 
+  // Custom domain forms may save a row or launch work. Read-only occurrence
+  // routes instead project the registry-declared file, without an Entity gate.
+  // The four specialized asset viewers below already honor this contract.
+  if (readOnly && vfsResolveRef && ptr.method === AssetRoutingMethod.VFS &&
+      ![AssetEditor.SKILL, AssetEditor.SUBAGENT, AssetEditor.MARKDOWN, AssetEditor.MCP].includes(ptr.editor) &&
+      (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)) {
+    const type = occurrenceType ?? vfsResolvedType ?? primaryTypeForEditor(ptr.editor);
+    const shape = type ? dataManager.getTypeInfo(type)?.shape : undefined;
+    return <ReadOnlyAssetPreview fsRef={assetOccurrenceMainRef(vfsResolveRef, shape)} />;
+  }
+
   // code: file-only, no entity. CodeEditor parses the compute-node-rooted path.
   if (ptr.editor === AssetEditor.CODE) {
-    return <CodeEditor activePath={ptr.value} />;
+    return <CodeEditor activePath={ptr.value} readOnly={readOnly} />;
   }
 
   // File-only display viewers: no entity, no EntityResolutionGate. HtmlPreview
@@ -402,6 +421,10 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         />
       );
     case AssetEditor.MCP:
+      // A path identifies an occurrence; its JSON can render before indexing.
+      // Entity actions are available only on the explicit identity route, where
+      // the loaded record owns the selected file.
+      if (ptr.method === AssetRoutingMethod.VFS) return <McpViewer fsRef={fsRef} />;
       return (
         <EntityResolutionGate<Mcp>
           type={Mcp.type}

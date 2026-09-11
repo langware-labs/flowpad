@@ -64,7 +64,7 @@ from flow_sdk.transcript_analyzer import TranscriptDescriptor
 if TYPE_CHECKING:
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
     from flow_sdk.builtin.worker_status import WorkerStatus
@@ -1623,6 +1623,10 @@ class WorkerDriver(Protocol):
         """Return a pure semantic snapshot for persisted process-hook intent."""
         ...
 
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        """Write this harness's instruction projection and return the prompt file."""
+        ...
+
     def prepare_process_hooks(
         self,
         assets: "AssetDir",
@@ -1725,6 +1729,18 @@ class WorkerDriver(Protocol):
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the
         given process — or None if no session id is yet assigned."""
+        ...
+
+    async def available_assets(self, process: "AgenticProcess"):
+        """File-backed executable assets reported by this harness's native resolver."""
+        ...
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        """Filesystem locations this worker loads, shared by PTY and headless.
+
+        Unlike the indexer catalog, this excludes other harnesses' formats
+        and directories merely accessible through filesystem tools.
+        """
         ...
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:

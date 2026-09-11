@@ -1455,8 +1455,7 @@ class Project(Entity):
         what a NEW process started in this project would see, before any
         process exists. Same path-scan + longest-prefix attribution
         (``scan_path_asset_descriptors``) over user-home / project-mount /
-        context dirs; ``spec`` (not file-backed) comes from a bounded scoped
-        DB list instead. Response shape matches the process action, plus
+        context dirs for every requested filesystem type. Response shape matches the process action, plus
         ``project_id`` per row and a top-level ``truncated`` flag — the seam
         for FTS-backed long-tail search. Never unbounded: ``limit`` is
         clamped; callers wanting more should search, not list.
@@ -1470,13 +1469,8 @@ class Project(Entity):
 
         Read-only throughout — no mint, no write, no indexer walk.
         """
-        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
-            AssetDescriptor,
-            AssetSource,
-            collect_base_source_dirs,
-            hydrate_asset_descriptor_remote,
-            scan_path_asset_descriptors,
-        )
+        from flow_sdk.assets.catalog import scan_path_asset_descriptors
+        from flow_sdk.builtin.asset_context import collect_base_source_dirs, hydrate_asset_descriptor_remote
 
         requested = (
             [t.strip() for t in types.split(",") if t.strip()]
@@ -1493,54 +1487,14 @@ class Project(Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        file_backed = [t for t in requested if t != "spec"] if want_assets else []
-        descriptors: list[AssetDescriptor] = []
-        if file_backed:
-            descriptors = await scan_path_asset_descriptors(
-                sources,
-                own_project_id=str(self.id),
-                types=file_backed,
-                limit=limit,
-            )
+        descriptors = await scan_path_asset_descriptors(
+            sources,
+            own_project_id=str(self.id),
+            types=requested,
+            limit=limit,
+        ) if want_assets else []
 
-        if want_assets and "spec" in requested and len(descriptors) < limit:
-            from flow_sdk.builtin.spec import Spec  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-
-            # Own-project OR global (project_id unset) — one query; $IS_NULL is
-            # unary, single-operand [field] shape.
-            spec_rows = await Spec.get_all(
-                QueryFilter.parse(
-                    {
-                        "match": {
-                            "op": "$OR",
-                            "operands": [
-                                {"project_id": str(self.id)},
-                                {"op": "$IS_NULL", "operands": ["project_id"]},
-                            ],
-                        },
-                        "limit": limit - len(descriptors),
-                    },
-                    "spec",
-                )
-            )
-            for spec_entity in spec_rows:
-                spec_project_id = getattr(spec_entity, "project_id", None)
-                descriptors.append(
-                    AssetDescriptor(
-                        typeid=f"spec-{spec_entity.id}",
-                        source=(
-                            AssetSource.PROJECT_DIR
-                            if str(spec_project_id or "") == str(self.id)
-                            else AssetSource.USER_DIR
-                        ),
-                        posix_path=None,
-                        project_id=str(spec_project_id) if spec_project_id else None,
-                        remote=bool(getattr(spec_entity, "remote", False)),
-                    )
-                )
-
-        await hydrate_asset_descriptor_remote(descriptors)
+        descriptors = await hydrate_asset_descriptor_remote(descriptors)
         data = {
             "assets": [d.to_row() for d in descriptors],
             "truncated": len(descriptors) >= limit,

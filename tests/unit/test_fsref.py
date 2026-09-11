@@ -255,7 +255,7 @@ class TestMainRef:
         assert skill_md.read_text(encoding="utf-8") == content
 
     def test_agent_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
-        from flow_sdk.fs_store.operations.subagent import extract_subagent_from_path
+        from flow_sdk.assets.types.subagent import extract_subagent_from_path
         folder = tmp_path / "agent-@myagent"
         folder.mkdir()
         md = folder / "myagent.md"

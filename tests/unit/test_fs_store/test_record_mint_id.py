@@ -18,7 +18,7 @@ import uuid as _uuid
 from pathlib import Path
 
 from flow_sdk.capsules import strip_capsule_blocks
-from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions.markdown import (
     markdown_id as _markdown_id,
 )

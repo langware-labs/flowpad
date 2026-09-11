@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
+from flow_sdk.assets.frontmatter import _render_frontmatter
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 

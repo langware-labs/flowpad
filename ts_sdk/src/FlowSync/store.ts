@@ -1,3 +1,5 @@
+import { webUrlFromPointer } from '../models/web-url-pointer';
+import { ViewType } from '../utils/ui/view-types';
 import { lazyAssets, LazyAsset } from '../lazy';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
@@ -1080,11 +1082,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === ViewType.WEB_APP) {
+      const url = webUrlFromPointer(pointer);
+      if (url) return new URL(url).host;
+    }
     if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
       return 'Asset compare';
     }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
+    if (dock?.viewType === ViewType.EDITOR) return lastSegment(pointer);
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
     //    bare entity id whose type is carried by the dock's viewType.
     if (pointer.includes('/typeid/')) {

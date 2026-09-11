@@ -22,7 +22,6 @@ produced before the uname-sigil cleanup used ``<type>-@<id>``; unpack reads both
 from __future__ import annotations
 
 import asyncio
-import filecmp
 import json
 import logging
 import os
@@ -35,6 +34,11 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from flow_sdk.assets.transfer import (
+    _attachment_snapshot,
+    _mint_rendered_asset_identity,
+    pack_tree,
+)
 from flow_sdk.builtin.flow_message import (
     FILE_VFS_PREFIX,
     PROMPT_FILE_VFS_PREFIX,
@@ -685,7 +689,7 @@ async def _pack_webapp_artifact_attachment(
     slug = _safe_entity_name(ent)
     dest = attachment_dir / key / "webapps" / slug
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_pack_ignore(entry_type, src))
+    pack_tree(src, dest, type_name=entry_type)
     metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_COPY,
@@ -794,26 +798,9 @@ async def _pack_file_backed_attachment(
     # relpath IS the receiver's placement relpath under the project root.
     dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if src_root.is_dir():
-        shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_pack_ignore(entry_type, src_root))
-    else:
-        shutil.copy2(src_root, dest)
+    pack_tree(src_root, dest, type_name=entry_type)
 
 
-def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_id: str) -> str:
-    """Persist identity for a source-less body through the type's sole seam.
-
-    Existing-source bundles never call this helper: their files and folder
-    capsules are copied byte-for-byte. A rendered fallback is newly
-    materialized, so TypeInfo may safely persist the proposed bundle id after
-    the body exists (``AssetCapsule.from_path`` accepts existing paths only).
-    """
-    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-    asset_path = info.layout_of(body_path).root
-    ref = FSRef(asset_path, record_type=RecordType(entry_type))
-    return info.stamp_id(ref, entry_id)
 
 
 def _safe_entity_name(entity) -> str:
@@ -822,52 +809,12 @@ def _safe_entity_name(entity) -> str:
     return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in str(raw)) or "asset"
 
 
-def _restore_file_backed_entry(
-    entry_dir: Path,
-    project_root: Path,
-    overwrite: bool,
-) -> bool:
-    """Copy every file under ``attachment/<type>-@<id>/`` into ``project_root``.
-
-    The in-bundle relpath is already the canonical ``<main_subdir>/<leaf>``
-    (the packer stores it that way), so this is an anchor-free verbatim mirror
-    — no per-type knowledge. Returns True when ≥1 file was restored. Raises
-    ``FlowMessageExistsError`` on a genuine collision when overwrite=False;
-    a byte-identical existing file is an idempotent no-op (re-receive).
-    """
-    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
-
-    conflicts: list[dict] = []
-    copied_any = False
-    root_resolved = project_root.resolve()
-    for src in entry_dir.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(entry_dir)  # "<main_subdir>/<leaf>..." or "<rel_path>/..."
-        # Path-traversal guard: the in-bundle relpath is sender-controlled (git
-        # origins key the subtree by rel_path). Gate on the SAME named guard the
-        # packer uses (anti-drift), then keep the resolve check as defense in depth
-        # against symlink escapes a string check can't see.
-        dest = project_root / rel
-        if not is_safe_rel_path(rel.as_posix()):
-            logger.warning("[bundle] skipping unsafe attachment path %s", rel)
-            continue
-        try:
-            dest.resolve().relative_to(root_resolved)
-        except ValueError:
-            logger.warning("[bundle] skipping unsafe attachment path %s (escapes project root)", rel)
-            continue
-        if dest.exists() and not overwrite:
-            if filecmp.cmp(src, dest, shallow=False):
-                continue  # same asset already present — no-op
-            conflicts.append({"path": str(dest)})
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
-        copied_any = True
-    if conflicts:
-        raise FlowMessageExistsError(conflicts)
-    return copied_any
+def _restore_file_backed_entry(entry_dir: Path, project_root: Path, overwrite: bool) -> bool:
+    from flow_sdk.assets.transfer import AssetTransferConflict, restore_tree
+    try:
+        return restore_tree(entry_dir, project_root, overwrite=overwrite)
+    except AssetTransferConflict as exc:
+        raise FlowMessageExistsError(exc.conflicts) from exc
 
 
 async def _reindex_root(root: Path, record_type, *, types=None, project_id: str | None = None) -> None:
@@ -1488,47 +1435,6 @@ async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
             logger.exception("[bundle] notify CREATE failed for %s-%s", entry_type, entry_id)
 
 
-def _attachment_snapshot(entry_dir: Path, entry_type: str) -> "tuple[str | None, str | None]":
-    """Best-effort (name, description) for a staged attachment's chip/modal.
-
-    Taken from the bundle at unpack time so the staged MessageAttachment can
-    render without the asset entity existing locally: leaf folder/file name,
-    refined by the main document's YAML frontmatter when present.
-    """
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(entry_type)
-    main_file = getattr(info, "main_file", None) if info else None
-    # Early-stop lookups (no full-tree listing): an attachment carrying a large
-    # resource tree must not be walked whole on the sync path.
-    main_path = None
-    name: str | None = None
-    if main_file:
-        main_path = next((p for p in entry_dir.rglob(main_file) if p.is_file()), None)
-        if main_path is not None:
-            name = main_path.parent.name
-    if main_path is None:
-        main_path = next((p for p in entry_dir.rglob("*.md") if p.is_file()), None)
-        if main_path is not None:
-            name = main_path.stem
-    if name is None:
-        first = next((p for p in entry_dir.rglob("*") if p.is_file()), None)
-        if first is not None:
-            name = first.stem
-    description: str | None = None
-    if main_path is not None:
-        try:
-            fm_text = _extract_frontmatter(main_path.read_text(encoding="utf-8", errors="replace"))
-            meta = _yaml_load(fm_text) if fm_text else None
-            if isinstance(meta, dict):
-                name = str(meta.get("name") or meta.get("title") or name or "") or name
-                raw_desc = meta.get("description")
-                if raw_desc:
-                    description = str(raw_desc)
-        except Exception:  # noqa: BLE001 — snapshot is cosmetic, never abort unpack
-            pass
-    return name, description
 
 
 async def _stage_attachment(
@@ -1720,57 +1626,6 @@ async def _notify_staged_attachments(mas: list) -> None:
             logger.exception("[bundle] notify CREATE failed for message_attachment %s", ma.id)
 
 
-# Build/environment artifacts that must never ride inside a shared asset
-# bundle. They are regenerable cruft, not skill source, and their deeply
-# nested trees (a `.venv` ships `…/site-packages/pip/_internal/…/__pycache__/
-# *.pyc`) blow past Windows' 260-char MAX_PATH on the receiver's extractall —
-# which silently aborts the whole download. Keep this in sync with the spirit
-# of a `.gitignore`: ship source, not built environments.
-# Build/environment cruft — type-agnostic, never worth shipping.
-_ASSET_PACK_PATTERNS: tuple[str, ...] = (
-    ".venv",
-    "venv",
-    "env",
-    "__pycache__",
-    "*.pyc",
-    "*.pyo",
-    "node_modules",
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-)
-_ASSET_PACK_IGNORE = shutil.ignore_patterns(*_ASSET_PACK_PATTERNS)
-
-
-def _pack_ignore(type_name: str | None, root: Path | str):
-    """The copytree filter for a folder-backed asset of ``type_name``.
-
-    Global cruft everywhere, plus that type's ``TypeInfo.pack_exclude`` — per-type
-    file policy is declared on the type, not branched on at this call site. A
-    task's inner ``spec.md`` (the plan) is the motivating case: the folder is
-    copied verbatim, so without this the plan rode along with every share.
-
-    ``pack_exclude`` applies ONLY at the asset folder's own root, never deeper.
-    A nested CHILD ENTITY can have the same filename — a ``spec`` entity parented
-    to a task is literally a ``spec.md``, one level down under the task's folder —
-    and dropping that would break the bundle's nested-entity contract (it did:
-    ``test_bundle_entity_envelope_matrix`` caught it). Root-only keeps the
-    distinction the filename alone can't carry: the task's own plan vs somebody
-    else's entity that happens to live inside.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    extra = tuple(getattr(SchemaRegistry.get(type_name), "pack_exclude", ()) or ()) if type_name else ()
-    if not extra:
-        return _ASSET_PACK_IGNORE
-    root_str = str(root)
-    at_root = shutil.ignore_patterns(*_ASSET_PACK_PATTERNS, *extra)
-
-    def _ignore(src_dir, names):
-        return (at_root if str(src_dir) == root_str else _ASSET_PACK_IGNORE)(src_dir, names)
-
-    return _ignore
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:

@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.identity_carrier import Derived, Frontmatter, JsonRoot, MalformedCarrier, Sidecar
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.index_log import read_scan_issues
 from flow_sdk.fs_store.indexer.reconcile import reconcile
 from flow_sdk.fs_store.schema_registry import TypeInfo
