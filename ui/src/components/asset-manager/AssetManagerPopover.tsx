@@ -270,11 +270,8 @@ export function AssetManagerPopover({
   const ownAssets = useProcessAssets(null, { enabled: open && !assets });
 
   // ── Flowpad Assistant drill-down ────────────────────────────────────────
-  // The assistant's assets are mounted wholesale via `--add-dir`, so they never
-  // appear as individual rows in the main list — one location row stands in for
-  // the lot. Clicking it descends INTO that project: the same `get-assets`
-  // action, asked of `@flowpad_assistant` instead of the current subject, so
-  // the rows are the same shape and render through the same grid.
+  // The project catalog identifies assistant-owned assets. For an existing
+  // worker, its verified inventory decides which of those assets are available.
   const browsingAssistant = view === 'assistant';
   const assistantAssets = useProcessAssets(null, {
     enabled: open && browsingAssistant,
@@ -284,17 +281,20 @@ export function AssetManagerPopover({
   // user home, and those rows belong to the user, not to the assistant. Read
   // through the scope model rather than the raw source string, so a backend
   // source rename degrades the chip instead of silently emptying this list.
-  const assistantDescriptors = useMemo(
-    () => assistantAssets.descriptors.filter((d) => assetScope(d).kind === 'project'),
-    [assistantAssets.descriptors],
-  );
+  const assistantDescriptors = useMemo(() => {
+    const catalog = assistantAssets.descriptors.filter((d) => assetScope(d).kind === 'project');
+    if (!assets?.workerScoped) return catalog;
+    const ids = new Set(catalog.map((d) => d.typeid));
+    const paths = new Set(catalog.map((d) => d.posix_path).filter(Boolean));
+    return assets.descriptors.filter((d) => d.source === 'system' || ids.has(d.typeid) || (d.posix_path && paths.has(d.posix_path)));
+  }, [assistantAssets.descriptors, assets]);
 
   // What the body lists. A drill-down is a foreign, READ-ONLY board: its own
   // source and loading flag, one section, no host filter, no dirs, no select or
   // improve. Decided once here so the rest of the render reads a value instead
   // of re-asking "are we in the drill-down?" at every row and section.
-  const { descriptors: listDescriptors, isLoading: listIsLoading } = browsingAssistant
-    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading }
+  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError } = browsingAssistant
+    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error }
     : (assets ?? ownAssets);
 
   // Project picker — load once when entering pick-project mode.
@@ -377,7 +377,7 @@ export function AssetManagerPopover({
       scope: assetScope(d),
       label: _displayLabelForDescriptor(d),
       used: assetDescriptorHasUsage(d),
-      selected: selected.has(d.typeid),
+      selected: assets?.workerScoped ? !!d.attached : selected.has(d.typeid),
       improvable: !!canImprove?.(d),
       key: descriptorKey(d),
     }));
@@ -423,22 +423,16 @@ export function AssetManagerPopover({
       return groups.length ? [{ key: 'available' as const, label: t`Assistant assets`, groups }] : [];
     }
 
-    // "Used" is only meaningful where a run reported usage. With no process
-    // behind the list the top section holds purely the user's picks, so it is
-    // labelled for what it actually contains.
-    const topLabel = rows.some((r) => r.used) ? t`Used assets` : t`Selected assets`;
-
-    // A group only exists if something was pushed into it, so a surviving
-    // section always has rows — `sections.length === 0` is the emptiness test.
     return [
-      { key: 'used' as const, label: topLabel, groups: groupByType(filtered.filter((r) => r.selected || r.used)) },
+      { key: 'used' as const, label: t`Used assets`, groups: groupByType(filtered.filter((r) => r.used)) },
+      { key: 'selected' as const, label: assets?.workerScoped ? t`Attached assets` : t`Selected assets`, groups: groupByType(filtered.filter((r) => r.selected && !r.used)) },
       {
         key: 'available' as const,
-        label: t`Available assets`,
+        label: assets?.workerScoped ? t`Available assets` : t`Project assets`,
         groups: groupByType(filtered.filter((r) => !r.selected && !r.used)),
       },
     ].filter((s) => s.groups.length > 0);
-  }, [browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
+  }, [assets?.workerScoped, browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
 
   // Pinned rows (the launching agent, the assistant marker) sit above the
   // sections and are not filterable — they hide while a filter is typed and in
@@ -541,7 +535,7 @@ export function AssetManagerPopover({
                 }}
                 title={
                   assistantEnabled
-                    ? t`Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required.`
+                    ? t`Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required.`
                     : t`Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required.`
                 }
                 data-testid="asset-manager-assistant-toggle"
@@ -647,7 +641,7 @@ export function AssetManagerPopover({
                 onClick={openAssistant}
                 className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-start hover:bg-primary/10"
                 data-testid="asset-manager-flowpad-location"
-                title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them.`}
+                title={t`Flowpad Assistant — click to browse the assets available to this worker.`}
               >
                 <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground">
@@ -661,7 +655,20 @@ export function AssetManagerPopover({
             )}
             {!browsingAssistant &&
               filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
-            {sections.length === 0 &&
+            {!browsingAssistant && (assets ?? ownAssets).unresolvedUsage?.map((usage) => (
+              <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
+                <div className="truncate" title={usage.reference}>{usage.reference}</div>
+                <div className="text-muted-foreground">
+                  <Trans>Used in transcript</Trans> · {usage.resolution}
+                </div>
+              </div>
+            ))}
+            {listError && (
+              <div role="alert" className="px-3 py-4 text-center text-[11px] text-destructive">
+                <Trans>Could not verify available assets.</Trans>
+              </div>
+            )}
+            {!listError && sections.length === 0 && !(assets ?? ownAssets).unresolvedUsage?.length &&
               (browsingAssistant || filteredDirs.length === 0) &&
               (listIsLoading ? (
                 <div
@@ -688,7 +695,7 @@ export function AssetManagerPopover({
                     </AssetTypeHeader>
                     {group.rows.map((row) => (
                       <AssetRow
-                        key={`${row.d.typeid}|${row.d.source}`}
+                        key={row.key}
                         descriptor={row.d}
                         scope={row.scope}
                         label={row.label}
@@ -955,17 +962,15 @@ export function AssetRow({
     }
     if (!id) return;
     try {
-      // Open by the asset's TypeId via the canonical DockPointer factory
-      // (grammar editor/<editor>/typeid/<type>-<id>). Read-only sources open in
-      // viewer mode (readOnly=1), passed as a real `?readOnly=1` query string
-      // via the DockPointer options (not embedded in the path).
+      const options = { assetType: type, ...(readOnly ? { readOnly: '1' } : {}) };
+      const computeNode = dataContext.computeNode?.typeId ?? LOCAL_COMPUTE_NODE;
       navigation.openDock(
-        DockPointer.forAssetEditorByTypeId(
-          type,
-          new TypeId(type, id),
-          undefined,
-          readOnly ? { readOnly: '1' } : undefined,
-        ),
+        descriptor.posix_path
+          ? DockPointer.forAssetEditor(
+              type, VFSPath.fromMachinePath(descriptor.posix_path, computeNode).absVfsPath,
+              undefined, options,
+            )
+          : DockPointer.forAssetEditorByTypeId(type, new TypeId(type, id), undefined, options),
       );
     } catch (err) {
       console.error('[AssetRow] failed to open asset', descriptor.typeid, err);

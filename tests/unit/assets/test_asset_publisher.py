@@ -22,12 +22,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.assets.asset_publisher import CLOUD_BRANCH, publish_asset
+from flow_sdk.assets.asset_publisher import CLOUD_BRANCH, publish_asset, resolve_asset_folder
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.utils.command_executor import _LocalCommandExecutor
 from tests.unit.conftest import git_cmd
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -48,11 +48,12 @@ def asset_repo(git_remote):
     return repo
 
 
-def _kwargs(repo: Path, *, asset: str = "docs/q.md") -> dict:
+async def _kwargs(repo: Path, *, asset: str = "docs/q.md") -> dict:
+    folder = await resolve_asset_folder(repo / asset, executor=_LocalCommandExecutor(), token="not-a-real-token")
     return {
+        "folder": folder,
         "asset_root": repo / asset,
         "asset_typeid": TypeId(type="markdown", id=mint_uuid()),
-        "token": SecretStr("not-a-real-token"),
         "author": GitAuthor(name="Q", email="q@example.com", typeid=f"user-{mint_uuid()}"),
     }
 
@@ -63,7 +64,7 @@ async def test_publish_commits_only_the_asset_path(asset_repo, git_remote):
     git_cmd(asset_repo, "add", "other.txt")
     (asset_repo / "docs" / "q.md").write_text("two\n", encoding="utf-8")
 
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
 
     assert receipt.changed is True
     assert receipt.origin.rel_path == "docs/q.md"
@@ -75,7 +76,7 @@ async def test_publish_commits_only_the_asset_path(asset_repo, git_remote):
 async def test_publish_advances_the_cloud_branch(asset_repo, git_remote):
     (asset_repo / "docs" / "q.md").write_text("two\n", encoding="utf-8")
 
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
 
     assert receipt.origin.branch == CLOUD_BRANCH
     assert receipt.branch == CLOUD_BRANCH
@@ -86,7 +87,7 @@ async def test_publish_advances_the_cloud_branch(asset_repo, git_remote):
 async def test_unpublished_work_on_main_does_not_move_the_cloud_branch(asset_repo, git_remote):
     """The stability property a shared link depends on."""
     (asset_repo / "docs" / "q.md").write_text("two\n", encoding="utf-8")
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
     published = receipt.head_commit
 
     (asset_repo / "unrelated.txt").write_text("later work\n", encoding="utf-8")
@@ -100,10 +101,10 @@ async def test_unpublished_work_on_main_does_not_move_the_cloud_branch(asset_rep
 
 async def test_second_publish_advances_the_cloud_branch(asset_repo, git_remote):
     (asset_repo / "docs" / "q.md").write_text("two\n", encoding="utf-8")
-    first = await publish_asset(**_kwargs(asset_repo))
+    first = await publish_asset(**await _kwargs(asset_repo))
 
     (asset_repo / "docs" / "q.md").write_text("three\n", encoding="utf-8")
-    second = await publish_asset(**_kwargs(asset_repo))
+    second = await publish_asset(**await _kwargs(asset_repo))
 
     assert second.head_commit != first.head_commit
     assert git_cmd(git_remote.path, "rev-parse", f"refs/heads/{CLOUD_BRANCH}") == second.head_commit
@@ -111,14 +112,14 @@ async def test_second_publish_advances_the_cloud_branch(asset_repo, git_remote):
 
 async def test_noop_publish_creates_no_commit(asset_repo):
     before = git_cmd(asset_repo, "rev-parse", "HEAD")
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
     assert receipt.changed is False
     assert git_cmd(asset_repo, "rev-parse", "HEAD") == before
 
 
 async def test_noop_publish_still_provisions_the_cloud_branch(asset_repo, git_remote):
     """flow-cloud may not exist yet even when the asset commit already does."""
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
     assert receipt.changed is False
     assert git_cmd(git_remote.path, "rev-parse", f"refs/heads/{CLOUD_BRANCH}") == receipt.head_commit
 
@@ -129,7 +130,7 @@ async def test_unrelated_local_commit_blocks_publishing(asset_repo):
     git_cmd(asset_repo, "commit", "-q", "-m", "unrelated")
 
     with pytest.raises(AssetPublishError) as raised:
-        await publish_asset(**_kwargs(asset_repo))
+        await publish_asset(**await _kwargs(asset_repo))
     assert raised.value.code is AssetPublishCode.BRANCH_AHEAD
 
 
@@ -137,7 +138,7 @@ async def test_failed_push_is_retried_without_a_second_commit(asset_repo, git_re
     """Without the recognized-retry path, a publish that committed then failed to
     push would be permanently stuck behind the BRANCH_AHEAD guard."""
     (asset_repo / "docs" / "q.md").write_text("pending push\n", encoding="utf-8")
-    kwargs = _kwargs(asset_repo)
+    kwargs = await _kwargs(asset_repo)
     git_cmd(asset_repo, "remote", "set-url", "--push", "origin", (tmp_path / "unavailable.git").as_uri())
 
     with pytest.raises(AssetPublishError) as raised:
@@ -156,7 +157,7 @@ async def test_failed_push_is_retried_without_a_second_commit(asset_repo, git_re
 
 async def test_asset_deletion_is_committed_path_only(asset_repo):
     (asset_repo / "docs" / "q.md").unlink()
-    receipt = await publish_asset(**_kwargs(asset_repo))
+    receipt = await publish_asset(**await _kwargs(asset_repo))
     assert receipt.changed is True
     assert git_cmd(asset_repo, "show", "--name-status", "--format=", "HEAD") == "D\tdocs/q.md"
 
@@ -168,14 +169,14 @@ async def test_a_non_github_origin_cannot_publish(git_remote):
     (repo / "docs" / "q.md").write_text("one\n", encoding="utf-8")
 
     with pytest.raises(AssetPublishError) as raised:
-        await publish_asset(**_kwargs(repo))
+        await publish_asset(**await _kwargs(repo))
     assert raised.value.code is AssetPublishCode.ORIGIN_INVALID
 
 
 async def test_publishing_from_a_detached_head_is_refused(asset_repo):
     git_cmd(asset_repo, "checkout", "-q", "--detach", "HEAD")
     with pytest.raises(AssetPublishError) as raised:
-        await publish_asset(**_kwargs(asset_repo))
+        await publish_asset(**await _kwargs(asset_repo))
     assert raised.value.code is AssetPublishCode.ORIGIN_INVALID
 
 
@@ -185,7 +186,7 @@ async def test_an_asset_outside_a_checkout_is_refused(tmp_path: Path):
     (loose / "q.md").write_text("x", encoding="utf-8")
 
     with pytest.raises(AssetPublishError) as raised:
-        await publish_asset(**_kwargs(loose, asset="q.md"))
+        await publish_asset(**await _kwargs(loose, asset="q.md"))
     assert raised.value.code is AssetPublishCode.NOT_GIT_BACKED
 
 

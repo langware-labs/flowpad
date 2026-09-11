@@ -17,7 +17,7 @@ import pytest
 from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.config import system_projects_root
 from flow_sdk.fs_store.indexer.functions.wizard import read_wizard
-from flow_sdk.fs_store.operations.subagent import load_system_subagent
+from flow_sdk.builtin.subagent_loading import load_system_subagent
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval

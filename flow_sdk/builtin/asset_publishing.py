@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import SecretStr
-
 from flow_sdk.assets.asset_publisher import publish_asset, resolve_asset_folder
 from flow_sdk.assets.git_publish import (
     AssetPublishCode,
@@ -13,7 +11,8 @@ from flow_sdk.assets.git_publish import (
     AssetPublishResult,
     GitAuthor,
 )
-from flow_sdk.assets.projection import PORTABLE_ASSET_CONTRACT_VERSION, project_asset_tree
+from flow_sdk.assets.projection import PORTABLE_ASSET_CONTRACT_VERSION
+from flow_sdk.builtin.asset_projection import project_asset_tree
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -43,7 +42,8 @@ async def _actor_author(actor: TypeId) -> GitAuthor:
     return GitAuthor(name=name, email=email, typeid=str(actor))
 
 
-async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
+async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
     from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
@@ -83,7 +83,8 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
 
     # Resolved WITH the token so the folder handed to publish_asset is already
     # authenticated — the alternative was reaching into its private state.
-    folder = await resolve_asset_folder(real_asset, token=github_token)
+    node = await ComputeNode.get_local()
+    folder = await resolve_asset_folder(real_asset, executor=node.get_command_executor(), token=github_token)
     if not real_asset.is_relative_to(folder.root):
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its Git checkout")
     credentials = load_credentials()
@@ -93,7 +94,6 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
     receipt = await publish_asset(
         asset_root=real_asset,
         asset_typeid=entity.typeid,
-        token=SecretStr(github_token),
         author=await _actor_author(actor),
         folder=folder,
     )

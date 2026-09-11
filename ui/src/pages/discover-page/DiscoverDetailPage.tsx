@@ -6,7 +6,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { Skeleton } from '@src/components/ui/skeleton';
 import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Project, TypeId } from '@sdk';
+import { Project } from '@sdk';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
@@ -83,7 +83,7 @@ export default function DiscoverDetailPage() {
   const reason = item ? bodyCopyKey(item) : null;
   const projectId = item?.sourceProjectId ?? directory.project?.id ?? null;
   const hubProject = useMemo(
-    () => (hub && projectId ? ({ id: projectId, typeId: new TypeId('project', projectId) } as unknown as Project) : null),
+    () => (hub && projectId ? new Project({ id: projectId }) : null),
     [hub, projectId],
   );
   const Icon = iconForType(item?.type ?? 'markdown');

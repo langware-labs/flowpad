@@ -7,11 +7,8 @@ from pydantic import model_validator
 from starlette.requests import Request
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.messages import HttpMethod
-from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
     ActionType,
     ErrorMessage,
@@ -27,6 +24,8 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -266,6 +265,11 @@ class Trigger(Entity):
     #: The trigger's folder on disk, when it came from one. Empty for a row the
     #: rules API or the service seed minted — those stay rowful and fileless.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+
+    def is_file_backed(self) -> bool:
+        """Only triggers adopted from a document have a filesystem asset."""
+        return bool(self.asset_ref)
+
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
     #: DB alone: a spent `fire_once` counter has to survive a full index rebuild,

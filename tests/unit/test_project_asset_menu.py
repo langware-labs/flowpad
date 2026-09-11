@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+from flow_sdk.assets.catalog import (AssetSource)
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.folder import Folder
