@@ -2350,6 +2350,10 @@ msgstr "Attach this session's transcript"
 msgid "Attached asset types"
 msgstr "Attached asset types"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Attached assets"
+msgstr "Attached assets"
+
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr "Attached channels"
@@ -3664,6 +3668,10 @@ msgstr "Close"
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
 
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all"
+msgstr "Close all"
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All"
 msgstr "Close All"
@@ -3683,6 +3691,10 @@ msgstr "Close all {0} tabs in this project"
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "Close All But This"
+
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all side tabs"
+msgstr "Close all side tabs"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
@@ -4728,6 +4740,10 @@ msgstr "Could not load your token plan."
 msgid "Could not open {0}"
 msgstr "Could not open {0}"
 
+#: src/navigation/NavigationActions.ts
+msgid "Could not open link"
+msgstr "Could not open link"
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "Could not open skill"
@@ -5012,6 +5028,10 @@ msgstr "Could not use {0}"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Could not verify {0}"
 msgstr "Could not verify {0}"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Could not verify available assets."
+msgstr "Could not verify available assets."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -7996,12 +8016,20 @@ msgid "Flowpad Assistant"
 msgstr "Flowpad Assistant"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
-msgstr "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+msgid "Flowpad Assistant — click to browse the assets available to this worker."
+msgstr "Flowpad Assistant — click to browse the assets available to this worker."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
-msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+#~ msgstr "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+msgstr "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Flowpad Assistant project not available."
@@ -13108,6 +13136,11 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Open in browser"
+msgstr "Open in browser"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Open in Data sources"
 msgstr "Open in Data sources"
@@ -13138,7 +13171,6 @@ msgid "Open in Files"
 msgstr "Open in Files"
 
 #: src/components/conversation/AttachmentChip.tsx
-#: src/components/webapp-viewer.tsx
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
@@ -14278,6 +14310,7 @@ msgstr "Project Agents (.claude/agents/)"
 msgid "Project Artifacts"
 msgstr "Project Artifacts"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 msgid "Project assets"
@@ -14982,6 +15015,7 @@ msgstr "referenced but not in entities table"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Refresh"
@@ -18910,6 +18944,10 @@ msgstr "The stored API key for this provider is removed from this machine. You c
 msgid "The tab content could not be prepared."
 msgstr "The tab content could not be prepared."
 
+#: src/navigation/NavigationActions.ts
+msgid "The terminal is not ready yet"
+msgstr "The terminal is not ready yet"
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -19139,6 +19177,10 @@ msgstr "This link does not point at a sandbox."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no available viewer"
+msgstr "This link has no available viewer"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -20329,6 +20371,10 @@ msgstr "Used assets"
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Used by"
 msgstr "Used by"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used in transcript"
+msgstr "Used in transcript"
 
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx

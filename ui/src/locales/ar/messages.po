@@ -2350,6 +2350,10 @@ msgstr "إرفاق نسخة هذه الجلسة"
 msgid "Attached asset types"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Attached assets"
+msgstr ""
+
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr ""
@@ -3664,6 +3668,10 @@ msgstr "إغلاق"
 msgid "Close (Escape)"
 msgstr "إغلاق (Escape)"
 
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All"
 msgstr "إغلاق الكل"
@@ -3683,6 +3691,10 @@ msgstr ""
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "إغلاق الكل ما عدا هذا"
+
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all side tabs"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
@@ -4728,6 +4740,10 @@ msgstr ""
 msgid "Could not open {0}"
 msgstr "تعذر فتح {0}"
 
+#: src/navigation/NavigationActions.ts
+msgid "Could not open link"
+msgstr ""
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "تعذّر فتح المهارة"
@@ -5012,6 +5028,10 @@ msgstr ""
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Could not verify {0}"
 msgstr "تعذر التحقق من {0}"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Could not verify available assets."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -7996,12 +8016,20 @@ msgid "Flowpad Assistant"
 msgstr "مساعد Flowpad"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
-msgstr "مساعد Flowpad — تُحمَّل مهاراته ووكلاؤه في هذه العملية عبر --add-dir. انقر لاستعراضها."
+msgid "Flowpad Assistant — click to browse the assets available to this worker."
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
-msgstr "تم تثبيت مساعد Flowpad (تُمرَّر مهاراته ووكلاؤه إلى العامل عبر --add-dir). انقر لإلغاء التثبيت — سيلزم إعادة التشغيل."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+#~ msgstr "مساعد Flowpad — تُحمَّل مهاراته ووكلاؤه في هذه العملية عبر --add-dir. انقر لاستعراضها."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgstr "تم تثبيت مساعد Flowpad (تُمرَّر مهاراته ووكلاؤه إلى العامل عبر --add-dir). انقر لإلغاء التثبيت — سيلزم إعادة التشغيل."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Flowpad Assistant project not available."
@@ -13108,6 +13136,11 @@ msgstr "فتح في علامة تبويب جديدة"
 msgid "Open in a new tab"
 msgstr "فتح في علامة تبويب جديدة"
 
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Open in browser"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Open in Data sources"
 msgstr "فتح في مصادر البيانات"
@@ -13138,7 +13171,6 @@ msgid "Open in Files"
 msgstr "فتح في الملفات"
 
 #: src/components/conversation/AttachmentChip.tsx
-#: src/components/webapp-viewer.tsx
 msgid "Open in new tab"
 msgstr "فتح في تبويب جديد"
 
@@ -14278,6 +14310,7 @@ msgstr "وكلاء المشروع (.claude/agents/)"
 msgid "Project Artifacts"
 msgstr "مخرجات المشروع"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 msgid "Project assets"
@@ -14982,6 +15015,7 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Refresh"
@@ -18910,6 +18944,10 @@ msgstr "سيُزال مفتاح API المخزَّن لهذا المزوّد م�
 msgid "The tab content could not be prepared."
 msgstr "تعذر تحضير محتوى التبويب."
 
+#: src/navigation/NavigationActions.ts
+msgid "The terminal is not ready yet"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعد التحميل لإعادة التحديد، أو افتح الجلسة ضمن مشروعها الحقيقي."
@@ -19139,6 +19177,10 @@ msgstr "هذا الرابط لا يشير إلى بيئة معزولة."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "هذا الرابط لا يحدد مستودعاً يمكن تشغيله."
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no available viewer"
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -20329,6 +20371,10 @@ msgstr "الأصول المستخدمة"
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Used by"
 msgstr "تُستخدم بواسطة"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used in transcript"
+msgstr ""
 
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
