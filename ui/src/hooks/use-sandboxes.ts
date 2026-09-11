@@ -83,7 +83,7 @@ export type Step = GenericStep<StepId>;
  *  progress channel. Which rows appear is decided by {@link plannedSteps}. */
 const STEP_LABELS: Record<StepId, string> = {
   launch: 'Starting the sandbox',
-  health: 'Starting FlowPad and signing in',
+  health: 'Starting FlowPad and signing in inside the sandbox',
   validate: 'Checking the project name',
   clone: 'Cloning the repository',
   init: 'Setting up the project',
@@ -128,7 +128,11 @@ function plannedProjectSteps(setup: SandboxSetup): Step[] {
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
 }
 
-function plannedSteps(setup?: SandboxSetup): Step[] {
+/** Exported so a caller that hasn't started a launch yet — `LaunchLanding`,
+ *  building a full sign-in→setup→open preview before `createSandbox` has run —
+ *  can render the SAME row set this hook would drive, instead of a placeholder
+ *  that has to be kept in sync with it by hand. */
+export function plannedSteps(setup?: SandboxSetup): Step[] {
   const ids: StepId[] = ['launch', 'health'];
   if (setup) {
     // No repo to fetch → the box mounts the project empty instead, and an empty
