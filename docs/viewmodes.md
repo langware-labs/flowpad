@@ -61,10 +61,14 @@ PTY (`viewModePtyMode`), so selecting Terminal switches the live worker to
 `WorkerMode.Interactive`; selecting **Chat or Vibe** switches it back to
 `WorkerMode.CLI`
 (`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`).
-The two directions reach the backend differently, and that asymmetry is real:
-`→Interactive` routes through `start()` / the `open` action (it has to actually
-attach a live PTY), while `→CLI` is the `switch-mode` action, whose
-`_enter_cli_mode` kills the PTY and persists `visible=false` + `pty_mode=false`.
+Both directions reach the backend through the **same** action, `switch-mode`:
+`→Interactive` spawns the PTY and returns the same open payload the `open`
+action does, so the client still does its live attach off the response, while
+`→CLI` runs `_enter_cli_mode`, killing the PTY and persisting `visible=false` +
+`pty_mode=false`. They used to differ — `→Interactive` went through `start()` /
+`open`, which carries no mid-turn guard, and that let a mid-turn switch to
+Terminal spawn a second worker onto the transcript a live headless turn was
+still writing, losing that turn (FLOWPAD-2130). One route, one guard.
 Both sides are one backend mutation driven by view mode — the mapping is
 `surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
 (`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*

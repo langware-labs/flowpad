@@ -14,10 +14,10 @@ import { resolve } from 'node:path';
  *     navigates (running the REAL `useViewToggleGate`, not a stub);
  *   • `useProcessSurface` — which lifecycle call, if any, actually goes out.
  *
- * and asserts both behave the way the ROUTE each direction lands on behaves:
- *
- *   →chat / →vibe  → `switch-mode`, which 409s mid-turn  ⇒ refused mid-turn
- *   →terminal      → `open`, which has NO mid-turn guard  ⇒ allowed mid-turn
+ * and asserts both behave the way the ROUTE behaves. There is one route now —
+ * `switch-mode`, which 409s mid-turn, so every direction is refused mid-turn.
+ * It used to be two, and →terminal's (`open`) had no guard, so a mid-turn click
+ * went out and lost the live turn (FLOWPAD-2130).
  *
  * The rows come from `test_fixtures/status_sets.json`, the same file the Python
  * contract test loads, so "what the server does" is not restated here — it is
@@ -153,23 +153,22 @@ describe('the reconcile effect issues exactly the call the route accepts', () =>
     // Allowed — and it must reach the route the fixture names.
     expect(switchMode).toHaveBeenCalledTimes(1);
     const [mode] = switchMode.mock.calls[0] as unknown as [string];
-    expect(mode).toBe(c.backend_route === 'open' ? 'interactive' : 'cli');
+    expect(mode).toBe(c.pty_mode ? 'cli' : 'interactive');
   });
 
-  it('a mid-turn →terminal really does go out, because `open` has no guard', async () => {
-    // The behaviour the client mirrors rather than second-guesses. If a guard is
-    // ever added to `open`, the fixture flips and this expectation flips with it.
-    const c = CASES.find((r) => r.backend_route === 'open' && r.busy);
+  it('a mid-turn →terminal does NOT go out any more (FLOWPAD-2130)', async () => {
+    // Before the fix this call went out and put a second worker on the
+    // in-flight turn's own transcript.
+    const c = CASES.find((r) => r.needs_switch && r.busy && !r.pty_mode);
     expect(c, 'fixture must cover a mid-turn →terminal').toBeDefined();
 
     await driveSurfaceTo(c!);
 
-    expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+    expect(switchMode).not.toHaveBeenCalled();
   });
 
   it('a mid-turn →chat does NOT go out, because `switch-mode` 409s', async () => {
-    const c = CASES.find((r) => r.backend_route === 'switch-mode' && r.busy);
+    const c = CASES.find((r) => r.needs_switch && r.busy && r.pty_mode);
     expect(c, 'fixture must cover a mid-turn →chat').toBeDefined();
 
     await driveSurfaceTo(c!);
@@ -199,10 +198,10 @@ describe('the ViewToggle greys exactly what the effect would refuse', () => {
     expect(c.blocked).toBe(c.backend_refuses);
   });
 
-  it('leaves →terminal clickable mid-turn, and refuses →chat', () => {
-    // The user-visible shape of the asymmetry, asserted end-to-end through the
-    // real component and the real gate.
-    const busyPty = CASES.find((r) => r.backend_route === 'switch-mode' && r.busy)!;
+  it('greys BOTH directions mid-turn, and the click is inert', () => {
+    // End-to-end through the real component and gate. →terminal used to stay
+    // clickable here.
+    const busyPty = CASES.find((r) => r.needs_switch && r.busy && r.pty_mode)!;
     live.ptyMode = true;
     live.proc = processFor(busyPty);
     live.mode = ViewMode.Advanced;
@@ -213,14 +212,14 @@ describe('the ViewToggle greys exactly what the effect would refuse', () => {
     expect(openDock).not.toHaveBeenCalled();
 
     view.unmount();
-    const busyHeadless = CASES.find((r) => r.backend_route === 'open' && r.busy)!;
+    const busyHeadless = CASES.find((r) => r.needs_switch && r.busy && !r.pty_mode)!;
     live.ptyMode = false;
     live.proc = processFor(busyHeadless);
     live.mode = ViewMode.Standard;
     render(<ViewToggle />);
 
-    expect(seg(ViewMode.Advanced).getAttribute('aria-disabled')).toBeNull();
+    expect(seg(ViewMode.Advanced).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(seg(ViewMode.Advanced));
-    expect(openDock).toHaveBeenCalledTimes(1);
+    expect(openDock).not.toHaveBeenCalled();
   });
 });
