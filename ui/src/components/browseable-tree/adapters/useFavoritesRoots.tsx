@@ -517,7 +517,8 @@ export function useFavoritesProjectRoots(): {
           ) : (
             <FolderOpen className="h-4 w-4" />
           ),
-        hasChildren: children.length > 0,
+        // The current project can receive its first bookmark even when empty.
+        hasChildren: children.length > 0 || key === currentBucket,
         listChildren: () => Promise.resolve(children),
         pointer: null,
         selectionKey: key,
@@ -537,6 +538,7 @@ export function useFavoritesProjectRoots(): {
     // Current project first — it is the one that opens — then the rest by name,
     // and the unscoped desk last.
     const rank = (k: string) => (k === currentBucket ? 0 : k === FAVORITES_PERSONAL_BUCKET ? 2 : 1);
+    if (!buckets.has(currentBucket)) buckets.set(currentBucket, []);
     const keys = [...buckets.keys()].sort(
       (a, b) => rank(a) - rank(b) || labelFor(a).localeCompare(labelFor(b)),
     );

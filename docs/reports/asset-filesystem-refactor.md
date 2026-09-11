@@ -36,6 +36,14 @@ node explicitly, preserving their behavior assertions. Counts above are
 separate, overlapping test gates,
 not additive totals. No test timeout or retry budget was increased.
 
+After merging `release/v0.2` at `ca7922f23`, all four backend unit CI shards
+(including their `--long` cases) and the backend API job passed. The complete
+frontend unit gate then passed **5,619 tests across 605 files**. That broader
+gate repaired stale toast and terminal mocks, preserved browser Blob/File
+compatibility in shared test setup, and restored the current project's empty
+bookmark bucket so its first bookmark can be added. Translation catalogs were
+extracted and a repeat extraction produced no drift.
+
 The completion audit maps the approved blocks to executable regressions:
 
 | Contract | Regression coverage |
