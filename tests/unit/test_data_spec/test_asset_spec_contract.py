@@ -7,9 +7,10 @@ from typing import Optional
 import pytest
 from pydantic import BaseModel
 
+from flow_sdk.assets.types.subagent_spec import SubAgentSpec
 from flow_sdk.builtin.agent import Agent, AgentSpec
 from flow_sdk.builtin.dataset import Dataset, DatasetManifestSpec
-from flow_sdk.builtin.subagent import SubAgent, SubAgentSpec
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo, check_asset_spec
 from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, field_kinds, field_persistence, spec_layout
 from flow_sdk.schema.data_spec import Body, DataSpec, FreeSection, FrontMatter

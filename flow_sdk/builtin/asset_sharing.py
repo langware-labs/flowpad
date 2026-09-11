@@ -105,7 +105,7 @@ async def share_asset_to_hub(
 ) -> ShareOutcome:
     """Run the gate sequence. Raises :class:`ShareBlocked` for anything a user can fix."""
     from flow_sdk.fs_store.type_id import TypeId
-    from flow_sdk.assets._publish_service import owning_project
+    from flow_sdk.builtin.asset_publishing import owning_project
     from flow_sdk.core.display_target import (
         DisplayTargetKind,
         DisplayTargetNotFound,
@@ -362,7 +362,8 @@ def _porcelain_path(line: str) -> str:
 
 
 async def _publish(entity, actor, warnings: list[str]) -> dict:
-    from flow_sdk.assets.git_publish import AssetPublishError, publish_git_asset
+    from flow_sdk.assets.git_publish import AssetPublishError
+    from flow_sdk.builtin.asset_publishing import publish_git_asset
 
     try:
         result = await publish_git_asset(entity, actor)

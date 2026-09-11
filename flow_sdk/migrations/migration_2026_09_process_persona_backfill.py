@@ -91,7 +91,7 @@ async def migrate(dry_run: bool = True) -> BackfillReport:
         # `_process_assets_path` is a pure path derivation; read the directory
         # rather than `ensure_embedded_assets`, which would CREATE one for every
         # process a migration merely looked at.
-        assets_dir = process._process_assets_path()  # noqa: SLF001 — migration reads the record layout
+        assets_dir = process.asset_workspace._process_assets_path()  # noqa: SLF001 — migration reads the record layout
         if not assets_dir.is_dir():
             report.no_agents += 1
             continue

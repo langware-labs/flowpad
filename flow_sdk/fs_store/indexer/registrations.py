@@ -6,6 +6,8 @@ side-effects should import this module instead.
 """
 # Walker modules — register TypeInfo + folder walkers.
 # Entity modules — trigger Entity.__init_subclass__ → SchemaRegistry merge of entity_cls.
+import flow_sdk.assets.types.skill  # noqa: F401
+import flow_sdk.assets.types.subagent  # noqa: F401
 import flow_sdk.builtin.claude_memory_entities  # noqa: F401
 import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401
@@ -51,10 +53,8 @@ import flow_sdk.fs_store.indexer.functions.markdown_index  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.mcp_server  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.plugin  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.secret_origin  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.skill  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.spec  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.subagent  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401

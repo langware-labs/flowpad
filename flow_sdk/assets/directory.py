@@ -1,16 +1,22 @@
-"""Process-local asset directory helpers."""
+"""Contained asset directory operations."""
 
 from __future__ import annotations
 
-import shutil
+import tempfile
 from pathlib import Path
+
+from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
 
 
 class AssetDir:
-    """Safe loader for files materialized under one process asset root."""
+    """Safe loader for files materialized under one asset root."""
 
     def __init__(self, os_path: str | Path) -> None:
         self.os_path = Path(os_path)
+
+    def ensure(self) -> Path:
+        self.os_path.mkdir(parents=True, exist_ok=True)
+        return self.os_path
 
     def _relative_target(self, relative_path: str | Path) -> Path:
         rel = Path(relative_path)
@@ -47,10 +53,7 @@ class AssetDir:
         resolved_parent = target.parent.resolve()
         if resolved_parent != root and root not in resolved_parent.parents:
             raise ValueError(f"asset path escapes asset dir: {relative_path}")
-        if target.is_symlink() or target.is_file():
-            target.unlink()
-        elif target.is_dir():
-            shutil.rmtree(target)
+        remove_path(target)
 
     def load_asset(
         self,
@@ -68,30 +71,20 @@ class AssetDir:
             raise ValueError("provide exactly one of content or source")
 
         target = self._target(relative_path)
-        if target.exists() or target.is_symlink():
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
-
-        if content is not None:
-            if isinstance(content, bytes):
-                target.write_bytes(content)
-            else:
-                target.write_text(content, encoding="utf-8")
-            return target
-
-        src = Path(source or "").resolve()
-        if not src.exists():
-            raise FileNotFoundError(src)
-        if symlink:
-            target.symlink_to(src, target_is_directory=src.is_dir())
-        elif src.is_dir():
-            shutil.copytree(
-                src,
-                target,
-                ignore=shutil.ignore_patterns(".flow_record", "record.json"),
+        if source is not None:
+            return materialize_asset_sync(
+                Path(source), target,
+                mode=MaterializationMode.LINK if symlink else MaterializationMode.COPY,
+                overwrite=True,
+                exclude=(".flow_record", "record.json"),
             )
-        else:
-            shutil.copy2(src, target)
+        # Generate bytes before entering the shared replacement transaction.
+        # A failed write must leave an existing owned projection and receipt intact.
+        with tempfile.TemporaryDirectory(prefix=".asset-content-", dir=target.parent) as temporary:
+            source_path = Path(temporary) / target.name
+            if isinstance(content, bytes):
+                source_path.write_bytes(content)
+            else:
+                source_path.write_text(content, encoding="utf-8")
+            materialize_asset_sync(source_path, target, overwrite=True)
         return target

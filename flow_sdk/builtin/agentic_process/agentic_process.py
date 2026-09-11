@@ -15,7 +15,6 @@ import json
 import logging
 import time
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property, lru_cache
@@ -28,12 +27,18 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
+from flow_sdk.assets.asset import Asset
+from flow_sdk.assets.catalog import (
+    AssetDescriptor,
+)
+from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.folder import AssetFolder
+from flow_sdk.assets.usage import AssetUsage
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.activity_bridge import (
     end_process_activity,
     sync_process_activity,
 )
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
 )
@@ -48,9 +53,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    ProcessHookRuntime,
-    ProcessMcpRuntime,
+from flow_sdk.builtin.agentic_process.process_assets import (
+    PreparedProcessAssets,
+    ProcessAssets,
+    SystemInstructionAssets,
 )
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
@@ -83,7 +89,6 @@ from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
-from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -177,460 +182,11 @@ def _shell_compute_is_local(shell: "Shell") -> bool:
     }
 
 
-# ── Asset descriptors ──────────────────────────────────────────────────────────
-# Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
-# "AgenticProcess.get_assets() — unified read-side asset view". The descriptors
-# unify the scattered fields (``embedded_asset_refs``, ``embedded_subagent_ids``,
-# ``cli_config.agents_json``, ``additional_dirs``) plus path-discovered assets
-# under user/project/workdir into one list the UI can consume.
-
-
-class AssetSource(str, Enum):
-    EMBEDDED = "embedded"  # materialized via embedded_asset_refs
-    INLINE = "inline"  # cli_config.agents_json / embedded_subagent_ids — no file
-    PROJECT_DIR = "project_dir"  # under project.fs_storage_mount_path
-    USER_DIR = "user_dir"  # under user_home
-    WORKDIR = "workdir"  # process workdir if distinct from project/user
-    ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
-    CONTEXT_DIR = "context_dir"  # project.include_dirs (context folders)
-    SYSTEM = "system"  # bundled flowpad_assistant assets (entity scope="system")
-    # Not attributable to any of this process's source dirs. Deliberately NOT
-    # "outside every source dir" — a foreign project's asset under $HOME is
-    # rejected by the cross-project rule in ``_source_match_for_asset`` and
-    # lands here despite living inside one. The fact that it was seen in the
-    # transcript is carried by ``AssetUsageKind.TRANSCRIPT_FILE_READ``, on the
-    # usage axis; this enum only ever answers "where does it live".
-    EXTERNAL = "external"
-
-
-class AssetUsageKind(str, Enum):
-    EMBEDDED_ASSET = "embedded_asset"
-    INLINE_PERSONA = "inline_persona"
-    TRANSCRIPT_FILE_READ = "transcript_file_read"
-    # Skill invoked through the native ``Skill`` tool (Claude ``/rca``), which
-    # yields a ``SkillCallEntry`` and NO ``SKILL.md`` file read — so file-read
-    # attribution alone would leave the skill unmarked in the asset view.
-    SKILL_INVOKED = "skill_invoked"
-
-
-# Sources whose underlying file/state lives outside this AgenticProcess —
-# editing the entity propagates elsewhere (other processes, the project,
-# the user globally), so the row is "read-only" from this process's
-# perspective. Attaching materializes an EMBEDDED writable copy.
-READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset(
-    {
-        AssetSource.PROJECT_DIR,
-        AssetSource.USER_DIR,
-        AssetSource.WORKDIR,
-        AssetSource.ADDITIONAL_DIR,
-        AssetSource.CONTEXT_DIR,
-        AssetSource.SYSTEM,
-        AssetSource.EXTERNAL,
-    }
-)
-
-
 class TranscriptSubpath(StrEnum):
     PLAN = "plan"
     PROMPT = "prompt"
     PROMPTS = "prompts"
     FULL = "full"
-
-
-def is_readonly_source(source: AssetSource) -> bool:
-    return source in READONLY_ASSET_SOURCES
-
-
-@dataclass
-class AssetUsage:
-    """Lightweight evidence that an asset is active or was used in this run."""
-
-    kind: AssetUsageKind
-    path: str | None = None
-    entry_id: str | None = None
-    timestamp: str | None = None
-    label: str | None = None
-
-
-@dataclass
-class AssetDescriptor:
-    """Single asset row visible to an AgenticProcess.
-
-    A given source asset may appear multiple times in the list — once per
-    distinct source (e.g. EMBEDDED + USER_DIR for the same skill).
-    """
-
-    typeid: str  # serialized TypeId, e.g. "skill-<uuid>"
-    source: AssetSource
-    posix_path: str | None  # canonical POSIX path; None for INLINE
-    source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
-    project_id: str | None = None  # owning project (path-discovered / spec rows); None for EMBEDDED/INLINE
-    usage: list[AssetUsage] = field(default_factory=list)
-    remote: bool | None = None  # None until a reference-only descriptor is hydrated
-    # Display name, carried ONLY for a descriptor with no entity row yet (an
-    # on-disk asset the indexer has not reached). Every other row resolves its
-    # label from the entity cache by typeid; a disk row has nothing to resolve,
-    # so without this the picker renders the raw ``skill-<uuid>``.
-    name: str | None = None
-
-    def to_row(self) -> dict:
-        """Single owner of the get-assets wire row — used by BOTH the process
-        and project actions so the response shapes cannot drift."""
-        return {
-            "typeid": self.typeid,
-            "source": self.source.value,
-            "posix_path": self.posix_path,
-            "source_dir": self.source_dir,
-            "project_id": self.project_id,
-            "remote": bool(self.remote),
-            "name": self.name,
-            "usage": [
-                {
-                    "kind": u.kind.value,
-                    "path": u.path,
-                    "entry_id": u.entry_id,
-                    "timestamp": u.timestamp,
-                    "label": u.label,
-                }
-                for u in self.usage
-            ],
-        }
-
-
-async def hydrate_asset_descriptor_remote(
-    descriptors: list[AssetDescriptor],
-) -> None:
-    """Batch-fill cloud state for reference-only descriptors.
-
-    Producers that already hold an entity stamp ``remote`` directly. Remaining
-    real TypeIds are grouped by registered entity class and loaded once per
-    type; invalid, named, unregistered, or missing references fail closed to
-    local-only.
-    """
-    from flow_sdk.api.api_types.identifier import is_valid_entity_id
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-    pending: dict[tuple[str, str], list[AssetDescriptor]] = {}
-    for descriptor in descriptors:
-        if descriptor.remote is not None:
-            continue
-        try:
-            typeid = TypeId(descriptor.typeid)
-        except (TypeError, ValueError):
-            descriptor.remote = False
-            continue
-        if not typeid.id or not is_valid_entity_id(str(typeid.id)):
-            descriptor.remote = False
-            continue
-        pending.setdefault((typeid.type, str(typeid.id)), []).append(descriptor)
-
-    ids_by_type: dict[str, set[str]] = {}
-    for entity_type, entity_id in pending:
-        ids_by_type.setdefault(entity_type, set()).add(entity_id)
-
-    for entity_type, ids in ids_by_type.items():
-        entity_cls = SchemaRegistry.get_entity_cls(entity_type)
-        rows = []
-        if entity_cls is not None:
-            try:
-                rows = await entity_cls.get_all(
-                    QueryFilter(
-                        match=ExpressionNode(
-                            op=QueryOp.IN,
-                            operands=["id", sorted(ids)],
-                        )
-                    )
-                )
-            except Exception:
-                logger.debug(
-                    "asset descriptor remote batch load failed for %s",
-                    entity_type,
-                    exc_info=True,
-                )
-        loaded = {str(row.id): bool(getattr(row, "remote", False)) for row in rows}
-        for entity_id in ids:
-            for descriptor in pending[(entity_type, entity_id)]:
-                descriptor.remote = loaded.get(entity_id, False)
-
-
-@dataclass
-class SystemInstructionAssets:
-    """This process's asset MOUNT, plus the instruction text when there is any.
-
-    The mount is the load-bearing half: it is how a worker discovers embedded
-    skills and sub-agents. Instruction TEXT is a separate, optional concern — a
-    process can have skills and nothing to say — so ``instructions`` may be ``""``
-    and ``claude_file`` ``None``. Gating the whole object on the text is what
-    silently starved opencode's generated config and copilot's custom-instruction
-    dirs of the assets dir whenever a process had skills but no persona.
-    """
-
-    assets_dir: Path
-    instructions: str = ""
-    claude_file: Path | None = None
-
-    @property
-    def system_prompt_file(self) -> str | None:
-        """The system-prompt file path, or None when there is no text.
-
-        The one place the "no text ⇒ no file to point at" coercion is stated.
-        """
-        return str(self.claude_file) if self.claude_file else None
-
-    # The owning process. Every vendor but opencode reaches these assets through
-    # a directory flag and needs nothing else; opencode reaches them ONLY through
-    # a generated per-process config, which is keyed on this id.
-    process_id: str = ""
-
-
-@dataclass
-class PreparedProcessAssets:
-    """Derived launch assets prepared once for one worker spawn."""
-
-    instruction_assets: SystemInstructionAssets | None = None
-    hook_runtime: ProcessHookRuntime = field(default_factory=ProcessHookRuntime)
-    mcp_runtime: ProcessMcpRuntime = field(default_factory=ProcessMcpRuntime)
-
-
-# Types treated as executable agent inputs by the asset-management UI.
-# Markdown / spec / plan / claude_rules etc. are intentionally excluded —
-# they're documentation, not things the agent runs.
-# "Executable" is a slight misnomer since ``mcp`` joined: an MCP is a capability
-# the worker is given, not something it runs. Renaming is a separate change.
-EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent", "mcp"]
-
-
-def add_source_dir(
-    pairs: list[tuple[str, AssetSource]],
-    seen: set[str],
-    path: "str | Path | None",
-    source: AssetSource,
-) -> None:
-    """Canonicalize + dedup one candidate scan dir into ``pairs``/``seen``."""
-    from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-    if not path:
-        return
-    try:
-        key = canonical_posix_path(path)
-    except (OSError, ValueError):
-        return
-    if not key or key in seen:
-        return
-    seen.add(key)
-    pairs.append((key, source))
-
-
-def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], set[str]]:
-    """The user/project/context portion of the scan-dir policy, shared by
-    ``AgenticProcess._collect_source_dirs`` and ``Project.get_assets_action``
-    so the staging view cannot drift from what a new process would see.
-    ``project`` may be None (user-home only)."""
-    from flow_sdk.instance_settings import get_instance_settings
-
-    pairs: list[tuple[str, AssetSource]] = []
-    seen: set[str] = set()
-    add_source_dir(pairs, seen, get_instance_settings().user_home, AssetSource.USER_DIR)
-    if project is not None:
-        add_source_dir(
-            pairs,
-            seen,
-            getattr(project, "fs_storage_mount_path", None),
-            AssetSource.PROJECT_DIR,
-        )
-        # CONTEXT_DIR — the project's context folders (include_dirs). Deduped on
-        # canonical path, so a folder that is also the project/user root won't
-        # double-count.
-        for context_dir in getattr(project, "include_dirs", None) or []:
-            add_source_dir(pairs, seen, context_dir, AssetSource.CONTEXT_DIR)
-    return pairs, seen
-
-
-def disk_asset_descriptors(
-    ranked: list[tuple[str, AssetSource]],
-    types: set[str],
-    seen_paths: set[str],
-) -> list[AssetDescriptor]:
-    """On-disk skills/subagents that have no entity row yet.
-
-    The picker's question is "what can this process use", and that is a
-    filesystem fact — not a DB one. Relying on ``Entity.assets_by_path`` alone
-    made the answer "what has been indexed", so a project added but never
-    indexed listed nothing at all despite having real ``.claude/skills``
-    folders on disk.
-
-    Discovery is DELEGATED to the indexer's own walkers (the declared
-    ``walk`` of skill / subagent, run by ``layout_walker``) rather than
-    re-deriving where assets live, so this pass cannot drift from the indexer:
-    a new harness dot-dir in ``WORKER_PREFIX`` is picked up here for free. The
-    walkers ignore their options argument, so one throwaway ``IndexerOptions``
-    serves all of them; they key off ``node.path`` and ``node.record_type``.
-
-    Strictly read-only. Ids come from the peek seams (``skill_id`` /
-    ``subagent_peek_entity_id``), which ADOPT an existing frontmatter id
-    rather than minting one, so a later index converges on
-    the same id instead of creating a second row for the same file.
-
-    ``seen_paths`` carries the paths the DB pass already considered; a path is
-    checked against it BEFORE the folder's yaml is parsed, so an indexed
-    corpus never pays for id or name resolution.
-
-    Serves ``skill`` and ``subagent`` only. ``Project.get_assets_action`` may
-    also ask for ``markdown``/``spec``; those still answer from the DB alone,
-    so an unindexed markdown doc stays invisible. Widening that means giving
-    those types the same walker + read-only-peek pair, not a new mechanism.
-    """
-    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
-        parse_skill_yaml_from_dir,
-        resolve_skill_name,
-        skill_id,
-    )
-    from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.walkers.generic import walker_for  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-    opts = IndexerOptions()
-    skill_fn, subagent_fn = walker_for("skill"), walker_for("subagent")
-    out: list[AssetDescriptor] = []
-
-    def claim(path: Path) -> str | None:
-        """Canonical path, or None when an earlier source or the DB pass owns it."""
-        try:
-            key = canonical_posix_path(path)
-        except (OSError, ValueError):
-            return None
-        if not key or key in seen_paths:
-            return None
-        seen_paths.add(key)
-        return key
-
-    for src_dir, source in ranked:
-        # The walkers serve the walks declared on this root kind; a project
-        # root is one both types name.
-        nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
-        if "skill" in types:
-            for ref in skill_fn(nodes, opts):
-                key = claim(ref._path)
-                if key is None:
-                    continue
-                # Parsed once and threaded into ``skill_id`` — its fallback
-                # would otherwise re-read and re-parse the same SKILL.md.
-                fields = parse_skill_yaml_from_dir(ref._path)
-                out.append(
-                    AssetDescriptor(
-                        typeid=f"skill-{skill_id(ref, fields)}",
-                        source=source,
-                        posix_path=key,
-                        source_dir=src_dir,
-                        name=resolve_skill_name(fields, ref._path.name),
-                    )
-                )
-        if "subagent" in types:
-            for ref in subagent_fn(nodes, opts):
-                key = claim(ref._path)
-                if key is None:
-                    continue
-                out.append(
-                    AssetDescriptor(
-                        typeid=str(AgenticProcess._agent_entity_ref(ref)),
-                        source=source,
-                        posix_path=key,
-                        source_dir=src_dir,
-                        # The filename stem is the harness's own agent name and
-                        # the peek seam's own fallback. Reading the frontmatter
-                        # for a nicer label would parse the file a second time
-                        # to win a name the entity cache supplies the moment
-                        # this asset is indexed.
-                        name=ref._path.stem,
-                    )
-                )
-    return out
-
-
-async def scan_path_asset_descriptors(
-    sources: list[tuple[str, AssetSource]],
-    own_project_id: str,
-    types: list[str],
-    limit: int = 10000,
-    offset: int = 0,
-) -> list[AssetDescriptor]:
-    """Build the *listable* path-discovered assets, for process and project views.
-
-    One ``Entity.assets_by_path()`` over ``sources`` (SQL prefix pushdown), each
-    hit attributed to the longest-prefix source dir via
-    ``AgenticProcess._source_match_for_asset`` — including its rule that a
-    project-scoped entity from another project is not claimed by the USER_DIR
-    home catchall.
-
-    Deliberately non-total: this is a listing, not the full attribution. It never
-    returns ``SYSTEM`` even though the enum admits it — see the skip below.
-    """
-    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
-    from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-    if not sources:
-        return []
-    entities = await Entity.assets_by_path(
-        PathQueryOptions(
-            search_dirs=[s[0] for s in sources],
-            types=types,
-            limit=limit,
-            offset=offset,
-        )
-    )
-    ranked = sorted(sources, key=lambda s: -len(s[0]))
-    descriptors: list[AssetDescriptor] = []
-    # Every path the DB pass CONSIDERED — not just the ones it emitted. A row
-    # it deliberately dropped (SYSTEM, or a foreign project's asset under the
-    # home catchall) is an exclusion, not an absence, and the filesystem pass
-    # below must not resurrect it: entities are materialized to disk, so the
-    # dropped row's folder is sitting right there with a real SKILL.md.
-    db_paths: set[str] = set()
-    for ent in entities:
-        ar_raw = getattr(ent, "asset_ref", None) or ""
-        if not ar_raw:
-            continue
-        ar = canonical_posix_path(ar_raw)
-        db_paths.add(ar)
-        match = AgenticProcess._source_match_for_asset(ar, ranked, ent, own_project_id)
-        if match is None:
-            continue
-        src_dir, src = match
-        # The bundled assistant's catalog is represented by a single "mounted"
-        # marker in the asset UI, not one row per shipped skill — listing it here
-        # would flood the available list. Its assets still surface individually
-        # when a run actually used one (see _append_transcript_asset_descriptors).
-        # Note this does NOT hide the assistant project's own assets when you're
-        # looking at it: that view's mount IS the assistant root, so it wins the
-        # longest-prefix match as PROJECT_DIR and never reaches SYSTEM.
-        if src == AssetSource.SYSTEM:
-            continue
-        ent_project_id = getattr(ent, "project_id", None)
-        descriptors.append(
-            AssetDescriptor(
-                typeid=f"{ent.type or ent.get_type()}-{ent.id}",
-                source=src,
-                posix_path=ar,
-                source_dir=src_dir,
-                project_id=str(ent_project_id) if ent_project_id else None,
-                remote=bool(getattr(ent, "remote", False)),
-            )
-        )
-
-    # Filesystem pass — the assets that exist on disk but have no row yet.
-    # Ranked (longest prefix first) so a nested project dir claims a path
-    # before the home catchall reaches it. Threaded: the reads are sync and
-    # the loop must not park on them.
-    # Skipped entirely once the DB pass has filled ``limit`` — the walk's
-    # output would be sliced to nothing anyway.
-    if limit and len(descriptors) >= limit:
-        return descriptors
-    disk = await asyncio.to_thread(disk_asset_descriptors, ranked, set(types), db_paths)
-    descriptors.extend(disk[: limit - len(descriptors)] if limit else disk)
-    return descriptors
 
 
 # ── prompt-action transient state (per-process locks + live workers) ─────────
@@ -1309,7 +865,7 @@ class AgenticProcess(Entity):
     def _migrate_legacy_process_assets_mount(self) -> "AgenticProcess":
         if self.id:
             self.additional_dirs = [
-                path for path in (self.additional_dirs or []) if not self._is_process_assets_path(path)
+                path for path in (self.additional_dirs or []) if not self.asset_workspace._is_process_assets_path(path)
             ]
         return self
 
@@ -5358,285 +4914,22 @@ class AgenticProcess(Entity):
     async def load_embedded_subagent_action(
         self, asset_ref: str = "", set_ap_persona: bool = False
     ) -> "ApiSuccessResponse | ApiFailResponse":
-        """Load a sub-agent from its ``asset_ref`` and embed it into this process.
+        return await self.asset_workspace.load_embedded_subagent_action(asset_ref=asset_ref, set_ap_persona=set_ap_persona)
 
-        ``asset_ref`` is the sub-agent record's own OS filesystem path (an ``FSRef``
-        path), NOT a VFS path — it was renamed from ``source_vfs_path`` and the
-        contract changed with it, which is what stranded the old VFS-style
-        re-rooting below.
-
-        Materializes the sub-agent markdown into the process asset directory so the
-        generated system-instruction files can include it on every launch.
-
-        Identity is persisted as the sub-agent's entity ref (``embedded_asset_refs``,
-        same as ``attach_embedded_asset``) — the name is only the projection used
-        for the materialized filename / CLI payload. ``embedded_subagent_ids`` is a
-        legacy name list; we no longer write it, and migrate-on-touch any entry
-        for this sub-agent so attach/detach stays symmetric on old processes.
-        """
-        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
-            extract_subagent_from_path,
-            render_subagent_markdown,
-        )
-
-        if not asset_ref:
-            return ApiFailResponse(message="asset_ref is required")
-        # `Path(ref).resolve()` — the same construction FSRef itself uses, and
-        # which `_agent_entity_ref` re-applies to this value downstream. Rooting
-        # it with `Path("/" + ref)` instead corrupted every Windows ref
-        # (`C:\...` → `\C:\...`), so the file never existed and the embed failed.
-        abs_path = Path(asset_ref).resolve()
-        # Both failures below used to return silently: the process then ran with
-        # no persona and NOTHING recorded it anywhere -- the browser console's
-        # `[Vibe] failed to embed` warning was the only trace a session ever left.
-        if not abs_path.exists():
-            logger.warning(
-                "load-embedded-subagent(%s): agent file not found: %s%s",
-                self.id, abs_path, " (persona NOT set)" if set_ap_persona else "",
-            )
-            return ApiFailResponse(message=f"Agent file not found: {abs_path}")
-        agent = extract_subagent_from_path(abs_path)
-        if agent is None:
-            logger.warning(
-                "load-embedded-subagent(%s): could not parse agent file: %s%s",
-                self.id, abs_path, " (persona NOT set)" if set_ap_persona else "",
-            )
-            return ApiFailResponse(message=f"Could not parse agent file: {abs_path}")
-        assets = self.ensure_embedded_assets()
-        name = agent.name or abs_path.stem
-        # `name` is the frontmatter name (`subagent_to_cli_json` keys
-        # `agents_json` by it) and it is also this file's stem, so the persona's
-        # `Path(...).stem` resolves back to the same key. They coincide because
-        # ONE expression writes both -- keep it that way. If a future rewrite
-        # ever lets the filename and the frontmatter name diverge, the persona
-        # stops resolving; the render-time warning is what announces it.
-        rel = Path(".claude") / "agents" / f"{name}.md"
-        assets.load_asset(rel, content=render_subagent_markdown(agent))
-        # The caller declares the persona; it is never inferred from embed order.
-        if set_ap_persona:
-            self.process_persona_path = rel.as_posix()
-        self._normalize_process_asset_mount()
-        ref = self._agent_entity_ref(abs_path)
-        self._record_embedded_ref(ref)
-        self._drop_legacy_agent_name(name)
-        await self.save()
-        return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
-
-    @staticmethod
-    def _agent_entity_ref(path: "Path | FSRef") -> TypeId:
-        """Entity ref for an agent .md path — the single ``agent path → TypeId``
-        seam (read-only; same uuid the indexer mints for the file).
-
-        Accepts an ``FSRef`` as well as a path because ``FSRef.__init__``
-        resolves, and the disk walker already holds the ref the walk yielded —
-        re-wrapping its path there would buy a realpath syscall per agent file
-        inside the very walk this function's caller tries to skip.
-        """
-        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        ref = path if isinstance(path, FSRef) else FSRef(path, record_type=RecordType.SUBAGENT)
-        return TypeId(type=RecordType.SUBAGENT.value, id=subagent_peek_entity_id(ref))
-
-    def _drop_legacy_agent_name(self, name: str | None) -> None:
-        """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""
-        if name and name in (self.embedded_subagent_ids or []):
-            self.embedded_subagent_ids = [n for n in self.embedded_subagent_ids if n != name]
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Make a skill folder discoverable to this process's worker.
+        return await self.asset_workspace.load_embedded_skill_action(asset_ref=asset_ref)
 
-        Skills are directory-discovered by the worker at startup, not a CLI
-        input. We symlink the live source folder into the worker's skills root
-        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for Claude,
-        ``<assets_dir>/.github/skills/<name>/`` for Copilot,
-        ``<assets_dir>/.opencode/skills/<name>/`` for OpenCode and
-        ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to the original
-        SKILL.md flow through to the next chat without re-materialization.
-        Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
-
-        Laying the files down is only half the job: the ref is ALSO recorded in
-        ``embedded_asset_refs``, exactly as ``attach_embedded_asset`` does. That
-        list is the persisted answer to "does this process have assets?", and
-        both delivery predicates read it from a FRESH entity instance on the
-        next request — ``resolved_add_dirs`` (via ``process_assets_active``) and
-        ``_prepare_system_instruction_assets`` (via ``has_existing_assets``).
-        Without the record the symlink is real and the worker never sees it: the
-        assets dir is simply never mounted.
-        """
-        import shutil
-
-        if not asset_ref:
-            return ApiFailResponse(message="asset_ref is required")
-        # Absolute already (see load_embedded_subagent_action) — do not re-root.
-        skill_dir = Path(asset_ref).resolve()
-        if not skill_dir.is_dir():
-            return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
-        if not (skill_dir / "SKILL.md").exists():
-            return ApiFailResponse(message=f"SKILL.md missing in: {skill_dir}")
-        try:
-            assets = self.ensure_embedded_assets()
-            assets_dir = assets.os_path
-            skills_root = self._skills_root(assets_dir)
-            skills_root.mkdir(parents=True, exist_ok=True)
-            link = skills_root / skill_dir.name
-            # Refresh: a stale symlink, prior copy, or regular file all get replaced.
-            if link.is_symlink() or link.is_file():
-                link.unlink()
-            elif link.is_dir():
-                shutil.rmtree(link)
-            link.symlink_to(skill_dir, target_is_directory=True)
-            self._normalize_process_asset_mount()
-            ref = self._skill_folder_ref(skill_dir)
-            self._record_embedded_ref(ref)
-            await self.save()
-            return ApiSuccessResponse(
-                data={"ok": True, "name": skill_dir.name, "link": str(link), "ref": str(ref) if ref else None}
-            )
-        except Exception as exc:
-            logger.exception("load_embedded_skill failed for %s", asset_ref)
-            return ApiFailResponse(message=str(exc))
-
-    def _embedded_skill_path(self, ref: "TypeId", assets_dir: "Path") -> "Path | None":
-        """Where this process's copy/link of skill ``ref`` lives, or None.
-
-        ``get_skill`` answers only for a skill that has a shadow record, which a
-        folder handed straight to ``load_embedded_skill_action`` need not have.
-        So fall back to scanning the vendor's skills root and matching entries
-        by resolved id — the same identity gate that minted the ref.
-        """
-        from flow_sdk.fs_store.operations.skill import get_skill  # noqa: PLC0415
-
-        root = self._skills_root(assets_dir)
-        rec = get_skill(ref.id)
-        if rec is not None and rec.name:
-            candidate = root / rec.name
-            if candidate.is_symlink() or candidate.exists():
-                return candidate
-        try:
-            entries = sorted(root.iterdir())
-        except OSError:
-            return None
-        for entry in entries:
-            if self._skill_folder_ref(entry) == ref:
-                return entry
-        return None
-
-    def _record_embedded_ref(self, ref: "TypeId | None") -> None:
-        """Record ``ref`` in ``embedded_asset_refs``, idempotently.
-
-        The bookkeeping half of embedding, shared by all three placement paths
-        (sub-agent, skill symlink, entity copy). It is what makes the process
-        say "I have assets" on the NEXT request's fresh entity — the predicate
-        both ``resolved_add_dirs`` and ``_prepare_system_instruction_assets``
-        read to decide whether to mount the assets dir. A placement path that
-        skips it lays real files down that no worker can see.
-
-        Callers still ``save()`` themselves: they have other fields to flush in
-        the same write.
-        """
-        if ref is None:
-            return
-        refs = list(self.embedded_asset_refs or [])
-        if not any(r.type == ref.type and r.id == ref.id for r in refs):
-            self.embedded_asset_refs = refs + [ref]
-
-    @staticmethod
-    def _skill_folder_ref(skill_dir: "Path") -> "TypeId | None":
-        """The ``skill-<id>`` TypeId for a skill folder on disk, or None.
-
-        Through ``skill_id`` — the read-only peek seam ``disk_asset_descriptors``
-        already builds this exact string with. It ADOPTS the folder's ``.flow/id``
-        capsule or frontmatter id rather than minting one, so pointing a process
-        at someone's skill folder never writes to it, and two loads of the same
-        folder converge (a fresh id per call would grow the ref list and never
-        match ``detach``).
-
-        Best-effort by contract: a folder that yields no id must not fail the
-        load, it just doesn't get a ref.
-        """
-        try:
-            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-            from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
-                parse_skill_yaml_from_dir,
-                skill_id,
-            )
-
-            ref = FSRef(skill_dir)
-            resolved = skill_id(ref, parse_skill_yaml_from_dir(skill_dir))
-            return TypeId(f"skill-{resolved}") if resolved else None
-        except Exception:
-            logger.debug("could not resolve a skill ref for %s", skill_dir, exc_info=True)
-            return None
-
-    @staticmethod
-    def _skill_source_folder(skill: "Any") -> str | None:
-        """Resolve a skill's source folder from a path, FSRef, or entity/record."""
-        if isinstance(skill, str):
-            return skill or None
-        asset_ref = getattr(skill, "asset_ref", None)
-        if isinstance(asset_ref, str):
-            return asset_ref or None
-        inner = getattr(asset_ref, "_path", None) or getattr(asset_ref, "path", None)
-        return str(inner) if inner else (str(skill.record_dir) if getattr(skill, "record_dir", None) else None)
 
     async def load_skill(self, skill: "Any") -> "ApiSuccessResponse | ApiFailResponse":
-        """Load a skill so this process's worker discovers it — worker-aware.
-
-        ``skill`` may be a ``Skill`` entity (``Skill.from_fs_ref(folder)``), an
-        FSRecord, or the skill folder path. Resolves it to its source folder and
-        materializes it into the right location for the process's worker (see
-        ``_skills_root``). The Python counterpart of TS ``loadEmbeddedSkill``.
-        """
-        source = self._skill_source_folder(skill)
-        if not source:
-            return ApiFailResponse(message="Could not resolve skill source folder")
-        return await self.load_embedded_skill_action(asset_ref=source)
+        return await self.asset_workspace.load_skill(skill=skill)
 
     def load_embedded_subagent(self, agent: "Any") -> None:
-        """Embed a sub-agent into this process so it is registered via --agents at launch.
-
-        Accepts a SubAgent record, any object with to_agents_json(), or a name string.
-        Adds the sub-agent's name to the persisted embedded_subagent_ids list and
-        stores the record in the in-memory _embedded_agents list.
-        """
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
-        if isinstance(agent, str):
-            rec = _load_subagent(agent) or FSRecord(type=RecordType.SUBAGENT, name=agent, id=agent)
-        else:
-            # duck-type: Record or anything with name/id
-            rec = agent
-        _agents.append(rec)
-        name = rec.name if hasattr(rec, "name") else str(agent)
-        if name and name not in (self.embedded_subagent_ids or []):
-            self.embedded_subagent_ids = list(self.embedded_subagent_ids or []) + [name]
+        return self.asset_workspace.load_embedded_subagent(agent=agent)
 
     def get_agents_json(self) -> "dict | None":
-        """Return merged --agents JSON from all embedded sub-agents, or None if none loaded.
-
-        Falls back to the persisted ``cli_config.agents_json`` for legacy
-        processes created before embedded sub-agents were materialized as assets.
-        """
-        _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
-        if _agents:
-            from flow_sdk.fs_store.operations.subagent import subagent_to_cli_json  # noqa: PLC0415
-
-            result: dict = {}
-            for rec in _agents:
-                if hasattr(rec, "to_agents_cli_json"):
-                    result.update(rec.to_agents_cli_json())
-                else:
-                    result.update(subagent_to_cli_json(rec))
-            if result:
-                return result
-        persisted = (self.cli_config or {}).get("agents_json") or None
-        return persisted or None
+        return self.asset_workspace.get_agents_json()
 
     # ── Embedded assets ────────────────────────────────────────────────────────
     # Unified attach/detach for agents, skills, and any future file-backed entity.
@@ -5644,8 +4937,12 @@ class AgenticProcess(Entity):
     # Claude discovers them via `--add-dir <record_dir>/assets`.
 
     @property
+    def asset_workspace(self) -> ProcessAssets:
+        return ProcessAssets(self)
+
+    @property
     def embedded_assets(self) -> AssetDir | None:
-        return object.__getattribute__(self, "__dict__").get("_embedded_assets")
+        return self.asset_workspace.embedded_assets
 
     @property
     def process_assets(self) -> AssetDir | None:
@@ -5656,21 +4953,8 @@ class AgenticProcess(Entity):
         return self.ensure_process_assets()
 
     def ensure_process_assets(self) -> AssetDir:
-        asset_dir = self.process_assets
-        if asset_dir is None:
-            asset_dir = AssetDir(self._record_dir() / "execution" / "assets")
-            object.__getattribute__(self, "__dict__")["_embedded_assets"] = asset_dir
-        asset_dir.os_path.mkdir(parents=True, exist_ok=True)
-        return asset_dir
+        return self.asset_workspace.ensure_process_assets()
 
-    def _process_assets_path(self) -> Path:
-        return self._record_dir() / "execution" / "assets"
-
-    def _is_process_assets_path(self, path: str | Path) -> bool:
-        try:
-            return Path(path).expanduser().resolve(strict=False) == self._process_assets_path().resolve(strict=False)
-        except (OSError, RuntimeError, TypeError, ValueError):
-            return False
 
     @property
     def instructions(self) -> str | None:
@@ -5686,249 +4970,13 @@ class AgenticProcess(Entity):
             context["instructions"] = value
         self.context_data = context
 
-    async def _assets_dir_path(self) -> "Path":
-        """The filesystem directory where embedded assets are materialized.
-
-        ``<records_root>/agentic_process/agentic_process-@<id>/execution/assets``
-        """
-        return self.ensure_embedded_assets().os_path
-
-    def _normalize_process_asset_mount(self) -> None:
-        """Migrate the former internal mount out of the user-owned field."""
-        self.additional_dirs = [d for d in (self.additional_dirs or []) if not self._is_process_assets_path(d)]
-
-    def _skills_root(self, assets_dir: "Path") -> "Path":
-        """Directory a skill folder is laid into so THIS process's worker finds it.
-
-        The vendor difference (Claude/Copilot read a mounted ``.claude/skills``;
-        Codex reads ``$CODEX_HOME/skills``) lives behind ``WorkerDriver.skills_root``
-        — the orchestrator never branches on the worker.
-        """
-        return self.driver.skills_root(self, assets_dir)
-
-    @staticmethod
-    def _render_persona_section(name: str | None, entry: dict | None) -> list[str]:
-        """The persona's own block -- the identity directive and its spec.
-
-        Empty when the process has no persona, which is what keeps the identity
-        from being handed to whichever agent happens to be there.
-        """
-        if not name:
-            return []
-        entry = entry or {}
-        desc = entry.get("description") or ""
-        body = entry.get("prompt") or ""
-        out = [
-            f"# You are the '{name}' agent",
-            (
-                "The user is chatting with you (this agent) directly. "
-                "Adopt the persona and follow the instructions below for "
-                "every reply, even when the user does not name the agent. "
-                "Execute side-effect instructions literally (file writes, "
-                "command outputs); do not paraphrase or summarise away "
-                "required artifacts."
-            ),
-        ]
-        if desc:
-            out.append(f"\n## Description\n{desc}")
-        if body:
-            out.append(f"\n## Instructions\n{body}")
-        return out
-
-    @staticmethod
-    def _render_subagent_sections(agents: "list[tuple[str, dict]]", persona: str | None) -> list[str]:
-        """The non-persona agents, one ## block each. Empty when there are none.
-
-        The heading turns on whether a persona holds the identity: beneath one
-        they are subordinate sub-agents, without one they are a flat catalogue.
-        """
-        if not agents:
-            return []
-        if persona:
-            out = [
-                "\n# Sub-agents available to you",
-                (
-                    "The ## blocks below are ADDITIONAL specialised agents you may draw "
-                    f"on. They do NOT replace your persona -- you remain the '{persona}' "
-                    "agent for every reply. When a request falls squarely in one of "
-                    "their areas, execute that agent's instructions yourself in this "
-                    "same turn rather than delegating to a separate sub-agent; "
-                    "otherwise ignore them. Never introduce yourself as one of these "
-                    "agents, and never decline a request on the grounds that it falls "
-                    "outside one of their scopes."
-                ),
-            ]
-        else:
-            out = [
-                "# Embedded agent specs",
-                (
-                    "Each ## block below is the canonical instruction body for a "
-                    "named agent. When the user instruction names one of these "
-                    "agents, do not delegate to a separate sub-agent. Execute the "
-                    "agent instructions yourself in this same turn and follow "
-                    "side-effect instructions literally."
-                ),
-            ]
-        for name, entry in agents:
-            entry = entry or {}
-            desc = entry.get("description") or ""
-            body = entry.get("prompt") or ""
-            out.append(f"\n## {name}")
-            if desc:
-                out.append(desc)
-            if body:
-                out.append(body)
-        return out
-
-    @staticmethod
-    def _render_agents_instruction_block(agents_json: dict | None, persona_path: str | None = None) -> str:
-        """Render the embedded sub-agents into the system-instruction text.
-
-        ``persona_path`` (the process's ``process_persona_path``) names the agent
-        that IS this process's identity: it carries the "you are this agent"
-        directive and the others render beneath it. When it is None or names an
-        agent that is not embedded, nothing is promoted -- the block stays a flat
-        catalogue and the worker keeps its own identity. Declared, never inferred.
-        """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return ""
-
-        # The stem IS the frontmatter name: `load_embedded_subagent_action`
-        # writes `<name>.md` from the same `name` that keys `agents_json`.
-        persona = Path(persona_path).stem if persona_path else None
-        if persona not in agents_json:
-            if persona is not None:
-                # Declared but not embedded: the materialized file is gone or no
-                # longer parses. Should never happen; the session silently loses
-                # its identity when it does, so say so rather than infer one.
-                logger.warning(
-                    "persona %r declared (%s) but not among the embedded agents %s; rendering without a persona",
-                    persona, persona_path, sorted(agents_json),
-                )
-            persona = None
-
-        rest = [(n, e) for n, e in agents_json.items() if n != persona]
-        sections = AgenticProcess._render_persona_section(persona, agents_json.get(persona))
-        sections += AgenticProcess._render_subagent_sections(rest, persona)
-        return "\n".join(sections)
-
-    def _load_materialized_agents_json(self, assets_dir: "Path") -> dict:
-        agents: dict = {}
-        agents_dir = assets_dir / ".claude" / "agents"
-        if not agents_dir.is_dir():
-            return agents
-        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
-            extract_subagent_from_path,
-            subagent_to_cli_json,
-        )
-
-        # Emit sub-agents in EMBED order, not filename order -- READING ORDER
-        # ONLY. Each sub-agent is materialized by a sequential `load_asset`
-        # write, so file mtime tracks embed order, and insertion order into
-        # `agents` is the order the ## blocks come out in
-        # (_render_agents_instruction_block). So the kind==vibe layers read in
-        # the created-date order the frontend embedded them, which is the order
-        # a reader expects. (name is the tiebreaker for same-tick writes.)
-        #
-        # It carries NO identity: which agent is the persona is declared in
-        # `process_persona_path` and promoted out of this dict regardless of
-        # where it sorts. That is deliberate -- position used to decide the
-        # persona, which made a concurrent write or an alphabetical tiebreak a
-        # correctness hazard. Reordering this is now a cosmetic change.
-        def _sort_key(p: "Path") -> tuple:
-            try:
-                return (p.stat().st_mtime_ns, p.name)
-            except OSError:
-                return (0, p.name)
-
-        for md in sorted(agents_dir.glob("*.md"), key=_sort_key):
-            try:
-                rec = extract_subagent_from_path(md)
-                if rec is None:
-                    continue
-                agents.update(subagent_to_cli_json(rec))
-            except Exception:
-                logger.debug("failed to parse embedded sub-agent %s", md, exc_info=True)
-        return agents
-
-    async def _prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
-        """Materialize process instructions into the process asset directory."""
-        explicit = await self.resolve_system_instructions()
-        legacy_agents = self.get_agents_json() or {}
-        # Embedded assets must be detected from PERSISTED state, not just the
-        # in-memory AssetDir handle: load-embedded-subagent runs on one entity
-        # instance and save() invalidates the cache, so the prompt/launch
-        # request gets a fresh instance whose _embedded_assets is None. Without
-        # this, a materialized persona (e.g. vibe) silently never reaches the
-        # worker's system instructions.
-        has_existing_assets = self.embedded_assets is not None or bool(self.embedded_asset_refs)
-        if not explicit and not legacy_agents and not has_existing_assets:
-            return None
-
-        asset_dir = self.ensure_embedded_assets()
-        agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)}
-        agent_block = self._render_agents_instruction_block(agents, self.process_persona_path)
-        instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
-
-        self._normalize_process_asset_mount()
-
-        # No text is NOT "no assets" — see ``SystemInstructionAssets``.
-        claude_file = None
-        if instructions:
-            claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
-            # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
-            # them via --add-dir), but their paths aren't consumed — write without capturing.
-            asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
-            asset_dir.load_asset(".agents", content=instructions + "\n")
-            copilot_body = (
-                f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
-            )
-            asset_dir.load_asset(
-                ".github/instructions/flowpad.instructions.md",
-                content=copilot_body,
-            )
-        return SystemInstructionAssets(
-            assets_dir=asset_dir.os_path,
-            instructions=instructions,
-            claude_file=claude_file,
-            process_id=self.id,
-        )
 
     async def prepare_process_assets(self) -> PreparedProcessAssets:
-        """Prepare every derived asset contribution once for a launch.
-
-        Hook projection is a driver concern. Drivers predating this contract
-        are harmless while no process hook is configured.
-        """
-        instructions = await self._prepare_system_instruction_assets()
-        hook_runtime = ProcessHookRuntime()
-        supports_hooks = bool(getattr(self.driver, "supports_process_hooks", False))
-        if self.process_hook_events or supports_hooks:
-            prepare = getattr(self.driver, "prepare_process_hooks", None)
-            if prepare is None:
-                raise ValueError("process hooks are unsupported by this worker")
-            # The driver decides whether its projection needs files. Passing a
-            # lazy handle keeps inline-only integrations (Codex) write-free.
-            assets = AssetDir(self._process_assets_path())
-            hook_runtime = prepare(
-                assets,
-                str(self.id),
-                tuple(self.process_hook_events),
-            )
-        mcp_runtime = ProcessMcpRuntime()
-        prepare_mcp = getattr(self.driver, "prepare_process_mcp", None)
-        if prepare_mcp is not None:
-            mcp_runtime = prepare_mcp(self.resolved_mcp_servers())
-        return PreparedProcessAssets(
-            instruction_assets=instructions,
-            hook_runtime=hook_runtime,
-            mcp_runtime=mcp_runtime,
-        )
+        return await self.asset_workspace.prepare_process_assets()
 
     async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
         """Compatibility instruction-only preparation entry point."""
-        return await self._prepare_system_instruction_assets()
+        return await self.asset_workspace._prepare_system_instruction_assets()
 
     @cached_property
     def hooks(self) -> "ProcessHooksManager":
@@ -5955,7 +5003,7 @@ class AgenticProcess(Entity):
             dedupe_by_name,
         )
 
-        return tuple(dedupe_by_name(self.mcp_servers or []))
+        return tuple(dedupe_by_name([*(self.mcp_servers or []), *self.asset_workspace.embedded_mcp_specs()]))
 
     def _require_mcp_support(self) -> None:
         driver = self.driver
@@ -6133,133 +5181,14 @@ class AgenticProcess(Entity):
             "mcp_config_fragment": dict(prepared.mcp_runtime.config_fragment),
         }
 
-    async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
-        """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
-
-        Returns the entity's display name on success, ``None`` if the entity
-        type is unsupported for embedding. Raises for resolution / IO failures.
-        """
-        from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
-        from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
-
-        if ref.type == "mcp":
-            # Unlike a skill or sub-agent, materializing an MCP is NOT how the
-            # worker finds it — MCP reaches the worker through argv/config
-            # rendering (``prepare_process_mcp``). The copy exists so the asset
-            # row has a file to reveal and edit, and so an attached server is
-            # editable without touching the shared original.
-            from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
-
-            row = await Mcp.get_by_id(ref.id)
-            if row is None:
-                raise FileNotFoundError(f"MCP not found: {ref.id}")
-            spec = row.to_spec()
-            AssetDir(assets_dir).load_asset(
-                Path("mcp") / spec.name / MCP_MAIN_FILE,
-                content=spec.model_dump_json(indent=2) + "\n",
-            )
-            return spec.name
-
-        if ref.type == "subagent":
-            # Resolve by id (uuid5-derived from the .md path) first, then fall back
-            # to name-based lookup for agents the UI knows by name only.
-            agent = get_subagent(ref.id) or _load_subagent(ref.id)
-            if agent is None:
-                raise FileNotFoundError(f"Agent not found: {ref.id}")
-            target_dir = assets_dir / ".claude" / "agents"
-            target_dir.mkdir(parents=True, exist_ok=True)
-            src = agent.asset_ref._path if agent.asset_ref else None
-            if src is None or not src.exists():
-                raise FileNotFoundError(f"Agent source missing: {ref.id}")
-            AssetDir(assets_dir).load_asset(
-                Path(".claude") / "agents" / f"{agent.name or ref.id}.md",
-                source=src,
-            )
-            return agent.name or ref.id
-
-        if ref.type == "skill":
-            skill = get_skill(ref.id)
-            if skill is None:
-                raise FileNotFoundError(f"Skill not found: {ref.id}")
-            target_root = self._skills_root(assets_dir)
-            copy_skill_to(skill, target_root)
-            return skill.name or ref.id
-
-        return None  # Unsupported type — caller decides to fail loudly.
-
-    async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
-        """Best-effort removal of the files laid down by _materialize_entity."""
-        import shutil
-
-        from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
-
-        if ref.type == "subagent":
-            agent = get_subagent(ref.id) or _load_subagent(ref.id)
-            name = agent.name if agent else ref.id
-            target = assets_dir / ".claude" / "agents" / f"{name}.md"
-            if target.exists():
-                target.unlink()
-        elif ref.type == "skill":
-            target = self._embedded_skill_path(ref, assets_dir)
-            # ``load_embedded_skill_action`` SYMLINKS the source folder while
-            # ``_materialize_entity`` COPIES it. rmtree raises on a symlink, so
-            # check the link before the directory — and never recurse into the
-            # user's real skill folder.
-            if target is None:
-                return
-            if target.is_symlink():
-                target.unlink()
-            elif target.exists():
-                shutil.rmtree(target)
 
     @action.post(action_name="attach-embedded-asset")
     async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Materialize ``entity_ref`` under the process's assets dir + add to --add-dir.
-
-        Wire param is the serialized TypeId string (``agent-<id>`` / ``skill-<id>``);
-        it's parsed into a ``TypeId`` at this boundary.
-        """
-        if not entity_ref:
-            return ApiFailResponse(message="entity_ref is required")
-        try:
-            ref = TypeId(entity_ref)
-            assets_dir = await self._assets_dir_path()
-            name = await self._materialize_entity(ref, assets_dir)
-            if name is None:
-                return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
-            self._normalize_process_asset_mount()
-            self._record_embedded_ref(ref)
-            await self.save()
-            return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
-        except Exception as exc:
-            logger.exception("attach_embedded_asset failed for %s", entity_ref)
-            return ApiFailResponse(message=str(exc))
+        return await self.asset_workspace.attach_embedded_asset(entity_ref=entity_ref)
 
     @action.post(action_name="detach-embedded-asset")
     async def detach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Remove materialized files + drop the ref from embedded_asset_refs."""
-        if not entity_ref:
-            return ApiFailResponse(message="entity_ref is required")
-        try:
-            ref = TypeId(entity_ref)
-            assets_dir = await self._assets_dir_path()
-            await self._unmaterialize_entity(ref, assets_dir)
-            refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
-            self.embedded_asset_refs = refs
-            if ref.type == "subagent" and self.embedded_subagent_ids:
-                # Legacy processes may still carry the agent by NAME — drop it
-                # too, or the persona file is gone while an INLINE row lingers.
-                from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-
-                agent = get_subagent(ref.id)
-                self._drop_legacy_agent_name(agent.name if agent else None)
-            await self.save()
-            return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
-        except Exception as exc:
-            logger.exception("detach_embedded_asset failed for %s", entity_ref)
-            return ApiFailResponse(message=str(exc))
+        return await self.asset_workspace.detach_embedded_asset(entity_ref=entity_ref)
 
     @action.get(action_name="list-embedded-assets")
     async def list_embedded_assets(self) -> "ApiSuccessResponse":
@@ -6269,487 +5198,36 @@ class AgenticProcess(Entity):
 
     # ── Asset descriptors (read-only unified view) ────────────────────────────
 
-    @staticmethod
-    def _transcript_file_reads(transcript) -> list[tuple[object, str]]:
-        """``(entry, canonical_path)`` for each file read in ``transcript``."""
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.transcript_analyzer.entry import EntryKind
+    async def get_asset_folders(self, *, sources=None) -> list[AssetFolder]:
+        from flow_sdk.assets.catalog import folders_for_sources
+        from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
 
-        if transcript is None:
-            return []
-        reads: list[tuple[object, str]] = []
-        for entry in transcript.filter(kind=EntryKind.FILE_READ):
-            if not getattr(entry, "path", None):
-                continue
-            try:
-                reads.append((entry, canonical_posix_path(entry.path)))
-            except Exception:
-                continue
-        return reads
+        sources = sources if sources is not None else await process_asset_sources(self)
+        return folders_for_sources(sources, str(self.project_id) if self.project_id else None)
 
-    @staticmethod
-    def _transcript_skill_calls(transcript) -> list:
-        """Native ``Skill``-tool invocations (Claude ``/rca``) in ``transcript``.
+    async def get_embedded_assets(self) -> list[Asset]:
+        return await self.asset_workspace.get_embedded_assets()
 
-        These carry a ``skill_name`` but produce no ``SKILL.md`` file read, so
-        they are the only signal that a skill run via the Skill tool was used.
-        """
-        from flow_sdk.transcript_analyzer.entry import EntryKind
+    async def get_used_assets(self, *, transcript=None, bindings=None) -> list[AssetUsage]:
+        from flow_sdk.assets.usage import InvocationBinding, resolve_usage, usage_project_context
 
-        if transcript is None:
-            return []
-        return [e for e in transcript.filter(kind=EntryKind.SKILL_CALL) if (getattr(e, "skill_name", "") or "").strip()]
+        transcript = transcript if transcript is not None else self._load_transcript()
+        if bindings is None:
+            # Only a binding captured with this run can attribute a name-only call.
+            bindings = [InvocationBinding.model_validate(value)
+                        for value in (self.context_data or {}).get("asset_invocation_bindings", [])]
+        entries = transcript.entries if transcript is not None else []
+        return usage_project_context(resolve_usage(entries, workdir=self.workdir, bindings=bindings), await self.get_asset_folders())
 
-    @staticmethod
-    def _usage_from_file_read(entry: object, read_path: str) -> AssetUsage:
-        return AssetUsage(
-            kind=AssetUsageKind.TRANSCRIPT_FILE_READ,
-            path=read_path,
-            entry_id=getattr(entry, "entry_id", None) or getattr(entry, "id", None),
-            timestamp=getattr(entry, "timestamp", None),
-            label="Read in transcript",
-        )
+    async def get_asset_descriptors(self, *, usages=None) -> list[AssetDescriptor]:
+        from flow_sdk.assets.catalog import EXECUTABLE_ASSET_TYPES, descriptor_from_asset, descriptors_from_folders
+        from flow_sdk.assets.usage import apply_usage
+        from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
 
-    @staticmethod
-    def _source_match_for_asset(
-        asset_path: str,
-        ranked_sources: list[tuple[str, AssetSource]],
-        entity: object,
-        own_project_id: str,
-    ) -> tuple[str, AssetSource] | None:
-        match = next(
-            (
-                (path, source)
-                for path, source in ranked_sources
-                if asset_path == path or asset_path.startswith(path + "/")
-            ),
-            None,
-        )
-        if match is None:
-            return None
-
-        src_dir, src = match
-        # USER_DIR is the real $HOME, so its prefix swallows every indexed asset
-        # on the machine, including other project checkouts under ~/. Keep the
-        # normal path-scan and transcript-only attribution rules aligned: a
-        # project-scoped entity from another project should not be mislabeled as
-        # a user asset just because it lives under the home catchall.
-        entity_scope = getattr(entity, "scope", None)
-        # System-scoped assets (the bundled flowpad_assistant skills/agents) are
-        # pip-installed under $HOME (~/.local/share/.../flowpad_assistant/.claude),
-        # so the USER_DIR prefix would otherwise claim them as personal user
-        # assets. They belong to the mounted assistant, never the user — attribute
-        # them to SYSTEM instead.
-        #
-        # Deliberately USER_DIR-only, and deliberately NOT hoisted above the
-        # prefix match: the assistant is itself a Project whose mount is the
-        # assistant root, so a deeper source dir (PROJECT_DIR for the assistant
-        # project, or an editable install nested in a project tree) legitimately
-        # wins the longest-prefix match and must keep winning. Claiming those for
-        # SYSTEM would empty the assistant project's own asset list.
-        #
-        # ``scope`` is a persisted column and ``_stamp_scope`` never clobbers an
-        # explicit value, so trust it only when the path agrees — otherwise the
-        # returned source_dir would not be a prefix of posix_path, breaking the
-        # invariant every other descriptor upholds. A disagreement falls back to
-        # the previous behaviour: no match at all.
-        if src == AssetSource.USER_DIR and entity_scope == "system":
-            from flow_sdk.config import flowpad_assistant_canonical_root  # noqa: PLC0415
-
-            sys_root = flowpad_assistant_canonical_root()
-            if sys_root and (asset_path == sys_root or asset_path.startswith(sys_root + "/")):
-                return sys_root, AssetSource.SYSTEM
-            return None
-        if (
-            src == AssetSource.USER_DIR
-            and entity_scope == "project"
-            and str(getattr(entity, "project_id", None) or "") != own_project_id
-        ):
-            return None
-        return src_dir, src
-
-    def _annotate_asset_usage(
-        self,
-        descriptors: list[AssetDescriptor],
-        reads: list[tuple[object, str]],
-    ) -> None:
-        """Attach transcript-file-read usage to descriptors in-place.
-
-        EMBEDDED/INLINE process-active usage is added at descriptor creation.
-        Transcript usage is derived here so the frontend consumes one unified
-        ``usage`` surface and does not need to fetch or parse transcripts.
-        """
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-        if not reads:
-            return
-
-        for descriptor in descriptors:
-            if not descriptor.posix_path:
-                continue
-            try:
-                asset_path = canonical_posix_path(descriptor.posix_path)
-            except Exception:
-                continue
-            type_name = descriptor.typeid.split("-", 1)[0]
-            type_info = SchemaRegistry.get(type_name)
-            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
-            for entry, read_path in reads:
-                if read_path != asset_path and not (
-                    folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
-                ):
-                    continue
-                descriptor.usage.append(self._usage_from_file_read(entry, read_path))
-
-    @staticmethod
-    def _annotate_skill_invocations(
-        descriptors: list[AssetDescriptor],
-        skill_calls: list,
-    ) -> None:
-        """Attach native Skill-tool invocations to skill descriptors in-place.
-
-        A skill run via the ``Skill`` tool (Claude ``/rca``) leaves a
-        ``SkillCallEntry`` but NO ``SKILL.md`` read, so ``_annotate_asset_usage``
-        (file-read only) misses it. Match the invocation's ``skill_name`` to each
-        skill descriptor's folder slug — the runtime's ``input.skill`` and the
-        folder name are the same literal — and mark it used. Descriptors that
-        share a slug (same skill under USER_DIR + PROJECT_DIR) are both marked,
-        matching the "duplicates are intentional" contract.
-        """
-        from pathlib import Path
-
-        if not skill_calls:
-            return
-        # One representative entry per slug (skill_calls already have non-empty
-        # skill_name) so a skill invoked N times yields a single usage badge.
-        first_by_slug: dict[str, object] = {}
-        for entry in skill_calls:
-            first_by_slug.setdefault((entry.skill_name or "").strip(), entry)
-
-        for descriptor in descriptors:
-            if not descriptor.posix_path or not descriptor.typeid.startswith("skill-"):
-                continue
-            slug = Path(descriptor.posix_path.rstrip("/")).name
-            entry = first_by_slug.get(slug)
-            if entry is None:
-                continue
-            descriptor.usage.append(
-                AssetUsage(
-                    kind=AssetUsageKind.SKILL_INVOKED,
-                    entry_id=getattr(entry, "entry_id", None) or getattr(entry, "id", None),
-                    timestamp=getattr(entry, "timestamp", None),
-                    label=f"Invoked via /{slug}",
-                )
-            )
-
-    async def _entity_for_transcript_read(self, read_path: str):
-        """Resolve a read path to the owning file-backed entity, if any."""
-        from pathlib import Path
-
-        from flow_sdk.core.entity.entity_model import Entity
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-        cur = Path(read_path)
-        for path in [cur, *cur.parents]:
-            try:
-                entity = await Entity.get_by_asset_ref(canonical_posix_path(path))
-            except Exception:
-                entity = None
-            if entity is None:
-                continue
-            asset_ref = getattr(entity, "asset_ref", None)
-            if not asset_ref:
-                continue
-            asset_path = canonical_posix_path(asset_ref)
-            type_info = SchemaRegistry.get(entity.type or entity.get_type())
-            folder_backed = type_info is not None and isinstance(type_info.shape, Folder)
-            read_path_posix = canonical_posix_path(read_path)
-            if read_path_posix == asset_path or (
-                folder_backed and read_path_posix.startswith(asset_path.rstrip("/") + "/")
-            ):
-                return entity
-        return None
-
-    async def _append_transcript_asset_descriptors(
-        self,
-        descriptors: list[AssetDescriptor],
-        reads: list[tuple[object, str]],
-        sources: list[tuple[str, AssetSource]],
-    ) -> None:
-        """Append read assets that were not visible through process sources."""
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        if not reads:
-            return
-
-        ranked_sources = sorted(sources, key=lambda s: -len(s[0]))
-        own_project_id = str(self.project_id or "")
-        existing_read_paths = {
-            u.path
-            for descriptor in descriptors
-            for u in descriptor.usage
-            if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ and u.path
-        }
-        descriptor_by_key = {(d.typeid, d.source): d for d in descriptors}
-
-        for entry, read_path in reads:
-            if read_path in existing_read_paths:
-                continue
-            entity = await self._entity_for_transcript_read(read_path)
-            if entity is None:
-                continue
-            asset_ref = getattr(entity, "asset_ref", None)
-            if not asset_ref:
-                continue
-            asset_path = canonical_posix_path(asset_ref)
-            match = self._source_match_for_asset(
-                asset_path,
-                ranked_sources,
-                entity,
-                own_project_id,
-            )
-            source_dir, source = match if match is not None else (None, AssetSource.EXTERNAL)
-            typeid = f"{entity.type or entity.get_type()}-{entity.id}"
-            key = (typeid, source)
-            if key in descriptor_by_key:
-                descriptor_by_key[key].usage.append(self._usage_from_file_read(entry, read_path))
-                existing_read_paths.add(read_path)
-                continue
-            descriptor = AssetDescriptor(
-                typeid=typeid,
-                source=source,
-                posix_path=asset_path,
-                source_dir=source_dir,
-                usage=[self._usage_from_file_read(entry, read_path)],
-                remote=bool(getattr(entity, "remote", False)),
-            )
-            descriptors.append(descriptor)
-            descriptor_by_key[key] = descriptor
-            existing_read_paths.add(read_path)
-
-    async def get_asset_descriptors(self) -> list[AssetDescriptor]:
-        """Return a unified list of assets visible to this process.
-
-        Composed from four sources of truth:
-          1. EMBEDDED   — ``self.embedded_asset_refs`` + computed materialized path.
-          2. INLINE     — ``cli_config.agents_json`` (or ``embedded_subagent_ids``
-                           fallback). No file → ``posix_path=None``.
-          3. Path-scan  — one ``Entity.assets_by_path()`` over the union of
-                           user/project/workdir/additional_dirs, filtered to
-                           ``EXECUTABLE_ASSET_TYPES`` and attributed to the
-                           longest-prefix source.
-          4. Transcript — file-backed entities read in the transcript but not
-                           otherwise visible in the process asset sources.
-
-        Duplicates across sources are intentional — the same source skill may
-        appear as both EMBEDDED (materialized into the process) and USER_DIR
-        (still globally available).
-        """
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        descriptors: list[AssetDescriptor] = []
-        seen_embedded: set[str] = set()
-
-        assets_dir = await self._assets_dir_path()
-
-        # 1. EMBEDDED
-        for ref in self.embedded_asset_refs or []:
-            mat_path = await self._materialized_path_for(ref, assets_dir)
-            mat_path_posix = canonical_posix_path(mat_path) if mat_path else None
-            descriptors.append(
-                AssetDescriptor(
-                    typeid=str(ref),
-                    source=AssetSource.EMBEDDED,
-                    posix_path=mat_path_posix,
-                    usage=[
-                        AssetUsage(
-                            kind=AssetUsageKind.EMBEDDED_ASSET,
-                            path=mat_path_posix,
-                            label="Embedded in this process",
-                        )
-                    ],
-                )
-            )
-            seen_embedded.add(str(ref))
-
-        # 2. INLINE (don't double-count anything already EMBEDDED)
-        for tid, inline_path in self._iter_inline_agent_descriptors(assets_dir):
-            if tid in seen_embedded:
-                continue
-            descriptors.append(
-                AssetDescriptor(
-                    typeid=tid,
-                    source=AssetSource.INLINE,
-                    posix_path=inline_path,
-                    usage=[
-                        AssetUsage(
-                            kind=AssetUsageKind.INLINE_PERSONA,
-                            path=inline_path,
-                            label="Loaded as inline persona",
-                        )
-                    ],
-                )
-            )
-
-        # 3. Path-discovered
-        sources = await self._collect_source_dirs(assets_dir)
-        descriptors.extend(
-            await scan_path_asset_descriptors(
-                sources,
-                own_project_id=str(self.project_id or ""),
-                types=list(EXECUTABLE_ASSET_TYPES),
-                limit=10000,
-            )
-        )
-
-        # Parse the transcript once; derive file-read and skill-invocation usage
-        # from the same in-memory entries via the first-class ``filter`` selector.
-        transcript = self._load_transcript()
-        reads = self._transcript_file_reads(transcript)
-        skill_calls = self._transcript_skill_calls(transcript)
-        self._annotate_asset_usage(descriptors, reads)
-        self._annotate_skill_invocations(descriptors, skill_calls)
-        await self._append_transcript_asset_descriptors(descriptors, reads, sources)
-        await hydrate_asset_descriptor_remote(descriptors)
-        return descriptors
-
-    async def _collect_source_dirs(self, assets_dir: "Path") -> list[tuple[str, AssetSource]]:
-        """Return distinct (canonical_posix_path, source) pairs to scan.
-
-        Smart-scan rules:
-          - user_home is always included.
-          - project mount path is included if the process has a project_id.
-          - workdir is included only when it's outside both user_home and
-            project_dir (otherwise it would be a noisy duplicate).
-          - additional_dirs are included except the auto-appended assets dir.
-          - Final list is deduped on canonical path.
-        """
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        proj = None
-        if self.project_id:
-            try:
-                from flow_sdk.builtin.project import Project
-
-                proj = await Project.get_by_id(self.project_id)
-            except Exception:
-                proj = None
-        # USER_DIR / PROJECT_DIR / CONTEXT_DIR — shared policy with the
-        # project-level staging view (Project.get_assets_action).
-        pairs, seen = collect_base_source_dirs(proj)
-
-        # WORKDIR — only if outside the previously-added paths.
-        wd = getattr(self, "workdir", None)
-        if wd:
-            try:
-                wd_key = canonical_posix_path(wd)
-                if wd_key and wd_key not in seen and not any(wd_key == k or wd_key.startswith(k + "/") for k in seen):
-                    pairs.append((wd_key, AssetSource.WORKDIR))
-                    seen.add(wd_key)
-            except (OSError, ValueError):
-                pass
-
-        # ADDITIONAL_DIR — exclude the auto-appended assets dir.
-        try:
-            assets_key = canonical_posix_path(assets_dir)
-        except (OSError, ValueError):
-            assets_key = ""
-        for d in self.additional_dirs or []:
-            try:
-                key = canonical_posix_path(d)
-            except (OSError, ValueError):
-                continue
-            if not key or key == assets_key or key in seen:
-                continue
-            seen.add(key)
-            pairs.append((key, AssetSource.ADDITIONAL_DIR))
-
-        return pairs
-
-    async def _materialized_path_for(self, ref: TypeId, assets_dir: "Path") -> "Path | None":
-        """Compute the on-disk path of a materialized embedded asset.
-
-        Mirrors the layout written by ``_materialize_entity``:
-          - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
-          - ``skill`` → ``<skills_root>/<name>`` — the vendor's own root (see
-            ``WorkerDriver.skills_root``), NOT always ``.claude/skills``
-          - ``mcp``   → ``<assets_dir>/mcp/<name>/mcp.json`` (NOT under a harness
-            dot-dir: no harness reads MCP from disk, so this copy is for the UI
-            and for editing, not for discovery)
-
-        TODO: when ``Record.materialize_into`` (tier 1 alignment) lands, swap
-        this for ``record.materialize_into(assets_dir).path`` so the layout is
-        owned by the record subclass instead of duplicated here.
-        """
-        try:
-            if ref.type == "mcp":
-                from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
-
-                row = await Mcp.get_by_id(ref.id)
-                if row is None:
-                    return None
-                return assets_dir / "mcp" / (row.name or ref.id) / MCP_MAIN_FILE
-            if ref.type == "subagent":
-                from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-                from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
-
-                rec = get_subagent(ref.id) or _load_subagent(ref.id)
-                if rec is None:
-                    return None
-                name = rec.name or ref.id
-                return assets_dir / ".claude" / "agents" / f"{name}.md"
-            if ref.type == "skill":
-                return self._embedded_skill_path(ref, assets_dir)
-        except Exception:
-            return None
-        return None
-
-    def _iter_inline_agent_descriptors(self, assets_dir: "Path") -> list[tuple[str, str | None]]:
-        """Return ``(typeid, posix_path)`` pairs for inline-attached agents.
-
-        Primary source: keys of ``cli_config.agents_json`` (agent names injected
-        via ``--agents`` at session launch). Fallback: ``embedded_subagent_ids``
-        (legacy name list written by old ``load_embedded_subagent`` calls).
-
-        Each name is resolved to its agent ENTITY id (the same uuid the indexer
-        mints) so the UI can open the row — the materialized copy under
-        ``<assets_dir>/.claude/agents/<name>.md`` first, else
-        ``load_subagent(name)`` (project > user > system). A name that resolves
-        nowhere is an entity-less persona: it keeps the legacy
-        ``subagent-<name>`` form with no path, and renders non-openable.
-        """
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        cfg = self.cli_config or {}
-        agents_json = cfg.get("agents_json") or {}
-        if isinstance(agents_json, dict) and agents_json:
-            names = list(agents_json.keys())
-        else:
-            names = list(self.embedded_subagent_ids or [])
-
-        pairs: list[tuple[str, str | None]] = []
-        for name in names:
-            src_path: "Path | None" = None
-            materialized = assets_dir / ".claude" / "agents" / f"{name}.md"
-            if materialized.is_file():
-                src_path = materialized
-            else:
-                try:
-                    rec = _load_subagent(name, project_dir=self.workdir or None)
-                except Exception:
-                    rec = None
-                rec_ref = getattr(rec, "asset_ref", None) if rec else None
-                if rec_ref is not None and rec_ref._path.is_file():
-                    src_path = rec_ref._path
-            if src_path is None:
-                pairs.append((f"{RecordType.SUBAGENT.value}-{name}", None))
-                continue
-            pairs.append((str(self._agent_entity_ref(src_path)), canonical_posix_path(src_path)))
-        return pairs
+        sources = await process_asset_sources(self)
+        descriptors = await asyncio.to_thread(descriptors_from_folders, await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
+        descriptors.extend(descriptor_from_asset(asset, attached=True) for asset in await self.get_embedded_assets())
+        return apply_usage(descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources)
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 
@@ -6999,7 +5477,7 @@ class AgenticProcess(Entity):
         if isinstance(add_dirs, list):
             worker_snapshot = {
                 **worker_snapshot,
-                "add_dirs": [directory for directory in add_dirs if not self._is_process_assets_path(directory)],
+                "add_dirs": [directory for directory in add_dirs if not self.asset_workspace._is_process_assets_path(directory)],
             }
         return {
             "generic": self._generic_restart_snapshot_payload(driver),
@@ -7149,9 +5627,38 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="get-assets")
     async def get_assets_action(self) -> "ApiSuccessResponse":
-        """HTTP wrapper around ``get_asset_descriptors``."""
-        items = await self.get_asset_descriptors()
-        return ApiSuccessResponse(data={"assets": [d.to_row() for d in items]})
+        """Report worker-available assets, joined to catalog identity and usage."""
+        from flow_sdk.assets.asset_inventory import AssetInventoryError
+        from flow_sdk.assets.folder import AssetScanError
+        from flow_sdk.assets.inventory import inventory_payload, reconcile_assets
+        from flow_sdk.assets.usage import apply_usage
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_process_view
+        from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
+
+        if self.hub_route:
+            return await self._relay_json("get-assets", method="GET", refresh=False)
+        usages = await self.get_used_assets()
+        if self.pty_mode and self.restart_required and self.shell_id and not self.last_started_snapshot:
+            return ApiSuccessResponse(data=inventory_payload(apply_usage([], usages, sources=await process_asset_sources(self)), usages,
+                assistant_enabled=self.assistant_enabled,
+                error="Worker has pending restart changes; current configuration does not describe the running worker"))
+        inspection = await inventory_process_view(self)
+        sources = await process_asset_sources(inspection)
+        try:
+            items = await inspection.get_asset_descriptors(usages=usages)
+        except AssetScanError as error:
+            return ApiSuccessResponse(data=inventory_payload(apply_usage([], usages, sources=sources), usages,
+                assistant_enabled=self.assistant_enabled, error=str(error)))
+        if not inspection.workdir:
+            return ApiSuccessResponse(data=inventory_payload([d for d in items if d.usage or d.attached], usages,
+                assistant_enabled=self.assistant_enabled, error="Worker has no working directory yet"))
+        try:
+            observations = await inspection.driver.available_assets(inspection)
+            items = reconcile_assets(items, observations, sources=sources)
+        except (AssetInventoryError, AssetScanError, FileNotFoundError, ValueError, LookupError) as error:
+            return ApiSuccessResponse(data=inventory_payload([d for d in items if d.usage or d.attached], usages,
+                assistant_enabled=self.assistant_enabled, error=str(error)))
+        return ApiSuccessResponse(data=inventory_payload(items, usages, assistant_enabled=self.assistant_enabled))
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
@@ -7600,7 +6107,7 @@ class AgenticProcess(Entity):
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         data["additional_dirs"] = [
-            path for path in (data.get("additional_dirs") or []) if not self._is_process_assets_path(path)
+            path for path in (data.get("additional_dirs") or []) if not self.asset_workspace._is_process_assets_path(path)
         ]
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
         # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
@@ -7919,10 +6426,10 @@ class AgenticProcess(Entity):
         await a project fetch). Launch paths call ``get_project`` first, so the
         cache is fresh as of launch.
         """
-        additional = [d for d in (self.additional_dirs or []) if not self._is_process_assets_path(d)]
+        additional = [d for d in (self.additional_dirs or []) if not self.asset_workspace._is_process_assets_path(d)]
         context = [d for d in (self.__dict__.get("_project_context_dirs") or []) if d not in additional]
         dirs = additional + context
-        assets_path = self._process_assets_path()
+        assets_path = self.asset_workspace._process_assets_path()
         hook_assets_active = bool(self.process_hook_events and getattr(self.driver, "process_hooks_use_assets", False))
         process_assets_active = bool(
             hook_assets_active

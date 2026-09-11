@@ -52,7 +52,7 @@ async def project_for_entity(entity: Entity, project_id: str | None):
     """The project whose manifest this asset publishes into: the caller's
     choice, else the ONE definition of "which project owns this asset" the
     git-publish path gates on (``owning_project``)."""
-    from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     if project_id:
@@ -221,13 +221,12 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     """Copy one published asset (a manifest row, as the hub relays it) into
     ``project`` at its type's placement, index it keeping the publisher's id,
     and record it in ``deps.json``. Returns ``{installed, show, posix_path}``."""
-    import shutil  # noqa: PLC0415
-
+    from flow_sdk.assets.asset import Asset  # noqa: PLC0415
     from flow_sdk.assets.project_manifest import make_dependency, record_dependency, rel_path_for  # noqa: PLC0415
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import resolve_destination  # noqa: PLC0415
-    from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import Scope  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.schema.data_spec.project_manifest_spec import PublishedAssetSpec  # noqa: PLC0415
 
     request = request if isinstance(request, dict) else {}
@@ -249,32 +248,27 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     if rel_path_for(mount, src) is not None:
         raise PublishRefused("same_project", "that asset already lives in this project")
 
-    family = resolve_destination(entry.type, "project", default_worker=await _default_worker(), project_mount=mount)
+    from flow_sdk.builtin.asset_installation import index_installed_asset
+    from flow_sdk.fs_store.placement import resolve_default_harness, resolve_destination
+
+    asset = Asset.from_path(src)
+    if asset.typeid != TypeId(entry.typeid):
+        raise PublishRefused("identity_mismatch", "the published files do not carry the requested asset identity")
+    info = SchemaRegistry.get(asset.typeid.type)
+    family = resolve_destination(asset.typeid.type, Scope.PROJECT,
+                                 default_worker=await resolve_default_harness(), project_mount=mount)
     if family is None:
-        raise PublishRefused("not_publishable", f"a {entry.type} has no project placement")
-    dest = family / src.name
-    if dest.exists() and not overwrite:
-        raise PublishRefused("exists", f"{dest.name} is already in this project — install with overwrite to replace it")
-
-    def _copy() -> None:
-        family.mkdir(parents=True, exist_ok=True)
-        if dest.is_symlink() or dest.is_file():
-            dest.unlink()   # never rmtree through a link
-        elif dest.is_dir():
-            shutil.rmtree(dest)
-        if src.is_dir():
-            shutil.copytree(src, dest, symlinks=False)   # the .flow/capsules sidecar travels with it
-        else:
-            shutil.copy2(src, dest)
-
-    await asyncio.to_thread(_copy)
-
-    # The copy carries the publisher's id (frontmatter / sidecar); resolving
-    # the path adopts it — "Found wins" — so the row keeps that id.
-    resolved = await resolve_asset(dest, write=False, type_name=entry.type)
-    await index_one(resolved, notify=True, scope="project", project_id=str(project.id))
+        raise PublishRefused("unsupported", "this asset cannot be installed in a project")
+    destination = family if info.singleton else family / asset.path.name
+    try:
+        import asyncio
+        installed = await asyncio.to_thread(asset.install, destination, overwrite=overwrite)
+        await index_installed_asset(asset, installed, scope=Scope.PROJECT, project_id=str(project.id))
+    except FileExistsError as exc:
+        raise PublishRefused("exists", f"{src.name} is already in this project — install with overwrite to replace it") from exc
+    dest = installed.path
     cls = SchemaRegistry.get_entity_cls(entry.type)
-    ent = await cls.get_one({"id": resolved.id}) if cls is not None else None
+    ent = await cls.get_one({"id": installed.typeid.id}) if cls is not None else None
 
     dep = make_dependency(
         entry=entry,
@@ -284,13 +278,13 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     record_dependency(mount, dep)
 
     info = SchemaRegistry.get(entry.type)
-    show = entity_target(entry.type, resolved.id, name=entry.name or None)
+    show = entity_target(entry.type, installed.typeid.id, name=entry.name or None)
     if ent is not None and info is not None and getattr(info, "setup_skill", None):
         try:
             show = await ent.setup_on_receive(project_id=str(project.id), workdir=str(dest))
         except Exception:  # noqa: BLE001 — setup is best-effort; the install stands
-            logger.warning("[project_manifest] setup_on_receive failed for %s", resolved.id, exc_info=True)
-    return {"installed": dep.model_dump(mode="json"), "show": show, "posix_path": str(dest), "id": resolved.id}
+            logger.warning("[project_manifest] setup_on_receive failed for %s", installed.typeid.id, exc_info=True)
+    return {"installed": dep.model_dump(mode="json"), "show": show, "posix_path": str(dest), "id": installed.typeid.id}
 
 
 # ── hub reflection ───────────────────────────────────────────────────────────
@@ -364,7 +358,8 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
     actor connected to GitHub. Then the share path pushes ``flow-cloud`` and
     registers the asset; then the hub snapshots the tree (either refusal is
     ``failed``)."""
-    from flow_sdk.assets.git_publish import AssetPublishError, publish_git_asset  # noqa: PLC0415
+    from flow_sdk.assets.git_publish import AssetPublishError
+    from flow_sdk.builtin.asset_publishing import publish_git_asset  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
     from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -458,12 +453,9 @@ async def rows_by_id(type_name: str, ids: list[str]) -> dict[str, Entity]:
 async def published_view(project) -> dict:
     """``GET project/{id}/published`` — the contract in
     ``flow_sdk.assets.project_manifest``'s docstring, joined with local state."""
+    from flow_sdk.assets.catalog import AssetSource, scan_path_asset_descriptors
     from flow_sdk.assets.project_manifest import MANIFEST_REL_PATH, ManifestError, read_manifest  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
-        AssetSource,
-        collect_base_source_dirs,
-        scan_path_asset_descriptors,
-    )
+    from flow_sdk.builtin.asset_context import collect_base_source_dirs
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.data_spec.project_manifest_spec import PUBLISHABLE_TYPES, split_typeid  # noqa: PLC0415
 

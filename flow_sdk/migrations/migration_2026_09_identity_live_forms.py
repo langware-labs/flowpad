@@ -200,7 +200,7 @@ _RETIRED_FORMS: dict[str, tuple[str, Any]] = {
 
 
 def _read_frontmatter(doc: Path) -> dict:
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 
     try:
         header = _extract_frontmatter(doc.read_text(encoding="utf-8"))
@@ -242,7 +242,7 @@ def _convert(info: Any, ref: Any, form: str, entity_id: str) -> None:
     from flow_sdk.capsules import CapsuleData, strip_capsule_blocks
     from flow_sdk.capsules.folder import FolderCapsule
     from flow_sdk.fs_store.identity_carrier import Frontmatter
-    from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, merge_frontmatter
+    from flow_sdk.assets.frontmatter import _atomic_write_text, merge_frontmatter
 
     carrier = info.carrier
     where = carrier.locate(info.layout_for(ref))

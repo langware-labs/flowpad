@@ -556,7 +556,7 @@ class ClaudeProjectEnvManager:
           - ``str``: treated as sub-agent name, loaded via ``load_subagent`` from operations
           - ``Path``: path to a ``.md`` file, copied directly
         """
-        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
+        from flow_sdk.builtin.subagent_loading import (  # noqa: PLC0415
             load_subagent as _load_subagent,
         )
 
@@ -572,7 +572,7 @@ class ClaudeProjectEnvManager:
             self._write_agent_md(agent)
 
     def _write_agent_md(self, agent: "AgentRecord") -> None:
-        from flow_sdk.fs_store.operations.subagent import render_subagent_markdown  # noqa: PLC0415
+        from flow_sdk.assets.types.subagent import render_subagent_markdown  # noqa: PLC0415
         name = agent.name or agent.id or "agent"
         dest = self.agents_dir / f"{name}.md"
         dest.write_text(render_subagent_markdown(agent), encoding="utf-8")
