@@ -38,8 +38,10 @@ existing bounded driver transcript descriptor when a PTY has not yet reported
 its session id. The shared `report_event/first_prompt` handler supplies an
 immediate provisional title from the existing terminal input event.
 `worker_history_changed` is published after a title or native identity changes;
-history hooks refetch on that semantic signal rather than on status traffic. Missing metadata retains the last
-usable name. Nothing writes titles back into native provider storage.
+history hooks refetch on that semantic signal rather than on status traffic.
+Chat rows with a cached process also register a backend entity watch, so its live
+name stays current in browsers without a mounted terminal. Missing metadata
+retains the last usable name. Nothing writes titles back into native provider storage.
 
 | Worker | Native title source | Provenance |
 | --- | --- | --- |
