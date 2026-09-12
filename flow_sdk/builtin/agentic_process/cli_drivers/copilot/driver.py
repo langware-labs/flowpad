@@ -336,6 +336,19 @@ class CopilotDriver:
         accepts_code_paste=False,
     )
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Keep the worker's native store aligned with backend discovery."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return {"COPILOT_HOME": str(get_instance_settings().copilot_home)}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import CopilotNamingAdapter
+
+        return CopilotNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Copilot transcript for READING (history / prompts / status).
 

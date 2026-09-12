@@ -183,8 +183,8 @@ export function ProcessToolbar({
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
   const processDisplayName = useMemo(
-    () => resolveProcessDisplayName(process, 30),
-    [process.context_data, process.name, process.instruction_content],
+    () => resolveProcessDisplayName(process),
+    [process.name],
   );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });

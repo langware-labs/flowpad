@@ -90,6 +90,19 @@ describe('api: tab rename flows into the backing entity', () => {
     expect(reloaded!.auto_rename).toBe(false); // override pins it
   }, 15000);
 
+  it('agentic_process: confirming the existing name pins it against later OSC observations', async () => {
+    const id = uuidv4();
+    const name = '123';
+    await new AgenticProcess({ id, name, auto_rename: true, worker_type: 'claude_code' }).save();
+    await renameViaTab(AgenticProcess.type, id, name);
+    const process = await AgenticProcess.getById(id);
+    await process!.observeTitle('A later terminal title');
+    await dataManager.clearCache();
+    const reloaded = await AgenticProcess.getById(id);
+    expect(reloaded!.name).toBe(name);
+    expect(reloaded!.auto_rename).toBe(false);
+  }, 15000);
+
   it('conversation (generic entity): rename mirrors name via base Entity.rename', async () => {
     const id = uuidv4();
     await new Conversation({ id, name: 'orig conversation' }).save();

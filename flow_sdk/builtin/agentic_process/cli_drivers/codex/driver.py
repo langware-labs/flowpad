@@ -325,6 +325,19 @@ class CodexDriver:
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Keep the worker's native store aligned with backend discovery."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return {"CODEX_HOME": str(get_instance_settings().codex_home)}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import CodexNamingAdapter
+
+        return CodexNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Codex transcript for READING (history / prompts / status).
 

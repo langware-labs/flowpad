@@ -72,6 +72,8 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
         !selected && !hasOpenTab && RAIL_DIM_WHEN_CLOSED,
       )}
       data-testid="chat-history-row"
+      data-process-id={entry.agentic_process_id ?? undefined}
+      data-worker-session-id={entry.worker_id}
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">

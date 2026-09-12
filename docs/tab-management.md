@@ -55,10 +55,13 @@ Collection-level: `list?project=<id>` (the exact project scope;
 projects — the global source the client store reads), `new_tab` (loader-driven
 get-or-create + global-order placement), `order` (drag-reorder commit).
 By-id: `close` (soft `visible=false` + per-`target_type` teardown via
-`teardown_for_tab`), `rename` (sets `Tab.name` THEN reflects onto the target via
-the generic `Entity.rename`; shell/AP also pin `auto_rename=false`), `set_name`
-(sets ONLY `Tab.name` — the PTY auto-title mirror; never touches the target or
-`auto_rename`, unlike `rename`). List/display mutations broadcast a
+`teardown_for_tab`), `rename` (reflects explicit user input onto the target;
+worker processes update their canonical name and linked tabs atomically), and
+`set_name` (sets an ordinary tab label; worker process tabs instead reconcile the
+canonical process name and ignore the supplied automatic label). Worker OSC
+frames use `AgenticProcess.observe-title`; provider provenance and name priority
+live in the [shared naming service](interface/session-naming.md). Ordinary shell
+and entity tabs retain their existing label/reflection behavior. List/display mutations broadcast a
 `tabs_changed` ping. Orphan cleanup: `Entity.delete` soft-closes any Tab pointing
 at a deleted target; `AgenticProcess.close` calls `hide_tabs_for_target` (the
 process row persists as `stopped`, so delete-cleanup never fires for it).

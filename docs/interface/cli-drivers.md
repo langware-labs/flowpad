@@ -10,6 +10,10 @@ lives in its own sub-package and implements one structural `WorkerDriver` Protoc
 entity holds a single resolved driver (via `get_driver(worker_type)`) and calls Protocol
 methods instead of `if worker_type == …` ladders.
 
+Session titles use each driver's read-only `naming_adapter` and native-store
+`session_store_env` traits. The [shared naming FSM](session-naming.md) owns
+priority, persistence, lifecycle subscriptions and tab projection for all workers.
+
 ```
 flow_sdk/builtin/agentic_process/cli_drivers/
     cli_worker_base_driver.py   ← the cross-vendor contract (this page's core)
