@@ -39,6 +39,7 @@ export enum OAuthEventType {
   /** Fired when an OAuth flow requires the user to enter a device code
    *  (RFC 8628). UI listens and renders a modal with `user_code` + verify URL. */
   DEVICE_FLOW_START = 'on_oauth_device_flow_start',
+  CODE_FLOW_START = 'on_oauth_code_flow_start',
 }
 
 /**
@@ -76,6 +77,14 @@ export interface OAuthDeviceFlowPayload {
   state: string;
 }
 
+export interface OAuthCodeFlowPayload {
+  provider: string;
+  state: string;
+  url: string;
+  targetEntity?: TypeId;
+  sharedEntityVarName?: string;
+}
+
 export interface OAuthProvider {
   name: string;
   display_name: string;
@@ -89,7 +98,7 @@ export interface OAuthProvider {
 /** The OAuth grants a provider's flow can use. Mirrors the backend's
  *  `OAuthFlowKind` — shown to the user because the three differ in what they
  *  ask of them and in what the resulting token can do. */
-export type OAuthFlowKind = 'code' | 'loopback' | 'device';
+export type OAuthFlowKind = 'code' | 'loopback' | 'device' | 'manual';
 
 /** What a connection test found. */
 export interface OAuthTestResult {
@@ -203,6 +212,7 @@ export class OauthFlow extends EventEmitter {
 export class OAuthService {
   private static instance: OAuthService;
   private oAuthFlows: Map<string, OauthFlow> = new Map();
+  private codeFlowStates = new Set<string>();
 
   /** Typed wrapper so every emit site produces the same payload shape. */
   private emitFlowComplete(payload: OAuthFlowCompletePayload) {
@@ -246,6 +256,8 @@ export class OAuthService {
   }
 
   public async onOAuthMessage(data: OAuthMessage) {
+    // Code-entry flows finish through their submitted action response.
+    if (this.codeFlowStates.has(data.oauth_request_id)) return;
     const oauthFlow = this.oAuthFlows.get(data.oauth_request_id);
     if (!oauthFlow) {
       // FlowpadCloud is owned by cloudManager — its WS messages don't go through this map.
@@ -443,6 +455,18 @@ export class OAuthService {
         return null;
       }
 
+      if (raw.kind === 'manual') {
+        this.codeFlowStates.add(String(raw.oauth_request_id ?? raw.state ?? ''));
+        dataManager.emit(OAuthEventType.CODE_FLOW_START, {
+          provider,
+          state: String(raw.oauth_request_id ?? raw.state ?? ''),
+          url: String(raw.url ?? ''),
+          targetEntity,
+          sharedEntityVarName,
+        } satisfies OAuthCodeFlowPayload);
+        return null;
+      }
+
       // Loopback flow (Anthropic et al.): adapt to OAuthClientRequestInfo + popup.
       const authUrl = String(raw.auth_url ?? raw.url ?? '');
       if (!authUrl) {
@@ -477,6 +501,35 @@ export class OAuthService {
       }
       throw Object.assign(new Error(oauthErrorText(error, `Could not connect to ${provider}.`)), { cause: error });
     }
+  }
+
+  public async submitAuthorizationCode(flow: OAuthCodeFlowPayload, code: string): Promise<void> {
+    const action = new ActionInfo('oauth', null, null, 'POST');
+    if (flow.targetEntity) action.targetEntity = flow.targetEntity;
+    action.subpath = [flow.provider, 'callback'];
+    action.bodyParameters = { state: flow.state, code: code.trim() };
+    await dataManager.callAction(action);
+    const result = await this.verifyAndAttach(flow.provider, flow.targetEntity, flow.sharedEntityVarName);
+    this.codeFlowStates.delete(flow.state);
+    this.emitFlowComplete({
+      provider: flow.provider,
+      oauth_request_id: flow.state,
+      targetEntity: flow.targetEntity,
+      ...result,
+    });
+    if (result.status !== OAuthStatus.SUCCESS) throw new Error('The provider could not verify the connection.');
+  }
+
+  public async cancelCodeFlow(flow: OAuthCodeFlowPayload): Promise<void> {
+    await this.cancelFlow(flow.provider, flow.state, flow.targetEntity);
+    this.codeFlowStates.delete(flow.state);
+    this.emitFlowComplete({
+      provider: flow.provider,
+      oauth_request_id: flow.state,
+      targetEntity: flow.targetEntity,
+      status: OAuthStatus.CANCELLED,
+      attachSuccess: null,
+    });
   }
 
   /**
