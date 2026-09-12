@@ -2399,6 +2399,10 @@ msgstr "Authentication"
 msgid "authored"
 msgstr "authored"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "Authorization code"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "Authorization code — you approve in the browser and come back"
@@ -2410,6 +2414,10 @@ msgstr "Authorization code with PKCE, redirected back to this machine"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "Authorization failed or was denied. Click Retry to try again."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "Authorize connection"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2971,6 +2979,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -4083,6 +4092,7 @@ msgstr "Confirm"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4159,6 +4169,7 @@ msgstr "Connecting"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -13032,6 +13043,10 @@ msgstr "Open analysis"
 msgid "Open as a tab"
 msgstr "Open as a tab"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "Open authorization page"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
@@ -13349,6 +13364,10 @@ msgstr "Open the project"
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr "Open the project and use \"Link to cloud\" to finish setting it up."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "Open the provider, approve access, then paste the authorization code shown there."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."

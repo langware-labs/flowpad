@@ -235,9 +235,9 @@ async def test_the_success_value_default_leaves_every_other_provider_alone(monke
 
 @pytest.mark.asyncio
 async def test_flowpad_connection_uses_registered_callback_in_sandbox(monkeypatch, hub_url):
-    from flow_sdk.instance_settings import runtime
-
     from functools import lru_cache
+
+    from flow_sdk.instance_settings import runtime
 
     monkeypatch.setattr(runtime, "own_sandbox_id", lru_cache(maxsize=1)(lambda: "test123"))
     result = await do.get_desktop_oauth_auth_url(FLOWPAD, "local-user")
@@ -248,3 +248,20 @@ async def test_flowpad_connection_uses_registered_callback_in_sandbox(monkeypatc
     assert query["redirect_uri"] == ["https://9007-test123.e2b.dev/auth/oauth_callback"]
     assert session.callback_server is None
     assert session.client_id == "flowpad-sandbox"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_cloud_connection_uses_provider_code_handoff(monkeypatch):
+    from functools import lru_cache
+
+    from flow_sdk.instance_settings import runtime
+
+    monkeypatch.setattr(runtime, "own_sandbox_id", lru_cache(maxsize=1)(lambda: "test123"))
+    result = await do.get_desktop_oauth_auth_url(registry.ANTHROPIC, "local-user")
+    query = parse_qs(urlparse(result.data["url"]).query)
+    session = do._desktop_oauth_sessions.pop(query["state"][0])
+    assert result.data["kind"] == "manual"
+    assert query["redirect_uri"] == ["https://platform.claude.com/oauth/code/callback"]
+    assert query["client_id"] == [client_id_for(registry.ANTHROPIC)]
+    assert session.callback_server is None
+    assert session.expires_at_monotonic is not None

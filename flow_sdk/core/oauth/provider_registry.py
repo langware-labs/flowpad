@@ -151,6 +151,8 @@ class LocalOAuthProvider:
     pkce: bool = False
     #: Optional first-party client supporting the registered sandbox callback.
     sandbox_client_id: Optional[str] = None
+    #: Provider-hosted code display for remote runtimes without loopback access.
+    manual_redirect_uri: Optional[str] = None
     #: Provider-specific authorize params that must NOT leak to other providers
     #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
     #: dataclass frozen and hashable.
@@ -211,6 +213,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         name=ANTHROPIC,
         # Its token endpoint takes JSON; see the field's note.
         token_request_json=True,
+        manual_redirect_uri="https://platform.claude.com/oauth/code/callback",
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
         icon="ClaudeCode",
