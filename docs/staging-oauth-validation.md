@@ -57,3 +57,12 @@ The popup callback driver now derives provider, request and target from its
 flow instead of accepting duplicate arguments. Bot-token adoption resolves
 its hub credential name once. Removed obsolete comments describing uncopied
 tokens. No protocol, access-policy, timeout or retry behavior changed.
+
+## Permission-denial feedback fix — 2026-09-13 (source only)
+
+The SDK auth interceptor no longer clears the signed-in user merely because an
+entity action returns 401 or 403. Explicit token rejection still expires the
+session. OAuth connection errors explain access refusal and preserve backend
+messages for other failures. Sandbox authorization policy is unchanged.
+Regression coverage checks both refusal statuses, real token rejection and
+connection-error feedback. This follow-up has not been released to staging.
