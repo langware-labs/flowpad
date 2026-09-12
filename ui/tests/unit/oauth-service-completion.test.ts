@@ -31,6 +31,20 @@ describe('OAuthService terminal completion', () => {
     (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.clear();
   });
 
+  it.each([401, 403])('explains connection access refusal (%s)', async (status) => {
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue({
+      response: { status, data: { message: 'Action is not allowed for this role' } },
+    });
+    await expect(service.connect('github')).rejects.toThrow('Connection access denied.');
+  });
+
+  it('preserves the backend explanation for other connection failures', async () => {
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue({
+      response: { status: 503, data: { message: 'The provider is temporarily unavailable' } },
+    });
+    await expect(service.connect('github')).rejects.toThrow('The provider is temporarily unavailable');
+  });
+
   it('completes an adopted grant without opening a popup', async () => {
     vi.spyOn(dataManager, 'callAction').mockResolvedValue({
       status: OAuthStatus.SUCCESS,
@@ -192,14 +206,9 @@ describe('OAuthService terminal completion', () => {
 
     await (
       service as unknown as {
-        driveHubCallback: (
-          provider: string,
-          info: { provider: string; auth_url: string; oauth_request_id: string },
-          flow: OauthFlow,
-          target?: typeof TARGET,
-        ) => Promise<void>;
+        drivePopupCallback: (flow: OauthFlow) => Promise<void>;
       }
-    ).driveHubCallback('slack', flow.oAuthRequestInfo, flow, TARGET);
+    ).drivePopupCallback(flow);
 
     expect(waitCallback).toHaveBeenCalledWith('slack', 'request-3', TARGET);
     expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);

@@ -463,12 +463,19 @@ export class OAuthService {
 
       // Both popup grants need the backend to finish the exchange/adoption.
       // A loopback callback only captures the code; wait-callback exchanges it.
-      void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
+      void this.drivePopupCallback(oauthFlow);
 
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
-      throw error;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 401 || status === 403) {
+        throw Object.assign(
+          new Error('Connection access denied. This session may not have permission to manage personal connections.'),
+          { cause: error },
+        );
+      }
+      throw Object.assign(new Error(oauthErrorText(error, `Could not connect to ${provider}.`)), { cause: error });
     }
   }
 
@@ -520,12 +527,9 @@ export class OAuthService {
    * OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it happens
    * on EVERY exit, including the one where the user walks away.
    */
-  private async driveHubCallback(
-    provider: string,
-    info: OAuthClientRequestInfo,
-    flow: OauthFlow,
-    targetEntity?: TypeId,
-  ): Promise<void> {
+  private async drivePopupCallback(flow: OauthFlow): Promise<void> {
+    const { oAuthRequestInfo: info, targetEntity } = flow;
+    const { provider } = info;
     const finish = async (status: OAuthStatus) => {
       // HTTP and WebSocket completion share one claim before verification.
       if (!this.oAuthFlows.has(info.oauth_request_id)) return;
