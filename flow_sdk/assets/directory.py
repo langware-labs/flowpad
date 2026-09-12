@@ -55,6 +55,13 @@ class AssetDir:
             raise ValueError(f"asset path escapes asset dir: {relative_path}")
         remove_path(target)
 
+    def read_asset(self, relative_path: str | Path) -> str:
+        """Read a contained support file without creating directories."""
+        target = self._relative_target(relative_path)
+        if not target.resolve().is_relative_to(self.os_path.resolve()):
+            raise ValueError(f"asset path escapes asset dir: {relative_path}")
+        return target.read_text(encoding="utf-8")
+
     def load_asset(
         self,
         relative_path: str | Path,

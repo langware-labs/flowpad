@@ -32,7 +32,7 @@ from flow_sdk.core.connections import (
     test as _test,
 )
 from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
-from flow_sdk.core.connections.types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionCancelled,
     ConnectionConnectError,

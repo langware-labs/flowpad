@@ -7,8 +7,9 @@ from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.ingest import reflect
 from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change, subscribe
 from flow_sdk.ingest.driver import SegmentCursorView, get_driver
-from flow_sdk.ingest.reflect import ReflectMode, origin_id_for
+from flow_sdk.ingest.reflect import origin_id_for
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.utils.git import git_remote_url
 
 from ._harness import DOC, FIRST_TOKEN, entity_at, searchable

@@ -27,7 +27,7 @@ async def arm_trigger(entity: Any) -> None:
     unregisters-then-registers, the FSOp arm is guarded on the watcher's task
     table, and a schedule job is replaced by id.
     """
-    from flow_sdk.builtin.trigger import TriggerType  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
     try:
         if entity.trigger_type == TriggerType.SCHEDULE:

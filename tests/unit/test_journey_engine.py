@@ -7,10 +7,10 @@ No LLM, no frontend — just the engine contract the User Journey feature rides 
 import asyncio
 import json
 
+from flow_sdk.assets.types.graph_workflow_doc import GUIDED_PRESENT_KINDS
 from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.graph_workflow_manager import GraphWorkflowManager, parse_graph_workflow_doc
-from flow_sdk.graph_workflow_manager.graph_workflow_doc import GUIDED_PRESENT_KINDS
 from tests.conftest import async_context
 
 

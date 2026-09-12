@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from flow_sdk.assets.scanning import AssetScanIssue
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.types import EntityType
 
@@ -49,9 +50,16 @@ class AssetDescriptor(DataSpec):
     attached: bool = False
     available: bool = False
     present: bool = True
+    parent_type_id: str | None = None
+    attachable: bool | None = None
 
     def to_row(self) -> dict:
         return self.model_dump(mode='json')
+
+
+class AssetCatalog(DataSpec):
+    assets: list[AssetDescriptor]
+    issues: list[AssetScanIssue] = Field(default_factory=list)
 
 
 EXECUTABLE_ASSET_TYPES = (EntityType.SKILL, EntityType.SUBAGENT, EntityType.MCP)
@@ -92,12 +100,20 @@ def source_match_for_asset(asset_path, ranked_sources):
     return None
 
 
-def descriptor_from_asset(asset, sources=(), *, attached=False):
+def descriptor_from_asset(asset, sources=(), *, attached=False, issues=None):
+    from flow_sdk.assets.serialization import read_asset_parent
+
     match = source_match_for_asset(asset.path, sources)
     root, source = match if match else (None, AssetSource.EXTERNAL)
+    try:
+        parent = read_asset_parent(asset.path, asset.info)
+    except (OSError, ValueError) as error:
+        parent = None
+        if issues is not None:
+            issues.append(AssetScanIssue(path=asset.path, message=str(error)))
     return AssetDescriptor(typeid=str(asset.typeid), source=AssetSource.EMBEDDED if attached else source,
                            posix_path=str(asset.path), source_dir=root, project_id=asset.project_id,
-                           name=asset.name, attached=attached)
+                           name=asset.name, attached=attached, parent_type_id=str(parent) if parent else None)
 
 
 def folders_for_sources(sources, project_id=None):
@@ -107,11 +123,13 @@ def folders_for_sources(sources, project_id=None):
             for path, source in sorted(sources, key=lambda pair: -len(pair[0])) if source != AssetSource.SYSTEM]
 
 
-def descriptors_from_folders(folders, sources, types):
-    from flow_sdk.assets.folder import collect_assets
-    return [descriptor_from_asset(asset, sources) for asset in collect_assets(folders) if asset.typeid.type in types]
+def catalog_from_folders(folders, sources, types):
+    from flow_sdk.assets.folder import collect_asset_scan
+    result = collect_asset_scan(folders)
+    return AssetCatalog(assets=[descriptor_from_asset(asset, sources, issues=result.issues) for asset in result.assets
+                                if asset.typeid.type in types], issues=result.issues)
 
 
 async def scan_path_asset_descriptors(sources, own_project_id, types, limit=10000, offset=0):
-    values = await asyncio.to_thread(descriptors_from_folders, folders_for_sources(sources, own_project_id), sources, types)
-    return values[offset:offset + limit] if limit else values[offset:]
+    result = await asyncio.to_thread(catalog_from_folders, folders_for_sources(sources, own_project_id), sources, types)
+    return result.model_copy(update={"assets": result.assets[offset:offset + limit] if limit else result.assets[offset:]})

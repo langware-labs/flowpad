@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
-    from flow_sdk.builtin.source_item import MessageSpec, SourceItemSpec
+    from flow_sdk.builtin.source_item import MessageSpec
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 
 class SendStatus(StrEnum):

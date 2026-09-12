@@ -20,12 +20,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.deck_template import deck_template_asset_hash, extract_deck_template
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions.deck_template import (
-    deck_template_asset_hash,
-    extract_deck_template,
-)
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry

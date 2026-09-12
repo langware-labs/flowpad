@@ -1,8 +1,8 @@
 """``TypeInfo.layout_of`` — the one path→layout classifier every mapper projects."""
 from pathlib import Path
 
+from flow_sdk.assets.layout import File, Folder
 from flow_sdk.fs_store.schema_registry import LayoutKind, TypeInfo
-from flow_sdk.schema.layout import File, Folder
 
 SKILL = TypeInfo(type_name="t_skill", shape=Folder(main="SKILL.md"))   # skill-style
 SPEC = TypeInfo(type_name="t_spec", shape=Folder(main="spec.md"))

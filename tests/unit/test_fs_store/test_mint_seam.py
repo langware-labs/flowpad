@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.identity_carrier import ForeignId, Frontmatter, Unstamped
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.identity_carrier import ForeignId, Frontmatter, Unstamped
+from flow_sdk.assets.layout import File, Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Folder
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 INFO = TypeInfo(type_name="probe", shape=File(ext=".md"), identity_carrier=Frontmatter())

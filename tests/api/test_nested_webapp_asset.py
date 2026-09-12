@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR as AA
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
 from flow_sdk.core.display_target import resolve_display_target
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR as AA
 
 pytestmark = pytest.mark.asyncio
 
@@ -55,7 +55,7 @@ async def _index(root: Path) -> dict:
         frozenset({RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP}),
     )
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP]))
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec
     from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
 
     # Scoped to THIS tree, not to the name: "demo"/"editor" are ordinary words and

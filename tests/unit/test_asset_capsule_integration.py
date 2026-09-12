@@ -6,11 +6,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.capsules import AssetCapsule, CapsuleData
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef
-from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
@@ -42,7 +42,7 @@ def test_file_creation_writes_the_id_as_the_first_frontmatter_key(tmp_path: Path
     assert "flowpad:capsule" not in text
     parsed = SchemaRegistry.get("markdown").from_disk_fn(ref, IDENTITY)[0]
     assert parsed.id == IDENTITY
-    assert "flowpad:capsule" not in parsed.body
+    assert "flowpad:capsule" not in parsed.content
 
 
 def test_creation_adopts_existing_filesystem_winner_on_record(tmp_path: Path) -> None:
@@ -94,7 +94,7 @@ def test_frontmatter_editor_preserves_the_id_and_a_legacy_capsule(tmp_path: Path
 
 
 def test_source_less_bundle_body_mints_proposed_identity(tmp_path: Path) -> None:
-    from flow_sdk.builtin.flow_message_bundle import _mint_rendered_asset_identity
+    from flow_sdk.assets.transfer import _mint_rendered_asset_identity
 
     info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     assert info is not None

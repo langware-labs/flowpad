@@ -12,7 +12,8 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import Delivered, EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from tests.utils.fake_source import scripted_provider
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval

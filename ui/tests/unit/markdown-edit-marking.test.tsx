@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { dataManager, FSRef, TypeId } from '@sdk';
+import { dataManager, FSRef, TypeId, type AssetDocument } from '@sdk';
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,8 +31,8 @@ vi.mock('@src/hooks/use-asset-revision-status', () => ({
 }));
 
 class MemoryFSRef extends FSRef {
-  override read(): Promise<string> {
-    return Promise.resolve('# Original\n');
+  override readDocument(): Promise<AssetDocument> {
+    return Promise.resolve({ body_ref: this.toJSON(), raw_text: '# Original\n', body: '# Original\n', fields: {}, body_start_line: 1, revision: 'original' });
   }
 
   override write(): Promise<void> {
@@ -45,7 +45,7 @@ function renderEditor(editEntity?: { markEdit(): void }) {
     '/document.md',
     new TypeId('markdown', MARKDOWN_ID),
     'file',
-    true,
+    false,
   );
   return render(
     <MemoryRouter initialEntries={['/dock/assets/wiki/@local/Guide?editorMode=editor']}>

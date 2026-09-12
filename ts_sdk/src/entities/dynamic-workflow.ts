@@ -40,9 +40,10 @@ export class DynamicWorkflow extends APIEntity<DynamicWorkflow> {
   static async createInProject(
     project: { typeId?: TypeId } | null,
     name: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<DynamicWorkflow> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
-    return new DynamicWorkflow({ name: name.trim() }).save(scopeIds);
+    return new DynamicWorkflow({ name: name.trim() }).save(scopeIds, destination);
   }
 
   /** FsRef for the .js script. Resolves compute node from dataContext. */

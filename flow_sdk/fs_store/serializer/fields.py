@@ -13,7 +13,7 @@ from enum import Enum
 from functools import cache
 from typing import Any, Optional, Union, get_args, get_origin
 
-from flow_sdk.schema.data_spec.markers import BodyMarker, FreeSectionMarker, marker_of
+from flow_sdk.schema.data_spec.markers import BodyMarker, FreeSectionMarker, SubAssetMarker, marker_of
 
 
 class FieldKind(str, Enum):
@@ -52,28 +52,36 @@ def type_default(cls: Any) -> str:
 
 
 def asset_info(cls: Any) -> Any:
-    """The registered ``TypeInfo`` of a class whose ``type`` field default names
-    a type WITH an ``asset_spec`` — i.e. a class that is an asset in its own
-    right — else None. A registry lookup at call time: nothing here is memoized
+    """Resolve an Entity type or the registered DataSpec class it stores.
+    Resolution alone does not classify a field as disk-only; ``asset_class``
+    requires either an Entity type or an explicit ``SubAsset`` marker. A registry lookup at call time: nothing here is memoized
     on inheritance, so a type registered later is seen the moment it is."""
     if not isinstance(cls, type):
         return None
     name = type_default(cls)
-    if not name:
-        return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — cycle-safe: lazy
 
+    if not name:
+        return next((info for value in SchemaRegistry.get_all_types()
+                     if (info := SchemaRegistry.get(value)).asset_spec is cls), None)
     info = SchemaRegistry.get(name)
     return info if info is not None and info.asset_spec is not None else None
 
 
 def asset_class(annotation: Any) -> tuple[Optional[type], bool]:
     """``(asset_cls, is_list)`` when the annotation names an asset type; else ``(None, False)``."""
+    explicit = isinstance(marker_of(annotation), SubAssetMarker)
     ann = unwrap_annotation(annotation)
-    if get_origin(ann) is list:
-        (inner,) = get_args(ann) or (None,)
-        return (inner, True) if asset_info(inner) is not None else (None, False)
-    return (ann, False) if asset_info(ann) is not None else (None, False)
+    is_list = get_origin(ann) is list
+    if is_list:
+        (ann,) = get_args(ann) or (None,)
+        explicit = explicit or isinstance(marker_of(ann), SubAssetMarker)
+        ann = unwrap_annotation(ann)
+    if (explicit or type_default(ann)) and asset_info(ann) is not None:
+        return ann, is_list
+    if explicit:
+        raise TypeError(f"SubAsset requires a registered asset spec, got {ann!r}")
+    return None, False
 
 
 _MARKER_KINDS = {BodyMarker: FieldKind.BODY, FreeSectionMarker: FieldKind.FREE_SECTION}
@@ -86,7 +94,7 @@ def field_persistence(annotation: Any) -> FieldKind:
     from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec, FileRef, FolderSpec  # noqa: PLC0415
 
     marker = marker_of(annotation)
-    if marker is not None:
+    if marker is not None and not isinstance(marker, SubAssetMarker):
         return _MARKER_KINDS[type(marker)]
     sub, is_list = asset_class(annotation)
     if sub is not None:

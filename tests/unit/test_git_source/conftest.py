@@ -19,7 +19,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.ingest.reflect import ReflectMode
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 
 
 def git(path: Path, *args: str) -> str:

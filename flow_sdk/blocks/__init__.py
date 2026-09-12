@@ -37,14 +37,9 @@ from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
-from flow_sdk.builtin.source_item import (
-    EmailMessageSpec,
-    MessageSpec,
-    SlackMessageSpec,
-    SourceItemSpec,
-    TelegramMessageSpec,
-)
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 from .delivery import Delivered

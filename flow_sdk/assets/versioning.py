@@ -1,4 +1,4 @@
-"""Auto-versioning of asset files on save (local instances).
+"""Pure filesystem version scope and document transformations.
 
 Hooked from the ``fs`` ``write`` action — the client file-write seam — so a save
 that actually changes an asset's content bumps the frontmatter ``version`` and
@@ -12,19 +12,15 @@ best-effort — a failure must never break the underlying save.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from pathlib import Path
 
 from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
-    _yaml_load,
     merge_frontmatter,
 )
 from flow_sdk.assets.scope import _folder_backed_types, folder_asset_for
-from flow_sdk.fs_store.fs_record import write_text_if_changed
-from flow_sdk.utils.git import _run_git, find_project_root, git_commit_file
 
 logger = logging.getLogger(__name__)
 
@@ -36,47 +32,32 @@ def _strip_version(text: str) -> str:
     frontmatter formatting the YAML writer normalizes) collapse to the same key."""
     if _extract_frontmatter(text) is None:
         return text
-    return merge_frontmatter(text, {}, drop_keys=("version",))
+    from flow_sdk.assets.document import read_document_bytes
+    from flow_sdk.assets.frontmatter import _render_frontmatter
+
+    document = read_document_bytes(text.encode("utf-8"))
+    if document.metadata_error:
+        return text
+    fields = {key: value for key, value in document.fields.items() if key != "version"}
+    return _render_frontmatter(fields) + "\n" + document.body
 
 
-def _porcelain_path(line: str) -> str:
-    """The path out of a ``git status --porcelain`` line (2 status chars + space +
-    path), taking the new name of an ``old -> new`` rename and unquoting."""
-    path = line[3:].strip()
-    if " -> " in path:
-        path = path.split(" -> ", 1)[1]
-    return path.strip().strip('"')
+def version_document(text: str, base: str) -> str:
+    """Bump a changed frontmatter document against caller-supplied prior bytes."""
+    from flow_sdk.assets.document import read_document_bytes
 
-
-async def _scope_changed_excluding_version(
-    repo_root: str, pathspec: str, main_rel: str
-) -> bool:
-    """True when the asset (one file, or a whole folder for folder-backed types)
-    differs from HEAD by something OTHER than the main file's ``version`` field.
-
-    A version-only delta on the main file is the phantom-revision storm (every
-    save re-bumps ``version`` → a commit whose diff is just ``version: N→N+1``);
-    that must not mint a revision. Any change to a non-main file in the asset
-    folder, or a real body/field change to the main file, is a genuine change.
-    """
-    status = await asyncio.to_thread(
-        _run_git, ["git", "status", "--porcelain", "--", pathspec], repo_root
-    )
-    changed = [_porcelain_path(ln) for ln in (status.stdout or "").splitlines() if ln.strip()]
-    if not changed:
-        return False
-    if any(p != main_rel for p in changed):
-        return True  # a non-main file in the asset folder changed → real change
-    # Only the main file changed — genuine iff it differs from HEAD ignoring `version`.
-    head = await asyncio.to_thread(
-        _run_git, ["git", "show", f"HEAD:./{main_rel}"], repo_root
-    )
-    head_text = head.stdout if head.returncode == 0 else ""
+    document = read_document_bytes(text.encode("utf-8"))
+    if document.metadata_error or _extract_frontmatter(text) is None or _strip_version(text) == _strip_version(base):
+        return text
     try:
-        work_text = Path(repo_root, main_rel).read_text(encoding="utf-8")
-    except OSError:
-        return True
-    return _strip_version(head_text) != _strip_version(work_text)
+        version = int(document.fields.get("version", 1)) + 1
+    except (ValueError, TypeError):
+        version = 2
+    return merge_frontmatter(text, {"version": version})
+
+
+
+
 
 
 def _versionable_folder_types() -> list:
@@ -86,7 +67,7 @@ def _versionable_folder_types() -> list:
     "my id lives in this document's header", the gate the identity seam uses too.
     Which folders are assets is shape (there); which may be STAMPED is policy (here).
     """
-    from flow_sdk.fs_store.identity_carrier import Frontmatter
+    from flow_sdk.assets.identity_carrier import Frontmatter
 
     return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter)]
 
@@ -135,57 +116,3 @@ def _asset_scope(real_path: str, repo_root: str, content: str) -> tuple[str, str
         return None  # only assets (files carrying YAML frontmatter)
     rel = os.path.relpath(real_path, repo_root)
     return rel, rel, real_path
-
-
-async def _bump_version_and_commit(real_path: str, content: str) -> dict | None:
-    """Bump the asset's frontmatter ``version`` and record a scoped git commit iff
-    the asset actually changed (ignoring the auto-managed version field). Returns
-    ``{"hash", "version"}`` of the new revision, else ``None``.
-
-    Asset-scoped, not file-scoped: a folder-backed asset (skill) commits its whole
-    folder and bumps the inner main file's version, so edits to its internal files
-    are versioned and diffable like any other change. Shared by the ``fs.write``
-    autosave hook and the explicit UI-triggered commit so the rule lives in one
-    place.
-    """
-    repo_root = find_project_root(real_path)
-    if not repo_root:
-        return None
-    scope = _asset_scope(real_path, repo_root, content)
-    if scope is None:
-        return None
-    pathspec, main_rel, main_abs = scope
-    if not await _scope_changed_excluding_version(repo_root, pathspec, main_rel):
-        return None  # no real change (identical to HEAD, or version/formatting only)
-    try:
-        main_text = Path(main_abs).read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fields = _yaml_load(_extract_frontmatter(main_text) or "") or {}
-    try:
-        current = int(fields.get("version", 1))
-    except (TypeError, ValueError):
-        current = 1
-    new_version = current + 1
-    name = fields.get("name") or Path(main_rel).stem
-    write_text_if_changed(Path(main_abs), merge_frontmatter(main_text, {"version": new_version}))
-    await git_commit_file(repo_root, pathspec, f"Flowpad: {name} v{new_version}")
-    head = await asyncio.to_thread(
-        _run_git, ["git", "log", "-1", "--format=%H", "--", pathspec], repo_root
-    )
-    return {"hash": (head.stdout or "").strip(), "version": new_version}
-
-
-async def commit_asset_change(real_path: str) -> dict | None:
-    """Bump + commit a single asset already edited on disk (the "commit" step of
-    the improvement cycle). The autoversion hook fires on the ``fs.write`` action,
-    but an agent (a skill-fixer worker) edits via its ``Edit`` tool — a raw disk
-    write that bypasses that seam — so this reads the on-disk content and commits
-    it explicitly. Returns ``{"hash", "version"}`` or ``None`` if nothing changed.
-    """
-    if not os.path.isfile(real_path):
-        return None
-    # Resolve symlinks (e.g. macOS /tmp → /private/tmp) so the path agrees with
-    # find_project_root's realpath output — else relpath lands "outside repo".
-    real_path = os.path.realpath(real_path)
-    return await _bump_version_and_commit(real_path, Path(real_path).read_text(encoding="utf-8"))
