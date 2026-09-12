@@ -508,7 +508,11 @@ class CloudManager extends EventEmitter {
     });
 
     try {
-      await apiClient.post('/cloud/login');
+      const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>('/cloud/login');
+      if (started?.present_in_browser && started.url) {
+        const popup = window.open(started.url, LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
+        if (!popup) throw new Error('Allow popups to complete sandbox sign-in.');
+      }
     } catch (err: any) {
       const message = err?.response?.data?.message ?? err?.message ?? 'Login request failed';
       this._applyLoginStatus('login_failed', null, message);
