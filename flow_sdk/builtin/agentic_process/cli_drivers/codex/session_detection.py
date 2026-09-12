@@ -10,11 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.indexer.functions.codex_sessions import (
-    discover_codex_session_paths_iter,
-    extract_codex_session_from_path,
-)
-
+from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
+from flow_sdk.fs_store.indexer.functions.codex_sessions import discover_codex_session_paths_iter
 
 _HEAD_LINES = 256
 

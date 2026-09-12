@@ -74,7 +74,7 @@ block, so single-capsule callers are unchanged:
 ## Identity carriers
 
 A filesystem asset's id lives in exactly ONE place per type. The type declares
-WHERE through `TypeInfo.identity_carrier` (`flow_sdk/fs_store/identity_carrier.py`):
+WHERE through `TypeInfo.identity_carrier` (`flow_sdk/assets/identity_carrier.py`):
 
 | carrier | types | stores |
 |---|---|---|

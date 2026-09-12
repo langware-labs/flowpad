@@ -360,9 +360,7 @@ def _claude_dir_cwd(path: Path) -> Optional[str]:
     """The ``cwd`` recorded in a Claude session's envelope head — cheap (no
     content parse). All sessions in a ``~/.claude/projects/<enc>/`` directory
     share one cwd, so one peek maps the whole directory to a project_id."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-        extract_claude_session_from_path,
-    )
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 
     try:
         s = extract_claude_session_from_path(path, include_content=False)
@@ -414,7 +412,7 @@ def _collect_claude_entries_sync(
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_claude_worker_history``. Runs on the history lane."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import extract_claude_session_from_path
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
     projects_dir = get_instance_settings().claude_projects_dir
@@ -566,7 +564,7 @@ def _collect_codex_entries_sync(
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_codex_worker_history``. Runs on the history lane."""
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
+    from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
     sessions_root = get_instance_settings().codex_sessions_dir
@@ -688,10 +686,8 @@ def _collect_copilot_entries_sync(
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_copilot_worker_history``. Runs on the history lane."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-        copilot_session_state_root,
-        read_copilot_session_meta,
-    )
+    from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import copilot_session_state_root
 
     root = copilot_session_state_root()
     if not root.is_dir():
@@ -1147,9 +1143,7 @@ def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[s
     fields ``_collect_claude_entries_sync`` feeds to ``_pick_name``. Returns
     ``(None, None)`` on any parse failure."""
     try:
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-            extract_claude_session_from_path,
-        )
+        from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 
         session = extract_claude_session_from_path(jsonl_path, include_content=False)
         sd = object.__getattribute__(session, "__dict__")
@@ -1161,7 +1155,7 @@ def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[s
 
 def _worker_first_prompt_sync(worker_type: WorkerType, jsonl_path: Path) -> Optional[str]:
     """First human prompt from the bounded transcript head, using the vendor parser."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import _iter_head_json
+    from flow_sdk.assets.types.claude_sessions import _iter_head_json
     from flow_sdk.transcript_analyzer.entries import UserMessageEntry
     from flow_sdk.transcript_analyzer.parsers import get_parser_class
 

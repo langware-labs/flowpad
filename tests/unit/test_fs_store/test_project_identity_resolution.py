@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.identity_carrier import Derived
 from flow_sdk.fs_store import FSRecord, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import Derived
 from flow_sdk.fs_store.indexer.functions import claude_projects
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     claude_project_identity_key,

@@ -449,8 +449,11 @@ class ProcessAssets:
 
     async def _materialize_source(self, ref: TypeId, *, source=None,
                                   mode: MaterializationMode = MaterializationMode.COPY):
+        from flow_sdk.assets import Asset
         from flow_sdk.assets.process_projection import resolve_embedding
+        from flow_sdk.fs_store.record_paths import get_default_records_root
 
+        source = source or Asset.from_typeid(ref, records_root=get_default_records_root())
         root = self.ensure_process_assets().os_path
         skills_root = self._skills_root(root)
         if ref.type == EntityType.SKILL and not skills_root.resolve().is_relative_to(root.resolve()):

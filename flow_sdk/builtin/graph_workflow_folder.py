@@ -1,10 +1,4 @@
-"""The shared folder-document scaffold — ONE copy of the flow-folder contract.
-
-GraphWorkflow and Journey are the same on-disk shape (graph.json + display.json +
-runs/ + a ``.flow`` id capsule) driven by the same engine; this module owns the
-scaffold so the contract can't drift between them. Any future folder-doc type
-calls these instead of re-rolling the layout.
-"""
+"""Application scope selection and persistence around shared graph scaffolds."""
 from __future__ import annotations
 
 import logging
@@ -16,53 +10,22 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-DISPLAY_STUB = '{"version": 1, "nodes": {}}\n'
-
-
-def folder_slug(name: str, fallback: str) -> str:
-    """Filesystem-safe folder name from an entity name."""
-    return (
-        "".join(c if c.isalnum() or c in "-_" else "-" for c in (name or fallback)).strip("-")
-        or fallback
-    )
-
-
 def scaffold_graph_workflow_folder(
-    entity: "Entity", home_dir: Path, fallback_slug: str, *, scripts: bool = False
+    entity: "Entity", home_dir: Path, fallback_slug: str
 ) -> Path:
     """Create the folder + stub files for a fresh folder-doc entity (idempotent).
 
     Sets ``entity.asset_ref`` to the resolved folder and pins the entity id in
     the ``.flow`` capsule so the indexer adopts it.
     """
-    from flow_sdk.graph_workflow_manager.graph_workflow_doc import empty_graph_workflow_doc
+    from flow_sdk.assets.creation import ensure_asset_scaffold, folder_slug
+    from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowDoc
 
-    asset_ref = getattr(entity, "asset_ref", "")
-    folder = Path(asset_ref) if asset_ref else home_dir / folder_slug(entity.name, fallback_slug)
-    folder.mkdir(parents=True, exist_ok=True)
-    if scripts:
-        (folder / "scripts").mkdir(exist_ok=True)
-    (folder / "runs").mkdir(exist_ok=True)
-    graph = folder / "graph.json"
-    if not graph.exists():
-        graph.write_text(empty_graph_workflow_doc(entity.id or "", entity.name), encoding="utf-8")
-    display = folder / "display.json"
-    if not display.exists():
-        display.write_text(DISPLAY_STUB, encoding="utf-8")
-    if entity.id:
-        # Stamp through the carrier that OWNS folder identity rather than
-        # writing the capsule here: it alone knows the Found/Foreign policy —
-        # an existing id wins, and a RETIRED `<folder>/.flow/id` raises
-        # ForeignId instead of being silently shadowed by a second identity.
-        # (This used to write that retired form itself, which left a freshly
-        # scaffolded folder un-adoptable — the carrier reads it back as
-        # Foreign — and raised a `foreign_id` scan issue against bytes the
-        # scaffold had just written.)
-        from flow_sdk.fs_store.identity_carrier import Sidecar  # noqa: PLC0415
-
-        Sidecar().stamp(folder, entity.id)
+    folder = Path(entity.asset_ref) if entity.asset_ref else home_dir / folder_slug(entity.name, fallback_slug)
+    folder = ensure_asset_scaffold(folder, entity.typeid, GraphWorkflowDoc(name=entity.name or ""))
     entity.asset_ref = str(folder)
     return folder
+
 
 
 async def rescaffold_after_save(entity: "Entity", label: str) -> None:

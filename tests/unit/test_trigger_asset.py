@@ -12,14 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.trigger import TriggerType
-from flow_sdk.fs_store.indexer.functions.trigger import (
-    extract_trigger,
-    read_trigger,
-    row_fields,
-    trigger_document_problem,
-)
+from flow_sdk.assets.types.trigger import extract_trigger, read_trigger, row_fields, trigger_document_problem
 from flow_sdk.schema.data_spec.trigger_spec import TriggerActionSpec, TriggerSpec
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 

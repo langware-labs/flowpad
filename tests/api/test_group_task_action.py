@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.task import Task, TaskKind
+from flow_sdk.builtin.task import Task
+from flow_sdk.schema.data_spec.task_spec import TaskKind
 
 pytestmark = pytest.mark.asyncio
 

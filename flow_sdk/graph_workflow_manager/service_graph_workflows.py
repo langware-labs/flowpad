@@ -214,7 +214,7 @@ def _graph_has_retired_shapes(doc: dict) -> bool:
     The retired set has ONE owner — ``graph_workflow_doc.retired_node_shape`` (the same
     predicate the parse validator raises) — plus one seed-specific addendum:
     the retired daily-analysis monolith callback."""
-    from flow_sdk.graph_workflow_manager.graph_workflow_doc import retired_node_shape
+    from flow_sdk.assets.types.graph_workflow_doc import retired_node_shape
 
     for n in doc.get("nodes") or []:
         if retired_node_shape(n):

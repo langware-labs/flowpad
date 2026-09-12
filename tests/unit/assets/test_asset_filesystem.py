@@ -9,7 +9,6 @@ from flow_sdk.assets import Asset, AssetFolder
 from flow_sdk.assets.asset import AssetIdentityMismatch
 from flow_sdk.assets.folder import collect_assets
 from flow_sdk.assets.materialize import MaterializationMode
-from flow_sdk.fs_store.record_paths import shadow_dir_for
 
 
 def skill(path, identity=None):
@@ -61,18 +60,18 @@ def test_serialized_usage_validates_file_identity_on_reload(tmp_path):
 
 def test_typeid_uses_filesystem_record_and_validates_its_target(tmp_path):
     asset = Asset.from_path(skill(tmp_path / "source", mint_uuid()))
-    record_dir = shadow_dir_for(asset.typeid.type, asset.typeid.id)
+    record_dir = tmp_path / 'records' / asset.typeid.type / asset.typeid.id
     record_dir.mkdir(parents=True)
     metadata = record_dir / "metadata.json"
     metadata.write_text(json.dumps({"type": asset.typeid.type, "id": asset.typeid.id, "asset_ref": str(asset.path)}))
-    assert Asset.from_typeid(asset.typeid).path == asset.path
+    assert Asset.from_typeid(asset.typeid, records_root=record_dir.parent.parent).path == asset.path
     other = skill(tmp_path / "other", mint_uuid())
     metadata.write_text(json.dumps({"type": asset.typeid.type, "id": asset.typeid.id, "asset_ref": str(other)}))
     with pytest.raises(AssetIdentityMismatch):
-        Asset.from_typeid(asset.typeid)
+        Asset.from_typeid(asset.typeid, records_root=record_dir.parent.parent)
     metadata.unlink()
     with pytest.raises(FileNotFoundError):
-        Asset.from_typeid(asset.typeid)
+        Asset.from_typeid(asset.typeid, records_root=record_dir.parent.parent)
 
 
 def test_exact_destination_copy_keeps_source_and_identity(tmp_path):

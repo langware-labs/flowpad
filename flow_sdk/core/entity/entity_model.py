@@ -941,8 +941,8 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
+        from flow_sdk.assets.layout import Folder  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import ancestors_of
-        from flow_sdk.schema.layout import Folder  # noqa: PLC0415
 
         posix_ancestors = ancestors_of(path_str)
         if not posix_ancestors:
@@ -1032,6 +1032,9 @@ class Entity(DBEntity):
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
+        from flow_sdk.core.asset_type_bindings import compose_asset_row_defaults
+        compose_asset_row_defaults(record_type, entity_cls, data)
+
         # Tripwire on the universal FS→DB path. An asset-backed record arrives
         # here already resolved through the type's carrier; if it ever does
         # not, ``allocate_id`` would mint a SECOND id for a path the seam
@@ -1217,6 +1220,8 @@ class Entity(DBEntity):
         # module registers its class but not its parser). Idempotent — cheap to
         # call on every load.
         register_all()
+        from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+        register_asset_runtime_bindings()
 
         rt = cls._resolve_fs_ref_type(ref, record_type)
         if rt is None:
@@ -1224,7 +1229,7 @@ class Entity(DBEntity):
         info = SchemaRegistry.get(rt)
         # DB-FREE by contract, so no owner lookup: with no owning row to consult
         # this degrades to the carrier, else a mint.
-        from flow_sdk.fs_store.identity_carrier import UnclaimedPath  # noqa: PLC0415
+        from flow_sdk.assets.identity_carrier import UnclaimedPath  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
 
         try:
@@ -1516,7 +1521,8 @@ class Entity(DBEntity):
         (the single authority shared with the receive path), so create and
         receive can no longer diverge on what "user root" means.
         """
-        from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
+        from flow_sdk.assets.placement import Scope
+        from flow_sdk.builtin.asset_placement import root_for_scope
 
         proj = scope_project or await self._resolve_scope_project()
         mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
@@ -1548,7 +1554,7 @@ class Entity(DBEntity):
         """
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+        from flow_sdk.assets.placement import AssetClass  # noqa: PLC0415
 
         if getattr(info, "asset_class", None) != AssetClass.REPO:
             return None
@@ -1558,7 +1564,7 @@ class Entity(DBEntity):
         pinfo = SchemaRegistry.get(parent.get_type())
         if pinfo is None or pinfo.asset_class != AssetClass.REPO:
             return None
-        from flow_sdk.schema.layout import Folder as _FolderShape  # noqa: PLC0415
+        from flow_sdk.assets.layout import Folder as _FolderShape  # noqa: PLC0415
 
         par_ref = getattr(parent, "asset_ref", None)
         if not par_ref or not isinstance(pinfo.shape, _FolderShape):
@@ -2615,19 +2621,19 @@ class Entity(DBEntity):
         if create_target is None:
             await persist_prepared_entity()
         else:
-            from flow_sdk.fs_store.fs_record import (
+            from flow_sdk.assets.creation import (
                 assert_create_target_available,
                 create_target_guard,
             )
 
             create_info, create_ref = create_target
-            async with create_target_guard(create_info, create_ref):
+            async with create_target_guard(create_info, create_ref._path):
                 # Re-check inside the path guard. Multiple creates may all pass
                 # the early check in ``_prepare_for_storage``; only the first is
                 # allowed to perform the DB write + carrier materialization.
                 assert_create_target_available(
                     create_info,
-                    create_ref,
+                    create_ref._path,
                     entity_type=self.get_type(),
                     name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
                     entity_id=str(self.id) if getattr(self, "id", None) else None,
@@ -2691,7 +2697,15 @@ class Entity(DBEntity):
         if hasattr(self, "project_id") and not getattr(self, "project_id", None):
             scope_proj = await self._resolve_scope_project()
             if scope_proj is not None:
-                self.project_id = scope_proj.id
+                existing_path = getattr(self, "asset_ref", None)
+                mount = getattr(scope_proj, "fs_storage_mount_path", None)
+                # Disk-to-row hydration keeps the requesting project membership
+                # (e.g. an attached context directory). Fresh destinations instead
+                # carry their own scope; a URL cannot reassign an outside file.
+                belongs = (_SUPPRESS_STORE.get() or not existing_path or
+                           (mount and Path(existing_path).resolve().is_relative_to(Path(mount).resolve())))
+                if belongs:
+                    self.project_id = scope_proj.id
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
 
@@ -2707,14 +2721,16 @@ class Entity(DBEntity):
                 or self.exist_in_db
                 or _SUPPRESS_STORE.get()
                 or not info.creatable
-                or not info.owns_main_ref
+                or info.shape is None
+                or not getattr(type(self), "owns_asset_ref", True)
+                or not self.is_file_backed()
             ):
                 return None
-            from flow_sdk.fs_store.fs_record import assert_create_target_available
+            from flow_sdk.assets.creation import assert_create_target_available
 
             assert_create_target_available(
                 info,
-                asset_ref,
+                asset_ref._path,
                 entity_type=type_name,
                 name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
                 # An occupied path whose identity capsule already names THIS
@@ -2751,7 +2767,7 @@ class Entity(DBEntity):
         # The machine's canonical harness picks the family prefix (.claude/… vs
         # .agents/…). Create-only path (asset_ref-set entities returned above),
         # so the capability lookup isn't per-save. Falls back to claude.
-        from flow_sdk.fs_store.placement import resolve_default_harness
+        from flow_sdk.builtin.asset_placement import resolve_default_harness
 
         default_worker = await resolve_default_harness()
         # Transient FSRecord just to compute the asset_ref convention.

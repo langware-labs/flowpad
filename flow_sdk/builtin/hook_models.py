@@ -13,13 +13,15 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
-from flow_sdk._compat import StrEnum
 from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
+from flow_sdk.claude_hook_events.hook_event_data import HookEventData as HookEventData
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 _log = logging.getLogger(__name__)
 
@@ -35,6 +37,8 @@ _SCRIPT_OUTPUT_CAP = 8192
 # which solves the same failure mode for CLI workers: that one is keyed on a
 # per-launch run_id marker and knows about npm wrapper processes, neither of
 # which a one-shot trigger script has, and it sits a layer above this module.
+
+
 def _kill_script_tree(proc) -> None:
     """SIGKILL the timed-out script AND everything it forked.
 
@@ -57,13 +61,7 @@ class RunResult:
     script_path: Optional[str] = None  # which path actually ran (after resolution)
 
 
-class ActionType(StrEnum):
-    """Types of actions that can be triggered."""
 
-    NOP = "nop"
-    NOTIFY_ENTITY = "notify_entity"
-    RUN_SCRIPT = "run_script"
-    CALLBACK = "callback"
 
 
 class RelationshipSubAction(StrEnum):
@@ -95,26 +93,7 @@ class SuccessMessage(StrEnum):
     TRIGGER_DISCONNECTED = "Trigger disconnected successfully"
 
 
-class TriggerAction(BaseModel):
-    """Action to be executed when a trigger matches."""
 
-    action_type: ActionType
-    # RUN_SCRIPT delivery: external script path on disk (preferred if it exists).
-    script_path: Optional[str] = None
-    # RUN_SCRIPT delivery: filename inside the trigger record's data folder
-    # (`record.data_dir / script_filename`). Used when `script_path` is None or
-    # the file doesn't exist on disk. Editable via flowpad's file editor.
-    script_filename: Optional[str] = None
-    # CALLBACK delivery: name registered via `@trigger_callbacks.register("name")`.
-    callback_name: Optional[str] = None
-    # WHAT the action acts on, as a TypeId (`wizard-<uuid>`).
-    #
-    # A callback used to name only a Python function, so "run a wizard" had to
-    # carry its subject on the TRIGGER's generic `path` — a field a HOOK trigger
-    # uses for its record.json, and which is Sharing.PRIVATE, so a shared trigger
-    # lost its target entirely. An action that cannot say what it acts on cannot
-    # be validated, cannot be searched for, and reads as "callback" in the UI.
-    target_type_id: Optional[str] = None
 
 
 class ExecutedAction(BaseModel):
@@ -126,8 +105,6 @@ class ExecutedAction(BaseModel):
     counter: int
 
 
-# Re-export canonical HookEventData from shared module
-from flow_sdk.claude_hook_events.hook_event_data import HookEventData
 
 
 class WebhookHandleResult(BaseModel):

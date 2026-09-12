@@ -17,15 +17,13 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.dataset import iter_examples
 from flow_sdk.builtin.dataset import (
     DataLayoutEnum,
     Dataset,
     ExampleKind,
 )
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.dataset import (
-    iter_examples,
-)
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.dataset_spec import FolderSpec
 from tests.fixtures.identity import resolve_id
@@ -137,10 +135,10 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     # id: loader == gen_id == cold-path record id
     assert loaded.id == gen == rec.id
 
-    # typed fields lifted from the nested `metadata` section
-    assert loaded.data_layout == meta["data_layout"]
-    assert loaded.field_spec == meta["field_spec"]
-    assert loaded.delimiter == meta["delimiter"]
+    # Authored fields match; omitted disk fields receive row defaults only at hydration.
+    assert loaded.data_layout == meta.get("data_layout", "csv")
+    assert loaded.field_spec == meta.get("field_spec", {})
+    assert loaded.delimiter == meta.get("delimiter", ",")
     assert loaded.num_examples == meta["num_examples"]
     assert loaded.kind_counts == meta["kind_counts"]
 

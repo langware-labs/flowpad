@@ -16,10 +16,10 @@ import pytest
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentRef, register_driver
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 

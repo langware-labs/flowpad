@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.assets.directory import AssetDir
+from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
@@ -26,8 +26,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgentOptions,
     AgenticContext,
+    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
     ProcessMcpRuntime,
@@ -37,10 +37,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
     to_mcp_config_json,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
     build_canonical_hook_data,
     build_process_hook_snapshot,
@@ -57,7 +57,6 @@ from flow_sdk.builtin.hooks.types import (
     HookScope,
     PermissionResponse,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
@@ -66,6 +65,7 @@ from flow_sdk.transcript_analyzer import (
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 VENDOR = vendor_for("claude")
 
@@ -491,9 +491,8 @@ class ClaudeDriver:
         return descriptor.path if descriptor else None
 
     async def available_assets(self, process: "AgenticProcess"):
-        from flow_sdk.assets.worker_inventory.claude import available_assets
-
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.asset_inventory import available_assets
 
         return await available_assets(inventory_inputs(process))
 

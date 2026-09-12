@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.builtin.data_source_spec import ManifestError, ManifestSpec, Runtime
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestError, ManifestSpec, Runtime
 
 RSS = {"schema": 1, "name": "rss", "title": "RSS / Atom",
        "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}}}

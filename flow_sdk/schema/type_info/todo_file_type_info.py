@@ -1,13 +1,10 @@
 """Type metadata for TODO_FILE."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.todo import (
-    extract_todo,
-    todo_identity_key,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.types.todo import extract_todo, todo_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 
 TODO_FILE = TypeInfo(

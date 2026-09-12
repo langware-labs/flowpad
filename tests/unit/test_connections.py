@@ -6,7 +6,7 @@ import pytest
 
 from flow_sdk import connections
 from flow_sdk.connections import NotConnected, TokenUnavailable, get_connection, get_connections, require
-from flow_sdk.core.connections.types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionResult,
     ConnectionSpec,

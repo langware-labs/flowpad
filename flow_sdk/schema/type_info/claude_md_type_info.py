@@ -1,9 +1,9 @@
 """Type metadata for CLAUDE_MD."""
-from flow_sdk.builtin.claude_memory_entities import ClaudeMdSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
-from flow_sdk.fs_store.indexer.functions.markdown import derive_claude_md
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.markdown import derive_claude_md
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.data_spec.markdown_spec import ClaudeMdSpec
 from flow_sdk.schema.types import EntityType
 
 # NOTE: no `main_subdir` on purpose. CLAUDE_MD's filename is the fixed

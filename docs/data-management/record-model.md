@@ -32,7 +32,7 @@ Source files:
 | `flow_sdk/fs_store/record_paths.py` | records-root path helpers + `record_stem()` |
 | `flow_sdk/fs_store/record_ref.py` | `RecordRef` / `RecordDataRef` dataclasses |
 | `flow_sdk/fs_store/record_list.py` | `RecordList` (storage-agnostic collection over `FSRecord`) |
-| `flow_sdk/fs_store/source_file_records.py` | source-file extractors (settings.json, .mcp.json, …) |
+| `flow_sdk/assets/types/source_file_records.py` | source-file extractors (settings.json, .mcp.json, …) |
 | `flow_sdk/fs_store/record_query.py` | `RecordQuery` filter/sort/paginate helper |
 | `flow_sdk/fs_store/manifest.py` | `CollectionManifest` per-type collection manifest |
 | `flow_sdk/fs_store/storage_layout.py` | `StorageLayout` enum (legacy; only re-exported from `fs_store/__init__.py`, no live consumer) |
@@ -334,7 +334,7 @@ Discovery is always live (no caching).
 
 ## Source-file extractors
 
-`flow_sdk/fs_store/source_file_records.py` replaces the dissolved `JsonFileRecordList` / `SourceFileRecordList` Record-subclass hierarchy. Each extractor is a **pure function** `(data: dict, source_file: str) -> list[dict]`, where each returned dict carries at least `type` (a `RecordType`/`EntityType` value) and `json_path` (RFC-6901 pointer; empty string for the root record).
+`flow_sdk/assets/types/source_file_records.py` replaces the dissolved `JsonFileRecordList` / `SourceFileRecordList` Record-subclass hierarchy. Each extractor is a **pure function** `(data: dict, source_file: str) -> list[dict]`, where each returned dict carries at least `type` (a `RecordType`/`EntityType` value) and `json_path` (RFC-6901 pointer; empty string for the root record).
 
 Registered extractors (`_EXTRACTORS`): `settings.json`, `settings.local.json`, `managed-settings.json`, `mcp.json`, `.mcp.json`. The allow-list `_ALLOWED_FILENAMES` is derived from `_EXTRACTORS` so it can't drift. Public surface: `known_filename(path)`, `extract_from_data(data, path)`, `extract_records(path)`, plus `load_raw` / `write_raw` and the JSON-pointer set/delete helpers.
 

@@ -43,8 +43,8 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     ensure_launchable,
 )
 from flow_sdk.ingest.driver import (
-    IngestDriver,
     FetchResult,
+    IngestDriver,
     SegmentCursorView,
     SegmentRef,
     SendOutcome,
@@ -168,7 +168,7 @@ def accepted_fields() -> str:
     Naming them from the schema at prompt-build time means the next rename cannot
     reopen that gap silently.
     """
-    from flow_sdk.builtin.source_item import SourceItemSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
     return ", ".join(f"`{name}`" for name in SourceItemSpec.model_fields)
 

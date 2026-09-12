@@ -35,7 +35,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => (
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
-vi.mock('@src/hooks/use-markdown-content', () => ({ useMarkdownContent: () => mocks.body }));
+vi.mock('@src/hooks/use-fs-ref-content', () => ({ useFSRefContent: () => ({ ...mocks.body, content: mocks.body.body }) }));
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
   useNavigate: () => vi.fn(),

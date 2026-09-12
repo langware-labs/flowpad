@@ -99,7 +99,8 @@ def unregister_tag_trigger(trigger_id: Optional[str]) -> None:
 
 async def start_tag_triggers() -> None:
     """Boot sweep: arm every enabled TAG trigger (fsop_watcher.start pattern)."""
-    from flow_sdk.builtin.trigger import Trigger, TriggerType
+    from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
     for trigger in await Trigger.list_by_type(TriggerType.TAG):
         try:
@@ -215,7 +216,6 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
         activate_flows_for_trigger,
         dispatch_trigger_actions,
     )
-
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
     from flow_sdk.tags.envelope import target_of
 

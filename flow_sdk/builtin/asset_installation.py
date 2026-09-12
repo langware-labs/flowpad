@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 
 from flow_sdk.assets.asset import Asset
-from flow_sdk.fs_store.placement import Scope
+from flow_sdk.assets.placement import Scope
 
 
 async def index_installed_asset(source: Asset, installed: Asset, *, scope: Scope,

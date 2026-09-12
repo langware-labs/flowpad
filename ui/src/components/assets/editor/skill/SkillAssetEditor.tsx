@@ -11,8 +11,8 @@ import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { FSRef, ProcessKind, Skill } from '@sdk';
+import { mainFileForType } from '@sdk/models/asset-editor';
 import { cn } from '@src/lib/utils';
-import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
@@ -63,9 +63,10 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
 
   // The URL-selected occurrence owns the bytes. An Entity may describe another
   // same-ID occurrence, so its primary doc must never replace this route ref.
+  const mainFile = mainFileForType(Skill.type);
   const editorRef = useMemo(
-    () => fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md'),
-    [fsRef],
+    () => !mainFile || fsRef.path.endsWith(`/${mainFile}`) ? fsRef : fsRef.child(mainFile),
+    [fsRef, mainFile],
   );
 
   const onDelete = useCallback(async () => {
@@ -75,32 +76,10 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
     navigation.openDock(DockPointer.forAssetList(Skill.type));
   }, [navigation]);
 
-  // Header eval toggle. Flipping it writes to BOTH layers so the flag takes
-  // effect immediately and durably:
-  //   1. SKILL.md frontmatter via the editor's content buffer (the durable
-  //      source of truth; single writer — see MarkdownHeaderExtrasCtx).
-  //   2. the Skill entity's `metadata.eval` via `save()` (the projection the
-  //      rest of the app reads through `isEval`). Without (2) the flag wouldn't
-  //      surface until a re-index re-walked this file — which isn't guaranteed
-  //      (the file may live in a root the manual rescan doesn't re-walk), so
-  //      the badge/auto-eval would silently never fire.
-  // `eval` round-trips as the string 'true'/'false' (frontmatter is quoted).
+  // One occurrence-scoped document patch; the backend refreshes the entity projection.
   const headerExtras = useCallback(({ fields, setField }: MarkdownHeaderExtrasCtx) => {
     const isEval = fields.eval === 'true';
-    const toggle = () => {
-      const next = isEval ? 'false' : 'true';
-      setField('eval', next);
-      const s = skillRef.current;
-      if (s) {
-        s.metadata = { ...(s.metadata ?? {}), eval: next };
-        void s.save().catch((e) => {
-          notify.error({
-            title: t`Could not update eval flag`,
-            message: e instanceof Error ? e.message : 'Save failed.',
-          });
-        });
-      }
-    };
+    const toggle = () => setField('eval', !isEval);
     return (
       <button
         type="button"

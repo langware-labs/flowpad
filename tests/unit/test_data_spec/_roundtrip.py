@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any, get_args, get_origin
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
-from flow_sdk.schema.layout import Folder
 
 
 def sample(name: str, annotation: Any, default: Any) -> Any:

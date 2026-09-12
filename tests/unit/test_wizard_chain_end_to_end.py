@@ -14,7 +14,6 @@ report `satisfied` and no installer is spawned — which is exactly the shape th
 "already provisioned" half of the container proof takes.
 """
 import asyncio
-import uuid
 
 import pytest
 
@@ -25,6 +24,7 @@ from flow_sdk.config import system_projects_root
 from flow_sdk.server.builtin_triggers import WIZARD_TRIGGER_UNAME_PREFIX
 from flow_sdk.tags import emit_tag, target_of
 from tests.conftest import async_context
+from tests.fixtures.identity import index_path
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -42,23 +42,20 @@ async def _index_trigger(wizard) -> Trigger:
     Goes through the REAL extractor and the REAL arming seam, so what is proved
     is the path a trigger actually takes off disk, not a hand-built row.
     """
+    from flow_sdk.assets.types.trigger import read_trigger, row_fields
     from flow_sdk.builtin.trigger_arming import arm_trigger
-    from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.trigger import extract_trigger, read_trigger, row_fields
+    from flow_sdk.schema.data_spec.trigger_action import TriggerAction
 
     spec = read_trigger(SHIPPED_TRIGGER)
     assert spec is not None, f"the shipped trigger asset did not parse at {SHIPPED_TRIGGER}"
-    record = extract_trigger(FSRef(SHIPPED_TRIGGER), str(uuid.uuid4()))[0]
-
-    trigger = Trigger(
-        id=record.id,
-        uname=UNAME,
-        asset_ref=str(SHIPPED_TRIGGER),
-        # `parent_type_id` is what the indexer stamps from the enclosure, and
-        # what makes `run_wizard: ""` mean "the wizard I live inside".
-        parent_type_id=str(wizard.typeid),
-        **row_fields(spec, parent_type_id=str(wizard.typeid)),
-    )
+    record = await index_path("trigger", SHIPPED_TRIGGER, write=False)
+    trigger = await Trigger.get_by_id(record.id)
+    trigger.uname = UNAME
+    trigger.parent_type_id = str(wizard.typeid)
+    fields = row_fields(spec, parent_type_id=str(wizard.typeid))
+    trigger.actions = [TriggerAction.model_validate(item) for item in fields.pop("actions", [])]
+    for field, value in fields.items():
+        setattr(trigger, field, value)
     await trigger.save()
     await arm_trigger(trigger)
     return trigger
@@ -81,6 +78,9 @@ async def _cleanup(wizard):
             tag_triggers.unregister_tag_trigger(row.id)
             await row.delete()
     if wizard is not None:
+        from flow_sdk.core.wizard.state import reset_run
+
+        reset_run(str(wizard.id))
         await wizard.delete()
 
 
@@ -88,8 +88,8 @@ async def _cleanup(wizard):
 async def test_app_ready_runs_the_shipped_wizard_through_its_declared_trigger():
     # 1. INDEXED — stand in for the detached system-content walk, which is the
     #    only thing that discovers a wizard shipped inside the wheel.
-    wizard = Wizard(name="dev-toolchain", asset_ref=str(SHIPPED))
-    await wizard.save()
+    record = await index_path("wizard", SHIPPED, write=False)
+    wizard = await Wizard.get_by_id(record.id)
     try:
         assert wizard.is_system(), "the shipped wizard must be trusted, or it will refuse to run"
 
@@ -126,8 +126,8 @@ async def test_the_run_reports_through_the_activity_tree():
     from flow_sdk.activity import Activity
     from flow_sdk.core.wizard import run_wizard
 
-    wizard = Wizard(name="dev-toolchain", asset_ref=str(SHIPPED))
-    await wizard.save()
+    record = await index_path("wizard", SHIPPED, write=False)
+    wizard = await Wizard.get_by_id(record.id)
     try:
         spec = wizard.spec()
         assert spec is not None
@@ -162,8 +162,8 @@ async def test_an_unattended_run_leaves_a_durable_record():
     from flow_sdk.core.wizard.state import read_state, reset_run
     from flow_sdk.server.builtin_triggers import _run_wizard_trigger
 
-    wizard = Wizard(name="dev-toolchain", asset_ref=str(SHIPPED))
-    await wizard.save()
+    record = await index_path("wizard", SHIPPED, write=False)
+    wizard = await Wizard.get_by_id(record.id)
     try:
         trigger = await _index_trigger(wizard)
 

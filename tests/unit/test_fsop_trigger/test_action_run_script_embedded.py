@@ -13,13 +13,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import (
-    ActionType,
-    RunScriptActionHandler,
-    TriggerAction,
-)
-from flow_sdk.builtin.trigger import Trigger, TriggerType
-
+from flow_sdk.builtin.hook_models import RunScriptActionHandler
+from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)

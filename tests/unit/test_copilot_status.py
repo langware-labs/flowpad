@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 _RESOURCES = Path(__file__).resolve().parent / "resources" / "transcripts"
 

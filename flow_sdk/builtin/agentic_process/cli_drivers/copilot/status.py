@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import tail_status
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 def copilot_tail_status(path: str | Path) -> WorkerStatus:

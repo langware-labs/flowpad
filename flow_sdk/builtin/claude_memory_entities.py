@@ -9,9 +9,9 @@ Hierarchy:
     └── ClaudeMd      — CLAUDE.md files (type="claude_md")
 """
 
-from typing import Any, ClassVar, List, Optional, Type
+from typing import ClassVar, List, Optional, Type
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity
@@ -21,7 +21,6 @@ from flow_sdk.core.entity.context_data_schemas import (
     PlanContextData,
 )
 from flow_sdk.fs_store.fs_ref.base import FSRef
-from flow_sdk.schema.data_spec import Body, FrontMatter
 
 
 class Translation(BaseModel):
@@ -29,7 +28,7 @@ class Translation(BaseModel):
 
     A translation is NOT a separate entity — it is an alternate body file of the
     same asset, living under the asset's record-data folder at
-    ``translations/<lang>.md`` (see ``flow_sdk/fs_store/operations/translation.py``).
+    ``translations/<lang>.md`` (see ``flow_sdk/assets/translations.py``).
     The UI selects it inline via the ``?lang=<code>`` dock prop (same tab,
     ``DockPointer.options`` are excluded from tab identity).
 
@@ -47,32 +46,10 @@ class Translation(BaseModel):
     process_id: Optional[str] = None
 
 
-class MarkdownSpec(FrontMatter):
-    """A ``.md`` document under ``docs/``: the frontmatter keys a doc may
-    carry and its markdown ``Body``. ``asset_type``/``title``/``links`` fall
-    back to the path and the body (``derive_markdown``)."""
-
-    title: Optional[str] = None
-    asset_type: Optional[str] = None
-    tags: Optional[List[str]] = None
-    links: Optional[List[str]] = None
-    scope: Optional[str] = None
-    body: Body = ""
-
-    @field_validator("tags", mode="before")
-    @classmethod
-    def _tags_list(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return [t.strip() for t in value.split(",") if t.strip()]
-        return value
 
 
-class ClaudeMdSpec(FrontMatter):
-    """A ``CLAUDE.md``: frontmatter is rare; the document is its ``Body``."""
 
-    asset_type: Optional[str] = None
-    scope: Optional[str] = None
-    body: Body = ""
+
 
 
 class Markdown(Entity):

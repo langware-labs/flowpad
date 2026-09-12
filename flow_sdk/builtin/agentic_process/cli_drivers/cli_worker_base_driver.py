@@ -62,15 +62,15 @@ from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
-    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
