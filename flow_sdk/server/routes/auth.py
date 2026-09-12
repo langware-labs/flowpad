@@ -235,6 +235,16 @@ async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     from flow_sdk.cli.auth.sandbox_login import complete_sandbox_login
     from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
 
+    from flow_sdk.app.actions.desktop_oauth import _desktop_oauth_sessions
+
+    provider_session = _desktop_oauth_sessions.get(state)
+    if provider_session is not None:
+        provider_session.callback_code = code or None
+        provider_session.callback_state = state
+        provider_session.callback_error = "Authorization was declined" if error else None
+        provider_session.callback_event.set()
+        return HTMLResponse("<p>Authorization received. You can close this window.</p>",
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
     try:
         if error:
             raise ValueError("Sign-in was not authorized")
