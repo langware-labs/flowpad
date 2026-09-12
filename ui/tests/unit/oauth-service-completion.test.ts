@@ -61,6 +61,32 @@ describe('OAuthService terminal completion', () => {
     );
   });
 
+  it('presents a provider code handoff and submits it in the request body', async () => {
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      kind: 'manual',
+      url: 'https://provider.example/authorize',
+      state: 'code-state',
+    });
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const popup = vi.spyOn(service, 'createOAuthPopupWindow');
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    await expect(service.connect('anthropic')).resolves.toBeNull();
+    expect(popup).not.toHaveBeenCalled();
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.CODE_FLOW_START,
+      expect.objectContaining({ provider: 'anthropic', state: 'code-state' }),
+    );
+    call.mockResolvedValue({});
+    await service.submitAuthorizationCode({ provider: 'anthropic', state: 'code-state', url: '' }, ' code#code-state ');
+    const action = call.mock.calls.at(-1)![0];
+    expect(action.bodyParameters).toEqual({ state: 'code-state', code: 'code#code-state' });
+    expect(action.queryParameters).toEqual({});
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'anthropic', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
   it('drives loopback exchange and completes once when HTTP and WebSocket race', async () => {
     vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
     const probe = vi.spyOn(service, 'test').mockResolvedValue({ ok: true });

@@ -2399,6 +2399,10 @@ msgstr "المصادقة"
 msgid "authored"
 msgstr "مُؤلّف"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "رمز التفويض"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "رمز التفويض — تتم الموافقة في المتصفح ثم العودة إلى التطبيق"
@@ -2410,6 +2414,10 @@ msgstr "رمز التفويض مع PKCE، مع إعادة التوجيه إلى 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "فشلت عملية التفويض أو تم رفضها. يُرجى النقر على إعادة المحاولة للمحاولة مرة أخرى."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "تفويض الاتصال"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2971,6 +2979,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -4083,6 +4092,7 @@ msgstr "تأكيد"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4159,6 +4169,7 @@ msgstr "جارٍ الاتصال"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "جارٍ الاتصال…"
 
@@ -13032,6 +13043,10 @@ msgstr "فتح التحليل"
 msgid "Open as a tab"
 msgstr "فتح في علامة تبويب"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "فتح صفحة التفويض"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "فتح مجلد النسخ الاحتياطي"
@@ -13349,6 +13364,10 @@ msgstr "فتح المشروع"
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr ""
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "افتح صفحة المزوّد، ووافق على الوصول، ثم الصق رمز التفويض الذي يظهر هناك."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
