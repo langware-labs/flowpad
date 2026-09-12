@@ -52,12 +52,18 @@ class MetadataNamingAdapter:
 class ClaudeNamingAdapter(MetadataNamingAdapter):
     def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]:
         path = getattr(process, "transcript_path", None)
-        return (Path(path).resolve(),) if path else ()
+        if path:
+            return (Path(path).resolve(),)
+        # A first turn has no file yet. Watch the native store until discovery
+        # resolves its real path, then the shared runtime narrows this binding.
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return (get_instance_settings().claude_projects_dir.resolve(),)
 
     def read(self, process: AgenticProcess) -> list[NameObservation]:
         from flow_sdk.assets.types.claude_titles import read_claude_title
-        paths = self.watch_paths(process)
-        title = read_claude_title(paths[0]) if paths else None
+        path = getattr(process, "transcript_path", None)
+        title = read_claude_title(path) if path else None
         if title is None:
             return []
         item = _observation(process, title.title,

@@ -5417,12 +5417,15 @@ class AgenticProcess(Entity):
                 return
             if turn_session_id is None:
                 turn_session_id = sid
-                if self.adopt_worker_session(sid):
-                    try:
+                try:
+                    if self.adopt_worker_session(sid):
                         await self.save()
-                        await self.reconcile_name()
-                    except Exception:
-                        logger.warning("%s: session adoption failed", log_prefix, exc_info=True)
+                    # A preassigned id is unchanged at init, but this is still
+                    # the first evidence of its native session. Bind naming
+                    # before the transcript/title file exists too.
+                    await self.reconcile_name()
+                except Exception:
+                    logger.warning("%s: session adoption failed", log_prefix, exc_info=True)
             elif sid != turn_session_id and not warned_spurious:
                 warned_spurious = True
                 logger.warning(

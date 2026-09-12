@@ -37,6 +37,10 @@ restores subscriptions for active processes. Native identity discovery uses the
 existing bounded driver transcript descriptor when a PTY has not yet reported
 its session id. The shared `report_event/first_prompt` handler supplies an
 immediate provisional title from the existing terminal input event.
+The first worker session report initializes naming even when its ID was
+preassigned. Claude observations watch the native projects directory until the
+transcript exists, then narrow to that file, so title arrival does not depend
+on a mounted browser or transcript view.
 `worker_history_changed` is published after a title or native identity changes;
 history hooks refetch on that semantic signal rather than on status traffic.
 Chat rows with a cached process also register a backend entity watch, so its live

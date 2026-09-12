@@ -32,6 +32,27 @@ specific mode. The checked-in suite's existing timeouts and zero retries apply.
 Verify the selected model against the isolated native CLI first; the model
 choices in this fixture record the successful September 2026 local experiment.
 
+With one worker selected, `NAMING_MODEL` may override its model and
+`NAMING_EXPECTED_ENDPOINT_TYPEID` asserts that worker's resolved funding source
+within each fixture Project before process creation. Configure a local key
+through the normal `lm_keys` action using the isolated encrypted secret store,
+then select it through `llm-endpoint/select`. Project endpoint constraints refer
+to hub endpoints; leave them empty when selecting a local provider key. A bare
+provider-key environment variable does not configure worker funding. Keep
+plaintext credentials out of test arguments, environment reports and browser
+artifacts. For Claude through
+OpenRouter, also point the native haiku/sonnet/opus and subagent model defaults
+at the verified model so auxiliary title requests use the same endpoint model.
+
+For a fresh isolated Claude home, `NAMING_CONFIGURE_CLAUDE_FIXTURE=true` prepares
+its native theme/onboarding state and trusts only each newly created test
+workdir. It requires explicit `CLAUDE_CONFIG_DIR` and refuses normal
+`~/.claude`. Claude's first-turn check also requires its verified native title
+to reach the `harness` naming phase with the correct session binding before
+the subsequent explicit rename can pin it.
+The Claude fixture uses normal permissions; these science questions need no
+privileged tool execution or native Bypass Permissions onboarding.
+
 Each of the eight cells requires all three browser tests to pass:
 
 1. A real first assistant response and matching canonical tab, header and
