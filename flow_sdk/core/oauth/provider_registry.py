@@ -149,6 +149,8 @@ class LocalOAuthProvider:
     client_id_default: Optional[str] = None
     #: Whether the authorize step sends a PKCE challenge.
     pkce: bool = False
+    #: Optional first-party client supporting the registered sandbox callback.
+    sandbox_client_id: Optional[str] = None
     #: Provider-specific authorize params that must NOT leak to other providers
     #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
     #: dataclass frozen and hashable.
@@ -461,6 +463,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # configured hub.
         client_id_env="FLOWPAD_OAUTH_CLIENT_ID",
         client_id_default="flowpad-desktop",
+        sandbox_client_id="flowpad-sandbox",
         pkce=True,
         # The hub's token response is `{access_token, token_type, scope}` — no
         # refresh token, because the credential it returns does not expire (the

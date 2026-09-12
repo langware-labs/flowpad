@@ -82,6 +82,7 @@ class DesktopOAuthSession:
         self.redirect_uri = redirect_uri
         self.user_id = user_id
         self.provider = provider
+        self.client_id: Optional[str] = None
         # Loopback flow fields (Anthropic)
         self.callback_code: Optional[str] = None
         self.callback_state: Optional[str] = None
@@ -326,8 +327,17 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
         )
 
     state = secrets.token_urlsafe(32)
-    callback_port = DesktopOAuthSession._find_free_port()
-    redirect_uri = f"http://localhost:{callback_port}/callback"
+    from flow_sdk.instance_settings.runtime import own_sandbox_id
+    from flow_sdk.compute.providers.compute_provider import sandbox_public_url
+
+    sandbox_id = own_sandbox_id() if provider.sandbox_client_id else None
+    callback_port = None if sandbox_id else DesktopOAuthSession._find_free_port()
+    redirect_uri = (
+        sandbox_public_url(9007, sandbox_id) + "/auth/oauth_callback"
+        if sandbox_id else f"http://localhost:{callback_port}/callback"
+    )
+    if sandbox_id:
+        client_id = provider.sandbox_client_id
 
     session = DesktopOAuthSession(
         state=state,
@@ -336,8 +346,10 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
         user_id=user_id,
         provider=provider.name,
     )
+    session.client_id = client_id
     session.callback_port = callback_port
-    session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
+    if callback_port is not None:
+        session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
     _desktop_oauth_sessions[state] = session
 
     auth_url = _build_authorize_url(provider, client_id, redirect_uri, state, code_challenge)
@@ -912,7 +924,7 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
         provider = get_local_provider(session.provider)
         if provider is None or provider.endpoints is None:
             return ApiFailResponse(message=f"Unknown provider on session: {session.provider}")
-        client_id = client_id_for(provider.name)
+        client_id = session.client_id or client_id_for(provider.name)
 
         # Prepare token exchange request
         token_data = {
