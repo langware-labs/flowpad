@@ -379,6 +379,26 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     # stays local and never needs the hub.
     hub_refusal: str | None = None
     if prefers_hub_flow(provider):
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.api.api_types.messages import OAuthMessageStatus  # noqa: PLC0415
+        from flow_sdk.app.actions.desktop_oauth import _broadcast_oauth_msg  # noqa: PLC0415
+        from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_test_provider  # noqa: PLC0415
+
+        # Connecting this machine can reuse the owner's existing valid grant.
+        # Only an actual provider probe permits adoption; a catalogue row alone
+        # must never bypass reauthorization for a revoked credential.
+        verification = await hub_test_provider(provider)
+        if verification and verification.get("ok") is True:
+            hub_name = await hub_credentials_ref(provider)
+            local_name = await resolve_user_credentials_name(provider) or hub_name
+            await _adopt_hub_credential(provider, local_name, hub_name)
+            request_id = mint_uuid()
+            await _broadcast_oauth_msg(request_id, OAuthMessageStatus.SUCCESS)
+            return ApiSuccessResponse(data={
+                "provider": provider,
+                "oauth_request_id": request_id,
+                "status": OAuthMessageStatus.SUCCESS.value,
+            })
         try:
             hub_payload = await hub_start_auth(provider)
         except Exception as exc:  # noqa: BLE001
@@ -509,27 +529,14 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
 
 
 async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
-    """Make a hub-held token usable on this machine.
+    """Store a completed hub grant locally before reporting it connected.
 
-    Two different needs, so two behaviours:
-
-    * A provider with LOCAL consumers of the raw token — GitHub, whose token is
-      read out of local SOD by ``git push``, the ``gh`` capability and the repo
-      actions, and Slack, whose ``SlackDriver._token()`` runs on every poll from
-      the request-less poller — gets the value copied into local SOD under the
-      local name. Without this the Connections tab would say Connected while
-      every one of those kept failing.
-    * A provider with no local consumer — Atlassian, whose hourly token the hub
-      refreshes and a local copy would go stale — gets a value-free row only.
-      The token stays on the hub and is resolved when a worker actually needs it,
-      which is the rule the rest of the secret plane follows.
-
-    Both branches run ONCE, here, in the request that completed the flow. A
-    credential connected on another machine is never adopted; see
-    ``credential_for``'s hub tier for the read path that still covers it.
+    The hub owns the OAuth exchange and refresh. Every desktop connection also
+    holds the resulting access token in encrypted SOD, including dynamically
+    discovered providers. A visibility row alone is not a completed adoption.
     """
     from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
-    from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_mirror import hub_mirror  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_user_fresh  # noqa: PLC0415
@@ -538,50 +545,28 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
 
     user = await get_current_request_user_fresh()
     if user is None:
-        return
+        raise RuntimeError("OAuth token could not be stored: no local user")
 
     descriptor = get_local_provider(provider)
-    if descriptor is not None and descriptor.copy_hub_credential:
-        value = await hub_credential_value(hub_name)
-        if value:
-            # Through the same seam the desktop grants use, so an adopted token
-            # and a locally-granted one are indistinguishable afterwards.
-            await record_credential(user, provider, value)
-            logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
-        else:
-            logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
+    value = await hub_credential_value(hub_name)
+    if not value:
+        raise RuntimeError(f"OAuth token for {provider} could not be read from the hub")
+    if not await record_credential(user, provider, hub_mirror(value, hub_name), name=local_name):
+        raise RuntimeError(f"OAuth token for {provider} could not be stored locally")
+    logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
 
-    # The APP (bot) half, when the provider issues one — a SEPARATE policy from
-    # `copy_hub_credential`, not a sub-case of it. They coincide for Slack and
-    # would not for a provider whose user token stays on the hub (Atlassian's
-    # shape) while its bot token has a local consumer. Nesting this under the
-    # user-token branch would have silently adopted nothing there.
-    #
-    # `verify_held=False` because the hub's provider table advertises only the
-    # user token: the value route serves this name, but nothing discoverable
-    # points at it.
+    # Some providers also issue an app/bot token. It is not advertised in
+    # the provider table, so read its separate credential without that check.
     app_local = descriptor.app_credentials_name if descriptor is not None else None
     if app_local:
         app_value = await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
         if app_value:
-            await record_credential(user, provider, app_value, name=app_local)
+            mirrored = hub_mirror(app_value, hub_app_credentials_name_for(provider))
+            if not await record_credential(user, provider, mirrored, name=app_local):
+                raise RuntimeError(f"OAuth bot token for {provider} could not be stored locally")
             logger.info("OAuth: adopted the hub's %s BOT token into local %s", provider, app_local)
         else:
             logger.info("OAuth: no %s bot token on the hub (app tokens are optional)", provider)
-
-    # A provider the hub owns outright has no local value to record, but the row
-    # still has to exist or the table reads it as MISSING.
-    if user.get_env_var(local_name) is None:
-        user.set_env_var(
-            EnvVar(
-                name=local_name,
-                description=f"OAuth token for {provider}",
-                var_type=EnvVarType.OAUTH_TOKEN,
-                ref_name=local_name,
-            )
-        )
-        await user.update()
-
 
 async def _handle_test(provider: str) -> ApiResponse:
     """Call the provider with the stored token and report what came back.
@@ -612,6 +597,16 @@ async def _handle_test(provider: str) -> ApiResponse:
     user = await get_current_request_user_fresh()
     if user is None:
         return ApiFailResponse(message="No user in request context")
+
+    from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
+
+    stored: object = None
+    try:
+        stored = await get_user_credentials(user, cred_name, user.id)
+    except HubMirrorUnavailable as e:
+        return ApiSuccessResponse(data=ProbeResult(ok=False, detail=str(e), code="local_mirror_unavailable").as_data())
+    except Exception as e:  # noqa: BLE001
+        logger.debug("OAuth test: no local credential for %s: %s", cred_name, e)
 
     descriptor = get_local_provider(provider)
     if descriptor is None or descriptor.hub_required:
@@ -649,12 +644,6 @@ async def _handle_test(provider: str) -> ApiResponse:
         # The Hub owns the descriptor and its test. Preserve its typed result
         # instead of inventing a local provider-name branch.
         return ApiSuccessResponse(data=delegated)
-
-    stored: object = None
-    try:
-        stored = await get_user_credentials(user, cred_name, user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.debug("OAuth test: no local credential for %s: %s", cred_name, e)
 
     token = token_from_credential(stored)
     if not token and prefers_hub_flow(provider):
