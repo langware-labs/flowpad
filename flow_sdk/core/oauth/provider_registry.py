@@ -227,13 +227,13 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         token_shape=TokenShape.CREDENTIAL_DICT,
         probe=OAuthProbeSpec(
             method="GET",
-            url="https://api.anthropic.com/v1/organizations/me",
+            url="https://api.anthropic.com/api/oauth/profile",
             headers=(
                 ("anthropic-version", "2023-06-01"),
                 ("anthropic-beta", "oauth-2025-04-20"),
             ),
-            identity_fields=("name", "display_name", "email"),
-            account_key_fields=("id", "uuid"),
+            identity_fields=("account.email", "account.display_name", "account.full_name"),
+            account_key_fields=("account.uuid",),
         ),
     ),
     GOOGLE: LocalOAuthProvider(
