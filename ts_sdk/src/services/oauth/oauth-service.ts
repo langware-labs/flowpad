@@ -468,7 +468,14 @@ export class OAuthService {
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
-      throw error;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 401 || status === 403) {
+        throw Object.assign(
+          new Error('Connection access denied. This session may not have permission to manage personal connections.'),
+          { cause: error },
+        );
+      }
+      throw Object.assign(new Error(oauthErrorText(error, `Could not connect to ${provider}.`)), { cause: error });
     }
   }
 
