@@ -99,7 +99,6 @@ def test_it_is_a_real_loopback_pkce_grant():
     assert p.kind is OAuthFlowKind.LOOPBACK
     assert p.pkce is True
     assert p.hub_required is False
-    assert p.copy_hub_credential is False
     assert p.token_shape is TokenShape.CREDENTIAL_DICT
 
 

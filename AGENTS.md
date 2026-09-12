@@ -180,3 +180,10 @@ If a backend route can't be called through `apiClient` because it doesn't return
 * **Don't reuse an already-taken word.** `Flow` means a chat message (`FlowMessage`) and a bus envelope (`FlowEvent`); `Graph` means the entity graph, `GRAPH_CONTEXT`, and `graph-view`; `Workflow` means the two Claude Code mirrors. That's why ours is the compound `GraphWorkflow` — bare `Graph*` and bare `Workflow*` are both ambiguous.
 
 * **`Agent` is reserved; the `.claude/agents/*.md` prompt asset is `SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
+
+### Staging OAuth validation
+
+- The real hub repository is `/Users/shlom/Documents/dev/test_flowpad/FlowPad`; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
+- Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in as `eran@langware.ai`.
+- Validate both the deployed cloud UI and the OSS local app against staging, including connected-state updates without a browser refresh. A local hub or local frontend alone does not prove staging deployment or local-backend synchronization.
+- User-facing UI belongs in `flowpad-oss`, never the hub repo’s legacy `flowpad/ui`. Read the hub repository guidance before changing hub code.
