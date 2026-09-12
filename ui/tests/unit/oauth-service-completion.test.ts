@@ -192,14 +192,9 @@ describe('OAuthService terminal completion', () => {
 
     await (
       service as unknown as {
-        driveHubCallback: (
-          provider: string,
-          info: { provider: string; auth_url: string; oauth_request_id: string },
-          flow: OauthFlow,
-          target?: typeof TARGET,
-        ) => Promise<void>;
+        drivePopupCallback: (flow: OauthFlow) => Promise<void>;
       }
-    ).driveHubCallback('slack', flow.oAuthRequestInfo, flow, TARGET);
+    ).drivePopupCallback(flow);
 
     expect(waitCallback).toHaveBeenCalledWith('slack', 'request-3', TARGET);
     expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);
