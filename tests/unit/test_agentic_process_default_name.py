@@ -187,3 +187,41 @@ async def test_terminal_first_prompt_event_names_before_native_session_exists():
         assert (await Tab.get_by_id(tab.id)).name == "Explain blue oceans"
     finally:
         set_execution_context(previous)
+
+
+async def test_preassigned_session_init_watches_title_before_transcript_exists(monkeypatch):
+    import asyncio
+
+    from flow_sdk.builtin.agentic_process.naming.runtime import _runtime, shutdown_name_observation
+    from flow_sdk.builtin.agentic_process.naming.state import reduce_name
+
+    sid = mint_uuid()
+    process = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CLAUDE_CODE_CLI,
+                             status=ProcessStatus.RUNNING, workdir="/repo", session_id=sid,
+                             naming_state=reduce_name(SessionNameState(), first_prompt="Explain blue oceans"))
+    await process._db.save(process)
+    tab = await _tab(process)
+    projects = get_instance_settings().claude_projects_dir.resolve()
+    projects.mkdir(parents=True, exist_ok=True)
+    published = asyncio.Event()
+    original_notify = AgenticProcess.notify_updated
+
+    async def notify(self, *args, **kwargs):
+        await original_notify(self, *args, **kwargs)
+        if self.id == process.id and self.name == "Why oceans look blue":
+            published.set()
+
+    monkeypatch.setattr(AgenticProcess, "notify_updated", notify)
+    try:
+        await process.make_turn_session_adopter("test")(sid)
+        assert (await AgenticProcess.get_by_id(process.id)).naming_state.session_id == sid
+        assert _runtime().bindings[str(process.id)] == (projects,)
+        path = await asyncio.to_thread(_write_transcript, sid, title="Why oceans look blue")
+        await published.wait()
+        durable = await AgenticProcess.get_by_id(process.id)
+        assert durable.naming_state.phase is NamePhase.HARNESS
+        assert durable.name == (await Tab.get_by_id(tab.id)).name == "Why oceans look blue"
+        assert _runtime().bindings[str(process.id)] == (path.resolve(),)
+        assert set(_runtime().watchers) == {path.parent.resolve()}
+    finally:
+        await shutdown_name_observation()

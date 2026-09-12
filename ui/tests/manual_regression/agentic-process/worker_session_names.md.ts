@@ -3,19 +3,20 @@
  * NAMING_WORKSPACE_ROOT must be a disposable directory outside history's excluded
  * OS-temp prefixes so the real Chats sidebar can discover these sessions.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import { apiContext } from '../_shared/api';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
 
 const workers = [
-  { type: 'claude_code', model: 'sm' },
+  { type: 'claude_code', model: 'sm', harness: 'harness.claude.cli', permissionMode: 'default' },
   // The portable sm tier currently maps to gpt-5.4-mini, which this ChatGPT
   // account rejects. Use the model verified by the isolated Codex CLI lab.
-  { type: 'codex', model: 'gpt-5.6-terra' },
-  { type: 'copilot', model: 'auto' },
-  { type: 'opencode', model: 'opencode/big-pickle' },
+  { type: 'codex', model: 'gpt-5.6-terra', harness: 'harness.codex.cli' },
+  { type: 'copilot', model: 'auto', harness: 'harness.copilot.cli' },
+  { type: 'opencode', model: 'opencode/big-pickle', harness: 'harness.opencode.cli' },
 ];
 const workspaceRoot = process.env.NAMING_WORKSPACE_ROOT;
 const selected = process.env.NAMING_WORKER;
@@ -67,6 +68,10 @@ async function expectNames(page: Page, id: string, name: string) {
 }
 
 for (const worker of workers.filter((candidate) => !selected || candidate.type === selected)) {
+  // Overrides apply only to an explicitly selected worker, so a model intended
+  // for one harness cannot silently fund the whole matrix.
+  const model = selected === worker.type ? process.env.NAMING_MODEL || worker.model : worker.model;
+  const endpoint = selected === worker.type ? process.env.NAMING_EXPECTED_ENDPOINT_TYPEID : undefined;
   for (const pty of [false, true]) {
     test.describe(`${worker.type} ${pty ? 'PTY' : 'headless'} naming`, () => {
       test.describe.configure({ mode: 'serial' });
@@ -87,6 +92,15 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
         expect(data.types?.length).toBeGreaterThan(0);
         const workdir = join(workspaceRoot!, `${worker.type}-${mode}-${Date.now()}`);
         mkdirSync(workdir, { recursive: true });
+        if (worker.type === 'claude_code' && process.env.NAMING_CONFIGURE_CLAUDE_FIXTURE === 'true') {
+          const nativeHome = process.env.CLAUDE_CONFIG_DIR;
+          expect(nativeHome, 'Fixture onboarding requires an isolated CLAUDE_CONFIG_DIR').toBeTruthy();
+          expect(resolve(nativeHome!)).not.toBe(resolve(homedir(), '.claude'));
+          const path = join(nativeHome!, '.claude.json');
+          const config = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
+          writeFileSync(path, JSON.stringify({ ...config, hasCompletedOnboarding: true, theme: 'dark',
+            projects: { ...config.projects, [workdir]: { hasTrustDialogAccepted: true } } }, null, 2));
+        }
         projectName = `${worker.type}-${mode}-names`;
         const projectResponse = await api.post('/api/v1/graph/project', {
           data: { type: 'project', name: projectName, fs_storage_mount_path: workdir },
@@ -95,10 +109,20 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
         projectId = (await projectResponse.json()).data.id;
         const project = (await (await api.get(`/api/v1/graph/project/${projectId}`)).json()).data;
         expect(project.fs_storage_mount_path).toBe(workdir);
+        if (endpoint) {
+          const fundingResponse = await api.get('/api/v1/graph/compute_node/@local/llm-endpoint', {
+            params: { project_id: projectId },
+          });
+          expect(fundingResponse.ok(), await fundingResponse.text()).toBe(true);
+          const funding = (await fundingResponse.json()).data;
+          const source = funding.resolved[worker.harness];
+          expect(source?.endpoint_typeid).toBe(endpoint);
+          expect(source?.eligible).toBe(true);
+        }
         const response = await api.post('/api/v1/graph/compute_node/@local/createProcess', {
           data: {
-            context: { workdir, worker_type: worker.type, model: worker.model,
-              project_id: projectId, permission_mode: 'bypassPermissions',
+            context: { workdir, worker_type: worker.type, model,
+              project_id: projectId, permission_mode: worker.permissionMode ?? 'bypassPermissions',
               load_flowpad_assistant: false },
             visible: pty, pty_mode: pty,
           },
@@ -145,11 +169,20 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
           const transcript = (await response.json()).data;
           return transcript.entries.some((entry: { kind?: string }) => entry.kind === 'assistant_message');
         }).toBe(true);
+        if (worker.type === 'claude_code') {
+          // Both Claude transports emit native ai-title metadata. Equality on
+          // the immediate fallback alone cannot prove that import is alive.
+          await expect.poll(async () => {
+            const process = await processData(api, id);
+            return { phase: process.naming_state.phase,
+              bound: !!process.session_id && process.naming_state.session_id === process.session_id };
+          }).toEqual({ phase: 'harness', bound: true });
+        }
         const process = await processData(api, id);
         sessionId = process.session_id;
         await expectNames(page, id, process.name);
         await attachJson(testInfo, 'resolved-name', { id, sessionId,
-          name: process.name, naming_state: process.naming_state, model: worker.model });
+          name: process.name, naming_state: process.naming_state, model, endpoint });
         await captureScreenshot(page, testInfo, 'named-surfaces');
       });
 
@@ -172,7 +205,10 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
             entry.kind === 'assistant_message').length;
         }).toBeGreaterThanOrEqual(2);
         await expectNames(page, id, chosenName);
-        expect((await processData(api, id)).session_id).toBe(sessionId);
+        const process = await processData(api, id);
+        expect(process.session_id).toBe(sessionId);
+        await attachJson(testInfo, 'pinned-name', { id, sessionId,
+          name: process.name, naming_state: process.naming_state, auto_rename: process.auto_rename });
         await captureScreenshot(page, testInfo, 'pinned-surfaces');
       });
 
@@ -190,13 +226,18 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
         await expectNames(page, id, chosenName);
         await selectViewMode(page, pty ? 'standard' : 'advanced');
         await expect(panel(page)).toHaveAttribute('data-pty-mode', String(!pty));
+        await expect.poll(async () => (await processData(api, id)).pty_mode).toBe(!pty);
         await expectNames(page, id, chosenName);
         await selectViewMode(page, mode);
         await expect(panel(page)).toHaveAttribute('data-pty-mode', String(pty));
+        await expect.poll(async () => (await processData(api, id)).pty_mode).toBe(pty);
         await expectNames(page, id, chosenName);
         const process = await processData(api, id);
         expect(process.session_id).toBe(sessionId);
         expect(process.auto_rename).toBe(false);
+        await attachJson(testInfo, 'restored-name', { id, sessionId,
+          name: process.name, naming_state: process.naming_state, auto_rename: process.auto_rename,
+          pty_mode: process.pty_mode });
         await captureScreenshot(page, testInfo, 'restored-surfaces');
       });
     });
