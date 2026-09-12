@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -277,11 +277,11 @@ async def test_file_backed_markdown_shape(env):
 # corner: raw non-entity FILE — bytes travel, no spurious entities.json entry
 # --------------------------------------------------------------------------- #
 async def test_raw_file_no_entities_entry(env):
+    import uuid as _uuid
+
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.builtin.flow_message_bundle import pack_bundle
     from flow_sdk.storage import get_entity_embedded_storage
-
-    import uuid as _uuid
 
     fm = FlowMessage(id=str(_uuid.uuid4()), text="carrier")
     # stage a raw blob in the FM's embedded storage, reference it as a FILE

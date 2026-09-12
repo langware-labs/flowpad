@@ -375,7 +375,7 @@ a lookup keyed by the wire name, so "add the vendor" means "add a row", never "a
 | Transcript parsing | `TranscriptFormat` members (`transcript_analyzer/formats.py`), a parser module + the `PARSERS` map (`transcript_analyzer/parsers/`), `_resolve_<vendor>` and the worker→record-type map (`transcript_analyzer/resolver.py`), and the path sniff in `transcript_streamer/registry.py::_infer_worker_type` | one format per canonical shape (a rollout/events file and a stdout tee usually need two) |
 | Pricing | `transcript_analyzer/pricing/<vendor>.py` (`<VENDOR>_PRICING` + `pricing_for`) wired into `pricing/__init__.py` | else the model silently inherits the Sonnet default table |
 | Session entity | `EntityType.<VENDOR>_SESSION` (`schema/types.py`), `schema/type_info/<vendor>_session_type_info.py` (this is where the entity's `icon` name lives), an indexer function under `fs_store/indexer/functions/`, its import in `indexer/registrations.py` and `add_function` call in `indexer/builtin.py` | vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`) |
-| Asset placement | `_WORKER_NAME_TO_TYPE` and `WORKER_PREFIX` in `fs_store/placement.py` | which harness dir convention the vendor speaks (`.claude` / `.agents` / `.github`) |
+| Asset placement | `_WORKER_NAME_TO_TYPE` and `WORKER_PREFIX` in `assets/placement.py` | which harness dir convention the vendor speaks (`.claude` / `.agents` / `.github`) |
 | Vendor dirs | `InstanceSettings` (`flow_sdk/instance_settings/base_settings.py`) | home + sessions/config paths, so tests can redirect them. Claude, Codex, and Copilot all resolve their roots here; new vendors should do the same |
 
 ### Logo / icon

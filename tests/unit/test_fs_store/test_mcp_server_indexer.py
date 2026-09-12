@@ -19,13 +19,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from flow_sdk.assets.types.mcp_server import extract_mcp_server
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions.mcp_server import (
-    extract_mcp_server,
-    mcp_servers_in_file_fn,
-    mcp_source_files_fn,
-)
+from flow_sdk.fs_store.indexer.functions.mcp_server import mcp_servers_in_file_fn, mcp_source_files_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id
@@ -280,8 +277,8 @@ def test_extract_vanished_entry_returns_empty(tmp_path: Path) -> None:
 
 
 def test_resolve_source_maps_each_system(tmp_path: Path) -> None:
+    from flow_sdk.assets.types.mcp_server import _resolve_source
     from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
-    from flow_sdk.fs_store.indexer.functions.mcp_server import _resolve_source
 
     cases = [
         (tmp_path / ".vscode" / "mcp.json", "servers", WorkerType.VSCODE),
@@ -398,7 +395,7 @@ def test_cloud_connector_vanished_returns_empty(tmp_path: Path) -> None:
 def test_source_file_extractor_emits_claude_mcp_json_entry(tmp_path: Path) -> None:
     """source_file_records previously referenced a non-existent enum member and
     raised AttributeError on any .mcp.json containing servers."""
-    from flow_sdk.fs_store.source_file_records import extract_from_data
+    from flow_sdk.assets.types.source_file_records import extract_from_data
 
     data = {"mcpServers": {"github": {"command": "npx", "args": []}}}
     rows = extract_from_data(data, tmp_path / ".mcp.json")

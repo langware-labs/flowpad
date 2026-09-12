@@ -88,6 +88,27 @@ describe('Asset evidence presentation', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
+  it('retains catalog rows without claiming failed worker verification as availability', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true, error: true,
+      descriptors: [{ ...processAssets.descriptors[0], available: false, present: true }],
+    } });
+    expect(screen.getByTestId('asset-manager-section-other')).toHaveTextContent('Other assets');
+    expect(screen.getByTestId(`asset-manager-row-${PROCESS_SKILL}-embedded`)).toBeInTheDocument();
+    expect(screen.queryByTestId('asset-manager-section-available')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not verify available assets');
+  });
+
+  it('labels only positively verified unused assets as available', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true,
+      descriptors: [
+        { ...processAssets.descriptors[0], available: true },
+        { typeid: ASSISTANT_SKILL, source: 'user_dir', posix_path: '/not-verified' },
+      ],
+    } });
+    expect(screen.getByTestId('asset-manager-section-available')).toHaveTextContent('Available assets');
+    expect(screen.getByTestId('asset-manager-section-other')).toHaveTextContent('Other assets');
+  });
+
   it('keeps an attached-only asset separate from observed usage', () => {
     renderManager({ assets: { ...processAssets, workerScoped: true,
       descriptors: [

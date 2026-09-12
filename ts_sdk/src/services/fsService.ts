@@ -3,6 +3,7 @@ import { FSEntry } from '../fs/FSEntry';
 import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
+import type { AssetDocument, DocumentPatch } from '../fs/AssetDocument';
 
 /**
  * Heuristic: does a UTF-8-decoded string look like binary rather than text?
@@ -54,6 +55,21 @@ export interface SymlinkResolveResult {
  * All methods throw errors on failure (consistent with SDK patterns)
  */
 export class FSManager {
+  async ensureDocument(typeid: TypeId, path: string, assetTypeId: TypeId, spec: Record<string, import('../fs/AssetDocument').DocumentValue>): Promise<void> {
+    const action = this.createFSAction(typeid, 'ensure_document', path, 'POST');
+    action.bodyParameters = { typeid: assetTypeId.toString(), spec };
+    await dataManager.callAction(action);
+  }
+
+  async readDocument(typeid: TypeId, path: string): Promise<AssetDocument> {
+    return dataManager.callAction<undefined, AssetDocument>(this.createFSAction(typeid, 'document', path));
+  }
+
+  async updateDocument(typeid: TypeId, path: string, patch: DocumentPatch): Promise<AssetDocument> {
+    const action = this.createFSAction(typeid, 'document', path, 'POST');
+    action.bodyParameters = { ...patch };
+    return dataManager.callAction<DocumentPatch, AssetDocument>(action);
+  }
   private static instance: FSManager;
 
   static getInstance(): FSManager {

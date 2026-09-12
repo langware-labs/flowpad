@@ -24,21 +24,10 @@ export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
  * constructor not found for type"), so without it every `agent` row fetched
  * from the backend is silently discarded client-side.
  *
- * **The entity is the source of truth for `agent.md`, not the reverse.** The
- * backend type is `owns_main_ref`, so every `save()` re-renders the file from
- * these fields (`flow_sdk/fs_store/indexer/functions/agent.py:agent_default_body`),
- * preserving the identity capsule. Two consequences for callers:
- *
- *  - Edit fields here and `save()`. Do NOT write the file through
- *    `FrontMatterFsRef.save()` — it reconstructs frontmatter from `name` and
- *    `description` alone and would drop `avatar` and everything else — and do
- *    not write it through the markdown editor's frontmatter buffer, whose
- *    line-regex parser flattens list and nested values. The one sanctioned
- *    file-level writer besides `save()` is the profile editor's
- *    `patchAgentDocument`, which edits the YAML document in place (keeping
- *    unknown keys and comments `save()` would drop) and re-attaches the
- *    identity capsule; the backend resyncs the row from disk on that write.
- *  - `system_prompt` IS the markdown body.
+ * The entity projects agent.md for actions and launching. File editors use the
+ * revision-checked FS document action to preserve unknown metadata and identity
+ * capsules. The backend refreshes this projection after a document write.
+ * `system_prompt` is the Markdown body; profile controls submit typed field patches.
  */
 @registerEntity
 export class Agent extends APIEntity<Agent> {
@@ -146,13 +135,7 @@ export class Agent extends APIEntity<Agent> {
     return this.dockPointer;
   }
 
-  /**
-   * FrontMatterFsRef for `agent.md` — READ-ONLY for this type.
-   *
-   * Exposed for viewers that want the raw file. Do not `save()` through it:
-   * it rebuilds frontmatter from `name`/`description` only, so it would drop
-   * every other field. `Agent.save()` is the sanctioned writer.
-   */
+  /** File accessor; structured edits use readDocument()/updateDocument(). */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
     const directory = this.bundleDirectory;
@@ -192,19 +175,15 @@ export class Agent extends APIEntity<Agent> {
     return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
   }
 
-  /**
-   * Create an Agent in the selected project, or in user scope when null.
-   * Placement remains backend-owned; the optional folder is intentionally
-   * reserved for compatibility with the shared Quick Create interface.
-   */
+  /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
     project: { typeId?: TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Agent> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const agent = new Agent({ name: name.trim() });
-    return agent.save(scopeIds);
+    return agent.save(scopeIds, destination);
   }
 
   /**

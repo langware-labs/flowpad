@@ -13,7 +13,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 _TURN = [
     {"type": "session.start", "data": {"sessionId": "s1"}},

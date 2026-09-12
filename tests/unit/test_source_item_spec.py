@@ -5,10 +5,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.db import DbSerializer
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.timeout(5)

@@ -87,6 +87,8 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
 
 
 def register_default_functions(idx: FSIndexer) -> None:
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+    register_asset_runtime_bindings()
     """Wire every production walker onto ``idx`` — the one registration graph.
 
     Split from ``build_default_indexer`` so a caller that needs the graph but

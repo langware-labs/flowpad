@@ -19,12 +19,16 @@ from flow_sdk.request_context.execution_context import (
 
 
 @pytest.fixture(autouse=True)
-def claude_home(tmp_path, monkeypatch):
+async def claude_home(tmp_path, monkeypatch):
+    from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
+
+    await shutdown_name_observation()
     directory = str(tmp_path / "claude")
     monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", directory)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", directory)
     reset_instance_settings()
     yield
+    await shutdown_name_observation()
     reset_instance_settings()
 
 

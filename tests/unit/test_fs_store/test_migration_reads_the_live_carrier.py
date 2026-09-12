@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.identity_carrier import MalformedCarrier
 from flow_sdk.capsules import AssetCapsule, CapsuleData
 from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import MalformedCarrier
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.migrations import migration_2026_09_identity_live_forms as mig
 

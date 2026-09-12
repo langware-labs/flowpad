@@ -60,7 +60,6 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookCapability, HookEventType, HookScope
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
@@ -69,12 +68,13 @@ from flow_sdk.transcript_analyzer import (
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 VENDOR = vendor_for("opencode")
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.assets.directory import AssetDir
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
@@ -346,10 +346,8 @@ class OpenCodeDriver:
         return descriptor.path if descriptor else None
 
     async def available_assets(self, process: "AgenticProcess"):
-        from flow_sdk.assets.worker_inventory.opencode import available_assets
-
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
-
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.asset_inventory import available_assets
         from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import add_dir_contributions
 
         return await available_assets(inventory_inputs(process, skill_paths=add_dir_contributions(process.resolved_add_dirs)[1]))

@@ -6,7 +6,7 @@ registered next to their definitions in ``fs_store/indexer/functions/<type>``.
 These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
-from flow_sdk.fs_store.identity_carrier import Derived
+from flow_sdk.assets.identity_carrier import Derived
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 

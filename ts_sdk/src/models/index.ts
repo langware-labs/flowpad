@@ -12,8 +12,6 @@ export * from './Ontology';
 export * from './ResultType';
 export * from './env_var';
 export * from './FSOptions';
-export * from './skill';
-export * from './activation';
 export * from './UserWarning';
 export * from './DockPointer';
 export * from './GitOrigin';

@@ -9,10 +9,10 @@ from pydantic import JsonValue, field_validator
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.assets.git_origin import PortableGitOrigin
+from flow_sdk.assets.layout import File, Folder
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
 from flow_sdk.schema.data_spec import DataSpec
-from flow_sdk.schema.layout import File, Folder
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.fs_record import FSRecord
@@ -135,7 +135,8 @@ def read_asset_tree(
     observed_id = info.read_id(parser_ref)
     if observed_id != expected_id:
         raise ValueError("asset identity does not match the requested entity")
-    records = list(info.from_disk_fn(parser_ref, expected_id))
+    from flow_sdk.assets.serialization import read_asset_data
+    records = [read_asset_data(parser_path, info, identity=expected_id)]
     matching = [record for record in records if str(record.id) == expected_id and str(record.type) == entity_type]
     if len(records) != 1 or len(matching) != 1:
         raise ValueError("asset parser must return exactly one matching record")

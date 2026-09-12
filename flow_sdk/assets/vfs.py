@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pydantic import ConfigDict
 
+from flow_sdk.assets.layout import Folder
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.layout import Folder
 
 
 class LocalAssetVFSBinding(DataSpec):

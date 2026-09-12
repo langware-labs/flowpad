@@ -10,8 +10,8 @@ Accepts a bare name (``"asset-cleanup"``), a ``TypeId`` or its string form
 """
 from typing import TYPE_CHECKING, Optional, Union
 
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.layout import Folder
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent

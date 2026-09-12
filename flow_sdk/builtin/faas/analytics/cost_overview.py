@@ -27,10 +27,10 @@ def load_recent_sessions_for_cost(limit: int = 100) -> list[dict]:
     expects (``cache_read_tokens`` / ``cache_creation_tokens`` / ``tool_uses``),
     which differ from the indexer record's stat field names.
     """
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
     from flow_sdk.fs_store.indexer.functions.claude_sessions import (
         discover_claude_session_paths_iter,
         ensure_claude_session_stats,
-        extract_claude_session_from_path,
     )
 
     by_mtime = []

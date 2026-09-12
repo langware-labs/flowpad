@@ -18,11 +18,11 @@ import logging
 
 from pydantic import BaseModel
 
-from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
 from flow_sdk.core import action
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.transcript_analyzer.worker_status import ExecutionMode, classify_execution_mode
 
 logger = logging.getLogger(__name__)
 

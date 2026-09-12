@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.identity_carrier import UnclaimedPath
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import UnclaimedPath
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all

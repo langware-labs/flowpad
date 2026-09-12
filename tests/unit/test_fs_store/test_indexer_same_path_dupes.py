@@ -54,7 +54,13 @@ async def _forge_duplicate_row(path: Path, entity_id: str) -> None:
     """
     cls = SchemaRegistry.get_entity_cls("markdown")
     entity = cls(id=entity_id, name="forged-duplicate", asset_ref=str(path))
-    await entity.save()
+    from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
+
+    token = _SUPPRESS_STORE.set(True)
+    try:
+        await entity.save()
+    finally:
+        _SUPPRESS_STORE.reset(token)
     assert entity_id in await md_sources(), "the forged duplicate row must exist"
 
 

@@ -47,9 +47,9 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.builtin.agentic_process.transcript_subscriber import _route_to_ap
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -119,13 +119,15 @@ async def _running_pty_process_mid_turn() -> tuple[AgenticProcess, Path]:
 
 async def _settle(before: set[asyncio.Task]) -> None:
     """Await every task the production path spawned during this step — the
-    debounced flush and anything it schedules. Only tasks that did not exist
+    debounced flush and finite work it schedules. Long-lived naming observers
+    remain active until fixture teardown. Only tasks that did not exist
     beforehand are awaited, so this can never block on the test runner's own."""
     current = asyncio.current_task()
     for _ in range(10):
         spawned = [
             t for t in asyncio.all_tasks()
             if t not in before and t is not current and not t.done()
+            and t.get_name() != "worker-name-watch"
         ]
         if not spawned:
             return

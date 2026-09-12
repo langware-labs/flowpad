@@ -13,11 +13,11 @@ two are different layers — a credential DEFINITION versus one project's
 declaration that it needs a variable. Sharing a glyph would say they are the
 same kind of thing.
 """
-from flow_sdk.builtin.credential_spec import CredentialManifestSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.credential_spec import credential_spec_identity_key
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.credential_spec import credential_spec_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

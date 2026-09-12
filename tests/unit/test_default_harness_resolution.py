@@ -4,7 +4,8 @@
 (3) claude. Never raises. Fast unit test — the capability boundary is monkeypatched.
 """
 import flow_sdk.core.capabilities.registry as cap_registry
-from flow_sdk.fs_store.placement import HarnessType, coerce_harness, resolve_default_harness
+from flow_sdk.assets.placement import HarnessType, coerce_harness
+from flow_sdk.builtin.asset_placement import resolve_default_harness
 
 
 def test_coerce_harness_maps_kinds_names_and_values():

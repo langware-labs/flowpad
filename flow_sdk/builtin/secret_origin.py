@@ -6,12 +6,11 @@ receiver's value store and is resolved only while launching a worker process.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.secret_origin_identity import secret_origin_id
+from flow_sdk.assets.types.secret_origin_identity import secret_origin_id
 from flow_sdk.builtin.secret_origin_refs import (
     SECRET_ORIGIN_ADAPTER,
     LocalSecretRef,
@@ -19,13 +18,17 @@ from flow_sdk.builtin.secret_origin_refs import (
     SecretOriginLocator,
 )
 from flow_sdk.core import Entity
+from flow_sdk.schema.data_spec.secret_origin_contract import (
+    SOD_STORE_ENV_LOCAL,
+    SOD_STORE_SODOT,
+    assert_value_free,
+    is_valid_secret_origin_env_var,
+)
 from flow_sdk.schema.types import EntityType
 
-SECRET_ORIGIN_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
 # The two local SOD stores the wizard may cache a provided value into.
-SOD_STORE_SODOT = "sodot"
-SOD_STORE_ENV_LOCAL = "env-local"
+
+
 _VALID_SOD_STORES = {SOD_STORE_SODOT, SOD_STORE_ENV_LOCAL}
 
 # Keys that UNAMBIGUOUSLY hold a plaintext value (vs. a value-free coordinate — a
@@ -34,35 +37,13 @@ _VALID_SOD_STORES = {SOD_STORE_SODOT, SOD_STORE_ENV_LOCAL}
 # construction; this guard is the safety net that makes a regression fail loudly
 # instead of committing a secret to git — so it only trips on keys that can only
 # mean "the value itself".
-_FORBIDDEN_VALUE_KEYS = {
-    "value",
-    "secret_value",
-    "plaintext",
-    "plain_value",
-    # A salted digest is kept per-machine in the encrypted sodot and must never
-    # reach a reference json or a hub payload. Naming it here makes a refactor
-    # that tries fail loudly instead of leaking quietly.
-    "digest",
-    "value_digest",
-    "value_hash",
-}
 
 
-def is_valid_secret_origin_env_var(env_var: str) -> bool:
-    return bool(SECRET_ORIGIN_ENV_VAR_RE.fullmatch(env_var))
 
 
-def assert_value_free(data: Any, *, where: str = "secret reference") -> None:
-    """Raise if ``data`` (a reference json / share payload) contains any
-    plaintext-value-looking key at any depth. The reference must be a pointer only."""
-    if isinstance(data, dict):
-        for k, v in data.items():
-            if isinstance(k, str) and k.strip().lower() in _FORBIDDEN_VALUE_KEYS:
-                raise ValueError(f"{where} must be value-free; found forbidden key {k!r}")
-            assert_value_free(v, where=where)
-    elif isinstance(data, (list, tuple)):
-        for item in data:
-            assert_value_free(item, where=where)
+
+
+
 
 
 class SecretOrigin(Entity):

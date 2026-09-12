@@ -4,17 +4,124 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.assets.asset_publisher import publish_asset, resolve_asset_folder
+from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.git_publish import (
+    AssetGitReceipt,
     AssetPublishCode,
     AssetPublishError,
     AssetPublishResult,
     GitAuthor,
+    asset_relative_path,
 )
 from flow_sdk.assets.projection import PORTABLE_ASSET_CONTRACT_VERSION
 from flow_sdk.builtin.asset_projection import project_asset_tree
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.utils.command_executor import CommandExecutor
+from flow_sdk.utils.git_folder import GitError, GitErrorCode, GitFolder, validate_github_remote
+
+#: The branch a published asset is pinned to. Advanced only by publishing.
+CLOUD_BRANCH = "flow-cloud"
+
+_GIT_ERROR_TO_PUBLISH: dict[GitErrorCode, AssetPublishCode] = {
+    GitErrorCode.NOT_A_REPO: AssetPublishCode.NOT_GIT_BACKED,
+    GitErrorCode.REMOTE_INVALID: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.REMOTE_MISMATCH: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.BRANCH_INVALID: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.BRANCH_NOT_FOUND: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.AUTH_REQUIRED: AssetPublishCode.GITHUB_NOT_CONNECTED,
+    GitErrorCode.AUTH_FAILED: AssetPublishCode.GITHUB_NOT_CONNECTED,
+    GitErrorCode.UPSTREAM_UNAVAILABLE: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.ORIGIN_OUT_OF_DATE: AssetPublishCode.BRANCH_DIVERGED,
+    GitErrorCode.DETACHED_HEAD: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.BRANCH_AHEAD: AssetPublishCode.BRANCH_AHEAD,
+    GitErrorCode.BRANCH_DIVERGED: AssetPublishCode.BRANCH_DIVERGED,
+    GitErrorCode.PUSH_REJECTED: AssetPublishCode.PUSH_REJECTED,
+    GitErrorCode.PATH_ESCAPES_REPO: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.COMMAND_FAILED: AssetPublishCode.ORIGIN_INVALID,
+}
+
+
+def as_publish_error(error: GitError) -> AssetPublishError:
+    """Map a mechanics failure onto the asset contract, keeping it output-free."""
+    code = _GIT_ERROR_TO_PUBLISH.get(error.code, AssetPublishCode.ORIGIN_INVALID)
+    return AssetPublishError(code, "Git operation failed", data=error.data)
+
+
+async def resolve_asset_folder(
+    asset_root: Path,
+    *,
+    executor: CommandExecutor,
+    token: str | None = None,
+) -> GitFolder:
+    """The checkout containing ``asset_root``.
+
+    The caller supplies the executor for the intended filesystem. Asset
+    utilities never look up a compute node or choose a runtime implicitly.
+    """
+    try:
+        return await GitFolder.discover(asset_root, executor=executor, token=token)
+    except GitError as exc:
+        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is not inside a Git checkout") from exc
+
+
+
+
+async def publish_asset(
+    *,
+    asset_root: Path,
+    asset_typeid: TypeId,
+    author: GitAuthor,
+    folder: GitFolder,
+    cloud_branch: str = CLOUD_BRANCH,
+) -> AssetGitReceipt:
+    """Publish one asset. Everything here is an ASSET rule; the git choreography
+    lives in :meth:`GitFolder.publish`.
+
+    The supplied folder already carries its executor and checkout identity.
+    """
+    try:
+        async with folder.lock():
+            asset_rel = asset_relative_path(folder.root, asset_root)
+            remote_url = await folder.get_remote_url()
+            if not remote_url:
+                raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Checkout has no origin remote")
+            # Asset policy, not a git rule: only a canonical GitHub origin may
+            # publish. Checked before any network call so a bad origin fails fast.
+            owner, name = validate_github_remote(remote_url)
+
+            # One literal: the trailer that identifies this asset's commit is
+            # the same string the retry path recognises its own pending commit
+            # by. Two copies drifting apart would silently strand the retry.
+            asset_trailer = f"FlowPad-Asset: {asset_typeid}"
+            receipt = await folder.publish(
+                asset_rel,
+                message=f"Publish FlowPad asset {asset_typeid}",
+                author=author,
+                trailers=[
+                    asset_trailer,
+                    f"FlowPad-User: {author.typeid or author.email}",
+                ],
+                also_advance=cloud_branch,
+                retry_marker=asset_trailer,
+            )
+
+            return AssetGitReceipt(
+                changed=receipt.changed,
+                repo_root=folder.root,
+                branch=cloud_branch,
+                head_commit=receipt.head_commit,
+                origin=PortableGitOrigin(
+                    provider="github",
+                    owner=owner,
+                    name=name,
+                    branch=cloud_branch,
+                    head_commit=receipt.head_commit,
+                    rel_path=asset_rel,
+                ),
+            )
+    except GitError as exc:
+        raise as_publish_error(exc) from exc
 
 
 async def owning_project(entity):

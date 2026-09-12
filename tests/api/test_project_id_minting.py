@@ -103,9 +103,7 @@ def test_codex_session_record_carries_cwd_for_stamping(tmp_path, monkeypatch):
     yields no project tab."""
     import json as _json
 
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import (
-        extract_codex_session_from_path,
-    )
+    from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
 
     proj_dir = tmp_path / "work" / "repo"
     proj_dir.mkdir(parents=True)

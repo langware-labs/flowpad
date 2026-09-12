@@ -54,10 +54,8 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
     if hint in (None, "copilot"):
         from types import SimpleNamespace
 
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-            find_copilot_session_jsonl,
-            read_copilot_session_meta,
-        )
+        from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import find_copilot_session_jsonl
 
         path = find_copilot_session_jsonl(session_id)
         if path is not None:

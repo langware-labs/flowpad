@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { dataContext, Project } from '@sdk';
+import { dataContext, FSRef, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -25,8 +25,8 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScopeSelection, type HarnessKind, type Scope } from './ScopeSelection';
-import { getDescriptor, harnessAppliesTo, subFolderFor, type QuickCreateDescriptor } from './registry';
+import { ScopeSelection, type Scope } from './ScopeSelection';
+import { getDescriptor, creationMounts, type QuickCreateDescriptor } from './registry';
 import { useProjectSnapshot } from './useProjectSnapshot';
 
 interface QuickCreateDialogProps {
@@ -38,14 +38,14 @@ interface QuickCreateDialogProps {
 
 function projectPrefix(project: Project | null): string | null {
   if (!project) return null;
-  return project.displayName ?? project.name ?? null;
+  return project.fs_storage_mount_path ?? null;
 }
 
-function defaultPathFor(scope: Scope, descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
+function defaultPathFor(scope: Scope, descriptor: QuickCreateDescriptor, mount: string): string {
   if (scope.kind === 'folder') return scope.folderPath ?? '';
-  const sub = subFolderFor(descriptor, harness);
-  const prefix = scope.kind === 'user' ? '~' : projectPrefix(scope.project);
-  return [prefix, sub].filter(Boolean).join('/') || sub;
+  const sub = mount || creationMounts(descriptor.type)[0] || '';
+  const prefix = scope.kind === 'user' ? dataContext.bootstrapInfo?.desktop_info?.paths?.home : projectPrefix(scope.project);
+  return prefix && sub ? `${prefix.replace(/[\\/]+$/, '')}/${sub}` : '';
 }
 
 function initialScope(project: Project | null): Scope {
@@ -67,7 +67,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const [name, setName] = useState('');
   const [scope, setScope] = useState<Scope>(() => initialScope(project ?? null));
-  const [harness, setHarness] = useState<HarnessKind>('all');
+  const [mount, setMount] = useState('');
   const [path, setPath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -82,8 +82,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const next = initialScope(project ?? null);
       setName('');
       setScope(next);
-      setHarness('all');
-      setPath(defaultPathFor(next, descriptor, 'all'));
+      setMount(creationMounts(descriptor.type)[0] ?? '');
+      setPath(defaultPathFor(next, descriptor, creationMounts(descriptor.type)[0] ?? ''));
       setIsSubmitting(false);
       requestAnimationFrame(() => nameRef.current?.focus());
     }
@@ -100,7 +100,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     const next: Scope = { ...scope, project: project ?? null };
     setScope(next);
     setPath((current) =>
-      current === defaultPathFor(scope, descriptor, harness) ? defaultPathFor(next, descriptor, harness) : current,
+      current === defaultPathFor(scope, descriptor, mount) ? defaultPathFor(next, descriptor, mount) : current,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id]);
@@ -110,15 +110,15 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       if (!descriptor) return;
       setScope(next);
       // Seeding the path on chip change is part of the spec: chip = default-setter.
-      setPath(defaultPathFor(next, descriptor, harness));
+      setPath(defaultPathFor(next, descriptor, mount));
     },
-    [descriptor, harness],
+    [descriptor, mount],
   );
 
-  const handleHarnessChange = useCallback(
-    (next: HarnessKind) => {
+  const handleMountChange = useCallback(
+    (next: string) => {
       if (!descriptor) return;
-      setHarness(next);
+      setMount(next);
       setPath(defaultPathFor(scope, descriptor, next));
     },
     [descriptor, scope],
@@ -138,9 +138,9 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       if (!descriptor) return;
       const next: Scope = { kind: 'project', project: selectedProject, folderPath: null };
       setScope(next);
-      setPath(defaultPathFor(next, descriptor, harness));
+      setPath(defaultPathFor(next, descriptor, mount));
     },
-    [descriptor, harness],
+    [descriptor, mount],
   );
 
   const handleProjectPick = useCallback(
@@ -178,15 +178,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     }
   }, [computeNode, t]);
 
-  const folderVfsPath = useMemo<string | undefined>(() => {
-    if (!descriptor || scope.kind !== 'project') return undefined;
-    const prefix = projectPrefix(scope.project);
-    if (prefix && path.startsWith(`${prefix}/`)) return path.slice(prefix.length + 1);
-    return subFolderFor(descriptor, harness);
-  }, [descriptor, scope, harness, path]);
-
   const handleCreate = useCallback(async () => {
-    if (!descriptor || !name.trim() || isSubmitting) return;
+    if (!descriptor || !name.trim() || !path.trim() || isSubmitting || !computeNode?.typeId) return;
     if (descriptor.allowedScopes && !descriptor.allowedScopes.includes(scope.kind)) return;
     setIsSubmitting(true);
     try {
@@ -194,10 +187,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const res = await descriptor.create({
         project: selectedProject,
         name,
-        absolutePath: path,
         scope: scope.kind,
-        harness,
-        folderVfsPath,
+        destination: new FSRef(path, computeNode.typeId, 'folder').toJSON(),
       });
       notify.success({ title: t(res.toastTitle) });
       commit();
@@ -209,7 +200,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     } finally {
       setIsSubmitting(false);
     }
-  }, [descriptor, name, path, scope, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange, t]);
+  }, [descriptor, name, path, scope, computeNode, isSubmitting, commit, navigation, onOpenChange, t]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -223,7 +214,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   // Backend type registry owns the glyph (TypeInfo.icon).
   const Icon = iconForType(descriptor.type);
   const scopeAllowed = !descriptor.allowedScopes || descriptor.allowedScopes.includes(scope.kind);
-  const canCreate = !!name.trim() && !!path.trim() && scopeAllowed && !isSubmitting;
+  const canCreate = !!computeNode?.typeId && !!name.trim() && !!path.trim() && scopeAllowed && !isSubmitting;
 
   return (
     <>
@@ -259,13 +250,13 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
               <ScopeSelection
                 scope={scope}
                 onScopeChange={handleScopeChange}
-                harness={harness}
-                onHarnessChange={handleHarnessChange}
+                mount={mount}
+                onMountChange={handleMountChange}
                 path={path}
                 onPathChange={setPath}
                 onPickFolder={handlePickFolder}
                 onOpenProjectPicker={() => setProjectPickerOpen(true)}
-                harnessApplies={!!descriptor && harnessAppliesTo(descriptor.type)}
+                mounts={creationMounts(descriptor.type)}
                 allowedScopes={descriptor.allowedScopes}
               />
             </div>

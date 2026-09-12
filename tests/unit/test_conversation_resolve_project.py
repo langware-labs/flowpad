@@ -23,7 +23,7 @@ async def test_resolves_from_shared_entity_over_ambient_fallback() -> None:
     # A shared entity owned by project B, while the request's ambient project is A.
     project_b = str(uuid.uuid4())
     wb_id = str(uuid.uuid4())
-    wb = Whiteboard.model_validate({"id": wb_id, "project_id": project_b})
+    wb = Whiteboard.model_validate({"id": wb_id, "name": wb_id, "project_id": project_b})
     await wb.save(None)
 
     project_a = str(uuid.uuid4())
@@ -64,7 +64,7 @@ async def test_first_resolvable_entity_wins() -> None:
     # the fallback — the resolver skips it and keeps scanning.
     project_c = str(uuid.uuid4())
     wb_id = str(uuid.uuid4())
-    await Whiteboard.model_validate({"id": wb_id, "project_id": project_c}).save(None)
+    await Whiteboard.model_validate({"id": wb_id, "name": wb_id, "project_id": project_c}).save(None)
 
     resolved = await Conversation.resolve_project_id(
         [f"whiteboard-{uuid.uuid4()}", f"whiteboard-{wb_id}"],

@@ -13,12 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from flow_sdk.fs_store.fs_record import write_text_if_changed
-from flow_sdk.assets.frontmatter import (
-    _extract_frontmatter,
-    _yaml_load,
-    merge_frontmatter,
-)
+from flow_sdk.assets.document import DocumentPatch, read_document, update_document
 
 if TYPE_CHECKING:
     from flow_sdk.core.entity.entity_model import Entity
@@ -46,16 +41,12 @@ class FrontmatterAccessor:
 
     def _read_fields(self) -> dict[str, Any]:
         path = self._body_path()
-        if not path or not path.exists():
+        if path is None:
             return {}
         try:
-            fm = _extract_frontmatter(path.read_text(encoding="utf-8"))
+            return read_document(path).fields
         except OSError:
             return {}
-        if not fm:
-            return {}
-        parsed = _yaml_load(fm)
-        return parsed if isinstance(parsed, dict) else {}
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._read_fields().get(key, default)
@@ -77,8 +68,7 @@ class FrontmatterAccessor:
             raise ValueError(
                 f"Entity {self._entity!r} has no asset_ref body file to write frontmatter into"
             )
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
-        write_text_if_changed(path, merge_frontmatter(text, {key: value}))
+        update_document(path, DocumentPatch(set_fields={key: value}))
         return self
 
     def __setitem__(self, key: str, value: Any) -> None:
