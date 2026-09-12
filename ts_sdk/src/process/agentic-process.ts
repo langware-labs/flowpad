@@ -63,6 +63,18 @@ import {
 } from './process-hooks';
 import type { HookEventType } from '../claude_hook_events/event-types';
 
+/** Read-only projection of the backend session naming FSM. */
+export interface SessionNameState {
+  readonly phase: 'unnamed' | 'prompt_fallback' | 'harness' | 'user_pinned' | 'protected_unknown';
+  readonly title: string | null;
+  readonly revision: number;
+  readonly session_id: string | null;
+  readonly source: string | null;
+  readonly fallback: string | null;
+  readonly cursors: Readonly<Record<string, { readonly revision: string; readonly sequence: number | null }>>;
+  readonly legacy_candidates: Readonly<Record<string, string>>;
+}
+
 // Connection membership and PTY recovery are now fully backend-owned:
 //   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
 //     to the WS lifecycle (server/routes/websocket.py).
@@ -325,8 +337,9 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
   connection_id?: string | null;
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename?: boolean;
+  readonly naming_state?: SessionNameState | null;
   /** Last view mode this session was viewed in (`vibe|standard|advanced|dev`).
    *  Per-session memory: opening the session applies it, changing mode while it
    *  is open records the new one. See `applyProcessViewMode`. */
@@ -840,6 +853,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
   }
 
+  /** Report an OSC frame; the backend driver validates it and reconciles names. */
+  async observeTitle(title: string, sessionId = this.session_id): Promise<void> {
+    const info = new ActionInfo('observe-title', AgenticProcess.type, this.id, 'POST');
+    info.bodyParameters = { title, session_id: sessionId ?? null };
+    await dataManager.callAction(info);
+  }
+
   /**
    * Headless transport (`pty_mode === false`): the chat streams over
    * flowDataStream and the process legitimately has NO shell/xterm — a null
@@ -987,8 +1007,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename: boolean = true;
+  readonly naming_state: SessionNameState | null;
 
   /**
    * The view mode this session was last seen in — per-SESSION mode memory.
@@ -1631,6 +1652,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.connection_id = entity.connection_id;
     this.auto_rename = entity.auto_rename ?? true;
+    this.naming_state = entity.naming_state ?? null;
     this.last_mode = entity.last_mode ?? null;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;

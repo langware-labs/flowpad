@@ -40,6 +40,7 @@ export type {
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
+  SessionNameState,
   ShowTarget,
   SpawnResult,
 } from './agentic-process';

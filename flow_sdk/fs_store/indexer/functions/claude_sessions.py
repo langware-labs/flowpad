@@ -49,7 +49,6 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
 _HEAD_LINES = 64
-_TAIL_BYTES = 16384
 
 # Fields populated onto the record by ensure_claude_session_stats. Mirror of
 # the _SessionStatsProp descriptors on the deleted subclass.
@@ -160,8 +159,8 @@ def extract_claude_session_from_path(
     """Build a Record from a JSONL transcript path.
 
     Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
-    session_id / slug / cwd, tail ``_TAIL_BYTES`` for the most-recent ai-title
-    or custom-title. The searchable ``content`` (extractive transcript text for
+    session_id / slug / cwd; title metadata is scanned once and read
+    incrementally thereafter, with explicit custom titles taking precedence. The searchable ``content`` (extractive transcript text for
     FTS) requires a full-transcript parse via ``worker_summary_log`` — this is
     gated by the indexer's skip-fresh check, so it only runs when the JSONL has
     changed. Listing callers that hit many transcripts per request (e.g.
@@ -196,32 +195,10 @@ def extract_claude_session_from_path(
     except OSError:
         pass
 
-    # tail — most-recent ai-title (preferred) or custom-title
-    try:
-        sz = path.stat().st_size
-        with open(path, "rb") as fb:
-            if sz > _TAIL_BYTES:
-                fb.seek(sz - _TAIL_BYTES)
-            tail = fb.read().decode("utf-8", errors="replace")
-        tail_custom: str = ""
-        for line in reversed(tail.splitlines()):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                raw = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            rtype = raw.get("type")
-            if rtype == "ai-title" and raw.get("aiTitle"):
-                custom_title = raw["aiTitle"]
-                break
-            if not tail_custom and rtype == "custom-title" and raw.get("customTitle"):
-                tail_custom = raw["customTitle"]
-        if not custom_title and tail_custom:
-            custom_title = tail_custom
-    except OSError:
-        pass
+    from flow_sdk.assets.types.claude_titles import read_claude_title
+
+    title = read_claude_title(path)
+    custom_title = title.title if title else ""
 
     name = custom_title or slug or session_id
 

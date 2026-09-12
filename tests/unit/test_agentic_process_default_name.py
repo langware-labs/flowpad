@@ -1,316 +1,189 @@
-"""Unit tests for AgenticProcess.stamp_default_name — the lazy, non-pinning
-default-name stamp that gives a nameless process the same title the Recent-
-sessions history list shows, so the tab chip / footer / sidebar stop rendering
-the ``agentic_process-<id>`` synthetic.
+"""Public naming lifecycle exercised with persisted entities and native metadata."""
 
-Contract:
-  * stamps ``name`` from ``get_worker_session_name`` when a subject exists;
-  * leaves ``auto_rename`` True (a stamp, NOT a user rename — a later real
-    OSC/LLM title can still win);
-  * first-writer-wins no-op once ``name`` is set, when the user pinned it
-    (``auto_rename=False``), when there is no ``session_id``, or when the
-    session has no subject yet (``get_worker_session_name`` → None).
-"""
-
-import uuid
-from unittest.mock import AsyncMock, PropertyMock, patch
+import json
 
 import pytest
+from starlette.requests import Request
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.fs_store.record_paths import (
-    get_default_records_data_root,
-    get_default_records_root,
-    set_default_records_data_root,
-    set_default_records_root,
+from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus
+from flow_sdk.builtin.agentic_process.naming.state import NamePhase, SessionNameState
+from flow_sdk.builtin.tab import Tab
+from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+from flow_sdk.request_context.execution_context import (
+    ExecutionContext,
+    get_execution_context,
+    set_execution_context,
 )
 
 
 @pytest.fixture(autouse=True)
-def use_tmp_records_root(tmp_path):
-    orig_root = get_default_records_root()
-    orig_data_root = get_default_records_data_root()
-    set_default_records_root(tmp_path)
-    set_default_records_data_root(tmp_path)
-    yield tmp_path
-    set_default_records_root(orig_root)
-    set_default_records_data_root(orig_data_root)
+def claude_home(tmp_path, monkeypatch):
+    directory = str(tmp_path / "claude")
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", directory)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", directory)
+    reset_instance_settings()
+    yield
+    reset_instance_settings()
 
 
-def _proc(**kwargs) -> AgenticProcess:
-    return AgenticProcess(id=mint_uuid(), **kwargs)
+async def _proc(**kwargs):
+    if not kwargs.get("name"):
+        kwargs.setdefault("naming_state", SessionNameState(session_id=kwargs.get("session_id")))
+    process = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CLAUDE_CODE_CLI,
+                             status=ProcessStatus.STOPPED, **kwargs)
+    await process.save()
+    return process
 
 
-def _patch_transcript_path(value=None):
-    return patch.object(
-        AgenticProcess, "transcript_path", new_callable=PropertyMock, return_value=value
-    )
+def _write_transcript(sid, *, prompt="why is the tab name not proper?", title=None):
+    rows = [{"type": "user", "message": {"role": "user", "content": prompt},
+             "uuid": mint_uuid(), "sessionId": sid, "cwd": "/repo", "isSidechain": False,
+             "entrypoint": "sdk-cli", "timestamp": "2026-09-13T00:00:00Z"},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking into it."}]},
+             "uuid": mint_uuid(), "sessionId": sid, "cwd": "/repo"}]
+    if title is not None:
+        rows.append({"type": "ai-title", "aiTitle": title, "sessionId": sid})
+    path = get_instance_settings().claude_projects_dir / "-repo" / f"{sid}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return path
+
+
+async def _tab(process, *, name=None):
+    tab = Tab(id=mint_uuid(), target_type=process.type, target_id=process.id, name=name)
+    await tab.save()
+    return tab
+
+
+async def _rename_action(process, name):
+    """Give the real action a real ASGI request, with no patched body reader."""
+    async def receive():
+        return {"type": "http.request", "body": json.dumps({"name": name}).encode(), "more_body": False}
+
+    request = Request({"type": "http", "method": "POST", "path": "/rename", "headers": []}, receive)
+    previous = get_execution_context()
+    try:
+        async with ExecutionContext.create() as context:
+            context.request_info.request = request
+            return await process._rename_action()
+    finally:
+        set_execution_context(previous)
 
 
 async def test_stamps_subject_and_keeps_auto_rename():
-    proc = _proc(session_id=str(uuid.uuid4()))
-    assert proc.auto_rename is True
-    with _patch_transcript_path(), patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Base directory spec"),
-    ), patch.object(
-        AgenticProcess,
-        "get_by_id",
-        new=AsyncMock(return_value=proc),
-    ), patch.object(
-        proc._db,
-        "compare_and_set_data_field",
-        new=AsyncMock(return_value=(proc, True)),
-    ) as compare_and_set:
-        changed = await proc.stamp_default_name()
-    assert changed is True
-    assert proc.name == "Base directory spec"
-    # The critical invariant: a STAMP must NOT pin auto_rename (unlike rename()).
-    assert proc.auto_rename is True
-    compare_and_set.assert_awaited_once_with(
-        str(proc.id),
-        proc.type,
-        "name",
-        None,
-        "Base directory spec",
-    )
+    sid = mint_uuid()
+    _write_transcript(sid, title="Base directory spec")
+    process = await _proc(session_id=sid)
+    assert await process.stamp_default_name() is True
+    durable = await AgenticProcess.get_by_id(process.id)
+    assert process.name == durable.name == "Base directory spec"
+    assert durable.auto_rename is True and durable.naming_state.phase is NamePhase.HARNESS
 
 
 async def test_stamp_mirrors_name_onto_open_tab():
-    """The terminal chip renders Tab.name (not the live entity) and the generic
-    entity→tab sync skips terminals — so the stamp must mirror onto the tab itself,
-    else the chip never heals. set_label (not rename) keeps auto_rename intact."""
-    proc = _proc(session_id=str(uuid.uuid4()))
-
-    class _StubTab:
-        def __init__(self):
-            self.name = f"agentic_process-{proc.id[:4]}…{proc.id[-4:]}"  # frozen synthetic
-            self.set_label = AsyncMock()
-
-    tab = _StubTab()
-    with _patch_transcript_path(), patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Base directory spec"),
-    ), patch.object(
-        AgenticProcess,
-        "get_by_id",
-        new=AsyncMock(return_value=proc),
-    ), patch.object(
-        proc._db,
-        "compare_and_set_data_field",
-        new=AsyncMock(return_value=(proc, True)),
-    ), patch(
-        "flow_sdk.builtin.tab.Tab.get_all", new=AsyncMock(return_value=[tab])
-    ), patch("flow_sdk.builtin.tab.broadcast_tabs_changed", new=AsyncMock()) as broadcast:
-        changed = await proc.stamp_default_name()
-    assert changed is True
-    tab.set_label.assert_awaited_once_with("Base directory spec")
-    broadcast.assert_awaited_once()
-    assert proc.auto_rename is True
+    sid = mint_uuid()
+    _write_transcript(sid, title="Base directory spec")
+    process = await _proc(session_id=sid)
+    tab = await _tab(process, name=f"agentic_process-{process.id[:4]}…{process.id[-4:]}")
+    assert await process.stamp_default_name() is True
+    assert (await Tab.get_by_id(tab.id)).name == process.name == "Base directory spec"
+    assert process.auto_rename is True
 
 
-async def test_noop_when_name_already_set():
-    proc = _proc(session_id=str(uuid.uuid4()), name="Existing name")
-    with patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Ignored"),
-    ) as resolve, patch.object(AgenticProcess, "save", new=AsyncMock()) as save:
-        changed = await proc.stamp_default_name()
-    assert changed is False
-    assert proc.name == "Existing name"
-    resolve.assert_not_awaited()
-    save.assert_not_awaited()
+async def test_noop_when_existing_user_name_is_set():
+    sid = mint_uuid()
+    _write_transcript(sid, title="Automatic title")
+    process = await _proc(session_id=sid, name="Existing name")
+    assert await process.stamp_default_name() is False
+    assert process.name == "Existing name" and process.naming_state.protected
 
 
 async def test_noop_when_user_pinned():
-    proc = _proc(session_id=str(uuid.uuid4()))
-    proc.auto_rename = False  # user rename pinned it
-    with patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Ignored"),
-    ) as resolve:
-        changed = await proc.stamp_default_name()
-    assert changed is False
-    assert proc.name is None
-    resolve.assert_not_awaited()
+    sid = mint_uuid()
+    _write_transcript(sid, title="Automatic title")
+    process = await _proc(session_id=sid)
+    await process.rename("Pinned name")
+    assert await process.stamp_default_name() is False
+    assert process.name == "Pinned name" and process.auto_rename is False
 
 
 async def test_noop_when_no_session():
-    proc = _proc()  # session_id defaults to None
-    assert proc.session_id is None
-    with patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Ignored"),
-    ) as resolve:
-        changed = await proc.stamp_default_name()
-    assert changed is False
-    resolve.assert_not_awaited()
+    process = await _proc()
+    assert await process.stamp_default_name() is False
+    assert process.session_id is None and process.name is None
 
 
-def _write_headless_transcript(tmp_path, sid: str) -> "Path":
-    """A real SDK-launched (headless print-mode) Claude transcript, mirroring the
-    on-disk shape byte-for-byte in the fields that matter: ``entrypoint``
-    ``sdk-cli`` envelope with a first user prompt, and — the defining trait of
-    every headless session — NO ``slug`` and NO ``aiTitle`` anywhere. Interactive
-    CLI sessions carry a ``slug``; ``-p``/stream-json sessions never do."""
-    import json
-    from pathlib import Path
-
-    lines = [
-        {"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-07-14T09:20:27.516Z",
-         "sessionId": sid, "content": "why is the tab name not proper?"},
-        {"type": "queue-operation", "operation": "dequeue", "timestamp": "2026-07-14T09:20:27.516Z",
-         "sessionId": sid},
-        {"parentUuid": None, "isSidechain": False, "type": "user",
-         "message": {"role": "user", "content": "why is the tab name not proper?"},
-         "uuid": "fb6fd9d9-b711-4274-a248-358e8506ada8", "timestamp": "2026-07-14T09:20:27.523Z",
-         "permissionMode": "bypassPermissions", "promptSource": "sdk", "userType": "external",
-         "entrypoint": "sdk-cli", "cwd": "/repo", "sessionId": sid,
-         "version": "2.1.209", "gitBranch": "main"},
-        {"parentUuid": "fb6fd9d9-b711-4274-a248-358e8506ada8", "isSidechain": False, "type": "assistant",
-         "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking into it."}]},
-         "uuid": "0c1d2e3f-0000-4000-8000-000000000001", "timestamp": "2026-07-14T09:20:31.000Z",
-         "cwd": "/repo", "sessionId": sid, "version": "2.1.209", "gitBranch": "main"},
-    ]
-    p = tmp_path / f"{sid}.jsonl"
-    p.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
-    return p
+async def test_headless_sdk_session_still_gets_a_default_name():
+    sid = mint_uuid()
+    _write_transcript(sid)
+    process = await _proc(session_id=sid, pty_mode=False)
+    assert await process.stamp_default_name() is True
+    assert process.name == "why is the tab name not proper?"
+    assert process.auto_rename is True and process.naming_state.phase is NamePhase.PROMPT_FALLBACK
+    assert await process.stamp_default_name() is False
 
 
-async def test_headless_sdk_session_still_gets_a_default_name(tmp_path):
-    """Captures the RCA'd bug: an SDK-launched (headless) Claude session never
-    receives a ``slug``/``aiTitle`` in its transcript, so the stamp's only title
-    source is empty and the process stays nameless FOREVER — the tab chip falls
-    back to the generic "Claude Code tab" and the footer agents list to the raw
-    id fragment. The transcript DOES carry a perfectly good subject (the first
-    user prompt); the naming chain must produce a real name from it.
-
-    Real mechanism end-to-end: real jsonl on disk → real
-    ``get_worker_session_name`` → real ``extract_claude_session_from_path``.
-    Only the transcript-path lookup is pointed at the tmp file (same harness as
-    every other test in this file)."""
-    sid = str(uuid.uuid4())
-    jsonl = _write_headless_transcript(tmp_path, sid)
-    proc = _proc(session_id=sid)
-
-    with _patch_transcript_path(jsonl), patch.object(
-        AgenticProcess,
-        "get_by_id",
-        new=AsyncMock(return_value=proc),
-    ), patch.object(
-        proc._db,
-        "compare_and_set_data_field",
-        new=AsyncMock(return_value=(proc, True)),
-    ):
-        changed = await proc.stamp_default_name()
-
-    assert changed is True, (
-        "stamp_default_name() no-opped on a headless (sdk-cli) transcript — no "
-        "slug/aiTitle exists for these sessions, so the process stays nameless "
-        "and the UI shows 'Claude Code tab' / the raw id fragment"
-    )
-    name = (proc.name or "").strip()
-    assert name, "process must carry a real default name after the stamp"
-    assert name != sid and proc.id not in name, "name must be a title, not an id fallback"
-    # Non-pinning invariant holds for the fallback path too.
-    assert proc.auto_rename is True
-
-
-async def test_delayed_stamp_does_not_resurrect_deleted_process(initialize_test_db):
-    """A turn-end callback may finish after close/delete; naming is update-only."""
-    proc = _proc(session_id=str(uuid.uuid4()))
-    await proc.save()
-    stale = await AgenticProcess.get_by_id(str(proc.id))
-    assert stale is not None
-    await proc.delete()
-
-    with _patch_transcript_path(), patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value="Late worker title"),
-    ):
-        changed = await stale.stamp_default_name()
-
-    assert changed is False
-    assert await AgenticProcess.get_by_id(str(proc.id)) is None
+async def test_delayed_stamp_does_not_resurrect_deleted_process():
+    sid = mint_uuid()
+    _write_transcript(sid, title="Late worker title")
+    process = await _proc(session_id=sid)
+    stale = await AgenticProcess.get_by_id(process.id)
+    await process.delete()
+    assert await stale.stamp_default_name() is False
+    assert await AgenticProcess.get_by_id(process.id) is None
 
 
 async def test_noop_when_no_subject_yet():
-    """A fresh session with no first-prompt subject yet → resolver returns None →
-    leave the name empty so the chip shows the provider label until later."""
-    proc = _proc(session_id=str(uuid.uuid4()))
-    with _patch_transcript_path(), patch(
-        "flow_sdk.builtin.worker_history.get_worker_session_name",
-        new=AsyncMock(return_value=None),
-    ), patch.object(AgenticProcess, "save", new=AsyncMock()) as save:
-        changed = await proc.stamp_default_name()
-    assert changed is False
-    assert proc.name is None
-    save.assert_not_awaited()
-
-
-# ── Footer rename action: user rename pins auto_rename AND mirrors onto the tab ──
+    process = await _proc(session_id=mint_uuid())
+    assert await process.stamp_default_name() is False
+    assert process.name is None
 
 
 async def test_rename_action_pins_and_mirrors_onto_open_tab():
-    """POST /graph/agentic_process/<id>/rename is a user rename from the footer:
-    it pins ``auto_rename=False`` (via rename()) and mirrors onto any open tab via
-    ``set_label`` (not rename → no reflect loop). Bidirectional counterpart of
-    Tab.rename → AgenticProcess.rename."""
-    proc = _proc(session_id=str(uuid.uuid4()))
-
-    class _StubTab:
-        def __init__(self):
-            self.name = "agentic_process-old"
-            self.set_label = AsyncMock()
-
-    tab = _StubTab()
-    with patch(
-        "flow_sdk.builtin.agentic_process.agentic_process._read_json_body",
-        new=AsyncMock(return_value={"name": "My renamed run"}),
-    ), patch.object(AgenticProcess, "save", new=AsyncMock()), patch.object(
-        AgenticProcess, "notify_updated", new=AsyncMock()
-    ) as notify, patch(
-        "flow_sdk.builtin.tab.Tab.get_all", new=AsyncMock(return_value=[tab])
-    ), patch(
-        "flow_sdk.builtin.tab.broadcast_tabs_changed", new=AsyncMock()
-    ) as broadcast:
-        result = await proc._rename_action()
-
-    assert proc.name == "My renamed run"
-    assert proc.auto_rename is False  # user rename pins it
-    tab.set_label.assert_awaited_once_with("My renamed run")
-    broadcast.assert_awaited_once()
-    notify.assert_awaited_once()
-    assert getattr(result, "status", None) != "FAIL"
+    process = await _proc(session_id=mint_uuid())
+    tab = await _tab(process)
+    result = await _rename_action(process, "My renamed run")
+    assert result.status != "FAIL"
+    durable = await AgenticProcess.get_by_id(process.id)
+    assert durable.name == (await Tab.get_by_id(tab.id)).name == "My renamed run"
+    assert durable.auto_rename is False
 
 
 async def test_rename_action_headless_no_tab_still_persists():
-    """A headless background worker has no open tab — the rename must still persist
-    on the entity; the mirror is best-effort (no tab, no broadcast)."""
-    proc = _proc(session_id=str(uuid.uuid4()))
-    with patch(
-        "flow_sdk.builtin.agentic_process.agentic_process._read_json_body",
-        new=AsyncMock(return_value={"name": "Headless renamed"}),
-    ), patch.object(AgenticProcess, "save", new=AsyncMock()), patch.object(
-        AgenticProcess, "notify_updated", new=AsyncMock()
-    ), patch(
-        "flow_sdk.builtin.tab.Tab.get_all", new=AsyncMock(return_value=[])
-    ), patch(
-        "flow_sdk.builtin.tab.broadcast_tabs_changed", new=AsyncMock()
-    ) as broadcast:
-        await proc._rename_action()
-    assert proc.name == "Headless renamed"
-    assert proc.auto_rename is False
-    broadcast.assert_not_awaited()
+    process = await _proc(session_id=mint_uuid(), pty_mode=False)
+    await _rename_action(process, "Headless renamed")
+    durable = await AgenticProcess.get_by_id(process.id)
+    assert durable.name == "Headless renamed" and durable.auto_rename is False
+    assert await Tab.get_all({"target_type": process.type, "target_id": process.id}) == []
 
 
 async def test_rename_action_rejects_empty_name():
-    proc = _proc(session_id=str(uuid.uuid4()))
-    with patch(
-        "flow_sdk.builtin.agentic_process.agentic_process._read_json_body",
-        new=AsyncMock(return_value={"name": "   "}),
-    ):
-        result = await proc._rename_action()
-    assert getattr(result, "status", None) == "FAIL"
-    assert proc.name is None
+    process = await _proc(session_id=mint_uuid())
+    result = await _rename_action(process, "   ")
+    assert result.status == "FAIL"
+    assert (await AgenticProcess.get_by_id(process.id)).name is None
+
+
+async def test_terminal_first_prompt_event_names_before_native_session_exists():
+    from urllib.parse import urlencode
+
+    process = await _proc()
+    tab = await _tab(process)
+    request = Request({"type": "http", "method": "GET", "path": "/report_event/first_prompt",
+                       "headers": [], "query_string": urlencode({"data": json.dumps({
+                           "prompt": "Explain blue oceans", "sent_at": "2026-09-13T00:00:00Z",
+                       })}).encode()})
+    previous = get_execution_context()
+    try:
+        async with ExecutionContext.create() as context:
+            context.request_info.request = request
+            context.request_info.sub_path = "first_prompt"
+            context.request_info.request_parameters = dict(request.query_params)
+            result = await process.report_event_action()
+        assert result.data["accepted"] is True
+        assert (await AgenticProcess.get_by_id(process.id)).name == "Explain blue oceans"
+        assert (await Tab.get_by_id(tab.id)).name == "Explain blue oceans"
+    finally:
+        set_execution_context(previous)

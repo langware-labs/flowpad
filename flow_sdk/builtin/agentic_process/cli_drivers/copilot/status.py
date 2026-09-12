@@ -54,6 +54,12 @@ def _classify(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:
         return WorkerStatus.IDLE, False
     if event_type == "user.message":
         return WorkerStatus.WORKING, False
-    if event_type.startswith("session.") or event_type == "system.message":
+    if event_type == "session.resume":
+        # Reopening a session does not start a user turn. New user/assistant
+        # events will supersede this when the next turn actually begins.
+        return WorkerStatus.IDLE, False
+    if event_type in {"session.start", "system.message"}:
         return WorkerStatus.INITIALIZING, False
+    # Usage checkpoints follow assistant.turn_end; permissions/model metadata
+    # can arrive after resume. None of them starts or changes a worker turn.
     return None, False

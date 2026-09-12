@@ -58,6 +58,7 @@ from flow_sdk.builtin.agentic_process.process_assets import (
     ProcessAssets,
     SystemInstructionAssets,
 )
+from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -660,11 +661,18 @@ class AgenticProcess(Entity):
         ),
     )
     # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
+    naming_state: SessionNameState | None = APIField(default=None)
+
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        """Only the naming transaction may change an initialized naming state."""
+        return ("name", "naming_state", "auto_rename") if current_data.get("naming_state") is not None else ()
+
     auto_rename: bool = APIField(
         default=True,
         description=(
-            "When True, PTY OSC title escapes are allowed to update `name`. "
-            "Cleared the first time the user manually renames this tab in the UI."
+            "Compatibility projection of naming_state: false for user-pinned "
+            "or protected unknown names. The shared naming service owns updates."
         ),
     )
     process_type: ProcessKind | None = APIField(
@@ -1019,6 +1027,8 @@ class AgenticProcess(Entity):
             fork_session_id=session_id,
             session_id=new_session_id,
         )
+        if not kwargs.get("name"):
+            kwargs.setdefault("naming_state", SessionNameState())
         proc = cls(workdir=workdir, session_id=new_session_id, **kwargs)
         proc.cli_config = cmd.to_json()
         return proc
@@ -1993,17 +2003,14 @@ class AgenticProcess(Entity):
             visible = bool((body or {}).get("visible", False))
             owner = request_info.someone_typeid if request_info else None
 
-            # Inherit the parent's name (+ " (fork)") when it has a real one, so the
-            # fork reads meaningfully immediately; otherwise leave it null (name
-            # defaults to None) and let the fork's own transcript subject stamp it.
-            parent_name = (self.name or "").strip()
+            # The fork establishes its own name from its prompt/provider evidence.
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
                 project_id=self.project_id,
                 visible=visible,
                 shared_context_entities=list(self.shared_context_entities or []),
-                name=f"{parent_name} (fork)" if parent_name else None,
+                name=None,
             )
             await new_proc.save(owner)
             return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
@@ -2325,21 +2332,15 @@ class AgenticProcess(Entity):
     @action.post(action_name="rename")
     async def _rename_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """POST /graph/agentic_process/<id>/rename {name} — user rename from outside
-        the tab strip (the footer process list). The reverse leg of ``Tab.rename`` →
-        ``AgenticProcess.rename``: pins ``auto_rename`` and mirrors onto the chip
-        (see :meth:`_mirror_name_to_tabs`)."""
+        the tab strip. The shared naming transaction pins the process and
+        updates its linked tabs before publishing."""
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
             return body
-        name = (body.get("name") or "").strip()
-        if not name:
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
             return ApiFailResponse(message="rename: name is required")
-        await self.rename(name)  # sets self.name + pins auto_rename=False
-        if await self._mirror_name_to_tabs(name):
-            from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
-
-            await broadcast_tabs_changed()
-        await self.notify_updated()
+        await self.rename(name)
         return ApiSuccessResponse(data={"id": self.id, "name": self.name})
 
     # ── Web app artifacts + Show (display focus) ─────────────────────────────
@@ -3084,6 +3085,7 @@ class AgenticProcess(Entity):
             # ``flow start`` spawning a migration agent before the
             # substrate is fully initialised).
             try:
+                await self.reconcile_name(first_prompt=instruction)
                 return await self.driver.headless_prompt(self, instruction)
             finally:
                 # A successful driver call has already handed the slot to its
@@ -3092,6 +3094,7 @@ class AgenticProcess(Entity):
                 release_prompt_admission(self.id, admission)
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
+        await self.reconcile_name(first_prompt=instruction)
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
@@ -3155,6 +3158,7 @@ class AgenticProcess(Entity):
         the signature is stable.
         """
         if instruction is not None:
+            await self.reconcile_name(first_prompt=instruction)
             staged = await self.input(instruction, options=options)
             if isinstance(staged, ApiFailResponse):
                 return staged
@@ -3486,6 +3490,7 @@ class AgenticProcess(Entity):
         # not here — print-mode processes have no persistent worker between
         # turns, so the only contention is the per-process lock above.
         if self.pty_mode:
+            await self.reconcile_name(first_prompt=message)
             return self._run_pty_prompt(message)
 
         admission = try_admit_prompt(self.id)
@@ -3500,6 +3505,7 @@ class AgenticProcess(Entity):
         # therefore cannot pass a check-before-register gap while this request
         # resolves project context, instruction assets, or secret environment.
         try:
+            await self.reconcile_name(first_prompt=message)
             # Resume ONLY when the worker actually has a resumable session on
             # disk for this id — NOT merely "session_id is set".
             resumable = self.driver.has_resumable_session(self)
@@ -5414,8 +5420,9 @@ class AgenticProcess(Entity):
                 if self.adopt_worker_session(sid):
                     try:
                         await self.save()
+                        await self.reconcile_name()
                     except Exception:
-                        logger.warning("%s: session_id save failed", log_prefix, exc_info=True)
+                        logger.warning("%s: session adoption failed", log_prefix, exc_info=True)
             elif sid != turn_session_id and not warned_spurious:
                 warned_spurious = True
                 logger.warning(
@@ -6688,111 +6695,73 @@ class AgenticProcess(Entity):
         await self.close()
 
     async def rename(self, name: str) -> None:
-        """Tab-rename reflection (``Tab.rename`` → ``target.rename``): mirror the
-        new name and pin it (``auto_rename=False``) so the worker title can't
-        overwrite it. Extends the generic ``Entity.rename`` with that pin."""
-        if name and self.name != name:
-            self.name = name
-            self.auto_rename = False
-            await self.save()
+        """An explicit user choice always pins, including a same-text rename."""
+        from .naming.service import reconcile_name
 
-    async def _mirror_name_to_tabs(self, name: str) -> bool:
-        """Reflect ``name`` onto any open Tab for this process via ``set_label`` —
-        NOT ``rename`` (set_label sets only ``Tab.name`` and never touches the
-        target's ``auto_rename``). The terminal chip renders ``Tab.name`` (not the
-        live entity), and the generic entity→tab sync deliberately skips terminal
-        types, so without this a stamped/renamed process name never reaches the
-        chip. Best-effort — a headless worker may have no open tab. Cross-project
-        unscoped (the tab can live in another project than the caller's scope).
-        Returns True iff a tab label changed."""
-        from flow_sdk.builtin.tab import _tabs_for_target  # noqa: PLC0415
+        # Snapshot native cursors before the user's edit so already-existing
+        # manual metadata cannot later replay over this newer explicit choice.
+        driver = self._restart_driver()
+        baseline = await asyncio.to_thread(driver.naming_adapter.read, self) if driver else ()
+        result = await reconcile_name(str(self.id), user_name=name, baseline_observations=baseline)
+        if result.process is not None:
+            self.name = result.process.name
+            self.naming_state = result.process.naming_state
+            self.auto_rename = result.process.auto_rename
 
-        changed = False
-        for tab in await _tabs_for_target(self.type, str(self.id)):
-            if tab.name != name:
-                await tab.set_label(name)
-                changed = True
-        return changed
+    async def reconcile_name(self, *, first_prompt: str | None = None):
+        from .naming.runtime import refresh_process_name
+
+        current = await refresh_process_name(self, first_prompt=first_prompt)
+        if current is not None:
+            self.name = current.name
+            self.naming_state = current.naming_state
+            self.auto_rename = current.auto_rename
+        return current
+
+    @action.get(action_name="report_event")
+    async def report_event_action(self):
+        """Shared first-input fallback with optional provider event handling."""
+        from .events import AgenticProcessEventName
+
+        request_info = get_current_request_info()
+        raw_name = (request_info.sub_path or "").strip("/") if request_info else ""
+        try:
+            event = AgenticProcessEventName(raw_name)
+            data = json.loads(request_info.get_param("data") or "{}")
+        except (ValueError, TypeError):
+            return ApiFailResponse(message="Invalid process event")
+        if not isinstance(data, dict):
+            return ApiFailResponse(message="Event data must be an object")
+        prompt = data.get("prompt")
+        if event is AgenticProcessEventName.FIRST_PROMPT and isinstance(prompt, str) and not prompt.lstrip().startswith("/"):
+            await self.reconcile_name(first_prompt=prompt)
+        driver = self._restart_driver()
+        handler = getattr(driver, "report_event", None)
+        result = await handler(self, event, data) if callable(handler) else {"handled": False}
+        return ApiSuccessResponse(data={**result, "accepted": True, "scheduled": False,
+                                       "process_id": self.id, "worker_type": self.worker_type,
+                                       "event_name": event.value, "event_data": data,
+                                       "session_id": self.session_id})
+
+    @action.post(action_name="observe-title")
+    async def observe_title_action(self):
+        """Accept raw terminal evidence; the backend adapter decides its meaning."""
+        from .naming.runtime import observe_terminal_title
+
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        title = body.get("title")
+        if not isinstance(title, str):
+            return ApiFailResponse(message="title must be a string")
+        current = await observe_terminal_title(self, title, body.get("session_id"))
+        return ApiSuccessResponse(data={"name": current.name if current else None})
 
     async def stamp_default_name(self) -> bool:
-        """Give a nameless process the SAME display title the Recent-sessions
-        history list shows — the session subject (Claude ``custom_title``/``slug``,
-        i.e. the auto-summary of the opening prompt) — and persist it, so every
-        surface (tab chip, footer process list, sidebar) reads a real name instead
-        of the ``agentic_process-<id>`` synthetic the FE would otherwise fabricate.
-
-        Unlike :meth:`rename`, this is a STAMP, not a user rename: it leaves
-        ``auto_rename`` untouched (stays True) so a later real OSC/LLM title can
-        still replace it. Idempotent, first-writer-wins — a no-op once the process
-        carries any name, when the user already pinned it (``auto_rename=False``),
-        or before a session/subject exists (``get_worker_session_name`` returns
-        ``None`` until the transcript has a title). On a write it broadcasts the
-        entity and mirrors the tab itself, so callers just fire-and-forget it
-        from their turn-end seams. Returns True iff it wrote a name.
-        """
-        if (self.name or "").strip():
-            return False
-        if self.auto_rename is False:
-            return False
-        if not self.session_id:
-            return False
-        from flow_sdk.builtin.worker_history import get_worker_session_name  # noqa: PLC0415
-
-        try:
-            # prompt_fallback: see get_worker_session_name — headless sessions
-            # have no on-file title, so the first user prompt is the last rung.
-            candidate = await get_worker_session_name(
-                self.worker_type, self.session_id, jsonl_path=self.transcript_path, prompt_fallback=True
-            )
-        except Exception:
-            logger.debug("AgenticProcess %s: default-name resolve failed", self.id, exc_info=True)
-            return False
-        candidate = (candidate or "").strip()
-        if not candidate:
-            return False
-
-        # Turn-end/flush callbacks can outlive ``close`` on another hydrated
-        # instance of this same process. A normal ``save`` is intentionally an
-        # upsert, so that stale callback could recreate a row that close +
-        # delete just removed. Re-read the authoritative row, then atomically
-        # compare-and-set only its still-empty name. The DB primitive never
-        # inserts and never rewrites lifecycle fields from this stale snapshot.
-        current = await AgenticProcess.get_by_id(str(self.id))
-        if current is None or (current.name or "").strip() or current.auto_rename is False:
-            return False
-        persisted, stamped = await self._db.compare_and_set_data_field(
-            str(self.id),
-            self.type,
-            "name",
-            current.name,
-            candidate,
-        )
-        if not stamped or persisted is None:
-            return False
-        self.name = candidate
-
-        # Close/delete may win immediately after the atomic stamp. Never mirror
-        # or broadcast this stale object; use the latest durable row, and do
-        # nothing further when it is already gone or a user rename won next.
-        durable = await AgenticProcess.get_by_id(str(self.id))
-        if durable is None or durable.name != candidate:
-            return True
-        # Mirror onto the chip: the terminal tab renders Tab.name, and nothing else
-        # reflects a terminal entity's name change onto it — so heal it here (also
-        # overwrites a legacy frozen `<type>-<id>` Tab.name). set_label keeps
-        # auto_rename intact.
-        if await durable._mirror_name_to_tabs(candidate):
-            from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
-
-            await broadcast_tabs_changed()
-        # Broadcast the entity itself so live name consumers (footer list, chat
-        # header) refresh — owned here so every stamp seam gets it for free.
-        try:
-            await durable.notify_updated()
-        except Exception:
-            logger.debug("AgenticProcess %s: stamp notify failed", self.id, exc_info=True)
-        logger.info("AgenticProcess %s: stamped default name %r", self.id, candidate[:80])
-        return True
+        """Compatibility entry point for shared name reconciliation on lifecycle edges."""
+        before = self.name
+        await self.reconcile_name()
+        return self.name != before
 
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
@@ -6803,6 +6772,9 @@ class AgenticProcess(Entity):
 
         Returns True on success, False if already terminated or on error.
         """
+        from .naming.runtime import stop_name_observation
+
+        stop_name_observation(str(self.id))
         logger.info(f"AgenticProcess {self.id}: close")
 
         # End the process's activity here, not only when a terminal worker status happens
@@ -7187,6 +7159,9 @@ class AgenticProcess(Entity):
         carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
         liveness reconciliation that ``driver.tail_status`` alone misses.
         """
+        from .naming.runtime import request_name_refresh
+
+        request_name_refresh(str(self.id))
         pending = getattr(self, "_pending_entries", None)
         if pending is None:
             object.__setattr__(self, "_pending_entries", [])

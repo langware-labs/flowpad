@@ -62,6 +62,7 @@ from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.assets.directory import AssetDir
@@ -516,6 +517,11 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
+    for key, configured_root in getattr(process.driver, "session_store_env", {}).items():
+        supplied = env.get(key)
+        if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
+            raise ValueError(f"Worker {key} must match Flowpad's configured session store")
+        env[key] = configured_root
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
@@ -1721,6 +1727,16 @@ class WorkerDriver(Protocol):
     device_login_spec: DeviceLoginSpec
 
     # ── Transcript discovery ─────────────────────────────────────────────────
+
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Native session-store environment pinned to instance configuration."""
+        ...
+
+    @property
+    def naming_adapter(self) -> "NamingAdapter":
+        """Provider observations; shared naming runtime owns state and watching."""
+        ...
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""

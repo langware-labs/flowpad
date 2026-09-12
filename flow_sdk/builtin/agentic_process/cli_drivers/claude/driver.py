@@ -468,6 +468,17 @@ class ClaudeDriver:
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Claude's split default config/keychain layout is handled by apply_worker_env."""
+        return {}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import ClaudeNamingAdapter
+
+        return ClaudeNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
