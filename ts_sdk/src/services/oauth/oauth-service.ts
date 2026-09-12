@@ -463,7 +463,7 @@ export class OAuthService {
 
       // Both popup grants need the backend to finish the exchange/adoption.
       // A loopback callback only captures the code; wait-callback exchanges it.
-      void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
+      void this.drivePopupCallback(oauthFlow);
 
       return oauthFlow;
     } catch (error) {
@@ -520,12 +520,9 @@ export class OAuthService {
    * OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it happens
    * on EVERY exit, including the one where the user walks away.
    */
-  private async driveHubCallback(
-    provider: string,
-    info: OAuthClientRequestInfo,
-    flow: OauthFlow,
-    targetEntity?: TypeId,
-  ): Promise<void> {
+  private async drivePopupCallback(flow: OauthFlow): Promise<void> {
+    const { oAuthRequestInfo: info, targetEntity } = flow;
+    const { provider } = info;
     const finish = async (status: OAuthStatus) => {
       // HTTP and WebSocket completion share one claim before verification.
       if (!this.oAuthFlows.has(info.oauth_request_id)) return;

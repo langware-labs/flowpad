@@ -390,8 +390,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("account_id",),
         ),
         hub_required=True,
-        # Access tokens expire hourly and the hub refreshes them; a local copy
-        # would go stale within the hour, so read through the hub instead.
     ),
     LINEAR: LocalOAuthProvider(
         name=LINEAR,
@@ -504,7 +502,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("id",),
         ),
         hub_required=True,
-        # Two-hour token the hub refreshes; a local copy would go stale.
     ),
 }
 
