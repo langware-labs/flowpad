@@ -77,7 +77,7 @@ async def test_an_artifact_is_not_a_wiki_resolution_candidate(bootstrapped_clien
     )
 
 
-async def test_a_path_resolves_to_an_asset_type_registered_after_artifact(bootstrapped_client):
+async def test_a_path_resolves_to_an_asset_type_registered_after_artifact(bootstrapped_client, tmp_path):
     """The same invariant for a type that sorts AFTER ``artifact``.
 
     ``spec`` happens to precede ``artifact`` in the candidate list, so it wins by
@@ -86,7 +86,7 @@ async def test_a_path_resolves_to_an_asset_type_registered_after_artifact(bootst
     """
     from flow_sdk.builtin.dataset import Dataset
 
-    path = "/tmp/artifact-shadow-probe/trainset"
+    path = str(tmp_path / "trainset")
 
     dataset = Dataset(name="the-real-dataset", asset_ref=path)
     await dataset.save(notify=False)

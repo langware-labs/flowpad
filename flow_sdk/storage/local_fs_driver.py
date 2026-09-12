@@ -2,7 +2,6 @@ import errno
 import logging
 import os
 import shutil
-import sys
 from io import BytesIO
 from typing import Any, AsyncIterator, BinaryIO, List
 
@@ -150,15 +149,22 @@ class LocalStorageDriver(StorageDriver):
         """Upload a file to the storage device (copy locally)."""
         try:
             storage_local_path = self._local_full_path(vfs_path)
-            local_storage_file_folder = anyio.Path(storage_local_path).parent  # Get the directory part of the path
-            await anyio.Path(local_storage_file_folder).mkdir(parents=True, exist_ok=True)
-            if isinstance(local_file_or_io, str):
-                shutil.copy2(local_file_or_io, storage_local_path)
-            elif isinstance(local_file_or_io, BytesIO):
-                async with await anyio.open_file(storage_local_path, "wb") as f:
-                    await f.write(local_file_or_io.read())
-            else:
+            if not isinstance(local_file_or_io, (str, BytesIO)):
                 raise ValueError("Invalid file type for upload")
+            from pathlib import Path
+
+            from flow_sdk.assets.materialize import materialize_asset_sync
+            from flow_sdk.capsules.atomic import atomic_write, capsule_lock
+
+            def persist():
+                target = Path(storage_local_path).resolve()
+                with capsule_lock(target):
+                    if isinstance(local_file_or_io, str):
+                        materialize_asset_sync(Path(local_file_or_io), target, overwrite=True)
+                    else:
+                        atomic_write(target, local_file_or_io.read())
+
+            await run_in_threadpool(persist)
         except FileNotFoundError as e:
             raise e
         except Exception as e:

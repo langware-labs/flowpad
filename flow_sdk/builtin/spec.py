@@ -4,26 +4,9 @@ from typing import Any, Dict, Optional
 
 from pydantic import model_validator
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
-from flow_sdk.schema.data_spec import Body, FrontMatter
-
-
-class SpecType(StrEnum):
-    PLAN = "plan"
-    ISSUE = "issue"
-    SUPPORT_TICKET = "support_ticket"
-
-
-class SpecDocSpec(FrontMatter):
-    """``specs/<name>/spec.md`` — the shape of the document: two frontmatter
-    keys and the markdown ``Body``. ``name`` is not here: it is the title, or
-    the folder (``derive_spec``)."""
-
-    title: Optional[str] = None
-    spec_type: Optional[str] = None
-    content: Body = ""
+from flow_sdk.schema.data_spec.spec_doc_spec import SpecType
 
 
 class Spec(Entity):

@@ -50,7 +50,6 @@ async def staging(tmp_path: Path, monkeypatch):
     for p in paths.values():
         if p.suffix == ".md":
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("# stub\n")
         else:
             p.mkdir(parents=True, exist_ok=True)
 
@@ -227,13 +226,15 @@ async def test_response_row_shape_matches_process_action(staging):
             "attached",
             "available",
             "present",
+            "parent_type_id",
+            "attachable",
         }
         assert row["usage"] == []
 
 
 @pytest.mark.asyncio
 async def test_ref_only_remote_hydration_batches_once_per_type(staging):
-    from flow_sdk.assets.catalog import AssetDescriptor
+    from flow_sdk.assets.catalog import AssetCatalog, AssetDescriptor
 
     skill = staging["ents"]["u_skill"]
     agent = staging["ents"]["other_agent"]
@@ -255,7 +256,7 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
     with (
         patch(
             "flow_sdk.assets.catalog.scan_path_asset_descriptors",
-            new=AsyncMock(return_value=descriptors),
+            new=AsyncMock(return_value=AssetCatalog(assets=descriptors)),
         ),
         patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
         patch.object(SubAgent, "get_all", new=AsyncMock(wraps=SubAgent.get_all)) as agent_get_all,

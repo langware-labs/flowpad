@@ -23,9 +23,9 @@ from typing import Optional
 
 import httpx
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 _BASE = "https://hacker-news.firebaseio.com/v0"
 #: Items hydrated per run — a bound on work per tick, with no sleeping.

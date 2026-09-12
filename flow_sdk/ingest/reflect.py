@@ -28,14 +28,14 @@ seam bundles and projects use. Obtaining bytes is not a reflect mode.
 from __future__ import annotations
 
 import logging
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol
 
-from flow_sdk._compat import StrEnum
+from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
 from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
 from flow_sdk.fs_store.origin.fs_origin import safe_join
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -44,28 +44,6 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
-class ReflectMode(StrEnum):
-    """How a source's payload becomes locally present.
-
-    ``RECORD`` is the default and is NOT a filesystem mode — it is the existing
-    ``ingest_items`` path every shipped driver already takes. It lives in this
-    enum because the choice is genuinely one axis: a source lands its payload in
-    the graph as a record, or on disk as an asset. Splitting it across two
-    settings would let a source ask for both and get neither.
-    """
-
-    #: The graph. `ingest_items` → SourceItem. Today's behaviour for rss,
-    #: hackernews, slack, agent, agentmail, cloud_email.
-    RECORD = "record"
-    #: The source's own directory is the walk root; nothing is duplicated.
-    #: The mount-not-copy case.
-    NONE = "none"
-    #: Bytes duplicated into the project.
-    COPY = "copy"
-    #: Linked into the project instead of duplicated. NOTE: `gitignore_walk`
-    #: never follows symlinked DIRECTORIES, so this cannot work for a
-    #: folder-layout asset — only for a file-layout one.
-    SYMLINK = "symlink"
 
 
 @dataclass
@@ -127,18 +105,6 @@ async def _materialize(source: "DataSource") -> Optional[Path]:
         logger.warning("[reflect] could not materialize %s for %s", origin.kind, source.id, exc_info=True)
         return None
     return safe_join(local_root, origin.rel_path or ".")   # the guarded join; None when the rel escapes
-
-
-def _remove(path: Path) -> None:
-    """Delete a placed asset root, whatever shape it is.
-
-    `is_symlink` first and deliberately: a link to a directory answers True to
-    `is_dir`, and `rmtree` would then delete the TARGET — the user's own tree.
-    """
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    elif path.is_dir():
-        shutil.rmtree(path)
 
 
 def _target_root(source: "DataSource") -> Optional[Path]:
@@ -209,10 +175,6 @@ class _ProjectionReflector:
         dest = self._dest(source, ref, root)
         if dest is None or not src.exists():
             return None
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        # Replace rather than merge: a partially-updated asset root is a state
-        # nothing downstream can reason about.
-        _remove(dest)
         self._emplace(src, dest)
         return str(dest)
 
@@ -220,7 +182,7 @@ class _ProjectionReflector:
         dest = self._dest(source, ref, root)
         if dest is None:
             return None
-        _remove(dest)
+        remove_path(dest)
         return str(dest)
 
 
@@ -228,10 +190,7 @@ class CopyReflector(_ProjectionReflector):
     """``copy`` — duplicate the asset root into the project."""
 
     def _emplace(self, src: Path, dest: Path) -> None:
-        if src.is_dir():
-            shutil.copytree(src, dest)
-        else:
-            shutil.copy2(src, dest)
+        materialize_asset_sync(src, dest, overwrite=True)
 
 
 class SymlinkReflector(_ProjectionReflector):
@@ -246,7 +205,7 @@ class SymlinkReflector(_ProjectionReflector):
 
 
     def _emplace(self, src: Path, dest: Path) -> None:
-        dest.symlink_to(src, target_is_directory=src.is_dir())
+        materialize_asset_sync(src, dest, mode=MaterializationMode.LINK, overwrite=True)
 
     # ── the link is placed; the TARGET is what gets indexed ──
     #
@@ -345,7 +304,7 @@ def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:
     except ValueError:
         return  # not ours to remove
     try:
-        _remove(old)
+        remove_path(old)
     except OSError:
         logger.debug("[reflect] could not retire %s", old, exc_info=True)
 

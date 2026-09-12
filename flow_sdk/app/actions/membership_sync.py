@@ -24,12 +24,11 @@ from typing import Any, Optional, Type
 from pydantic import TypeAdapter
 
 from flow_sdk._compat import UTC
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-
 from flow_sdk.fs_store.serializer.hub import HubSerializer
+from flow_sdk.fs_store.type_id import TypeId
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +105,9 @@ def _shared_secret_origin_payload(
     an entry in their keychain), so what arrives is a value-free declaration
     the receiver satisfies from their own store.
     """
-    from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
 
     locator_data = item.get("locator") if isinstance(item.get("locator"), dict) else None
     if not locator_data:

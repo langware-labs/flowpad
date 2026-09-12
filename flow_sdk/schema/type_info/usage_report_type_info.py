@@ -1,5 +1,5 @@
 """Type metadata for USAGE_REPORT."""
-from flow_sdk.builtin.usage_report import UsageReportSpec
+from flow_sdk.schema.data_spec.usage_report_spec import UsageReportSpec
 from flow_sdk.schema.type_info._report import report_type_info
 from flow_sdk.schema.types import EntityType
 

@@ -1661,8 +1661,8 @@ msgid "All guides"
 msgstr "جميع الأدلة"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "All harnesses"
-msgstr "جميع التجهيزات"
+#~ msgid "All harnesses"
+#~ msgstr "جميع التجهيزات"
 
 #: src/navigation/record-type-nav.ts
 msgid "All hooks"
@@ -2243,6 +2243,10 @@ msgstr "تقرير تنظيف الأصول"
 msgid "Asset compare"
 msgstr "مقارنة الأصول"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "Asset folder"
+msgstr "مجلد الأصول"
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr "الأصل يحتوي على تعديلات"
@@ -2250,6 +2254,10 @@ msgstr "الأصل يحتوي على تعديلات"
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr "لا يوجد ملف للأصل على القرص"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset list truncated. Narrow the selection to see more."
+msgstr "قائمة الأصول مختصرة. ضيّق نطاق الاختيار لرؤية المزيد."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Asset must be clean-git"
@@ -3329,7 +3337,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -3841,7 +3848,6 @@ msgid "Code Ref"
 msgstr "مرجع الكود"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -4329,7 +4335,6 @@ msgid "Copied to Clipboard"
 msgstr "تم النسخ إلى الحافظة"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -4866,8 +4871,8 @@ msgid "Could not save {envVar}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Could not save agent"
-msgstr "تعذر حفظ الوكيل"
+#~ msgid "Could not save agent"
+#~ msgstr "تعذر حفظ الوكيل"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Could not save inbox settings"
@@ -5007,8 +5012,8 @@ msgid "Could not update attached secrets"
 msgstr "تعذر تحديث الأسرار المرفقة"
 
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
-msgid "Could not update eval flag"
-msgstr "تعذر تحديث علم التقييم"
+#~ msgid "Could not update eval flag"
+#~ msgstr "تعذر تحديث علم التقييم"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
@@ -5372,6 +5377,10 @@ msgstr "المجلد الحالي"
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Current directory (click to refresh)"
 msgstr "المجلد الحالي (انقر للتحديث)"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Current file on disk"
+msgstr "الملف الحالي على القرص"
 
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
@@ -6259,6 +6268,10 @@ msgstr "تجاهل التغييرات؟"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Discard draft"
 msgstr "تجاهل المسودة"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Discard edits and reload"
+msgstr "تجاهل التعديلات وإعادة التحميل"
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Discard failed"
@@ -7748,6 +7761,10 @@ msgstr "الحقل"
 msgid "File"
 msgstr "ملف"
 
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "File changed outside this editor. Your edits are preserved."
+msgstr "تغيّر الملف خارج هذا المحرر. تعديلاتك محفوظة في المسودة."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
 msgstr "وقت تعديل الملف (mtime) أحدث من تاريخ التحديث في قاعدة البيانات (updated_date)"
@@ -8643,8 +8660,8 @@ msgstr "يلزم تثبيت Harness"
 
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "Harness path"
-msgstr "مسار الأداة"
+#~ msgid "Harness path"
+#~ msgstr "مسار الأداة"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness Session Details"
@@ -12550,8 +12567,8 @@ msgid "None"
 msgstr "لا شيء"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "None (project root)"
-msgstr "بدون (جذر المشروع)"
+#~ msgid "None (project root)"
+#~ msgstr "بدون (جذر المشروع)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -13582,6 +13599,10 @@ msgstr "نظام التشغيل"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "نظام التشغيل:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Other assets"
+msgstr "أصول أخرى"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -16145,8 +16166,8 @@ msgid "Save failed"
 msgstr "فشل الحفظ"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Save failed."
-msgstr "فشل الحفظ."
+#~ msgid "Save failed."
+#~ msgstr "فشل الحفظ."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -17716,6 +17737,10 @@ msgstr "مؤجّل"
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
 msgstr "منفذ وكيل SOCKS"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Some assets could not be read."
+msgstr "تعذّرت قراءة بعض الأصول."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
@@ -20561,6 +20586,10 @@ msgstr "عرض إعدادات Claude Code على مستويات المستخدم
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "View contact details"
 msgstr "عرض تفاصيل جهة الاتصال"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "View current file"
+msgstr "عرض الملف الحالي"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/version-popover/diagnose-modal.tsx

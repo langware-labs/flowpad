@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 
 from ._harness import ASSET_KINDS, FIRST_TOKEN, SECOND_TOKEN, entity_at, id_at, searchable
 

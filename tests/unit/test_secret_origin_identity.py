@@ -11,7 +11,7 @@ import uuid
 import pytest
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.secret_origin_identity import secret_origin_id, stable_key
+from flow_sdk.assets.types.secret_origin_identity import secret_origin_id, stable_key
 
 PROJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 OTHER_PROJECT = "8a1b6d5c-2e34-4f7a-9b1c-77c0de6f9a12"

@@ -1,14 +1,10 @@
 """Type metadata for SPREADSHEET (flat CSV/XLSX file asset)."""
 from typing import List, Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.spreadsheet import (
-    extract_spreadsheet,
-    spreadsheet_asset_hash,
-    spreadsheet_identity_key,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.types.spreadsheet import extract_spreadsheet, spreadsheet_asset_hash, spreadsheet_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode

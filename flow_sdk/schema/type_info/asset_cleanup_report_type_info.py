@@ -1,6 +1,6 @@
 """Type metadata for ASSET_CLEANUP_REPORT."""
-from flow_sdk.builtin.asset_cleanup_report import AssetCleanupReportSpec
-from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import derive_cleanup
+from flow_sdk.assets.types.asset_cleanup_report import derive_cleanup
+from flow_sdk.schema.data_spec.asset_cleanup_report_spec import AssetCleanupReportSpec
 from flow_sdk.schema.type_info._report import report_type_info
 from flow_sdk.schema.types import EntityType
 

@@ -2,14 +2,14 @@
 
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.codex_sessions import (
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.codex_sessions import (
     codex_session_id_from_file,
     codex_session_identity_key,
     extract_codex_session,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
 CODEX_SESSION = TypeInfo(

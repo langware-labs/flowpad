@@ -53,6 +53,7 @@ def register_all() -> None:
     """
     import flow_sdk.schema.type_info as pkg
 
+    failures = []
     for mod in pkgutil.iter_modules(pkg.__path__):
         if mod.name.startswith("_"):
             continue
@@ -62,13 +63,8 @@ def register_all() -> None:
                 if not info.locations:
                     info.locations = ["index"]
                 SchemaRegistry.register(info, declared=True)
-        except Exception:  # noqa: BLE001 — one bad module must not wedge the registry
-            logger.warning(
-                "register_all: skipping type_info module %r (failed to load/register) — "
-                "that type will be unavailable, but the registry stays usable. "
-                "A stale/mismatched install is the usual cause.",
-                mod.name,
-                exc_info=True,
-            )
-    # Post-pass, once every entity class is complete: a spec/row mismatch RAISES.
-    SchemaRegistry.check_asset_specs()
+        except Exception as error:
+            failures.append((mod.name, error))
+    if failures:
+        details = "; ".join(f"{name}: {error}" for name, error in failures)
+        raise RuntimeError(f"Type declaration registration failed: {details}") from failures[0][1]

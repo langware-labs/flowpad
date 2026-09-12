@@ -34,6 +34,7 @@ export interface PublishedRowBase {
 }
 
 export interface PublishedRow extends PublishedRowBase {
+  body_ref?: BodyRef | null;
   type: string;
   id: string;
   state: PublishedState;
@@ -84,6 +85,7 @@ export interface PublishedDirectory {
 export const EMPTY_PUBLISHED_DIRECTORY: PublishedDirectory = { rows: [], facets: { types: [], projects: [] }, total: 0 };
 
 export interface UnpublishedRow {
+  body_ref?: BodyRef | null;
   typeid: string;
   type: string;
   name: string;

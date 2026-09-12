@@ -12,13 +12,13 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every type
-from flow_sdk.builtin.credential_spec import CredentialManifestSpec
+from flow_sdk.assets.types.credential_spec import credential_spec_identity_key
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.credential_spec import credential_spec_identity_key
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
 
 # Only the walker tests are async, so `asyncio` is per-test rather than a
 # module mark — a module mark warns on every sync test in the file.

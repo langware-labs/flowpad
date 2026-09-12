@@ -8,18 +8,22 @@ import pytest
 from pydantic import BaseModel
 
 from flow_sdk.assets.types.subagent_spec import SubAgentSpec
-from flow_sdk.builtin.agent import Agent, AgentSpec
-from flow_sdk.builtin.dataset import Dataset, DatasetManifestSpec
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo, check_asset_spec
 from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, field_kinds, field_persistence, spec_layout
 from flow_sdk.schema.data_spec import Body, DataSpec, FreeSection, FrontMatter
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.timeout(5)
 
 
 def test_every_spec_bearing_type_passes_the_contract():
+    import flow_sdk.builtin.data_source_spec  # noqa: F401 — bind the Entity under test
+    import flow_sdk.builtin.source_item  # noqa: F401
     for t in (EntityType.AGENT, EntityType.SUBAGENT, EntityType.DATASET, EntityType.DATA_SOURCE_SPEC, EntityType.SOURCE_ITEM):
         info = SchemaRegistry.get(t)
         assert info.asset_spec is not None, t

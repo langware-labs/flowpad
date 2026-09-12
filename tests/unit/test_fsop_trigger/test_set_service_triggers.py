@@ -4,11 +4,11 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.builtin.hook_models import ActionType
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.schema.data_spec.trigger_action import ActionType
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.server.builtin_triggers import set_service_triggers
-
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)

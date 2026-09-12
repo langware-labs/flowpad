@@ -72,8 +72,6 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.builtin.worker_status import StatusDetail, WorkerStatus
-from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.compute.providers.compute_provider import (
     LOOPBACK_HOSTNAMES,
     sandbox_public_url,
@@ -90,6 +88,8 @@ from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -351,34 +351,6 @@ async def _read_json_body() -> dict | ApiFailResponse:
     from flow_sdk.request_context.json_body import read_json_body  # noqa: PLC0415
 
     return await read_json_body(get_current_request_info())
-
-
-def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
-    """Upsert YAML frontmatter key/values in a plan .md file."""
-    import re
-
-    p = Path(file_path)
-    if not p.exists():
-        return
-    content = p.read_text(encoding="utf-8")
-    fm_re = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
-    m = fm_re.match(content)
-    if m:
-        existing = m.group(1)
-        for k, v in fields.items():
-            val_str = "true" if v is True else ("false" if v is False else str(v))
-            line_re = re.compile(rf"^{re.escape(k)}:.*$", re.MULTILINE)
-            if line_re.search(existing):
-                existing = line_re.sub(f"{k}: {val_str}", existing)
-            else:
-                existing += f"\n{k}: {val_str}"
-        new_content = f"---\n{existing}\n---\n" + content[m.end() :]
-    else:
-        lines = "\n".join(
-            f"{k}: {'true' if v is True else ('false' if v is False else str(v))}" for k, v in fields.items()
-        )
-        new_content = f"---\n{lines}\n---\n{content}"
-    p.write_text(new_content, encoding="utf-8")
 
 
 async def _index_additional_dir(
@@ -2768,7 +2740,8 @@ class AgenticProcess(Entity):
         app is a complete, valid app, so absence is the normal early state and
         not an error.
         """
-        from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp  # noqa: PLC0415
+        from flow_sdk.builtin.faas.micro_app import MicroApp
+        from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 
         app_root = Path(artifact_path)
         dist_rel = str(dist or "").strip()
@@ -3217,10 +3190,10 @@ class AgenticProcess(Entity):
         Raises:
             TimeoutError: if the process does not reach idle within ``timeout``.
         """
-        from flow_sdk.builtin.worker_status import (
+        from flow_sdk.transcript_analyzer.worker_status import (
             WorkerStatus as _WS,
         )
-        from flow_sdk.builtin.worker_status import (
+        from flow_sdk.transcript_analyzer.worker_status import (
             _has_pending_tool_use,
             _last_user_is_tool_result,
             _scan_reversed,
@@ -4604,7 +4577,10 @@ class AgenticProcess(Entity):
             await self.inject(prompt)
             await asyncio.sleep(1.5)
 
-            _write_plan_frontmatter(file_path, {"executed": True})
+            from flow_sdk.assets.document import DocumentPatch, update_document
+
+            if Path(file_path).exists():
+                update_document(Path(file_path), DocumentPatch(set_fields={"executed": True}))
 
             return ApiSuccessResponse(data={"injected": True})
         except Exception as e:
@@ -5226,14 +5202,18 @@ class AgenticProcess(Entity):
         return usage_project_context(resolve_usage(entries, workdir=self.workdir, bindings=bindings), await self.get_asset_folders())
 
     async def get_asset_descriptors(self, *, usages=None) -> list[AssetDescriptor]:
-        from flow_sdk.assets.catalog import EXECUTABLE_ASSET_TYPES, descriptor_from_asset, descriptors_from_folders
+        return (await self.get_asset_catalog(usages=usages)).assets
+
+    async def get_asset_catalog(self, *, usages=None):
+        from flow_sdk.assets.catalog import EXECUTABLE_ASSET_TYPES, catalog_from_folders, descriptor_from_asset
         from flow_sdk.assets.usage import apply_usage
         from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
 
         sources = await process_asset_sources(self)
-        descriptors = await asyncio.to_thread(descriptors_from_folders, await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
+        catalog = await asyncio.to_thread(catalog_from_folders, await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
+        descriptors = list(catalog.assets)
         descriptors.extend(descriptor_from_asset(asset, attached=True) for asset in await self.get_embedded_assets())
-        return apply_usage(descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources)
+        return catalog.model_copy(update={"assets": apply_usage(descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources)})
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 
@@ -5655,20 +5635,21 @@ class AgenticProcess(Entity):
         inspection = await inventory_process_view(self)
         sources = await process_asset_sources(inspection)
         try:
-            items = await inspection.get_asset_descriptors(usages=usages)
+            catalog = await inspection.get_asset_catalog(usages=usages)
+            items = catalog.assets
         except AssetScanError as error:
             return ApiSuccessResponse(data=inventory_payload(apply_usage([], usages, sources=sources), usages,
                 assistant_enabled=self.assistant_enabled, error=str(error)))
         if not inspection.workdir:
-            return ApiSuccessResponse(data=inventory_payload([d for d in items if d.usage or d.attached], usages,
-                assistant_enabled=self.assistant_enabled, error="Worker has no working directory yet"))
+            return ApiSuccessResponse(data=inventory_payload(items, usages,
+                assistant_enabled=self.assistant_enabled, error="Worker has no working directory yet", scan_issues=catalog.issues))
         try:
             observations = await inspection.driver.available_assets(inspection)
             items = reconcile_assets(items, observations, sources=sources)
         except (AssetInventoryError, AssetScanError, FileNotFoundError, ValueError, LookupError) as error:
-            return ApiSuccessResponse(data=inventory_payload([d for d in items if d.usage or d.attached], usages,
-                assistant_enabled=self.assistant_enabled, error=str(error)))
-        return ApiSuccessResponse(data=inventory_payload(items, usages, assistant_enabled=self.assistant_enabled))
+            return ApiSuccessResponse(data=inventory_payload(items, usages,
+                assistant_enabled=self.assistant_enabled, error=str(error), scan_issues=catalog.issues))
+        return ApiSuccessResponse(data=inventory_payload(items, usages, assistant_enabled=self.assistant_enabled, scan_issues=catalog.issues))
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
@@ -6189,7 +6170,7 @@ class AgenticProcess(Entity):
         if worker_status != WorkerStatus.ERROR:
             return None
         try:
-            from flow_sdk.builtin.worker_status import tail_status_detail
+            from flow_sdk.transcript_analyzer.worker_status import tail_status_detail
 
             path = self.driver.transcript_path(self)
             return tail_status_detail(path) if path else None

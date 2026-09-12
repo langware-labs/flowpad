@@ -26,15 +26,17 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
+from flow_sdk.builtin.agentic_process.naming.runtime import refresh_process_name
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
 
 
-class _RealTailDriver:
+class _RealTailDriver(ClaudeDriver):
     """Driver shim that reads a REAL JSONL file via the canonical ``_tail_status``
     — no status mocking, just a fixed transcript path."""
 
@@ -62,6 +64,8 @@ async def _make_headless_ap(monkeypatch, path: Path) -> AgenticProcess:
     ap.status = ProcessStatus.RUNNING.value
     ap.pty_mode = False  # HEADLESS transport
     await ap.save(notify=False)
+    # Settle initial naming migration before measuring status-only broadcasts.
+    await refresh_process_name(ap, watch=False)
     # A headless turn is in flight for its whole duration. Under the OLD code this
     # pinned worker_status to INITIALIZING and suppressed every broadcast.
     object.__setattr__(ap, "_turn_in_flight", True)

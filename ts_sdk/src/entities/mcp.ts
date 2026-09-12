@@ -91,12 +91,13 @@ export class Mcp extends APIEntity<Mcp> {
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
     shape: McpShape = 'bundled',
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Mcp> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     // `bundled` is the default because the name-only create paths (the assets
     // list `+`, the CLI) cannot ask — and of the three, it is the only one that
     // produces something that runs without further typing.
-    return new Mcp({ name: name.trim(), ...SHAPE_FIELDS[shape] }).save(scopeIds);
+    return new Mcp({ name: name.trim(), ...SHAPE_FIELDS[shape] }).save(scopeIds, destination);
   }
 
   override get dockPointer(): DockPointerData {

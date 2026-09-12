@@ -44,7 +44,8 @@ import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
-import type { WikiLinkTarget } from './markdown/MarkdownEditor';
+import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
+import { detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
@@ -300,6 +301,11 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
 
   if (!derived) return <ConnectingFallback />;
   const { fsRef, assetType, mainFileRef } = derived;
+  const documentRef = assetOccurrenceMainRef(fsRef, dataManager.getTypeInfo(assetType)?.shape);
+  const renderDocument = ptr.method === AssetRoutingMethod.VFS && detectLanguage(documentRef.path) === 'markdown'
+    ? (ref: FSRef) => <MarkdownEditor fsRef={ref} chatTarget={null} wikiLinkTarget={wikiLinkTarget} />
+    : undefined;
+
 
   switch (ptr.editor) {
     case AssetEditor.SKILL:
@@ -307,6 +313,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Skill>
           type={Skill.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="skill"
           resolvedEntity={typeIdEntity as Skill | undefined}
           render={(skill) => (
@@ -321,6 +328,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Task>
           type={Task.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="task"
           resolvedEntity={typeIdEntity as Task | undefined}
           render={(task) => (
@@ -335,6 +343,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<SubAgent>
           type={SubAgent.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="sub-agent"
           resolvedEntity={typeIdEntity as SubAgent | undefined}
           render={(subagent) => (
@@ -349,11 +358,12 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Agent>
           type={Agent.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="agent"
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionShell entity={agent}>
-              <AgentProfileEditor agent={agent} mainRef={mainFileRef} onSaved={() => refetchEntity()} />
+              <AgentProfileEditor agent={agent} mainRef={mainFileRef} />
             </AssetCollisionShell>
           )}
         />
@@ -363,6 +373,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Whiteboard>
           type={Whiteboard.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="whiteboard"
           resolvedEntity={typeIdEntity as Whiteboard | undefined}
           render={(whiteboard) => (
@@ -377,6 +388,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<DeckTemplate>
           type={DeckTemplate.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="deck template"
           resolvedEntity={typeIdEntity as DeckTemplate | undefined}
           render={(deckTemplate) => (
@@ -391,6 +403,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Deck>
           type={Deck.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="deck"
           resolvedEntity={typeIdEntity as Deck | undefined}
           render={(deck) => (
@@ -405,6 +418,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Journey>
           type={Journey.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="journey"
           resolvedEntity={typeIdEntity as Journey | undefined}
           render={(journey) => <JourneyViewer journey={journey} />}
@@ -415,6 +429,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Wizard>
           type={Wizard.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="wizard"
           resolvedEntity={typeIdEntity as Wizard | undefined}
           render={(wizard) => <WizardViewer fsRef={fsRef} wizard={wizard} />}
@@ -429,6 +444,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Mcp>
           type={Mcp.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="MCP server"
           resolvedEntity={typeIdEntity as Mcp | undefined}
           render={(mcp) => <McpViewer fsRef={fsRef} mcp={mcp} />}
@@ -439,6 +455,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<Spreadsheet>
           type={Spreadsheet.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="spreadsheet"
           resolvedEntity={typeIdEntity as Spreadsheet | undefined}
           render={(spreadsheet) => (
@@ -455,6 +472,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<AgentTrace>
           type={AgentTrace.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="agent trace"
           resolvedEntity={typeIdEntity as AgentTrace | undefined}
           render={(trace) => (
@@ -469,6 +487,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<DynamicWorkflow>
           type={DynamicWorkflow.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="dynamic workflow"
           resolvedEntity={typeIdEntity as DynamicWorkflow | undefined}
           render={(workflow) => (
@@ -483,6 +502,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<UsageReport>
           type={UsageReport.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="usage report"
           resolvedEntity={typeIdEntity as UsageReport | undefined}
           render={(report) => (
@@ -497,6 +517,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <EntityResolutionGate<AssetCleanupReport>
           type={AssetCleanupReport.type}
           fsRef={fsRef}
+          renderDocument={renderDocument}
           typeLabel="asset cleanup report"
           resolvedEntity={typeIdEntity as AssetCleanupReport | undefined}
           render={(report) => (

@@ -12,14 +12,11 @@ for the thing, not for the distinction — so the asset lives at
 The metadata model is derived from the type's ``asset_spec`` (``ManifestSpec``)
 ∪ the ``Persist.TRUE`` ``runtime`` the extractor derives from the folder.
 """
-from flow_sdk.builtin.data_source_spec import ManifestSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.data_source_spec import (
-    data_source_spec_identity_key,
-    derive_data_source_spec,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.data_source_spec import data_source_spec_identity_key, derive_data_source_spec
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 from flow_sdk.schema.types import EntityType
 
 DATA_SOURCE_SPEC = TypeInfo(

@@ -29,7 +29,6 @@ from email.parser import BytesParser
 from email.utils import formatdate, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Optional
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
     FetchResult,
     IngestDriver,
@@ -39,6 +38,7 @@ from flow_sdk.ingest.driver import (
     SendStatus,
 )
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 GMAIL_ADDRESS_ENV = "GMAIL_ADDRESS"
 GMAIL_APP_PASSWORD_ENV = "GMAIL_APP_PASSWORD"

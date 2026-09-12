@@ -30,8 +30,9 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
-from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.inbox.projection import project_source_item, reconcile_source
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.utils.serialization import iso_to_utc
 
 YEAR_OLD = "2025-09-01T10:00:00+00:00"

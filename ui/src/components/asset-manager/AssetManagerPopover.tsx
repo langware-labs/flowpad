@@ -293,8 +293,8 @@ export function AssetManagerPopover({
   // source and loading flag, one section, no host filter, no dirs, no select or
   // improve. Decided once here so the rest of the render reads a value instead
   // of re-asking "are we in the drill-down?" at every row and section.
-  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError } = browsingAssistant
-    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error }
+  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } = browsingAssistant
+    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error, scanIssues: assistantAssets.scanIssues, truncated: assistantAssets.truncated }
     : (assets ?? ownAssets);
 
   // Project picker — load once when entering pick-project mode.
@@ -429,7 +429,12 @@ export function AssetManagerPopover({
       {
         key: 'available' as const,
         label: assets?.workerScoped ? t`Available assets` : t`Project assets`,
-        groups: groupByType(filtered.filter((r) => !r.selected && !r.used)),
+        groups: groupByType(filtered.filter((r) => !r.selected && !r.used && (!assets?.workerScoped || r.d.available === true))),
+      },
+      {
+        key: 'other' as const,
+        label: t`Other assets`,
+        groups: groupByType(filtered.filter((r) => assets?.workerScoped && !r.selected && !r.used && r.d.available !== true)),
       },
     ].filter((s) => s.groups.length > 0);
   }, [assets?.workerScoped, browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
@@ -663,6 +668,13 @@ export function AssetManagerPopover({
                 </div>
               </div>
             ))}
+            {!!scanIssues?.length && (
+              <details className="px-3 py-2 text-xs text-amber-700" data-testid="asset-scan-issues">
+                <summary><Trans>Some assets could not be read.</Trans></summary>
+                {scanIssues.map((issue, index) => <div key={`${issue.path}:${index}`} className="mt-1 break-words">{issue.path}: {issue.message}</div>)}
+              </details>
+            )}
+            {truncated && <div className="px-3 py-2 text-xs text-muted-foreground"><Trans>Asset list truncated. Narrow the selection to see more.</Trans></div>}
             {listError && (
               <div role="alert" className="px-3 py-4 text-center text-[11px] text-destructive">
                 <Trans>Could not verify available assets.</Trans>

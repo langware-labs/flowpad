@@ -23,7 +23,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import 
     ACTIVE_SECONDS,
     tail_status,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 def _write(tmp_path, *objs, stale: bool = False):

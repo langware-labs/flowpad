@@ -19,7 +19,7 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
 });
 
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
-  useAgentContext: () => ({ computeNode: null }),
+  useAgentContext: () => ({ computeNode: { typeId: { type: 'compute_node', id: '@local', toString: () => 'compute_node-@local' } } }),
 }));
 
 vi.mock('@src/hooks/use-all-projects', () => ({
@@ -70,10 +70,8 @@ function createArgs(project: Project | null, scope: 'user' | 'project' | 'folder
   return {
     project,
     name: ' Q ',
-    absolutePath: 'flowpad-os/agentic-assets/agent',
     scope,
-    harness: 'all' as const,
-    folderVfsPath: 'agentic-assets/agent',
+    destination: { type_id: 'compute_node-@local', path: '/project/agentic-assets/agent', ref_type: 'folder' as const, read_only: false },
   };
 }
 
@@ -86,8 +84,8 @@ describe('Agent Quick Create', () => {
 
     const result = await descriptor.create(createArgs(project, 'project'));
 
-    expect(descriptor.allowedScopes).toEqual(['user', 'project']);
-    expect(create).toHaveBeenCalledWith(project, ' Q ', 'agentic-assets/agent');
+    expect(descriptor.allowedScopes).toBeUndefined();
+    expect(create).toHaveBeenCalledWith(project, ' Q ', expect.objectContaining({ path: '/project/agentic-assets/agent' }));
     // `toastTitle` is a lazy Lingui descriptor, not a string — the create path
     // runs at module scope where an eager `t` would freeze the pre-locale
     // language. `.message` is its English source; callers render `i18n._(…)`.
@@ -95,16 +93,16 @@ describe('Agent Quick Create', () => {
     expect(result.pointer?.toUrl()).toContain(`typeid/agent-${AGENT_ID}`);
   });
 
-  it('passes null for User scope and rejects Folder scope before creating', async () => {
+  it('passes an exact destination for User and Folder scope', async () => {
     const saved = new Agent({ id: AGENT_ID, name: 'Q' });
     const create = vi.spyOn(Agent, 'createInProject').mockResolvedValue(saved);
     const descriptor = getDescriptor(Agent.type)!;
 
     await descriptor.create(createArgs(null, 'user'));
-    expect(create).toHaveBeenLastCalledWith(null, ' Q ', 'agentic-assets/agent');
+    expect(create).toHaveBeenLastCalledWith(null, ' Q ', expect.objectContaining({ path: '/project/agentic-assets/agent' }));
 
-    await expect(descriptor.create(createArgs(null, 'folder'))).rejects.toThrow(/User or Project/);
-    expect(create).toHaveBeenCalledTimes(1);
+    await descriptor.create(createArgs(null, 'folder'));
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it('uses the selected User scope even when an ambient project exists', async () => {
@@ -121,11 +119,12 @@ describe('Agent Quick Create', () => {
 
     render(<QuickCreateDialog open onOpenChange={vi.fn()} type="agent" />);
     fireEvent.click(screen.getByRole('button', { name: 'User' }));
+    fireEvent.change(screen.getByPlaceholderText('Path'), { target: { value: '/Users/test/agentic-assets/agent' } });
     fireEvent.change(screen.getByPlaceholderText('New agent name'), { target: { value: 'Q' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create).toHaveBeenCalledWith(null, 'Q', undefined);
+    expect(create).toHaveBeenCalledWith(null, 'Q', expect.objectContaining({ path: '/Users/test/agentic-assets/agent' }));
     runInAction(() => contextMap.set(ContextEntitiesEnum.CurrentProjectTypeId, null));
   });
 
@@ -150,12 +149,13 @@ describe('Agent Quick Create', () => {
     fireEvent.click(screen.getByRole('button', { name: 'project-a' }));
     fireEvent.click(screen.getByText('Pick project B'));
     await screen.findByRole('button', { name: 'project-b' });
+    fireEvent.change(screen.getByPlaceholderText('Path'), { target: { value: '/project-b/custom' } });
     fireEvent.change(screen.getByPlaceholderText('New agent name'), { target: { value: 'Q' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(dialogMocks.ensureProject).toHaveBeenCalledWith('/project-b', { select: false });
-    expect(create).toHaveBeenCalledWith(selected, 'Q', 'agentic-assets/agent');
+    expect(create).toHaveBeenCalledWith(selected, 'Q', expect.objectContaining({ type_id: 'compute_node-@local', path: '/project-b/custom' }));
     expect(dialogMocks.openDock).toHaveBeenCalledTimes(1);
   });
 
@@ -165,8 +165,9 @@ describe('Agent Quick Create', () => {
       <ScopeSelection
         scope={scope}
         onScopeChange={vi.fn()}
-        harness="all"
-        onHarnessChange={vi.fn()}
+        mount="agentic-assets/agent"
+        mounts={["agentic-assets/agent"]}
+        onMountChange={vi.fn()}
         path="~/agentic-assets/agent"
         onPathChange={vi.fn()}
         onPickFolder={vi.fn(() => Promise.resolve(null))}
@@ -189,7 +190,7 @@ describe('Agent Quick Create', () => {
     const agent = await Agent.createInProject(project, '  Q  ');
 
     expect(agent.name).toBe('Q');
-    expect(save).toHaveBeenCalledWith([project.typeId]);
+    expect(save).toHaveBeenCalledWith([project.typeId], undefined);
   });
 
   it('resolves only the canonical sibling avatar inside an agent.md bundle', () => {

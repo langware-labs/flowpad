@@ -158,7 +158,7 @@ def test_every_repo_destination_is_a_real_repo_family():
     This is the check that keeps the destinations honest now that they are spelled
     out literally in one table rather than derived from a type name.
     """
-    from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     m = _load_migration()
