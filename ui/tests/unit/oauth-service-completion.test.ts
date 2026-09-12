@@ -31,6 +31,43 @@ describe('OAuthService terminal completion', () => {
     (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.clear();
   });
 
+  it('completes an adopted grant without opening a popup', async () => {
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      status: OAuthStatus.SUCCESS,
+      oauth_request_id: 'adopted-grant',
+    });
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    const popup = vi.spyOn(service, 'createOAuthPopupWindow');
+    const emitted = vi.spyOn(dataManager, 'emit');
+    await expect(service.connect('slack')).resolves.toBeNull();
+    expect(popup).not.toHaveBeenCalled();
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'slack', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
+  it('drives loopback exchange and completes once when HTTP and WebSocket race', async () => {
+    vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
+    const probe = vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const call = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValueOnce({
+        kind: 'loopback',
+        url: 'https://example.test/auth',
+        state: 'loopback-request',
+      })
+      .mockImplementationOnce(async () => {
+        await service.onOAuthMessage({ oauth_request_id: 'loopback-request', status: OAuthStatus.SUCCESS } as never);
+        return { status: 'success' };
+      });
+    await service.connect('flowpad');
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce());
+    expect(call.mock.calls[1][0].subpath).toBe('flowpad/wait-callback');
+    expect(emitted.mock.calls.filter(([event]) => event === OAuthEventType.OAUTH_FLOW_COMPLETE)).toHaveLength(1);
+  });
+
   it('verifies a new grant at owner scope before attaching its target', async () => {
     const test = vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
     const attach = vi.spyOn(service, 'attach').mockResolvedValue(undefined);
@@ -151,6 +188,7 @@ describe('OAuthService terminal completion', () => {
       TARGET,
     );
     flow.closeWindow();
+    (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.set('request-3', flow);
 
     await (
       service as unknown as {

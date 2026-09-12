@@ -382,6 +382,19 @@ export class OAuthService {
         throw new Error(`Empty OAuth /auth response for ${provider}`);
       }
 
+      // The backend may have adopted an existing verified hub grant. It has
+      // already stored the local token, so there is no browser flow to open.
+      if (raw.status === OAuthStatus.SUCCESS) {
+        const result = await this.verifyAndAttach(provider, targetEntity, sharedEntityVarName);
+        this.emitFlowComplete({
+          provider,
+          ...result,
+          oauth_request_id: String(raw.oauth_request_id ?? ''),
+          targetEntity,
+        });
+        return null;
+      }
+
       // Device flow (e.g. GitHub): no browser popup; emit an event so the UI can
       // render a code-display modal. Then kick off the long-poll on wait-callback.
       if ((raw as { kind?: string }).kind === 'device') {
@@ -448,19 +461,9 @@ export class OAuthService {
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
-      // A `code` grant looks like a `loopback` one from here — same popup, same
-      // auth_url — but it does not finish like one: its redirect is handled by
-      // the HUB, not by a port on this machine. So no local server posts a
-      // result back, `onOAuthMessage` is never called, and the hub's completion
-      // websocket is not one this process is on either. Treated as loopback,
-      // the user authorized successfully and the app waited forever for a
-      // message nobody would send: the token sat on the hub, the connection read
-      // as MISSING, and the caller's spinner never stopped. `wait-callback` is
-      // the backend's own answer — it polls the hub and adopts the token into
-      // local SOD — so drive it.
-      if ((raw as { kind?: OAuthFlowKind }).kind === 'code') {
-        void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
-      }
+      // Both popup grants need the backend to finish the exchange/adoption.
+      // A loopback callback only captures the code; wait-callback exchanges it.
+      void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
 
       return oauthFlow;
     } catch (error) {
@@ -507,7 +510,7 @@ export class OAuthService {
   }
 
   /**
-   * Carry a hub-redirected (`code`) grant to completion, since nothing else will.
+   * Carry a popup grant through the backend token exchange and storage.
    *
    * `wait-callback` answers `success` once the hub holds the token (the backend
    * then copies it into local SOD), or `polling` when the user is still at the
@@ -524,18 +527,9 @@ export class OAuthService {
     targetEntity?: TypeId,
   ): Promise<void> {
     const finish = async (status: OAuthStatus) => {
-      let attachSuccess: boolean | null = null;
-      if (status === OAuthStatus.SUCCESS) {
-        ({ status, attachSuccess } = await this.verifyAndAttach(provider, targetEntity, flow.sharedEntityVarName));
-      }
-      this.oAuthFlows.delete(info.oauth_request_id);
-      this.emitFlowComplete({
-        provider,
-        status,
-        oauth_request_id: info.oauth_request_id,
-        targetEntity,
-        attachSuccess,
-      });
+      // HTTP and WebSocket completion share one claim before verification.
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return;
+      await this.onOAuthMessage({ oauth_request_id: info.oauth_request_id, status } as OAuthMessage);
     };
 
     try {
