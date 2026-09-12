@@ -169,8 +169,6 @@ class LocalOAuthProvider:
     #: The standard route is delegated to the Hub; local endpoints/client id
     #: are therefore intentionally absent and are not publication defects.
     hub_required: bool = False
-    #: Whether a Hub grant is copied into local SOD for non-Hub consumers.
-    copy_hub_credential: bool = False
     #: OPTIONAL. The local SOD name for this provider's APP (bot) credential,
     #: when the provider issues a second identity alongside the user's. Slack's
     #: one OAuth returns both an `xoxb` bot token and an `xoxp` user token; the
@@ -206,7 +204,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             identity_fields=("login", "name"),
             account_key_fields=("id",),
         ),
-        copy_hub_credential=True,
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
@@ -366,7 +363,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # background poller, which has no request user and so cannot reach the hub
         # tier. Adoption runs once inside the wait-callback request (which can),
         # and the poller then reads local SOD.
-        copy_hub_credential=True,
         # The bot half of the same grant. An agent posts AS this, not as the
         # human who connected — which is also what makes an inbound message from
         # that human read as someone else, so a reply is addressable at all.
@@ -396,7 +392,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         hub_required=True,
         # Access tokens expire hourly and the hub refreshes them; a local copy
         # would go stale within the hour, so read through the hub instead.
-        copy_hub_credential=False,
     ),
     LINEAR: LocalOAuthProvider(
         name=LINEAR,
@@ -419,7 +414,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("data.viewer.id",),
         ),
         hub_required=True,
-        copy_hub_credential=False,
     ),
     FLOWPAD: LocalOAuthProvider(
         name=FLOWPAD,
@@ -492,7 +486,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # The whole point is that this credential lives on THIS machine and is
         # never fetched from the hub — the hub is the issuer, not a holder.
         hub_required=False,
-        copy_hub_credential=False,
     ),
     GITLAB: LocalOAuthProvider(
         name=GITLAB,
@@ -512,7 +505,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         ),
         hub_required=True,
         # Two-hour token the hub refreshes; a local copy would go stale.
-        copy_hub_credential=False,
     ),
 }
 
@@ -688,6 +680,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
         return None
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
@@ -713,6 +706,8 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
             value = await _read(target)
             if value:
                 return value
+    except HubMirrorUnavailable:
+        return None
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
