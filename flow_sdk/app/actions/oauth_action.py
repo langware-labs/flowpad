@@ -559,14 +559,16 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     # the provider table, so read its separate credential without that check.
     app_local = descriptor.app_credentials_name if descriptor is not None else None
     if app_local:
-        app_value = await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
+        app_hub_name = hub_app_credentials_name_for(provider)
+        app_value = await hub_credential_value(app_hub_name, verify_held=False)
         if app_value:
-            mirrored = hub_mirror(app_value, hub_app_credentials_name_for(provider))
+            mirrored = hub_mirror(app_value, app_hub_name)
             if not await record_credential(user, provider, mirrored, name=app_local):
                 raise RuntimeError(f"OAuth bot token for {provider} could not be stored locally")
             logger.info("OAuth: adopted the hub's %s BOT token into local %s", provider, app_local)
         else:
             logger.info("OAuth: no %s bot token on the hub (app tokens are optional)", provider)
+
 
 async def _handle_test(provider: str) -> ApiResponse:
     """Call the provider with the stored token and report what came back.

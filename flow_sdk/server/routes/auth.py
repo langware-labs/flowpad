@@ -227,3 +227,20 @@ async def login_callback(
             icon="✗",
             status_code=400,
         )
+
+
+@router.get("/oauth_callback", response_class=HTMLResponse)
+async def oauth_callback(state: str = "", code: str = "", error: str = ""):
+    """Redeem a sandbox sign-in code only against its server-held PKCE state."""
+    from flow_sdk.cli.auth.sandbox_login import complete_sandbox_login
+    from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
+
+    try:
+        if error:
+            raise ValueError("Sign-in was not authorized")
+        await complete_sandbox_login(state, code)
+    except Exception:
+        await _broadcast_oauth_error("Sandbox sign-in failed. Start sign-in again.")
+        return HTMLResponse("Sandbox sign-in failed. Return to Flowpad and try again.", status_code=400)
+    return HTMLResponse("<p>Signed in. You can close this window.</p><script>window.close()</script>",
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
