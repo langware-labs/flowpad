@@ -231,3 +231,20 @@ async def test_the_success_value_default_leaves_every_other_provider_alone(monke
     _hub_answers(monkeypatch, {"ok": False, "error": "invalid_auth"})
     rejected = await run_probe("slack", "xoxp-bad")
     assert rejected.ok is False and rejected.code == "invalid_auth"
+
+
+@pytest.mark.asyncio
+async def test_flowpad_connection_uses_registered_callback_in_sandbox(monkeypatch, hub_url):
+    from flow_sdk.instance_settings import runtime
+
+    from functools import lru_cache
+
+    monkeypatch.setattr(runtime, "own_sandbox_id", lru_cache(maxsize=1)(lambda: "test123"))
+    result = await do.get_desktop_oauth_auth_url(FLOWPAD, "local-user")
+    query = parse_qs(urlparse(result.data["url"]).query)
+    request_id = query["state"][0]
+    session = do._desktop_oauth_sessions.pop(request_id)
+    assert query["client_id"] == ["flowpad-sandbox"]
+    assert query["redirect_uri"] == ["https://9007-test123.e2b.dev/auth/oauth_callback"]
+    assert session.callback_server is None
+    assert session.client_id == "flowpad-sandbox"
