@@ -1,0 +1,108 @@
+{
+  "local": {
+    "anthropic": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "atlassian": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "flowpad": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "github": {
+      "ok": true,
+      "identity": "serans1"
+    },
+    "gitlab": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "linear": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "notion": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "slack": {
+      "ok": true,
+      "identity": "eran"
+    }
+  },
+  "sandbox": {
+    "anthropic": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "atlassian": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "flowpad": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "github": {
+      "ok": true,
+      "identity": "serans1"
+    },
+    "gitlab": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "linear": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "notion": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "slack": {
+      "ok": true,
+      "identity": "eran"
+    }
+  },
+  "reopened": {
+    "anthropic": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "atlassian": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "flowpad": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "github": {
+      "ok": true,
+      "identity": "serans1"
+    },
+    "gitlab": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "linear": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "notion": {
+      "ok": true,
+      "identity": "eran@langware.ai"
+    },
+    "slack": {
+      "ok": true,
+      "identity": "eran"
+    }
+  },
+  "sandbox_login": {
+    "jwt": true,
+    "refresh_token_present": true
+  }
+}

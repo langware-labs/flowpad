@@ -1,68 +1,74 @@
-# Staging OAuth validation — 2026-09-12
+# Staging OAuth validation — 2026-09-13
 
-Validated with Chrome profile langware.ai / eran@langware.ai against
-https://staging.flowpad.ai. The hub checkout is the sibling
-`test_flowpad/FlowPad`, not the OSS repository's minimal hub stub.
+Validated using Chrome profile `langware.ai` / `eran@langware.ai` against
+`https://staging.flowpad.ai`, with hub 0.29.113 and Flowpad 0.2.166.
+The hub repository is `langware-labs/flowpad-hub` in sibling
+`test_flowpad/FlowPad`, not the OSS hub stub.
 
-## Deployed result
+## Result
 
-Hub 0.29.111 serves app/UI 0.2.165. Authenticated bootstrap reports
-`supported_pages: ["hub"]`. Deployment and smoke tests passed:
-https://github.com/langware-labs/flowpad-hub/actions/runs/34717614684.
+All eight OAuth providers passed live credential probes locally and from a
+fresh staging cloud sandbox. All eight browser rows became Connected without
+refresh. Reopening the sandbox through the hub preserved its standard user
+JWT, refresh token, and all eight working connections; the repeated live
+probes also passed. The hub card updated to the signed-in account without refresh.
 
-| Provider | Local app | Staging hub | Verified identity |
-| --- | --- | --- | --- |
-| GitHub | Pass | Pass | serans1 |
-| Slack | Pass | Pass | eran |
-| GitLab | Pass | Pass | eran@langware.ai |
-| Atlassian | Pass | Pass | eran@langware.ai |
-| Linear | Pass | Pass | eran@langware.ai |
-| Notion | Pass | Pass | eran@langware.ai |
-| Anthropic | Pass | Local OAuth flow | eran@langware.ai |
-| FlowPad OAuth | Pass | Local OAuth flow | eran@langware.ai |
+| Provider | Local probe | Fresh sandbox probe | After reopen | Identity |
+| --- | --- | --- | --- | --- |
+| Anthropic | Pass | Pass | Pass | eran@langware.ai |
+| Atlassian | Pass | Pass | Pass | eran@langware.ai |
+| Flowpad OAuth | Pass | Pass | Pass | eran@langware.ai |
+| GitHub | Pass | Pass | Pass | serans1 |
+| GitLab | Pass | Pass | Pass | eran@langware.ai |
+| Linear | Pass | Pass | Pass | eran@langware.ai |
+| Notion | Pass | Pass | Pass | eran@langware.ai |
+| Slack | Pass | Pass | Pass | eran |
 
-All six hub-backed grants have actual encrypted local token copies, equal to
-hub values and bound to the cloud account and staging API origin. Credential
-reads resolve through the hub refresh authority and persist rotated values.
+The six hub-backed providers adopted existing approved grants with one click.
+Flowpad OAuth completed its remote PKCE callback with one click. Anthropic
+completed its provider-hosted authorization-code handoff; its initial sandbox
+connection requires pasting the returned code. It is working, but that initial
+handoff is not literally one click. CLI logins for Claude/Codex/Copilot are
+separate credentials and are not covered by this OAuth matrix.
 
-Existing approved grants were adopted locally with one provider click.
-Connected status updated without refresh. Local Linear and deployed GitHub
-also updated already-open observer tabs. The deployed GitHub reconnect reused
-approved scopes and granted no additional organization access.
+## Standard sandbox login
 
-## Release evidence
+Created `OAuth 0.29.113 standard login validation` with auto-login disabled.
+Verified it started logged out, clicked FlowPad Connect, and observed Connected
+and the Eran profile without refreshing. The stored credential is a JWT with a
+refresh token. Owner-validated PKCE callbacks target the actual sandbox host.
+Reopening does not replace the explicit user login with a delegated node key.
 
-- App OAuth PR #450 and version PR #451 merged; wheel and sdist 0.2.165 published,
-  tagged, and verified through a clean install.
-- App CI passed frontend checks, four unit shards, API and E2E suites.
-- Hub PR #1137 contains the app pin, three E2B ledger entries and the compatible
-  asset-projection import. Hub CI 34717145890 and security scan passed.
-- All three E2B 0-2-165 template sizes passed version-specific validation.
-- A fresh staging-created sandbox ran 0.2.165, auto-signed in as
-  eran@langware.ai, and opened in Chrome. The disposable sandbox was deleted.
+- Hub entity: `70d5f38d-8f0b-43fc-93c8-67fef9ce7624`
+- E2B sandbox: `ier6a24xyd08p24i6nsrv` (same before and after reopen)
+- App: `0.2.166`; staging hub: `0.29.113`
+- Open: https://staging.flowpad.ai/api/v1/graph/compute_node/70d5f38d-8f0b-43fc-93c8-67fef9ce7624/open-service/workspace
 
-## Sandbox limitation
+Delegated auto-login keys retain their existing restrictions on personal OAuth.
+Authenticated policy refusals now return 403; invalid credentials still return
+401. The SDK preserves login on permission refusal and displays connection
+access denial. Regression tests cover both statuses and actual token rejection.
+The old restricted test sandbox was already logged out at the final revisit,
+so that revisit does not constitute a new live permission-denial test.
 
-A sandbox's delegated auto-login key resolves to `owner_by_api`. Hub policy
-intentionally forbids personal `env-var` and `oauth` operations for that role.
-GitHub adoption in that sandbox was refused 401, after which the frontend
-misleadingly displayed Login Required. Personal OAuth within delegated
-sandboxes is therefore **not a passing scenario**. Security restrictions were
-preserved; the passing cloud results above refer to the staging hub UI.
+## Release and verification
 
-## Simplify review — 2026-09-13
+- Published app 0.2.166 wheel and sdist; verified hashes and a clean PyPI install.
+- App CI: https://github.com/langware-labs/flowpad/actions/runs/34725318664
+- Hub CI: https://github.com/langware-labs/flowpad-hub/actions/runs/34726659107
+- Staging deployment and post-deploy checks: https://github.com/langware-labs/flowpad-hub/actions/runs/34726681973
+- All three 0.2.166 E2B template sizes built and passed validation.
+- Small template: `ybri8yxkn7p18wxptcng`; medium: `8hlg3q21zu22ilkvgho4`;
+  large: `fm7b7h40kay6m8r8i00p`.
+- Focused app backend tests: 51 passed; SDK tests: 10 passed; typecheck passed.
+- Focused hub denial tests: 151 passed, 1 skipped; identity tests: 7 passed;
+  root-write denial regression: 1 passed. Full hub CI passed.
 
-Reviewed the OAuth commits for reuse, simplification, efficiency and placement.
-The popup callback driver now derives provider, request and target from its
-flow instead of accepting duplicate arguments. Bot-token adoption resolves
-its hub credential name once. Removed obsolete comments describing uncopied
-tokens. No protocol, access-policy, timeout or retry behavior changed.
+An initial launch during load-balancer deployment cutover returned 502. Once
+the deployment completed, launch and the complete validation succeeded. The
+orphan sandbox from that failed launch was removed. No timeout or retry budgets
+were increased. Production was not deployed.
 
-## Permission-denial feedback fix — 2026-09-13 (source only)
-
-The SDK auth interceptor no longer clears the signed-in user merely because an
-entity action returns 401 or 403. Explicit token rejection still expires the
-session. OAuth connection errors explain access refusal and preserve backend
-messages for other failures. Sandbox authorization policy is unchanged.
-Regression coverage checks both refusal statuses, real token rejection and
-connection-error feedback. This follow-up has not been released to staging.
+Probe evidence is committed alongside this report. Probes establish accepted
+credentials and expected identities; they do not exercise every provider API
+operation or guarantee future provider availability/token revocation behavior.
