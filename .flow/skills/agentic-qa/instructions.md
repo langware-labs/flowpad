@@ -938,3 +938,12 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
   (:6001/:5002), qa-w2, qa-w3. Local hub :8093 was already UP and healthy all cycle and was never
   restarted. The user's backends :9008 (oss) and :9007 (prod) were never targeted. Playwright:
   headless Chromium, per-category config, JSON reporter per file, private `--output` per runner.
+
+### 2026-09-12 — Staging OAuth preflight
+
+- Staging https://staging.flowpad.ai returned hub-only bootstrap successfully. Fresh Playwright session redirected to login.dev.flowpad.ai; all eight OAuth test routes rejected anonymous requests with 401. This is blocked live validation, not a provider failure or pass. Existing desktop prod session targets app.flowpad.ai and is not staging authentication. Evidence: `_results/2026-09-12-staging-oauth/`.
+
+### User browser preference — 2026-09-12
+
+- For staging hub/OAuth validation, use Google Chrome with the `eran@langware.ai` profile (Chrome profile label `langware.ai`). Explicit user instruction supersedes the generic fresh/headless-browser policy for this task. Continue with the existing account session.
+- Authenticated staging follow-up: GitLab live Test passed as eran@langware.ai. Atlassian/Notion Connected rows returned Not shared with this project while picker showed Select a project; hidden fallback target suspected. GitHub/Slack/Linear reached consent; Google Drive/Microsoft absent. See `_results/2026-09-12-staging-oauth/report.md`.
