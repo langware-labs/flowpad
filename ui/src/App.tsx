@@ -18,6 +18,7 @@ import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
+import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
@@ -150,6 +151,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
+        <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
@@ -169,7 +171,11 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
 
 const App = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  return <PrimaryContentProvider navigationKey={location.key}><AppContent>{children}</AppContent></PrimaryContentProvider>;
+  return (
+    <PrimaryContentProvider navigationKey={location.key}>
+      <AppContent>{children}</AppContent>
+    </PrimaryContentProvider>
+  );
 };
 
 export default App;

@@ -2407,6 +2407,10 @@ msgstr "אימות"
 msgid "authored"
 msgstr "נכתב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "קוד הרשאה"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "קוד הרשאה — יש לאשר בדפדפן ולחזור לכאן"
@@ -2418,6 +2422,10 @@ msgstr "קוד הרשאה עם PKCE, עם הפניה חוזרת למחשב זה"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנסות שנית."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "אישור חיבור"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2979,6 +2987,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -4089,6 +4098,7 @@ msgstr "אישור"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4165,6 +4175,7 @@ msgstr "מתחבר"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "מתחברת..."
 
@@ -13049,6 +13060,10 @@ msgstr "פתח ניתוח"
 msgid "Open as a tab"
 msgstr "פתח כטאב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "פתיחת דף ההרשאה"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
@@ -13366,6 +13381,10 @@ msgstr "פתחו את הפרויקט"
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr ""
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "פתחו את דף הספק, אשרו גישה והדביקו כאן את קוד ההרשאה שמוצג שם."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
