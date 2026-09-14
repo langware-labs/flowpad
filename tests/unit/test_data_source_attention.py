@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.ingest.driver import get_driver
 from flow_sdk.ingest.health import SourceHealth
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
@@ -174,7 +175,7 @@ class TestAttentionFastLane:
         monkeypatch.setattr(poller.asyncio, "sleep", lambda s: real_sleep(min(s, 0.02)))
         monkeypatch.setattr(poller, "ATTENTION_LEASE_SECONDS", 2.5)
         monkeypatch.setattr(
-            "flow_sdk.ingest.drivers.telegram.TelegramDriver.attention_poll_seconds", 1
+            get_driver("telegram"), "attention_poll_seconds", 1
         )
 
         await src.request_poll_action()

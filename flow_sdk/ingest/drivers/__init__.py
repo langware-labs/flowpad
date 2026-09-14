@@ -18,13 +18,13 @@ from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
 from flow_sdk.ingest.drivers.teams import TeamsDriver
-from flow_sdk.ingest.drivers.telegram import TelegramDriver
 from flow_sdk.ingest.drivers.whatsapp import WhatsAppDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.rss import RssSource
 from flow_sdk.sources.providers.slack import SlackSource
+from flow_sdk.sources.providers.telegram import TelegramSource
 
 
 def _folder_origin(row):
@@ -78,13 +78,47 @@ def _slack_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="")
     if not (text or "").strip():
         raise ValueError("a slack send needs text")
     thread = str(thread_key or "").strip() or str(in_reply_to or "").strip()
-    return MessageData(text=text, conversation=source.origin(thread, channel) if thread else source.channel_origin(channel))
+    return MessageData(text=text, conversation=source.origin(thread, channel) if thread else source.channel_origin(channel)), None
 
 
 def _slack_outbound_spec(_source):
     from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
 
     return SlackMessageSpec
+
+
+
+async def _telegram_credentials(row):
+    """The bot token. Read from the row's config until per-row secrets move out of it; either
+    way it reaches the source as a credential, never as configuration."""
+    from pydantic import SecretStr  # noqa: PLC0415
+
+    from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+    token = str((row.config or {}).get("bot_token") or "").strip()
+    return Credentials(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(token)}) if token else Credentials()
+
+
+def _telegram_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """``to`` is the chat — a chat reply targets the chat, never its author — and a forum topic
+    rides ``thread_key``. ``in_reply_to`` (``<chat_id>/<message_id>``) makes it a reply to that
+    message, which Telegram keeps in the replied message's topic. A subject has no equivalent."""
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    chat = str(to or "").strip() or str(thread_key or "").split("/", 1)[0].strip()
+    if not chat:
+        raise ValueError("a telegram send needs a chat id in `to` or `thread_key`")
+    answered = str(in_reply_to or "").strip()
+    if "/" in answered and answered.rsplit("/", 1)[-1].isdigit():
+        return MessageData(text=text), source.origin(answered)
+    topic = str(thread_key or "").split("/", 1)[1:]
+    return MessageData(text=text, conversation=source.chat_origin(chat, topic[0] if topic and topic[0].isdigit() else "")), None
+
+
+def _telegram_outbound_spec(_source):
+    from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
+
+    return TelegramMessageSpec
 
 
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
@@ -117,7 +151,16 @@ register_driver(
     )
 )
 register_driver(TeamsDriver())
-register_driver(TelegramDriver())
+register_driver(
+    SourceDriver(
+        TelegramSource,
+        kind="datasource.api.telegram",
+        credentials=_telegram_credentials,
+        outgoing=_telegram_outgoing,
+        outbound_spec=_telegram_outbound_spec,
+        lift_cursor=lambda state: TelegramSource.resume_at(state["next_offset"]) if state.get("next_offset") else None,
+    )
+)
 register_driver(WhatsAppDriver())
 
 __all__ = [
@@ -129,6 +172,5 @@ __all__ = [
     "GoogleDriveDriver",
     "HelpdeskDriver",
     "TeamsDriver",
-    "TelegramDriver",
     "WhatsAppDriver",
 ]
