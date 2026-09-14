@@ -13,11 +13,14 @@ from typing import Annotated, ClassVar, Optional
 
 from pydantic import ConfigDict, StringConstraints, field_validator, model_validator
 
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
+from flow_sdk.sources.values.items import Payload
+from flow_sdk.sources.values.origin import CloudOrigin
 
-#: A header component: the natural key is ``(data_source_id, segment_key,
-#: external_id)`` and a blank component collapses every item of a segment onto
-#: one row — so blankness is refused by the type, not by a route.
+#: A header component: each one feeds the natural key (``data_source_id`` plus the
+#: origin lifted from ``provider``/``segment_key``/``external_id``), and a blank
+#: component collapses every item of a segment onto one row — so blankness is
+#: refused by the type, not by a route.
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 #: Slack's ``ts`` shape and nothing else in the fleet: ten epoch digits, a dot,
@@ -115,6 +118,25 @@ class SourceItemSpec(DataSpec):
     message_id: Optional[str] = None
     segment_label: str = ""
     raw: Optional[dict] = None
+
+    # ── the contract's value, lifted from the header above (``ingest/legacy_lift.py``) ──
+    # The ingestor fills both before it resolves the row; a caller may pass them already
+    # lifted. Neither is digested: each is a function of digested fields and the source.
+    origin: Optional[CloudOrigin] = None
+    data: Optional[Tagged[Payload]] = None
+
+    # The flat triple the row's natural key reads (``SOURCE_ITEM.natural_key``).
+    @property
+    def origin_kind(self) -> str:
+        return self.origin.kind if self.origin else ""
+
+    @property
+    def origin_namespace(self) -> str:
+        return self.origin.namespace if self.origin else ""
+
+    @property
+    def origin_key(self) -> str:
+        return self.origin.key if self.origin else ""
 
 
 DIGESTED_FIELDS: tuple[str, ...] = (

@@ -128,17 +128,18 @@ class DbSerializer:
         """The row to save, or ``(None, "unchanged")``.
 
         Pure and synchronous: copies ONLY the header's fields (``type(spec)
-        .model_fields``) onto ``existing`` or a fresh row — everything else on
-        the row (``read``, ``starred``) is local state and survives by not
-        being named — and stamps ``content_digest``. The caller saves and emits,
-        in that order.
+        .model_fields``) and the natural key it resolves by onto ``existing`` or
+        a fresh row — a row always holds its own key, even a component the spec
+        computes — while everything else on the row (``read``, ``starred``) is
+        local state and survives by not being named. Stamps ``content_digest``.
+        The caller saves and emits, in that order.
         """
         info = _info(cls)
         digest = self.digest_of(cls, spec)
         if existing is not None and digest and getattr(existing, info.digest_field, None) == digest:
             return None, "unchanged"
         row = existing if existing is not None else cls()
-        for name in type(spec).model_fields:
+        for name in dict.fromkeys((*type(spec).model_fields, *(info.natural_key or ()))):
             setattr(row, name, getattr(spec, name))
         if digest:
             setattr(row, info.digest_field, digest)
