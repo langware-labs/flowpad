@@ -6,13 +6,14 @@ import { pairToolEvents } from './groupTurnEvents';
 import { TurnEventList } from './ToolEntryRow';
 
 interface TurnEventChipProps {
-  /** The CURRENT turn's dense events (tool calls, reasoning, status, errors). */
+  /** The CURRENT turn's dense events (tool calls, status, errors) — reasoning
+   *  is grouped separately, see `ThinkingSummary`. */
   events: FlowData[];
 }
 
 /**
  * Compact live event counter for the current turn: a tiny pill whose number
- * climbs as the agent emits flow data (tool calls, reasoning, status, errors).
+ * climbs as the agent emits flow data (tool calls, status, errors).
  * Clicking it opens a popover with the full per-event list — the SAME list the
  * inline {@link ToolEntryRow} expands to (`TurnEventList`). Renders nothing
  * until the turn has produced at least one dense event, so an idle/thinking

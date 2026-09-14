@@ -73,12 +73,10 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
                 _base_for_event(event, _line_index, 0, ""),
             )
             if worker_unavailable is not None:
-                out = [
-                    entry_to_flowdata(
-                        worker_unavailable,
-                        observation_kind="live",
-                    )
-                ]
+                out = entry_to_flowdata(
+                    worker_unavailable,
+                    observation_kind="live",
+                )
             else:
                 out = _convert_assistant_event(event, _line_index)
         except Exception:
@@ -207,7 +205,7 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
                 envelope={},
                 base=_base_for_event(event, line_index, block_index, tool_use_id),
             ))
-            out.append(entry_to_flowdata(entry, observation_kind="live"))
+            out.extend(entry_to_flowdata(entry, observation_kind="live"))
     return out
 
 
@@ -234,7 +232,7 @@ def _convert_user_event(event: dict[str, Any], line_index: int) -> list[FlowData
                 )
                 # Delegate to the history path's converter so the live frame
                 # is identical to the one a reload replays.
-                out.append(entry_to_flowdata(entry, observation_kind="live"))
+                out.extend(entry_to_flowdata(entry, observation_kind="live"))
             continue
         if block.get("type") != "tool_result":
             continue
