@@ -83,9 +83,10 @@ class Choosing(Protocol):
 
 @runtime_checkable
 class Identified(Protocol):
-    """A source that can say who it reads and posts as."""
+    """A source that can say who it reads and posts as — every identity, primary first (a Slack
+    bot answers to its user id and its bot id)."""
 
-    async def whoami(self) -> UserProfile: ...
+    async def whoami(self) -> tuple[UserProfile, ...]: ...
 
 
 @runtime_checkable

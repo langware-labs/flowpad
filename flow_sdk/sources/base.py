@@ -60,6 +60,9 @@ class Source:
     stamps_identity: ClassVar[bool] = True
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
+    #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
+    #: allows one request per interval declares 1.
+    pages_per_pass: ClassVar[Optional[int]] = None
     #: Ceiling on segments synced per pass; ``None`` means the runtime's budget.
     segment_budget: ClassVar[Optional[int]] = None
     #: The config field naming WHICH remote account a row serves.

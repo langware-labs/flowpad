@@ -8,31 +8,53 @@ flips from asserting it exists to asserting it is gone.
 
 What it translates, and nothing else:
 
-* a ``DataSource`` row → the ``SourceBinding`` the class is constructed from;
+* a ``DataSource`` row → the ``SourceBinding`` the class is constructed from, with the
+  provider's credentials (``credentials``) and, for a send, the persona the row posts as;
 * ``segments`` → the source's own segments (``Segmented``), else one ``root`` segment;
-* ``fetch`` → one full traversal of the segment's query. Records older than the row's window
-  are dropped — the window is the application's, never the source's — and the rest lower to
-  the flat envelope (``legacy_lift.envelope_of``); a reflecting source's files become refs, diffed against the
-  manifest the cursor carries — an observed stamp per key (``Payload.stable_dump``) and, when
-  the source can say, a handle that survives a rename (``StableHandle``), so a moved file is
-  never reported as removed;
-* ``verify`` / ``choices`` → the ``Verifiable`` / ``Choosing`` capabilities.
+* ``fetch`` → a traversal of the segment's query, capped by ``pages_per_pass``. With no durable
+  cursor yet, a message query starts at the row's window (``since``). Records older than the
+  window are dropped — the window is the application's, never the source's — the rest lower to
+  the flat envelope (``legacy_lift.envelope_of``) in the order they happened. A reflecting
+  source's files become refs, diffed against the manifest the cursor carries: an observed stamp
+  per key (``Payload.stable_dump``) and, when the source can say, a handle that survives a rename
+  (``StableHandle``), so a moved file is never reported as removed;
+* ``send`` → ``Messaging.send``, with the legacy arguments mapped into the channel's addressing
+  by ``outgoing``; a refused message is a ``ValueError``, never source health;
+* ``verify`` / ``choices`` → ``Verifiable`` / ``Choosing``; after a verify that could read, or a
+  send, an ``Identified`` source's identities are stamped on the row, once.
 
-A durable source's ``resume_cursor`` is carried in the cursor state and handed back on the
-next pass; any other source starts every traversal from the beginning, as the engine expects.
+A durable source's ``resume_cursor`` is carried in the cursor state (``lift_cursor`` adopts the
+state a legacy driver left) and handed back on the next pass; any other source starts every
+traversal from the beginning, as the engine expects.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+import logging
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Optional
 
-from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.ingest.driver import (
+    FetchResult,
+    IngestDriver,
+    SegmentCursorView,
+    SegmentRef,
+    SendOutcome,
+    SetupVerdict,
+    identity_stamped,
+    stamp_identity,
+)
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.sources.base import Source
-from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.errors import Rejected
-from flow_sdk.sources.protocols import Choosing, Segmented, StableHandle, Verifiable
+from flow_sdk.sources.binding import Persona, SourceBinding
+from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.errors import Rejected, SourceError
+from flow_sdk.sources.protocols import Choosing, Identified, Messaging, Segmented, StableHandle, Verifiable
+from flow_sdk.sources.values.items import MessageData
 from flow_sdk.sources.values.page import ChangePage
+from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.utils.serialization import iso_to_utc
+
+logger = logging.getLogger(__name__)
 
 DELETE_AT = "D1"
 
@@ -40,20 +62,37 @@ DELETE_AT = "D1"
 ROOT_SEGMENT = "root"
 
 _TRAITS = ("stamps_identity", "open_inbound", "identity_config_key", "connection", "attention_poll_seconds", "segment_budget")
+_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
+
+#: ``(row) -> Credentials`` — what this provider's source reads with.
+CredentialResolver = Callable[[Any], Awaitable[Credentials]]
+#: ``(source, *, thread_key, to, text, subject, in_reply_to) -> MessageData`` — the legacy send
+#: arguments in this channel's addressing.
+Outgoing = Callable[..., MessageData]
 
 
 def _when(item: Any) -> Any:
-    """The event time an item's payload reports, if any — the window and the high-water read it."""
+    """The event time an item's payload reports, if any — the window, the order and the
+    high-water read it."""
     return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
 
 
-def binding_of(row: Any) -> SourceBinding:
+def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
     return SourceBinding(
         source_id=str(getattr(row, "id", "") or ""),
         name=str(getattr(row, "provider", "") or ""),
         account_key=str(getattr(row, "account_key", "") or ""),
         config=dict(getattr(row, "config", None) or {}),
+        credentials=credentials or Credentials(),
+        persona=persona or Persona(),
     )
+
+
+async def _persona_of(row: Any) -> Persona:
+    from flow_sdk.inbox.sender_identity import sender_identity  # noqa: PLC0415
+
+    identity = await sender_identity(row)
+    return Persona(name=identity.username, icon=identity.icon_emoji) if identity else Persona()
 
 
 class SourceDriver(IngestDriver):
@@ -66,70 +105,96 @@ class SourceDriver(IngestDriver):
         ref_for: Optional[Callable[[Source, str], str]] = None,
         origin_for: Optional[Callable[..., Any]] = None,
         origin_id_for: Optional[Callable[..., str]] = None,
+        credentials: Optional[CredentialResolver] = None,
+        outgoing: Optional[Outgoing] = None,
+        outbound_spec: Optional[Callable[[Any], type]] = None,
+        lift_cursor: Optional[Callable[[dict], Optional[str]]] = None,
     ) -> None:
         self.source_cls = cls
         self.provider = cls.provider
         self.kind = kind
         self._build = build or cls
         self._ref_for = ref_for
+        self._credentials = credentials
+        self._outgoing = outgoing
+        self._lift_cursor = lift_cursor
         for trait in _TRAITS:
             setattr(self, trait, getattr(cls, trait))
         self.origin_for = origin_for
         self.origin_id_for = origin_id_for
+        self.sends = outgoing is not None and issubclass(cls, Messaging)
+        if outbound_spec is not None:
+            self.outbound_spec = outbound_spec
         if not cls.reflects:
             self.channel_for = lambda row: cls.origin_kind_for(getattr(row, "config", None) or {})
         self.verify = self._verify if issubclass(cls, Verifiable) else None
         self.choices = self._choices if issubclass(cls, Choosing) else None
 
-    def open(self, row: Any) -> Source:
+    async def open(self, row: Any, *, persona: bool = False) -> Source:
         """The configured source. A configuration the class refuses is a person's to fix."""
+        credentials = await self._credentials(row) if self._credentials else None
+        binding = binding_of(row, credentials=credentials, persona=await _persona_of(row) if persona else None)
         try:
-            return self._build(binding_of(row))
+            return self._build(binding)
         except ValueError as exc:
             raise Rejected(str(exc)) from exc
 
     async def segments(self, row: Any) -> list[SegmentRef]:
-        source = self.open(row)
+        source = await self.open(row)
         if not isinstance(source, Segmented):
             return [SegmentRef(key=ROOT_SEGMENT)]
         async with source:
             return [SegmentRef(key=ref.key, label=ref.label, stamp=ref.stamp) for ref in await source.segments()]
 
     async def fetch(self, row: Any, view: SegmentCursorView) -> FetchResult:
-        source = self.open(row)
+        source = await self.open(row)
+        cls = type(source)
         async with source:
             segment = None
             if isinstance(source, Segmented):
                 segment = next((ref for ref in await source.segments() if ref.key == view.segment_key), None)
-            durable = type(source).durable_cursor
-            cursor = (view.state or {}).get("cursor") if durable else None
-            items, removed, moved, resume = [], [], [], None
+            query = segment.query if segment else None
+            state = dict(view.state or {})
+            cursor = None
+            if cls.durable_cursor:
+                cursor = state.get("cursor") or (self._lift_cursor(state) if self._lift_cursor else None)
+            floor = iso_to_utc(view.window_start) if view.window_start else None
+            if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
+                query = query.model_copy(update={"since": floor})
+            items, removed, moved, resume, pages = [], [], [], None, 0
             while True:
-                page = await source.fetch(segment.query if segment else None, cursor=cursor)
+                page = await source.fetch(query, cursor=cursor)
+                pages += 1
                 items.extend(page.items)
                 if isinstance(page, ChangePage):
                     removed.extend(page.removed)
                     moved.extend(page.moved)
                     resume = page.resume_cursor or resume
-                if (cursor := page.next_cursor) is None:
+                cursor = page.next_cursor
+                if cursor is None or (cls.pages_per_pass is not None and pages >= cls.pages_per_pass):
                     break
-            state = {"cursor": resume} if durable and resume else {}
-            if type(source).reflects:
-                return self._files(source, view, items, removed, moved, state)
-            label = segment.label if segment else ""
-            floor = iso_to_utc(view.window_start) if view.window_start else None
-            kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
-            envelopes = [
-                envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=view.segment_key, segment_label=label)
-                for item in kept
-            ]
-            stamps = [when for when in map(_when, kept) if when is not None]
-            return FetchResult(
-                items=envelopes,
-                next_state=state,
-                high_water=max(stamps).isoformat() if stamps else None,
-                unchanged=not envelopes and not removed,
-            )
+            carried = {"cursor": resume} if cls.durable_cursor and resume else {}
+            if cls.reflects:
+                return self._files(source, view, items, removed, moved, carried)
+            return self._records(row, view, segment, items, removed, carried, floor)
+
+    def _records(self, row: Any, view: SegmentCursorView, segment, items, removed, state: dict, floor) -> FetchResult:
+        kept = sorted(
+            (item for item in items if floor is None or (_when(item) or floor) >= floor),
+            key=lambda item: _when(item) or _EPOCH,
+        )
+        label = segment.label if segment else ""
+        envelopes = [
+            envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=view.segment_key, segment_label=label)
+            for item in kept
+        ]
+        stamps = [when for when in map(_when, kept) if when is not None]
+        return FetchResult(
+            items=envelopes,
+            next_state=state,
+            high_water=max(stamps).isoformat() if stamps else None,
+            unchanged=not envelopes and not removed,
+        )
 
     def _files(self, source: Source, view: SegmentCursorView, items, removed, moved, state: dict) -> FetchResult:
         assert self._ref_for is not None, f"{self.provider} reflects but names no ref_for"
@@ -150,18 +215,59 @@ class SourceDriver(IngestDriver):
             unchanged=not changed and not gone and not moved,
         )
 
+    async def send(
+        self,
+        row: Any,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        conversation_id: str = "",
+        in_reply_to: str = "",
+    ) -> SendOutcome:
+        if self._outgoing is None:
+            raise NotImplementedError(f"{self.provider} cannot send")
+        source = await self.open(row, persona=True)
+        data = self._outgoing(source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        try:
+            async with source:
+                sent = await source.send(data)
+        except SourceError as exc:
+            # One refused message must never park the channel's ingestion.
+            raise ValueError(f"{self.provider} refused the message: {exc}") from exc
+        if isinstance(source, Identified):
+            await self._stamp(row, source)
+        return SendOutcome(external_id=sent.origin.key, recorded=False)
+
     async def _verify(self, row: Any) -> SetupVerdict:
         try:
-            source = self.open(row)
+            source = await self.open(row)
         except Rejected as exc:
             return SetupVerdict.waiting(str(exc))
         verdict = await source.verify()
+        if (verdict.ready or verdict.pending) and isinstance(source, Identified):
+            await self._stamp(row, source)
         return SetupVerdict(ready=verdict.ready, detail=verdict.detail, pending=tuple(verdict.pending))
+
+    async def _stamp(self, row: Any, source: Source) -> None:
+        """Record who the source reads and posts as, once. The inbox reads it to know "me":
+        without it our own posts come back as a stranger's and a listening loop answers itself."""
+        if identity_stamped(row):
+            return
+        try:
+            profiles = await source.whoami()  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 — identity is a nicety; it never fails what asked for it
+            logger.debug("[ingest] %s whoami failed", self.provider, exc_info=True)
+            return
+        if profiles:
+            identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
+            await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
 
     async def _choices(self, row: Any, field: str) -> list:
         from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
 
-        async with self.open(row) as source:
+        async with await self.open(row) as source:
             offered = await source.choices(field)
         return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
 

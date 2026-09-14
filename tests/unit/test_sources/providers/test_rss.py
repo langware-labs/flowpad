@@ -70,8 +70,9 @@ async def test_each_feed_url_is_a_segment():
 async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
     url = f"{feed_server}/atom"
     result = await get_driver("rss").fetch(_row(url), _view(url))
-    assert [item.external_id for item in result.items] == list(ATOM_IDS[:2]), "the 2020 entry is outside the window"
-    first = result.items[0]
+    assert sorted(item.external_id for item in result.items) == list(ATOM_IDS[:2]), "the 2020 entry is outside the window"
+    assert [item.external_id for item in result.items] == [ATOM_IDS[1], ATOM_IDS[0]], "records ingest in the order they happened"
+    first = next(item for item in result.items if item.external_id == ATOM_IDS[0])
     assert (first.name, first.author_display, first.permalink) == ("First atom entry", "Ada", "https://example.test/a/1")
     assert "zebrafish" in first.body and first.occurred_at.startswith("2026-07-30T11:00:00")
     assert result.high_water.startswith("2026-07-30T11:00:00")
@@ -80,8 +81,9 @@ async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
 async def test_rss2_is_parsed_including_rfc822_dates(feed_server):
     url = f"{feed_server}/rss"
     result = await get_driver("rss").fetch(_row(url), _view(url))
-    assert [item.external_id for item in result.items] == ["rss-item-0001", "rss-item-0002"]
-    assert "platypus" in result.items[0].body and result.items[0].occurred_at.startswith("2026-07-30T10:00:00")
+    by_id = {item.external_id: item for item in result.items}
+    assert sorted(by_id) == ["rss-item-0001", "rss-item-0002"]
+    assert "platypus" in by_id["rss-item-0001"].body and by_id["rss-item-0001"].occurred_at.startswith("2026-07-30T10:00:00")
 
 
 async def test_a_304_is_the_free_no_op_poll(feed_server):
