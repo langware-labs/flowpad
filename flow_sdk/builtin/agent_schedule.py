@@ -75,6 +75,12 @@ def _document(body: dict[str, Any], base: Optional[dict[str, Any]]) -> dict[str,
     for key in ("every", "expr", "timezone"):
         if key in body:
             schedule[key] = str(body[key] or "").strip()
+    if "runs_on" in body:
+        runs_on = str(body["runs_on"] or "").strip()
+        if runs_on:
+            schedule["runs_on"] = runs_on
+        else:
+            schedule.pop("runs_on", None)
     if "prompt" in body:
         run_agent["prompt"] = str(body["prompt"] or "").strip()
 
@@ -154,6 +160,17 @@ async def _owned(agent: "Agent", trigger_id: str) -> "Trigger":
     return trigger
 
 
+async def _check_place(agent: "Agent", body: dict[str, Any]) -> None:
+    """A schedule's ``runs_on`` must be one of this agent's own places."""
+    runs_on = str(body.get("runs_on") or "").strip()
+    if not runs_on:
+        return
+    from flow_sdk.builtin.agent_places import place_of  # noqa: PLC0415
+
+    if await place_of(agent, runs_on) is None:
+        raise ScheduleError(f"{runs_on} is not a place this agent runs on", status_code=404)
+
+
 async def add_schedule(agent: "Agent", body: dict[str, Any]) -> "Trigger":
     """Write a new schedule under the agent and index + arm it."""
     from flow_sdk.assets.creation import (  # noqa: PLC0415
@@ -168,6 +185,7 @@ async def add_schedule(agent: "Agent", body: dict[str, Any]) -> "Trigger":
     name = str(body.get("name") or "").strip()
     if not name:
         raise ScheduleError("name is required")
+    await _check_place(agent, body)
     spec = _validate(_document({**body, "name": name}, None))
     folder = agent_folder(agent) / AGENTIC_ASSETS_DIR / TRIGGER_FAMILY / folder_slug(name.lower(), "schedule")
     info = SchemaRegistry.get(TRIGGER_FAMILY)
@@ -187,6 +205,7 @@ async def update_schedule(agent: "Agent", trigger_id: str, body: dict[str, Any])
     from flow_sdk.assets.types.trigger import TRIGGER_JSON  # noqa: PLC0415
 
     trigger = await _owned(agent, trigger_id)
+    await _check_place(agent, body)
     folder = Path(trigger.asset_ref)
     try:
         base = json.loads((folder / TRIGGER_JSON).read_text(encoding="utf-8"))

@@ -195,6 +195,13 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
             return
+        from flow_sdk.builtin.trigger_arming import disarm_trigger, runs_here  # noqa: PLC0415
+
+        if not await runs_here(entity):
+            # A job left in the persistent jobstore for a schedule that now
+            # belongs to another place: drop it rather than run it here.
+            await disarm_trigger(trigger_id)
+            return
         entity.counter += 1
         entity.last_run = datetime.now(timezone.utc)
         # APScheduler has already advanced the job when it runs it: a cron's next
@@ -307,6 +314,7 @@ class Trigger(Entity):
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")
     sched_trigger_type: Optional[str] = APIField(None, description="APScheduler type: cron, interval, date")
     timezone: Optional[str] = APIField(None, description="IANA zone the schedule is read in (schedule triggers only). Empty = machine local.")
+    runs_on: Optional[str] = APIField(None, description="Deployment id of the place this schedule runs on; only that place's machine arms it. Empty = every machine (legacy).")
     next_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Next scheduled run (schedule triggers only)")
     last_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")

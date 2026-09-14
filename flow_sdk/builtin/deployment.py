@@ -30,6 +30,7 @@ converges through :meth:`find_existing`, never through a key baked into the id.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -38,8 +39,8 @@ from pydantic import PrivateAttr, field_validator
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.core import Entity, action
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -73,6 +74,54 @@ KIND_NODE = "compute.node"
 #: NODE_PROVIDERS" validation — because this set only knew the providers THIS
 #: tier could place on.
 NODE_PROVIDERS = frozenset({"local", "e2b", "docker", "gcp_vm", "user_machine"})
+
+logger = logging.getLogger(__name__)
+
+
+class DeploymentActionError(RuntimeError):
+    """A placement verb the caller has to fix. ``status_code`` rides to HTTP."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _bare_node_id(node_id: str) -> str:
+    """A node id without its ``compute_node-`` TypeId prefix.
+
+    A hub-created placement records its node as a TypeId string while
+    ``ComputeNode._local_id()`` is the bare uuid, so an unnormalized comparison
+    read every hub-created row as "not here" — on the box it runs on too.
+    """
+    prefix = "compute_node-"
+    return node_id[len(prefix):] if node_id.startswith(prefix) else node_id
+
+
+async def _place_mcp_specs(agent, names: "list[str] | None") -> list:
+    """The MCP servers a launch gets: the agent's own, or a place's named set.
+
+    A place names servers (names travel between machines; ids do not). A name the
+    agent already carries uses that attached copy; otherwise the first Mcp asset of
+    that name on this machine. A name that resolves nowhere is skipped with a warning
+    — a dangling override must not make the agent unlaunchable.
+    """
+    specs = await agent.resolved_mcp_specs()
+    if names is None:
+        return specs
+    from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+    by_name = {spec.name: spec for spec in specs}
+    chosen = []
+    for name in names:
+        spec = by_name.get(name)
+        if spec is None:
+            rows = await Mcp.get_all({"match": {"name": name}})
+            spec = rows[0].to_spec() if rows else None
+        if spec is None:
+            logger.warning("place override names MCP server %r, which does not resolve here — skipped", name)
+            continue
+        chosen.append(spec)
+    return chosen
 
 
 class Deployment(Entity):
@@ -224,7 +273,8 @@ class Deployment(Entity):
             return None
         external = (self.origin.external_id if self.origin else "") or ""
         if external:
-            return external
+            # Normalized HERE, the addressing seam, so every reader gets the bare id.
+            return _bare_node_id(external)
         # No node recorded. Falling back to THIS machine is only correct for the
         # `local` provider — for a cloud placement it would report `is_local`
         # True and let `dispatch_agent_run` execute here while claiming the run
@@ -280,8 +330,8 @@ class Deployment(Entity):
         new deployable element needs no change here. ``TypeId`` has no
         ``.parse`` — the constructor does the parsing.
         """
-        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
         if self._element is not None:
             return self._element
@@ -311,10 +361,20 @@ class Deployment(Entity):
         bridge like any other hub update, so this doesn't write the status
         locally in that case; doing both would race the push.
         """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
-
         if self.remote:
-            return await self._pause_on_hub()
+            await self._hub_action("pause")
+            return True
+        return await self._set_node_state("pause", "paused")
+
+    async def resume(self) -> bool:
+        """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
+        if self.remote:
+            await self._hub_action("resume")
+            return True
+        return await self._set_node_state("resume", "running")
+
+    async def _set_node_state(self, verb: str, provider_state: str) -> bool:
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
         node_id = self.compute_node_id
         if node_id is None:
@@ -322,28 +382,51 @@ class Deployment(Entity):
         node = await ComputeNode.get_by_id(node_id)
         if node is None:
             return False
-        await node.pause()
+        await getattr(node, verb)()
         self.status = DeploymentStatus(
             sync_state=self.status.sync_state,
-            provider_state="paused",
+            provider_state=provider_state,
             observed_at=datetime.now(UTC).isoformat(),
             message=self.status.message,
         )
         await self.save()
         return True
 
-    async def _pause_on_hub(self) -> bool:
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+    async def update(self) -> dict[str, Any]:
+        """Bring a cloud machine to the published definition.
 
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required to pause a cloud deployment")
-        path = build_hub_url(self, action="pause")
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(path, {})
-        return True
+        The hub re-clones the published repository into the box's project and
+        re-indexes it, then stamps ``source_revision``. This computer has no
+        "update": its definition IS the files on disk.
+        """
+        if self.is_local:
+            raise DeploymentActionError("this computer already runs the definition on disk", status_code=409)
+        return await self._hub_action("update")
+
+    async def remote_runs(self, limit: int = 8) -> list[dict[str, Any]]:
+        """The latest runs ON a cloud machine, read through the hub.
+
+        Local runs are the local ``/runs`` list; a box's runs live in the box's
+        own database, which only the hub can reach.
+        """
+        if self.is_local:
+            raise DeploymentActionError("this computer's runs are the local run list", status_code=409)
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        data = await hub_http.hub_get(self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
+        if not isinstance(data, dict):
+            raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
+        runs = data.get("runs")
+        return [run for run in runs if isinstance(run, dict)] if isinstance(runs, list) else []
+
+    async def _hub_action(self, verb: str) -> dict[str, Any]:
+        """POST one action on this placement's hub row; the row itself comes back down the bridge."""
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        data = await hub_http.hub_post(self.get_type(), {}, self.id, verb)
+        if data is None:
+            raise DeploymentActionError(f"cloud login required to {verb} a cloud machine", status_code=401)
+        return data if isinstance(data, dict) else {}
 
     @action.post(action_name="pause")
     async def pause_action(self):
@@ -357,6 +440,48 @@ class Deployment(Entity):
         if not paused:
             return ApiFailResponse(message="this deployment has no machine to pause")
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    async def _answer(self, verb: str, run):
+        """One envelope for the placement verbs: a caller error keeps its status, a hub failure is a 502."""
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await run())
+        except DeploymentActionError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+        except HubError as exc:
+            return ApiFailResponse(message=f"{verb} failed on the hub: {exc}", status_code=502)
+
+    @action.post(action_name="resume")
+    async def resume_action(self):
+        """`POST /deployment/<id>/resume` — start this placement's paused machine."""
+
+        async def run():
+            if not await self.resume():
+                raise DeploymentActionError("this deployment has no machine to resume")
+            return self.model_dump(mode="json")
+
+        return await self._answer("resume", run)
+
+    @action.post(action_name="update")
+    async def update_action(self):
+        """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
+        return await self._answer("update", self.update)
+
+    @action.get(action_name="runs")
+    async def runs_action(self):
+        """`GET /deployment/<id>/runs?limit=` — the latest runs on a cloud machine; the hub bounds ``limit``."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        raw = str((request_info.get_param("limit") if request_info else None) or "")
+        limit = int(raw) if raw.isdigit() else 8
+
+        async def run():
+            return {"runs": await self.remote_runs(limit)}
+
+        return await self._answer("runs", run)
 
     # ── the launch verbs (agent placements) ───────────────────────────────
 
@@ -384,8 +509,8 @@ class Deployment(Entity):
         agent = await self.agent()
         if agent is None:
             raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
-        if not agent.enabled:
-            raise RuntimeError(f"agent {agent.name!r} is disabled")
+        if not agent.enabled_on(self.id):
+            raise RuntimeError(f"agent {agent.name!r} is disabled on {self.name or self.id}")
         return agent
 
     async def create_process(self, prompt: str = "", **options) -> "AgenticProcess":
@@ -407,6 +532,12 @@ class Deployment(Entity):
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         agent = await self._require_agent()
+        # This place's overrides (agent.md ``places``) win over the definition
+        # for every launch through it — chat, run, schedule, email alike.
+        place = agent.place_for(self.id)
+        place_mcp = place.mcp_servers if place is not None else None
+        if place is not None:
+            agent = agent.model_copy(update={k: v for k, v in place.overrides().items() if k != "mcp_servers"})
 
         # A per-run worker override has to reach BOTH sides — the options object
         # (dispatched on the driver key) and the process field (a WorkerType
@@ -459,7 +590,7 @@ class Deployment(Entity):
             # still add its own on top; ``resolved_mcp_servers`` dedupes by name.
             # Reads the folder AFTER the attach above, which is what puts the
             # editor's declared ids there.
-            mcp_servers=await agent.resolved_mcp_specs(),
+            mcp_servers=await _place_mcp_specs(agent, place_mcp),
             cli_config=opts.to_json(),
             instruction_content=prompt,
             context_data=context_data,

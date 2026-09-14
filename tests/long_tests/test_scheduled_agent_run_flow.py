@@ -93,13 +93,19 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         agent_folder = Path(agent["asset_ref"])
         prompt = "Reply with the single word: scheduled"
 
-        # ── add: one second ahead ───────────────────────────────────────────
+        # ── the places: this computer first ─────────────────────────────────
+        places = await _data(client, "GET", f"/api/v1/graph/agent/{agent_id}/places")
+        assert places and places[0]["is_local"] is True, places
+        here_id = places[0]["deployment"]["id"]
+
+        # ── add on this computer: one second ahead ──────────────────────────
         fire_at = datetime.now(timezone.utc) + timedelta(seconds=1)
         trigger = await _data(client, "POST", f"/api/v1/graph/agent/{agent_id}/add_schedule", json={
             "name": "One second ahead",
             "every": "date",
             "expr": fire_at.isoformat(),
             "timezone": "UTC",
+            "runs_on": here_id,
             "prompt": prompt,
         })
         trigger_id = trigger["id"]
@@ -107,6 +113,7 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         assert document.is_file(), "the schedule must be a child asset of the agent"
         assert trigger["parent_type_id"] == f"agent-{agent_id}"
         assert trigger["trigger_type"] == "schedule"
+        assert trigger["runs_on"] == here_id
 
         # ── the real scheduler fires it ─────────────────────────────────────
         runs = await _until(lambda: _runs(client, trigger_id), budget_s=1.0 + FIRE_SLACK_S)
@@ -117,6 +124,7 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         assert run["agent"] == agent_name
         assert run["trigger_id"] == trigger_id
         assert run["prompt"] == prompt
+        assert run["deployment_id"] == here_id, "the run goes through the schedule's place"
 
         fired = await _data(client, "GET", f"/api/v1/graph/trigger/{trigger_id}")
         assert fired["counter"] == 1
@@ -162,6 +170,30 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         await asyncio.sleep(1.0 + FIRE_SLACK_S)
         assert await _runs(client, quiet["id"]) == []
         assert (await _data(client, "GET", f"/api/v1/graph/trigger/{quiet['id']}"))["counter"] == 0
+
+        # ── a schedule for another place never fires on this computer ───────
+        cloud = await _data(client, "POST", "/api/v1/graph/deployment", json={
+            "type": "deployment",
+            "name": f"{agent_name} (e2b)",
+            "kind": "runtime.agent",
+            "parent_type_id": f"agent-{agent_id}",
+            "target": {"provider": "e2b", "scope": "machine", "location": "sandbox"},
+            "origin": {"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{uuid.uuid4()}"},
+            "status": {"sync_state": "current"},
+        })
+        elsewhere_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+        elsewhere = await _data(client, "POST", f"/api/v1/graph/agent/{agent_id}/add_schedule", json={
+            "name": "Cloud one second ahead",
+            "every": "date",
+            "expr": elsewhere_at.isoformat(),
+            "timezone": "UTC",
+            "runs_on": cloud["id"],
+            "prompt": prompt,
+        })
+        await asyncio.sleep(1.0 + FIRE_SLACK_S)
+        assert await _runs(client, elsewhere["id"]) == []
+        assert (await _data(client, "GET", f"/api/v1/graph/trigger/{elsewhere['id']}"))["counter"] == 0
+        await _data(client, "POST", f"/api/v1/graph/agent/{agent_id}/remove_schedule", json={"trigger_id": elsewhere["id"]})
 
         # ── remove takes folder, row and job ────────────────────────────────
         for tid, folder in ((trigger_id, document.parent), (quiet["id"], None)):

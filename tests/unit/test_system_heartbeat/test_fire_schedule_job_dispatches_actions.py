@@ -121,7 +121,8 @@ def launches(monkeypatch):
 
     async def _launch(self, prompt, *, deployment=None, wait=False, **options):
         proc = AgenticProcess(id=str(uuid.uuid4()), name=options.get("name") or "scheduled", status="running")
-        calls.append({"agent_id": self.id, "prompt": prompt, "options": options, "process": proc, "lifecycle": []})
+        calls.append({"agent_id": self.id, "prompt": prompt, "options": options, "deployment": deployment,
+                      "process": proc, "lifecycle": []})
         return proc
 
     def _call(process):
@@ -327,3 +328,46 @@ async def test_a_fire_records_the_schedules_next_run(initialize_test_db, monkeyp
     scheduler.get_job.return_value = None  # a fired one-shot's job is gone
     await _fire_schedule_job(trigger.id)
     assert (await Trigger.get_by_id(trigger.id)).next_run is None
+
+
+# ── RUN_AGENT runs through the schedule's place ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_scheduled_run_uses_its_place(initialize_test_db, tmp_path, launches) -> None:
+    calls, _ = launches
+    agent = await _agent(tmp_path, "sched-place-local")
+    local = await agent.local_deployment()
+    trigger = await Trigger(
+        name="placed", trigger_type=TriggerType.SCHEDULE, sched_trigger_type="cron", expr="0 9 * * *",
+        parent_type_id=str(agent.typeid), runs_on=local.id,
+        actions=[TriggerAction(action_type=ActionType.RUN_AGENT, prompt="p")],
+    ).save()
+
+    await _fire_schedule_job(trigger.id)
+    assert len(calls) == 1
+    # The captured launch was handed that exact place.
+    assert calls[0]["deployment"].id == local.id
+    assert calls[0]["options"]["context_data"] == {"trigger_id": trigger.id}
+
+
+@pytest.mark.asyncio
+async def test_a_schedule_for_another_place_never_runs_here(initialize_test_db, tmp_path, launches) -> None:
+    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+
+    calls, log = launches
+    agent = await _agent(tmp_path, "sched-place-cloud")
+    cloud = Deployment(
+        name="cloud", kind=KIND_AGENT, parent_type_id=str(agent.typeid),
+        target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
+    )
+    await cloud.save()
+    trigger = await Trigger(
+        name="elsewhere", trigger_type=TriggerType.SCHEDULE, sched_trigger_type="cron", expr="0 9 * * *",
+        parent_type_id=str(agent.typeid), runs_on=cloud.id,
+        actions=[TriggerAction(action_type=ActionType.RUN_AGENT, prompt="p")],
+    ).save()
+
+    await _fire_schedule_job(trigger.id)
+    assert calls == []
+    assert (await Trigger.get_by_id(trigger.id)).counter == 0, "a job stranded in the jobstore must not count a fire"

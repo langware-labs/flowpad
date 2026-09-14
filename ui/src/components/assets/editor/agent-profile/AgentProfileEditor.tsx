@@ -1,10 +1,12 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionState } from '@sdk';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useRef, useState } from 'react';
-import { Loader2, Mail, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronRight, Loader2, UploadCloud } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
+import { errorMessage } from '@src/lib/error-message';
 import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
@@ -15,22 +17,16 @@ import { Textarea } from '@src/components/ui/textarea';
 import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
-import { AgentDeploymentsSection } from './AgentDeploymentsSection';
-import { AgentScheduleSection } from './AgentScheduleSection';
+import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
 import { AgentMcpField } from './AgentMcpField';
-import { useProject } from '@sdk/react/hooks';
-import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import type { AgentDocumentPatch } from './agent-fields';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DocumentSaveNotice } from '../DocumentSaveNotice';
 import type { DocumentValue } from '@sdk/fs/AssetDocument';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 
 interface AgentProfileEditorProps {
   /** Always resolved — AssetEditorRouter renders this inside an
@@ -41,17 +37,20 @@ interface AgentProfileEditorProps {
 }
 
 /**
- * The agent profile editor — an agent is a persona, so it reads like a profile
- * rather than a config file.
+ * The agent page: a DEFINITION shared by every place, and the places it RUNS ON.
  *
- * The entity record resolves the filesystem authority. On desktop that ref is
- * backed by the local checkout; in cloud it is backed by the Agent's Git
- * origin. The editor always patches agent.md through the same revision-checked document
- * action; the backend preserves YAML and identity data.
+ * The left column edits agent.md on this computer — the defaults every place
+ * starts from. The right column lists each place (this computer, each cloud
+ * machine) with what that place owns: its config overrides, schedules and email.
+ * The header says what of the definition is not published yet.
+ *
+ * The entity record resolves the filesystem authority. The editor always patches
+ * agent.md through the same revision-checked document action; the backend
+ * preserves YAML and identity data.
  */
 export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
+  const hub = isHubOnly();
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
@@ -60,24 +59,27 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const contentRef = useRef(content);
   contentRef.current = content;
   const profile = content.typedFields as Partial<Agent>;
-  const enabled = profile.enabled ?? agent.enabled;
   const title = content.fields.title ?? '';
-  const name = content.fields.name ?? '';
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
   const autoLaunchPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
-  // The ACTIVE project is the one a session opened from here acts in — an
-  // agent supplied by an attached help desk lives in the desk's checkout, and
-  // launching into THAT would open the session in the vendor's repo.
-  const { project: activeProject } = useProject();
-  const { launch, busyId } = useAgentLauncher();
-  // Covers the pre-launch write flush too, so the button stays busy for the
-  // WHOLE operation — `busyId` alone leaves it clickable during the flush,
-  // and every click mints a fresh session.
-  const [flushing, setFlushing] = useState(false);
-  const using = flushing || busyId === agent?.id;
+  const [version, setVersion] = useState<AgentVersionState | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  const loadVersion = useCallback(async () => {
+    if (hub) return;
+    try {
+      setVersion(await agentRef.current.versionState());
+    } catch {
+      setVersion(null);
+    }
+  }, [hub]);
+
+  useEffect(() => {
+    void loadVersion();
+  }, [loadVersion, agent.updated_date]);
 
   const save = useCallback((patch: AgentDocumentPatch): Promise<boolean> => {
     const current = contentRef.current;
@@ -125,50 +127,51 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     [save],
   );
 
-  /** Launch only once the pending field write has landed.
-   *
-   * Clicking Use blurs the focused field first, so `commit` has already
-   * queued the system-prompt save — but it queues it fire-and-forget, and
-   * `use` reads the agent ROW on the backend. Without this await the launch
-   * races the write and can open the session on the pre-edit persona.
-   * `writeQueueRef` is the same tail `save` chains onto, so awaiting it
-   * drains every queued field, not just the prompt. */
-  const handleUse = useCallback(async () => {
-    setFlushing(true);
+  const publish = useCallback(async () => {
+    setPublishing(true);
     try {
+      // Pending edits first: publishing must never push a stale file.
       await writeQueueRef.current;
-      if (!await contentRef.current.save()) return;
-      await launch(agent, activeProject?.id ?? null);
+      if (!(await contentRef.current.save())) return;
+      await agentRef.current.publish({ force: true });
+      notify.success({ title: t`Published` });
+      await loadVersion();
+    } catch (e) {
+      notify.error({ title: t`Could not publish`, message: errorMessage(e, t`Publish failed.`), forceToast: true });
     } finally {
-      setFlushing(false);
+      setPublishing(false);
     }
-  }, [agent, activeProject?.id, launch]);
+  }, [loadVersion, t]);
 
   const identityKey = profile.name || agent.id;
   const ringColor = colorForIdentityKey(identityKey);
   const AgentIcon = iconForType(Agent.type);
-  // Through `mainRef`, not `profile.avatarImageUrl`: the router hands the editor
-  // the authoritative ref (local mount OR hub entity storage), while the SDK
-  // getter resolves off `asset_ref` — same file here, but this one is exact.
   const avatarImageUrl =
     profile.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
+  const pending = version?.pending_changes ?? 0;
+  const commitShort = version?.published_commit ? version.published_commit.slice(0, 7) : '';
 
   if (content.isLoading) return <Loader2 className="m-4 h-5 w-5 animate-spin" />;
-  if (content.loadError) return <div role="alert" className="p-4">{content.loadError.message}</div>;
+  if (content.loadError)
+    return (
+      <div role="alert" className="p-4">
+        {content.loadError.message}
+      </div>
+    );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <DocumentSaveNotice {...content} />
-      {/* ── header band: identity + the two verbs ─────────────────────── */}
-      <div className="flex shrink-0 items-start gap-5 border-b border-border px-6 pb-5 pt-6">
+      {/* ── header: identity + what is not published ─────────────────── */}
+      <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-border px-6 py-5">
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
               aria-label={t`Change avatar`}
               className={cn(
-                'flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full',
-                'text-3xl text-white shadow-sm transition hover:opacity-90',
+                'flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full',
+                'text-2xl text-white shadow-sm transition hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 ringColor,
               )}
@@ -177,9 +180,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 key={`${profile.avatar ?? 'none'}:${avatarRevision}`}
                 agent={agent}
                 imageUrl={avatarImageUrl}
-                className="h-full w-full bg-transparent text-3xl"
-                glyphClassName="h-9 w-9 text-3xl"
-                fallback={<AgentIcon className="h-9 w-9" />}
+                className="h-full w-full bg-transparent text-2xl"
+                glyphClassName="h-7 w-7 text-2xl"
+                fallback={<AgentIcon className="h-7 w-7" />}
               />
             </button>
           </PopoverTrigger>
@@ -194,135 +197,101 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           </PopoverContent>
         </Popover>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[14rem] flex-1">
           <div className="flex items-baseline gap-3">
             <Input
               value={title}
               onChange={(e) => content.setField('title', e.target.value)}
               onBlur={() => commit('title', title.trim())}
+              readOnly={hub}
               placeholder={t`Agent title`}
               aria-label={t`Agent title`}
               className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
             />
-            <Input
-              value={name}
-              onChange={(e) => content.setField('name', e.target.value)}
-              onBlur={() => commit('name', name.trim())}
-              placeholder={t`agent-name`}
-              aria-label={t`Agent name`}
-              className="h-7 w-48 shrink-0 border-0 bg-transparent px-0 text-end font-mono text-sm text-muted-foreground shadow-none focus-visible:ring-0"
-            />
           </div>
-          <Textarea
-            value={description}
-            onChange={(e) => content.setField('description', e.target.value)}
-            onBlur={() => commit('description', description.trim())}
-            placeholder={t`What is this agent for?`}
-            aria-label={t`Description`}
-            className="mt-1 min-h-0 resize-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-            rows={2}
-          />
+          <div
+            className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+            data-testid="agent-version"
+          >
+            {hub ? (
+              <Trans>Published version — edit it on the author's computer</Trans>
+            ) : !version ? null : !version.has_repo ? (
+              <Trans>Not in a git repository — can't be published</Trans>
+            ) : version.published ? (
+              <span>
+                <Trans>Published</Trans> <code className="rounded bg-muted px-1 font-mono">{commitShort}</code>
+              </span>
+            ) : (
+              <Trans>Not published yet</Trans>
+            )}
+            {!hub && pending > 0 && (
+              <span
+                className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                data-testid="agent-pending"
+              >
+                {pending === 1 ? t`1 change not published` : t`${pending} changes not published`}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 pt-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {enabled ? <Trans>Agent enabled</Trans> : <Trans>Agent disabled</Trans>}
-            </span>
-            <Switch
-              checked={enabled}
-              onCheckedChange={(v) => void save({ enabled: v })}
-              aria-label={t`Enable Agent`}
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigation.openDock(DockPointer.forAgentInbox(agent.id))}
-            data-testid="agent-inbox-button"
-          >
-            <Mail className="me-1.5 h-3.5 w-3.5" />
-            <Trans>Email inbox</Trans>
-          </Button>
-          <Button
-            size="sm"
-            disabled={!enabled || using}
-            onClick={() => void handleUse()}
-            data-testid="agent-use"
-          >
-            {using ? (
-              <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="me-1.5 h-3.5 w-3.5" />
-            )}
-            <Trans>Use</Trans>
-          </Button>
+        <div className="flex shrink-0 items-center gap-3">
+          {!hub && (
+            <Button
+              size="sm"
+              disabled={publishing || !version?.has_repo || (version.published && pending === 0)}
+              onClick={() => void publish()}
+              data-testid="agent-publish"
+            >
+              {publishing ? (
+                <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UploadCloud className="me-1.5 h-3.5 w-3.5" />
+              )}
+              <Trans>Publish</Trans>
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* ── body: the prompt owns the left, settings sit in a tabbed rail ── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="flex min-h-0 flex-col px-6 py-5">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">
-              <Trans>Behaviour</Trans>
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              <Trans>Who this agent is — its system prompt.</Trans>
-            </span>
-          </div>
-          <Textarea
-            value={prompt}
-            onChange={(e) => content.setBody(e.target.value)}
-            onBlur={() => commit('system_prompt', prompt)}
-            placeholder={t`Describe who this agent is, what it does, and what it must never do…`}
-            aria-label={t`System prompt`}
-            className="min-h-40 flex-1 resize-none font-mono text-sm leading-relaxed"
-          />
-          {/* The intro is what the USER sees first, not what the model reads:
-              a welcome placeholder so a fresh session is never an empty pane.
-              Kept beside the prompt because authors write the two together —
-              one says who the agent is, the other tells the user what to
-              expect from it. */}
-          <div className="mb-2 mt-5 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">
-              <Trans>Intro</Trans>
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              <Trans>Shown as the agent's first message. Not sent to the model.</Trans>
-            </span>
-          </div>
-          <Textarea
-            value={intro}
-            onChange={(e) => content.setField('intro', e.target.value)}
-            onBlur={() => commit('intro', intro.trim())}
-            placeholder={t`Welcome! Tell the user what this agent can do and how to start…`}
-            aria-label={t`Intro`}
-            data-testid="agent-intro-field"
-            className="min-h-20 resize-none text-sm leading-relaxed"
-            rows={3}
-          />
-        </section>
+      {/* ── body: the definition on the left, where it runs on the right ── */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_36rem] lg:overflow-hidden">
+        <section
+          className="flex min-h-0 flex-col gap-5 px-6 py-5 lg:overflow-y-auto"
+          aria-labelledby="agent-definition"
+        >
+          {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
+          <fieldset disabled={hub} className="contents" data-testid="agent-definition-fields">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="agent-definition" className="text-sm font-semibold">
+                <Trans>Definition</Trans>
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                <Trans>Shared by every place</Trans>
+              </span>
+            </div>
 
-        <aside className="min-h-0 overflow-y-auto border-t border-border px-4 py-4 lg:border-s lg:border-t-0">
-          <Tabs defaultValue="runtime">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="runtime">
-                <Trans>Runtime</Trans>
-              </TabsTrigger>
-              <TabsTrigger value="schedule" data-testid="agent-tab-schedule">
-                <Trans>Schedule</Trans>
-              </TabsTrigger>
-              <TabsTrigger value="deploy">
-                <Trans>Deploy</Trans>
-              </TabsTrigger>
-              <TabsTrigger value="advanced">
-                <Trans>Advanced</Trans>
-              </TabsTrigger>
-            </TabsList>
+            {/* shrink-0: opening "More" must scroll the column, not squeeze the prompt to nothing. */}
+            <div className="flex shrink-0 flex-col">
+              <label className="mb-1 text-xs text-muted-foreground" htmlFor="agent-system-prompt">
+                <Trans>Behaviour — who this agent is, its system prompt</Trans>
+              </label>
+              <Textarea
+                id="agent-system-prompt"
+                value={prompt}
+                onChange={(e) => content.setBody(e.target.value)}
+                onBlur={() => commit('system_prompt', prompt)}
+                placeholder={t`Describe who this agent is, what it does, and what it must never do…`}
+                aria-label={t`System prompt`}
+                className="min-h-48 resize-y font-mono text-sm leading-relaxed"
+              />
+            </div>
 
-            <TabsContent value="runtime" className="mt-4">
-              <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="mb-2 text-xs text-muted-foreground">
+                <Trans>Default config — a place can override any of these</Trans>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <AgentChoiceField
                   label={t`Worker`}
                   value={profile.worker_type}
@@ -349,73 +318,101 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   onCommit={(v) => void save({ effort: v })}
                 />
               </div>
-              <div className="mt-4 flex items-center justify-between rounded-md border border-border px-3 py-2">
-                <span className="text-sm">
-                  <Trans>Load Flowpad assistant</Trans>
+            </div>
+
+            <AgentMcpField value={profile.mcp_servers} onCommit={(ids) => void save({ mcp_servers: ids })} />
+
+            <details className="group rounded-md border border-border" data-testid="agent-more">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
+                <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
+                <Trans>More</Trans>
+                <span className="text-xs font-normal text-muted-foreground">
+                  <Trans>name · description · intro · auto-launch · Flowpad assistant · declared fields</Trans>
                 </span>
-                <Switch
-                  checked={profile.load_flowpad_assistant}
-                  onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
-                  aria-label={t`Load Flowpad assistant`}
-                />
-              </div>
-              {/* Project auto-launch: fires ONCE per project, the first time the
-                  project this agent lives in is opened. The prompt rides the
-                  process queue. Oldest agent wins when several set it. */}
-              <div className="mt-4 rounded-md border border-border px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">
-                    <Trans>Auto-launch on project open</Trans>
-                  </span>
-                  <Switch
-                    checked={profile.auto_launch}
-                    onCheckedChange={(v) => void save({ auto_launch: v })}
-                    aria-label={t`Auto-launch on project open`}
-                    data-testid="agent-auto-launch"
-                  />
+              </summary>
+              <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    <Trans>Name — the agent's folder name, used to address it</Trans>
+                  </div>
+                  <code className="font-mono text-sm" data-testid="agent-name">
+                    {agent.name}
+                  </code>
                 </div>
-                {profile.auto_launch ? (
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    <Trans>Description</Trans>
+                  </div>
                   <Textarea
-                    value={autoLaunchPrompt}
-                    onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
-                    onBlur={() => commit('auto_launch_prompt', autoLaunchPrompt.trim())}
-                    placeholder={t`First prompt to send when the project opens…`}
-                    aria-label={t`Auto-launch prompt`}
-                    data-testid="agent-auto-launch-prompt"
-                    className="mt-2 min-h-16 resize-none text-sm"
+                    value={description}
+                    onChange={(e) => content.setField('description', e.target.value)}
+                    onBlur={() => commit('description', description.trim())}
+                    placeholder={t`What is this agent for?`}
+                    aria-label={t`Description`}
+                    className="min-h-0 resize-none text-sm"
                     rows={2}
                   />
-                ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <Trans>Once per project, the first time it is opened. Oldest agent wins if several set this.</Trans>
-                  </p>
-                )}
-              </div>
-              {/* Runtime, not Advanced: unlike the declared-only fields there,
-                  this one REACHES the worker — create_process attaches each id
-                  and the harness launches with it. */}
-              <div className="mt-4">
-                <AgentMcpField
-                  value={profile.mcp_servers}
-                  onCommit={(ids) => void save({ mcp_servers: ids })}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="schedule" className="mt-4">
-              <AgentScheduleSection agent={agent} autoLaunchPrompt={autoLaunchPrompt} />
-            </TabsContent>
-
-            <TabsContent value="deploy" className="mt-4">
-              <AgentDeploymentsSection agent={agent} />
-            </TabsContent>
-
-            <TabsContent value="advanced" className="mt-4">
-              <section>
-                <p className="mb-3 text-xs text-muted-foreground">
-                  <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
-                </p>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    <Trans>Intro — shown as the agent's first message, not sent to the model</Trans>
+                  </div>
+                  <Textarea
+                    value={intro}
+                    onChange={(e) => content.setField('intro', e.target.value)}
+                    onBlur={() => commit('intro', intro.trim())}
+                    placeholder={t`Welcome! Tell the user what this agent can do and how to start…`}
+                    aria-label={t`Intro`}
+                    data-testid="agent-intro-field"
+                    className="min-h-16 resize-none text-sm"
+                    rows={2}
+                  />
+                </div>
+                <div className="rounded-md border border-border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">
+                      <Trans>Auto-launch on project open</Trans>
+                    </span>
+                    <Switch
+                      checked={profile.auto_launch}
+                      onCheckedChange={(v) => void save({ auto_launch: v })}
+                      aria-label={t`Auto-launch on project open`}
+                      data-testid="agent-auto-launch"
+                    />
+                  </div>
+                  {profile.auto_launch ? (
+                    <Textarea
+                      value={autoLaunchPrompt}
+                      onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
+                      onBlur={() => commit('auto_launch_prompt', autoLaunchPrompt.trim())}
+                      placeholder={t`First prompt to send when the project opens…`}
+                      aria-label={t`Auto-launch prompt`}
+                      data-testid="agent-auto-launch-prompt"
+                      className="mt-2 min-h-16 resize-none text-sm"
+                      rows={2}
+                    />
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <Trans>
+                        Once per project, the first time it is opened. Oldest agent wins if several set this.
+                      </Trans>
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                  <span className="text-sm">
+                    <Trans>Load Flowpad assistant</Trans>
+                  </span>
+                  <Switch
+                    checked={profile.load_flowpad_assistant}
+                    onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
+                    aria-label={t`Load Flowpad assistant`}
+                  />
+                </div>
                 <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
+                  </p>
                   <AgentSelectField
                     label={t`Max turns`}
                     value={profile.max_turns == null ? '' : String(profile.max_turns)}
@@ -437,21 +434,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     value={profile.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  {/* Skills are wired in the agent-resources pane (Zone B),
-                      which lists what actually exists instead of asking for
-                      typed ids, and is deliberately not duplicated here — two
-                      editors for one field is how they drift. MCP servers have
-                      their own derived slot on the Runtime tab, because unlike
-                      everything in this section they do reach the worker. */}
                   <AgentListField
                     label={t`Additional directories`}
                     value={profile.additional_dirs}
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
-              </section>
-            </TabsContent>
-          </Tabs>
+              </div>
+            </details>
+          </fieldset>
+        </section>
+
+        <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
+          <AgentPlacesColumn agent={agent} autoLaunchPrompt={autoLaunchPrompt} pendingChanges={pending} />
         </aside>
       </div>
     </div>

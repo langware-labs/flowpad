@@ -138,4 +138,40 @@ describe('the agent schedule tab', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     expect(add).not.toHaveBeenCalled();
   });
+
+  it('on a place, lists that place\'s schedules and legacy ones only on this computer', () => {
+    const LOCAL = '44444444-4444-4444-8444-444444444444';
+    rows.triggers = [
+      schedule({ id: 'here', name: 'Here', runs_on: LOCAL }),
+      schedule({ id: 'cloud', name: 'Cloud', runs_on: '55555555-5555-4555-8555-555555555555' }),
+      schedule({ id: 'legacy', name: 'Legacy', runs_on: null }),
+    ];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    render(<AgentScheduleSection agent={agent} deploymentId={LOCAL} isLocal />);
+    expect(screen.getByTestId('agent-schedule-0')).toHaveTextContent('Here');
+    expect(screen.getByTestId('agent-schedule-1')).toHaveTextContent('Legacy');
+    expect(screen.getByTestId('agent-schedule-everywhere-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-schedule-2')).toBeNull();
+  });
+
+  it('Run now on a cloud place fires on that machine, through the hub', async () => {
+    const CLOUD = '55555555-5555-4555-8555-555555555555';
+    rows.triggers = [schedule({ runs_on: CLOUD })];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    const relay = vi.spyOn(agent, 'placeAction').mockResolvedValue({});
+    render(<AgentScheduleSection agent={agent} deploymentId={CLOUD} isLocal={false} />);
+    fireEvent.click(screen.getByTestId('agent-schedule-run-0'));
+    await waitFor(() => expect(relay).toHaveBeenCalledWith(CLOUD, 'run_now', 't1'));
+  });
+
+  it('creates a schedule on its place', async () => {
+    const LOCAL = '44444444-4444-4444-8444-444444444444';
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    const add = vi.spyOn(agent, 'addSchedule').mockResolvedValue({} as never);
+    render(<AgentScheduleSection agent={agent} autoLaunchPrompt="Go" deploymentId={LOCAL} isLocal />);
+    fireEvent.click(screen.getByTestId('agent-schedule-add'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+    expect(add.mock.calls[0][0]).toMatchObject({ runs_on: LOCAL, prompt: 'Go' });
+  });
 });

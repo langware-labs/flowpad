@@ -46,6 +46,8 @@ export interface ITrigger extends IEntity {
   sched_trigger_type?: 'cron' | 'interval' | 'date';
   /** IANA zone the schedule is read in; empty = the backend machine's zone. */
   timezone?: string | null;
+  /** The place (Deployment id) a schedule runs on; empty = every machine (legacy). */
+  runs_on?: string | null;
   next_run?: Date;
   last_run?: Date;
   instruction?: string;
@@ -107,6 +109,8 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   expr?: string;
   sched_trigger_type?: 'cron' | 'interval' | 'date';
   timezone?: string | null;
+  /** The place (Deployment id) a schedule runs on; empty = every machine (legacy). */
+  runs_on?: string | null;
   next_run?: Date;
   last_run?: Date;
   instruction?: string;
@@ -146,6 +150,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.expr = entity.expr;
     this.sched_trigger_type = entity.sched_trigger_type;
     this.timezone = entity.timezone ?? null;
+    this.runs_on = entity.runs_on ?? null;
     this.next_run = entity.next_run;
     this.last_run = entity.last_run;
     this.instruction = entity.instruction;

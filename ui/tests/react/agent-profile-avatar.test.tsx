@@ -31,11 +31,8 @@ vi.mock('@src/components/graph-view/icons/iconRegistry', async () => {
   };
 });
 
-vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({
-  AgentScheduleSection: () => null,
-}));
-vi.mock('@src/components/assets/editor/agent-profile/AgentDeploymentsSection', () => ({
-  AgentDeploymentsSection: () => null,
+vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({
+  AgentPlacesColumn: () => null,
 }));
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentRunDialog', () => ({
@@ -111,12 +108,14 @@ beforeEach(() => {
 });
 
 describe('Agent profile avatar', () => {
-  it('distinguishes the Agent launch switch from its Email inbox', async () => {
+  it('has no agent-wide switch or name box in the header: enabled is per place, the name is the folder', async () => {
     render(<MemoryRouter><AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} /></MemoryRouter>);
 
-    expect(await screen.findByText('Agent enabled')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Enable Agent' })).toBeChecked();
-    expect(screen.getByTestId('agent-inbox-button')).toHaveTextContent('Email inbox');
+    expect(await screen.findByRole('textbox', { name: 'Agent title' })).toBeInTheDocument();
+    expect(screen.queryByText('Agent enabled')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Enable Agent' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Agent name' })).toBeNull();
+    expect(screen.getByTestId('agent-name')).toHaveTextContent('Q');
   });
 
   it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', async () => {
@@ -155,12 +154,8 @@ describe('Agent profile avatar', () => {
       target: { value: 'Senior QA manager' },
     });
     fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Agent name' }), {
-      target: { value: 'Q Prime' },
-    });
-    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent name' }));
 
-    await waitFor(() => expect(document.fields).toMatchObject({title: 'Senior QA manager', name: 'Q Prime'}));
+    await waitFor(() => expect(document.fields).toMatchObject({ title: 'Senior QA manager', name: 'Q' }));
     expect(mocks.write).toHaveBeenCalled();
     expect(entitySave).not.toHaveBeenCalled();
   });

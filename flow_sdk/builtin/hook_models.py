@@ -383,14 +383,29 @@ class RunAgentActionHandler(TriggerActionHandler):
                     break
         if agent is None:
             raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
-        if not agent.enabled:
-            _log.info("RUN_AGENT on %s: agent %r is disabled; not running", getattr(trigger, "name", "?"), agent.name)
-            return None
 
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
+        runs_on = str(getattr(trigger, "runs_on", "") or "")
+        if runs_on:
+            from flow_sdk.builtin.agent_places import place_of  # noqa: PLC0415
+
+            deployment = await place_of(agent, runs_on, local=True)
+            if deployment is None:
+                _log.info("RUN_AGENT on %s: place %s is not this agent's place on this machine; not running",
+                          getattr(trigger, "name", "?"), runs_on)
+                return None
+        else:
+            # Resolved once here and handed to `launch`, which would otherwise resolve it again.
+            deployment = await agent.local_deployment()
+        # A place can be switched off on its own; a schedule on it is then a quiet no-op, not an error.
+        if not agent.enabled_on(deployment.id):
+            _log.info("RUN_AGENT on %s: agent %r is disabled on place %s; not running",
+                      getattr(trigger, "name", "?"), agent.name, deployment.id)
+            return None
         process = await agent.launch(
             prompt,
+            deployment=deployment,
             name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
             workdir=await _workdir_for(agent),
             context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},

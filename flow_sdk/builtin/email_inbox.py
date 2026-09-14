@@ -569,10 +569,16 @@ class EmailInbox(Entity):
             "inbox_typeid": str(self.typeid),
             "provider_inbox_id": self.provider_inbox_id,
         }
+        from flow_sdk.builtin.agent_places import email_answers_here  # noqa: PLC0415
+
+        # Only the place chosen to answer this mailbox polls it; every other
+        # machine keeps its source but stops (DISABLED), so replies never come twice.
+        wanted_status = SourceStatus.ACTIVE.value if await email_answers_here(self.agent_id) else SourceStatus.DISABLED.value
         source = await self.source()
         if source is None:
             source = DataSource(
                 name=f"Inbox {self.address}",
+                status=wanted_status,
                 provider=CloudEmailDriver.provider,
                 kind=CloudEmailDriver.kind,
                 config=config,
@@ -589,7 +595,7 @@ class EmailInbox(Entity):
             "kind": CloudEmailDriver.kind,
             "account_key": self.address,
             "account_identities": [self.address],
-            "status": SourceStatus.ACTIVE.value,
+            "status": wanted_status,
         }
         changed = any(getattr(source, field) != value for field, value in wanted.items())
         if changed or source.next_poll_at is not None:

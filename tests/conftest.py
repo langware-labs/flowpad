@@ -289,6 +289,7 @@ def _restore_main_thread_event_loop():
     import asyncio as _asyncio
 
     _shutdown_leftover_name_observers()
+    _drop_leftover_bus_tasks()
     try:
         loop = _asyncio.get_event_loop_policy().get_event_loop()
         closed = loop.is_closed()
@@ -320,6 +321,48 @@ def _shutdown_leftover_name_observers():
             continue
         # Runs on `loop`, so the shutdown's own get_running_loop() is that loop.
         loop.run_until_complete(runtime.shutdown_name_observation())
+
+
+def _drop_leftover_bus_tasks():
+    """Stop tag-bus handler tasks a test left running when it ended.
+
+    ``TagBus._dispatch`` keeps every async handler task in ``bus._INFLIGHT`` until
+    it finishes (so it cannot be garbage-collected mid-flight). A handler still
+    running when its test's loop closes never finishes, and never leaves the set.
+    It then poisons every later test that drains the set: the inbox projection
+    (armed process-wide once any test boots the app) answers a git source's
+    ``sync.completed`` with an ``_on_sync`` reconcile against that test's own
+    ``git_db``, the fixture closes the loop and the driver under it, and
+    ``test_tag_triggers._settle`` later gathers the stranded task — "The future
+    belongs to a different loop" — with every writer after it hitting
+    "database is locked".
+
+    A task on a closed loop can never run again, so it is dropped. One on an idle
+    loop is cancelled ON that loop, so its ``finally`` blocks release what they
+    hold. Nothing here waits on a budget.
+    """
+    import asyncio as _asyncio
+    import sys as _sys
+
+    bus = _sys.modules.get("flow_sdk.tags.bus")
+    if bus is None:
+        return
+    by_loop: dict = {}
+    for task in list(bus._INFLIGHT):
+        if task.done():
+            bus._INFLIGHT.discard(task)
+            continue
+        loop = task.get_loop()
+        if loop.is_closed():
+            bus._INFLIGHT.discard(task)
+        elif not loop.is_running():
+            by_loop.setdefault(loop, []).append(task)
+    for loop, tasks in by_loop.items():
+        for task in tasks:
+            task.cancel()
+        loop.run_until_complete(_asyncio.gather(*tasks, return_exceptions=True))
+        for task in tasks:
+            bus._INFLIGHT.discard(task)
 
 
 def async_context(func):
