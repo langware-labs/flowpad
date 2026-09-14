@@ -115,3 +115,15 @@ class SourceItemSpec(DataSpec):
     message_id: Optional[str] = None
     segment_label: str = ""
     raw: Optional[dict] = None
+
+
+DIGESTED_FIELDS: tuple[str, ...] = (
+    "kind",
+    "name",
+    "body",
+    "occurred_at",
+    "author_external_id",
+    "author_display",
+    "permalink",
+    "thread_key",
+)

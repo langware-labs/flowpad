@@ -197,13 +197,6 @@ def local_dummy_provider(monkeypatch):
     stays True so the hub route is the one exercised, and `get_local_provider`
     is non-None.
 
-    `copy_hub_credential=True` is the OTHER half, and it is not optional here.
-    A registered provider used to be sufficient for `_adopt_hub_credential` to
-    copy the value into local SOD; the copy is now gated on this flag as well
-    (GitHub sets it — `git push` reads the raw token locally — and so does Slack
-    now that `SlackDriver._token()` reads it from the poller). Without it these
-    tests would assert the copied shape while modelling an uncopied one, and the
-    desktop holds None.
     """
     from flow_sdk.core.oauth import provider_registry as registry
     from flow_sdk.core.oauth.provider_registry import LocalOAuthProvider, OAuthFlowKind
@@ -216,7 +209,6 @@ def local_dummy_provider(monkeypatch):
             display_name="Dummy Auth",
             user_credentials_name=LOCAL_CREDENTIALS_NAME,
             kind=OAuthFlowKind.DEVICE,
-            copy_hub_credential=True,
         ),
     )
     return PROVIDER
@@ -241,10 +233,14 @@ def _isolate_oauth_module_state():
 
 async def local_value(user) -> Optional[str]:
     """What this machine actually holds, or None when it holds nothing."""
-    from flow_sdk.request_context.methods import get_user_credentials
+    from flow_sdk.core.oauth.provider_probe import token_from_credential
+    from flow_sdk.request_context.methods import get_current_sod_store
 
     try:
-        return await get_user_credentials(user, LOCAL_CREDENTIALS_NAME, user.id)
+        stored = await get_current_sod_store().read_user_sod(
+            f"{user.type}_{LOCAL_CREDENTIALS_NAME}_{user.id}", user.id
+        )
+        return token_from_credential(stored)
     except KeyError:
         return None
 

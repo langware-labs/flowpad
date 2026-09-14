@@ -9,14 +9,14 @@ file-indexed row and a DB-minted row collide on one id across machines.
 """
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.secret_origin import (
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.types.secret_origin import (
     extract_secret_origin,
     secret_origin_id_from_file,
     secret_origin_identity_key,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 

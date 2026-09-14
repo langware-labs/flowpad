@@ -185,7 +185,7 @@ The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_roo
 
 On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<contenthash>_<pathdigest>.hash` sentinel), project directory encoding, the commonly used `EntityType` constants grouped by category (and which of them the indexer actually walks — `indexable_types()`, derived from the walker graph), and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
 
-**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`indexable_types()`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
+**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/assets/types/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`indexable_types()`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
 
 ***
 
@@ -257,7 +257,7 @@ FTS5-backed full-text search for Records. Covers the `search_*` readers (default
 
 The `fs-records` custom action on `ComputeNode` -- the primary HTTP API for reading and writing Records. Full routing table (GET list, GET single, POST create, PUT update, DELETE, plus file-path variants), `_parse_record_query()` supported parameters, `_embed_includes()` session join, path-based source-file routing, security checks, TypeRegistry lookup, error response format, and DataOp broadcast on mutations.
 
-**Key source files:** `flow_sdk/builtin/faas/fs_records_actions.py` (`_fs_records_action` and helpers; `ComputeNode.fs_records_action` delegates to it), `flow_sdk/fs_store/source_file_records.py`, `flow_sdk/fs_store/record_query.py`
+**Key source files:** `flow_sdk/builtin/faas/fs_records_actions.py` (`_fs_records_action` and helpers; `ComputeNode.fs_records_action` delegates to it), `flow_sdk/assets/types/source_file_records.py`, `flow_sdk/fs_store/record_query.py`
 
 ***
 

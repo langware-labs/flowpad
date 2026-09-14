@@ -157,8 +157,8 @@ def test_golden_markdown_id_agrees_with_the_seam_on_a_capsule_only_doc(
     nor touches the bytes. They must still agree: `markdown_id` flows straight
     into `sync_to_db()` from `agentic_process` and `bootstrap`.
     """
+    from flow_sdk.assets import Asset
     from flow_sdk.capsules import AssetCapsule, CapsuleData
-    from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
 
     path = tmp_path / "doc.md"
     path.write_text("# Doc\n\nbody\n", encoding="utf-8")
@@ -168,20 +168,20 @@ def test_golden_markdown_id_agrees_with_the_seam_on_a_capsule_only_doc(
 
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     assert resolve_id(_info("markdown"), ref) == expected, "a retired form is foreign: the path v5 answers"
-    assert markdown_id(ref) == expected, "and so must the read-only derive"
+    assert Asset.from_path(ref._path).typeid.id == expected, "and so must the read-only derive"
     assert path.read_bytes() == before
 
 
 def test_golden_markdown_id_miss_path_is_unchanged(tmp_path: Path) -> None:
     """The far commoner case must NOT move: no carrier → path-v5, still no write."""
-    from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
+    from flow_sdk.assets import Asset
 
     path = tmp_path / "plain.md"
     path.write_text("# Plain\n\nbody\n", encoding="utf-8")
     before = path.read_bytes()
     ref = FSRef(path, record_type="markdown")
 
-    assert markdown_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert Asset.from_path(ref._path).typeid.id == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     assert path.read_bytes() == before, "a read-only derive never stamps"
 
 
@@ -194,7 +194,7 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
     subagent, so the divergence is kept and pinned here — a future "cleanup"
     that quietly merges them must fail this test first.
     """
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
+    from flow_sdk.assets.types.subagent import subagent_peek_entity_id
 
     path = tmp_path / "helper.md"
     path.write_text("# Helper\n\nbody\n", encoding="utf-8")
@@ -208,7 +208,7 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
 
 def test_golden_secret_origin_id_matches_the_seam_key() -> None:
     """Two files must produce byte-identical output, today by convention only."""
-    from flow_sdk.builtin.secret_origin_identity import secret_origin_id, stable_key
+    from flow_sdk.assets.types.secret_origin_identity import secret_origin_id, stable_key
 
     assert secret_origin_id("proj-1", "API_KEY") == str(
         uuid.uuid5(uuid.NAMESPACE_URL, stable_key("proj-1", "API_KEY"))

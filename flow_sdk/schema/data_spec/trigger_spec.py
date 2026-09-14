@@ -36,7 +36,6 @@ from typing import Annotated, Any, ClassVar, Optional
 
 from pydantic import ConfigDict, StringConstraints, model_validator
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]

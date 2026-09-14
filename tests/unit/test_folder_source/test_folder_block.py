@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import Delivered, FolderChange, FolderSource, workflow
-from flow_sdk.ingest.reflect import ReflectMode
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 
 from ._harness import DOC, write_doc
 

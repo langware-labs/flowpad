@@ -16,7 +16,7 @@ from flow_sdk.core.connections.service import (
     flow_service,
 )
 from flow_sdk.core.connections.specs import _list_connection_specs_with_client
-from flow_sdk.core.connections.types import ConnectionConnectError, ConnectionSpec, ConnectionStage
+from flow_sdk.schema.data_spec.connection_spec import ConnectionConnectError, ConnectionSpec, ConnectionStage
 
 pytestmark = pytest.mark.asyncio
 
@@ -388,7 +388,7 @@ async def test_catalogue_rows_survive_a_server_that_disagrees_about_the_shape():
     either mismatch into a `TypeError` out of the transport layer; projecting
     means an unknown key is ignored and a missing one takes its default.
     """
-    from flow_sdk.core.connections.types import ConnectionSpec
+    from flow_sdk.schema.data_spec.connection_spec import ConnectionSpec
 
     # A NEWER server sending a field this client has never heard of.
     newer = ConnectionSpec.from_wire(

@@ -529,7 +529,8 @@ async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_cl
     three planes, so the delivery row must hang off the SAME artifact id and be
     updated, never forked, when the app is re-registered.
     """
-    from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+    from flow_sdk.builtin.faas.micro_app import MicroApp
+    from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 
     project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()

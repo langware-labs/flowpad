@@ -47,7 +47,7 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
         return {}
 
     monkeypatch.setattr("flow_sdk.core.oauth.github_credentials.get_github_token", fake_token)
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", fake_publish)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", fake_publish)
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
 
     pid = await project(bootstrapped_client, tmp_path)

@@ -302,8 +302,8 @@ def test_versioning_never_selects_a_non_frontmatter_type():
     asset-scoped versioning only if its main file can hold the ``version:`` header
     the stamper writes — which is exactly what a ``Frontmatter`` declares.
     """
-    from flow_sdk.actions.fs.asset_versioning import _versionable_folder_types
-    from flow_sdk.fs_store.identity_carrier import Frontmatter
+    from flow_sdk.assets.identity_carrier import Frontmatter
+    from flow_sdk.assets.versioning import _versionable_folder_types
 
     selected = _versionable_folder_types()
     assert selected, "registry unavailable — the predicate returned nothing"

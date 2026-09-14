@@ -46,6 +46,7 @@ function webAppPointer(port: number | string | undefined): DockPointer | null {
  */
 export function dockForDisplayTarget(target: ShowTarget | null | undefined): DockPointer | null {
   if (!target) return null;
+  if (target.kind === 'url' && target.url) return DockPointer.forWebUrl(target.url);
 
   // A terminal is an address, not content — same dock a journey's open_terminal
   // uses. Checked first because a shell target also carries type/id, which the
@@ -96,7 +97,8 @@ export function dockForDisplayTarget(target: ShowTarget | null | undefined): Doc
   // like the same file opened from the explorer or a chat attachment.
   const editor = target.type ? editorForType(target.type) : undefined;
   if (editor && target.typeid) {
-    return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid)).toDockPointer();
+    const options = target.line ? { initialLine: String(target.line) } : undefined;
+    return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid), options).toDockPointer();
   }
-  return target.path ? dockPointerForFile(target.path) : null;
+  return target.path ? dockPointerForFile(target.path, { line: target.line, column: target.column }) : null;
 }

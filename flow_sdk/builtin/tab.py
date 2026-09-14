@@ -329,30 +329,41 @@ class Tab(Entity):
         if target is not None and callable(teardown):
             await teardown()
 
-    async def set_label(self, name: str) -> None:
-        """Set ONLY the Tab label — no target reflect, no ``auto_rename`` change.
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        from flow_sdk.schema.types import EntityType
 
-        The PTY auto-title mirror: the active panel already saved the live name onto
-        its Shell/AgenticProcess; this keeps the durable ``Tab.name`` in step so the
-        chip stays right once inactive. Unlike :meth:`rename`, it must NOT touch the
-        target (which would pin ``auto_rename=False`` and stop future auto-titles)."""
+        return ("name",) if current_data.get("target_type") == EntityType.AGENTIC_PROCESS else ()
+
+    async def reconcile_target_name(self, target=None) -> None:
+        """Process tab names project durable naming state, even on reopen."""
+        if target is None:
+            target = await self._target_entity()
+        reconcile = getattr(target, "reconcile_name", None)
+        if callable(reconcile):
+            current = await reconcile()
+            if current is not None:
+                self.name = current.name
+
+    async def set_label(self, name: str) -> None:
+        """Set an ordinary label; worker labels always project their target."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await self.reconcile_target_name(target)
+            return
         if name and self.name != name:
             self.name = name
             await self.save()
 
     async def rename(self, name: str) -> None:
-        """``Tab.name`` is the generic source of truth for the tab label. Set it,
-        then reflect onto the backing entity by calling its generic ``rename`` —
-        base ``Entity.rename`` adopts the name onto ANY target (conversation,
-        agentic_process, shell, markdown, …); shell/agentic_process override it
-        to also pin ``auto_rename=False`` (and the FE sends the PTY ``/rename``).
-        Dispatch is by method, not by ``if target_type==`` (slick P6) — exactly
-        like ``close`` → ``teardown_for_tab``. A target-less tab keeps the label
-        on the Tab alone.
-        """
+        """A process target owns the transaction that names it and its tabs."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await target.rename(name)
+            self.name = target.name
+            return
         self.name = name
         await self.save()
-        target = await self._target_entity()
         if target is not None:
             await target.rename(name)
 
@@ -930,6 +941,10 @@ async def ensure_tab(
     # *second* canonical row → two visible chips for one pointer. Query the pointer:
     # reuse the canonical (``id == tid``) row, and soft-hide any foreign-id strays
     # sharing that pointer so a pre-existing duplicate self-heals on next open.
+    # A loader label is presentation, never naming evidence for a worker.
+    # Initialize legacy authority before inserting a new tab with a UI hint.
+    if target_type == "agentic_process":
+        name = None
     same_pointer = await Tab.get_all({"pointer": pointer})
     existing = next((t for t in same_pointer if t.id == tid), None)
     for stray in same_pointer:
@@ -1025,6 +1040,7 @@ async def ensure_tab(
                 dirty = True
         if dirty:
             await existing.save()
+        await existing.reconcile_target_name()
         return existing
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
     # opener. ``after_tab_id`` is the explicit opener when given; otherwise the
@@ -1065,6 +1081,7 @@ async def ensure_tab(
     tab.tab_order = new_order.index(tid)
     await _persist_global_order(new_order, {t.id: t for t in visible})
     await tab.save()
+    await tab.reconcile_target_name()
     return tab
 
 

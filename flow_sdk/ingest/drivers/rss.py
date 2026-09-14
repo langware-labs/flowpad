@@ -21,10 +21,10 @@ from email.utils import parsedate_to_datetime
 from typing import Optional
 from xml.etree import ElementTree
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.utils.serialization import iso_to_datetime
 
 _ATOM = "{http://www.w3.org/2005/Atom}"

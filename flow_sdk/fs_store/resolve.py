@@ -26,9 +26,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.assets.layout import Layout, LayoutKind
 from flow_sdk.fs_store.indexer.reconcile import reconcile
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-from flow_sdk.schema.layout import Layout, LayoutKind
 
 
 class NotAnAsset(LookupError):

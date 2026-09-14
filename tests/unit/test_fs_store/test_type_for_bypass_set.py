@@ -70,7 +70,7 @@ def test_the_undeclared_set_is_exactly_the_walked_types_type_for_cannot_place(tm
     one with a ``from_disk_fn``; a declared location is its main document,
     fixed name, family dir (with the document declaring its own ``type:``,
     the way two types sharing a mount are told apart) or unique extension."""
-    from flow_sdk.schema.layout import File, Folder
+    from flow_sdk.assets.layout import File, Folder
 
     def classified_at(candidate: Path, type_name: str) -> bool:
         candidate.parent.mkdir(parents=True, exist_ok=True)

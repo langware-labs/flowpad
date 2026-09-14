@@ -32,7 +32,6 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
     FetchResult,
     IngestDriver,
@@ -46,6 +45,7 @@ from flow_sdk.ingest.driver import (
 )
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.source_item import MessageSpec

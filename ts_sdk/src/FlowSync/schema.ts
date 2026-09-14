@@ -92,6 +92,8 @@ export interface TypeInfo {
   /** Scope-relative subdir for the claude-default mount (e.g. `.claude/skills`,
    *  `agentic-assets/task`). Derived server-side from the three fields above. */
   main_subdir?: string | null;
+  /** Backend-declared scope-relative asset mounts. */
+  scan_mounts?: string[];
   /** THE on-disk shape declaration this type makes — mirrors `flow_sdk/schema/layout.py`
    *  `Folder.to_dict` / `File.to_dict`. `{kind:'folder', main:'SKILL.md'}`: the asset IS
    *  a directory (asset_ref is the folder; the Assets sidebar expands it into its file

@@ -1,3 +1,4 @@
+import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
 import type { IWorkspace } from './entities/workspace';
@@ -5,8 +6,6 @@ import type { IWorkspace } from './entities/workspace';
 // this entire file, so every `Record<string, unknown>` in it resolved to the
 // FS record class and failed as a non-generic type.
 import { Record as FsRecord, RecordRefs } from './fs/Record';
-import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
-import { Frontmatter } from './fs/Frontmatter';
 import { EntityFactory, type EntityConstructor } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
@@ -655,18 +654,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
-   * Generic read/write access to this asset's YAML frontmatter, or null when the
-   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
-   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
-   * the body and all keys — the home of frontmatter-persisted fields like
-   * `version`. Caller must `await frontmatter.load()` before get/set.
-   */
-  public get frontmatter(): Frontmatter | null {
-    const doc = (this as unknown as { doc?: unknown }).doc;
-    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
-  }
-
-  /**
    * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
    * optional JSON body and return the envelope's `data`. The one helper every
    * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
@@ -956,7 +943,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.expand = { ...this.expand, expansions: [...loadingExpansions.expand] };
   }
 
-  public async save(scope: TypeId[] | TypeId = []): Promise<T> {
+  public async save(scope: TypeId[] | TypeId = [], destination?: FSRefJson): Promise<T> {
     const isNew = !this.saved;
     if (!Array.isArray(scope)) {
       scope = [scope];
@@ -967,6 +954,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // DataOp. A JSON round-trip is also the exact wire normalization Axios
     // would perform (Dates -> strings, undefined fields omitted).
     const entityJson = JSON.parse(JSON.stringify(this.toJSON())) as IEntity;
+    if (destination) {
+      if (!isNew) throw new Error('A creation destination cannot relocate an existing entity');
+      Object.assign(entityJson, { destination });
+    }
     const entity = await dataManager.save<T>(this.typeId, scope, entityJson);
     if (isNew) {
       this.markAsExpanded();
@@ -1232,6 +1223,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { group_id: groupId };
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** Resolve a reference relative to this entity through the shared backend resolver. */
+  public async resolveDisplayTarget(link: string): Promise<ShowTarget | null> {
+    const info = new ActionInfo('resolve-display-target', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { link };
+    return (await dataManager.callAction<unknown, ShowTarget>(info)) ?? null;
   }
 
   /**

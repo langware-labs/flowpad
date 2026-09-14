@@ -181,21 +181,37 @@ async def resolve_by_path(
 ):
     """``{type, id, root, body, editor, entity}`` for the asset at ``path``.
 
-    ``resolve_asset`` classifies the path and settles its id through the
-    indexer's reconcile; ``ensure_entity`` indexes the asset when no row
-    exists yet, so a client that gets ``entity: null`` can still fetch by
-    ``(type, id)``. A path no type claims is 404.
+    Filesystem identity and layout come from the asset library. The application
+    adds an Entity projection when its metadata can be parsed. Malformed
+    metadata leaves the document addressable for inspection and repair.
     """
-    from flow_sdk.fs_store.resolve import NotAnAsset, ensure_entity, resolve_asset  # noqa: PLC0415
+    import yaml
+
+    from flow_sdk.assets import Asset
+    from flow_sdk.assets.asset import NotAnAsset
+    from flow_sdk.fs_store.resolve import Resolved, ensure_entity
 
     try:
-        resolved = await resolve_asset(path, write=True)
-    except NotAnAsset as reason:
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path('/') / candidate
+        asset = Asset.from_path(candidate)
+    except (NotAnAsset, FileNotFoundError) as reason:
         return JSONResponse(status_code=404, content={"status": "FAIL", "message": str(reason), "data": None})
-    entity = await ensure_entity(resolved)
+    resolved = Resolved(asset.typeid.type, asset.typeid.id, asset.path, asset.layout.body,
+                        asset.info.editor, layout=asset.layout)
+    projection_error = None
+    try:
+        entity = await ensure_entity(resolved)
+        if entity is None:
+            projection_error = 'File metadata could not be read.'
+    except (ValueError, yaml.YAMLError) as error:
+        entity = None
+        projection_error = str(error)
     return JSONResponse(content={"status": "SUCCESS", "data": {
         **resolved.to_dict(),
         "entity": entity.model_dump(mode="json") if entity is not None else None,
+        **({"entity_error": projection_error} if projection_error else {}),
     }})
 
 

@@ -37,8 +37,9 @@ let localUser: User | null = null;
  * This ensures clean state between tests by clearing entity cache and subscriptions
  */
 export async function unitTestSetup() {
-  // Global polyfill for Blob
-  globalThis.Blob = Blob;
+  // Keep browser Blob/File/FileReader in the same realm. A foreign Blob
+  // inside jsdom File is stringified rather than copied as binary bytes.
+  if (typeof globalThis.Blob === 'undefined') globalThis.Blob = Blob;
 
   // Mock matchMedia for components that check pointer type (jsdom doesn't provide this)
   if (!window.matchMedia) {
@@ -111,7 +112,7 @@ export async function apiTestSetup(_signupInfo?: unknown, _test_name: string | n
 
   // The @local user is returned by bootstrap — no login needed
   if (!localUser && bootstrapInfo.user) {
-    localUser = dataManager.castAndDeepAssign(bootstrapInfo.user) as User;
+    localUser = dataManager.castAndDeepAssign(bootstrapInfo.user);
   }
 
   clearStats();

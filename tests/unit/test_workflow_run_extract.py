@@ -9,11 +9,8 @@ import pytest
 # Populate the SchemaRegistry so WORKFLOW_RUN type metadata resolves.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.assets.types.workflow_run import extract_workflow_run
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.workflow_run import (
-    extract_workflow_run,
-    workflow_run_id,
-)
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id
 
@@ -35,7 +32,7 @@ def test_extract_workflow_run_envelope():
     # Stable v5 id minted from the provider runId.
     assert rec.id == mint_uuid(RUN_ID)
     assert is_valid_entity_id(rec.id)
-    assert workflow_run_id(FSRef(_JOURNAL)) == rec.id
+    assert SchemaRegistry.get("workflow_run").read_identity(SchemaRegistry.get("workflow_run").layout_for(FSRef(_JOURNAL))) == rec.id
 
     assert rec.run_id == RUN_ID
     assert rec.name == "anatomy-probe"

@@ -1,3 +1,4 @@
+import type { AssetScanResult } from '../process/asset-descriptor';
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import apiClient, { getRaw } from '../client';
@@ -16,7 +17,7 @@ import {
   type RequestInstallResult,
 } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
+import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { SubAgent } from './subagent';
@@ -534,7 +535,7 @@ export class Project extends APIEntity<Project> {
    * scan hit `limit` the response is truncated (long tail should be searched,
    * not listed).
    */
-  async getAssets(options?: { types?: string[]; limit?: number }): Promise<AssetDescriptor[]> {
+  async getAssets(options?: { types?: string[]; limit?: number }): Promise<AssetScanResult> {
     return Project.getAssetsById(this.typeId.id, options);
   }
 
@@ -542,14 +543,14 @@ export class Project extends APIEntity<Project> {
   static async getAssetsById(
     projectId: string,
     options?: { types?: string[]; limit?: number },
-  ): Promise<AssetDescriptor[]> {
+  ): Promise<AssetScanResult> {
     const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
     const queryParameters: Record<string, string | number> = {};
     if (options?.types?.length) queryParameters.types = options.types.join(',');
     if (options?.limit) queryParameters.limit = options.limit;
     actionInfo.queryParameters = queryParameters;
-    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
-    return response?.assets ?? [];
+    const response = await dataManager.callAction<void, AssetScanResult>(actionInfo);
+    return response ?? { assets: [] };
   }
 
   /**

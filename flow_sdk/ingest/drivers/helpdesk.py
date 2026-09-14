@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.cloud_client.transport.hub_http import rows_of
 from flow_sdk.ingest.driver import (
@@ -44,6 +43,7 @@ from flow_sdk.ingest.driver import (
 from flow_sdk.ingest.drivers._watermark import Watermark
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)

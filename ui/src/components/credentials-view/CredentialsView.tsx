@@ -6,7 +6,6 @@ import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -34,7 +33,6 @@ export const CredentialsView: React.FC = () => {
   const { user } = useAuth();
   const { navigation, currentDock } = useDockNavigation();
   const { projects, isLoading } = useProjects();
-  const { project: contextProject } = useContext();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // One surface now, so the leading tab is the only tab — and it is still
@@ -47,15 +45,12 @@ export const CredentialsView: React.FC = () => {
 
   const items = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
-  // The URL wins; then the current project, so the header agrees with the
-  // footer's StatusBar rather than quietly showing a different one; then the
-  // head of `useProjects`, which is recency-sorted.
+  // An unscoped URL manages the person's credentials. Falling back to a
+  // recent/context project silently turns Test into a project permission check
+  // and grants new connections to a project the user never selected here.
   const selected = useMemo(
-    () =>
-      (projects ?? []).find((p) => p.id === projectId) ??
-      (projects ?? []).find((p) => p.id === contextProject?.id) ??
-      (projects ?? [])[0],
-    [projects, projectId, contextProject?.id],
+    () => (projects ?? []).find((p) => p.id === projectId),
+    [projects, projectId],
   );
 
   const go = (nextTab: CredentialsSubview, nextProjectId?: string) => {
@@ -89,7 +84,7 @@ export const CredentialsView: React.FC = () => {
                 className="ms-auto h-7 gap-1 text-xs"
                 data-testid="credentials-project-picker"
               >
-                {selected?.name ?? t`Select a project`}
+                {selected?.displayName ?? selected?.name ?? t`Select a project`}
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </PopoverTrigger>

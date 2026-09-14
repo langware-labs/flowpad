@@ -41,17 +41,17 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
 
-from flow_sdk.builtin.graph_workflow import GraphWorkflow
-from flow_sdk.core.capabilities.models import now_iso
-from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE, RunEvent
-from flow_sdk.graph_workflow_manager.function_runner import record_emission
-from flow_sdk.graph_workflow_manager.graph_workflow_doc import (
+from flow_sdk.assets.types.graph_workflow_doc import (
     AGENT_DONE_EVENT,
     TRIGGER_FIRED_EVENT,
     GraphWorkflowDoc,
     GraphWorkflowNodeDef,
     parse_graph_workflow_doc,
 )
+from flow_sdk.builtin.graph_workflow import GraphWorkflow
+from flow_sdk.core.capabilities.models import now_iso
+from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE, RunEvent
+from flow_sdk.graph_workflow_manager.function_runner import record_emission
 from flow_sdk.graph_workflow_manager.journal import RunJournal
 
 logger = logging.getLogger(__name__)
@@ -926,13 +926,13 @@ class GraphWorkflowManager:
 
         Raises RuntimeError on a dangling reference — a mistyped/deleted SubAgent
         must fail the execution loudly, not silently fall back to inline."""
-        from flow_sdk.graph_workflow_manager.graph_workflow_doc import agent_ref
+        from flow_sdk.assets.types.graph_workflow_doc import agent_ref
 
         agent_id = agent_ref(node)
         if not agent_id:
             return {}
+        from flow_sdk.assets.types.subagent import parse_subagent_markdown
         from flow_sdk.builtin.subagent import SubAgent
-        from flow_sdk.fs_store.indexer.functions.subagent import parse_subagent_markdown
 
         entity = await SubAgent.get_by_id(agent_id)
         if entity is None or not entity.asset_ref:

@@ -14,7 +14,7 @@ import InteractiveTerminal from './interactive-terminal';
 import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
-import { allowRename, cleanTitle, isProgramIdentityTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
+import { allowRename, cleanTitle, isProgramIdentityTitle } from './rename-rules';
 import { classifyRuntimeFailure, type ProcessLoadErrorKind } from '@src/routes/loaders/load-process';
 
 interface TabbedTerminalProps {
@@ -162,8 +162,8 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
  * entity (URL-first corollary: the view hydrates + attaches on mount, not via a
  * list-wide join). A process panel resolves its transport shell from the live
  * `AgenticProcess.shell_id` (so a worker restart reconnects the PTY); a plain
- * shell's transport is its target id. The OSC title auto-save saves the live
- * entity and mirrors the label onto the Tab via `set_name` (no `auto_rename` pin).
+ * shell's transport is its target id. Process OSC titles are observations for
+ * the backend naming policy; plain shells retain their terminal auto-title path.
  */
 const TerminalPanel: React.FC<{
   tab: Tab;
@@ -194,7 +194,6 @@ const TerminalPanel: React.FC<{
   });
   const activeProcess = reconciledProcess ?? process;
   const transportShellId = isProcess ? (activeProcess?.shell_id ?? '') : targetId;
-  const source = isProcess ? activeProcess : shell;
   const processRef = useRef(activeProcess);
   processRef.current = activeProcess;
   const processReady = activeProcess != null;
@@ -265,18 +264,25 @@ const TerminalPanel: React.FC<{
 
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
-    if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? activeProcess : null)) return;
-    if (!source || !source.auto_rename) return; // user pinned this tab
+    if (isProcess) {
+      // The driver/backend owns title validation, provenance, pinning and tab
+      // synchronization. An OSC frame never writes a process name in the UI.
+      void activeProcess?.observeTitle(title).catch((error) => {
+        console.warn('[terminal] title observation failed', error);
+      });
+      return;
+    }
+    if (!shell || !shell.auto_rename) return; // user pinned this shell
     // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
     // real text and dedupe against the CLEANED name — so animation ticks that
     // reduce to the same title never fire a save.
     const clean = cleanTitle(title);
-    if (!allowRename(clean) || source.name === clean) return;
+    if (!allowRename(clean) || shell.name === clean) return;
     // A restarting worker re-announces itself (title `claude` / the exe path)
     // before any tag title exists — never let that clobber the stored name.
-    if (isProgramIdentityTitle(clean, isProcess ? activeProcess : null)) return;
-    source.name = clean;
-    void source.save().catch(() => {});
+    if (isProgramIdentityTitle(clean)) return;
+    shell.name = clean;
+    void shell.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
     // set_name, NOT rename (which would pin auto_rename off).
     void tabManager.setName(tab.id, clean).catch(() => {});

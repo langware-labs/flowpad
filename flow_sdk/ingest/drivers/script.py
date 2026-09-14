@@ -29,10 +29,11 @@ import os
 import sys
 from typing import Any, Optional
 
-from flow_sdk.builtin.data_source_spec import AuthSpec, DataSourceSpec, Runtime, TraitsSpec
-from flow_sdk.builtin.source_item import SourceItemSpec
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.builtin.data_source_spec import DataSourceSpec
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.data_source_manifest_spec import AuthSpec, Runtime, TraitsSpec
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.utils.module_rpc import ModuleFailure, call_module
 
 logger = logging.getLogger(__name__)

@@ -1,13 +1,12 @@
 """Type metadata for WHITEBOARD."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     frontmatter_identity,
 )
-from flow_sdk.fs_store.indexer.functions.whiteboard import (
-    extract_whiteboard,
-    whiteboard_asset_hash,
-)
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.scaffolds import render_whiteboard_document, scaffold_whiteboard
+from flow_sdk.assets.types.whiteboard import extract_whiteboard, whiteboard_asset_hash
+from flow_sdk.assets.types.whiteboard_spec import WhiteboardSpec
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -28,6 +27,9 @@ WHITEBOARD = TypeInfo(
     shape=Folder(main="WHITE_BOARD.md"),
     editor="whiteboard",
     from_disk_fn=extract_whiteboard,
+    render_fn=render_whiteboard_document,
+    scaffold_fn=scaffold_whiteboard,
+    scaffold_spec=WhiteboardSpec,
     identity_carrier=frontmatter_identity(),
     asset_hash_fn=whiteboard_asset_hash,
 )

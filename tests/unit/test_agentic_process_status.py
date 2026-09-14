@@ -28,7 +28,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_for_input,
     is_ready_from_busy,
 )
-from flow_sdk.builtin.worker_status import (
+from flow_sdk.transcript_analyzer.worker_status import (
     _IGNORED_TYPES,
     _RUNNING_STATUSES,
     _TAIL_BYTES,
@@ -62,7 +62,7 @@ def test_terminal_set_matches_spec(status_fixture):
 def test_error_set_matches_spec(status_fixture):
     """Python ``_ERROR_STATUSES`` must equal the shared fixture literal
     (``worker_execution_error``), kept in parity with the TS ``ERROR_WORKER_STATUSES``."""
-    from flow_sdk.builtin.worker_status import _ERROR_STATUSES
+    from flow_sdk.transcript_analyzer.worker_status import _ERROR_STATUSES
 
     expected = {WorkerStatus(v) for v in status_fixture["worker_execution_error"]}
     assert _ERROR_STATUSES == expected
@@ -117,7 +117,7 @@ def test_process_startable_set_matches_spec(status_fixture):
 
 
 def test_classify_execution_mode_truth_table():
-    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+    from flow_sdk.transcript_analyzer.worker_status import ExecutionMode, classify_execution_mode
 
     # Not live → None.
     for s in ("new", "stopping", "stopped", "failed"):
@@ -145,7 +145,7 @@ def test_classify_execution_mode_hidden_live_pty_is_interactive():
     """A hidden live PTY (visible=False but pty_mode=True) is a PTY worker →
     INTERACTIVE, NOT the headless BACKGROUND bucket. Pins the transport-keyed
     contract that the old ``visible``-keyed classifier got wrong."""
-    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+    from flow_sdk.transcript_analyzer.worker_status import ExecutionMode, classify_execution_mode
 
     assert classify_execution_mode(status="running", worker_status=None, pty_mode=True) == ExecutionMode.INTERACTIVE
     # And a dead-PID hidden PTY still surfaces as Error (rule 2 keys on pty_mode).

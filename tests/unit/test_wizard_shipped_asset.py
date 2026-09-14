@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.config import system_projects_root
-from flow_sdk.fs_store.indexer.functions.wizard import read_wizard
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -53,7 +53,7 @@ def test_the_two_steps_are_independent(spec):
 def test_it_runs_itself_once_on_app_ready(spec):
     # The trigger is an ordinary child asset now, not an inline array — so what
     # is asserted is the folder, and that it declares the same thing.
-    from flow_sdk.fs_store.indexer.functions.trigger import read_trigger
+    from flow_sdk.assets.types.trigger import read_trigger
 
     child = WIZARD_DIR / "agentic-assets" / "trigger" / "on-app-ready"
     declared = read_trigger(child)

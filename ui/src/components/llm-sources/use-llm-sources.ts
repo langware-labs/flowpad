@@ -1,6 +1,6 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
-import { useContext } from '@sdk/react/hooks';
+import { useCloudStatus, useContext } from '@sdk/react/hooks';
 /**
  * The box's funding picture, as one cached read.
  *
@@ -211,6 +211,35 @@ export function useFundingFollowsLogin(): void {
       }),
     [qc, params],
   );
+}
+
+/**
+ * Re-read funding when the HUB login changes.
+ *
+ * Sibling to {@link useFundingFollowsLogin}, which follows `capabilityManager` and therefore
+ * only hears about DEVICE logins and key changes. Signing in to FlowPad changes neither: the
+ * endpoint arrives from the hub, the funding read's params never move, and nothing invalidates
+ * the query — so the screen went on reporting "no source" over a box that had just been given
+ * one. That is the gap `flow llm set auto` sits in: the CLI hears the change on the socket and
+ * returns, while the page that produced it does not notice.
+ */
+export function useFundingFollowsHubLogin(): void {
+  const qc = useQueryClient();
+  // PRIMITIVES in the dependency list, never the params OBJECT.
+  //
+  // `useFundingParams` builds a fresh `{projectId}` on every render, so an effect that depends
+  // on it re-runs every render — and this effect's body INVALIDATES, so each run caused a
+  // refetch, a re-render, and another invalidation, several times a second. The list re-mounted
+  // under the user's cursor: clicking a row selected it and the very next render threw the
+  // selection away, so the detail panel could never appear and nothing was logged.
+  //
+  // `useFundingFollowsLogin` above shares the unstable dependency and is fine, which is what
+  // makes this easy to copy wrong: its body only SUBSCRIBES, so re-running is idempotent.
+  const { projectId } = useFundingParams();
+  const state = useCloudStatus().login.status;
+  useEffect(() => {
+    void qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, { projectId }) });
+  }, [qc, projectId, state]);
 }
 
 /**
