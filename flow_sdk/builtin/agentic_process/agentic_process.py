@@ -5204,12 +5204,12 @@ class AgenticProcess(Entity):
         return (await self.get_asset_catalog(usages=usages)).assets
 
     async def get_asset_catalog(self, *, usages=None):
-        from flow_sdk.assets.catalog import EXECUTABLE_ASSET_TYPES, catalog_from_folders, descriptor_from_asset
+        from flow_sdk.assets.catalog import EXECUTABLE_ASSET_TYPES, descriptor_from_asset, scan_catalog
         from flow_sdk.assets.usage import apply_usage
         from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
 
         sources = await process_asset_sources(self)
-        catalog = await asyncio.to_thread(catalog_from_folders, await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
+        catalog = await scan_catalog(await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
         descriptors = list(catalog.assets)
         descriptors.extend(descriptor_from_asset(asset, attached=True) for asset in await self.get_embedded_assets())
         return catalog.model_copy(update={"assets": apply_usage(descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources)})
