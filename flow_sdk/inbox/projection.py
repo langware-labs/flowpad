@@ -262,13 +262,14 @@ async def project_source_item(
 
     # Defensive reads end here: `item` and `source` are typed entities.
 
-    await ensure_conversation_entity(
+    conversation = await ensure_conversation_entity(
         conversation_id,
         parent_typeid=None,
         someone_typeid=None,
         title=thread.title or subject or key,
         owner=thread.owner,
     )
+    await _stamp_channel(conversation, channel, str(source.id))
 
     sender_id, sender_name = await _sender_for(item, source, channel)
     # The message row is resolved by its reference column. FIRST placement
@@ -297,6 +298,20 @@ async def project_source_item(
         conversation_id, sender_id, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce,
     )
+
+
+async def _stamp_channel(conversation, channel: str, source_id: str) -> None:
+    """A source-backed conversation names its channel and the source feeding it.
+
+    Set once, only while empty: a twin source projecting into the same thread
+    must not make the pointer flap on every pass.
+    """
+    missing = {k: v for k, v in (("channel", channel), ("channel_source_id", source_id)) if v and not getattr(conversation, k, None)}
+    if not missing:
+        return
+    for name, value in missing.items():
+        setattr(conversation, name, value)
+    await conversation.save(notify=False)
 
 
 def _origins(item, source, channel: str, key: str):

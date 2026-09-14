@@ -112,6 +112,11 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
+  /** The channel a source-backed conversation replies through (``gmail``,
+   *  ``slack``); stamped by the inbox projection. Null = a Flowpad conversation. */
+  channel?: string | null;
+  /** The local DataSource feeding this conversation; never leaves the machine. */
+  channel_source_id?: string | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
    *  key on the conversation fanout is ``participants`` (hub contract), adapted
    *  in ``onEntityUpdate``. */
@@ -154,6 +159,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
+  channel?: string | null;
+  channel_source_id?: string | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   git_sharing_enabled?: boolean;
@@ -170,6 +177,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
+    this.channel = entity.channel ?? null;
+    this.channel_source_id = entity.channel_source_id ?? null;
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;

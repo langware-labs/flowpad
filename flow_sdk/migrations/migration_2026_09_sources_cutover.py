@@ -16,6 +16,10 @@ Pass 2 — messages. A ``flow_message`` projected from a row carries ``origin``;
 triple it had no namespace (read as ``legacy``), and between the triple and this pass it had
 an interim one. Each is set to its row's origin, keeping the message's own ``url``.
 
+Pass 3 — conversations. A conversation fed by a source names its ``channel`` and
+``channel_source_id``; one projected before those fields existed takes them from its
+messages' rows, and only where they are still empty.
+
 A row whose header cannot name an origin (a blank key component) is counted and left alone.
 Idempotent: a converted instance reports zeros.
 
@@ -41,6 +45,7 @@ logger = logging.getLogger("migrate.sources_cutover")
 ITEM = "source_item"
 SOURCE = "data_source"
 MESSAGE = "flow_message"
+CONVERSATION = "conversation"
 
 
 @dataclass
@@ -50,11 +55,18 @@ class Report:
     duplicates_removed: int = 0
     messages_repointed: int = 0
     messages_reoriginated: int = 0
+    conversations_stamped: int = 0
     unliftable_ids: list[str] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
-        return bool(self.rows_lifted or self.duplicates_removed or self.messages_repointed or self.messages_reoriginated)
+        return bool(
+            self.rows_lifted
+            or self.duplicates_removed
+            or self.messages_repointed
+            or self.messages_reoriginated
+            or self.conversations_stamped
+        )
 
 
 @dataclass
@@ -173,22 +185,41 @@ def migrate(*, dry_run: bool = True, db: Path | None = None) -> Report:
                     msg.blob["origin_local"] = {**msg.blob["origin_local"], "source_item_id": row.id}
                 report.messages_repointed += 1
                 msg.dirty = True
+            messages.append(msg)
             current = msg.blob.get("origin") if isinstance(msg.blob.get("origin"), dict) else None
             target = row.blob["origin"]
-            if current is None:
-                continue
-            if tuple(current.get(k) for k in ("kind", "namespace", "key")) != tuple(target[k] for k in ("kind", "namespace", "key")):
-                msg.blob["origin"] = {"kind": target["kind"], "namespace": target["namespace"], "key": target["key"], "url": current.get("url") or None}
+            triple = ("kind", "namespace", "key")
+            if current is not None and tuple(current.get(k) for k in triple) != tuple(target[k] for k in triple):
+                msg.blob["origin"] = {**{k: target[k] for k in triple}, "url": current.get("url") or None}
                 report.messages_reoriginated += 1
                 msg.dirty = True
-            messages.append(msg)
+
+        # ── pass 3: conversations name their channel and source ──
+        stamps: dict[str, dict[str, str]] = {}
+        for msg in messages:
+            conversation_id = str(msg.blob.get("conversation_id") or "")
+            row = survivors[_message_item_id(msg.blob)] if _message_item_id(msg.blob) in survivors else None
+            if conversation_id and row is not None:
+                stamps.setdefault(conversation_id, {
+                    "channel": row.blob["origin"]["kind"],
+                    "channel_source_id": str(row.blob.get("data_source_id") or ""),
+                })
+        conversations = []
+        for conv in _rows(conn, CONVERSATION):
+            for name, value in stamps.get(conv.id, {}).items():
+                if value and not conv.blob.get(name):
+                    conv.blob[name] = value
+                    conv.dirty = True
+            if conv.dirty:
+                report.conversations_stamped += 1
+                conversations.append(conv)
 
         if not dry_run:
             dead = set(doomed)
             for row in {id(r): r for r in survivors.values()}.values():
                 if row.dirty and row.id not in dead:
                     conn.execute("UPDATE entities SET data = ? WHERE id = ?", (json.dumps(row.blob), row.id))
-            for msg in messages:
+            for msg in (*messages, *conversations):
                 if msg.dirty:
                     conn.execute("UPDATE entities SET data = ? WHERE id = ?", (json.dumps(msg.blob), msg.id))
             for eid in doomed:
