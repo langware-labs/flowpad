@@ -22,7 +22,16 @@ import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfi
 import { AgentMcpField } from './AgentMcpField';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
-import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
+import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
+import {
+  AGENT_DEFAULT_MACHINE_SIZE,
+  AGENT_EFFORTS,
+  AGENT_MACHINE_SIZE_LABELS,
+  AGENT_MACHINE_SIZES,
+  AGENT_MODEL_TIERS,
+  AGENT_PERMISSION_MODES,
+  AGENT_WORKER_TYPES,
+} from './agent-vocabularies';
 import type { AgentDocumentPatch } from './agent-fields';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DocumentSaveNotice } from '../DocumentSaveNotice';
@@ -87,7 +96,14 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
     const operation = writeQueueRef.current.then(async () => {
       const saved = await contentRef.current.save();
-      if (saved) agentRef.current.markEdit();
+      if (saved) {
+        agentRef.current.markEdit();
+        // A saved agent.md in a git checkout is auto-committed server-side
+        // (`asset_versioning`), which moves the branch ahead of its remote with
+        // no event of its own. Say so on the preflight channel, so the deploy
+        // checklist re-asks and offers Push instead of claiming nothing is pending.
+        invalidateGitPreflight(agentRef.current.typeId);
+      }
       return saved;
     });
     writeQueueRef.current = operation;
@@ -399,6 +415,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             </TabsContent>
 
             <TabsContent value="deploy" className="mt-4">
+              {/* Read by the hub when it creates this agent's cloud box; a local
+                  launch ignores it. An absent key deploys at the hub's default
+                  (sm), so it shows as sm and there is no Unset to pick. */}
+              <div className="mb-4" data-testid="agent-machine-size">
+                <AgentChoiceField
+                  label={t`Machine size`}
+                  value={profile.machine_size}
+                  options={AGENT_MACHINE_SIZES}
+                  labels={AGENT_MACHINE_SIZE_LABELS}
+                  defaultValue={AGENT_DEFAULT_MACHINE_SIZE}
+                  onCommit={(v) => void save({ machine_size: v })}
+                />
+              </div>
               <AgentDeploymentsSection agent={agent} />
             </TabsContent>
 
