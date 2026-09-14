@@ -22,12 +22,11 @@ import { ViewMode } from '@src/contexts/view-mode-context';
  *   backend_route    — which action that call lands on
  *   backend_refuses  — whether THAT route 409s (Python asserts this half)
  *
- * The asymmetry in the last two columns is real and deliberate: only `→cli`
- * goes through the guarded `switch-mode` action. `→terminal` routes through
- * `start()`/`open`, which has no mid-turn guard at all — so the client does not
- * refuse one either. The client mirrors the SERVER PER ROUTE and invents no
- * policy of its own: `blocked === backend_refuses` on every row. If a guard is
- * ever added to `open`, both columns flip together.
+ * Both directions now go through the guarded `switch-mode` action, so the last
+ * two columns agree everywhere: `blocked === backend_refuses` on every row. That
+ * was an asymmetry until FLOWPAD-2130 — `→terminal` routed through the unguarded
+ * `open`, so the client refused nothing there and a mid-turn click spawned a PTY
+ * onto the session a live headless turn was writing, losing it.
  */
 
 interface TransportSwitchCase {
@@ -112,20 +111,21 @@ describe('transport switch gate — TS half of the cross-language contract', () 
     }
   });
 
-  it('records that the →terminal direction has no backend guard, so the client adds none', () => {
-    // Not an aspiration — a fact about the routes, asserted so it cannot rot
-    // silently. `switchMode(Interactive)` calls `start()`/`open`, and
+  it('routes every transport switch at `switch-mode`, never at the unguarded `open`', () => {
     // `_reject_if_turn_in_flight` is invoked only from `switch_mode` and
-    // `http_restart`. If a guard is ever added to the open path, this fails and
-    // BOTH `backend_refuses` and `blocked` must be flipped on those rows.
-    const openRows = cases.filter((c) => c.backend_route === 'open');
-    expect(openRows.length).toBeGreaterThan(0);
-    for (const c of openRows) {
-      expect(c.backend_refuses, c.label).toBe(false);
-      expect(c.blocked, c.label).toBe(false);
+    // `http_restart`, so a switch routed at `open` is an unguarded one
+    // (FLOWPAD-2130). Guarding `open` itself is FLOWPAD-2117, deliberately apart.
+    const switching = cases.filter((c) => c.needs_switch);
+    expect(switching.length).toBeGreaterThan(0);
+    for (const c of switching) {
+      expect(c.backend_route, c.label).toBe('switch-mode');
     }
 
-    const midTurnOpen = openRows.filter((c) => c.busy);
-    expect(midTurnOpen.length, 'fixture must cover a mid-turn →terminal').toBeGreaterThan(0);
+    const midTurnToTerminal = switching.filter((c) => c.busy && !c.pty_mode);
+    expect(midTurnToTerminal.length, 'fixture must cover a mid-turn →terminal').toBeGreaterThan(0);
+    for (const c of midTurnToTerminal) {
+      expect(c.backend_refuses, c.label).toBe(true);
+      expect(c.blocked, c.label).toBe(true);
+    }
   });
 });
