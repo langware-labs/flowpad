@@ -10,7 +10,7 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 def parse_agent_markdown(text: str, name: str) -> dict[str, Any]:
     from flow_sdk.capsules import strip_capsule_blocks
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+    from flow_sdk.assets.frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 
     fm = _extract_frontmatter(text)
     fields = (_yaml_load(fm) if fm else None) or {}

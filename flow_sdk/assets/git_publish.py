@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import NamedTuple
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.assets.git_origin import PortableGitOrigin
+from flow_sdk.schema.data_spec import DataSpec
 
 
 class AssetPublishCode(StrEnum):
@@ -22,7 +22,7 @@ class AssetPublishCode(StrEnum):
     HUB_PUBLISH_FAILED = "hub_publish_failed"
 
 
-class PublishFailure(NamedTuple):
+class PublishFailure(DataSpec):
     """What a publish code means over HTTP, and what the person should DO."""
 
     status: int
@@ -36,29 +36,29 @@ class PublishFailure(NamedTuple):
 #: button ends up looking broken.
 _PUBLISH_FAILURE: dict[AssetPublishCode, PublishFailure] = {
     AssetPublishCode.NOT_GIT_BACKED: PublishFailure(
-        400, "Create it inside a project — publishing goes through that project's repository."
+        status=400, remedy="Create it inside a project — publishing goes through that project's repository."
     ),
     AssetPublishCode.PROJECT_NOT_PUBLISHED: PublishFailure(
-        409, "Publish its project first — the asset travels inside that repository."
+        status=409, remedy="Publish its project first — the asset travels inside that repository."
     ),
     AssetPublishCode.GITHUB_NOT_CONNECTED: PublishFailure(
-        409, "Publishing pushes the asset to its project's repository, so the connection must exist first."
+        status=409, remedy="Publishing pushes the asset to its project's repository, so the connection must exist first."
     ),
-    AssetPublishCode.ORIGIN_INVALID: PublishFailure(409, "Check the project's git remote."),
-    AssetPublishCode.BRANCH_AHEAD: PublishFailure(409, "Push the project's branch first."),
+    AssetPublishCode.ORIGIN_INVALID: PublishFailure(status=409, remedy="Check the project's git remote."),
+    AssetPublishCode.BRANCH_AHEAD: PublishFailure(status=409, remedy="Push the project's branch first."),
     AssetPublishCode.BRANCH_DIVERGED: PublishFailure(
-        409, "Reconcile the project's branch with its remote first."
+        status=409, remedy="Reconcile the project's branch with its remote first."
     ),
     AssetPublishCode.PUSH_REJECTED: PublishFailure(
-        502, "The remote refused the push — check access to the repository."
+        status=502, remedy="The remote refused the push — check access to the repository."
     ),
     AssetPublishCode.HUB_PUBLISH_FAILED: PublishFailure(
-        502, "The hub could not accept it; try again shortly."
+        status=502, remedy="The hub could not accept it; try again shortly."
     ),
 }
 
 #: A code with no row is a fault we did not anticipate, so it reads as one.
-_UNKNOWN_FAILURE = PublishFailure(500, "")
+_UNKNOWN_FAILURE = PublishFailure(status=500, remedy="")
 
 
 def publish_failure(code: AssetPublishCode) -> PublishFailure:
@@ -95,7 +95,7 @@ class AssetPublishError(RuntimeError):
         return f"{self} — {self.remedy}" if self.remedy else str(self)
 
 
-class GitAuthor(BaseModel):
+class GitAuthor(DataSpec):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str
@@ -113,7 +113,7 @@ class GitAuthor(BaseModel):
         return value
 
 
-class AssetGitReceipt(BaseModel):
+class AssetGitReceipt(DataSpec):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     changed: bool
@@ -123,18 +123,12 @@ class AssetGitReceipt(BaseModel):
     origin: PortableGitOrigin
 
 
-class AssetPublishResult(BaseModel):
+class AssetPublishResult(DataSpec):
     project: dict
     asset: dict
     git: dict
     local_cache_warning: str | None = None
 
-
-async def publish_git_asset(entity, actor) -> AssetPublishResult:
-    """Publish an asset's path-only Git commit and register it under its Project."""
-    from flow_sdk.assets._publish_service import publish_git_asset_impl  # noqa: PLC0415
-
-    return await publish_git_asset_impl(entity, actor)
 
 
 __all__ = [
@@ -143,5 +137,4 @@ __all__ = [
     "AssetPublishError",
     "AssetPublishResult",
     "GitAuthor",
-    "publish_git_asset",
 ]

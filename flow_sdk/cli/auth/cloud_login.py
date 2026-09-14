@@ -62,6 +62,13 @@ async def cloud_login() -> dict[str, Any]:
         kind = _classify_hub(hub_url)
 
         if kind == "cloud":
+            from flow_sdk.instance_settings.runtime import own_sandbox_id
+
+            sandbox_id = own_sandbox_id()
+            if sandbox_id:
+                from flow_sdk.cli.auth.sandbox_login import start_sandbox_login
+
+                return start_sandbox_login(sandbox_id)
             # Browser-mode: success/failure arrives later via the OAuth WS
             # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
             # (_finalize_login on success, _broadcast_oauth_error on error).

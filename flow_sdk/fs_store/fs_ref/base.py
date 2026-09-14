@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 def _read_existing_frontmatter(path: Path) -> dict:
     """Read and parse existing YAML frontmatter from a .md file. Returns {} on error."""
     try:
-        from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+        from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 
         text = path.read_text(encoding="utf-8")
         fm = _extract_frontmatter(text)
@@ -143,7 +143,7 @@ class FSRef:
         """Write markdown file preserving (or injecting) frontmatter fields."""
         if self.read_only:
             raise IOError(f"FSRef at {self.path!r} is read-only")
-        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
+        from flow_sdk.assets.frontmatter import _render_frontmatter
 
         if self._path.exists():
             existing_fm = _read_existing_frontmatter(self._path)

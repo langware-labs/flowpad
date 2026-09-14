@@ -60,3 +60,5 @@ export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
 export { Frontmatter } from './fs/Frontmatter';
 
 export * from './lazy';
+
+export * from './models/web-url-pointer';

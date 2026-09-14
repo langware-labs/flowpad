@@ -580,8 +580,8 @@ class Agent(Entity):
         if self.remote and self.origin:
             return False
 
-        from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
-        from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import publish_git_asset  # noqa: PLC0415
 
         project = await owning_project(self)
         if project is not None:

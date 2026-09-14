@@ -3,29 +3,29 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue, field_validator
+from pydantic import JsonValue, field_validator
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
+from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.schema.layout import File, Folder
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.fs_record import FSRecord
 
 PORTABLE_ASSET_CONTRACT_VERSION = 1
 
 
-class PortableAssetLayout(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class PortableAssetLayout(DataSpec):
     asset_rel_root: str
     main_ref: str
 
 
-class PortableAssetProjection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class PortableAssetProjection(DataSpec):
     contract_version: Literal[1] = PORTABLE_ASSET_CONTRACT_VERSION
     type: str
     id: str
@@ -106,41 +106,19 @@ _LOCAL_OR_RUNTIME_FIELDS = frozenset(
 )
 
 
-def _portable_fields(entity: Any, entity_cls: type) -> dict[str, JsonValue]:
-    excluded = set(entity_cls.fields_not_sent_to_hub()) | set(_LOCAL_OR_RUNTIME_FIELDS)
-    computed = set(getattr(entity_cls, "model_computed_fields", {}))
-    dumped = entity.model_dump(mode="json", exclude_none=True)
-    return {
-        key: value
-        for key, value in dumped.items()
-        if entity_cls.is_api_field(key) and key not in excluded and key not in computed
-    }
-
-
-def project_asset_tree(
+def read_asset_tree(
     *,
     entity_type: str,
     expected_id: str,
     checkout_root: Path,
     origin: PortableGitOrigin,
-) -> PortableAssetProjection:
+) -> FSRecord:
     """Parse one asset from Git without writing, indexing, or touching the DB."""
     if not is_valid_entity_id(expected_id):
         raise ValueError("expected_id must be a UUID v4 or v5")
     info = SchemaRegistry.get(entity_type)
     if info is None or not info.git_publishable:
         raise ValueError(f"type {entity_type!r} is not Git-publishable")
-    entity_cls = info.entity_cls or SchemaRegistry.get_entity_cls(entity_type)
-    if entity_cls is None:
-        # CLI/library callers can invoke the pure contract before server startup
-        # has imported the entity catalog. Load the catalog through its one
-        # registration module, then re-read the registry; no per-type import map.
-        import flow_sdk.models.entities  # noqa: F401, PLC0415
-
-        entity_cls = SchemaRegistry.get_entity_cls(entity_type)
-    if entity_cls is None:
-        raise ValueError(f"type {entity_type!r} has no registered entity model")
-
     root = Path(checkout_root).resolve(strict=True)
     if not root.is_dir() or not (root / ".git").exists() or (root / ".git").is_symlink():
         raise ValueError("checkout_root must be a concrete Git checkout directory")
@@ -162,12 +140,4 @@ def project_asset_tree(
     if len(records) != 1 or len(matching) != 1:
         raise ValueError("asset parser must return exactly one matching record")
 
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-
-    entity = Entity._build_from_fs_record(matching[0], fallback_cls=entity_cls)
-    return PortableAssetProjection(
-        type=entity_type,
-        id=expected_id,
-        fields=_portable_fields(entity, entity_cls),
-        layout=layout_for_origin(info, origin),
-    )
+    return matching[0]

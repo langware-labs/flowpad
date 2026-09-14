@@ -1,5 +1,6 @@
 """Type metadata for SUBAGENT — Claude Code's provider-owned ``.claude/agents/*.md``."""
-from flow_sdk.builtin.subagent import SubAgentSpec
+from flow_sdk.assets.process_projection import _subagent as project_process_asset
+from flow_sdk.assets.types.subagent_spec import SubAgentSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.layout import File, Walk
@@ -8,6 +9,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 SUBAGENT = TypeInfo(
     type_name=EntityType.SUBAGENT,
+    process_projection=project_process_asset,
     shape=File(ext=".md"),
     editor="subagent",
     display_name="Sub-agents",

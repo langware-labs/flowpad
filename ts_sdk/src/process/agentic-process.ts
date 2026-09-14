@@ -34,7 +34,7 @@ function parseFsRef(value: FSRef | FSRefJson | null | undefined): FSRef | null {
   if (!value) return null;
   return value instanceof FSRef ? value : FSRef.fromJson(value);
 }
-import type { AssetDescriptor } from './asset-descriptor';
+import type { AssetDescriptor, ProcessAssetInventory } from './asset-descriptor';
 import { DockPointerData, TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
@@ -2275,8 +2275,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
-    const response = await this.get<{ assets?: AssetDescriptor[] }>('get-assets');
+    const response = await this.getAssetInventory();
+    if (response?.availability_error) throw new Error(response.availability_error);
     return response?.assets ?? [];
+  }
+
+  async getAssetInventory(): Promise<ProcessAssetInventory> {
+    return await this.get<ProcessAssetInventory>('get-assets') ?? { assets: [] };
   }
 
   /**

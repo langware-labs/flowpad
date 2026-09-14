@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def render_entity_frontmatter(entity: Any, fields: dict[str, Any]) -> str:
     """Render domain frontmatter; identity is stored by ``AssetCapsule``."""
-    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
+    from flow_sdk.assets.frontmatter import _render_frontmatter  # noqa: PLC0415
 
     return _render_frontmatter(fields)
 

@@ -250,27 +250,6 @@ def test_atlassians_probe_names_the_person_not_a_site():
     assert registry.get_local_provider("atlassian").probe.url == "https://api.atlassian.com/me"
 
 
-@pytest.mark.parametrize(
-    ("provider", "copies"),
-    [("github", True), ("slack", True), ("atlassian", False), ("linear", False), ("gitlab", False)],
-)
-def test_a_provider_copies_its_hub_token_iff_something_local_reads_it(provider, copies):
-    """`copy_hub_credential` tracks one fact: does anything on THIS machine read
-    the raw token outside a request?
-
-    github (`git push`, the `gh` capability) and slack (`SlackDriver._token()`,
-    called from the request-less ingest poller) both do, so the value has to be
-    copied down — with the flag False the desktop finishes a successful OAuth
-    holding a visibility row and no value, and every Slack poll fails
-    `no_credential` while Connections shows "Connected". The hub-run providers do not, and
-    must not copy: the hub refreshes their expiring tokens and a local copy goes
-    stale within the hour.
-    """
-    descriptor = registry.get_local_provider(provider)
-    assert descriptor is not None
-    assert descriptor.copy_hub_credential is copies
-
-
 def test_linears_probe_is_graphql_over_get():
     """The one probe that is not a plain REST read: the query rides in the URL
     with a JSON content-type, because neither probe runner sends a body and

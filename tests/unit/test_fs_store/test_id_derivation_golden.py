@@ -194,7 +194,7 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
     subagent, so the divergence is kept and pinned here — a future "cleanup"
     that quietly merges them must fail this test first.
     """
-    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
+    from flow_sdk.assets.types.subagent import subagent_peek_entity_id
 
     path = tmp_path / "helper.md"
     path.write_text("# Helper\n\nbody\n", encoding="utf-8")

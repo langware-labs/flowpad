@@ -1,5 +1,6 @@
+import { openExternal } from '@src/lib/open-external';
 import { ServiceStatusLed } from '@src/components/machine-overview/service-status-led';
-import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
@@ -30,6 +31,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Derive panel visibility and active tab from URL pointer
+  const webUrl = currentDock?.webUrl ?? null;
   const subview = currentDock?.pointer as WebappSubview | undefined;
   const showPanel = subview === WebappSubview.SHELL || subview === WebappSubview.ARTIFACTS;
   const activeTab = subview || WebappSubview.SHELL;
@@ -57,7 +59,8 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   // the URL-derived viewer context; logical Artifacts no longer carry it.
   const webAppPort = currentContext?.viewerOptions?.port ?? null;
 
-  const webAppConfig = useProcessWebApp(flow, webAppPort);
+  const webAppConfig = useProcessWebApp(flow, webUrl ? null : webAppPort);
+  const src = webUrl ?? webAppConfig.host;
 
   // Failure handling now lives in WebappDisplay: it diagnoses the app through
   // the backend probe and runs the repair agent itself, so this viewer no longer
@@ -68,12 +71,10 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   }, []);
 
   const handleOpenInNewTab = useCallback(() => {
-    if (webAppConfig.host) {
-      window.open(webAppConfig.host, '_blank');
-    }
-  }, [webAppConfig.host]);
+    if (src) openExternal(src);
+  }, [src]);
 
-  const hasWebApp = Boolean(webAppConfig.host);
+  const hasWebApp = Boolean(src);
   const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
 
   return (
@@ -81,7 +82,9 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
       <div className="flex h-9 items-center justify-between gap-1 border-b bg-muted/30 px-2">
         {/* Left side: Webapp selector and status LED */}
         <div className="flex items-center gap-2">
-          {webAppPort ? (
+          {webUrl ? (
+            <span className="truncate font-mono text-xs text-muted-foreground" title={webUrl}>{webUrl}</span>
+          ) : webAppPort ? (
             <>
               <span className="font-mono text-xs text-muted-foreground">localhost:{webAppPort}</span>
               <ServiceStatusLed />
@@ -116,7 +119,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
                 </TooltipContent>
               </Tooltip>
             )}
-            <Tooltip>
+            {!webUrl && <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
@@ -132,13 +135,14 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
               <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
                 <p>{showPanel ? <Trans>Hide panel</Trans> : <Trans>Show panel</Trans>}</p>
               </TooltipContent>
-            </Tooltip>
+            </Tooltip>}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
+                  aria-label={t`Refresh`}
                   onClick={handleRefresh}
                   disabled={!hasWebApp}
                 >
@@ -155,6 +159,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
+                  aria-label={t`Open in browser`}
                   onClick={handleOpenInNewTab}
                   disabled={!hasWebApp}
                 >
@@ -162,7 +167,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-                <p><Trans>Open in new tab</Trans></p>
+                <p><Trans>Open in browser</Trans></p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -171,7 +176,9 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
       <div ref={contentRef} className="relative flex h-[calc(100%-36px)] w-full flex-col">
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
-          {hasWebApp ? (
+          {webUrl ? (
+            <PersistentIframe ref={iframeRef} src={webUrl} testId="web-url-frame" />
+          ) : hasWebApp ? (
             <WebappDisplay
               ref={iframeRef}
               processId={flow?.id}

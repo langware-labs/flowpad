@@ -19,8 +19,7 @@ export type AssetSource =
   | 'external';       // not attributable to any of this process's source dirs
 
 export type AssetUsageKind =
-  | 'embedded_asset'
-  | 'inline_persona'
+  | 'skill_invoked'
   | 'transcript_file_read';
 
 export interface AssetUsage {
@@ -51,8 +50,29 @@ export interface AssetDescriptor {
    *  not-yet-indexed one has nothing to resolve, so the backend carries the
    *  name it read off the file. Null/absent for cache-resolvable rows. */
   name?: string | null;
+  /** Native invocation name, including any plugin namespace. */
+  invocation_name?: string | null;
   /** Lightweight usage evidence owned by the backend. */
   usage?: AssetUsage[];
+  attached?: boolean;
+  available?: boolean;
+  present?: boolean;
+}
+
+export interface ProcessAssetUsage {
+  asset: { path: string; typeid: string; project_id?: string | null } | null;
+  reference: string;
+  resolution: 'resolved' | 'missing' | 'ambiguous' | 'unbound' | 'identity_changed';
+  evidence: AssetUsage[];
+}
+
+/** Worker verification status and its resolved configuration. */
+export interface ProcessAssetInventory {
+  assets: AssetDescriptor[];
+  used_assets?: ProcessAssetUsage[];
+  unresolved_usage?: ProcessAssetUsage[];
+  assistant_enabled?: boolean;
+  availability_error?: string;
 }
 
 /**

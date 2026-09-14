@@ -1,7 +1,7 @@
 """Skill entity — graph/HTTP surface for FSRecord(type='skill').
 
 On-disk parsing (walker / id / extract) lives in
-``fs_store/indexer/functions/skill.py`` and is wired to the indexer via
+``assets/types/skill.py`` and is wired to the indexer via
 ``TypeInfo`` callable slots, not classmethods on this entity.
 """
 from __future__ import annotations

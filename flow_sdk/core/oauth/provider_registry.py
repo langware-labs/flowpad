@@ -149,6 +149,10 @@ class LocalOAuthProvider:
     client_id_default: Optional[str] = None
     #: Whether the authorize step sends a PKCE challenge.
     pkce: bool = False
+    #: Optional first-party client supporting the registered sandbox callback.
+    sandbox_client_id: Optional[str] = None
+    #: Provider-hosted code display for remote runtimes without loopback access.
+    manual_redirect_uri: Optional[str] = None
     #: Provider-specific authorize params that must NOT leak to other providers
     #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
     #: dataclass frozen and hashable.
@@ -169,8 +173,6 @@ class LocalOAuthProvider:
     #: The standard route is delegated to the Hub; local endpoints/client id
     #: are therefore intentionally absent and are not publication defects.
     hub_required: bool = False
-    #: Whether a Hub grant is copied into local SOD for non-Hub consumers.
-    copy_hub_credential: bool = False
     #: OPTIONAL. The local SOD name for this provider's APP (bot) credential,
     #: when the provider issues a second identity alongside the user's. Slack's
     #: one OAuth returns both an `xoxb` bot token and an `xoxp` user token; the
@@ -206,12 +208,12 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             identity_fields=("login", "name"),
             account_key_fields=("id",),
         ),
-        copy_hub_credential=True,
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
         # Its token endpoint takes JSON; see the field's note.
         token_request_json=True,
+        manual_redirect_uri="https://platform.claude.com/oauth/code/callback",
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
         icon="ClaudeCode",
@@ -230,13 +232,13 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         token_shape=TokenShape.CREDENTIAL_DICT,
         probe=OAuthProbeSpec(
             method="GET",
-            url="https://api.anthropic.com/v1/organizations/me",
+            url="https://api.anthropic.com/api/oauth/profile",
             headers=(
                 ("anthropic-version", "2023-06-01"),
                 ("anthropic-beta", "oauth-2025-04-20"),
             ),
-            identity_fields=("name", "display_name", "email"),
-            account_key_fields=("id", "uuid"),
+            identity_fields=("account.email", "account.display_name", "account.full_name"),
+            account_key_fields=("account.uuid",),
         ),
     ),
     GOOGLE: LocalOAuthProvider(
@@ -366,7 +368,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # background poller, which has no request user and so cannot reach the hub
         # tier. Adoption runs once inside the wait-callback request (which can),
         # and the poller then reads local SOD.
-        copy_hub_credential=True,
         # The bot half of the same grant. An agent posts AS this, not as the
         # human who connected — which is also what makes an inbound message from
         # that human read as someone else, so a reply is addressable at all.
@@ -394,9 +395,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("account_id",),
         ),
         hub_required=True,
-        # Access tokens expire hourly and the hub refreshes them; a local copy
-        # would go stale within the hour, so read through the hub instead.
-        copy_hub_credential=False,
     ),
     LINEAR: LocalOAuthProvider(
         name=LINEAR,
@@ -419,7 +417,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("data.viewer.id",),
         ),
         hub_required=True,
-        copy_hub_credential=False,
     ),
     FLOWPAD: LocalOAuthProvider(
         name=FLOWPAD,
@@ -469,6 +466,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # configured hub.
         client_id_env="FLOWPAD_OAUTH_CLIENT_ID",
         client_id_default="flowpad-desktop",
+        sandbox_client_id="flowpad-sandbox",
         pkce=True,
         # The hub's token response is `{access_token, token_type, scope}` — no
         # refresh token, because the credential it returns does not expire (the
@@ -492,7 +490,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # The whole point is that this credential lives on THIS machine and is
         # never fetched from the hub — the hub is the issuer, not a holder.
         hub_required=False,
-        copy_hub_credential=False,
     ),
     GITLAB: LocalOAuthProvider(
         name=GITLAB,
@@ -511,8 +508,6 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_fields=("id",),
         ),
         hub_required=True,
-        # Two-hour token the hub refreshes; a local copy would go stale.
-        copy_hub_credential=False,
     ),
 }
 
@@ -688,6 +683,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
         return None
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
@@ -713,6 +709,8 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
             value = await _read(target)
             if value:
                 return value
+    except HubMirrorUnavailable:
+        return None
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from flow_sdk.fs_store.fs_record import write_text_if_changed
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
     merge_frontmatter,

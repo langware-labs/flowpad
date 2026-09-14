@@ -217,6 +217,8 @@ class TypeInfo:
     # mutates the entity kwargs after the main doc and fields are read, before
     # the class is constructed.
     derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Optional async projection for process attachment/reveal/detach.
+    process_projection: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
     # dataset). Tells the disk serializer this type has layout-written rows,
     # without the serializer ever naming the type.
@@ -444,6 +446,18 @@ class TypeInfo:
         layout = self.layout_for(ref)
         found = self.carrier.read(self.carrier.locate(layout))
         return found.id if isinstance(found, Found) else None
+
+    def read_identity(self, layout: "Layout", *, ref: Any = None) -> str:
+        """Identity of a read-only filesystem view, without store reconciliation.
+
+        Valid carrier ids win. Missing/foreign carriers use the existing keyed
+        or path fallback. Never mint a transient v4 or write the source.
+        """
+        found = self.carrier.read(self.carrier.locate(layout))
+        if isinstance(found, Found):
+            return found.id
+        key = self.stable_key_for(ref if ref is not None else layout.root)
+        return mint_uuid(key, namespace=self.id_namespace) if key else self.path_id(layout, self.carrier.locate(layout))
 
     def _stampable(self, layout: "Layout", where: Path) -> bool:
         """The carrier accepts ``where`` AND a folder asset has its main
@@ -1059,7 +1073,7 @@ class SchemaRegistry:
         """The ``type:`` a markdown document's own frontmatter declares, if any —
         how two types sharing one mount and extension (``markdown`` and
         ``markdown_index`` under ``docs``) are told apart."""
-        from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
+        from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
 
         try:
             head = p.read_text(encoding="utf-8", errors="ignore")[:4096]

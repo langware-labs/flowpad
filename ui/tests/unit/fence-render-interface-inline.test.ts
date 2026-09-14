@@ -8,7 +8,7 @@
 import { renderInterfaceCard } from '@src/components/milkdown-editor/plugins/fence-render/renderers/interface';
 import { parseInterfaceBlock } from '@src/components/milkdown-editor/plugins/fence-render/renderers/interface-schema';
 import type { FenceRenderContext } from '@src/components/milkdown-editor/plugins/fence-render/registry';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SOURCE = `name: createTask
 description: Create a task.
@@ -38,6 +38,9 @@ beforeEach(() => {
   };
   renderInterfaceCard(SOURCE, host, ctx);
 });
+
+// This fixture mounts raw DOM, so React Testing Library cleanup cannot own it.
+afterEach(() => host.remove());
 
 function field(testId: string): HTMLElement {
   const node = host.querySelector<HTMLElement>(`[data-testid="${testId}"]`);

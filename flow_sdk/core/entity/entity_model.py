@@ -3531,6 +3531,36 @@ class Entity(DBEntity):
 
 from flow_sdk.actions.action_registry import action as _action_registry  # noqa: E402
 
+
+async def _http_resolve_display_target(self: Entity):
+    from flow_sdk.core.display_target import (
+        DisplayTargetNotFound,
+        resolve_display_target,
+    )
+    from flow_sdk.request_context.methods import get_current_request_info
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+    body = await get_current_request_info().get_post_data()
+    link = body.get("link") if isinstance(body, dict) else None
+    if not isinstance(link, str):
+        return ApiFailResponse(message="Missing link", status_code=400)
+    try:
+        target = await resolve_display_target(link=link, source=self, discover=True)
+        return ApiSuccessResponse(data=target)
+    except DisplayTargetNotFound as error:
+        return ApiFailResponse(message=str(error), status_code=404)
+    except (ValueError, OSError) as error:
+        return ApiFailResponse(message=str(error), status_code=400)
+
+
+_action_registry.register(
+    action_name="resolve-display-target",
+    function_name="resolve_display_target",
+    handler=_http_resolve_display_target,
+    methods="post",
+    types="all",
+)
+
 # Bare-name registration: ActionManager's fallback lookup resolves it for any Entity subclass.
 _action_registry.register(
     action_name="entity-event",

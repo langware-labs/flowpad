@@ -19,17 +19,12 @@ every read.
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
-
-from pydantic import SecretStr
 
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.git_publish import AssetGitReceipt, AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.utils.command_executor import CommandExecutor
 from flow_sdk.utils.git_folder import GitError, GitErrorCode, GitFolder, validate_github_remote
-
-if TYPE_CHECKING:
-    from flow_sdk.builtin.faas.compute_node import ComputeNode
 
 #: The branch a published asset is pinned to. Advanced only by publishing.
 CLOUD_BRANCH = "flow-cloud"
@@ -62,24 +57,16 @@ def as_publish_error(error: GitError) -> AssetPublishError:
 async def resolve_asset_folder(
     asset_root: Path,
     *,
+    executor: CommandExecutor,
     token: str | None = None,
-    node: "ComputeNode | None" = None,
 ) -> GitFolder:
     """The checkout containing ``asset_root``.
 
-    The executor comes from a ComputeNode — the only way to obtain one — and
-    which node is a caller decision, not a default buried here. ``None`` means
-    ``@local``, which is what a desktop publish wants: the repository IS the
-    user's own working copy, so the commit has to happen where that copy lives.
-
-    A publish from the cloud passes its own node instead, and nothing else about
-    this path changes — that is the point of the executor seam.
+    The caller supplies the executor for the intended filesystem. Asset
+    utilities never look up a compute node or choose a runtime implicitly.
     """
-    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
-
-    node = node or await ComputeNode.get_local()
     try:
-        return await GitFolder.discover(asset_root, executor=node.get_command_executor(), token=token)
+        return await GitFolder.discover(asset_root, executor=executor, token=token)
     except GitError as exc:
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is not inside a Git checkout") from exc
 
@@ -105,22 +92,15 @@ async def publish_asset(
     *,
     asset_root: Path,
     asset_typeid: TypeId,
-    token: SecretStr,
     author: GitAuthor,
-    folder: GitFolder | None = None,
+    folder: GitFolder,
     cloud_branch: str = CLOUD_BRANCH,
-    node: "ComputeNode | None" = None,
 ) -> AssetGitReceipt:
     """Publish one asset. Everything here is an ASSET rule; the git choreography
     lives in :meth:`GitFolder.publish`.
 
-    ``node`` selects where git runs; ``None`` is ``@local``, the desktop case.
-    Ignored when ``folder`` is supplied, since that folder already carries its
-    own executor.
+    The supplied folder already carries its executor and checkout identity.
     """
-    secret = token.get_secret_value()
-    folder = folder or await resolve_asset_folder(asset_root, token=secret, node=node)
-
     try:
         async with folder.lock():
             asset_rel = _asset_rel(folder, asset_root)
