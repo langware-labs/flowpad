@@ -19137,6 +19137,8 @@ msgid "thinking"
 msgstr "التفكير"
 
 #: src/components/entity-execution-panel/current-activity.ts
+#: src/components/floating-chat/ThinkingSummary.tsx
+#: src/components/floating-chat/ThinkingSummary.tsx
 msgid "Thinking"
 msgstr "التفكير"
 

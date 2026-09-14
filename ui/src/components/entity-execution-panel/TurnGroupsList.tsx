@@ -1,5 +1,6 @@
 import { AgenticProcess, FlowData, FlowElementTypes, PrefKey, type Agent } from '@sdk';
 import { Fragment, memo, useMemo } from 'react';
+import { ThinkingSummary } from '@src/components/floating-chat/ThinkingSummary';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import { planTurnFiles } from '@src/components/floating-chat/turnFiles';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -25,10 +26,13 @@ function TurnDivider() {
 /**
  * Is this group rendered at all?
  *
- * "Show tool calls" (default off) gates the dense tool/reasoning/status chips.
- * When off, dense (non-message) groups are dropped so the transcript shows only
- * user/assistant text turns. Toggled from the composer's Tools menu or
- * Preferences → Chat. The Flowpad prompt envelope is never shown.
+ * "Show tool calls" (default off) gates the dense tool/status chips. When
+ * off, dense groups are dropped so the transcript shows only user/assistant
+ * text turns. Toggled from the composer's Tools menu or Preferences → Chat.
+ * The Flowpad prompt envelope is never shown.
+ *
+ * `thinking` groups are NOT gated by this preference — a non-empty summary
+ * is always shown (collapsed by default) regardless of tool visibility.
  *
  * A group that paints NOTHING must also be excluded: the divider is decided per
  * visible group below, while the decision to render nothing happens two levels
@@ -47,6 +51,9 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
   // committed dense group can be emptied after the fact by the grouper's
   // `retract`, when a refinement supersedes its only event.
   if (g.kind === 'dense') return showTools && g.events.length > 0;
+  // Independent of "show tool calls" — thinking is its own feature, not
+  // another tool-detail chip.
+  if (g.kind === 'thinking') return g.events.length > 0 && paintsThinking(g.events);
   if (g.flowData.attributes?.['is-meta'] !== 'true') return paintsSomething(g.flowData);
   const content = g.flowData.content ?? '';
   return !isFlowpadPromptEnvelope(String(content));
@@ -54,10 +61,13 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
 
 /**
  * Renders a `groupTurnEvents` partition: text-shaped turns as
- * {@link ExecutionMessage} bubbles, contiguous tool/reasoning/status runs as a
- * single dense {@link ToolEntryRow} chip. Shared by the floating Flowpad
- * Assistant (via EntityExecutionPanel's dense layout) and the interactive
- * tab's Standard-mode SimpleChatPane so both render identical chat turns.
+ * {@link ExecutionMessage} bubbles, contiguous tool/status runs as a single
+ * dense {@link ToolEntryRow} chip. Reasoning runs get their own collapsible
+ * {@link ThinkingSummary} row.
+ *
+ * Shared by the floating Flowpad Assistant (via EntityExecutionPanel's dense
+ * layout) and the interactive tab's Standard-mode SimpleChatPane so both
+ * render identical chat turns.
  *
  * Standard mode additionally opts into a per-turn "files touched" chip row —
  * see `showTurnFiles`.
@@ -126,7 +136,9 @@ export function TurnGroupsList({
             ? `msg-${i}-${g.flowData.timestamp ?? ''}`
             : g.kind === 'worker-unavailable'
               ? `worker-unavailable-${i}-${g.flowData.timestamp ?? ''}`
-              : `dense-${i}`;
+              : g.kind === 'thinking'
+                ? `thinking-${i}`
+                : `dense-${i}`;
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
@@ -183,6 +195,8 @@ const TurnGroupRow = memo(function TurnGroupRow({
       ) : (
         <ExecutionMessage flowData={group.flowData} worker={worker} agent={agent} isUser={isUser} />
       )
+    ) : group.kind === 'thinking' ? (
+      <ThinkingSummary events={group.events} />
     ) : (
       <ToolEntryRow events={group.events} />
     );
@@ -213,6 +227,15 @@ const TurnGroupRow = memo(function TurnGroupRow({
 function paintsSomething(flowData: FlowData): boolean {
   if (flowData.ready === false) return true;
   return !!String(flowData.content ?? '').trim();
+}
+
+/**
+ * Will {@link ThinkingSummary} paint anything for this group? Mirrors
+ * `paintsSomething`: a still-streaming frame stays mounted before its first
+ * chunk lands, so the divider around it doesn't flicker as content arrives.
+ */
+function paintsThinking(events: FlowData[]): boolean {
+  return events.some((event) => event.ready === false || !!String(event.content ?? '').trim());
 }
 
 function isFlowpadPromptEnvelope(content: string): boolean {

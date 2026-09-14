@@ -111,7 +111,7 @@ def _write_copilot(path: Path, command: str) -> Path:
 def _claude_replay(path: Path):
     # Claude has no path-based loader (``load_session_history`` resolves a
     # session id); its per-entry converter IS the replay path.
-    return [claude_entry_to_flowdata(e) for e in AgentTranscriptFile("claude", path).entries]
+    return [fd for e in AgentTranscriptFile("claude", path).entries for fd in claude_entry_to_flowdata(e)]
 
 
 def _codex_replay(path: Path):
