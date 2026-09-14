@@ -8,6 +8,7 @@
  * renders its mode + status label, and External is an empty-state in v1.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -25,6 +26,10 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: { openShellProcess, openLens } }),
 }));
+
+// Worker-count assertions own their inputs; live indexing activities are covered
+// separately and must not race these synthetic worker fixtures.
+vi.mock('@src/store/activity-store', () => ({ useActivities: () => [] }));
 
 import { AgenticProcess, ProcessStatus, WorkerStatus } from '@sdk';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
