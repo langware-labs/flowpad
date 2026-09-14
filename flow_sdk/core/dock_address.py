@@ -174,6 +174,11 @@ class ViewType(StrEnum):
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
     LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>] -- the harness in focus
+    # DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
+    # rather than a state on LLM_SOURCES because ``flow llm set auto`` opens it in a BROWSER,
+    # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
+    # and why"; this answers "you have nothing yet, pick something" -- one question, no pointer.
+    LLM_SETUP = "llm-setup"  # /dock/llm-setup -- the whole screen is one question
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -350,9 +355,7 @@ _NONE = PointerRequirement.NONE
 #: view added in TypeScript cannot land here unclassified.
 VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.HOME: _m(_OPT, chrome="fullbleed", label="Home", aliases=("landing", "start")),
-    ViewType.SYSTEM_PROFILE: _m(
-        _OPT, label="System Profile", aliases=("claude code status", "live status")
-    ),
+    ViewType.SYSTEM_PROFILE: _m(_OPT, label="System Profile", aliases=("claude code status", "live status")),
     ViewType.ANALYSIS: _m(_OPT, addressable=False),
     ViewType.CHAT: _m(_OPT, addressable=False),
     ViewType.SHELL: _m(_OPT, label="Worker", aliases=("chats", "terminal")),
@@ -376,39 +379,25 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.API_KEYS: _m(_NONE, addressable=False),
     ViewType.HOOKS: _m(_OPT, label="Hooks", aliases=("claude hooks",)),
     ViewType.MACHINE: _m(_OPT, label="Machine", aliases=("system", "this machine")),
-    ViewType.EXPLORER: _m(
-        _OPT, scope_keyed=True, label="Files", aliases=("file tree", "folders")
-    ),
+    ViewType.EXPLORER: _m(_OPT, scope_keyed=True, label="Files", aliases=("file tree", "folders")),
     ViewType.SKILLS: _m(_OPT, addressable=False),
-    ViewType.AI_CONFIG: _m(
-        _OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")
-    ),
+    ViewType.AI_CONFIG: _m(_OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")),
     ViewType.SHOW: _m(_REQ, label="Show"),
     ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
     ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
-    ViewType.WORLDVIEW: _m(
-        _REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")
-    ),
+    ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")),
     # OPTIONAL, not REQUIRED like the graph beside it: the screen opens on the
     # organization you belong to, and only carries a pointer when you deep-link to
     # a particular team.
-    ViewType.ORGANIZATION: _m(
-        _OPT, label="Organization", aliases=("people", "teams", "members"), pages=("hub",)
-    ),
-    ViewType.TAG: _m(
-        _REQ, folds_pointer=True, label="Tag Graph", aliases=("tags", "taxonomy")
-    ),
+    ViewType.ORGANIZATION: _m(_OPT, label="Organization", aliases=("people", "teams", "members"), pages=("hub",)),
+    ViewType.TAG: _m(_REQ, folds_pointer=True, label="Tag Graph", aliases=("tags", "taxonomy")),
     ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True, label="Subgraph"),
-    ViewType.K_BROWSER: _m(
-        _REQ, label="Knowledge Browser", aliases=("docs browser",)
-    ),
+    ViewType.K_BROWSER: _m(_REQ, label="Knowledge Browser", aliases=("docs browser",)),
     ViewType.LENS: _m(_REQ, label="Lens", aliases=("transcript",)),
     ViewType.SESSION: _m(_REQ, addressable=False),
     ViewType.TASKS: _m(_OPT, label="Tasks", aliases=("todo",)),
     ViewType.SETTINGS: _m(_OPT, label="Settings", aliases=("claude settings",)),
-    ViewType.PREFERENCES: _m(
-        _OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")
-    ),
+    ViewType.PREFERENCES: _m(_OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")),
     ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process"),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
     ViewType.EVENTS: _m(_NONE, label="Events", aliases=("rules", "event bus")),
@@ -440,23 +429,17 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
-    ViewType.PROJECT: _m(
-        _OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")
-    ),
+    ViewType.PROJECT: _m(_OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")),
     # `<agentId>/inbox` — the id leads, so the pointer is required.
     ViewType.AGENT: _m(_REQ, label="Agent"),
     ViewType.INBOX: _m(_NONE, label="Inbox", aliases=("messages",)),
-    ViewType.CONVERSATION: _m(
-        _REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")
-    ),
+    ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),
     ViewType.DIAGNOSIS: _m(_REQ, label="Diagnosis"),
     ViewType.DESKTOP: _m(_NONE, scope_keyed=True, label="Desktop", aliases=("favorites",)),
     ViewType.LIVE_SESSION: _m(_REQ, label="Live Session"),
-    ViewType.HELPDESK: _m(
-        _REQ, folds_pointer=True, label="Help desk", aliases=("support",)
-    ),
+    ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",)),
     ViewType.ATLAS: _m(_OPT, addressable=False),
     ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
     ViewType.HUB_ENTITY: _m(_REQ, label="Entity", aliases=("hub entity",), pages=("hub",)),
@@ -475,15 +458,15 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # options, so it is excluded from tab identity and switching dev/served
     # re-points the SAME tab instead of forking one per runtime.
     ViewType.APP: _m(_REQ, label="App"),
-    ViewType.LLM_ENDPOINTS: _m(
-        _OPT, folds_pointer=True, label="LLM Endpoints", aliases=("endpoints",), pages=("hub",)
-    ),
+    ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True, label="LLM Endpoints", aliases=("endpoints",), pages=("hub",)),
     ViewType.TOKEN_PLAN: _m(
         _OPT, folds_pointer=True, label="Token plan", aliases=("budget", "token budget"), pages=("hub",)
     ),
-    ViewType.LLM_SOURCES: _m(
-        _OPT, folds_pointer=True, label="LLM sources", aliases=("harness funding",)
-    ),
+    ViewType.LLM_SOURCES: _m(_OPT, folds_pointer=True, label="LLM sources", aliases=("harness funding",)),
+    # Pointer NONE: the screen asks one question and has no selection to address. It is the
+    # destination ``flow llm set auto`` opens when the box can fund nothing, so the aliases are
+    # the words someone stuck at that moment actually says.
+    ViewType.LLM_SETUP: _m(_NONE, label="Set up LLM", aliases=("llm setup", "choose llm", "connect llm")),
 }
 
 

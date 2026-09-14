@@ -87,6 +87,10 @@ const LlmSourcesView = lazy(() =>
 const LlmEndpointsView = lazy(() =>
   import('@src/components/llm-endpoints/LlmEndpointsView').then((m) => ({ default: m.LlmEndpointsView })),
 );
+// Lazy like its neighbours: a one-question onboarding screen most sessions never open.
+const LlmSetupView = lazy(() =>
+  import('@src/components/llm-setup/LlmSetupView').then((m) => ({ default: m.LlmSetupView })),
+);
 const TokenPlanView = lazy(() =>
   import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
 );
@@ -143,7 +147,11 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
 export function ContentPanel(props: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
-  return <PrimaryContentRegion><ContentPanelBody {...props} /></PrimaryContentRegion>;
+  return (
+    <PrimaryContentRegion>
+      <ContentPanelBody {...props} />
+    </PrimaryContentRegion>
+  );
 }
 
 function ContentPanelBody({
@@ -364,6 +372,14 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <LlmSourcesView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
+      // DESK only, same reason. No pointer: the screen is one question — see
+      // `llm-setup-pointer.ts`.
+      case ViewType.LLM_SETUP:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <LlmSetupView />
           </Suspense>
         );
       case ViewType.AI_CONFIG:

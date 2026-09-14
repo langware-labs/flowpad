@@ -46,6 +46,9 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    backend_frames as _backend_frames,
+)
+from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
 )
 from flow_sdk.cli.commands._common import (
@@ -53,6 +56,9 @@ from flow_sdk.cli.commands._common import (
 )
 from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
 )
 from flow_sdk.cli.commands._common import (
     local_request as _local_request,
@@ -110,6 +116,9 @@ _OPS: dict[str, tuple[str, str]] = {
     "binding": ("POST", "/binding"),
     "select": ("POST", "/select"),
     "test": ("POST", "/test"),
+    # The PER-ROW check, dispatched on the source kind -- so a device login is asked the
+    # question that can actually fail for it. ``test`` above is the hub-only pass-through.
+    "test_source": ("POST", "/test-source"),
     "unbind": ("DELETE", ""),
 }
 
@@ -143,6 +152,7 @@ def _in_process(op: str, payload: dict) -> dict:
         "binding": lambda: binding.llm_binding(payload),
         "select": lambda: binding.select_llm_source(payload),
         "test": lambda: binding.test_hub_llm_endpoint(payload),
+        "test_source": lambda: binding.check_llm_source(payload),
     }
 
     try:
@@ -467,7 +477,18 @@ def _list_sources(
 def _use_shell(
     ref: Annotated[str, typer.Argument(help="Row number from `flow llm list`, an endpoint id, or a name prefix.")],
     harness: Annotated[str, typer.Argument(help="all (default) or one of claude/codex/copilot/opencode.")] = "all",
+    json_output: Annotated[bool, typer.Option("--json", help="With `auto`: emit the source as JSON.")] = False,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="With `auto`: never open the chooser; exit 4 with its URL.")
+    ] = False,
 ) -> None:
+    # `flow llm set auto` is the spelling people reach for, and `set` is an alias of this, so
+    # the word arrives HERE as a row reference. It names a question rather than a row, so it is
+    # answered by `auto` rather than looked up -- see that command for why.
+    if _is_auto(ref):
+        _report(_resolve_or_choose(no_browser=no_browser), json_output=json_output)
+        return
+    _refuse_auto_flags(json_output=json_output, no_browser=no_browser)
     rows = _rows(_status())
     row = _pick(rows, ref)
     workers = _targets(row, harness, rows)
@@ -501,7 +522,17 @@ def _test(
 def _use_box(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
     harness: Annotated[str, typer.Argument(help="all (default) or one harness.")] = "all",
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="With `auto`: never open the chooser; exit 4 with its URL.")
+    ] = False,
 ) -> None:
+    # `flow llm user set auto`: make sure the box HAS a source (opening the chooser if it has
+    # none), then apply that source box-wide -- the same write the picker's Use button makes.
+    # Falls through into the normal path with a concrete row, so there is one writer either way.
+    if _is_auto(ref):
+        ref = _resolve_or_choose(no_browser=no_browser).typeid
+    else:
+        _refuse_auto_flags(no_browser=no_browser)
     rows = _rows(_status())
     row = _pick(rows, ref)
     workers = _targets(row, harness, rows)
@@ -601,3 +632,374 @@ def _project_for_cwd(*, required: bool = True) -> str:
     if not best_id and required:
         _fail(EXIT_NOT_FOUND, "NO_PROJECT", f"No project mounts {cwd}. Pass --project <id>.")
     return best_id
+
+
+# ── auto: "can this box issue an LLM call yet, and if not, let me fix it" ─────
+#
+# The one command that answers a question rather than performing an action. Everything else
+# here assumes you already HAVE sources and are choosing between them; `auto` is what a fresh
+# box, a fresh agent or a fresh CI runner asks before it can assume anything at all.
+#
+# Two halves, and only the second one needs a browser:
+#
+#   1. Is a source already resolved? That is a pure read of the SAME resolver every spawn uses
+#      (`_status` -> `resolved`), and it works with no server running at all -- `_in_process`
+#      exists for exactly this shape of install. A box that is already funded never opens a
+#      window.
+#   2. If not, hand the user the chooser and wait. The chooser is a screen, so it needs
+#      something serving the UI -- but NOT a separately running instance: `flow auth login`
+#      already establishes that the CLI can host the app itself for the length of one command,
+#      and this does the same.
+#
+# **There is no poll and no timeout here, deliberately.** The obvious spelling of "wait until
+# the user signs in" is a sleep loop with a budget, and a budget is exactly what this repo
+# forbids -- it would also be wrong on the merits, since the thing being waited for is a human
+# and no number is the right one. Instead the command holds a WebSocket open and blocks on it.
+# Every way the chooser can succeed already broadcasts a frame:
+#
+#   * the Flowpad tile (hub login)        -> `cloud_login_status_msg`  (cli/auth/cloud_login.py)
+#   * a harness OAuth grant / stored key  -> `llm_config_msg`          (app/actions/desktop_oauth.py)
+#   * the picker's own Use write          -> `llm_config_msg`          (select_llm_source)
+#
+# The frame is only the WAKE-UP; it is never the answer. Each one re-asks the resolver, because
+# "a credential changed" and "the box can now fund a call" are different claims and only the
+# resolver is entitled to make the second one.
+
+
+#: Frames that mean "this box's LLM funding may have changed".
+#:
+#: Deliberately NOT `data_op_msg`: an entity notification fires for changes all over the graph,
+#: and each spurious wake costs a `_status` read -- a capability read, a key listing, a secret
+#: store walk and a keychain round-trip PER harness. Two precise frames beat one broad one.
+_FUNDING_FRAMES = frozenset({"llm_config_msg", "cloud_login_status_msg"})
+
+#: Where the chooser lives. `ViewType.LLM_SETUP` in `flow_sdk/core/dock_address.py`.
+_CHOOSER_PATH = "/dock/llm-setup"
+
+
+def _is_evidence(pick: dict) -> bool:
+    """Whether a resolver verdict is EVIDENCE the box can actually issue a call.
+
+    One line, because the rule is not ours: the backend publishes ``unverified`` on every
+    verdict (``Candidate.unverified``), which is where it belongs -- it needs the endpoint's
+    kind, and a rule re-derived here would drift from the copy the setup screen makes. This
+    used to be that second copy.
+
+    **Absent means UNVERIFIED.** The flag is missing when the backend answering is older than
+    this CLI -- and that is not a rare, historical box. A server loads its code once at start
+    and keeps it: upgrade the package without restarting the desktop app (or an instance that
+    has been up for days) and the new CLI talks to the old server until something restarts it.
+    That window is normal, and it is the moment right after every update.
+
+    Reading the silence as "verified" is the expensive way to be wrong. Observed: a box with
+    codex NOT INSTALLED AT ALL was told `codex device login funds codex`, because the backend
+    predated the flag by 23 minutes and the absence read as a yes. The user learns the truth
+    when a call fails. Reading it as "unverified" is the cheap way to be wrong: the chooser
+    opens when it did not strictly need to, and every source on it still works.
+
+    So this fails safe, and deliberately does NOT keep a compatibility path for the older
+    shape -- the repo does not carry back-compat shims, and a shim whose failure mode is a
+    confident false claim is the worst kind to carry.
+    """
+    return pick.get("unverified") is False
+
+
+def _probe_unproven_device_logins(status: dict) -> dict:
+    """Ask every un-probed device login whether it is REALLY signed in, and re-read.
+
+    Without this, requiring evidence (:func:`_is_evidence`) is too strict on the transport that
+    needs it most. A device login only becomes ``CACHED`` once something has probed it, and the
+    thing that normally does is the running backend -- so with **no backend at all**, which is
+    the pure-CLI install this command is largely for, nothing has ever asked and every device
+    login is ``PRESUMED`` forever. `auto` would then send a perfectly well-configured box to
+    the chooser every single time.
+
+    So rather than assume in either direction, ask. A vendor ``auth-status`` is a subprocess
+    against credentials the user already pays for and makes no network call -- the same reason
+    `useProbeDeviceLogins` runs it unasked whenever the LLM Sources page opens.
+
+    Only reached when the box already looks unfunded, so the common path pays nothing: a box
+    with evidence never gets here, and a box without it is about to open a BROWSER, next to
+    which a few local subprocesses are free.
+
+    A probe that refuses is not fatal -- "this CLI is not installed" is a perfectly good answer
+    and the most likely one here. ``_op`` reports refusals by exiting, which is right for a
+    user-invoked action and wrong for a question we asked on our own initiative.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+    asked = False
+    for capability_kind, sources in (status.get("sources") or {}).items():
+        # ``unverified`` is exactly "an un-probed device login" -- the backend's own verdict,
+        # the same one `_is_evidence` reads. Re-deriving it from kind + authority here was the
+        # third copy of one rule.
+        if not any(source.get("unverified") for source in sources or []):
+            continue
+        try:
+            _op("test_source", {"kind": LLMEndpointKind.DEVICE, "harness": _worker_of(capability_kind)})
+        except Exception:  # noqa: BLE001 -- an unanswerable probe IS an answer ("not installed")
+            pass
+        asked = True
+    return _status(_project_for_cwd(required=False)) if asked else status
+
+
+def _auto_source(status: dict) -> Row | None:
+    """The source that would fund a call right now, or ``None`` when nothing would.
+
+    Read off the resolver's ``resolved`` -- the overlay's winner. NOT from ``source.auto``:
+    that means "would win if nothing were chosen", which is true of several rows at once and
+    false of the one actually in force whenever a preference or a project pin has spoken.
+    `auto` promises the source a spawn would really get, so it reads what a spawn reads.
+
+    ...but a winner is not automatically EVIDENCE -- see :func:`_is_evidence`. The resolver is
+    right to fall back on an unproven device login (something must be tried, and there is
+    nothing better), and this command is right to refuse to call that "you are set up": one
+    picks the best of what exists, the other decides whether anything exists at all.
+
+    The default vendor wins ties. Any funded row is a truthful answer to "is this box funded",
+    but a person at a prompt is usually about to run THEIR harness, and naming a source that
+    funds a different one reads as a wrong answer even though it is a correct one.
+    """
+    from flow_sdk.flowpad_types.vendors import default_vendor
+
+    trusted = {
+        str(pick.get("endpoint_typeid") or "")
+        for pick in (status.get("resolved") or {}).values()
+        if pick and _is_evidence(pick)
+    }
+    funded = [row for row in _rows(status) if row.active_for and row.typeid in trusted]
+    if not funded:
+        return None
+    preferred = default_vendor().key
+    return next((row for row in funded if preferred in row.active_for), funded[0])
+
+
+def _report(row: Row, *, json_output: bool) -> None:
+    """The command's whole output: which source, of what kind, funding what."""
+    if json_output:
+        _ok({"source": row._asdict()})
+        return
+    detail = "/".join(part for part in (row.kind, row.provider) if part) or "-"
+    typer.echo(f"  {row.name}  ({detail})  funds {','.join(row.active_for)}")
+
+
+def _chooser_url(port: int) -> str:
+    """The chooser's address, carrying the cookie-gate secret when the instance is armed.
+
+    The browser's FIRST contact is necessarily cookie-less, and the gate exempts no path --
+    so on a gated instance a bare URL would open onto a 403 page instead of the chooser. The
+    query transport exists for precisely this case; `gate_headers` tells us whether there is
+    anything to carry.
+    """
+    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate, is_gated
+
+    url = f"http://127.0.0.1:{port}{_CHOOSER_PATH}"
+    return f"{url}?cookie-gate={get_cookie_gate()}" if is_gated() else url
+
+
+def _serve_chooser_here() -> int:
+    """Run the app in THIS process, and return the port it came up on.
+
+    `flow auth login` established the pattern: a pure-CLI install has no backend, and requiring
+    one would make funding a bare `claude` impossible on exactly the box that needs it most.
+    The UI is baked into the wheel (`build_ui.py` -> `server/static/assets/`), so the hosted app
+    serves the chooser like any other screen.
+
+    Readiness comes from the app's OWN lifespan hook, not from a sleep. `wait_for_login_callback`
+    guesses with `time.sleep(1)`, which is both a race and a delay; `server.on_startup` fires
+    when the app is actually up. The hooks list is captured by reference in `_build_lifespan`,
+    so registering after `create()` still works.
+    """
+    import threading
+
+    import uvicorn
+
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.server.app import app, server
+
+    ready = threading.Event()
+    failure: list[BaseException] = []
+
+    async def _mark_ready() -> None:
+        ready.set()
+
+    server.on_startup(_mark_ready)
+    port = get_instance_settings().port
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+
+    def _run() -> None:
+        try:
+            uvicorn.Server(config).run()
+        except BaseException as exc:  # noqa: BLE001 — reported below, on the caller's thread
+            failure.append(exc)
+        finally:
+            # Unblock either way. A thread that died on a bind error must not leave the CLI
+            # waiting on an event nobody will ever set.
+            ready.set()
+
+    threading.Thread(target=_run, daemon=True).start()
+    ready.wait()
+    if failure:
+        _fail(
+            EXIT_CONNECTION_ERROR,
+            "CONNECTION_ERROR",
+            f"Could not serve the LLM chooser on port {port}: {failure[0]}",
+        )
+    # `_op` routes over HTTP as soon as a port exists, and the cached answer predates this
+    # server. Both transports end at the same functions, but the HTTP one is now the correct
+    # choice: there IS a live writer, and the browser wants its broadcasts.
+    _backend_port.cache_clear()
+    return port
+
+
+def _steer_open_app(port: int) -> bool:
+    """Send the ALREADY-OPEN app to the chooser. True when it went somewhere.
+
+    A second window is the wrong answer when the app is already in front of the user: they end
+    up with two Flowpads, and the one they were looking at is not the one being asked the
+    question. The backend already knows whether a tab is listening -- that is what
+    ``flow navigate view`` is -- so ask it first and only spawn a browser when nobody is home.
+
+    ``navigate/view`` HIJACKS the tab the user is looking at, which `navigate_cmd` reserves for
+    an explicit "take me there". This IS that: the user just typed a command whose entire
+    purpose is to be taken to the chooser.
+
+    Never fatal. Every failure -- no tab (``NO_ACTIVE_TAB``), an older server with no such
+    route, a refusal -- means the same thing to this caller: nobody is listening, open a
+    browser. ``_op``/``_call`` answer refusals by EXITING, which is right for a user-invoked
+    action and wrong for a question we asked on our own initiative.
+    """
+    try:
+        resp = _local_post(
+            f"http://127.0.0.1:{port}/api/v1/agent/navigate/view",
+            json={"view": _CHOOSER_PATH.rsplit("/", 1)[-1]},
+            timeout=5,
+        )
+        if resp.status_code == 200 and (resp.json() or {}).get("ok"):
+            typer.echo("Opened the LLM setup in Flowpad.", err=True)
+            return True
+    except Exception:  # noqa: BLE001 -- any failure means "nobody is listening"
+        pass
+    return False
+
+
+async def _await_funding(port: int, url: str) -> Row | None:
+    """Open the chooser and block until the resolver can name a source.
+
+    The socket work is ``_common.backend_frames`` — a general "wait for the backend to say
+    something" primitive, not this command's own plumbing. What is specific to `auto` is only
+    WHICH frames to wake on and what question to re-ask on each wake.
+
+    Returns ``None`` only when the socket closes without the box ever becoming funded, i.e. the
+    server went away. A user who closes the window without choosing anything leaves this
+    blocked, which is correct: nothing has happened yet, and Ctrl-C is how a person says they
+    changed their mind. There is no budget to expire here, on purpose.
+    """
+    import asyncio
+    import webbrowser
+
+    async def _open_browser() -> None:
+        # Runs once the socket is UP (see ``backend_frames``), so a user who signs in instantly
+        # cannot beat us to the frame.
+        if not await asyncio.to_thread(_steer_open_app, port):
+            # The return value is load-bearing on a headless box -- over SSH, in CI, on a server
+            # with no display, `webbrowser.open` finds no handler and answers False without
+            # raising. Ignoring it printed "Opened <url>" over a window that does not exist and
+            # then blocked on a socket nobody would ever satisfy: a lie followed by a hang, the
+            # one shape a CLI must not have. Waiting is still right (the URL is reachable
+            # through a forwarded port, and Ctrl-C is always there) -- but it has to say what
+            # really happened.
+            opened = await asyncio.to_thread(webbrowser.open, url)
+            typer.echo(
+                f"Opened {url}" if opened else f"No browser on this machine. Open this to continue:\n  {url}",
+                err=True,
+            )
+        typer.echo("Waiting for you to choose a source… (Ctrl-C to cancel)", err=True)
+
+    async for _frame in _backend_frames(port, _FUNDING_FRAMES, on_connected=_open_browser):
+        # A credential changed. Whether the BOX can now fund a call is the resolver's question,
+        # not this frame's -- a failed login broadcasts too.
+        row = _auto_source(await asyncio.to_thread(_status))
+        if row is not None:
+            return row
+    return None
+
+
+def _refuse_auto_flags(*, json_output: bool = False, no_browser: bool = False) -> None:
+    """Refuse `auto`-only flags on a row reference, rather than ignoring them.
+
+    ``set`` and ``use`` take a POSITIONAL row and dispatch on the word ``auto``, so these
+    options have to be declared on the whole command even though only that one branch reads
+    them. Accepting and silently dropping them is the failure mode to avoid: a caller who
+    writes ``flow llm set 2 --json`` and gets shell exports has been told nothing went wrong.
+    """
+    given = [flag for flag, on in (("--json", json_output), ("--no-browser", no_browser)) if on]
+    if given:
+        _fail(
+            EXIT_INVALID_ARG,
+            "INVALID_ARG",
+            f"{' and '.join(given)} apply to `auto` only.",
+            {"remediation": ["Use `flow llm set auto " + " ".join(given) + "`"]},
+        )
+
+
+def _is_auto(ref: str) -> bool:
+    """Whether a row reference is really the `auto` question.
+
+    Checked before `_pick`, never inside it: `_pick` resolves names by unique PREFIX, so a
+    source someone named "Auto top-up" would otherwise answer to this word, and the box would
+    silently pick a row when it was asked a question. A reserved word is matched exactly.
+    """
+    return ref.strip().lower() == "auto"
+
+
+def _resolve_or_choose(*, no_browser: bool = False) -> Row:
+    """The source that funds LLM calls — obtaining one, via the chooser, if the box has none.
+
+    The whole of `auto`, minus the reporting, so the user scope can reuse the answer instead of
+    running the command for its side effect and then asking again.
+    """
+    # Project-scoped when there is one, for the same reason `list` is: a project pin outranks
+    # the box, so the box-wide question would report a source a spawn here would not get.
+    status = _status(_project_for_cwd(required=False))
+    row = _auto_source(status)
+    if row is None:
+        # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
+        # so ask before sending the user to a browser.
+        row = _auto_source(_probe_unproven_device_logins(status))
+    if row is not None:
+        return row
+
+    port = _backend_port()
+    if no_browser:
+        # The URL is the actionable part -- an agent that cannot open a window can still hand
+        # it to the person who can. Only meaningful when something is serving it.
+        where = _chooser_url(port) if port is not None else _CHOOSER_PATH
+        _fail(
+            EXIT_NOT_FOUND,
+            "NO_LLM_SOURCE",
+            "This box has no LLM source and --no-browser was given.",
+            {"remediation": [f"Open {where} and choose one", "Or re-run without --no-browser"]},
+        )
+
+    if port is None:
+        port = _serve_chooser_here()
+    import asyncio
+
+    row = asyncio.run(_await_funding(port, _chooser_url(port)))
+    if row is None:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", "Lost the connection to Flowpad before a source was chosen.")
+    return row
+
+
+@llm_app.command(
+    "auto",
+    help="Report the source that funds LLM calls, opening the chooser when the box has none.",
+)
+def _auto(
+    json_output: Annotated[bool, typer.Option("--json", help="Emit the source as JSON.")] = False,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="Never open the chooser; exit 4 with its URL instead.")
+    ] = False,
+) -> None:
+    _report(_resolve_or_choose(no_browser=no_browser), json_output=json_output)
