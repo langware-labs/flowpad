@@ -10725,6 +10725,10 @@ msgstr ""
 msgid "Machine secrets"
 msgstr "סודות המכונה"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Machine size"
+msgstr ""
+
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "צרו אפליקציית משימות"
