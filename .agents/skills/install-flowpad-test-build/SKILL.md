@@ -24,7 +24,7 @@ Set these before starting:
 
 ```bash
 BRANCH_NAME=FLOWPAD-1862
-DMG_PATH=~/Downloads/Flowpad-arm64.dmg
+DMG_PATH=~/Downloads/Flowpad-universal.dmg
 WORKDIR=~/Developer/flowpad-$BRANCH_NAME
 ```
 
