@@ -5,18 +5,19 @@ from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 
+# Note: These are flow-cli paths, not FlowPad
+from flow_sdk.config import default_service_config
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.request_context.execution_context import get_execution_context
+
+
 # TODO: ServiceConfig - stub import
 class ServiceConfig:
     """Stub ServiceConfig class for type hints"""
     development: bool = True
     sandbox_storage_mount_path: str = "/tmp"
 
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.request_context.execution_context import get_execution_context
-
-# Note: These are flow-cli paths, not FlowPad
-from flow_sdk.config import default_service_config
-from flow_sdk.fs_store.type_id import TypeId
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -281,7 +282,12 @@ def _sod_key(entity: Any, name: str) -> str:
 async def get_user_credentials(user, name: str, foreign_key: str | None = None) -> Any:
     sod_store: SodDriver = get_current_sod_store()
     value = await sod_store.read_user_sod(_sod_key(user, name), foreign_key)
-    return value
+    from flow_sdk.core.oauth.hub_mirror import resolve_hub_mirror  # noqa: PLC0415
+
+    token, refreshed = await resolve_hub_mirror(value)
+    if refreshed != value:
+        await sod_store.write_user_sod(_sod_key(user, name), refreshed, foreign_key)
+    return token
 
 
 async def set_user_credentials(user, name: str, value: Any, foreign_key: str):

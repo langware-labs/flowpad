@@ -79,7 +79,45 @@ afterEach(() => {
   h.projectIds = [];
 });
 
+describe('Asset evidence presentation', () => {
+  it('renders unresolved historical usage alongside verification failure', () => {
+    renderManager({ assets: { ...processAssets, descriptors: [], workerScoped: true, error: true,
+      unresolvedUsage: [{asset: null, reference: 'plugin:deleted', resolution: 'missing', evidence: [{kind: 'skill_invoked'}]}],
+    } });
+    expect(screen.getByTestId('asset-unresolved-usage')).toHaveTextContent('plugin:deleted');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('keeps an attached-only asset separate from observed usage', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true,
+      descriptors: [
+        {...processAssets.descriptors[0], attached: true, usage: []},
+        {typeid: ASSISTANT_SKILL, source: 'user_dir', posix_path: '/used', usage: [{kind: 'skill_invoked'}]},
+      ],
+    } });
+    expect(screen.getByTestId('asset-manager-section-selected')).toHaveTextContent('Attached assets');
+    expect(screen.getByTestId('asset-manager-section-used')).toHaveTextContent('Used assets');
+  });
+});
+
 describe('Flowpad Assistant drill-down — same modal, same rows, one level down', () => {
+  it('shows only assistant assets present in the worker inventory', async () => {
+    renderManager({ assets: {
+      ...processAssets,
+      workerScoped: true,
+      descriptors: [h.assistant[0] as AssetDescriptor],
+    } });
+    fireEvent.click(screen.getByTestId('asset-manager-flowpad-location'));
+    expect(await screen.findByTestId(`asset-manager-row-${ASSISTANT_SKILL}-project_dir`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`asset-manager-row-${ASSISTANT_AGENT}-project_dir`)).not.toBeInTheDocument();
+  });
+
+  it('shows an inventory failure instead of reporting an empty available list', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true, descriptors: [], error: true } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not verify available assets');
+    expect(screen.queryByText('No assets available')).not.toBeInTheDocument();
+  });
+
   it('descends into the assistant and comes back, without leaving the surface', async () => {
     renderManager();
 

@@ -149,11 +149,11 @@ export class AuthManager extends EventEmitter {
           return Promise.reject(error);
         }
 
-        // Only handle auth-related errors (401, 403, token errors)
-        // For server errors (5xx) and other non-auth errors, pass through silently
+        // The hub also uses 401/403 for entity/action permission denials.
+        // Those do not invalidate the authenticated user. Only explicit token
+        // rejection clears this session; identity loading and the cloud login
+        // channel own the remaining authentication-state transitions.
         const isAuthError =
-          error.response?.status === 401 ||
-          error.response?.status === 403 ||
           (error.response?.data as any)?.message === invalidRefreshTokenMessage ||
           error.message === invalidTokenMessage;
 

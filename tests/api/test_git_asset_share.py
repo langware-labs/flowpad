@@ -30,7 +30,7 @@ async def test_git_asset_share_loads_url_entity_and_ignores_forged_body(
         )
     )
     monkeypatch.setattr("flow_sdk.app.actions.share_action._local_mode_share_blocked", lambda: False)
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", publish)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", publish)
 
     response = await bootstrapped_client.post(
         f"/api/v1/graph/agent/{agent['id']}/share",
@@ -51,7 +51,7 @@ async def test_git_asset_share_rejects_recipients_and_missing_url_row(
     agent = await _create_agent(bootstrapped_client, "Q-share-no-recipients")
     monkeypatch.setattr("flow_sdk.app.actions.share_action._local_mode_share_blocked", lambda: False)
     publish = AsyncMock()
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", publish)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", publish)
 
     response = await bootstrapped_client.post(
         f"/api/v1/graph/agent/{agent['id']}/share",

@@ -162,23 +162,21 @@ class Mcp(Entity):
         the row carries entity columns (``asset_ref``, timestamps, …) that
         ``McpSpec``'s ``extra="forbid"`` would reject.
 
-        A BUNDLED server's ``entrypoint`` is resolved here, and only here — this
-        is the one place holding both the spec fields and ``asset_ref``. The file
+        A BUNDLED server's ``entrypoint`` is resolved by the shared filesystem
+        utility against this row's asset folder. The file
         keeps the relative path (portable); the launch payload gets the absolute
         one, so ``mcp_projection`` and all four harnesses stay unchanged.
         """
-        args = [*(self.args or [])]
-        if self.entrypoint and self.folder is not None:
-            args.append(str(self.folder / self.entrypoint))
-        return McpSpec(
+        from flow_sdk.assets.types.mcp import resolve_mcp_spec
+        return resolve_mcp_spec(McpSpec(
             name=self.name or self.id,
             transport=self.transport or "stdio",
             command=self.command or "",
-            args=args,
+            args=list(self.args or []),
             env=dict(self.env or {}),
             url=self.url or "",
             entrypoint=self.entrypoint or "",
-        )
+        ), self.folder)
 
     @action.post(action_name="test")
     async def test_action(self) -> "ApiSuccessResponse":

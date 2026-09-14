@@ -20,7 +20,7 @@ import json
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import get_driver
 from flow_sdk.builtin.hooks.types import (
     BlockResponse,

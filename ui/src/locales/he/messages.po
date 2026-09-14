@@ -1810,6 +1810,10 @@ msgstr "כבר פעיל"
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "כבר התחברת במקום אחר? בדוק שוב"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "פתח גם חלון Terminal נלווה של מערכת ההפעלה"
@@ -2346,6 +2350,10 @@ msgstr "צרפו את תמליל הסשן הזה"
 msgid "Attached asset types"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Attached assets"
+msgstr ""
+
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr ""
@@ -2391,6 +2399,10 @@ msgstr "אימות"
 msgid "authored"
 msgstr "נכתב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "קוד הרשאה"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "קוד הרשאה — יש לאשר בדפדפן ולחזור לכאן"
@@ -2402,6 +2414,10 @@ msgstr "קוד הרשאה עם PKCE, עם הפניה חוזרת למחשב זה"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנסות שנית."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "אישור חיבור"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2963,6 +2979,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -3660,6 +3677,10 @@ msgstr "סגור"
 msgid "Close (Escape)"
 msgstr "סגור (Escape)"
 
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All"
 msgstr "סגור הכל"
@@ -3679,6 +3700,10 @@ msgstr ""
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "סגור הכל חוץ מזה"
+
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all side tabs"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
@@ -4067,6 +4092,7 @@ msgstr "אישור"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4143,6 +4169,7 @@ msgstr "מתחבר"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "מתחברת..."
 
@@ -4724,6 +4751,10 @@ msgstr ""
 msgid "Could not open {0}"
 msgstr "לא ניתן היה לפתוח את {0}"
 
+#: src/navigation/NavigationActions.ts
+msgid "Could not open link"
+msgstr ""
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
@@ -5009,6 +5040,10 @@ msgstr ""
 msgid "Could not verify {0}"
 msgstr "לא ניתן לאמת את {0}"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Could not verify available assets."
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
@@ -5018,8 +5053,12 @@ msgid "Couldn't close the project's tabs"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "הכנת ארגז החול לא הושלמה"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "הכנת ארגז החול לא הושלמה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -7988,12 +8027,20 @@ msgid "Flowpad Assistant"
 msgstr "עוזר Flowpad"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
-msgstr "Flowpad Assistant — המיומנויות והסוכנים שלו מותקנים בתהליך זה דרך --add-dir. לחצו כדי לעיין בהם."
+msgid "Flowpad Assistant — click to browse the assets available to this worker."
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
-msgstr "עוזר Flowpad מעודכן (מיומנויותיו וסוכניו מועברים לעובד דרך --add-dir). לחץ להסרה — יידרש הפעלה מחדש."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+#~ msgstr "Flowpad Assistant — המיומנויות והסוכנים שלו מותקנים בתהליך זה דרך --add-dir. לחצו כדי לעיין בהם."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgstr "עוזר Flowpad מעודכן (מיומנויותיו וסוכניו מועברים לעובד דרך --add-dir). לחץ להסרה — יידרש הפעלה מחדש."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Flowpad Assistant project not available."
@@ -9896,7 +9943,6 @@ msgstr "להפעיל את {0}?"
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
@@ -9904,6 +9950,10 @@ msgstr "הפעלת ארגז חול"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "הפעילו את סביבת העבודה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -12993,6 +13043,10 @@ msgstr "פתח ניתוח"
 msgid "Open as a tab"
 msgstr "פתח כטאב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "פתיחת דף ההרשאה"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
@@ -13097,6 +13151,11 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Open in browser"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Open in Data sources"
 msgstr "פתיחה במקורות נתונים"
@@ -13127,7 +13186,6 @@ msgid "Open in Files"
 msgstr "פתחו בקבצים"
 
 #: src/components/conversation/AttachmentChip.tsx
-#: src/components/webapp-viewer.tsx
 msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
 
@@ -13307,6 +13365,10 @@ msgstr "פתחו את הפרויקט"
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr ""
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "פתחו את דף הספק, אשרו גישה והדביקו כאן את קוד ההרשאה שמוצג שם."
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "פתח את ה-index.md המעובד."
@@ -13315,6 +13377,7 @@ msgstr "פתח את ה-index.md המעובד."
 msgid "Open the repository"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "פתיחת ארגז החול"
@@ -14108,8 +14171,8 @@ msgid "Preparing your workspace…"
 msgstr "מכינים את סביבת העבודה…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "מתכונן…"
+#~ msgid "Preparing…"
+#~ msgstr "מתכונן…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -14266,6 +14329,7 @@ msgstr "סוכני פרויקט (.claude/agents/)"
 msgid "Project Artifacts"
 msgstr "ארטיפקטים של הפרויקט"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 msgid "Project assets"
@@ -14970,6 +15034,7 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Refresh"
@@ -17372,6 +17437,14 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
@@ -17399,6 +17472,10 @@ msgstr "התחברו ל-Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17490,6 +17567,10 @@ msgstr ""
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "מתבצעת התחברות"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -18882,6 +18963,10 @@ msgstr "מפתח ה-API השמור עבור ספק זה יוסר מהמחשב ה
 msgid "The tab content could not be prepared."
 msgstr "לא ניתן היה להכין את תוכן הכרטיסייה."
 
+#: src/navigation/NavigationActions.ts
+msgid "The terminal is not ready yet"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
@@ -19111,6 +19196,10 @@ msgstr "הקישור הזה אינו מפנה ל-Sandbox."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no available viewer"
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -20302,6 +20391,10 @@ msgstr "נכסים בשימוש"
 msgid "Used by"
 msgstr "בשימוש על ידי"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used in transcript"
+msgstr ""
+
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -20941,8 +21034,8 @@ msgid "WorldView"
 msgstr "תצוגת עולם"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21154,8 +21247,12 @@ msgid "Your questions"
 msgstr "השאלות שלך"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "ארגז החול שלך מוכן"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "ארגז החול שלך מוכן"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"

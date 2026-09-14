@@ -404,7 +404,7 @@ class FsRecordsActionsMixin:
         """
         import os  # noqa: PLC0415
 
-        from flow_sdk.actions.fs.asset_versioning import commit_asset_change  # noqa: PLC0415
+        from flow_sdk.assets.versioning import commit_asset_change  # noqa: PLC0415
 
         body = await request_info.get_post_data() if request_info else {}
         params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
