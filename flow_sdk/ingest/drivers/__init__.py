@@ -17,12 +17,12 @@ from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
-from flow_sdk.ingest.drivers.teams import TeamsDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.rss import RssSource
 from flow_sdk.sources.providers.slack import SlackSource
+from flow_sdk.sources.providers.teams import TeamsSource
 from flow_sdk.sources.providers.telegram import TelegramSource
 from flow_sdk.sources.providers.whatsapp import WhatsAppSource
 
@@ -48,22 +48,27 @@ def _folder_origin_id(row, ref: str) -> str:
 
 
 
-async def _slack_credentials(row):
-    """This machine's Slack token — the BOT's, when we hold it.
+def _connection_token(provider: str):
+    """A resolver for this machine's connection to ``provider`` — its APP token first, when the
+    provider issues one (Slack's bot), else the user's.
 
-    The bot is who a Slack source should be: it posts as whoever the token is, and an inbound
+    The app is who a message source should be: it posts as whoever the token is, and an inbound
     message from the human reads as a stranger's — the thing that makes a reply addressable —
-    only when we are NOT that human. Falls back to the user token so an instance that connected
-    before the bot half was adopted keeps working, degraded rather than broken.
+    only when we are NOT that human. The user token is the fallback, so an instance connected
+    before the app half existed keeps working, degraded rather than broken.
     """
-    from pydantic import SecretStr  # noqa: PLC0415
 
-    from flow_sdk.core.oauth.provider_registry import SLACK, app_credentials_name, token_for  # noqa: PLC0415
-    from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+    async def resolve(row):
+        from pydantic import SecretStr  # noqa: PLC0415
 
-    bot = app_credentials_name(SLACK)
-    token = (await token_for(SLACK, name=bot) if bot else None) or await token_for(SLACK)
-    return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else Credentials()
+        from flow_sdk.core.oauth.provider_registry import app_credentials_name, token_for  # noqa: PLC0415
+        from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+        app = app_credentials_name(provider)
+        token = (await token_for(provider, name=app) if app else None) or await token_for(provider)
+        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else Credentials()
+
+    return resolve
 
 
 def _slack_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
@@ -147,6 +152,29 @@ def _whatsapp_outbound_spec(_source):
     return WhatsAppMessageSpec
 
 
+
+def _teams_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """``to`` is the composite ``{teamId}/{channelId}`` (a Teams thread key is a bare message id
+    and names no channel); ``thread_key`` is the ROOT the post goes under. Without one it is a new
+    root, and only then does ``subject`` mean anything. Graph posts as the connected user."""
+    from flow_sdk.sources.providers.teams import TeamsMessageData, split_segment  # noqa: PLC0415
+
+    segment = str(to or "").strip()
+    if not all(split_segment(segment)):
+        raise ValueError("a teams send needs `{teamId}/{channelId}` in `to`")
+    if not (text or "").strip():
+        raise ValueError("a teams send needs text")
+    root = str(thread_key or "").strip() or str(in_reply_to or "").strip()
+    conversation = source.origin(root, segment) if root else source.channel_origin(segment)
+    return TeamsMessageData(text=text, subject=None if root else (subject or None), conversation=conversation), None
+
+
+def _teams_outbound_spec(_source):
+    from flow_sdk.builtin.source_item import TeamsMessageSpec  # noqa: PLC0415
+
+    return TeamsMessageSpec
+
+
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
 register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
 register_driver(HelpdeskDriver())
@@ -170,13 +198,22 @@ register_driver(
     SourceDriver(
         SlackSource,
         kind="datasource.api.slack",
-        credentials=_slack_credentials,
+        credentials=_connection_token("slack"),
         outgoing=_slack_outgoing,
         outbound_spec=_slack_outbound_spec,
         lift_cursor=lambda state: SlackSource.resume_after(state["last_ts"]) if state.get("last_ts") else None,
     )
 )
-register_driver(TeamsDriver())
+register_driver(
+    SourceDriver(
+        TeamsSource,
+        kind="datasource.api.teams",
+        credentials=_connection_token("microsoft"),
+        outgoing=_teams_outgoing,
+        outbound_spec=_teams_outbound_spec,
+        lift_cursor=lambda state: TeamsSource.resume_after(state["last_created"]) if state.get("last_created") else None,
+    )
+)
 register_driver(
     SourceDriver(
         TelegramSource,
@@ -205,5 +242,4 @@ __all__ = [
     "GmailDriver",
     "GoogleDriveDriver",
     "HelpdeskDriver",
-    "TeamsDriver",
 ]
