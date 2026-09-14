@@ -1,7 +1,7 @@
 ---
 id: 91856acd-d005-470d-b3c8-0e762229408a
+version: 2
 ---
-
 # Claude Guidelines for flow-cli
 
 ## Quick Start
@@ -151,15 +151,15 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 **This is not limited to tests, and "it's not technically a test timeout" is not an out.** The rule is about the INTENT: never raise — or newly add — ANY wait/timeout/retry/backoff/poll budget anywhere (test OR production/runtime code) in order to make an error, flake, hang, or contention symptom go away. This explicitly includes, without limitation: SQLite/DB `busy_timeout`, SQLAlchemy/driver `connect_args={"timeout": …}` or `pool_timeout`, HTTP/client `timeout=…`, `asyncio.wait_for(…)`, lock-acquire timeouts, retry counts / `max_attempts`, `sleep`/backoff durations, and debounce/throttle intervals. A symptom like `database is locked`, a 5xx, a race, or "it's slow" means there is real contention or a real slow/stalling path — **fix that root cause** (remove the contention, isolate the writer, make the call fast, fix the stall). Widening a wait to ride past the symptom is the same banned move as bumping a test timeout. If you think a longer wait is genuinely the correct fix (not a mask), STOP and get explicit user approval first, every time — do not decide unilaterally on "spirit."
 
-
 ## The `long` tier — 1s is the unit ceiling
 
 **A unit test that takes more than 1 second is not a unit test.** The fast tier exists to answer "did I break something" in a couple of minutes; a handful of wall-clock-bound tests otherwise dominate it (before this rule, 55 of 6764 tests held half the runtime).
 
 Two forms, one tier:
 
-* **A whole file that is wall-clock-bound lives in `tests/long_tests/`.** That is the default when every test in the module is slow.
-* **A single slow test that shares fixtures with fast siblings gets `@pytest.mark.long`** and stays where it is. Splitting one test out of a module just to fork its fixtures buys nothing.
+* **A whole file that is wall-clock-bound lives in** **`tests/long_tests/`.** That is the default when every test in the module is slow.
+
+* **A single slow test that shares fixtures with fast siblings gets** **`@pytest.mark.long`** and stays where it is. Splitting one test out of a module just to fork its fixtures buys nothing.
 
 The two forms are selected differently, and `-m long` does NOT find the files — the directory is their only signal:
 
@@ -170,7 +170,7 @@ pytest tests/unit -m long         # ONLY the marked outliers, not tests/long_tes
 pytest tests/long_tests           # the slow FILES (no marker involved)
 ```
 
-Marked tests are **deselected**, not skipped — a skip still reports as a test and buries the fast tier's signal. The deselection is repo-wide and applies to the DEFAULT run only: **CI and `scripts/deploy_to_github.sh` both pass `--long`**, so the marker never takes a test out of the gate, only out of the inner loop. If you mark a test, you have changed how long CI takes, not what CI covers — anything that genuinely should not run in CI belongs in the excluded-tier list in `.github/workflows/test.yml`.
+Marked tests are **deselected**, not skipped — a skip still reports as a test and buries the fast tier's signal. The deselection is repo-wide and applies to the DEFAULT run only: **CI and** **`scripts/deploy_to_github.sh`** **both pass** **`--long`**, so the marker never takes a test out of the gate, only out of the inner loop. If you mark a test, you have changed how long CI takes, not what CI covers — anything that genuinely should not run in CI belongs in the excluded-tier list in `.github/workflows/test.yml`.
 
 Annotate the marker with the measured cost — `@pytest.mark.long  # 6.01s` — so the next reader can tell a test that legitimately does 6s of work from one that is quietly waiting.
 
@@ -192,7 +192,6 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
 
-
 ## Backend URLs in the frontend (non-negotiable)
 
 **Application code never touches a backend URL.** No `__API_URL__`, no `config.SERVER_URL`, no hand-built `http://localhost:…` strings in components, hooks, or prompts. The ONLY consumer of the API base URL is the SDK config bootstrap (`ts_sdk/src/config/load_config.ts`). Everything above it goes through the two sanctioned channels:
@@ -208,16 +207,17 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 ## Data shapes — every value is a `DataSpec` (non-negotiable)
 
-**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's `input`/`output` — is a `DataSpec` subclass (`flow_sdk/schema/data_spec/spec.py`). Never a bare `BaseModel`, a dataclass, a `TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the shape is nameable in the same tag ontology as everything else.
+**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's** **`input`/`output`** **— is a** **`DataSpec`** **subclass (`flow_sdk/schema/data_spec/spec.py`). Never a bare** **`BaseModel`, a dataclass, a** **`TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the shape is nameable in the same tag ontology as everything else.
 
 Two flavors, one base:
 
 * **`FrontMatter(DataSpec)`** — the shape IS a file's header, and the class IS the field list (`SubAgentSpec`, `AgentSpec`). What it declares is what is read and written, and nothing else.
-* **plain `DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). Add `frozen=True`; a value is a value.
 
-* **`extra="forbid"` is inherited, and it is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never `**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+* **plain** **`DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). Add `frozen=True`; a value is a value.
 
-* **Register a `spec_kind` when the shape should be nameable** (`"ingest.source_item"`, `"folder"`) — a dot-path tag resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool`; anything else is a registered kind or anonymous.
+* **`extra="forbid"`** **is inherited, and it is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+
+* **Register a** **`spec_kind`** **when the shape should be nameable** (`"ingest.source_item"`, `"folder"`) — a dot-path tag resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool`; anything else is a registered kind or anonymous.
 
 * **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
 
@@ -225,9 +225,11 @@ Two flavors, one base:
 
 ## Naming — check the glossary before inventing a noun
 
-**[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
+**[`docs/glossary.md`](docs/glossary.md)** **is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
 
 * **Say whether it mirrors a provider or is ours.** `DynamicWorkflow`/`WorkflowRun` mirror Claude Code's Workflow tool; `GraphWorkflow`/`GraphWorkflowRun` are ours. A provider mirror follows the provider's format and lives under its dot-dir; a native asset is `AssetClass.REPO` under `agentic-assets/<family>/`.
+
 * **Don't reuse an already-taken word.** `Flow` means a chat message (`FlowMessage`) and a bus envelope (`FlowEvent`); `Graph` means the entity graph, `GRAPH_CONTEXT`, and `graph-view`; `Workflow` means the two Claude Code mirrors. That's why ours is the compound `GraphWorkflow` — bare `Graph*` and bare `Workflow*` are both ambiguous.
 
-* **`Agent` is reserved; the `.claude/agents/*.md` prompt asset is `SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
+* **`Agent`** **is reserved; the** **`.claude/agents/*.md`** **prompt asset is** **`SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
+
