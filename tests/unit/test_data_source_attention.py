@@ -151,6 +151,7 @@ class TestAttentionFastLane:
         assert str(src.id) not in poller._attention
 
     @pytest.mark.asyncio
+    @pytest.mark.long  # 2.59s — one real 2.5s attention lease, arm → poll → poll → lapse
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_the_loop_polls_at_cadence_and_expires_with_the_lease(self, monkeypatch):
         import time as _time

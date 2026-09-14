@@ -364,7 +364,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             account_key_parts=("team_id", "user_id"),
         ),
         hub_required=True,
-        # the slack source's credential resolver (`_slack_credentials`) calls `token_for(SLACK)` on every poll, from the
+        # the slack source's credential resolver (`_connection_token`) calls `token_for(SLACK)` on every poll, from the
         # background poller, which has no request user and so cannot reach the hub
         # tier. Adoption runs once inside the wait-callback request (which can),
         # and the poller then reads local SOD.
