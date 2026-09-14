@@ -39,6 +39,7 @@ from flow_sdk.ingest.driver import (
     SegmentCursorView,
     SegmentRef,
     SendOutcome,
+    SendStatus,
     SetupVerdict,
     identity_stamped,
     stamp_identity,
@@ -258,7 +259,9 @@ class SourceDriver(IngestDriver):
         if self._outgoing is None:
             raise NotImplementedError(f"{self.provider} cannot send")
         source = await self.open(row, persona=True)
-        data, answered = self._outgoing(source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        data, answered = self._outgoing(
+            source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, conversation_id=conversation_id
+        )
         try:
             async with source:
                 sent = await (source.reply(answered, data) if answered is not None else source.send(data))
@@ -267,8 +270,19 @@ class SourceDriver(IngestDriver):
             raise ValueError(f"{self.provider} refused the message: {exc}") from exc
         if isinstance(source, Identified):
             await self._stamp(row, source)
-        recorded = False if type(source).echoes_sends else await self._record(row, source, sent)
-        return SendOutcome(external_id=sent.origin.key, recorded=recorded)
+        # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
+        # records its own copy says so on the payload.
+        drafted = bool(getattr(type(source), "sends_may_draft", False)) and sent.data.sent_at is None
+        if drafted or type(source).echoes_sends:
+            recorded = bool(getattr(sent.data, "recorded", False))
+        else:
+            recorded = await self._record(row, source, sent)
+        return SendOutcome(
+            external_id=sent.origin.key,
+            status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
+            recorded=recorded,
+            artifact_id=str(getattr(sent.data, "artifact_id", "") or ""),
+        )
 
     async def _record(self, row: Any, source: Source, sent: Any) -> bool:
         """Ingest a sent message the provider will never echo back — the only copy there will be,

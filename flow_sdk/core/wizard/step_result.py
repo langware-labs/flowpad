@@ -15,7 +15,7 @@ agent's last assistant message is prose: it cannot be typed, cannot be bound to
 a later step, and cannot say "I failed". The graph-workflow node is the right
 SHAPE (settle, then read a declared location) but its payload is that same
 prose. The receipt is the one mechanism with a proven verdict rule in this tree
-— ``ingest/drivers/agent.py`` reads one, and treats a MISSING receipt as a
+— ``ingest/agent_transport.py`` reads one, and treats a MISSING receipt as a
 failed run rather than an empty one, for exactly the reason that applies here.
 
 Pure: stdlib only, no entity imports, no process imports. That is what keeps
