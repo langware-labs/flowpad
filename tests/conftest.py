@@ -288,6 +288,7 @@ def _restore_main_thread_event_loop():
     yield
     import asyncio as _asyncio
 
+    _shutdown_leftover_name_observers()
     try:
         loop = _asyncio.get_event_loop_policy().get_event_loop()
         closed = loop.is_closed()
@@ -295,6 +296,30 @@ def _restore_main_thread_event_loop():
         closed = True
     if closed:
         _asyncio.set_event_loop(_asyncio.new_event_loop())
+
+
+def _shutdown_leftover_name_observers():
+    """Stop worker-name file watchers a test left on a loop that outlives it.
+
+    ``refresh_process_name`` binds a ``watchfiles.awatch`` task per event loop,
+    and ``async_context`` reuses the main thread's loop for every test. A test
+    that starts a process and never stops it leaves that task pending on the
+    shared loop: the next test that drains ``asyncio.all_tasks()``
+    (``test_wizard_chain_end_to_end._settle``) waits on it forever, and the
+    watcher's worker thread then keeps pytest from exiting. That cost CI's unit
+    shard its whole 15-minute cap. One teardown for every loop, rather than a
+    per-package fixture that only ever saw pytest-asyncio's loop.
+    """
+    import sys as _sys
+
+    runtime = _sys.modules.get("flow_sdk.builtin.agentic_process.naming.runtime")
+    if runtime is None:
+        return
+    for loop in list(runtime._runtimes.keys()):
+        if loop.is_closed() or loop.is_running():
+            continue
+        # Runs on `loop`, so the shutdown's own get_running_loop() is that loop.
+        loop.run_until_complete(runtime.shutdown_name_observation())
 
 
 def async_context(func):
