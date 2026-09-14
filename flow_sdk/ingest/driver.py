@@ -246,7 +246,7 @@ class IngestDriver:
 
         Takes the SOURCE, not just the driver, for the same reason
         ``channel_for`` does: one driver can serve several channels.
-        ``AgentDriver`` reaches whichever connector its config names, so "which
+        The ``agent`` source reaches whichever connector its config names, so "which
         channel is this?" is only answerable per source.
 
         Email is the default because it is the historical behaviour; a

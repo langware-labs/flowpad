@@ -9,12 +9,13 @@ import os
 from pathlib import Path
 
 from flow_sdk.ingest.driver import register_driver
-from flow_sdk.ingest.drivers.agent import AgentDriver
 from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
+from flow_sdk.ingest.agent_transport import HarnessWorker
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
+from flow_sdk.sources.providers.agent import AgentSendData, AgentSource
 from flow_sdk.sources.providers.agentmail import AgentMailSource
 from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
@@ -72,7 +73,7 @@ def _connection_token(provider: str):
     return resolve
 
 
-def _slack_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _slack_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """The legacy send arguments as a Slack message: ``to`` is the channel (a Slack thread key
     is a bare ``ts`` and names none), and the thread it lands in is ``thread_key``. A subject has
     no Slack equivalent."""
@@ -109,7 +110,7 @@ def _config_secret(name: str):
     return resolve
 
 
-def _telegram_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _telegram_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """``to`` is the chat — a chat reply targets the chat, never its author — and a forum topic
     rides ``thread_key``. ``in_reply_to`` (``<chat_id>/<message_id>``) makes it a reply to that
     message, which Telegram keeps in the replied message's topic. A subject has no equivalent."""
@@ -132,7 +133,7 @@ def _telegram_outbound_spec(_source):
 
 
 
-def _whatsapp_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _whatsapp_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """``to`` is the person's wa_id — the person IS the conversation — and ``in_reply_to`` quotes
     their message, which renders as a quote and starts no thread. A subject has no equivalent."""
     from flow_sdk.sources.providers.whatsapp import digits  # noqa: PLC0415
@@ -154,7 +155,7 @@ def _whatsapp_outbound_spec(_source):
 
 
 
-def _teams_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _teams_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """``to`` is the composite ``{teamId}/{channelId}`` (a Teams thread key is a bare message id
     and names no channel); ``thread_key`` is the ROOT the post goes under. Without one it is a new
     root, and only then does ``subject`` mean anything. Graph posts as the connected user."""
@@ -237,7 +238,7 @@ def hub_refusal(exc, *, signed_in: bool):
     return Rejected(f"the hub refused the request ({status}): {reason}")
 
 
-def _helpdesk_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _helpdesk_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """A reply goes to the TICKET — the hub conversation id — which the hub threads by."""
     from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
 
@@ -302,7 +303,7 @@ def _machine_secret(secret_name: str, *, config_key: str):
     return resolve
 
 
-def _mail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _mail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
     """A reply to a known message keeps the exchange one thread on the recipient's side; a bare send
     to ``to`` starts a new one, and only then does ``subject`` mean anything."""
     from flow_sdk.sources import UserProfile  # noqa: PLC0415
@@ -409,7 +410,18 @@ register_driver(
         ),
     )
 )
-register_driver(AgentDriver())
+register_driver(
+    SourceDriver(
+        AgentSource,
+        kind="datasource.agent",
+        build=lambda binding: AgentSource(binding, worker=HarnessWorker()),
+        outgoing=lambda source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id="": (
+            AgentSendData(text=text, subject=subject or None, thread_key=thread_key, to=to, conversation_id=conversation_id),
+            None,
+        ),
+        lift_cursor=lambda state: AgentSource.resume_after(state["high_water"]) if state.get("high_water") else None,
+    )
+)
 register_driver(
     SourceDriver(
         AgentMailSource,
@@ -497,7 +509,6 @@ register_driver(
 )
 
 __all__ = [
-    "AgentDriver",
     "GitDriver",
     "GoogleDriveDriver",
 ]
