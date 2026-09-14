@@ -112,7 +112,7 @@ happens on an old host.
 ### `name`
 
 The folder name, the driver-registry key, and the asset id — one noun, not three.
-`rss` resolves `RssDriver`.
+`rss` resolves the shipped `RssSource`.
 
 **A name that collides with a shipped driver is refused at driver registration,
 not at load.** The manifest still indexes as a `data_source_spec` row; it is
