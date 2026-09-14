@@ -43,14 +43,9 @@ from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 from .delivery import Delivered
-from .folder_source import FolderChange, FolderSource
+from .folder_changes import FolderChange, FolderChanges
 from .merge import listen
 from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
-
-#: Deprecated alias, kept so scripts written against the first release keep importing.
-#: ``MessageSource`` is the domain term for a bidirectional ``DataSource``; the
-#: prompt/reply block is ``MessageBlock``. Deliberately not in ``__all__``.
-MessageSource = MessageBlock
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
@@ -59,7 +54,7 @@ __all__ = [
     "Delivered",
     "EmailMessageSpec",
     "FolderChange",
-    "FolderSource",
+    "FolderChanges",
     "FileRef",
     "MessageSpec",
     "MessageRequest",

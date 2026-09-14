@@ -1,4 +1,7 @@
-"""``FolderSource`` — a watched directory as a block: the object-shaped sibling of ``Inbox``.
+"""``FolderChanges`` — a watched directory as a block: the object-shaped sibling of ``Inbox``.
+
+Named for what it yields (change pages), not for what it wraps: ``FolderSource`` is the
+contract-level filesystem source, a different object.
 
 A view over the ``folder`` ``DataSource`` for that directory (found or created by its root, the
 driver's natural key), exactly as ``Inbox`` is a view over a mailbox's source. NOT ``Folder``:
@@ -25,7 +28,7 @@ from flow_sdk.blocks.delivery import Delivered
 from flow_sdk.schema.data_spec.folder_change_spec import FolderChange
 
 
-class FolderSource:
+class FolderChanges:
     def __init__(
         self,
         root: str,
@@ -112,4 +115,4 @@ class FolderSource:
             await asyncio.sleep(cadence)
 
 
-__all__ = ["FolderChange", "FolderSource"]
+__all__ = ["FolderChange", "FolderChanges"]
