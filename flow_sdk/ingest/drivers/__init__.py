@@ -10,13 +10,14 @@ from pathlib import Path
 
 from flow_sdk.ingest.driver import register_driver
 from flow_sdk.ingest.drivers.agent import AgentDriver
-from flow_sdk.ingest.drivers.agentmail import AgentMailDriver
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.source_driver import SourceDriver
+from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
+from flow_sdk.sources.providers.agentmail import AgentMailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
@@ -277,6 +278,45 @@ async def _helpdesk_choices(_row, field):
     return out
 
 
+
+def _machine_secret(secret_name: str, *, config_key: str):
+    """A resolver for a MACHINE secret (the SOD store, by name, with no project), falling back to
+    the row's legacy ``config[config_key]`` so a source created before the move keeps working. The
+    store wins when both exist."""
+
+    async def resolve(row):
+        from pydantic import SecretStr  # noqa: PLC0415
+
+        from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+        value = ""
+        try:
+            from flow_sdk.cli.auth.secrets import read_secret  # noqa: PLC0415
+
+            value = str(read_secret(secret_name) or "").strip()
+        except Exception:  # noqa: BLE001 — a locked or absent store is "no key", not a crash
+            value = ""
+        value = value or str((row.config or {}).get(config_key) or "").strip()
+        return Credentials(shape=AuthShape.SECRETS, values={config_key: SecretStr(value)}) if value else Credentials()
+
+    return resolve
+
+
+def _agentmail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """A reply to a known message keeps the exchange one thread on the recipient's side; a bare send
+    to ``to`` starts a new one, and only then does ``subject`` mean anything."""
+    from flow_sdk.sources import UserProfile  # noqa: PLC0415
+    from flow_sdk.sources.values.items import EmailMessageData  # noqa: PLC0415
+
+    answered = str(in_reply_to or "").strip()
+    if answered:
+        return EmailMessageData(text=text), source.origin(answered)
+    address = str(to or "").strip()
+    if not address:
+        raise ValueError("an agentmail send needs a recipient address in `to`")
+    return EmailMessageData(text=text, subject=subject or None, recipients=(UserProfile(origin=source.origin(address), address=address),)), None
+
+
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
 register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
 register_driver(
@@ -293,7 +333,15 @@ register_driver(
     )
 )
 register_driver(AgentDriver())
-register_driver(AgentMailDriver())
+register_driver(
+    SourceDriver(
+        AgentMailSource,
+        kind="datasource.api.agentmail",
+        credentials=_machine_secret(AGENTMAIL_SECRET, config_key="api_key"),
+        outgoing=_agentmail_outgoing,
+        lift_cursor=lambda state: AgentMailSource.resume_after(state["high_water"]) if state.get("high_water") else None,
+    )
+)
 register_driver(CloudEmailDriver())
 register_driver(
     SourceDriver(
@@ -350,7 +398,6 @@ register_driver(
 
 __all__ = [
     "AgentDriver",
-    "AgentMailDriver",
     "CloudEmailDriver",
     "GitDriver",
     "GmailDriver",
