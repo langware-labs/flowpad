@@ -48,7 +48,7 @@ from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import Rejected, SourceError
-from flow_sdk.sources.protocols import Choosing, Identified, Messaging, Segmented, StableHandle, Verifiable
+from flow_sdk.sources.protocols import Choosing, Identified, Listable, Messaging, Segmented, StableHandle, Verifiable
 from flow_sdk.sources.values.items import MessageData
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
@@ -151,6 +151,9 @@ class SourceDriver(IngestDriver):
             return [SegmentRef(key=ref.key, label=ref.label, stamp=ref.stamp) for ref in await source.segments()]
 
     async def fetch(self, row: Any, view: SegmentCursorView) -> FetchResult:
+        if not issubclass(self.source_cls, Listable):
+            # A push-only source (a webhook is its only delivery): a poll cannot return anything.
+            return FetchResult(items=[], next_state=dict(view.state or {}), unchanged=True)
         source = await self.open(row)
         cls = type(source)
         async with source:
