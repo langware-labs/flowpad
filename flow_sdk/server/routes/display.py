@@ -25,6 +25,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from flow_sdk.core.webpage_status import WebpageStatusRequest
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 router = APIRouter()
@@ -106,3 +107,18 @@ async def display_url(req: DisplayUrlRequest):
             "url": url,
         }
     )
+
+
+@router.post("/api/v1/web/status")
+async def webpage_status(req: WebpageStatusRequest):
+    """Can the display frame this external page, and does it answer at all?
+
+    The browser cannot tell a refused frame from one that loaded (see
+    ``flow_sdk/core/webpage_status.py``), so the URL display asks here before
+    offering "Open in browser". Body: ``{url, embedder_origin}``. Data:
+    ``WebpageStatus``. Always succeeds; an unchecked page says so in ``nav_error``.
+    """
+    from flow_sdk.core.webpage_status import check_webpage_status  # noqa: PLC0415
+
+    status = await check_webpage_status(req.url.strip(), req.embedder_origin)
+    return ApiSuccessResponse(data=status.model_dump())

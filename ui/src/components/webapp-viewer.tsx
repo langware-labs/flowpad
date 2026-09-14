@@ -1,6 +1,7 @@
 import { openExternal } from '@src/lib/open-external';
 import { ServiceStatusLed } from '@src/components/machine-overview/service-status-led';
-import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import type { PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { WebUrlDisplay } from '@src/components/web-url-display/WebUrlDisplay';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
@@ -177,7 +178,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
           {webUrl ? (
-            <PersistentIframe ref={iframeRef} src={webUrl} testId="web-url-frame" />
+            <WebUrlDisplay ref={iframeRef} url={webUrl} testId="web-url-frame" />
           ) : hasWebApp ? (
             <WebappDisplay
               ref={iframeRef}
