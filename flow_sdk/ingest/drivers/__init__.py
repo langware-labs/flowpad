@@ -18,13 +18,13 @@ from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
 from flow_sdk.ingest.drivers.teams import TeamsDriver
-from flow_sdk.ingest.drivers.whatsapp import WhatsAppDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.rss import RssSource
 from flow_sdk.sources.providers.slack import SlackSource
 from flow_sdk.sources.providers.telegram import TelegramSource
+from flow_sdk.sources.providers.whatsapp import WhatsAppSource
 
 
 def _folder_origin(row):
@@ -88,15 +88,19 @@ def _slack_outbound_spec(_source):
 
 
 
-async def _telegram_credentials(row):
-    """The bot token. Read from the row's config until per-row secrets move out of it; either
-    way it reaches the source as a credential, never as configuration."""
-    from pydantic import SecretStr  # noqa: PLC0415
+def _config_secret(name: str):
+    """A resolver that reads one secret from the row's config — until per-row secrets move out
+    of config. Either way it reaches the source as a credential, never as configuration."""
 
-    from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+    async def resolve(row):
+        from pydantic import SecretStr  # noqa: PLC0415
 
-    token = str((row.config or {}).get("bot_token") or "").strip()
-    return Credentials(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(token)}) if token else Credentials()
+        from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+        value = str((row.config or {}).get(name) or "").strip()
+        return Credentials(shape=AuthShape.SECRETS, values={name: SecretStr(value)}) if value else Credentials()
+
+    return resolve
 
 
 def _telegram_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
@@ -119,6 +123,28 @@ def _telegram_outbound_spec(_source):
     from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
 
     return TelegramMessageSpec
+
+
+
+def _whatsapp_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """``to`` is the person's wa_id — the person IS the conversation — and ``in_reply_to`` quotes
+    their message, which renders as a quote and starts no thread. A subject has no equivalent."""
+    from flow_sdk.sources.providers.whatsapp import digits  # noqa: PLC0415
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    wa_id = digits(to) or digits(thread_key)
+    if not wa_id:
+        raise ValueError("a whatsapp send needs the recipient's wa_id in `to`")
+    quoted = str(in_reply_to or "").strip()
+    if quoted:
+        return MessageData(text=text), source.message_origin(quoted, wa_id)
+    return MessageData(text=text, conversation=source.conversation_origin(wa_id)), None
+
+
+def _whatsapp_outbound_spec(_source):
+    from flow_sdk.builtin.source_item import WhatsAppMessageSpec  # noqa: PLC0415
+
+    return WhatsAppMessageSpec
 
 
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
@@ -155,13 +181,21 @@ register_driver(
     SourceDriver(
         TelegramSource,
         kind="datasource.api.telegram",
-        credentials=_telegram_credentials,
+        credentials=_config_secret("bot_token"),
         outgoing=_telegram_outgoing,
         outbound_spec=_telegram_outbound_spec,
         lift_cursor=lambda state: TelegramSource.resume_at(state["next_offset"]) if state.get("next_offset") else None,
     )
 )
-register_driver(WhatsAppDriver())
+register_driver(
+    SourceDriver(
+        WhatsAppSource,
+        kind="datasource.api.whatsapp",
+        credentials=_config_secret("access_token"),
+        outgoing=_whatsapp_outgoing,
+        outbound_spec=_whatsapp_outbound_spec,
+    )
+)
 
 __all__ = [
     "AgentDriver",
@@ -172,5 +206,4 @@ __all__ = [
     "GoogleDriveDriver",
     "HelpdeskDriver",
     "TeamsDriver",
-    "WhatsAppDriver",
 ]

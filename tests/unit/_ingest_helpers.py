@@ -75,7 +75,9 @@ def local_http_server(respond: Responder) -> Iterator[str]:
             pass
 
     server = HTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # A short shutdown poll: `serve_forever` checks for `shutdown()` once per interval, and the
+    # default half second was paid again by every test that stops a server.
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
     try:
         yield f"http://127.0.0.1:{server.server_port}"
     finally:
