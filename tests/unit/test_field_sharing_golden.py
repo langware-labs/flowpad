@@ -470,11 +470,9 @@ def test_project_hub_body_override_strips_local_project_state():
         "last_mode",
         "last_session_at",
         "presence",
-        "secret_origins",
         "session_code",
         "session_count",
         "shared_context_origins",
-        "shared_secret_origins",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

@@ -99,7 +99,6 @@ EXPECTED = {
     "CONVERSATION": "conversation",
     "WHITEBOARD": "whiteboard",
     "DATASET": "dataset",
-    "SECRET_ORIGIN": "secret_origin",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",
     "REAL_PROJECT_CWD": "real_project_cwd",

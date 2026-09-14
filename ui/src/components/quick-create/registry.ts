@@ -1,5 +1,7 @@
 import {
   Agent,
+  CredentialSpec,
+  credentialsService,
   SubAgent,
   dataManager,
   DynamicWorkflow,
@@ -14,6 +16,8 @@ import {
 } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
+import { CredentialQuickCreateDialog } from '@src/components/credentials/CredentialQuickCreateDialog';
+import { slugify, toEnvVarName } from '@src/components/credentials/credential-draft';
 import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -208,6 +212,33 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('mcp', saved.asset_ref) : undefined,
         toastTitle: msg`MCP server created`,
+      };
+    },
+  },
+  {
+    type: CredentialSpec.type,
+    label: msg`Secret`,
+    wikiword: 'Secrets',
+    allowedScopes: ['user', 'project'],
+    Dialog: CredentialQuickCreateDialog,
+    // The assets-list `+` is name-only: declare one variable named after it,
+    // kept in .env.local, with no value yet — values are set from Connections.
+    create: async ({ project, name, scope }) => {
+      const title = name.trim();
+      const projectId = scope !== 'user' ? (project?.id ?? null) : null;
+      const row = await credentialsService.save({
+        scope: projectId ? 'project' : 'user',
+        project_id: projectId,
+        manifest: {
+          name: slugify(title),
+          title,
+          value_store: 'env',
+          vars: { [toEnvVarName(title) || 'API_KEY']: { label: title } },
+        },
+      });
+      return {
+        pointer: DockPointer.forCredentials(undefined, row.project_id ?? undefined),
+        toastTitle: msg`Secret created`,
       };
     },
   },

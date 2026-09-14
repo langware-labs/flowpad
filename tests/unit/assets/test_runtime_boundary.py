@@ -29,7 +29,7 @@ def test_filesystem_operations_never_import_application_or_resolve_settings():
         assert {'skill', 'markdown', 'task', 'mcp', 'graph_workflow', 'journey'} <= set(SchemaRegistry.get_all_types())
         from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
         from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
-        CredentialManifestSpec.model_validate({'schema': 1, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
+        CredentialManifestSpec.model_validate({'schema': 2, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
         ManifestSpec.model_validate({'schema': 1, 'name': 'source', 'reflect': ['copy']})
         import subprocess, socket
         def forbidden_command(*args, **kwargs):

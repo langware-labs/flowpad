@@ -24,9 +24,11 @@ const h = vi.hoisted(() => ({
   projects: [] as unknown[],
   usage: {} as Record<string, unknown[]>,
   checkHarnessLogins: vi.fn(),
-  declare: vi.fn(async () => undefined),
-  provide: vi.fn(async () => undefined),
-  deleteCredential: vi.fn(async () => ({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
+  save: vi.fn(() => Promise.resolve({ typeid: 'credential_spec-new', title: 'Twilio', project_id: null })),
+  remove: vi.fn(() => Promise.resolve({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
+  refresh: vi.fn(() => Promise.resolve()),
+  status: { project_id: null, vault_enabled: true, credentials: [], files: [] } as Record<string, unknown>,
+  templates: [] as unknown[],
   rows: [] as unknown[],
   blocked: false,
   connections: null as unknown[] | null,
@@ -58,27 +60,12 @@ vi.mock('@src/components/connections-manager/use-credential-usage', async (impor
 }));
 // The credential half is a fixture here: this file is about the table, and the
 // fold itself is covered by `credential-rows.test.ts`.
-vi.mock('@src/components/connections-manager/use-credential-connections', () => ({
-  useCredentialConnections: () => ({
-    rows: h.rows,
-    specs: [
-      {
-        id: 'spec-twilio',
-        name: 'twilio',
-        title: 'Twilio',
-        vars: { TWILIO_SID: { label: 'Account SID', required: true } },
-        // A real `CredentialSpec` exposes `varNames`; the form reads variables
-        // through it so the set it ASKS for cannot drift from the set
-        // `pointersFor` declares.
-        varNames: ['TWILIO_SID'],
-      },
-    ],
-    envLocalBlocked: h.blocked,
-    envLocalPresent: new Set<string>(),
-    declareCredential: h.declare,
-    provide: h.provide,
-    deleteCredential: h.deleteCredential,
-  }),
+vi.mock('@src/components/credentials/use-credentials', () => ({
+  useCredentials: () => ({ status: h.status, templates: h.templates, ready: true, refresh: h.refresh }),
+}));
+vi.mock('@sdk', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  credentialsService: { save: h.save, remove: h.remove, setValues: vi.fn(), status: vi.fn() },
 }));
 // The consolidated read. Stubbed rather than provided with a QueryClient: this
 // file is about the table's own producers, and the harness rows it feeds are
@@ -343,134 +330,240 @@ describe('ConnectionsManager — a credential that is held but dead', () => {
   });
 });
 
-describe('ConnectionsManager — adding a credential writes the key', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    localStorage.clear();
-    h.providers = [];
-    h.statuses = {};
-    h.grants = {};
-    h.projects = [];
-    h.usage = {};
-    h.blocked = false;
-    h.rows = [];
-  });
+const TWILIO_TEMPLATE = {
+  id: 'spec-twilio',
+  name: 'twilio',
+  title: 'Twilio',
+  description: '',
+  icon_name: '',
+  help_url: '',
+  value_store: 'env',
+  lm_provider: '',
+  scope: 'system',
+  vars: { TWILIO_SID: { label: 'Account SID', required: true } },
+  varNames: ['TWILIO_SID'],
+};
+
+const statusWith = (over: Record<string, unknown> = {}) => ({
+  project_id: null,
+  vault_enabled: true,
+  credentials: [],
+  files: [],
+  ...over,
+});
+
+const credential = (over: Record<string, unknown> = {}) => ({
+  typeid: 'credential_spec-1',
+  name: 'twilio',
+  title: 'Twilio',
+  description: '',
+  icon_name: '',
+  help_url: '',
+  scope: 'user',
+  project_id: null,
+  value_store: 'env',
+  lm_provider: '',
+  state: 'connected',
+  vars: [
+    {
+      env_var: 'TWILIO_SID', label: 'SID', hint: '', placeholder: '', pattern: '', help_url: '',
+      secret: false, required: true, present: true, found_in: 'env', warning: null, shadowed_by: null,
+    },
+  ],
+  ...over,
+});
+
+const resetCredentials = () => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  h.providers = [];
+  h.statuses = {};
+  h.grants = {};
+  h.projects = [];
+  h.usage = {};
+  h.templates = [TWILIO_TEMPLATE];
+  h.status = statusWith();
+};
+
+const openTemplate = async () => {
+  await userEvent.click(screen.getByTestId('add-connection-open'));
+  await userEvent.click(screen.getByTestId('add-connection-twilio'));
+};
+
+describe('ConnectionsManager — adding a credential', () => {
+  beforeEach(resetCredentials);
   afterEach(() => cleanup());
 
-  it('asks for the values before declaring anything', async () => {
-    // Declaring an empty shell was the bug: it produced a "connection" that
-    // connects nothing and — because a credential exists when its values do —
-    // does not even render as a row afterwards.
+  it('a catalogue template opens the one credential form with its variable fixed', async () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
 
-    await userEvent.click(screen.getByTestId('add-connection-open'));
-    await userEvent.click(screen.getByTestId('add-connection-twilio'));
-
-    expect(screen.getByTestId('credential-value-form')).toBeTruthy();
-    expect(h.declare).not.toHaveBeenCalled();
+    expect(screen.getByTestId('credential-dialog')).toBeTruthy();
+    expect(screen.getByTestId('credential-var-name-0').tagName).toBe('CODE');
+    expect(h.save).not.toHaveBeenCalled();
   });
 
-  it('declares before it provides — the pointer must exist first', async () => {
+  it('saving writes the declaration and its values in one call, then re-reads', async () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByTestId('add-connection-open'));
-    await userEvent.click(screen.getByTestId('add-connection-twilio'));
+    await openTemplate();
 
-    await userEvent.type(screen.getByTestId('credential-value-TWILIO_SID'), 'sid-1');
-    await userEvent.click(screen.getByTestId('credential-value-save'));
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+    await userEvent.click(screen.getByTestId('credential-save'));
 
-    await waitFor(() => expect(h.provide).toHaveBeenCalled());
-    // `provide-secret` resolves the pointer on the project, so a value written
-    // before the declaration has nowhere to land.
-    expect(h.declare.mock.invocationCallOrder[0]).toBeLessThan(
-      h.provide.mock.invocationCallOrder[0],
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: 'user',
+        project_id: null,
+        manifest: expect.objectContaining({ name: 'twilio', value_store: 'env' }),
+        values: { TWILIO_SID: 'sid-1' },
+      }),
     );
-    expect(h.provide).toHaveBeenCalledWith({ envVar: 'TWILIO_SID', value: 'sid-1' });
+    await waitFor(() => expect(h.refresh).toHaveBeenCalled());
   });
 
-  it('refuses, and says why, when .env.local is committable', async () => {
-    h.blocked = true;
+  it('with a project selected, a new credential defaults to that project', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} project={{ id: 'p1', typeId: PROJECT } as never} />);
+    await openTemplate();
+
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.save.mock.calls[0][0]).toMatchObject({ scope: 'project', project_id: 'p1' });
+  });
+
+  it('Custom API key opens a pack name and name + value pairs, the rest behind Advanced', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} project={{ id: 'p1', typeId: PROJECT } as never} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-custom'));
+
+    expect(screen.getByTestId('credential-title')).toBeTruthy();
+    expect(screen.getByTestId('credential-var-name-0').tagName).toBe('INPUT');
+    expect(screen.getByTestId('credential-var-value-0')).toBeTruthy();
+    expect(screen.queryByTestId('credential-advanced')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('credential-advanced-toggle'));
+
+    // Defaults: this project, the .env.local file — each with its wiki section.
+    expect(screen.getByTestId('credential-scope').textContent).toMatch(/this project/i);
+    expect(screen.getByTestId('credential-store').textContent).toMatch(/\.env\.local/i);
+    expect(screen.getByTestId('credential-scope-info')).toBeTruthy();
+    expect(screen.getByTestId('credential-store-info')).toBeTruthy();
+    expect(screen.getByTestId('credential-description')).toBeTruthy();
+  });
+
+  it('refuses to write a value into a committable .env.local, and says why', async () => {
+    h.status = statusWith({
+      files: [
+        {
+          scope: 'user', project_id: null, path: '/h/.env.local', exists: true, blocked: true,
+          block_code: 'tracked', block_reason: '.env.local is already TRACKED by git.', detected: [],
+        },
+      ],
+    });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+
+    expect(screen.getByTestId('env-local-blocked-notice').textContent).toMatch(/TRACKED/);
+    expect(screen.getByTestId('credential-save').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('a vault credential asks for the vault to be enabled first', async () => {
+    h.status = statusWith({ vault_enabled: false });
+    h.templates = [{ ...TWILIO_TEMPLATE, value_store: 'vault' }];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+
+    expect(screen.getByTestId('vault-disabled-notice')).toBeTruthy();
+    expect(screen.getByTestId('credential-save').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('packing detected keys opens the form with those names and no value fields', async () => {
+    h.status = statusWith({
+      files: [
+        {
+          scope: 'user', project_id: null, path: '/h/.env.local', exists: true, blocked: false,
+          block_code: null, block_reason: null,
+          detected: [
+            { key: 'QA_A', line: 1 },
+            { key: 'QA_B', line: 2 },
+          ],
+        },
+      ],
+    });
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    expect(screen.getAllByTestId('env-local-blocked-notice').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByTestId('detected-key-user-QA_A'));
+    await userEvent.click(screen.getByTestId('detected-pack-user'));
 
-    await userEvent.click(screen.getByTestId('add-connection-open'));
-    await userEvent.click(screen.getByTestId('add-connection-twilio'));
-    // Shown again inside the modal, which covers the table's copy.
-    expect(screen.getAllByTestId('env-local-blocked-notice').length).toBe(2);
-    expect((screen.getByTestId('credential-value-save') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('credential-var-name-0').textContent).toBe('QA_A');
+    expect(screen.queryByTestId('credential-var-value-0')).toBeNull();
+
+    await userEvent.type(screen.getByTestId('credential-title'), 'QA pack');
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.save.mock.calls[0][0]).toMatchObject({ scope: 'user', values: {} });
+    expect(Object.keys((h.save.mock.calls[0][0] as { manifest: { vars: object } }).manifest.vars)).toEqual(['QA_A']);
   });
 });
 
-describe('ConnectionsManager — withdrawing a declaration', () => {
+describe('ConnectionsManager — credential rows', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    localStorage.clear();
-    h.providers = [];
-    h.grants = {};
-    h.projects = [];
-    h.usage = {};
-    h.blocked = false;
-    h.rows = [
-      {
-        key: 'twilio',
-        title: 'Twilio',
-        state: 'connected',
-        sodStore: 'sodot',
-        declaredCount: 2,
-        adoptableCount: 0,
-        members: [
-          { envVar: 'TWILIO_SID', label: 'SID', secret: false, required: true, state: 'met', declared: true, typeid: 'secret_origin-1' },
-        ],
-      },
-    ] as unknown[];
+    resetCredentials();
+    h.status = statusWith({ credentials: [credential({ value_store: 'vault' })] });
   });
   afterEach(() => cleanup());
 
-  it('deletes the credential — one plain verb, not "stop declaring"', async () => {
-    // Without this there is no way to remove anything in the app at all — the
-    // row is permanent, and so is its entry in the machine's attachable
-    // secrets list.
+  const openMenuItem = async (key: string, item: 'edit' | 'delete') => {
+    await userEvent.click(screen.getByTestId(`connection-more-${key}`));
+    await userEvent.click(await screen.findByTestId(`connection-${item}-${key}`));
+  };
+
+  it('lists a declared credential with where its values live and who gets it', () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByTestId('connection-delete-twilio'));
 
-    // A value in Flowpad's own store really is deleted, so the dialog says so
-    // without hedging.
-    expect(document.body.textContent).toMatch(/stored value is deleted/i);
-    expect(document.body.textContent).not.toMatch(/\.env\.local/i);
-
-    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
-    await waitFor(() => expect(h.deleteCredential).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('connection-row-user-twilio')).toBeTruthy();
+    expect(screen.getByTestId('connection-store-user-twilio').textContent).toMatch(/vault/i);
+    expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
   });
 
-  it('names the variables it will NOT delete, before deleting', async () => {
-    // The one case where Delete is not total. `.env.local` is the user's own
-    // file and Flowpad never removes an entry from it, so the dialog has to say
-    // which variables stay — discovering it afterwards is how a delete button
-    // starts lying.
-    //
-    // The STORE decides, not where a value was last found: a declaration's
-    // locator kind comes from its definition's store, and that kind is what
-    // picks the driver the backend asks to forget the value.
-    h.rows = [
-      {
-        key: 'gmail',
-        title: 'Gmail',
-        state: 'connected',
-        sodStore: 'env-local',
-        declaredCount: 2,
-        adoptableCount: 0,
-        members: [
-          { envVar: 'GMAIL_ADDRESS', label: 'Address', secret: false, required: true, state: 'met', declared: true, typeid: 'secret_origin-9' },
-          { envVar: 'GMAIL_APP_PASSWORD', label: 'Password', secret: true, required: true, state: 'met', declared: true, typeid: 'secret_origin-10' },
-        ],
-      },
-    ] as unknown[];
+  it('a credential missing values offers to set them, and asks only for values', async () => {
+    h.status = statusWith({
+      credentials: [
+        credential({
+          state: 'missing',
+          vars: [{ ...(credential().vars as object[])[0], present: false, found_in: null, warning: 'missing' }],
+        }),
+      ],
+    });
     render(<ConnectionsManager projectTypeId={PROJECT} />);
-    await userEvent.click(screen.getByTestId('connection-delete-gmail'));
+
+    expect(screen.getByTestId('connection-status-user-twilio').textContent).toMatch(/needs values/i);
+    await userEvent.click(screen.getByTestId('connection-setvalues-user-twilio'));
+
+    expect(screen.getByTestId('credential-var-value-0')).toBeTruthy();
+    expect(screen.queryByTestId('credential-title')).toBeNull();
+  });
+
+  it('deleting a vault credential says its values are deleted', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openMenuItem('user-twilio', 'delete');
+
+    expect(document.body.textContent).toMatch(/deleted from the vault/i);
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(h.remove).toHaveBeenCalledWith('credential_spec-1'));
+  });
+
+  it('deleting an env-file credential names the lines that stay', async () => {
+    h.status = statusWith({ credentials: [credential({ value_store: 'env' })] });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openMenuItem('user-twilio', 'delete');
 
     const text = document.body.textContent ?? '';
-    expect(text).toMatch(/GMAIL_ADDRESS, GMAIL_APP_PASSWORD stay in your \.env\.local/i);
-    // And it must not also claim the value was deleted.
-    expect(text).not.toMatch(/stored value is deleted/i);
+    expect(text).toMatch(/TWILIO_SID stay in \.env\.local/i);
+    expect(text).not.toMatch(/deleted from the vault/i);
   });
 });

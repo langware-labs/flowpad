@@ -50,6 +50,24 @@ def _oauth(monkeypatch, specs):
     monkeypatch.setattr("flow_sdk.core.connections.specs._list_connection_specs_local", rows)
 
 
+def _no_credentials(monkeypatch):
+    async def none(project):
+        return []
+
+    monkeypatch.setattr(status_mod, "_credential_rows", none)
+
+
+def _api_row(provider, *, scope):
+    return ConnectionSpec(
+        provider=provider,
+        display_name=provider.title(),
+        kind=ConnectionKind.API_KEY,
+        state=ConnectionState.CONNECTED,
+        connected=True,
+        scope=scope,
+    )
+
+
 def _spec(provider, *, connected):
     return ConnectionSpec(
         provider=provider,
@@ -213,101 +231,93 @@ async def test_lists_only_held_oauth_grants(monkeypatch):
     _no_flowpad(monkeypatch)
     _oauth(monkeypatch, [_spec("slack", connected=True), _spec("github", connected=False)])
 
+    _no_credentials(monkeypatch)
     rows = await status_mod.list_connections()
 
     assert [r.provider for r in rows if r.kind is ConnectionKind.OAUTH] == ["slack"]
 
 
-async def test_credentials_need_a_project_and_are_absent_without_one(monkeypatch):
-    """Their identity IS `(project_id, env_var)`, and the server has no notion of
-    a selected project — so no project means a smaller honest list, not a guess."""
+async def test_user_credentials_are_listed_without_a_project(monkeypatch):
+    """User-scope credentials apply to every project, so they are rows even when
+    no project is named; the call passes the project through unchanged."""
     _no_harnesses(monkeypatch)
     _no_flowpad(monkeypatch)
     _oauth(monkeypatch, [])
+    seen = []
 
-    rows = await status_mod.list_connections()
+    async def rows(project):
+        seen.append(project)
+        return [_api_row("personal", scope="user")]
 
-    assert [r for r in rows if r.kind is ConnectionKind.API_KEY] == []
+    monkeypatch.setattr(status_mod, "_credential_rows", rows)
+
+    listed = await status_mod.list_connections()
+
+    assert seen == [None]
+    assert [(r.provider, r.scope) for r in listed if r.kind is ConnectionKind.API_KEY] == [("personal", "user")]
 
 
 async def test_flowpad_and_harnesses_are_machine_scoped(monkeypatch):
     _no_harnesses(monkeypatch)
     _no_flowpad(monkeypatch)
+    _no_credentials(monkeypatch)
     _oauth(monkeypatch, [_spec("slack", connected=True)])
     rows = await status_mod.list_connections()
     assert rows and {r.scope for r in rows} == {"machine"}
 
 
-# ── the fold's own rule, ported ────────────────────────────────────────────
+# ── credential rows come from the credential status ─────────────────────
 
 
-class _Spec:
-    def __init__(self, name, required, all_vars=None):
-        self.name = name
-        self.title = name.title()
-        self.icon_name = ""
-        self._required = required
-        self._all = all_vars or required
+def _status(monkeypatch, rows):
+    from flow_sdk.schema.data_spec.credential_status_spec import (
+        CredentialsStatusSpec,
+        CredentialStatusRowSpec,
+        CredentialVarStatusSpec,
+    )
 
-    def var_names(self):
-        return list(self._all)
+    status = CredentialsStatusSpec(
+        credentials=[
+            CredentialStatusRowSpec(
+                typeid=f"credential_spec-{name}",
+                name=name,
+                title=name.title(),
+                scope=scope,
+                value_store="env",
+                state=state,
+                vars=[CredentialVarStatusSpec(env_var=v, present=state == "connected") for v in env_vars],
+            )
+            for name, scope, state, env_vars in rows
+        ]
+    )
 
-    def required_var_names(self):
-        return list(self._required)
+    async def fake(project):
+        return status
 
-
-class _Resolve:
-    def __init__(self, statuses):
-        self.data = {"secrets": [{"env_var": k, "status": v} for k, v in statuses.items()]}
-
-
-class _Project:
-    def __init__(self, statuses):
-        self._statuses = statuses
-
-    async def secret_resolve_status(self):
-        return _Resolve(self._statuses)
-
-
-def _specs(monkeypatch, specs):
-    class _CredentialSpec:
-        @staticmethod
-        async def get_all():
-            return specs
-
-    monkeypatch.setattr("flow_sdk.builtin.credential_spec.CredentialSpec", _CredentialSpec)
+    monkeypatch.setattr("flow_sdk.builtin.credential_status.credentials_status", fake)
 
 
-async def test_a_credential_exists_when_its_values_do(monkeypatch):
-    _specs(monkeypatch, [_Spec("gmail", ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"])])
-    project = _Project({"GMAIL_ADDRESS": "available", "GMAIL_APP_PASSWORD": "available"})
+async def test_a_credential_is_a_connection_when_its_values_are_there(monkeypatch):
+    _status(monkeypatch, [("gmail", "project", "connected", ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"])])
 
-    rows = await status_mod._credential_rows(project)
+    rows = await status_mod._credential_rows(object())
 
     assert [r.provider for r in rows] == ["gmail"]
     assert rows[0].connected and rows[0].scope == "project"
     assert rows[0].env_vars == ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD")
 
 
-async def test_a_half_satisfied_credential_is_not_a_row(monkeypatch):
-    """No partial states, by design: "not there, not seen". A credential without
-    its values is not a connection — it is an entry in the Add dialog."""
-    _specs(monkeypatch, [_Spec("twilio", ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"])])
-    project = _Project({"TWILIO_ACCOUNT_SID": "available", "TWILIO_AUTH_TOKEN": "missing"})
+async def test_a_partial_or_missing_credential_is_not_a_row(monkeypatch):
+    """"Not there, not seen": a credential without its values is not a
+    connection — it is set up from the Connections screen."""
+    _status(monkeypatch, [("twilio", "project", "partial", ["A", "B"]), ("slack", "user", "missing", ["C"])])
 
-    assert await status_mod._credential_rows(project) == []
+    assert await status_mod._credential_rows(object()) == []
 
 
-async def test_an_optional_member_does_not_hold_a_working_credential_back(monkeypatch):
-    """Required-only, exactly as `required_var_names` documents."""
-    _specs(
-        monkeypatch,
-        [_Spec("openrouter", ["OPENROUTER_API_KEY"], all_vars=["OPENROUTER_API_KEY", "SITE_URL"])],
-    )
-    project = _Project({"OPENROUTER_API_KEY": "available", "SITE_URL": "missing"})
+async def test_a_row_carries_its_own_scope(monkeypatch):
+    _status(monkeypatch, [("personal", "user", "connected", ["P"]), ("team", "project", "connected", ["T"])])
 
-    rows = await status_mod._credential_rows(project)
+    rows = await status_mod._credential_rows(object())
 
-    assert [r.provider for r in rows] == ["openrouter"]
-    # The row still names every variable it is made of, satisfied or not.
-    assert rows[0].env_vars == ("OPENROUTER_API_KEY", "SITE_URL")
+    assert [(r.provider, r.scope) for r in rows] == [("personal", "user"), ("team", "project")]

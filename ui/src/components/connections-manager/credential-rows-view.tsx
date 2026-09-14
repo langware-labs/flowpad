@@ -1,135 +1,94 @@
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { KeyRound, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { KeyRound } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { MoreOnHover } from './more-on-hover';
 import { Button } from '../ui/button';
-import { ProvideValueInline } from '@src/components/credentials-view/ProvideValueInline';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { TableCell, TableRow } from '../ui/table';
-import { CONNECTIONS_COLUMN_COUNT } from '../connections-manager';
+import { MoreOnHover } from './more-on-hover';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
-/** Same cap the OAuth scope chips use — one chip and a count. The column is one
- *  line, and four chips wrapped the row to four lines. */
+/** Same cap the OAuth scope chips use — one chip and a count. */
 const VARS_SHOWN = 1;
 
-/** The provider glyph for a credential row.
- *
- *  From the definition's `icon_name`, which is asset data rather than a TYPE
- *  icon — the row is a provider, not an entity type, so `iconForType` is the
- *  wrong registry. Falls back to a key glyph, never to nothing. */
+/** The provider glyph, from the definition's `icon_name` — asset data, not a type icon. */
 function CredentialGlyph({ iconName }: { iconName?: string }) {
-  const Icon = iconName ? lucideByName(iconName) : null;
-  return Icon ? (
-    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-  ) : (
-    <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-  );
+  const Icon = (iconName && lucideByName(iconName)) || KeyRound;
+  return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />;
 }
 
 /**
- * Credential rows for the Connections table.
- *
- * A fragment of `<TableRow>`s rather than its own table: the whole point is that
- * an API credential is not a second kind of thing beside an OAuth connection —
- * it is the same row with a different sign-in.
+ * Credential rows for the Connections table — `<TableRow>`s in the one table, so
+ * a pasted API key reads as the same kind of thing as an OAuth sign-in.
  */
 export function CredentialConnectionRows({
   rows,
-  onProvide,
-  onAdopt,
+  onSetValues,
+  onEdit,
   onDelete,
-  adoptingKey,
 }: {
   rows: CredentialRow[];
-  /** Write one member's value. Declaration-first is already guaranteed: a row
-   *  only offers this for members a `SecretOrigin` declares. */
-  onProvide?: (envVar: string, value: string) => Promise<void>;
-  /** Adopt a detected-but-undeclared credential: declare all of its variables.
-   *  Without this a row whose values are already on disk is a dead end — it is
-   *  shown in the table, and therefore excluded from Add connection, so there
-   *  would be nowhere left to add it from. */
-  onAdopt?: (rowKey: string) => Promise<void>;
-  /** Delete the credential: its declarations, and the values it is ours to
-   *  delete. See `deleteCredential` — a value in the user's `.env.local` stays,
-   *  and the confirm dialog is where that is said. */
-  onDelete?: (row: CredentialRow) => void;
-  /** Row key currently being adopted, so the button can spell "working". */
-  adoptingKey?: string | null;
+  onSetValues: (row: CredentialRow) => void;
+  onEdit: (row: CredentialRow) => void;
+  onDelete: (row: CredentialRow) => void;
 }) {
   const { t } = useLingui();
-  const [settingUp, setSettingUp] = React.useState<string | null>(null);
-
-  // In-component, like `statusLabel` in the host: a module-level map of raw
-  // strings escapes lingui extraction.
-  // Short by necessity: the OAuth rows put their status on one line, and a
-  // wrapping label here is what made the two halves of the table look like two
-  // different tables. The detail moves to the title attribute.
-  // An API credential has ONE state worth a word: the key is present, so it is
-  // enabled. There is no "detected" (that is just enabled) and no "0 of 2" (a
-  // credential without its values is not a connection — it is not a row at all,
-  // it is an entry in the Add dialog). `credential-rows.ts` enforces that.
-  const statusText = (): string => t`Enabled`;
-
-  const dot = (): string => 'bg-emerald-500';
 
   return (
     <>
       {rows.map((row) => {
-        const shown = row.members.slice(0, VARS_SHOWN);
-        const extra = row.members.length - shown.length;
-        const unset = row.members.filter((m) => m.declared && m.state !== 'met');
-        const showAdopt = !!onAdopt && row.declaredCount === 0 && row.adoptableCount > 0;
-        const showSetup = !!onProvide && row.declaredCount > 0 && row.state !== 'connected';
-        const showDelete = !!onDelete && row.declaredCount > 0;
+        const testKey = `${row.scope}-${row.name}`;
+        const shown = row.vars.slice(0, VARS_SHOWN);
+        const extra = row.vars.length - shown.length;
+        const connected = row.state === 'connected';
         return (
-          <React.Fragment key={`credential:${row.key}`}>
-          <TableRow data-testid={`connection-row-${row.key}`}>
+          <TableRow key={row.typeid} data-testid={`connection-row-${testKey}`}>
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
                 <CredentialGlyph iconName={row.iconName} />
-                <span>{row.title}</span>
+                <span className="truncate" title={row.description}>
+                  {row.title}
+                </span>
               </div>
             </TableCell>
 
             <TableCell>
               <Badge
                 variant="outline"
-                className="text-xs font-normal"
-                title={t`Values you paste, kept in this project's environment`}
-                data-testid={`connection-kind-${row.key}`}
+                className="rounded-full px-2 text-[11px] font-medium text-muted-foreground"
+                title={
+                  row.store === 'vault'
+                    ? t`Values are kept in this machine's encrypted vault`
+                    : row.scope === 'user'
+                      ? t`Values are kept in .env.local in your home folder`
+                      : t`Values are kept in this project's .env.local`
+                }
+                data-testid={`connection-store-${testKey}`}
               >
-                <Trans>API</Trans>
+                {row.store === 'vault' ? <Trans>Vault</Trans> : <Trans>Env file</Trans>}
               </Badge>
             </TableCell>
 
-            {/* Requirement 5: an API credential's "access requested" IS its set
-                of environment variables. Same badge shape the OAuth scopes use,
-                so the two read as one column. */}
-            <TableCell data-testid={`connection-vars-${row.key}`}>
+            <TableCell data-testid={`connection-vars-${testKey}`}>
               <MoreOnHover
-                lines={row.members.map((m) => `${m.envVar}${m.required ? '' : t` (optional)`}`)}
+                lines={row.vars.map(
+                  (v) =>
+                    `${v.envVar}${v.required ? '' : t` (optional)`}${v.present ? '' : t` — not set`}${v.warning === 'wrong-store' ? t` (value is in the other store)` : ''}`,
+                )}
               >
                 <div className="flex items-center gap-1">
-                  {shown.map((m) => (
+                  {shown.map((v) => (
                     <Badge
-                      key={m.envVar}
+                      key={v.envVar}
                       variant="secondary"
                       className={cn(
                         'max-w-[220px] truncate font-mono text-[11px] font-normal',
-                        m.state === 'missing' && 'opacity-50',
+                        !v.present && 'opacity-50',
                       )}
-                      title={
-                        m.state === 'met'
-                          ? t`Set${m.foundIn ? ` — from ${m.foundIn}` : ''}`
-                          : m.state === 'adoptable'
-                            ? t`In .env.local at line ${m.line ?? 0}, not declared yet`
-                            : t`Not set`
-                      }
                     >
-                      {m.envVar}
+                      {v.envVar}
                     </Badge>
                   ))}
                   {!!extra && (
@@ -143,110 +102,71 @@ export function CredentialConnectionRows({
 
             <TableCell>
               <div className="flex items-center gap-2 text-sm">
-                <span className={cn('h-2 w-2 shrink-0 rounded-full', dot())} />
                 <span
-                  className="whitespace-nowrap text-emerald-600"
-                  data-testid={`connection-status-${row.key}`}
+                  className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')}
+                />
+                <span
+                  className={cn('whitespace-nowrap', connected ? 'text-emerald-600' : 'text-amber-600')}
+                  title={row.missing.length ? t`Missing: ${row.missing.join(', ')}` : undefined}
+                  data-testid={`connection-status-${testKey}`}
                 >
-                  {statusText()}
+                  {connected ? <Trans>Connected</Trans> : <Trans>Needs values</Trans>}
                 </span>
               </div>
             </TableCell>
 
-            <TableCell className="text-sm text-muted-foreground">—</TableCell>
+            <TableCell className="text-sm text-muted-foreground" data-testid={`connection-scope-${testKey}`}>
+              <span title={row.shadowed ? t`This project declares the same variables, and its values win` : undefined}>
+                {row.scope === 'user' ? <Trans>All projects</Trans> : <Trans>This project</Trans>}
+                {row.shadowed && (
+                  <span className="ms-1 text-xs text-muted-foreground/70">
+                    <Trans>(overridden)</Trans>
+                  </span>
+                )}
+              </span>
+            </TableCell>
+
             <TableCell className="text-end">
-              {showAdopt && (
+              <div className="flex items-center justify-end gap-1">
                 <Button
+                  variant={connected ? 'ghost' : 'outline'}
                   size="sm"
                   className="h-7"
-                  disabled={adoptingKey === row.key}
-                  onClick={() => void onAdopt?.(row.key)}
-                  data-testid={`connection-adopt-${row.key}`}
+                  onClick={() => onSetValues(row)}
+                  data-testid={`connection-setvalues-${testKey}`}
                 >
-                  {adoptingKey === row.key ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
+                  {connected ? <Trans>Update values</Trans> : <Trans>Set values</Trans>}
                 </Button>
-              )}
-              {showSetup && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => setSettingUp(settingUp === row.key ? null : row.key)}
-                  data-testid={`connection-setup-${row.key}`}
-                >
-                  <Trans>Set up</Trans>
-                </Button>
-              )}
-              {showDelete && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ms-1 h-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => onDelete?.(row)}
-                  data-testid={`connection-delete-${row.key}`}
-                >
-                  <Trans>Delete</Trans>
-                </Button>
-              )}
-              {/* The cell is never blank: a row with no action still gets a dash,
-                  which the three-way ternary this replaced could not express once
-                  Delete became a fourth outcome. */}
-              {!showAdopt && !showSetup && !showDelete && (
-                <span className="text-sm text-muted-foreground">—</span>
-              )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      title={t`More`}
+                      data-testid={`connection-more-${testKey}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => onEdit(row)} data-testid={`connection-edit-${testKey}`}>
+                      <Pencil className="me-2 h-3.5 w-3.5" />
+                      <Trans>Edit</Trans>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => onDelete(row)}
+                      data-testid={`connection-delete-${testKey}`}
+                    >
+                      <Trash2 className="me-2 h-3.5 w-3.5" />
+                      <Trans>Delete</Trans>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </TableCell>
           </TableRow>
-
-          {/* One field per variable still waiting — the answer to "it says not
-              connected and I cannot tell why". `ProvideValueInline` is reused
-              verbatim: it is one-way, never reads a value back, and Enter saves. */}
-          {settingUp === row.key && (
-            <TableRow data-testid={`connection-setup-panel-${row.key}`}>
-              <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="bg-muted/30">
-                <div className="space-y-2 py-1">
-                  {unset.map((m) => (
-                    <div key={m.envVar} className="flex items-center gap-3">
-                      <code className="w-56 shrink-0 text-xs">{m.envVar}</code>
-                      <ProvideValueInline
-                        envVar={m.envVar}
-                        prompt={m.hint || m.placeholder || t`Enter ${m.label}`}
-                        onSubmit={async (value) => {
-                          await onProvide?.(m.envVar, value);
-                        }}
-                        onCancel={() => setSettingUp(null)}
-                      />
-                      {m.helpUrl && (
-                        <a
-                          href={m.helpUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-muted-foreground underline"
-                        >
-                          <Trans>Where do I get this?</Trans>
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                  {/* The destination is not the same for every row, and saying
-                      the wrong one is worse than saying nothing: ".env.local,
-                      git-ignored" is a reassurance about a file, and a key bound
-                      for the encrypted store is not going into a file at all —
-                      it is going somewhere every project on this machine reads. */}
-                  <p className="text-xs text-muted-foreground">
-                    {row.sodStore === 'sodot' ? (
-                      <Trans>
-                        Saved to this machine&apos;s encrypted store. Available to every project
-                        here, and never written to a file or sent anywhere.
-                      </Trans>
-                    ) : (
-                      <Trans>Saved to this project&apos;s .env.local, which stays git-ignored.</Trans>
-                    )}
-                  </p>
-                </div>
-              </TableCell>
-            </TableRow>
-          )}
-          </React.Fragment>
         );
       })}
     </>

@@ -8,15 +8,15 @@ An **origin** answers *where does the real thing live*. It is a value object,
 never an entity: a `kind` discriminant plus locator fields, no behaviour and no
 secrets. Behaviour lives in a `kind`-keyed driver registry.
 
-Three sibling families answer three different versions of that question. They
+Two sibling families answer two different versions of that question. They
 are deliberately parallel in shape and deliberately **not** one type — their
-resolution contracts have nothing in common.
+resolution contracts have nothing in common. (Where a *secret value* lives is not
+an origin: it is a credential's `value_store` — see [credentials](../secret_share.md).)
 
 | Family | Answers | Kinds today | Resolves to |
 |---|---|---|---|
 | `FSOrigin` | where an asset's **bytes** live | `git`, `local` | a directory on disk |
 | `CloudOrigin` | where a record's **truth** lives | free string — `gmail`, `slack`, `jira`, `gcp` | a mutable remote record |
-| `SecretOrigin` | where a **value** resolves | `local`, `env-local`, `flowpad-hub`, `gcp`, `1password` | a string, at worker launch, never persisted |
 
 This document covers `FSOrigin` — the data-layer carrier. Bundle *transport*
 (how origins ride a share) is [messages and attachments](../collab/messages-and-attachments.md).

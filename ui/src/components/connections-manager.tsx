@@ -8,6 +8,7 @@ import {
   type OAuthFlowKind,
   type OAuthTestResult,
   type Project,
+  credentialsService,
 } from '@sdk';
 import { Check, CircleHelp, Loader2, MoreHorizontal, Trash2, X } from 'lucide-react';
 import * as React from 'react';
@@ -19,7 +20,6 @@ import { GrantStatus } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { lucideByName } from '@src/lib/lucide-by-name';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Badge } from './ui/badge';
@@ -30,18 +30,29 @@ import { ConfirmDialog } from './ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
-import { useCredentialConnections } from './connections-manager/use-credential-connections';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
 import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { CredentialRow } from './credentials-view/credential-rows';
 import {
-  CredentialValueForm,
-  EnvLocalBlockedNotice,
-} from './connections-manager/credential-value-form';
+  buildCredentialRows,
+  buildDetectedGroups,
+  type CredentialRow,
+  type DetectedGroup,
+} from './credentials-view/credential-rows';
+import { useCredentials } from './credentials/use-credentials';
+import { CredentialDialog } from './credentials/CredentialDialog';
+import { DetectedKeys } from './credentials/DetectedKeys';
+import {
+  customDraft,
+  editDraft,
+  packDraft,
+  templateDraft,
+  valuesDraft,
+  type CredentialDraft,
+} from './credentials/credential-draft';
 import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus } from 'lucide-react';
@@ -55,11 +66,8 @@ export interface ConnectionsManagerProps {
    */
   projectTypeId?: TypeId;
   /**
-   * The selected project, when the host already resolved it. Credential rows
-   * are project-scoped (`SecretOrigin` identity is `(project_id, env_var)`) and
-   * need the entity to call its two actions — and `useProjects()` is a
-   * recency-limited list, so re-finding it by id here misses on an instance
-   * with many projects.
+   * The selected project, when the host already resolved it. The user's own
+   * credentials show without one; the project's credentials need it.
    */
   project?: Project | null;
   className?: string;
@@ -308,58 +316,36 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
   const { projects } = useProjects();
 
-  // The credential half of the table. An API credential is project-scoped
-  // (`SecretOrigin` identity is `(project_id, env_var)`), so it needs the
-  // Project entity — `projectTypeId` alone cannot call the two actions.
-  // The host always passes the resolved entity; `useProjects()` is a
-  // recency-limited list, so a lookup by id here could only ever miss on an
-  // instance with many projects.
+  // The credential half of the table: the user's credentials always, and the
+  // selected project's when there is one. Status is value-free.
   const selectedProject = project ?? null;
   const { navigation } = useDockNavigation();
-
   const {
-    rows: credentialRows,
-    specs: credentialSpecs,
-    envLocalBlocked,
-    envLocalBlockReason,
-    envLocalPresent: envLocalKeys,
-    declareCredential,
-    provide: provideCredentialValue,
-    deleteCredential,
-  } = useCredentialConnections(selectedProject);
+    status: credentialStatus,
+    templates: credentialTemplates,
+    refresh: refreshCredentials,
+  } = useCredentials(selectedProject?.id ?? null);
+  const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
+  const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
+  const defaultScope = selectedProject ? 'project' : 'user';
 
   const [addOpen, setAddOpen] = React.useState(false);
-  const [addBusy, setAddBusy] = React.useState<string | null>(null);
-  const [pendingCredential, setPendingCredential] = React.useState<CredentialSpec | null>(null);
+  const [credentialDraft, setCredentialDraft] = React.useState<{ seq: number; draft: CredentialDraft } | null>(null);
+  // Each open gets a fresh form (a new key), so no state carries over from the last one.
+  const openDraft = (draft: CredentialDraft) => setCredentialDraft((prev) => ({ seq: (prev?.seq ?? 0) + 1, draft }));
   const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
 
-  /**
-   * What Delete will actually do, said before it happens.
-   *
-   * The prediction keys off the row's STORE, which is what actually decides the
-   * outcome: a declaration's locator kind comes from its definition's store
-   * (`CredentialSpec.locatorFor`), and that kind picks the driver whose
-   * `forget()` the backend calls. Reading `member.foundIn` instead would predict
-   * from where a value was last resolved — a near-enough proxy that is not the
-   * signal the backend acts on.
-   *
-   * One store per credential, so there are two outcomes and not three:
-   * `locatorFor` gives every variable of a definition the same kind, and an
-   * ad-hoc row is a single variable.
-   */
+  /** What Delete will actually do, said before it happens: vault values go,
+   *  `.env.local` lines stay. */
   const credentialDeleteDescription = React.useMemo(() => {
     const row = pendingDeleteCredential;
-    if (!row || row.sodStore !== 'env-local') {
-      return t`This project stops using it and the stored value is deleted.`;
+    if (!row) return '';
+    const where = row.scope === 'user' ? t`every project` : t`this project`;
+    if (row.store === 'vault') {
+      return t`${row.title} is removed from ${where}, and its values are deleted from the vault.`;
     }
-    // Name the variables that are actually there — those are the lines that stay.
-    const names = row.members
-      .filter((m) => m.state === 'met' || m.state === 'adoptable')
-      .map((m) => m.envVar)
-      .join(', ');
-    return names.includes(',')
-      ? t`This project stops using it. ${names} stay in your .env.local — Flowpad never removes an entry from that file.`
-      : t`This project stops using it. ${names} stays in your .env.local — Flowpad never removes an entry from that file.`;
+    const names = row.vars.map((v) => v.envVar).join(', ');
+    return t`${row.title} is removed from ${where}. ${names} stay in .env.local — Flowpad never removes lines from that file.`;
   }, [pendingDeleteCredential, t]);
 
   const [usageForced, setUsageForced] = React.useState(false);
@@ -552,9 +538,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // component re-renders on usage polling and grant-status changes, and a fresh
   // array each time defeats the dialog's own memoization.
   const addableSpecs = React.useMemo(() => {
-    const shown = new Set(credentialRows.map((r) => r.key));
-    return credentialSpecs.filter((spec) => !shown.has(String(spec.name ?? '')));
-  }, [credentialRows, credentialSpecs]);
+    const added = new Set(credentialRows.map((r) => r.name));
+    return credentialTemplates.filter((spec) => !added.has(String(spec.name ?? '')));
+  }, [credentialRows, credentialTemplates]);
   const addableProviders = React.useMemo(
     () =>
       availableProviders.filter(
@@ -570,54 +556,15 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
   const pickCredential = (spec: CredentialSpec) => {
     setAddOpen(false);
-    setPendingCredential(spec);
+    openDraft(templateDraft(spec, defaultScope));
   };
 
-  /**
-   * Declare one credential, with the busy flag and the failure message both
-   * surfaces share. Returns whether it landed.
-   */
-  const declareWithBusy = async (spec: CredentialSpec, key: string): Promise<boolean> => {
-    setAddBusy(key);
-    try {
-      await declareCredential(spec);
-      return true;
-    } catch (error) {
-      notify.error({
-        title: t`Could not add ${spec.title || key}`,
-        message: errorMessage(error, t`The credential could not be added.`),
-      });
-      return false;
-    } finally {
-      setAddBusy(null);
-    }
+  const pickCustom = () => {
+    setAddOpen(false);
+    openDraft(customDraft(defaultScope));
   };
 
-  /**
-   * Declare THEN provide, in that order and never the reverse: `provide-secret`
-   * looks the pointer up on the project and fails when it is absent, so a value
-   * written first has nowhere to go.
-   */
-  const saveCredential = async (values: Record<string, string>) => {
-    const spec = pendingCredential;
-    if (!spec) return;
-    const key = String(spec.name ?? '');
-    if (!(await declareWithBusy(spec, key))) return;
-    setAddBusy(key);
-    try {
-      for (const [envVar, value] of Object.entries(values)) {
-        if (value) await provideCredentialValue({ envVar, value });
-      }
-      setPendingCredential(null);
-    } catch (error) {
-      notify.error({
-        title: t`Could not add ${spec.title || key}`,
-        message: errorMessage(error, t`The value could not be written.`),
-      });
-    } finally {
-      setAddBusy(null);
-    }
-  };
+  const packDetected = (group: DetectedGroup, keys: string[]) => openDraft(packDraft(keys, group.scope));
 
   return (
     // No frame of its own — the host supplies height and padding.
@@ -647,23 +594,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         specs={addableSpecs}
         onPickProvider={pickProvider}
         onPickCredential={pickCredential}
-        busyKey={addBusy}
+        onPickCustom={pickCustom}
       />
 
-      <CredentialValueForm
-        spec={pendingCredential}
-        presentKeys={envLocalKeys}
-        blocked={envLocalBlocked}
-        blockReason={envLocalBlockReason}
-        busy={!!addBusy}
-        onCancel={() => setPendingCredential(null)}
-        onSave={saveCredential}
-      />
-
-      {envLocalBlocked && (
-        <EnvLocalBlockedNotice
-          reason={envLocalBlockReason}
-          className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+      {credentialDraft && (
+        <CredentialDialog
+          key={credentialDraft.seq}
+          draft={credentialDraft.draft}
+          projectId={selectedProject?.id ?? null}
+          status={credentialStatus}
+          onRefresh={refreshCredentials}
+          onClose={() => setCredentialDraft(null)}
+          onSaved={async (saved) => {
+            setCredentialDraft(null);
+            await refreshCredentials();
+            notify.success({ title: t`${saved.title} saved` });
+          }}
         />
       )}
 
@@ -910,29 +856,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             })}
             <CredentialConnectionRows
               rows={credentialRows}
-              adoptingKey={addBusy}
+              onSetValues={(row) => openDraft(valuesDraft(row.source))}
+              onEdit={(row) => openDraft(editDraft(row.source))}
               onDelete={(row) => setPendingDeleteCredential(row)}
-              onAdopt={async (rowKey) => {
-                // Declares straight away — no value form. A row is only
-                // adoptable when every one of its values is ALREADY on disk, so
-                // there is nothing to ask for and asking would add a click to
-                // the one case that should be a single click.
-                const spec = credentialSpecs.find((c) => String(c.name ?? '') === rowKey);
-                if (spec) await declareWithBusy(spec, rowKey);
-              }}
-              onProvide={async (envVar, value) => {
-                try {
-                  await provideCredentialValue({ envVar, value });
-                  notify.success({ title: t`${envVar} saved` });
-                } catch (error) {
-                  // `write_env_local` refuses when `.env.local` is committable —
-                  // a security gate, so surface it rather than swallow it.
-                  notify.error({
-                    title: t`Could not save ${envVar}`,
-                    message: errorMessage(error, t`The value could not be written.`),
-                  });
-                }
-              }}
             />
             {/* "Nothing yet" is about what YOU added. The FlowPad row is always
                 present — it is the app's own account, not a connection you chose
@@ -946,13 +872,13 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             )}
           </TableBody>
         </Table>
+        <DetectedKeys groups={detectedGroups} onPack={packDetected} />
       </div>
 
-      {/* Delete says what will actually happen, BEFORE it happens. The row
-          already knows which store each value came from (`foundIn`), so the
-          one case where Delete is not total — a value in the user's own
-          `.env.local`, which Flowpad never removes from — is named here rather
-          than discovered afterwards. */}
+      {/* Delete says what will actually happen, BEFORE it happens: the one case
+          where Delete is not total — lines in the user's own `.env.local`,
+          which Flowpad never removes — is named here rather than discovered
+          afterwards. */}
       <ConfirmDialog
         open={!!pendingDeleteCredential}
         onOpenChange={(open) => {
@@ -968,7 +894,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           if (!row) return;
           void (async () => {
             try {
-              const { kept } = await deleteCredential(row);
+              const { kept } = await credentialsService.remove(row.typeid);
+              await refreshCredentials();
               // Report what the BACKEND did, not what the dialog predicted: the
               // driver decides, and a value could have moved stores since the
               // table was painted.
@@ -977,7 +904,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 // No singular/plural split here, unlike the dialog: "stayed"
                 // reads the same for one name or several.
                 ...(kept.length
-                  ? { message: t`${kept.join(', ')} stayed in your .env.local.` }
+                  ? { message: t`${kept.join(', ')} stayed in .env.local.` }
                   : {}),
               });
             } catch (error) {

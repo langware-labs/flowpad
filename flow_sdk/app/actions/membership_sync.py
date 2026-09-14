@@ -11,8 +11,8 @@ the hub). Used on three paths:
 
 This mirrors ``_upsert_hub_conversation_metadata`` (the Conversation precedent)
 but keeps container-specific expansion here: organizations and teams need only
-flat metadata, while projects additionally materialize their shared Folder and
-SecretOrigin declarations.
+flat metadata, while projects additionally materialize their shared Folder
+references.
 """
 
 from __future__ import annotations
@@ -65,7 +65,6 @@ _MIRRORED_FIELDS = (
     "members",
     "shared_context_entities",
     "shared_context_origins",
-    "shared_secret_origins",
 )
 
 
@@ -91,51 +90,6 @@ def _validated_field(cls: Type[Entity], name: str, value: Any) -> Any:
     except Exception as exc:  # noqa: BLE001
         logger.debug("[membership-sync] %s.%s did not validate: %s", cls.__name__, name, exc)
         return value
-
-
-def _shared_secret_origin_payload(
-    item: dict[str, Any],
-) -> tuple[str, str, Any, str] | None:
-    """Parse one value-free shared secret declaration → ``(name, env_var,
-    locator, sod_store)``.
-
-    EVERY kind is accepted, ``local`` included: a receiver must see a
-    declaration in order to be warned that its value is missing here. The
-    sender already strips the machine-specific coordinate (a ``sod_name`` names
-    an entry in their keychain), so what arrives is a value-free declaration
-    the receiver satisfies from their own store.
-    """
-    from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
-
-    locator_data = item.get("locator") if isinstance(item.get("locator"), dict) else None
-    if not locator_data:
-        logger.debug("[membership-sync] secret origin missing locator")
-        return None
-    kind = normalize_secret_origin_kind(locator_data.get("kind") or item.get("kind"))
-    try:
-        locator = SECRET_ORIGIN_ADAPTER.validate_python({**locator_data, "kind": kind})
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[membership-sync] invalid secret origin locator: %s", exc)
-        return None
-    if kind == "flowpad-hub":
-        # Either the typed coordinates or the legacy opaque id — but not neither,
-        # or there is nothing on the hub to point at.
-        has_coords = bool((getattr(locator, "project_id", "") or "").strip())
-        has_legacy = bool((getattr(locator, "secret_id", "") or "").strip())
-        if not has_coords and not has_legacy:
-            logger.debug("[membership-sync] flowpad-hub secret origin has no hub coordinates")
-            return None
-    env_var = (item.get("env_var") or "").strip()
-    if not env_var or not is_valid_secret_origin_env_var(env_var):
-        logger.debug("[membership-sync] invalid secret origin env_var: %r", env_var)
-        return None
-    # The env var IS the identity, so it is a fine default display name; a
-    # missing name is not a reason to drop the declaration.
-    name = (item.get("name") or "").strip() or env_var
-    sod_store = (item.get("sod_store") or "").strip()
-    return name, env_var, locator, sod_store
 
 
 async def materialize_remote_membership_entity(
@@ -176,7 +130,6 @@ async def materialize_remote_membership_entity(
         with remote_reflection():
             ent = await ent.save(someone_typeid, notify=notify)
         await materialize_project_context_folders(ent, data, someone_typeid, notify=notify)
-        await materialize_project_secret_origins(ent, data, someone_typeid, notify=notify)
         return ent
 
     changed = False
@@ -193,7 +146,6 @@ async def materialize_remote_membership_entity(
         with remote_reflection():
             await existing.save(someone_typeid, notify=notify)
     await materialize_project_context_folders(existing, data, someone_typeid, notify=notify)
-    await materialize_project_secret_origins(existing, data, someone_typeid, notify=notify)
     return existing
 
 
@@ -261,99 +213,6 @@ async def materialize_project_context_folders(
 
     if getattr(project, "shared_context_origins", None) != raw_origins and hasattr(project, "shared_context_origins"):
         setattr(project, "shared_context_origins", dict(raw_origins))
-        changed = True
-    if changed:
-        project.fetched_at = datetime.now(UTC)
-        with remote_reflection():
-            await project.save(someone_typeid, notify=notify)
-    return count
-
-
-async def materialize_project_secret_origins(
-    project: Entity,
-    data: dict[str, Any],
-    someone_typeid: str | None = None,
-    *,
-    notify: bool = True,
-) -> int:
-    """Materialize received project secret pointers from hub metadata.
-
-    The hub payload is value-free. This creates local SecretOrigin rows and
-    links them into the project's shared context bucket so runtime injection can
-    resolve whatever values are available on this machine.
-    """
-    if getattr(project, "type", None) != "project" or not isinstance(data, dict):
-        return 0
-    has_explicit_shared = "shared_secret_origins" in data
-    shared = (
-        data.get("shared_secret_origins") if has_explicit_shared else getattr(project, "shared_secret_origins", None)
-    ) or {}
-    if not isinstance(shared, dict):
-        return 0
-
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
-
-    changed = False
-    count = 0
-    expected_shared_typeids: set[str] = set()
-    normalized_shared: dict[str, dict[str, Any]] = {}
-    seen_env_vars: set[str] = set()
-    for item in shared.values():
-        if not isinstance(item, dict):
-            continue
-        parsed = _shared_secret_origin_payload(item)
-        if parsed is None:
-            continue
-        name, env_var, locator, sod_store = parsed
-        # env_var is unique within a project by definition, so two payload
-        # entries naming the same one are a sender-side bug. First wins and we
-        # say so — last-wins would silently clobber.
-        if env_var in seen_env_vars:
-            logger.warning(
-                "[membership-sync] duplicate env_var %r in shared_secret_origins; keeping the first",
-                env_var,
-            )
-            continue
-        seen_env_vars.add(env_var)
-        secret = await SecretOrigin.mint_for(
-            project_id=str(project.id),
-            env_var=env_var,
-            locator=locator,
-            name=name,
-            sod_store=sod_store,
-            remote=True,
-        )
-        expected_shared_typeids.add(str(secret.typeid))
-        normalized_shared[str(secret.typeid)] = {
-            "name": name,
-            "project_id": str(project.id),
-            "env_var": env_var,
-            "kind": locator.kind,
-            "locator": locator.model_dump(mode="json"),
-            "sod_store": secret.effective_sod_store(),
-        }
-        changed = (
-            project.add_shared_context_entities(
-                secret.typeid,
-                data=secret.context_data(scope="shared"),
-            )
-            or changed
-        )
-        count += 1
-
-    if has_explicit_shared:
-        stale = [
-            tid
-            for tid in project.context_of_type("secret_origin", bucket="shared")
-            if str(tid) not in expected_shared_typeids
-        ]
-        if stale:
-            changed = project.remove_shared_context_entities(*stale) or changed
-
-    if getattr(project, "shared_secret_origins", None) != normalized_shared and hasattr(
-        project, "shared_secret_origins"
-    ):
-        setattr(project, "shared_secret_origins", normalized_shared)
         changed = True
     if changed:
         project.fetched_at = datetime.now(UTC)

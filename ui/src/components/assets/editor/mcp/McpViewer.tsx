@@ -214,8 +214,8 @@ function McpForm({ initial, mainRef, mcp, readOnly }: { initial: McpSpecDoc; mai
       )}
 
       {/* Read-only: this file travels with its agent over git, so a value typed
-          here would be committed and shared. Declaring the variable as a project
-          secret (SecretOrigin) is the supported path. */}
+          here would be committed and shared. Declaring the variable in a credential
+          (Connections) is the supported path. */}
       <div className="grid grid-cols-[7rem_1fr] items-start gap-3">
         <span className="pt-2 text-xs uppercase tracking-wider text-muted-foreground">
           <Trans>Env</Trans>

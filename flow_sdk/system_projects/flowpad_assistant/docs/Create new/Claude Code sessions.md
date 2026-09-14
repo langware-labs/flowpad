@@ -22,7 +22,7 @@ TUI exactly as you would in your own shell.
 ## What it can see
 
 Beyond the project folder, the agent also gets every [[Context folders|context
-folder]] attached to the project, and any [[Project secrets]] bound to it
+folder]] attached to the project, and any [[Secrets]] declared for it
 arrive as environment variables.
 
 ## Good to know

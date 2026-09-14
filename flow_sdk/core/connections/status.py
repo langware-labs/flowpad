@@ -25,9 +25,9 @@ Costs, since they are not uniform:
   runs :func:`check_harness_logins` — a separate verb, because probing writes
   and this list is read on paths a person is waiting on (``require()``).
 * OAuth    — a hub fetch memoised for ten minutes, plus one user read.
-* API keys — the expensive one, and the reason it is opt-in: ``env_local_status``
-  shells out to three ``git`` subprocesses to decide whether ``.env.local`` is
-  committable. Paid only when a project is named.
+* Credentials — one ``.env.local`` listing and one git probe (three ``git``
+  subprocesses) per scope root: the user's home always, the project's when one
+  is named.
 """
 
 from __future__ import annotations
@@ -205,54 +205,37 @@ def _harness_state(source) -> ConnectionState:
     return ConnectionState.CONNECTED
 
 
-async def _credential_rows(project: "Project") -> list[ConnectionSpec]:
-    """The API-key credentials this project declares, and whether they resolve.
+async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]:
+    """The connected credentials: every user-scope one, plus the project's.
 
-    A credential EXISTS when its values do. A definition with no value is not a
-    connection — it is an entry in the Add dialog — so it is not emitted here,
-    which is the rule the browser fold used to own.
+    A credential is a connection once every required value is in its store; a
+    definition with no value is an entry in the Add dialog, not a row here.
     """
-    from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
-    specs = await CredentialSpec.get_all()
-    if not specs:
-        return []
-
-    resolve = await project.secret_resolve_status()
-    by_var = {
-        str(row.get("env_var") or ""): row
-        for row in ((getattr(resolve, "data", None) or {}).get("secrets") or [])
-    }
-
-    rows: list[ConnectionSpec] = []
-    for spec in specs:
-        required = spec.required_var_names() or spec.var_names()
-        if not required:
-            continue
-        if not all(str(by_var.get(var, {}).get("status") or "") == "available" for var in required):
-            continue
-        rows.append(
-            ConnectionSpec(
-                provider=str(spec.name or ""),
-                display_name=str(spec.title or spec.name or ""),
-                kind=ConnectionKind.API_KEY,
-                state=ConnectionState.CONNECTED,
-                connected=True,
-                icon=str(spec.icon_name or ""),
-                scope="project",
-                env_vars=tuple(spec.var_names()),
-            )
+    status = await credentials_status(project)
+    return [
+        ConnectionSpec(
+            provider=row.name,
+            display_name=row.title or row.name,
+            kind=ConnectionKind.API_KEY,
+            state=ConnectionState.CONNECTED,
+            connected=True,
+            icon=row.icon_name,
+            scope=row.scope,
+            env_vars=tuple(var.env_var for var in row.vars),
         )
-    return rows
+        for row in status.credentials
+        if row.state == "connected"
+    ]
 
 
 async def list_connections(*, project: Optional["Project"] = None) -> list[ConnectionSpec]:
     """Every connection, in the order the screen shows them.
 
-    Machine-level kinds always; API-key credentials only when a project is named,
-    because their identity IS ``(project_id, env_var)`` and there is no
-    server-side notion of "the selected project" — that lives in the client. A
-    caller with no project gets a smaller honest list rather than a guess.
+    Machine-level kinds and user-scope credentials always; a project's own
+    credentials only when a project is named — there is no server-side notion of
+    "the selected project", that lives in the client.
 
     A pure read: nothing here probes, and :func:`check_harness_logins` is the
     verb that does. ``flow_sdk.connections.require`` resolves through here on
@@ -266,7 +249,7 @@ async def list_connections(*, project: Optional["Project"] = None) -> list[Conne
         _flowpad_row(),
         _harness_rows(),
         _list_connection_specs_local(),
-        _credential_rows(project) if project is not None else _none(),
+        _credential_rows(project),
     )
     rows: list[ConnectionSpec] = [flowpad, *harnesses]
     # Held only: the table lists what exists, and an unconnected provider belongs
@@ -274,7 +257,3 @@ async def list_connections(*, project: Optional["Project"] = None) -> list[Conne
     rows.extend(spec for spec in oauth if spec.connected)
     rows.extend(credentials)
     return rows
-
-
-async def _none() -> list[ConnectionSpec]:
-    return []

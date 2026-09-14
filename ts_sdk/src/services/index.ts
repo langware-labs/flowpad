@@ -3,6 +3,7 @@ export * from './system-tools-service';
 export * from './secrets-service';
 export * from './lm-providers';
 export * from './lm-keys-service';
+export * from './credentials-service';
 export * from './llm-endpoints-service';
 export * from './connections-service';
 export * from './llm-sources-service';

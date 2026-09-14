@@ -37,7 +37,7 @@ BESPOKE: dict[str, str] = {
 
 DECLARED = {
     "claude_rules", "command", "plan", "todo_file", "subagent", "skill",
-    "markdown", "secret_origin", "dynamic_workflow", "spreadsheet",
+    "markdown", "dynamic_workflow", "spreadsheet",
 }
 
 

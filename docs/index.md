@@ -51,7 +51,7 @@ subfolder_count: 10
 - [PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)](pty-sync.md) — PTY line synchronization for the annotation and trace gutters: xterm buffer coordinates, the PtySyncSession coordinator, its React lifecycle, and row calculations.
 - [PTY / xterm Terminal System Specification](pty-terminal-spec.md) — Specification of the PTY and xterm terminal system: end-to-end output and input paths, encoding, channels, WebSocket and REST endpoints, and message formats.
 - [Renderable code fences](renderable-fences.md) — Render-only code fences: the registry, tab state ownership, host services, the three renderers, source grounding, and live refresh.
-- [Secret sharing (SecretOrigin)](secret_share.md) — Secret sharing through SecretOrigin: the core invariant, locator value objects, identity, project linking, carry and materialize on share, and runtime injection.
+- [Credentials and secrets](secret_share.md) — Credentials (CredentialSpec) as the only secret declaration: user and project scope, the .env.local and vault stores, resolution and precedence, and the credentials operations.
 - [Session Share Spec](session_share_spec.md) — Transferring a worker session between machines: project path encoding, experiment results, where paths appear in a transcript, and the transfer algorithm.
 - [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — Shell mode versus direct agentic PTY spawn: plain shell and agentic tab creation, title and rename behavior, tab handling, and recovery after a backend restart.
 - [System Agents](system_agents.md) — System agents: loading agent definitions from system assets, project-user-system priority resolution, and serializing them for the Claude CLI --agents flag.

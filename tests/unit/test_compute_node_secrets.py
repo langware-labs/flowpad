@@ -1,4 +1,4 @@
-"""Which of a project's secrets a compute node may see.
+"""Which of a project's declared credential variables a compute node may see.
 
 The model is a plain value-free field on the node: `{project_id: [ENV_VAR]}`.
 The token IS the env var name and the project is the namespace, so nothing
@@ -21,15 +21,24 @@ from flow_sdk.schema.type_info import register_all
 register_all()
 
 
+async def _declare(project, *env_vars, name="pack", values=None):
+    from flow_sdk.builtin.credential_service import save_credential
+
+    return await save_credential(
+        scope="project",
+        project_id=str(project.id),
+        manifest={"name": name, "vars": {v: {"label": v} for v in env_vars}},
+        values=values or {},
+    )
+
+
 async def _project_with(tmp_path, *env_vars, name="node-secrets-proj"):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     project = Project(name=str(tmp_path / name))
     project.fs_storage_mount_path = str(tmp_path)
     await project.save()
-    for env_var in env_vars:
-        await project.add_secret_pointer(
-            name=env_var, env_var=env_var, scope="private",
-            locator={"kind": "env-local", "env_key": env_var},
-        )
+    if env_vars:
+        await _declare(project, *env_vars)
     return project
 
 
@@ -106,10 +115,7 @@ async def test_attach_all_is_a_snapshot_not_a_standing_wildcard(tmp_path, sod_en
     await node.attach_all_secrets(project_id=str(project.id))
     assert sorted(node.attached_env_vars(project.id)) == ["A_KEY", "B_KEY"]
 
-    await project.add_secret_pointer(
-        name="C_KEY", env_var="C_KEY", scope="private",
-        locator={"kind": "env-local", "env_key": "C_KEY"},
-    )
+    await _declare(project, "C_KEY", name="later")
 
     assert "C_KEY" not in node.attached_env_vars(project.id)
 
@@ -142,9 +148,9 @@ async def test_a_stale_project_key_is_not_fatal(tmp_path, sod_env):
 
 @pytest.mark.asyncio
 async def test_the_attachment_map_holds_names_only(tmp_path, sod_env):
-    project = await _project_with(tmp_path, "A_KEY")
+    project = await _project_with(tmp_path)
+    await _declare(project, "A_KEY", values={"A_KEY": "sk-super-secret"})
     node = await _node()
-    await project.provide_secret(env_var="A_KEY", value="sk-super-secret")
     await node.attach_all_secrets(project_id=str(project.id))
 
     blob = json.dumps(node.model_dump(mode="json"), default=str)

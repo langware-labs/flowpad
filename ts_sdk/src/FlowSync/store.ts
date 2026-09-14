@@ -591,8 +591,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!ctor) {
       // Expected, not exceptional. The backend broadcasts ops for every
       // api-visible type, and a dozen of those are deliberately not modelled as
-      // client entities — `secret_origin` reaches the UI as a summary on
-      // Project, `helpdesk` as bare actions, and so on. `api_visible` is the
+      // client entities — `helpdesk` reaches the UI as bare actions, and so
+      // on. `api_visible` is the
       // only dial the backend has and it also gates the schema payload the UI
       // needs for each type's label and icon, so these frames cannot simply be
       // switched off.

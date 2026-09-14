@@ -149,7 +149,9 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
   names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
   `reason` field is what both the picker and the spawn error render.
-* **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, SecretOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
+* **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
+* **`CredentialSpec`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/credential/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). See [secret_share](secret_share.md).
+* **value store** — ours. Where a credential's values live, named by `value_store`: `env` (the scope root's `.env.local`, the default) or `vault` (the per-instance encrypted store, `sodot` on disk).
 
 ## Consolidation seams (2026-08-29, Phase 1)
 

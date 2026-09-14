@@ -1,21 +1,16 @@
-"""Type metadata for CREDENTIAL_SPEC — the authored definition of a credential.
+"""Type metadata for CREDENTIAL_SPEC — a named set of environment variables.
 
-A REPO folder asset, so the existing `repo_assets_fn` walker finds it with no new
-discovery code: it scans `<container>/agentic-assets/<family>/` recursively in
-any walked container, which includes the shipped assistant project.
+A REPO folder asset at ``agentic-assets/credential/<name>/credential.json``, found
+by the shared ``repo_assets_fn`` walker in any walked container: a project mount
+(project scope), the user's home (user scope) and the shipped assistant project
+(system scope — templates).
 
-``family="credential"`` — the folder a human reads is named for the thing. The
-asset lives at `agentic-assets/credential/<name>/credential.json`, a fourth
-shipped family alongside `agent`, `data_source` and `journey`.
-
-Deliberately NOT ``icon="KeyRound"``: that is ``SECRET_ORIGIN``'s glyph, and the
-two are different layers — a credential DEFINITION versus one project's
-declaration that it needs a variable. Sharing a glyph would say they are the
-same kind of thing.
+Identity is a WRITABLE folder capsule: a v4 minted once at creation and kept in
+``.flow/capsules/identity.json``. The shipped templates commit theirs, so every
+install indexes the same catalogue row instead of one per install path.
 """
-from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.identity import folder_json_identity
 from flow_sdk.assets.layout import Folder
-from flow_sdk.assets.types.credential_spec import credential_spec_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
 from flow_sdk.schema.types import EntityType
@@ -23,31 +18,20 @@ from flow_sdk.schema.view_mode import ViewMode
 
 CREDENTIAL_SPEC = TypeInfo(
     type_name=EntityType.CREDENTIAL_SPEC,
-    icon="Plug",
-    display_name="Credential definitions",
+    icon="KeyRound",
+    display_name="Credentials",
     api_visible=True,
-    # Authored in a folder or written by an agent, not from a New button —
-    # the same call `DATA_SOURCE_SPEC` makes.
-    creatable=False,
-    # Unlike DATA_SOURCE_SPEC, this one IS browseable: an author who has just
-    # written a credential folder needs somewhere to see that it indexed.
+    creatable=True,
+    # The row is authoritative once created in-app: an edit rewrites
+    # credential.json from the row.
+    owns_main_ref=True,
+    indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     asset_class="repo",
     family="credential",
     shape=Folder(main="credential.json"),
     asset_spec=CredentialManifestSpec,
     fts_content=("name", "description"),
-    # DERIVED, not a capsule: `credential.json` deliberately carries no id —
-    # stamping one in would make a shared definition arrive carrying the
-    # sender's id. A derived carrier has nowhere to write an id back, so
-    # identity must be a pure function of the source, and `identity_key_fn` is
-    # what supplies it. It is NOT optional: without a key `TypeInfo.mint` falls
-    # through to `uuid5(resolved path)`, and a shipped spec's path is the
-    # INSTALL's, so one credential would fork into a row per install location.
-    identity_carrier=derived_identity(),
-    identity_key_fn=credential_spec_identity_key,
+    identity_carrier=folder_json_identity(),
     index_fields=["name", "title"],
 )
-
-# No `derive_fields_fn`: a credential folder has no marker files, so nothing
-# about it is derived from the listing — unlike a source, whose runtime is.

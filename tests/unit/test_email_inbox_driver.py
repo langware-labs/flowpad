@@ -40,11 +40,8 @@ class TestTheFamily:
         assert "flowpad-hub" in EMAIL_INBOX_DRIVERS.kinds()
 
     def test_hub_has_one_spelling_across_families(self):
-        """`flowpad-hub` is also `HubSecretDriver.kind`. Two families disagreeing
-        about what "the hub" is called is how an alias table starts drifting."""
-        from flow_sdk.builtin.drivers.hub_secret_driver import HubSecretDriver
-
-        assert HubEmailInboxDriver.kind == HubSecretDriver.kind == "flowpad-hub"
+        """The hub member is addressed as `flowpad-hub`."""
+        assert HubEmailInboxDriver.kind == "flowpad-hub"
 
     def test_the_bare_alias_resolves(self):
         assert EMAIL_INBOX_DRIVERS.normalize("hub") == "flowpad-hub"

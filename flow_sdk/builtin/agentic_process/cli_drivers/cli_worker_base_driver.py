@@ -563,16 +563,14 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
 
 
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve project SecretOrigin pointers into this transient worker env.
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
 
     This must only be called on spawn-time env dicts. It must not mutate
     AgentOptions.env_vars because those are persisted and rendered.
     """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
-        attached_env_vars_for,
-        resolve_project_secrets,
-    )
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -583,15 +581,11 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
-    if project is None:
-        return env
 
     # Node attachment gates the worker too, not only the connector's commands.
-    # None = nothing curated on this node, i.e. every declared secret, so an
-    # untouched setup behaves exactly as it did before attachment existed.
-    only = await attached_env_vars_for(project)
-    resolved = await resolve_project_secrets(project, only=only, process=process)
-    for env_var, value in resolved.items():
+    # None = nothing curated on this node, i.e. every declared variable. With no
+    # project, only user-scope credentials apply.
+    for env_var, value in (await resolve_attached_secrets(project)).items():
         # setdefault, not assignment: an explicitly-set env var wins.
         env.setdefault(env_var, value.get_secret_value())
 
