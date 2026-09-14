@@ -6,11 +6,11 @@ Importing this package registers every shipped driver. Nothing outside
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from flow_sdk.ingest.agent_transport import HarnessWorker
 from flow_sdk.ingest.driver import register_driver
-from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.source_driver import SourceDriver, read_cache_index
 from flow_sdk.sources.providers.agent import AgentSendData, AgentSource
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
@@ -19,6 +19,7 @@ from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.gcs import GcsSource
 from flow_sdk.sources.providers.gdrive import DriveSource
+from flow_sdk.sources.providers.git import GitSource
 from flow_sdk.sources.providers.gmail import GmailSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
@@ -91,6 +92,35 @@ def _indexed_origin_id(prefix: str):
         return f"{prefix}:{key}"
 
     return origin_id
+
+
+def _git_origin(row):
+    """The checkout, as the origin refs are relative to — a ``LocalOrigin`` even when the repository
+    has a remote: ``config.repo`` IS the tree diffed, pushed or not."""
+    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
+    raw = (row.config or {}).get("repo") or ""
+    return local_origin_for_path(Path(raw).expanduser().resolve()) if raw else None
+
+
+@lru_cache(maxsize=64)
+def _git_remote_url(repo: str) -> str:
+    """A repository's remote, once per process: it is a property of the repository, not of a ref,
+    and a subprocess per changed file made a 50-file commit pay 50 of them."""
+    from flow_sdk.utils.git import git_remote_url  # noqa: PLC0415
+
+    return git_remote_url(repo)
+
+
+def _git_origin_id(row, ref: str) -> str:
+    """``GitOrigin.key()`` — the documented cross-machine handle, branch-independent, and computable
+    for a path that no longer exists, so a deleted or renamed-from path still resolves to its row."""
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+
+    repo = Path(str((row.config or {}).get("repo") or "")).expanduser().resolve()
+    origin = GitOrigin.from_url(_git_remote_url(str(repo)), rel_path=Path(ref).resolve().relative_to(repo).as_posix())
+    # No parseable remote: the generic path handle, never a second git-shaped key.
+    return str(origin.key()) if origin is not None else ""
 
 
 def _connection_token(provider: str):
@@ -517,7 +547,16 @@ register_driver(
         origin_id_for=_gcs_origin_id,
     )
 )
-register_driver(GitDriver())
+register_driver(
+    SourceDriver(
+        GitSource,
+        kind="datasource.vcs.git",
+        ref_for=lambda source, key: os.path.join(source.repo, key),
+        origin_for=_git_origin,
+        origin_id_for=_git_origin_id,
+        lift_cursor=lambda state: GitSource.resume_at(state["sha"]) if state.get("sha") else None,
+    )
+)
 register_driver(
     SourceDriver(
         GmailSource,
@@ -571,5 +610,4 @@ register_driver(
 )
 
 __all__ = [
-    "GitDriver",
 ]
