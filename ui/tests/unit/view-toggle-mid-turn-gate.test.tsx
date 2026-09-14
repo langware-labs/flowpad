@@ -63,17 +63,18 @@ describe('surfaceTransportGate — the one predicate the control and the effect 
     expect(surfaceTransportGate(ptyBusy, ViewMode.Dev)).toEqual(NO_OP);
   });
 
-  it('routes →terminal at `open`, which has no mid-turn guard — so neither has the client', () => {
-    // The client mirrors the server PER ROUTE and invents no policy. Greying a
-    // button the backend would have honoured tells the user something untrue.
+  it('routes →terminal at `switch-mode` too, and refuses it mid-turn', () => {
+    // FLOWPAD-2130: this direction used to route at the unguarded `open`, so a
+    // mid-turn click spawned a PTY onto the live turn's own session. Idle is
+    // still a plain yes — the gate is `busy`, not readiness.
     expect(surfaceTransportGate(proc(false, { busy: true }), ViewMode.Advanced)).toEqual({
       needsSwitch: true,
-      route: 'open',
-      blocked: false,
+      route: 'switch-mode',
+      blocked: true,
     });
     expect(surfaceTransportGate(proc(false), ViewMode.Advanced)).toEqual({
       needsSwitch: true,
-      route: 'open',
+      route: 'switch-mode',
       blocked: false,
     });
   });
@@ -102,7 +103,7 @@ describe('surfaceTransportGate — the one predicate the control and the effect 
     // `retry: true`, which clears the `start_failure` latch).
     expect(surfaceTransportGate(proc(false, { failed: true }), ViewMode.Advanced)).toEqual({
       needsSwitch: true,
-      route: 'open',
+      route: 'switch-mode',
       blocked: false,
     });
     // Same for the FLOWPAD-2105 direction on a PTY the user ended with `/exit`:

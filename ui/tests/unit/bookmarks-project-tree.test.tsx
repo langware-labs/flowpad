@@ -1,6 +1,6 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AUTO_BOOKMARK_SOURCE, Bookmark, BookmarkType } from '@sdk';
 
@@ -46,7 +46,7 @@ const markdownLeaf = (id: string, title: string, parent: string, project?: strin
     },
   });
 
-const h = vi.hoisted(() => ({ bookmarks: [] as unknown[] }));
+const h = vi.hoisted(() => ({ bookmarks: [] as unknown[], currentProjectId: '' }));
 
 h.bookmarks = [
   new Bookmark({
@@ -87,8 +87,8 @@ vi.mock('@src/hooks/use-project-bookmarks', () => ({
 vi.mock('@sdk/react/hooks', () => ({
   // The adapter reads dataContext (synchronous, seeds defaultExpandedIds on the
   // first render); `use-favorites` fetches the entity to stamp new rows.
-  useContext: () => ({ project: { id: PROJ.current } }),
-  useProject: () => ({ project: { id: PROJ.current, displayName: 'flowpad-oss' } }),
+  useContext: () => ({ project: { id: h.currentProjectId } }),
+  useProject: () => ({ project: { id: h.currentProjectId, displayName: 'flowpad-oss' } }),
 }));
 vi.mock('@src/hooks/entity-hooks', () => ({
   useEntitiesQuery: () => ({
@@ -134,6 +134,7 @@ function panelOrder(): string[] {
   );
 }
 
+beforeEach(() => { h.currentProjectId = PROJ.current; });
 afterEach(cleanup);
 
 describe('bookmarks tree — global, grouped by project', () => {
@@ -229,13 +230,8 @@ describe('bookmarks tree — global, grouped by project', () => {
   });
 
   it('gives a project with no favorites yet a desk to add its first one into', async () => {
-    vi.resetModules();
-    vi.doMock('@sdk/react/hooks', () => ({
-      useContext: () => ({ project: { id: 'a-project-with-nothing-in-it' } }),
-      useProject: () => ({ project: { id: 'a-project-with-nothing-in-it' } }),
-    }));
-    const { FavoritesTreeMenu: Fresh } = await import('@src/components/favorites/FavoritesTreeMenu');
-    render(<Fresh mirrored />);
+    h.currentProjectId = 'a-project-with-nothing-in-it';
+    render(<FavoritesTreeMenu mirrored />);
 
     // The bucket exists even though no bookmark carries that project_id, it is
     // expandable, and its level carries the add row — otherwise the only way to

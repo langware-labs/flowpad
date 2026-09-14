@@ -49,7 +49,7 @@ export function SubAgentAssetEditor({
   // resolves. Falls back to the URL-derived fsRef while loading. Both resolve
   // to the same file post mount-path fix, but the entity-derived ref is the
   // explicit source of truth.
-  const editorRef = agent?.doc ?? fsRef;
+  const editorRef = fsRef;
   // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`
   // and uses it as docTypeId. Passing a path here is what caused the "Invalid typeId" crash.
   const chatTarget = agent ? agent.typeId.toString() : null;

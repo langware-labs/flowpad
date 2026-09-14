@@ -9,7 +9,7 @@ which is the rule that decides whether a row appears at all.
 import pytest
 
 from flow_sdk.core.connections import status as status_mod
-from flow_sdk.core.connections.types import ConnectionKind, ConnectionSpec, ConnectionState
+from flow_sdk.schema.data_spec.connection_spec import ConnectionKind, ConnectionSpec, ConnectionState
 
 pytestmark = pytest.mark.asyncio
 

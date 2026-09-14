@@ -16,10 +16,11 @@ from typing import Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 _log = logging.getLogger(__name__)
 
@@ -289,8 +290,8 @@ async def _wizard_for(trigger: Trigger) -> "Optional[Wizard]":
 async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
     from pathlib import Path  # noqa: PLC0415
 
+    from flow_sdk.assets.types.wizard import read_wizard
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.wizard import read_wizard  # noqa: PLC0415
 
     # WHICH wizard, by TypeId, off the ACTION that says so. `trigger.path` was
     # the old channel and a poor one: a generic field a HOOK trigger uses for

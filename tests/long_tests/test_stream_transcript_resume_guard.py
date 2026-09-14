@@ -24,7 +24,7 @@ from flow_sdk.builtin.agentic_process.agentic_process import (
     register_prompt_worker,
     unregister_prompt_worker,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 

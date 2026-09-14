@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.git_publish import (
     AssetGitReceipt,
     AssetPublishCode,
     AssetPublishError,
     GitAuthor,
-    publish_git_asset,
 )
 from flow_sdk.assets.projection import PortableAssetLayout, PortableAssetProjection
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.asset_publishing import publish_git_asset
 from flow_sdk.builtin.project import Project
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.type_id import TypeId
 
 
@@ -29,9 +29,9 @@ async def test_project_must_already_be_published_before_git_mutation(tmp_path, m
         project_id=project.id,
         asset_ref=str(tmp_path / "agent" / "q" / "agent.md"),
     )
-    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.owning_project", AsyncMock(return_value=project))
     resolve = AsyncMock()
-    monkeypatch.setattr("flow_sdk.assets._publish_service.resolve_asset_folder", resolve)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.resolve_asset_folder", resolve)
 
     with pytest.raises(AssetPublishError) as raised:
         await publish_git_asset(agent, TypeId(type="user", id=mint_uuid()))
@@ -102,12 +102,12 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
             posted.update({"path": path, "payload": payload})
             return {"asset": {"id": agent.id, "type": "agent"}}
 
-    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
-    monkeypatch.setattr("flow_sdk.assets._publish_service.resolve_asset_folder", AsyncMock(return_value=folder))
-    monkeypatch.setattr("flow_sdk.assets._publish_service.publish_asset", AsyncMock(return_value=receipt))
-    monkeypatch.setattr("flow_sdk.assets._publish_service.project_asset_tree", lambda **_: projection)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.resolve_asset_folder", AsyncMock(return_value=folder))
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_asset", AsyncMock(return_value=receipt))
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.project_asset_tree", lambda **_: projection)
     monkeypatch.setattr(
-        "flow_sdk.assets._publish_service._actor_author",
+        "flow_sdk.builtin.asset_publishing._actor_author",
         AsyncMock(return_value=GitAuthor(name="Q", email="q@example.com", typeid=str(actor))),
     )
     monkeypatch.setattr("flow_sdk.core.oauth.github_credentials.get_github_token", AsyncMock(return_value="secret"))

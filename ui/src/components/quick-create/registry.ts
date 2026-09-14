@@ -12,13 +12,13 @@ import {
   Task,
   Whiteboard,
 } from '@sdk';
-import { t, msg } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
 import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { ComponentType } from 'react';
-import type { HarnessKind, ScopeKind } from './ScopeSelection';
+import type { ScopeKind } from './ScopeSelection';
 
 /**
  * Result returned by a QuickCreateDescriptor's `create` function.
@@ -40,17 +40,11 @@ export interface QuickCreateResult {
  * absence rather than assume the panel called it.
  */
 export interface QuickCreateCreateArgs {
-  /** Currently-active project context (legacy create paths still rely on this). */
+  /** The selected owning project, or null for a user/custom folder. */
   project: Project | null;
   name: string;
-  /** Final destination as edited by the user in the path input. Panel only. */
-  absolutePath?: string;
-  /** Which scope chip was active when Create was pressed. Panel only. */
+  destination?: import('@sdk').FSRefJson;
   scope?: ScopeKind;
-  /** Which harness chip was active (affects which on-disk convention the path follows). Panel only. */
-  harness?: HarnessKind;
-  /** Project-relative folder when scope === 'project' (e.g. ".claude/skills"). */
-  folderVfsPath?: string;
 }
 
 /**
@@ -81,15 +75,6 @@ export interface QuickCreateDescriptor {
    *  wrong one silently shows a "create this page" prompt instead of help —
    *  making this optional is how a new type ships an untipped tile. */
   wikiword: string;
-  /**
-   * Last-resort sub-folder, used ONLY when the backend registry has not loaded
-   * (an isolated unit test, or the dialog opening before bootstrap resolves).
-   * The real answer comes from `TypeInfo` — see {@link subFolderFor}. Do not add
-   * per-harness variants here: that table is what drifted out of sync with the
-   * backend and told users their task went to `.claude/tasks` for months after
-   * it had moved to `agentic-assets/task`.
-   */
-  fallbackSubFolder: string;
   /** Scope chips this type supports. Omitted means all scopes. */
   allowedScopes?: readonly ScopeKind[];
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
@@ -106,48 +91,10 @@ export interface QuickCreateDescriptor {
   }>;
 }
 
-/**
- * Harness → dot-directory. The ONE thing the client still has to know, because
- * it is an external standard rather than a flowpad decision: Claude Code reads
- * `.claude/`, the AGENTS.md standard `.agents/`, Copilot `.github/`. Mirrors
- * `WORKER_PREFIX` in `flow_sdk/fs_store/placement.py` — note codex maps onto
- * `.agents` (the standard it speaks), NOT `.codex`.
- */
-const HARNESS_DIR: Partial<Record<HarnessKind, string>> = {
-  claude: '.claude',
-  codex: '.agents',
-  copilot: '.github',
-};
-
-/**
- * True when the harness chips mean anything for this type.
- *
- * Only SHARED assets (skill, agent) exist in a per-harness location, so only
- * they get a choice. HARNESS types are pinned to the one harness that reads
- * them; REPO types mount under `agentic-assets/` with no dot-dir at all; and
- * INTERNAL types are bare at the scope root. Offering a harness chip for those
- * would let the UI promise a destination the backend will not honour.
- */
-export function harnessAppliesTo(type: string): boolean {
-  return dataManager?.getTypeInfo?.(type)?.asset_class === 'shared';
-}
-
-/**
- * Resolve the sub-folder for a (descriptor, harness, scope) tuple.
- *
- * The backend owns placement: `TypeInfo.main_subdir` is the resolved mount for
- * the default (claude) harness, derived server-side from the type's
- * asset_class/harness/family. This function only swaps the dot-dir prefix when
- * the user picks a non-default harness for a SHARED type — the single case
- * where more than one destination legitimately exists.
- */
-export function subFolderFor(descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
-  if (harness === 'none') return '';
-  const info = dataManager?.getTypeInfo?.(descriptor.type);
-  const mount = info?.main_subdir ?? descriptor.fallbackSubFolder;
-  if (!info?.family || info.asset_class !== 'shared') return mount;
-  if (harness === 'all' || harness === 'claude') return mount;
-  return `${HARNESS_DIR[harness] ?? '.claude'}/${info.family}`;
+/** Placement options are backend registry data, never a vendor directory table. */
+export function creationMounts(type: string): string[] {
+  const info = dataManager?.getTypeInfo?.(type);
+  return info?.scan_mounts?.filter((mount) => !mount.includes('*')) ?? (info?.main_subdir ? [info.main_subdir] : []);
 }
 
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
@@ -155,13 +102,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: Agent.type,
     label: msg`Agent`,
     wikiword: 'Agent Management',
-    fallbackSubFolder: 'agentic-assets/agent',
-    allowedScopes: ['user', 'project'],
-    create: async ({ project, name, scope, folderVfsPath }) => {
-      if (scope === 'folder') {
-        throw new Error('Agents can only be created in User or Project scope');
-      }
-      const saved = await Agent.createInProject(project, name, folderVfsPath);
+    create: async ({ project, name, destination }) => {
+      const saved = await Agent.createInProject(project, name, destination);
       return {
         pointer: DockPointer.forAssetEditorByTypeId(Agent.type, saved.typeId),
         toastTitle: msg`Agent created`,
@@ -172,9 +114,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'skill',
     label: msg`Skill`,
     wikiword: 'Skill assets',
-    fallbackSubFolder: '.claude/skills',
-    create: async ({ project, name, folderVfsPath }) => {
-      const saved = await Skill.createInProject(project, name, folderVfsPath);
+    create: async ({ project, name, destination }) => {
+      const saved = await Skill.createInProject(project, name, destination);
       return {
         // Open a freshly-created skill ready to type into: edit mode, caret on the
         // line right after the auto-inserted `# <name>` headline (body line 2).
@@ -192,9 +133,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'subagent',
     label: msg`Sub agent`,
     wikiword: 'Sub agents',
-    fallbackSubFolder: '.claude/agents',
-    create: async ({ project, name, folderVfsPath }) => {
-      const saved = await SubAgent.createInProject(project, name, folderVfsPath);
+    create: async ({ project, name, destination }) => {
+      const saved = await SubAgent.createInProject(project, name, destination);
       return {
         // Open a freshly-created agent ready to type into: edit mode, caret at the
         // start of the (empty) system-prompt body, right after the headline.
@@ -212,9 +152,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'dynamic_workflow',
     label: msg`Dynamic Workflow`,
     wikiword: 'Dynamic workflows',
-    fallbackSubFolder: '.claude/workflows',
-    create: async ({ project, name }) => {
-      const saved = await DynamicWorkflow.createInProject(project, name);
+    create: async ({ project, name, destination }) => {
+      const saved = await DynamicWorkflow.createInProject(project, name, destination);
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('dynamic_workflow', saved.asset_ref) : undefined,
         toastTitle: msg`Dynamic workflow created`,
@@ -225,9 +164,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'task',
     label: msg`Task`,
     wikiword: 'Task assets',
-    fallbackSubFolder: 'agentic-assets/task',
-    create: async ({ project, name }) => {
-      const task = await Task.createInProject(project, name);
+    create: async ({ project, name, destination }) => {
+      const task = await Task.createInProject(project, name, destination);
       return {
         pointer: DockPointer.forTasks(task.id),
         toastTitle: msg`Task created`,
@@ -238,9 +176,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'markdown',
     label: msg`Markdown`,
     wikiword: 'Markdown documents',
-    fallbackSubFolder: 'docs',
-    create: async ({ project, name }) => {
-      const md = await Markdown.createInProject(project, name);
+    create: async ({ project, name, destination }) => {
+      const md = await Markdown.createInProject(project, name, destination);
       return {
         pointer: md.asset_ref ? DockPointer.forAssetEditor('markdown', md.asset_ref) : undefined,
         toastTitle: msg`Markdown created`,
@@ -251,9 +188,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'whiteboard',
     label: msg`Whiteboard`,
     wikiword: 'Whiteboard assets',
-    fallbackSubFolder: 'agentic-assets/whiteboard',
-    create: async ({ project, name, folderVfsPath }) => {
-      const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
+    create: async ({ project, name, destination }) => {
+      const saved = await Whiteboard.createInProject(project, name, destination);
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
         toastTitle: msg`Whiteboard created`,
@@ -264,12 +200,11 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'mcp',
     label: msg`MCP Server`,
     wikiword: 'MCP servers',
-    fallbackSubFolder: 'agentic-assets/mcp',
     Dialog: McpCreateDialog,
     // The assets-list `+` never opens a Dialog, so it needs a default that
     // still produces something runnable — hence `bundled` (the SDK default).
-    create: async ({ project, name }) => {
-      const saved = await Mcp.createInProject(project, name);
+    create: async ({ project, name, destination }) => {
+      const saved = await Mcp.createInProject(project, name, 'bundled', destination);
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('mcp', saved.asset_ref) : undefined,
         toastTitle: msg`MCP server created`,
@@ -281,11 +216,10 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: msg`Prompt`,
     wikiword: 'Prompt library',
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.
-    fallbackSubFolder: 'agentic-assets/prompt',
     // A prompt is its text, so the library dialog creates it in one step.
     Dialog: PromptEditDialog,
-    create: async ({ project, name }) => {
-      await Prompt.createInProject(project, name);
+    create: async ({ project, name, destination }) => {
+      await Prompt.createInProject(project, name, destination);
       return { toastTitle: msg`Prompt created` };
     },
   },

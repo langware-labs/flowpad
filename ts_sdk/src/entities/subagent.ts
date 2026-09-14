@@ -139,18 +139,17 @@ export class SubAgent extends APIEntity<SubAgent> {
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<SubAgent> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const agent = new SubAgent({ name: name.trim() });
-    return agent.save(scopeIds);
+    return agent.save(scopeIds, destination);
   }
 
   /**
    * Set this agent's `kind` (e.g. mark/unmark as a vibe agent). Backed by the
    * `set-kind` action, which rewrites the `.claude/agents/<name>.md` frontmatter
-   * server-side preserving every other field, then reindexes — do NOT use
-   * entity save/FrontMatterFsRef for this (they'd drop other frontmatter).
+   * server-side preserving every other field, then refreshes its projection.
    */
   async setKind(kind: AgentKind): Promise<void> {
     await SubAgent.setKindById(this.id, kind);

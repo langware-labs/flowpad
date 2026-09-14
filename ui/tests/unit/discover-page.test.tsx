@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DiscoverPage from '@src/pages/discover-page/discover-page';
@@ -37,6 +38,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<typeof import('@sdk/react/hooks')>()), useEntity: () => ({ data: null }) }));
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
+vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
@@ -68,9 +70,24 @@ beforeEach(() => {
   mocks.getPublishedDirectory.mockReset();
   mocks.getPublishedDirectory.mockResolvedValue(mocks.directory);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('DiscoverPage', () => {
+  it('sends a hub row Install click to that row\'s publisher', async () => {
+    mocks.hubOnly = true;
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ delivered: 1, request_id: 'proof' });
+    render(<DiscoverPage />);
+    fireEvent.click((await screen.findAllByTestId('install-button'))[1]);
+    await waitFor(() => expect(call).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'install', method: 'POST',
+      targetEntity: expect.objectContaining({ type: 'project', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }),
+      bodyParameters: { typeid: 'markdown-dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    })));
+  });
+
   it('on the desk: ranked rows in a Published section and a Not-yet-published section', async () => {
     render(<DiscoverPage />);
     expect(await screen.findByText('rca')).toBeInTheDocument();

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.worker_status import WorkerStatus
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 def _now_iso(timespec: str = "auto") -> str:

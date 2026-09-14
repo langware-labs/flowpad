@@ -12,7 +12,7 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dataContext, FrontMatterFsRef, ProcessKind, type AnyEntity } from '@sdk';
+import { ProcessKind, type AnyEntity } from '@sdk';
 import type { APIEntity, FSRef, TypeId } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
@@ -77,14 +77,9 @@ export function PlainMarkdownAssetEditor({
   // preserve object identity and therefore skip a render. MarkdownEditor guards
   // both paths against replacing unsaved edits.
   const baseReloadKey = `${entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date)}:${externalRevision}`;
-  const localTypeId = dataContext.computeNodeTypeId;
-
-  // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
-  // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
-  const baseEditorRef = useMemo(
-    () => (!resolvedEntity && assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
-    [resolvedEntity, assetRef, localTypeId, fsRef],
-  );
+  // The router's ref identifies the selected occurrence, including copies
+  // sharing an Entity ID. Entity metadata is not a replacement content path.
+  const baseEditorRef = fsRef;
 
   // Document translation: the `?lang=` inline body swap, completion auto-refresh,
   // and the Translations side tab — shared with the wikitip modal surface.

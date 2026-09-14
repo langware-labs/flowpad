@@ -22,8 +22,10 @@ from .fs_actions import (
     copy,
     create_symlink,
     delete,
+    document,
     download,
     download_zip,
+    ensure_document,
     mkdir,
     move,
     read_optional,
@@ -100,6 +102,10 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await mkdir(current_request_info, fs_info)
         elif fs_info.fs_action == "write":
             return await write(current_request_info, fs_info)
+        elif fs_info.fs_action == "ensure_document":
+            return await ensure_document(current_request_info, fs_info)
+        elif fs_info.fs_action == "document":
+            return await document(current_request_info, fs_info)
         elif fs_info.fs_action == "open":
             return await open_in_os(current_request_info, fs_info)
         elif fs_info.fs_action == "create_symlink":

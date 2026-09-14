@@ -19,13 +19,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     AgenticWorker,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 logger = logging.getLogger(__name__)
 

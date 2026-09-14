@@ -20,12 +20,9 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.assets.types.spreadsheet import extract_spreadsheet, spreadsheet_asset_hash
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions.spreadsheet import (
-    extract_spreadsheet,
-    spreadsheet_asset_hash,
-)
 from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry

@@ -21,12 +21,12 @@ export default mergeConfig(
       hookTimeout: 15000, // Increased hook timeout for API setup with websockets
       setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts'), path.resolve(__dirname, './apiSetup.ts')],
       exclude: [],
-      pool: 'threads',
-      poolOptions: {
-        threads: {
-          singleThread: true,
-        },
-      },
+      // Files create and dispose SDK realms with worker-global module resets.
+      // A fresh process prevents a prior realm's callbacks from importing into
+      // the next file's partially initialized SDK graph. The npm command owns
+      // serialization against the shared live backend.
+      pool: 'forks',
+      isolate: true,
       reporters: ['default', 'hanging-process'],
       environment: 'jsdom',
       environmentOptions: {

@@ -148,8 +148,9 @@ def test_task_frontmatter_fields_covers_every_task_field():
     exactly how ``archived_at`` resurrected archived tasks. This fails loudly
     until the new field is either round-tripped or explicitly declared local.
     """
-    from flow_sdk.builtin.task import Task, TaskSpec
+    from flow_sdk.builtin.task import Task
     from flow_sdk.core.entity.entity_model import Entity
+    from flow_sdk.schema.data_spec.task_spec import TaskSpec
 
     # Only fields Task itself declares; base-Entity infrastructure (uname, scope,
     # created_by, …) is never frontmatter.

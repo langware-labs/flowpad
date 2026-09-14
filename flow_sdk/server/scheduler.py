@@ -110,7 +110,8 @@ async def prune_orphan_scheduler_jobs() -> int:
     # transient DB error can never wipe valid jobs.
     try:
         from flow_sdk.builtin.cron_event import CronEvent
-        from flow_sdk.builtin.trigger import Trigger, TriggerType
+        from flow_sdk.builtin.trigger import Trigger
+        from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
         valid_ids: set[str] = {t.id for t in await Trigger.list_by_type(TriggerType.SCHEDULE) if t.id}
         valid_ids.update(c.id for c in await CronEvent.get_all() if getattr(c, "id", None))

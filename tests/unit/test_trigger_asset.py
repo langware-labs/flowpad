@@ -12,14 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.trigger import TriggerType
-from flow_sdk.fs_store.indexer.functions.trigger import (
-    extract_trigger,
-    read_trigger,
-    row_fields,
-    trigger_document_problem,
-)
+from flow_sdk.assets.types.trigger import extract_trigger, read_trigger, row_fields, trigger_document_problem
 from flow_sdk.schema.data_spec.trigger_spec import TriggerActionSpec, TriggerSpec
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -37,6 +32,25 @@ TAG_DOC = {
     "tag": {"on": "app.ready"},
     "actions": [{"run_wizard": ""}],
 }
+
+
+@pytest.mark.asyncio
+async def test_seed_trigger_does_not_create_an_incomplete_asset(tmp_path):
+    from flow_sdk.assets.folder import AssetFolder
+    from flow_sdk.builtin.trigger import Trigger
+
+    trigger = Trigger(name="Service trigger", trigger_type=TriggerType.SCHEDULE, expr="* * * * *")
+    await trigger._prepare_for_storage(scope_root=tmp_path)
+    assert trigger.asset_ref == ""
+    assert AssetFolder(path=tmp_path).assets() == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_document_trigger_is_file_backed(tmp_path):
+    from flow_sdk.builtin.trigger import Trigger
+
+    trigger = Trigger(name="Document trigger", asset_ref=str(_write(tmp_path, TAG_DOC)))
+    assert trigger.is_file_backed()
 
 
 # ── the spec ────────────────────────────────────────────────────────────────

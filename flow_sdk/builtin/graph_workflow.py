@@ -31,7 +31,8 @@ def graph_workflows_home_dir() -> Path:
     lands at ``<user_home>/agentic-assets/graph_workflow/``, which is exactly
     where the shared ``repo_assets_fn`` walker looks.
     """
-    from flow_sdk.fs_store.placement import Scope, resolve_destination
+    from flow_sdk.assets.placement import Scope
+    from flow_sdk.builtin.asset_placement import resolve_destination
 
     # REPO declares user_scope, and the type is registered, so this always
     # resolves — a None here is a registry bug worth surfacing, not papering
@@ -58,7 +59,7 @@ class GraphWorkflow(Entity):
         """Create the folder + stub files for a fresh flow (idempotent)."""
         from flow_sdk.builtin.graph_workflow_folder import scaffold_graph_workflow_folder
 
-        return scaffold_graph_workflow_folder(self, graph_workflows_home_dir(), "flow", scripts=True)
+        return scaffold_graph_workflow_folder(self, graph_workflows_home_dir(), "flow")
 
     async def save(self, *args, **kwargs):  # type: ignore[override]
         result = await super().save(*args, **kwargs)

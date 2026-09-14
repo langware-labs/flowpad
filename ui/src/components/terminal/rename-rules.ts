@@ -1,5 +1,4 @@
 import type { AgenticProcess } from '@sdk';
-import { Shell } from '@sdk';
 
 // `[45]` for the version nibble, matching the entity-id policy (ids are UUID v4
 // or v5 — CLAUDE.md) and the SDK's own shape source (`ts_sdk/src/models/TypeId.ts`
@@ -28,13 +27,9 @@ export function cleanTitle(name: string | null | undefined): string {
   );
 }
 
-/** True when a name is shaped like a TypeId — an address, not a label.
- *
- *  Exported because both rename paths must reject it and they no longer share
- *  code: the PTY auto-title mirror gates on `allowRename` below, while a USER
- *  rename goes TabStrip → the strip owner's `onRename`. The unified-tab-strip
- *  refactor moved the user path off `TabbedTerminal` and the check did not come
- *  with it. */
+/** Legacy name filter for plain-shell and other tab rename paths.
+ *  AgenticProcess explicit renames deliberately bypass this filter: a user
+ *  may choose an identifier-shaped name, and the backend pins that choice. */
 export function isTypeIdLikeName(name: string | null | undefined): boolean {
   return TYPEID_RX.test(cleanTitle(name));
 }
@@ -82,24 +77,4 @@ export function nextTerminalName(sessions: { name: string }[]): string {
   let n = 1;
   while (usedNumbers.has(n)) n++;
   return `Tab ${n}`;
-}
-
-function isCodexProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'codex';
-}
-
-function isCopilotProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'copilot';
-}
-
-/** PTY OSC title auto-save rule: a plain shell always auto-titles; a process
- *  auto-titles unless it is Codex/Copilot (they emit unstable titles). The Tab
- *  body renders from `TabRow` + the panel's live entity, so the rule keys on the
- *  target type + that entity, not a `TerminalTab`. */
-export function shouldAutoSaveTitleForTarget(
-  targetType: string | null | undefined,
-  process?: AgenticProcess | null,
-): boolean {
-  if (!process) return targetType === Shell.type;
-  return !isCodexProcess(process) && !isCopilotProcess(process);
 }

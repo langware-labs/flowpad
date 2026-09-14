@@ -6,14 +6,13 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.hook_models import (
-    ActionType,
     CallbackActionHandler,
     NopActionHandler,
     NotifyEntityActionHandler,
     RunScriptActionHandler,
     get_action_handler,
 )
-
+from flow_sdk.schema.data_spec.trigger_action import ActionType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)

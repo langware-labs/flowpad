@@ -1,15 +1,12 @@
 """Type metadata for DECK."""
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     folder_json_identity,
 )
-from flow_sdk.fs_store.indexer.functions.deck import (
-    deck_asset_hash,
-    extract_deck,
-)
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.deck import deck_asset_hash, extract_deck
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode

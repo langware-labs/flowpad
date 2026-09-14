@@ -5,13 +5,13 @@ from pydantic import ValidationError
 
 from flow_sdk import service_log
 from flow_sdk.actions import action
+from flow_sdk.assets.creation import AssetPathCollisionError
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
-from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -268,7 +268,7 @@ async def handle_record_action():
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+    from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 
     asset_binding = local_asset_vfs_binding(entity)
     if asset_binding is not None:
@@ -351,6 +351,8 @@ async def handle_create_entity(request: Request):
     # Get the entity model using the new helper function
     entity_model = get_entity_model_from_registry(request_info.direct_resource_type)
     type_info = SchemaRegistry.get(request_info.direct_resource_type)
+    data = dict(data)
+    destination = data.pop("destination", None)
     try:
         sanitized_data = {}
         for key, value in data.items():
@@ -406,6 +408,8 @@ async def handle_create_entity(request: Request):
             and not request_info.target_entity_typeid
             and await entity_model.get_by_id(str(incoming_id)) is not None
         ):
+            if destination is not None:
+                raise HTTPException(status_code=400, detail="destination is only supported for a new asset")
             merged = await entity_model.update_by_id(
                 str(incoming_id),
                 {k: v for k, v in sanitized_data.items() if k not in ("id", "type")},
@@ -433,7 +437,13 @@ async def handle_create_entity(request: Request):
     # reserved-root gate) is a client error, not a server fault — mapped once
     # around the whole branch dispatch so every create path agrees.
     try:
-        entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+        if destination is not None:
+            from flow_sdk.builtin.asset_creation import prepare_destination
+
+            parent = await prepare_destination(entity, destination, request_info)
+            entity = await _dispatch_create_save(entity, request_info, someone_typeid, destination_parent=parent)
+        else:
+            entity = await _dispatch_create_save(entity, request_info, someone_typeid)
     except AssetPathCollisionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
@@ -444,16 +454,22 @@ async def handle_create_entity(request: Request):
     return ApiSuccessResponse[Entity](data=entity)
 
 
-async def _dispatch_create_save(entity: Entity, request_info, someone_typeid) -> Entity:
+_DEFAULT_CREATE_PARENT = object()
+
+
+async def _dispatch_create_save(entity: Entity, request_info, someone_typeid, *, destination_parent=_DEFAULT_CREATE_PARENT) -> Entity:
     """The three create arms (standalone / visitor / parented), extracted so
     handle_create_entity can wrap them under one ValueError→400 mapping."""
-    if not request_info.target_entity_typeid or request_info.target_entity_typeid.type == User.get_type():
+    target_typeid = (request_info.target_entity_typeid if destination_parent is _DEFAULT_CREATE_PARENT
+                     else destination_parent.typeid if destination_parent is not None else None)
+    if not target_typeid or target_typeid.type == User.get_type():
         entity = await entity.save(someone_typeid)
-    elif request_info.target_entity_typeid.type == Visitor.get_type():
+    elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()
         await entity.set_visitor_role(AuthRole.ANONYMOUS_VIEWER.value.lower())
     else:
-        target_entity: Entity | None = await request_info.get_target_entity()
+        target_entity: Entity | None = (await request_info.get_target_entity()
+                                      if destination_parent is _DEFAULT_CREATE_PARENT else destination_parent)
         # we will not get to this if anymore because it is caught in the Authorizer: is_authorized_resource_request
         if not target_entity:
             err_msg = f"Invalid url path, Target entity not found:{request_info.parent_entity}"

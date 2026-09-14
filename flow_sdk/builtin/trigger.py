@@ -6,20 +6,14 @@ from typing import Any, ClassVar, Optional, Union
 from pydantic import model_validator
 from starlette.requests import Request
 
-from flow_sdk._compat import StrEnum
-from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.messages import HttpMethod
-from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
-    ActionType,
     ErrorMessage,
     ExecutedAction,
     HookEventData,
     RelationshipSubAction,
     SuccessMessage,
-    TriggerAction,
     get_action_handler,
 )
 from flow_sdk.core import action as core_action
@@ -27,21 +21,17 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 logger = logging.getLogger(__name__)
 
 
-class TriggerType(StrEnum):
-    """Discriminator for Trigger entities. New values: extend here + handle in lifecycle hooks."""
 
-    HOOK = "hook"
-    SCHEDULE = "schedule"
-    FSOP = "fsop"
-    # A unified-bus subscription (docs/flow-events.md phase 4): fires on
-    # matching FlowEvents instead of files/cron/hooks.
-    TAG = "tag"
 
 
 def _allowlisted_roots() -> list[Path]:
@@ -266,6 +256,11 @@ class Trigger(Entity):
     #: The trigger's folder on disk, when it came from one. Empty for a row the
     #: rules API or the service seed minted — those stay rowful and fileless.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+
+    def is_file_backed(self) -> bool:
+        """Only triggers adopted from a document have a filesystem asset."""
+        return bool(self.asset_ref)
+
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
     #: DB alone: a spent `fire_once` counter has to survive a full index rebuild,
@@ -853,18 +848,22 @@ class Trigger(Entity):
         if not self.path:
             return ApiFailResponse(message="Trigger has no filesystem path")
         from pathlib import Path
-        trigger_file = Path(self.path) / "trigger.py"
+
+        from flow_sdk.assets.directory import AssetDir
+
+        directory = AssetDir(Path(self.path))
+        trigger_file = directory.os_path / "trigger.py"
         method = request.method.upper()
         if method == "GET":
             if not trigger_file.exists():
                 return ApiFailResponse(message="trigger.py not found")
-            content = trigger_file.read_text(encoding="utf-8")
+            content = directory.read_asset("trigger.py")
             return ApiSuccessResponse(data={"content": content})
         elif method == "PUT":
             request_info = get_current_request_info()
             body = await request_info.get_post_data() if request_info else {}
             content = (body or {}).get("content", "")
-            trigger_file.write_text(content, encoding="utf-8")
+            directory.load_asset("trigger.py", content=content)
             return ApiSuccessResponse(data={"saved": True})
         return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} trigger-content")
 

@@ -55,6 +55,8 @@ export interface ResolvedAsset {
   editor: string | null;
   /** The entity row when the backend hydrated it; null when only classified. */
   entity: Record<string, unknown> | null;
+  /** Classified document remains readable when its Entity projection cannot parse. */
+  entity_error?: string | null;
 }
 
 export interface DatabasePaths {

@@ -31,12 +31,9 @@ import uuid
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Callable
 
 from flow_sdk._compat import StrEnum
-
-if TYPE_CHECKING:
-    from flow_sdk.fs_store.fs_record import FSRecord as AgentRecord
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "claude_plugin_test"
 
@@ -317,7 +314,6 @@ class ClaudeProjectEnvManager:
 
         self._clean = clean
         self._env_vars: dict[str, str] = {}
-        self._mcp_config_path: Path | None = None
         self._debug_file: Path | None = None
         self._dump_activations = False
         self._plugin_root = Path(plugin_root) if plugin_root else None
@@ -471,153 +467,6 @@ class ClaudeProjectEnvManager:
 
     # Backward-compat alias (skillit tests use _build_env)
     _build_env = build_env
-
-    # -- Rules engine integration ---------------------------------------------
-
-    @property
-    def user_rules(self):
-        """Return user-level rules (~/.flow/skill_rules).
-
-        Empty if ``include_user_home`` is False.
-        """
-        from flow_sdk.rules.engine import RulesPackage
-
-        if not self._include_user_home:
-            return RulesPackage(source="user", rules=[])
-        from flow_sdk.rules.rule_loader import get_user_rules_dir
-
-        return RulesPackage.from_folder(get_user_rules_dir(), source="user")
-
-    @property
-    def project_rules(self):
-        """Return project-level rules (<root>/.flow/skill_rules)."""
-        from flow_sdk.rules.engine import RulesPackage
-
-        rules_path = self._root / ".flow" / "skill_rules"
-        rules_path.mkdir(parents=True, exist_ok=True)
-        return RulesPackage.from_folder(rules_path, source="project")
-
-    @property
-    def all_rules(self):
-        """Return merged rules (user + project, project overrides user)."""
-        from flow_sdk.rules.engine import RulesPackage
-
-        user_path = None
-        if self._include_user_home:
-            from flow_sdk.rules.rule_loader import get_user_rules_dir
-
-            user_path = get_user_rules_dir()
-        return RulesPackage.from_multiple_folders(
-            user_path=user_path,
-            project_path=self._root / ".flow" / "skill_rules",
-        )
-
-    @property
-    def rule_engine(self):
-        """Return RuleEngine for this environment."""
-        from flow_sdk.rules.engine import RuleEngine
-
-        return RuleEngine(project_dir=str(self._root))
-
-    def load_rule(self, rule_path: str) -> None:
-        """Copy a rule into the env's .flow/skill_rules folder.
-
-        Args:
-            rule_path: Full path to a rule directory.
-        """
-        rule_src = Path(rule_path).expanduser()
-        if not rule_src.exists():
-            raise FileNotFoundError(f"Rule not found: {rule_path}")
-        rules_dir = self._root / ".flow" / "skill_rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(rule_src, rules_dir / rule_src.name)
-
-    def load_all_user_rules(self) -> None:
-        """Copy all rules from the per-instance skill_rules dir into the env."""
-        from flow_sdk.instance_settings import get_instance_settings
-        user_rules = get_instance_settings().skill_rules_dir
-        if not user_rules.exists():
-            return
-        rules_dir = self._root / ".flow" / "skill_rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        for rule_dir in user_rules.iterdir():
-            if rule_dir.is_dir() and (rule_dir / "trigger.py").exists():
-                shutil.copytree(
-                    rule_dir, rules_dir / rule_dir.name, dirs_exist_ok=True
-                )
-
-    # -- Agent management -----------------------------------------------------
-
-    def load_subagent(self, agent: "AgentRecord | str | Path") -> None:
-        """Copy a sub-agent definition into ``.claude/agents/``.
-
-        Accepts:
-          - ``Record`` (SUBAGENT type): renders via ``render_subagent_markdown`` and writes it
-          - ``str``: treated as sub-agent name, loaded via ``load_subagent`` from operations
-          - ``Path``: path to a ``.md`` file, copied directly
-        """
-        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
-            load_subagent as _load_subagent,
-        )
-
-        if isinstance(agent, Path):
-            dest = self.agents_dir / agent.name
-            dest.write_text(agent.read_text(encoding="utf-8"), encoding="utf-8")
-        elif isinstance(agent, str):
-            loaded = _load_subagent(agent)
-            if loaded is None:
-                raise FileNotFoundError(f"SubAgent {agent!r} not found")
-            self._write_agent_md(loaded)
-        else:
-            self._write_agent_md(agent)
-
-    def _write_agent_md(self, agent: "AgentRecord") -> None:
-        from flow_sdk.fs_store.operations.subagent import render_subagent_markdown  # noqa: PLC0415
-        name = agent.name or agent.id or "agent"
-        dest = self.agents_dir / f"{name}.md"
-        dest.write_text(render_subagent_markdown(agent), encoding="utf-8")
-
-    # -- System prompt --------------------------------------------------------
-
-    def set_system_prompt(self, content: str) -> None:
-        """Write *content* to ``CLAUDE.md`` (overwrites)."""
-        self.claude_md_path.write_text(content, encoding="utf-8")
-
-    def append_system_prompt(self, content: str) -> None:
-        """Append *content* to ``CLAUDE.md``."""
-        with self.claude_md_path.open("a", encoding="utf-8") as f:
-            f.write(content)
-
-    def load_system_prompt(self, file_path: str | Path) -> None:
-        """Copy file content into the env's CLAUDE.md.
-
-        Args:
-            file_path: Path to the file whose content becomes CLAUDE.md.
-        """
-        src = Path(file_path).expanduser()
-        if not src.exists():
-            raise FileNotFoundError(f"System prompt file not found: {src}")
-        shutil.copy2(src, self._root / "CLAUDE.md")
-
-    # -- MCP config -----------------------------------------------------------
-
-    def set_mcp_config(self, config: dict[str, Any]) -> None:
-        """Write ``mcp.json`` to the project root."""
-        mcp_path = self._root / "mcp.json"
-        mcp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
-
-    def loadMcp(self) -> None:
-        """Write an MCP config pointing to the flow-sdk MCP server."""
-        mcp_config = {
-            "mcpServers": {
-                "flow_sdk": {
-                    "command": shutil.which("flow-sdk-mcp") or "flow-sdk-mcp",
-                    "args": [],
-                }
-            }
-        }
-        self._mcp_config_path = self._root / "mcp.json"
-        self._mcp_config_path.write_text(json.dumps(mcp_config, indent=2))
 
     # -- Plugin installation --------------------------------------------------
 
@@ -830,8 +679,6 @@ class ClaudeProjectEnvManager:
             "--dangerously-skip-permissions",
             *self._session_args(),
         ]
-        if self._mcp_config_path:
-            cmd.extend(["--mcp-config", str(self._mcp_config_path)])
         if self._debug_file:
             cmd.extend(["--debug-file", str(self._debug_file)])
 

@@ -31,15 +31,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.instance_settings import get_instance_settings
-
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 DEFAULT_TAIL_BYTES = 64 * 1024
 DEFAULT_ACTIVE_SECONDS = 300

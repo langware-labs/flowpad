@@ -1,119 +1,184 @@
-import { useCallback, useMemo, useRef } from 'react';
-import { FsRef, FsRefContentState, useFSRefContent } from './use-fs-ref-content';
+import { DocumentDraft, type AssetDocument, type DocumentRef, type DocumentValue } from '@sdk/fs/AssetDocument';
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
-export interface MarkdownContentState extends Omit<FsRefContentState, 'content' | 'setContent'> {
+export interface MarkdownContentState {
   fields: Record<string, string>;
+  typedFields: Record<string, DocumentValue>;
   hasFields: boolean;
   body: string;
-  /** 1-indexed line in the on-disk file where `body[0]` sits. 1 when no frontmatter. */
   bodyStartLine: number;
-  setField: (key: string, value: string) => void;
+  setField: (key: string, value: DocumentValue) => void;
   setBody: (body: string) => void;
+  dropField: (key: string) => void;
+  dirty: boolean;
+  saving: boolean;
+  lastSync: Date | null;
+  isLoading: boolean;
+  loadError: Error | null;
+  saveError: Error | null;
+  conflict: boolean;
+  metadataError: string | null;
+  currentDocument: AssetDocument | null;
+  inspectCurrent: () => Promise<void>;
+  isMissing: boolean;
+  recreate: () => Promise<void>;
+  save: () => Promise<boolean>;
+  reload: () => void;
 }
 
-// ── Pure frontmatter utilities ────────────────────────────────────────────────
-
-export function parseFrontmatter(
-  raw: string,
-): { fields: Record<string, string>; body: string; bodyStartLine: number } {
-  if (!raw.startsWith('---\n')) return { fields: {}, body: raw, bodyStartLine: 1 };
-
-  const closeIdx = raw.indexOf('\n---\n', 4);
-  if (closeIdx === -1) return { fields: {}, body: raw, bodyStartLine: 1 };
-
-  const frontmatter = raw.slice(4, closeIdx);
-  const afterClose = raw.slice(closeIdx + 5);
-  const leadingNewlines = afterClose.match(/^\n+/);
-  const body = afterClose.replace(/^\n+/, '');
-  const consumed = closeIdx + 5 + (leadingNewlines ? leadingNewlines[0].length : 0);
-  const bodyStartLine = raw.slice(0, consumed).split('\n').length;
-
-  const fields: Record<string, string> = {};
-  for (const line of frontmatter.split('\n')) {
-    const match = /^([\w-]+):\s*(.*)$/.exec(line);
-    if (match) {
-      fields[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
-    }
-  }
-
-  return { fields, body, bodyStartLine };
+function isConflict(error: unknown): boolean {
+  const e = error as { response?: { status?: number }; status?: number; code?: string };
+  return e?.response?.status === 409 || e?.status === 409 || e?.code === 'stale_document';
 }
 
-export function serializeFrontmatter(fields: Record<string, string>, body: string): string {
-  // No parsed fields → the file had no readable frontmatter. Emitting a fence
-  // here would inject a hollow `---\n\n---` block and strand the body's real
-  // content deeper on every save, so leave the content untouched.
-  if (Object.keys(fields).length === 0) return body;
-
-  // Minimal quoting to match the backend YAML writer's on-disk form, so
-  // serialize(parse(x)) === x for an unchanged asset. Quoting every scalar (the
-  // old behavior) made the editor's buffer differ from disk on mount → dirty
-  // with no user edit → autosave → autoversion bumps `version` every open.
-  const needsQuote = (v: string) =>
-    v === '' || /^(?:true|false|null|yes|no|on|off|~)$/i.test(v) || /^\s|\s$|[:#]/.test(v);
-  const lines = Object.entries(fields).map(([key, value]) => {
-    const quoted = needsQuote(value) ? `'${value.replace(/'/g, "''")}'` : value;
-    return `${key}: ${quoted}`;
-  });
-  return `---\n${lines.join('\n')}\n---\n\n${body}`;
-}
-
-/**
- * Canonical form for the dirty comparison: collapses every difference a save
- * would re-normalize away, so an unedited open is never marked dirty.
- *  - frontmatter compared by parsed key/value map (immune to quote style, key
- *    spacing, fence formatting — the editor's serializer vs the backend writer's)
- *  - body compared with trailing whitespace and trailing blank lines stripped
- *    (the rich editor re-emits those on mount).
- * Compare-only — never what gets written.
- */
-export function normalizeMarkdownForCompare(raw: string): string {
-  const { fields, body } = parseFrontmatter(raw);
-  const fm = JSON.stringify(Object.entries(fields).sort());
-  const normBody = body.replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
-  return `${fm} ${normBody}`;
-}
-
-// ── Hook ──────────────────────────────────────────────────────────────────────
-
+/** A structured document draft; all YAML parsing and writing belongs to the backend. */
 export function useMarkdownContent(
-  fsRef: FsRef | null,
-  options?: { autoSave?: boolean; autoSaveMs?: number; reloadKey?: string | number; reindexOnSave?: boolean },
+  fsRef: DocumentRef | null,
+  options?: { autoSave?: boolean; autoSaveMs?: number; reloadKey?: string | number },
 ): MarkdownContentState {
-  const { content, setContent, ...rest } = useFSRefContent(fsRef, {
-    ...options,
-    normalize: normalizeMarkdownForCompare,
-  });
+  const [generation, redraw] = useReducer((n: number) => n + 1, 0);
+  const [reloadTrigger, reload] = useReducer((n: number) => n + 1, 0);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [saveError, setSaveError] = useState<Error | null>(null);
+  const [currentDocument, setCurrentDocument] = useState<AssetDocument | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [isMissing, setMissing] = useState(false);
+  const [loading, setLoading] = useState(!!fsRef);
+  const [saving, setSaving] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const draft = useRef<DocumentDraft | null>(null);
+  const ref = useRef(fsRef);
+  ref.current = fsRef;
+  const saveBlocked = useRef(false);
+  const inFlight = useRef(false);
+  const pendingSave = useRef(false);
+  const epoch = useRef(0);
+  const identity = fsRef?.vpath ?? fsRef?.path ?? null;
+  const previousLoad = useRef({ identity, reloadTrigger });
+  const reloadKey = options?.reloadKey;
 
-  const { fields, body, bodyStartLine } = useMemo(() => parseFrontmatter(content), [content]);
+  useEffect(() => () => { ++epoch.current; }, []);
 
-  // Stable refs so setField/setBody don't change identity when fields/body change
-  const fieldsRef = useRef(fields);
-  fieldsRef.current = fields;
-  const bodyRef = useRef(body);
-  bodyRef.current = body;
+  useEffect(() => {
+    const previous = previousLoad.current;
+    const explicit = identity !== previous.identity || reloadTrigger !== previous.reloadTrigger;
+    previousLoad.current = { identity, reloadTrigger };
+    if (!explicit && (draft.current?.dirty || inFlight.current || saveBlocked.current)) return;
+    const token = ++epoch.current;
+    draft.current = null;
+    saveBlocked.current = false;
+    inFlight.current = false;
+    pendingSave.current = false;
+    setSaving(false);
+    setConflict(false);
+    setCurrentDocument(null);
+    setSaveError(null);
+    setLoadError(null);
+    setMissing(false);
+    setLastSync(null);
+    const target = ref.current;
+    setLoading(!!target);
+    if (!target) return;
+    void target.readDocument().then((document) => {
+      if (epoch.current !== token) return;
+      draft.current = new DocumentDraft(document);
+    }).catch(async (error: unknown) => {
+      if (epoch.current !== token) return;
+      const missing = target.exists ? !(await target.exists().catch(() => true)) : false;
+      if (epoch.current !== token) return;
+      setMissing(missing);
+      if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
+    }).finally(() => {
+      if (epoch.current === token) { setLoading(false); redraw(); }
+    });
+  }, [identity, reloadTrigger, reloadKey]);
 
-  const setField = useCallback(
-    (key: string, value: string) => {
-      setContent(serializeFrontmatter({ ...fieldsRef.current, [key]: value }, bodyRef.current));
-    },
-    [setContent],
-  );
+  const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
+  const save = useCallback(async () => {
+    const target = ref.current;
+    const current = draft.current;
+    if (!target || target.readOnly || !current || saveBlocked.current) return false;
+    if (!current.dirty) return true;
+    if (inFlight.current) { pendingSave.current = true; return false; }
+    const token = epoch.current;
+    const submitted = current.snapshot();
+    inFlight.current = true;
+    setSaving(true);
+    try {
+      const saved = await target.updateDocument(current.patch());
+      if (token !== epoch.current) return false;
+      current.accept(saved, submitted);
+      setLastSync(new Date());
+      setSaveError(null);
+      return true;
+    } catch (error) {
+      if (token !== epoch.current) return false;
+      // Any failure pauses automatic saving; a stale revision must never be retried.
+      saveBlocked.current = true;
+      setConflict(isConflict(error));
+      setSaveError(error instanceof Error ? error : new Error(String(error)));
+      return false;
+    } finally {
+      if (token === epoch.current) {
+        inFlight.current = false;
+        setSaving(false);
+        redraw();
+        if (pendingSave.current) { pendingSave.current = false; void saveRef.current(); }
+      }
+    }
+  }, []);
+  saveRef.current = save;
 
-  const setBody = useCallback(
-    (newBody: string) => {
-      setContent(serializeFrontmatter(fieldsRef.current, newBody));
-    },
-    [setContent],
-  );
+  const setBody = useCallback((body: string) => {
+    if (!draft.current || ref.current?.readOnly) return;
+    draft.current.body = body;
+    redraw();
+  }, []);
+  const setField = useCallback((key: string, value: DocumentValue) => {
+    if (!draft.current || ref.current?.readOnly) return;
+    draft.current.fields[key] = value;
+    redraw();
+  }, []);
+  const dropField = useCallback((key: string) => {
+    if (!draft.current || ref.current?.readOnly) return;
+    delete draft.current.fields[key];
+    redraw();
+  }, []);
+  const inspectCurrent = useCallback(async () => {
+    const token = epoch.current;
+    try {
+      const document = await ref.current?.readDocument();
+      if (epoch.current === token && document) setCurrentDocument(document);
+    } catch (error) {
+      if (epoch.current === token) setSaveError(error instanceof Error ? error : new Error(String(error)));
+    }
+  }, []);
+  const recreate = useCallback(async () => {
+    try { await ref.current?.create?.(); reload(); }
+    catch (error) { setLoadError(error instanceof Error ? error : new Error(String(error))); }
+  }, []);
 
+  const dirty = draft.current?.dirty ?? false;
+  const autoSave = options?.autoSave ?? true;
+  const autoSaveMs = options?.autoSaveMs ?? 3000;
+  useEffect(() => {
+    if (!autoSave || !dirty || saveBlocked.current) return;
+    const timer = setTimeout(() => { void saveRef.current(); }, autoSaveMs);
+    return () => clearTimeout(timer);
+  }, [autoSave, autoSaveMs, dirty, generation]);
+  usePrimaryContentPending(loading);
+
+  const current = draft.current;
+  // Text inputs only expose scalars; structured metadata survives in the typed draft.
+  const fields = Object.fromEntries(Object.entries(current?.fields ?? {}).filter(([, value]) =>
+    value === null || typeof value !== 'object',
+  ).map(([key, value]) => [key, value === null ? '' : typeof value === 'string' ? value : JSON.stringify(value)]));
   return {
-    fields,
-    hasFields: Object.keys(fields).length > 0,
-    body,
-    bodyStartLine,
-    setField,
-    setBody,
-    ...rest,
+    fields, typedFields: current?.fields ?? {}, hasFields: Object.keys(current?.fields ?? {}).length > 0,
+    body: current?.body ?? '', bodyStartLine: current?.document.body_start_line ?? 1,
+    setBody, setField, dropField, dirty, saving, lastSync, isLoading: loading, loadError,
+    saveError, conflict, currentDocument, inspectCurrent, metadataError: current?.document.metadata_error ?? null,
+    isMissing, recreate, save, reload,
   };
 }

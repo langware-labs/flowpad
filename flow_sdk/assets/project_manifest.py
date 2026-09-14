@@ -48,8 +48,8 @@ from typing import Optional
 from filelock import FileLock
 from pydantic import ValidationError
 
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.instances.model import utc_now_iso
 from flow_sdk.schema.data_spec.project_manifest_spec import (
     DEPS_MAIN,

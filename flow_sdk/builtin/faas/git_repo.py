@@ -525,7 +525,7 @@ class GitRepo:
         tracking) only works for a single file, so it is dropped for folder scope.
         """
         try:
-            from flow_sdk.actions.fs.asset_scope import is_folder_asset_dir
+            from flow_sdk.assets.scope import is_folder_asset_dir
 
             if is_folder_asset_dir(self.work_dir):
                 return ".", False

@@ -354,6 +354,11 @@ msgstr "{0} פרוס"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא ניתן לפתוח אותה."
 
+#. placeholder {0}: funded.name
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "{0} is issuing your LLM calls. You can close this tab."
+msgstr ""
+
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "{0} is not signed in"
@@ -622,12 +627,28 @@ msgid "{name} avatar"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
-msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקוב אחר מדריך ההתקנה המהיר ואז לחזור לכאן כדי להתחבר."
+msgid "{name} has no account to sign into — it runs on an LLM key."
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
-msgstr "{name} עדיין לא מותקן במחשב הזה. התקן אותו למטה, ואז חזור לכאן כדי להתחבר."
+msgid "{name} has no account to sign into — it runs on an LLM key. Add one to get it working."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "{name} has no account to sign into — it runs on an LLM key. Add one under “LLM API keys” above and pick it here."
+#~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
+#~ msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקוב אחר מדריך ההתקנה המהיר ואז לחזור לכאן כדי להתחבר."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
+#~ msgstr "{name} עדיין לא מותקן במחשב הזה. התקן אותו למטה, ואז חזור לכאן כדי להתחבר."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -1212,6 +1233,10 @@ msgstr ""
 msgid "Add an agent…"
 msgstr "חיפוש סוכן להוספה…"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Add an API key"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add annotation"
 msgstr "הוסף הערה"
@@ -1661,8 +1686,8 @@ msgid "All guides"
 msgstr "כל המדריכים"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "All harnesses"
-msgstr "כל הרתמות"
+#~ msgid "All harnesses"
+#~ msgstr "כל הרתמות"
 
 #: src/navigation/record-type-nav.ts
 msgid "All hooks"
@@ -1809,6 +1834,10 @@ msgstr "כבר פעיל"
 #: src/components/llm-sources/LlmSourcesView.tsx
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "כבר התחברת במקום אחר? בדוק שוב"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
@@ -2000,6 +2029,11 @@ msgstr ""
 #: src/i18n/type-labels.ts
 msgid "Api Key"
 msgstr "מפתח API"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "API key"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -2239,6 +2273,10 @@ msgstr "דוח ניקוי נכסים"
 msgid "Asset compare"
 msgstr "השוואת נכסים"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "Asset folder"
+msgstr "תיקיית נכסים"
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr "שינויים לא שמורים בנכס"
@@ -2246,6 +2284,10 @@ msgstr "שינויים לא שמורים בנכס"
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr "אין קובץ בדיסק לנכס זה"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset list truncated. Narrow the selection to see more."
+msgstr "רשימת הנכסים קוצרה. צמצמו את הבחירה כדי לראות עוד."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Asset must be clean-git"
@@ -2346,6 +2388,10 @@ msgstr "צרפו את תמליל הסשן הזה"
 msgid "Attached asset types"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Attached assets"
+msgstr ""
+
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr ""
@@ -2391,6 +2437,10 @@ msgstr "אימות"
 msgid "authored"
 msgstr "נכתב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "קוד הרשאה"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "קוד הרשאה — יש לאשר בדפדפן ולחזור לכאן"
@@ -2402,6 +2452,10 @@ msgstr "קוד הרשאה עם PKCE, עם הפניה חוזרת למחשב זה"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנסות שנית."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "אישור חיבור"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2458,8 +2512,8 @@ msgid "Auto-updates check hourly."
 msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/funding-chip/FundingChip.tsx
-msgid "Automatic"
-msgstr "אוטומטי"
+#~ msgid "Automatic"
+#~ msgstr "אוטומטי"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -2512,6 +2566,7 @@ msgstr "אזור AWS עבור Bedrock"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
@@ -2963,6 +3018,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -3241,6 +3297,10 @@ msgstr "בחר מסמך מהסרגל הצדדי כדי לצפות בתוכנו"
 msgid "Choose a project"
 msgstr ""
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Choose a source"
+msgstr ""
+
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
 msgstr "בחר משימה מסרגל הצד כדי להציג פרטים"
@@ -3321,7 +3381,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -3660,6 +3719,10 @@ msgstr "סגור"
 msgid "Close (Escape)"
 msgstr "סגור (Escape)"
 
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All"
 msgstr "סגור הכל"
@@ -3679,6 +3742,10 @@ msgstr ""
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "סגור הכל חוץ מזה"
+
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all side tabs"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
@@ -3825,7 +3892,6 @@ msgid "Code Ref"
 msgstr "הפניית קוד"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -4067,6 +4133,7 @@ msgstr "אישור"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4143,6 +4210,7 @@ msgstr "מתחבר"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "מתחברת..."
 
@@ -4313,7 +4381,6 @@ msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -4724,6 +4791,10 @@ msgstr ""
 msgid "Could not open {0}"
 msgstr "לא ניתן היה לפתוח את {0}"
 
+#: src/navigation/NavigationActions.ts
+msgid "Could not open link"
+msgstr ""
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
@@ -4846,8 +4917,8 @@ msgid "Could not save {envVar}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Could not save agent"
-msgstr "לא ניתן היה לשמור את הסוכן"
+#~ msgid "Could not save agent"
+#~ msgstr "לא ניתן היה לשמור את הסוכן"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Could not save inbox settings"
@@ -4903,6 +4974,7 @@ msgid "Could not share {projectName}"
 msgstr ""
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not sign in to FlowPad"
 msgstr ""
 
@@ -4987,8 +5059,8 @@ msgid "Could not update attached secrets"
 msgstr "לא ניתן היה לעדכן את הסודות המצורפים"
 
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
-msgid "Could not update eval flag"
-msgstr "לא ניתן היה לעדכן את דגל ההערכה"
+#~ msgid "Could not update eval flag"
+#~ msgstr "לא ניתן היה לעדכן את דגל ההערכה"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
@@ -5009,6 +5081,10 @@ msgstr ""
 msgid "Could not verify {0}"
 msgstr "לא ניתן לאמת את {0}"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Could not verify available assets."
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
@@ -5018,8 +5094,12 @@ msgid "Couldn't close the project's tabs"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "הכנת ארגז החול לא הושלמה"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "הכנת ארגז החול לא הושלמה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -5345,6 +5425,10 @@ msgstr "תיקייה נוכחית"
 msgid "Current directory (click to refresh)"
 msgstr "תיקייה נוכחית (לחץ לרענון)"
 
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Current file on disk"
+msgstr "הקובץ הנוכחי בדיסק"
+
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 msgid "Current project"
@@ -5525,7 +5609,6 @@ msgid "default"
 msgstr "ברירת מחדל"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr "ברירת מחדל"
@@ -5534,7 +5617,6 @@ msgstr "ברירת מחדל"
 msgid "Default ({defaultDbPath})"
 msgstr "ברירת מחדל ({defaultDbPath})"
 
-#: src/components/funding-chip/FundingChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Default assistant"
 msgstr "עוזר ברירת מחדל"
@@ -6231,6 +6313,10 @@ msgstr "לזרוק את השינויים?"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Discard draft"
 msgstr "השלך טיוטה"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Discard edits and reload"
+msgstr "ביטול העריכות וטעינה מחדש"
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Discard failed"
@@ -7720,6 +7806,10 @@ msgstr "שדה"
 msgid "File"
 msgstr "קובץ"
 
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "File changed outside this editor. Your edits are preserved."
+msgstr "הקובץ השתנה מחוץ לעורך הזה. העריכות שלכם נשמרו בטיוטה."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
 msgstr "זמן שינוי קובץ חדש יותר מ-DB updated_date"
@@ -7988,12 +8078,20 @@ msgid "Flowpad Assistant"
 msgstr "עוזר Flowpad"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
-msgstr "Flowpad Assistant — המיומנויות והסוכנים שלו מותקנים בתהליך זה דרך --add-dir. לחצו כדי לעיין בהם."
+msgid "Flowpad Assistant — click to browse the assets available to this worker."
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
-msgstr "עוזר Flowpad מעודכן (מיומנויותיו וסוכניו מועברים לעובד דרך --add-dir). לחץ להסרה — יידרש הפעלה מחדש."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+#~ msgstr "Flowpad Assistant — המיומנויות והסוכנים שלו מותקנים בתהליך זה דרך --add-dir. לחצו כדי לעיין בהם."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgstr "עוזר Flowpad מעודכן (מיומנויותיו וסוכניו מועברים לעובד דרך --add-dir). לחץ להסרה — יידרש הפעלה מחדש."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Flowpad Assistant project not available."
@@ -8238,8 +8336,8 @@ msgid "Funded by your vendor subscription"
 msgstr "ממומן על ידי המנוי שלך אצל הספק"
 
 #: src/components/funding-chip/FundingChip.tsx
-msgid "Funding for"
-msgstr "מימון עבור"
+#~ msgid "Funding for"
+#~ msgstr "מימון עבור"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8607,16 +8705,16 @@ msgstr "נדרשת רתמה"
 
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "Harness path"
-msgstr "נתיב הרתמה"
+#~ msgid "Harness path"
+#~ msgstr "נתיב הרתמה"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness Session Details"
 msgstr "פרטי סשן הרתמה"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Harness setup"
-msgstr "הגדרת רתמה"
+#~ msgid "Harness setup"
+#~ msgstr "הגדרת רתמה"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Harness sign-in & status"
@@ -9709,6 +9807,9 @@ msgid "Key ending {0} — only the owner can change it."
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Key not set"
 msgstr "המפתח לא הוגדר"
 
@@ -9727,6 +9828,12 @@ msgstr "המפתח נשמר ותקף"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Key saved but invalid"
 msgstr "המפתח נשמר אך אינו תקף"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Key set"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Keychain access is required to finish signing in to Flowpad."
@@ -9896,7 +10003,6 @@ msgstr "להפעיל את {0}?"
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
@@ -9904,6 +10010,10 @@ msgstr "הפעלת ארגז חול"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "הפעילו את סביבת העבודה"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -10143,6 +10253,8 @@ msgid "Live session with {guestName} on your machine · {status}"
 msgstr "סשן חי עם {guestName} במחשב שלך · {status}"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "LLM API keys"
 msgstr "מפתחות API של LLM"
 
@@ -10176,7 +10288,6 @@ msgid "LLM keys"
 msgstr "מפתחות LLM"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/funding-chip/FundingChip.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -10579,6 +10690,10 @@ msgstr "נדרש כניסה"
 msgid "Login: {0}"
 msgstr "כניסה: {0}"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Login/API key"
+msgstr ""
+
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Logout"
@@ -10614,7 +10729,16 @@ msgstr "סודות המכונה"
 msgid "Make a todo app"
 msgstr "צרו אפליקציית משימות"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Make this the default assistant"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Manage"
+#~ msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Manage API keys"
 msgstr "ניהול מפתחות API"
 
@@ -12369,6 +12493,10 @@ msgstr ""
 msgid "No subfolders"
 msgstr "אין תיקיות משנה"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "No subscription or key? Start here."
+#~ msgstr ""
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "No substantiated findings"
 msgstr "אין ממצאים מהימנים"
@@ -12511,8 +12639,8 @@ msgid "None"
 msgstr "אף אחד"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "None (project root)"
-msgstr "ללא (שורש הפרויקט)"
+#~ msgid "None (project root)"
+#~ msgstr "ללא (שורש הפרויקט)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -12561,8 +12689,8 @@ msgstr "לא נמצא"
 #~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Not installed"
-msgstr "לא מותקן"
+#~ msgid "Not installed"
+#~ msgstr "לא מותקן"
 
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
@@ -12604,6 +12732,7 @@ msgstr "לא מוגדר"
 msgid "Not set up for publishing"
 msgstr "לא מוגדר לפרסום"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in"
 msgstr "לא מחובר"
@@ -12993,6 +13122,10 @@ msgstr "פתח ניתוח"
 msgid "Open as a tab"
 msgstr "פתח כטאב"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "פתיחת דף ההרשאה"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
@@ -13097,6 +13230,11 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Open in browser"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Open in Data sources"
 msgstr "פתיחה במקורות נתונים"
@@ -13127,7 +13265,6 @@ msgid "Open in Files"
 msgstr "פתחו בקבצים"
 
 #: src/components/conversation/AttachmentChip.tsx
-#: src/components/webapp-viewer.tsx
 msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
 
@@ -13307,6 +13444,10 @@ msgstr "פתחו את הפרויקט"
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr ""
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "פתחו את דף הספק, אשרו גישה והדביקו כאן את קוד ההרשאה שמוצג שם."
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "פתח את ה-index.md המעובד."
@@ -13315,6 +13456,7 @@ msgstr "פתח את ה-index.md המעובד."
 msgid "Open the repository"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "פתיחת ארגז החול"
@@ -13538,6 +13680,10 @@ msgstr "מערכת הפעלה"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "מערכת הפעלה:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Other assets"
+msgstr "נכסים אחרים"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -13867,6 +14013,14 @@ msgstr "ניתן לבחור בתיקייה כלשהי שכבר קיימת במח
 msgid "Pick branch"
 msgstr ""
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Pick FlowPad, an assistant you already pay for, or paste an API key."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "pick one"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Pick project folder"
 msgstr "בחר תיקיית פרויקט"
@@ -14108,8 +14262,8 @@ msgid "Preparing your workspace…"
 msgstr "מכינים את סביבת העבודה…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "מתכונן…"
+#~ msgid "Preparing…"
+#~ msgstr "מתכונן…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -14266,6 +14420,7 @@ msgstr "סוכני פרויקט (.claude/agents/)"
 msgid "Project Artifacts"
 msgstr "ארטיפקטים של הפרויקט"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 msgid "Project assets"
@@ -14970,6 +15125,7 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Refresh"
@@ -16099,8 +16255,8 @@ msgid "Save failed"
 msgstr "השמירה נכשלה"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Save failed."
-msgstr "השמירה נכשלה."
+#~ msgid "Save failed."
+#~ msgstr "השמירה נכשלה."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -16973,6 +17129,10 @@ msgstr "הגדרת Git לשיתוף"
 msgid "Set up GitHub"
 msgstr "הגדרת GitHub"
 
+#: src/types/ViewType.ts
+msgid "Set up LLM"
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Set up org budget"
 msgstr ""
@@ -17364,6 +17524,7 @@ msgstr "תצוגת גרף Sigma"
 
 #: src/components/account/user-info.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/notifications/ingest.ts
@@ -17371,6 +17532,14 @@ msgstr "תצוגת גרף Sigma"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "היכנסו"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
@@ -17399,6 +17568,10 @@ msgstr "התחברו ל-Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17444,6 +17617,10 @@ msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} ל�
 msgid "Sign me in automatically — this sandbox belongs to one person."
 msgstr "התחברות אוטומטית — סנדבוקס זה שייך לאדם אחד."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign out"
+#~ msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
 msgstr "יציאה מהסנדבוקס הזה (תישארו מחוברים כאן)"
@@ -17462,6 +17639,7 @@ msgstr "ההתחברות לא אושרה"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
@@ -17490,6 +17668,10 @@ msgstr ""
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "מתבצעת התחברות"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -17654,6 +17836,10 @@ msgstr "במתן"
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
 msgstr "פורט ה-Proxy של SOCKS"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Some assets could not be read."
+msgstr "לא ניתן היה לקרוא חלק מהנכסים."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
@@ -18556,8 +18742,8 @@ msgid "That agent is no longer in your workspace."
 msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלך"
 
 #: src/components/funding-chip/FundingChip.tsx
-msgid "That change could not be applied."
-msgstr "לא ניתן היה להחיל את השינוי."
+#~ msgid "That change could not be applied."
+#~ msgstr "לא ניתן היה להחיל את השינוי."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -18770,6 +18956,7 @@ msgid "The live session has ended."
 msgstr "הסשן החי הסתיים."
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "The login did not complete."
 msgstr ""
 
@@ -18881,6 +19068,10 @@ msgstr "מפתח ה-API השמור עבור ספק זה יוסר מהמחשב ה
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
 msgstr "לא ניתן היה להכין את תוכן הכרטיסייה."
+
+#: src/navigation/NavigationActions.ts
+msgid "The terminal is not ready yet"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -19096,6 +19287,10 @@ msgstr "קישור ההתקנה חייב לציין מאגר תוכן ב-GitHub.
 msgid "This is its first start, so it takes a few minutes."
 msgstr "זו ההפעלה הראשונה שלו, ולכן זה עשוי להימשך כמה דקות."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "This is your default assistant"
+msgstr ""
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key contains a space or line break. It was probably copied along with the text around it."
 msgstr ""
@@ -19111,6 +19306,10 @@ msgstr "הקישור הזה אינו מפנה ל-Sandbox."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no available viewer"
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -20302,6 +20501,10 @@ msgstr "נכסים בשימוש"
 msgid "Used by"
 msgstr "בשימוש על ידי"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used in transcript"
+msgstr ""
+
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -20487,6 +20690,10 @@ msgstr "צפה בהגדרות Claude Code בין ההיקפים של משתמש,
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "View contact details"
 msgstr "הצגת פרטי איש קשר"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "View current file"
+msgstr "הצגת הקובץ הנוכחי"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -20738,6 +20945,10 @@ msgstr "על מה עבד"
 msgid "What Published does"
 msgstr ""
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "What should issue your LLM calls?"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
@@ -20941,8 +21152,8 @@ msgid "WorldView"
 msgstr "תצוגת עולם"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21050,6 +21261,10 @@ msgstr "תוסר מרשימת המשתתפים. חברים אחרים שומרי
 msgid "You're doing great!"
 msgstr ""
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "You're set up"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "You're signed in and ready to go."
 msgstr "ההתחברות בוצעה בהצלחה — אפשר להתחיל"
@@ -21154,8 +21369,12 @@ msgid "Your questions"
 msgstr "השאלות שלך"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "ארגז החול שלך מוכן"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "ארגז החול שלך מוכן"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"

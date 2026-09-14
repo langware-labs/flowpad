@@ -14,13 +14,13 @@ would be the same "hand it to whoever is there" mistake moved into a migration.
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.process_assets import ProcessAssets
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
@@ -76,7 +76,7 @@ async def _process(tmp_path, *agents: str, persona: str | None = None) -> Agenti
     )
     await process.save(notify=False)
     if agents:
-        agents_dir = process._process_assets_path() / ".claude" / "agents"
+        agents_dir = process.asset_workspace._process_assets_path() / ".claude" / "agents"
         agents_dir.mkdir(parents=True, exist_ok=True)
         for name in agents:
             (agents_dir / f"{name}.md").write_text(
@@ -149,8 +149,8 @@ async def test_the_backfilled_path_actually_resolves_to_a_persona(instance, tmp_
     await mig.migrate(dry_run=False)
 
     reloaded = await AgenticProcess.get_one({"id": str(process.id)})
-    agents = reloaded._load_materialized_agents_json(Path(reloaded._process_assets_path()))
-    block = AgenticProcess._render_agents_instruction_block(agents, reloaded.process_persona_path)
+    agents = reloaded.asset_workspace._load_materialized_agents_json(reloaded.asset_workspace._process_assets_path())
+    block = ProcessAssets._render_agents_instruction_block(agents, reloaded.process_persona_path)
 
     assert "# You are the 'standard' agent" in block
     assert "# Embedded agent specs" not in block

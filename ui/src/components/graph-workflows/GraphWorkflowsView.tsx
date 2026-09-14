@@ -17,7 +17,6 @@ import {
 } from '@sdk/services/graph-workflows';
 import { useConnectionStatus, useEntity, useOnTag } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/contexts/agent-context';
-import { reindexAfterWrite } from '@src/hooks/use-fs-ref-content';
 import { DockPointer, useDockNavigation } from '@src/navigation';
 import { PANEL_PARAM, RUN_PARAM } from '@src/navigation/DockPointer';
 import { openRunPreview } from '@src/components/runs/run-preview';
@@ -106,12 +105,8 @@ export function GraphWorkflowsView() {
   const graphRef = useMemo(() => fsRef?.child('graph.json') ?? null, [fsRef]);
   const displayRef = useMemo(() => fsRef?.child('display.json') ?? null, [fsRef]);
 
-  // Reindex after graph.json writes so the GraphWorkflow row (name/enabled/node
-  // counts) tracks canvas edits; display.json is excluded from the asset hash,
-  // so its writes never reindex.
-  const reindexGraph = useCallback((r: FSRef) => reindexAfterWrite(`/${r.path}`), []);
   const markFlowEdited = useCallback(() => flow?.markEdit(), [flow]);
-  const persistGraph = useFilePersister(graphRef, reindexGraph, markFlowEdited);
+  const persistGraph = useFilePersister(graphRef, undefined, markFlowEdited);
   const persistDisplay = useFilePersister(displayRef, undefined, markFlowEdited);
 
   const doc = useStudio((s) => s.doc);

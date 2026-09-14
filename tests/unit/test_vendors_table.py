@@ -39,8 +39,8 @@ def test_worker_type_values_are_real_enum_members():
 
 
 def test_capability_kinds_and_harnesses_are_real():
+    from flow_sdk.assets.placement import HarnessType
     from flow_sdk.core.capabilities.models import CapabilityKind
-    from flow_sdk.fs_store.placement import HarnessType
 
     kinds = {k.value for k in CapabilityKind}
     for v in VENDORS:
@@ -79,10 +79,10 @@ def test_vendor_for_path(path, expected):
 
 
 def test_consumers_agree_with_the_table():
+    from flow_sdk.assets.placement import HarnessType, coerce_harness
     from flow_sdk.builtin.agent import driver_key, worker_type_value
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory, get_driver
     from flow_sdk.core.capabilities.registry import get_capability_registry, install_worker_type
-    from flow_sdk.fs_store.placement import HarnessType, coerce_harness
 
     registry = get_capability_registry()
     for v in VENDORS:

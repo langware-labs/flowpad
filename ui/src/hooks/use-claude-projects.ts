@@ -1,10 +1,9 @@
 import { useAgentContext } from '@src/contexts/agent-context';
-import { fsManager, type ProjectListItem, type SkillItem } from '@sdk';
+import { type ProjectListItem } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 const NO_PROJECTS: ProjectListItem[] = [];
-const NO_SKILLS: SkillItem[] = [];
 
 export function useProjectList(options: { enabled?: boolean } = {}) {
   const { computeNode } = useAgentContext();
@@ -60,26 +59,6 @@ export function useClaudeProjects(selectedProjectEncodedName: string | null = nu
     refetchResources: projectResources.refetch,
     invalidateResources: projectResources.invalidate,
   };
-}
-
-/**
- * Hook to fetch all skills across user-level and all projects.
- * Shares the node-scoped scan-item?type=skills read through LazyAsset.Skills.
- */
-export function useAllSkills(options: { enabled?: boolean } = {}) {
-  const { computeNode } = useAgentContext();
-  const result = useLazyAsset(LazyAsset.Skills, { nodeId: computeNode?.id ?? '' }, {
-    enabled: options.enabled !== false && !!computeNode?.id,
-  });
-  const reload = result.reload;
-  const deleteSkill = useCallback(async (skill: SkillItem) => {
-    const folder = skill.path || skill.source_file;
-    if (!folder || !computeNode?.typeId) return;
-    await fsManager.delete(computeNode.typeId, folder.replace(/\/[^/]+\.(md|yaml|yml)$/i, ''));
-    await reload();
-  }, [computeNode?.typeId, reload]);
-  return { skills: result.data ?? NO_SKILLS, isLoading: result.isLoading, error: result.error,
-    refetch: result.reload, deleteSkill };
 }
 
 /**

@@ -129,10 +129,12 @@ env.output_dir          # <root>/output/
 env.agents_dir          # <root>/.claude/agents/
 env.claude_md_path      # <root>/CLAUDE.md
 
-env.load_subagent(agent)                 # Copy subagent .md into .claude/agents/
-env.set_system_prompt("You are...")      # Write CLAUDE.md
-env.append_system_prompt("\n## Extra")   # Append to CLAUDE.md
-env.set_mcp_config({"servers": {...}})   # Write mcp.json
+from pathlib import Path
+from flow_sdk.assets import Asset
+from flow_sdk.assets.directory import AssetDir
+
+Asset.from_path(agent.asset_ref).install(Path(project_dir) / ".claude/agents/agent.md")
+AssetDir(project_dir).load_asset("CLAUDE.md", content="You are...")
 env.env_set("KEY", "value")             # Set env var for subprocess
 env.build_env()                          # Build sanitized env dict
 env.cleanup()                            # Remove the root directory
