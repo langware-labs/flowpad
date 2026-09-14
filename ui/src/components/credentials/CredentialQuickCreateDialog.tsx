@@ -21,6 +21,10 @@ export const CredentialQuickCreateDialog: React.FC<{
   const { status, refresh } = useCredentials(projectId);
   // A new draft per open, so the form starts clean each time.
   const draft = React.useMemo(() => (open ? customDraft(projectId ? 'project' : 'user') : null), [open, projectId]);
+  // Re-read status on open, so a blocked `.env.local` shows before a value is typed.
+  React.useEffect(() => {
+    if (open) void refresh();
+  }, [open, refresh]);
 
   if (!draft) return null;
   return (

@@ -332,7 +332,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const [addOpen, setAddOpen] = React.useState(false);
   const [credentialDraft, setCredentialDraft] = React.useState<{ seq: number; draft: CredentialDraft } | null>(null);
   // Each open gets a fresh form (a new key), so no state carries over from the last one.
-  const openDraft = (draft: CredentialDraft) => setCredentialDraft((prev) => ({ seq: (prev?.seq ?? 0) + 1, draft }));
+  // Status is re-read on open: a `.env.local` tracked or fixed in git since the
+  // last fetch must be reflected before the user types a value.
+  const openDraft = (draft: CredentialDraft) => {
+    void refreshCredentials();
+    setCredentialDraft((prev) => ({ seq: (prev?.seq ?? 0) + 1, draft }));
+  };
   const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
 
   /** What Delete will actually do, said before it happens: vault values go,
