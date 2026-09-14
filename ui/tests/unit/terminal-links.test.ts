@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { Terminal, ILink } from '@xterm/xterm';
-import { FileLinkProvider, fileLinkMatches } from '@src/components/terminal/interactive-terminal/terminal-links';
+import { FileLinkProvider, fileLinkMatches, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -12,6 +12,34 @@ describe('terminal links', () => {
       'src/main.py:12:3', '/tmp/my file.txt', 'file:///tmp/a.txt', 'skill-@link-probe',
     ]);
     for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
+  });
+
+  it('unwraps references that prose puts in brackets, keeping cell offsets exact', () => {
+    const line = 'see (ui/src/a-b.ts:49) and [a.ts:3], {src/b.py:1:2}: ((main.c:7))';
+    expect(fileLinkMatches(line).map((match) => match.text)).toEqual([
+      'ui/src/a-b.ts:49', 'a.ts:3', 'src/b.py:1:2', 'main.c:7',
+    ]);
+    for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
+  });
+
+  it('does not link placeholders, bare schemes, or abbreviations', () => {
+    const line = '- /dock/... and file://, e.g. i.e., x / y ~ ... … mailto: vscode: path:line:col http(s)://host/...';
+    expect(fileLinkMatches(line)).toEqual([]);
+  });
+
+  it('finds the file reference or web URL under a buffer cell, without relying on hover', async () => {
+    const terminal = new HeadlessTerminal({ cols: 80, rows: 5, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write('see ui/a.ts:3 and https://example.com/x?y=1. ok', resolve));
+      const term = terminal as unknown as Terminal;
+      expect(linkAtCell(term, 5, 1)).toBe('ui/a.ts:3');
+      expect(linkAtCell(term, 13, 1)).toBe('ui/a.ts:3');
+      expect(linkAtCell(term, 19, 1)).toBe('https://example.com/x?y=1');
+      expect(linkAtCell(term, 1, 1)).toBeNull();
+      expect(linkAtCell(term, 15, 1)).toBeNull();
+    } finally {
+      terminal.dispose();
+    }
   });
 
   it('maps wrapped paths after wide characters to actual terminal cells', async () => {

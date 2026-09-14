@@ -935,6 +935,14 @@ class LocalComputeProvider(ComputeProvider):
         session = self._pty_processes.get((provider_node_id, session_id))
         return session["pid"] if session else None
 
+    def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
+        """Return the live working directory of this PTY session's shell, or None."""
+        pid = self.get_pty_shell_pid(provider_node_id, session_id)
+        try:
+            return psutil.Process(pid).cwd() if pid else None
+        except (psutil.Error, OSError):
+            return None
+
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
         """Check if a process is alive (cross-platform)."""

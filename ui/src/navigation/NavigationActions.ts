@@ -30,7 +30,9 @@ import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-d
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
-import { presentDockTab } from './present-dock-tab';
+import { placeDockInProject, presentDockTab } from './present-dock-tab';
+import { openExternal } from '@src/lib/open-external';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications/notify';
 import { t } from '@lingui/core/macro';
 
@@ -142,6 +144,13 @@ function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
   return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
 }
 
+const isWebUrl = (link: string) => /^https?:\/\//i.test(link);
+
+/** A link that cannot be opened says why — the backend's sentence, not the HTTP status. */
+function notifyLinkError(error: unknown): void {
+  notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), forceToast: true });
+}
+
 /**
  * NavigationActions - Navigation actions implementation
  *
@@ -150,6 +159,7 @@ function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
  *
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
+
 export class NavigationActions {
   constructor(
     private navigate: NavigateFunction,
@@ -703,30 +713,49 @@ export class NavigationActions {
     this.openDock(dockPointerForFile(path, options));
   }
 
+  /** Resolve a clicked terminal reference to the dock that presents it. */
+  private async resolveLinkDock(link: string, source: Shell | null): Promise<DockPointer> {
+    if (!source) throw new Error(t`The terminal is not ready yet`);
+    // An app URL copied from this browser is an internal address, not an iframe.
+    if (isWebUrl(link)) {
+      const url = new URL(link);
+      if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
+        link = url.pathname + url.search;
+      }
+    }
+    const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
+    if (!dock) throw new Error(t`This link has no available viewer`);
+    return dock;
+  }
+
   /** Resolve on activation, then open using the same presentation as an agent show. */
   async openLink(link: string, source: Shell | null): Promise<void> {
     const origin = this.here;
     try {
-      if (!source) throw new Error(t`The terminal is not ready yet`);
-      // An app URL copied from this browser is an internal address, not an iframe.
-      if (/^https?:\/\//i.test(link)) {
-        const url = new URL(link);
-        if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
-          link = url.pathname + url.search;
-        }
-      }
-      const [target, tabs] = await Promise.all([source.resolveDisplayTarget(link), tabManager.listAll()]);
-      const dock = dockForDisplayTarget(target);
-      if (!dock) throw new Error(t`This link has no available viewer`);
+      const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
       const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
       const placed = await presentDockTab(dock, {
-        projectId: source.project_id ?? anchor?.project_id,
+        projectId: source?.project_id ?? anchor?.project_id,
         afterTabId: anchor?.id ?? null,
         parentTabId: anchor?.parent_tab_id ?? null,
       });
       this.openDock(placed);
     } catch (error) {
-      notify.error({ title: t`Could not open link`, message: String(error), forceToast: true });
+      notifyLinkError(error);
+    }
+  }
+
+  /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
+  async openLinkInBrowser(link: string, source: Shell | null): Promise<void> {
+    try {
+      if (isWebUrl(link)) {
+        openExternal(link);
+        return;
+      }
+      const dock = placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id);
+      openExternal(this.getDockUrl(dock));
+    } catch (error) {
+      notifyLinkError(error);
     }
   }
 
