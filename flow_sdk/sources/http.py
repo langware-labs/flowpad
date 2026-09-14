@@ -20,9 +20,10 @@ from flow_sdk.sources.values.origin import CloudOrigin
 REQUEST_TIMEOUT_SECONDS = 20
 
 
-def client() -> httpx.AsyncClient:
-    """A client with the house ceiling. The caller owns the context manager."""
-    return httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
+def client(timeout: float = REQUEST_TIMEOUT_SECONDS) -> httpx.AsyncClient:
+    """A client with the house ceiling, or a provider's own when it has one. The caller owns the
+    context manager."""
+    return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
 
 
 def error_for_status(status: int, hint: str = "", *, origin: Optional[CloudOrigin] = None) -> SourceError:
