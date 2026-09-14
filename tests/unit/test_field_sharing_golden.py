@@ -357,7 +357,9 @@ def test_the_two_egress_seams_now_agree():
             # of the pointer log, rebuilt locally and never accepted from the hub.
             # `owner`: whose inbox lists it — a fact about this machine's partition,
             # never the hub's (that is the roster's `owner` role).
-            ["hub_updated_date", "message_ids", "owner"],
+            # `channel_source_id`: the local DataSource behind a source-backed
+            # conversation — a row id in OUR database.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.

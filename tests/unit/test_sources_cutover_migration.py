@@ -11,6 +11,7 @@ from flow_sdk.migrations import migration_2026_09_sources_cutover as mig
 SRC = "11111111-1111-4111-8111-111111111111"
 OLD, NEW, ALONE, BLANK = (f"2222222{n}-2222-4222-8222-222222222222" for n in "1234")
 MSG = "33333333-3333-4333-8333-333333333333"
+CONV = "44444444-4444-4444-8444-444444444444"
 
 
 def _db(tmp_path: Path) -> Path:
@@ -29,7 +30,9 @@ def _db(tmp_path: Path) -> Path:
     put(NEW, "source_item", "2026-01-03", **header, external_id="17", body="new")
     put(ALONE, "source_item", "2026-01-02", **header, external_id="18", body="x", starred=True)
     put(BLANK, "source_item", "2026-01-02", **{**header, "external_id": ""})
-    put(MSG, "flow_message", "2026-01-02", source_item_id=OLD, origin_local={"data_source_id": SRC, "source_item_id": OLD},
+    put(CONV, "conversation", "2026-01-02", title="t")
+    put(MSG, "flow_message", "2026-01-02", source_item_id=OLD, conversation_id=CONV,
+        origin_local={"data_source_id": SRC, "source_item_id": OLD},
         origin={"kind": "slack", "external_id": "17", "url": "https://slack.test/17"})
     conn.commit()
     conn.close()
@@ -49,7 +52,7 @@ def test_a_dry_run_reports_and_writes_nothing(tmp_path):
     db = _db(tmp_path)
     report = mig.migrate(dry_run=True, db=db)
     assert (report.rows_lifted, report.duplicates_removed, report.rows_unliftable) == (3, 1, 1)
-    assert (report.messages_repointed, report.messages_reoriginated) == (1, 1)
+    assert (report.messages_repointed, report.messages_reoriginated, report.conversations_stamped) == (1, 1, 1)
     assert "origin" not in _read(db, NEW) and _read(db, OLD) is not None
 
 
@@ -66,6 +69,9 @@ def test_apply_lifts_collapses_repoints_and_converges(tmp_path):
     msg = _read(db, MSG)
     assert msg["source_item_id"] == NEW and msg["origin_local"]["source_item_id"] == NEW
     assert msg["origin"] == {"kind": "slack", "namespace": "T1/C1", "key": "17", "url": "https://slack.test/17"}
+
+    conv = _read(db, CONV)
+    assert (conv["channel"], conv["channel_source_id"]) == ("slack", SRC)
 
     again = mig.migrate(dry_run=False, db=db)
     assert not again.changed and again.rows_unliftable == 1

@@ -21,12 +21,14 @@ def run() -> dict[str, int]:
         "duplicates_removed": report.duplicates_removed,
         "messages_repointed": report.messages_repointed,
         "messages_reoriginated": report.messages_reoriginated,
+        "conversations_stamped": report.conversations_stamped,
     }
     if not report.changed:
         print("sources: every record already carries its origin.")  # noqa: T201 — migration output is user-facing
         return summary
     print(  # noqa: T201
         f"sources: lifted {report.rows_lifted} record(s), removed {report.duplicates_removed} duplicate(s), "
-        f"updated {report.messages_repointed + report.messages_reoriginated} message(s)."
+        f"updated {report.messages_repointed + report.messages_reoriginated} message(s) "
+        f"and {report.conversations_stamped} conversation(s)."
     )
     return summary
