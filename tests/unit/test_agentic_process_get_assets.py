@@ -232,8 +232,9 @@ async def test_scan_failure_retains_usage_occurrence_name_and_source(home, tmp_p
     async def used(self): return [usage]
     async def descriptors(self, **kwargs): raise AssetScanError([AssetScanIssue(path=tmp_path / 'broken', message='Malformed')])
     monkeypatch.setattr(AgenticProcess, 'get_used_assets', used)
-    monkeypatch.setattr(AgenticProcess, 'get_asset_descriptors', descriptors)
+    monkeypatch.setattr(AgenticProcess, 'get_asset_catalog', descriptors)
     result = (await value.get_assets_action()).data
+    assert 'Malformed' in result['availability_error']
     assert result['assets'][0]['source'] == AssetSource.WORKDIR.value
     assert result['assets'][0]['name'] == 'copy-two'
 
