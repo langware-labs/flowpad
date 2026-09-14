@@ -16,7 +16,6 @@ from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
-from flow_sdk.ingest.drivers.hackernews import HackerNewsDriver
 from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
 from flow_sdk.ingest.drivers.slack import SlackDriver
 from flow_sdk.ingest.drivers.teams import TeamsDriver
@@ -24,6 +23,7 @@ from flow_sdk.ingest.drivers.telegram import TelegramDriver
 from flow_sdk.ingest.drivers.whatsapp import WhatsAppDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
+from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.rss import RssSource
 
 
@@ -48,7 +48,7 @@ def _folder_origin_id(row, ref: str) -> str:
 
 
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
-register_driver(HackerNewsDriver())
+register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
 register_driver(HelpdeskDriver())
 register_driver(AgentDriver())
 register_driver(AgentMailDriver())
@@ -78,7 +78,6 @@ __all__ = [
     "GitDriver",
     "GmailDriver",
     "GoogleDriveDriver",
-    "HackerNewsDriver",
     "HelpdeskDriver",
     "SlackDriver",
     "TeamsDriver",
