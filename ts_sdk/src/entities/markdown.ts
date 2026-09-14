@@ -97,9 +97,10 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Markdown> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const md = new Markdown({ name: name.trim() });
-    return md.save(scopeIds);
+    return md.save(scopeIds, destination);
   }
 }

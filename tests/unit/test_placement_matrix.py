@@ -14,19 +14,18 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.origin.local_origin import LocalOrigin
-from flow_sdk.fs_store.placement import (
+from flow_sdk.assets.placement import (
     LAYOUT_REGISTRY,
     WORKER_PREFIX,
     AssetClass,
     HarnessType,
     Scope,
     family_subdir,
-    resolve_destination,
-    root_for_scope,
     untyped_fallback_class,
     untyped_rel_subdir,
 )
+from flow_sdk.builtin.asset_placement import resolve_destination, root_for_scope
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id
 
@@ -246,7 +245,7 @@ def test_no_squatting_in_harness_dot_dirs():
     which both misrepresents the file to anyone reading the repo and collides the
     day Claude Code claims the name.
     """
-    from flow_sdk.fs_store.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+    from flow_sdk.assets.placement import LAYOUT_REGISTRY  # noqa: PLC0415
 
     offenders = {
         name: info.family
@@ -356,11 +355,10 @@ def test_agent_main_ref_uses_backend_slug_and_bundle_layout(tmp_path):
 
 
 def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
-    from flow_sdk.fs_store.fs_record import (
+    from flow_sdk.assets.creation import (
         AssetPathCollisionError,
         assert_create_target_available,
     )
-    from flow_sdk.fs_store.fs_ref import FSRef
 
     bundle = tmp_path / "agentic-assets" / "agent" / "q"
     bundle.mkdir(parents=True)
@@ -369,7 +367,7 @@ def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
 
     with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
         assert_create_target_available(
-            info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q"
+            info, bundle / "agent.md", entity_type="agent", name="Q"
         )
 
 
@@ -378,7 +376,7 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
     competing bundle — re-materializing it (hub receive re-creating a row, a
     re-scan after a local delete, two instances sharing one ``user_home``) must
     adopt it. A DIFFERENT id in the capsule still collides."""
-    from flow_sdk.fs_store.fs_record import (
+    from flow_sdk.assets.creation import (
         AssetPathCollisionError,
         assert_create_target_available,
     )
@@ -395,14 +393,14 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
 
     # Same entity → adopted, no raise.
     assert_create_target_available(
-        info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q", entity_id=mine
+        info, bundle / "agent.md", entity_type="agent", name="Q", entity_id=mine
     )
 
     # Another entity's carrier, and an unidentified caller, both still collide.
     for other in (theirs, None):
         with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
             assert_create_target_available(
-                info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q", entity_id=other
+                info, bundle / "agent.md", entity_type="agent", name="Q", entity_id=other
             )
 
 
@@ -410,8 +408,8 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
 def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
     # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a
     # transiently-registered fixture type so PR-1 doesn't depend on a migrated type.
+    from flow_sdk.assets.layout import Folder
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-    from flow_sdk.schema.layout import Folder
 
     SchemaRegistry.register(
         TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture", shape=Folder())

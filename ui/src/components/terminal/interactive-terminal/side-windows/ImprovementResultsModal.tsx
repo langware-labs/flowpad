@@ -1,7 +1,8 @@
 import { t } from '@lingui/core/macro';
 import React, { useEffect, useState } from 'react';
 import { ActionInfo, GitWorkdir, type FSRef, dataManager } from '@sdk';
-import { extractBody } from '@sdk/fs/FrontMatterFsRef';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
+const extractBody = (raw: string) => parseFrontmatterDoc(raw).body;
 import { Loader2, RotateCcw, Save } from 'lucide-react';
 import { AssetDiffTabs } from '@src/components/assets/editor/revisions/AssetDiffTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';

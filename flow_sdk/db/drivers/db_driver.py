@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Callable, Generic, List, Optional, Tuple
+from typing import AsyncIterator, Awaitable, Callable, Generic, List, Optional, Tuple
 
 from pydantic import BaseModel
 
@@ -364,6 +364,22 @@ class DBDriver(Generic[RecordType]):
     ) -> tuple[Optional[RecordType], bool]:
         """Atomically patch one JSON field without ever inserting a missing row."""
         raise NotImplementedError("update_existing_data_field is not implemented")
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncIterator[None]:
+        """Group existing-row patches under one writer transaction."""
+        raise NotImplementedError("write_transaction is not implemented")
+        yield
+
+    async def update_existing_data_fields(
+        self, entity_id: str, entity_type: str, values: dict[str, object]
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically patch fields without creating a missing entity."""
+        raise NotImplementedError("update_existing_data_fields is not implemented")
+
+    async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Run a notification only after the ambient write commits successfully."""
+        raise NotImplementedError("after_commit is not implemented")
 
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None):
         raise NotImplementedError("create is not implemented")

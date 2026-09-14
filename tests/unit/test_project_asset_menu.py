@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.catalog import (AssetSource)
+from flow_sdk.assets.catalog import AssetSource
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.folder import Folder
@@ -89,7 +89,6 @@ async def nested(tmp_path: Path, monkeypatch):
     for p in assets.values():
         if p.suffix == ".md":
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("# stub\n")
         else:
             p.mkdir(parents=True, exist_ok=True)
 
@@ -169,10 +168,10 @@ def _total(node: dict) -> int:
 # ── Cases ─────────────────────────────────────────────────────────────────────
 
 
-async def test_default_response_unchanged(nested):
-    """No ``browsing`` ⇒ byte-identical to what the action returned before."""
+async def test_default_response_includes_scan_diagnostics_without_menu(nested):
+    """Default browsing includes flat assets and diagnostics, without a menu."""
     resp = await nested["p"].get_assets_action()
-    assert set(resp.data.keys()) == {"assets", "truncated"}
+    assert set(resp.data.keys()) == {"assets", "truncated", "scan_issues"}
 
 
 async def test_menu_absent_unless_requested(nested):

@@ -160,7 +160,9 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
  *  active project is the fallback for acts raised outside one. `rel` is
  *  optional: no `rel` is the root itself. */
 function projectPath(rel: string | undefined, ctx: ActContext): string | null {
-  const base = ctx.projectRoot ?? dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
+  const base = ctx.projectRoot === undefined
+    ? dataContext.project?.fs_storage_mount_path ?? dataContext.workdir
+    : ctx.projectRoot;
   if (!base) return null;
   return rel ? `${base.replace(/\/+$/, '')}/${rel.replace(/^\/+/, '')}` : base;
 }

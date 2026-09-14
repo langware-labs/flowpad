@@ -7,9 +7,6 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.prompt import (
-    _read_prompt_frontmatter_id,
-)
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -75,12 +72,12 @@ def test_extract_name_falls_back_to_stem_and_optionals_absent(tmp_path: Path):
 def test_foreign_version_id_rejected_v4_adopted(tmp_path: Path):
     """Entity-id policy: only v4/v5 frontmatter ids are adopted."""
     p7 = _write_md(tmp_path / "prompts" / "seven.md", "x", frontmatter=f"id: {V7_ID}\n")
-    assert _read_prompt_frontmatter_id(p7) is None
+    assert SchemaRegistry.get("prompt").read_id(p7) is None
     [rec] = _extract(FSRef(p7))
     assert rec.id != V7_ID  # derived uuid5(path) instead
 
     p4 = _write_md(tmp_path / "prompts" / "four.md", "x", frontmatter=f"id: {V4_ID}\n")
-    assert _read_prompt_frontmatter_id(p4) == V4_ID
+    assert SchemaRegistry.get("prompt").read_id(p4) == V4_ID
 
 
 def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
@@ -93,7 +90,7 @@ def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
     first = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
     second = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
     assert first == second
-    assert _read_prompt_frontmatter_id(p) == first == frontmatter_id(p)
+    assert SchemaRegistry.get("prompt").read_id(p) == first == frontmatter_id(p)
     [rec] = _extract(FSRef(p))
     assert rec.name == "Keeper"
     assert rec.icon == "🚀"  # emoji round-trips through yaml quoting

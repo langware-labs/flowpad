@@ -1,7 +1,8 @@
+import { bindAssetEditorRegistry } from '@sdk/models/asset-editor';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { FSRef, TypeId, type Skill } from '@sdk';
 import { MemoryRouter, useLocation } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { AssetRow } from '@src/components/asset-manager/AssetManagerPopover';
 import { SkillAssetEditor } from '@src/components/assets/editor/skill/SkillAssetEditor';
@@ -16,7 +17,8 @@ function Location() {
   const location = useLocation();
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
-afterEach(cleanup);
+beforeEach(() => bindAssetEditorRegistry({ get: () => ({ type_name: 'skill', shape: { kind: 'folder', main: 'SKILL.md' } }), all: () => [] }));
+afterEach(() => { cleanup(); bindAssetEditorRegistry(null); });
 describe('asset occurrence navigation', () => {
   it('puts the clicked copy path and read-only option in the URL', async () => {
     render(<MemoryRouter><TooltipProvider>

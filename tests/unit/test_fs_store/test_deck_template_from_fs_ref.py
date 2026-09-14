@@ -13,11 +13,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.deck_template import extract_deck_template
 from flow_sdk.builtin.deck_template import DeckTemplate
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.deck_template import (
-    extract_deck_template,
-)
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id
 

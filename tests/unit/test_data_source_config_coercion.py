@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_source_spec import ConfigFieldSpec, DataSourceSpec
+from flow_sdk.builtin.data_source_spec import DataSourceSpec
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ConfigFieldSpec
 from tests.unit._ingest_helpers import make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]

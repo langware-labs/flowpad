@@ -33,7 +33,8 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
   // row instead of leaving a stale title. Gate `enabled` on a cached hit so we
   // only watch already-materialized processes (open-tab sessions) — never fire a
   // fetch per history row for on-disk-only sessions. `useEntity` returns the
-  // cached instance and subscribes to its data-ops without an extra API call.
+  // cached instance; watch also subscribes this browser to backend data-ops,
+  // even when no terminal view is mounted here.
   const cached = entry.agentic_process_id
     ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
     : null;
@@ -41,7 +42,7 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
     () => (entry.agentic_process_id ? new TypeId(AgenticProcess.type, entry.agentic_process_id) : null),
     [entry.agentic_process_id],
   );
-  const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached });
+  const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached, watch: true });
   const process = watched ?? cached;
   const title = pickHistoryTitle(process, entry);
   // Live "this chat is working" signal — true while its worker is mid-turn.
@@ -72,6 +73,8 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
         !selected && !hasOpenTab && RAIL_DIM_WHEN_CLOSED,
       )}
       data-testid="chat-history-row"
+      data-process-id={entry.agentic_process_id ?? undefined}
+      data-worker-session-id={entry.worker_id}
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">

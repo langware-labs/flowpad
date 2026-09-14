@@ -1,3 +1,4 @@
+import { DocumentSaveNotice } from '../DocumentSaveNotice';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -13,7 +14,7 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, PageId, TypeId, PrefKey, dataManager, looksBinaryText } from '@sdk';
+import { FSRef, PageId, TypeId, PrefKey, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { downloadFile } from '@sdk/utils/utils';
@@ -79,7 +80,7 @@ const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> 
  */
 export interface MarkdownHeaderExtrasCtx {
   fields: Record<string, string>;
-  setField: (key: string, value: string) => void;
+  setField: (key: string, value: import('@sdk/fs/AssetDocument').DocumentValue) => void;
 }
 
 export interface WikiLinkTarget {
@@ -341,21 +342,6 @@ function MarkdownEditorContent({
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
-  // For an `owns_main_ref` type (e.g. prompt) the ENTITY is authoritative over
-  // the file, so a save that only lands on disk gets reverted by the next
-  // `entity.save()` re-render. Those saves reindex back into the entity; the
-  // hand-edited types (markdown, skill) are already file-authoritative and skip
-  // the cost. Registry-driven off the entity's own type — never a type allowlist.
-  const reindexOnSave = useMemo(() => {
-    if (!chatTarget) return false;
-    try {
-      const typeName = new TypeId(chatTarget).type;
-      return !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeName)?.owns_main_ref;
-    } catch {
-      return false; // not a parseable TypeId (raw file) → no entity to reindex into
-    }
-  }, [chatTarget]);
-
   // Keep the stored preference as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
     setStoredMode(viewMode);
@@ -372,12 +358,17 @@ function MarkdownEditorContent({
     isLoading,
     loadError,
     isMissing,
+    saveError,
+    conflict,
+    metadataError,
+    currentDocument,
+    inspectCurrent,
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: !readOnly, autoSaveMs: 2000, reloadKey, reindexOnSave });
+  } = useMarkdownContent(fsRef, { autoSave: !readOnly, autoSaveMs: 2000, reloadKey });
   const markEntityEdited = useCallback(() => { if (!readOnly) editEntity?.markEdit(); }, [editEntity, readOnly]);
-  const setEditedField = useCallback((key: string, value: string) => {
+  const setEditedField = useCallback((key: string, value: import('@sdk/fs/AssetDocument').DocumentValue) => {
     if (readOnly) return;
     setField(key, value);
     markEntityEdited();
@@ -767,6 +758,7 @@ function MarkdownEditorContent({
         showLearningMode={showLearningMode}
       />
 
+      <DocumentSaveNotice {...{saveError, metadataError, conflict, inspectCurrent, reload, currentDocument}} />
       {hasFields && (
         <div className="flex-shrink-0 border-b">
           <button

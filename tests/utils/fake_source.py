@@ -15,7 +15,6 @@ from typing import Iterable, Optional
 
 import flow_sdk.ingest.drivers  # noqa: F401 — the shipped drivers register FIRST, so an override below is not undone by a later import
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
     DRIVERS,
     FetchResult,
@@ -25,6 +24,7 @@ from flow_sdk.ingest.driver import (
     SendOutcome,
     SetupVerdict,
 )
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 SEGMENT = "s"
 

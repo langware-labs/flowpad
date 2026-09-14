@@ -165,23 +165,10 @@ def merge_frontmatter(
     minting ``id`` so it stays at the top); otherwise existing key order is kept and
     ``updates`` overwrite in place / append new keys at the end.
     """
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict[str, Any] = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    for k in drop_keys:
-        fields.pop(k, None)
-    if prepend:
-        merged = {**updates, **{k: v for k, v in fields.items() if k not in updates}}
-    else:
-        merged = dict(fields)
-        merged.update(updates)
-    tail = "\n" if body and not body.endswith("\n") else ""
-    return _render_frontmatter(merged) + "\n\n" + body + tail
+    from flow_sdk.assets.document import DocumentPatch, patch_document_text
 
+    return patch_document_text(text, DocumentPatch(set_fields=updates, drop_fields=drop_keys),
+                               allow_identity=True, prepend=prepend)
 
 
 def _stat_or_none(path: Path) -> "os.stat_result | None":
@@ -210,10 +197,10 @@ class StaleWrite(OSError):
 _UNCHECKED = object()
 
 
-def _atomic_write_text(path: Path, text: str, *, expect: "os.stat_result | None | object" = _UNCHECKED) -> None:
+def _atomic_write_text_unlocked(path: Path, text: str, *, expect: "os.stat_result | None | object" = _UNCHECKED) -> None:
     """Atomically replace ``path`` with UTF-8 ``text``, preserving its mode.
 
-    ``expect`` makes the replace a COMPARE-AND-SWAP: pass the stat taken at the
+    ``expect`` detects observed external changes before replacement: pass the stat taken at the
     read that decided this write, and the replace is abandoned (``StaleWrite``)
     if the file moved on since. Callers that derive ``text`` from the file's own
     bytes MUST pass it — otherwise a concurrent non-atomic rewriter (``git
@@ -222,16 +209,18 @@ def _atomic_write_text(path: Path, text: str, *, expect: "os.stat_result | None 
     unconditional, for callers whose ``text`` does not depend on the old content.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    if expect is not _UNCHECKED and not _same_file(expect, _stat_or_none(path)):
+        raise StaleWrite(f"{path} changed since the read that decided this write")
     try:
-        if path.read_text(encoding="utf-8") == text:
+        if path.read_bytes() == text.encode("utf-8"):
             return
     except OSError:
         pass
 
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(text.encode("utf-8"))
             handle.flush()
             os.fsync(handle.fileno())
         try:
@@ -249,6 +238,15 @@ def _atomic_write_text(path: Path, text: str, *, expect: "os.stat_result | None 
         raise
 
 
+def _atomic_write_text(path: Path, text: str, *, expect=_UNCHECKED) -> None:
+    """Coordinate managed writers; stat checks cannot lock unrelated editors."""
+    from flow_sdk.capsules.atomic import capsule_lock
+
+    path = Path(path).resolve()
+    with capsule_lock(path):
+        _atomic_write_text_unlocked(path, text, expect=expect)
+
+
 def write_frontmatter_id(path: Any, entity_id: str) -> bool:
     """Force ``entity_id`` into a file's frontmatter ``id:`` — returns whether it
     persisted. Preserves the body and every existing field, including legacy id
@@ -259,14 +257,19 @@ def write_frontmatter_id(path: Any, entity_id: str) -> bool:
     adopted = adopt_entity_id(entity_id)
     if adopted is None:
         return False
+    from flow_sdk.capsules.atomic import atomic_write, capsule_lock
+
+    target = path.resolve()
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        text = ""
-    try:
-        _atomic_write_text(path, merge_frontmatter(text, {"id": adopted}, prepend=True))
+        with capsule_lock(target):
+            try:
+                text = target.read_bytes().decode("utf-8")
+            except FileNotFoundError:
+                text = ""
+            rendered = merge_frontmatter(text, {"id": adopted}, prepend=True)
+            atomic_write(target, rendered.encode("utf-8"))
         return True
-    except OSError:
+    except (OSError, ValueError):
         return False
 
 
@@ -287,31 +290,9 @@ def _plain_yaml(value: Any) -> Any:
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:
     """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block."""
-    try:
-        import yaml  # type: ignore
+    import yaml
 
-        # safe_dump over coerced values. Entity fields arrive as TrackedList /
-        # TrackedDict (mutation-tracking collections holding a `_parent` backref
-        # to the entity) and as TypeId. Plain `yaml.dump` happily emitted
-        # `!!python/object/new:` for those and, following `_parent`, serialized
-        # the ENTIRE entity into the frontmatter — one UI field edit once turned
-        # a 26-line agent.md into 190 lines of pickled object graph carrying
-        # absolute paths. safe_dump makes an un-coerced exotic type raise (and
-        # fall to the simple renderer below) instead of pickling itself.
-        yaml_text = yaml.safe_dump(
-            _plain_yaml(fields), default_flow_style=False, sort_keys=False, allow_unicode=True
-        ).strip()
-    except Exception:
-        # Fallback: simple key: value rendering
-        parts: list[str] = []
-        for k, v in fields.items():
-            if isinstance(v, list):
-                parts.append(f"{k}: [{', '.join(str(x) for x in v)}]")
-            elif isinstance(v, bool):
-                parts.append(f"{k}: {'true' if v else 'false'}")
-            elif v is None:
-                continue
-            else:
-                parts.append(f"{k}: {v}")
-        yaml_text = "\n".join(parts)
+    yaml_text = yaml.safe_dump(
+        _plain_yaml(fields), default_flow_style=False, sort_keys=False, allow_unicode=True
+    ).strip()
     return f"---\n{yaml_text}\n---"

@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import render_shell_command
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgentOptions,
     AgenticContext,
     AgenticProcessContextKey,
+    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
     ProcessMcpRuntime,
@@ -26,19 +27,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
-    to_mcp_config_json,
-)
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     copilot_session_state_root,
     copilot_transcript_path_for_process,
     find_copilot_session_jsonl,
     find_latest_copilot_session_jsonl,
-    read_copilot_session_meta,
-)
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-    user_turn_count as _user_turn_count,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     load_session_history as _copilot_load_session_history,
@@ -46,11 +40,17 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     load_transcript_history as _copilot_load_transcript_history,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    user_turn_count as _user_turn_count,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_mcp_config_json,
+)
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
     build_canonical_hook_data,
@@ -60,7 +60,6 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
@@ -69,6 +68,7 @@ from flow_sdk.transcript_analyzer import (
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 VENDOR = vendor_for("copilot")
 
@@ -336,6 +336,19 @@ class CopilotDriver:
         accepts_code_paste=False,
     )
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Keep the worker's native store aligned with backend discovery."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return {"COPILOT_HOME": str(get_instance_settings().copilot_home)}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import CopilotNamingAdapter
+
+        return CopilotNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Copilot transcript for READING (history / prompts / status).
 
@@ -380,9 +393,8 @@ class CopilotDriver:
         return descriptor.path if descriptor else None
 
     async def available_assets(self, process: "AgenticProcess"):
-        from flow_sdk.assets.worker_inventory.copilot import available_assets
-
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.asset_inventory import available_assets
 
         return await available_assets(inventory_inputs(process))
 

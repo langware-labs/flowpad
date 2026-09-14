@@ -1,11 +1,9 @@
-import { Shell } from '@sdk';
 import { describe, expect, it } from 'vitest';
 import {
   allowRename,
   cleanTitle,
   isProgramIdentityTitle,
   nextTerminalName,
-  shouldAutoSaveTitleForTarget,
 } from '@src/components/terminal/rename-rules';
 
 /**
@@ -140,19 +138,5 @@ describe('nextTerminalName', () => {
 
   it('ignores names that are not of the "Tab N" shape', () => {
     expect(nextTerminalName([{ name: 'Custom' }, { name: 'Tab 1' }])).toBe('Tab 2');
-  });
-});
-
-describe('shouldAutoSaveTitleForTarget', () => {
-  it('auto-titles a plain shell (no process) but nothing else', () => {
-    expect(shouldAutoSaveTitleForTarget(Shell.type)).toBe(true);
-    expect(shouldAutoSaveTitleForTarget('markdown')).toBe(false);
-    expect(shouldAutoSaveTitleForTarget(null)).toBe(false);
-  });
-
-  it('auto-titles a claude process but not codex/copilot (unstable titles)', () => {
-    expect(shouldAutoSaveTitleForTarget(Shell.type, { worker_type: 'claude' } as any)).toBe(true);
-    expect(shouldAutoSaveTitleForTarget(Shell.type, { worker_type: 'codex' } as any)).toBe(false);
-    expect(shouldAutoSaveTitleForTarget(Shell.type, { worker_type: 'Copilot' } as any)).toBe(false);
   });
 });

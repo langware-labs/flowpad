@@ -28,9 +28,9 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.transcript_analyzer import EntryKind
+from flow_sdk.transcript_analyzer.worker_status import ApiErrorTimeoutError
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,

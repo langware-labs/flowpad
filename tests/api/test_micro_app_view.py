@@ -17,8 +17,9 @@ import re
 
 import pytest
 
-from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+from flow_sdk.builtin.faas.micro_app import MicroApp
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
+from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 
 
 def _view_url(app: MicroApp, sub_path: str = "") -> str:

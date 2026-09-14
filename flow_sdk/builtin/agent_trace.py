@@ -11,36 +11,11 @@ the create POST into the serializer (which materializes trace.json as the ``Free
 never persisted or returned on GET — viewers stream the file via FSRef instead.
 """
 
-from typing import ClassVar, Optional
+from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
-from flow_sdk.schema.data_spec import FreeSection, SectionedHeader
 from flow_sdk.schema.types import EntityType
-
-
-class AgentTraceSpec(SectionedHeader):
-    """``trace.json`` — a FLAT document: the payload IS the file, and the
-    summary fields the row needs live under its ``summary`` key. ``name`` comes
-    from the folder when the file carries none."""
-
-    _section: ClassVar[str | None] = "summary"
-    _section_fields: ClassVar[frozenset[str]] = frozenset(
-        {"verdict", "verdict_reason", "duration_ms", "cost_usd", "issue_count", "divergence_count", "lane_count"}
-    )
-
-    name: Optional[str] = None
-    session_id: Optional[str] = None
-    worker_type: Optional[str] = None
-    analyzed_process_id: Optional[str] = None
-    verdict: Optional[str] = None
-    verdict_reason: Optional[str] = None
-    duration_ms: Optional[int] = None
-    cost_usd: Optional[float] = None
-    issue_count: Optional[int] = None
-    divergence_count: Optional[int] = None
-    lane_count: Optional[int] = None
-    trace: Optional[FreeSection] = None
 
 
 class AgentTrace(Entity):

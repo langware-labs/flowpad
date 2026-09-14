@@ -33,32 +33,16 @@ import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.whiteboard  # noqa: F401
 import flow_sdk.builtin.wizard  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_command  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_md  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_memory  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_plan  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_projects  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_rules  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.codex_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.copilot_sessions  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.dataset  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.deck  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.deck_template  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.dynamic_workflows  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.graph_workflow  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.markdown  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.markdown_index  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.mcp_server  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.plugin  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.secret_origin  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.spec  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.wizard  # noqa: F401
 
 # Operations modules — register types that have no walker but are CRUD-able.
 import flow_sdk.fs_store.operations.claude_debug_log  # noqa: F401

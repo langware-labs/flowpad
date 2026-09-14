@@ -1,6 +1,8 @@
 import { APIEntity, registerEntity } from '../../APIEntity';
 import apiClient from '../../client';
 import { dataContext } from '../../FlowSync/context';
+import { dataManager } from '../../APIEntity';
+import { ExpansionRequest } from '../../FlowSync/query';
 import { FSRef } from '../../fs/FSRef';
 import { DockPointerData } from '../../models/DockPointer';
 import { IEntity, EntityMerge } from '../../IEntity';
@@ -8,6 +10,8 @@ import { JourneyGraph } from './journey-graph';
 import { IJourneyJournal, JourneyJournal } from './journey-journal';
 
 export interface IJourney extends IEntity {
+  /** Owning project root resolved by the backend for this occurrence. */
+  project_root?: string | null;
   asset_ref?: string;
   enabled?: boolean;
 }
@@ -15,8 +19,6 @@ export interface IJourney extends IEntity {
 /** The file a journey's steps are authored in, inside its asset folder. */
 const GRAPH_FILE = 'graph.json';
 
-/** `<root>/agentic-assets/journey/<name>` → `<root>`. */
-const JOURNEY_ASSET_REF = /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/;
 
 // `implements IJourney` only checks the class; it contributes no members, so every
 // field declared solely on IJourney read as "does not exist". deepAssign populates
@@ -48,6 +50,7 @@ export class Journey extends APIEntity<Journey> implements IJourney {
   constructor(entity: Partial<IJourney> = {}) {
     super(entity);
     this.asset_ref = entity.asset_ref;
+    this.project_root = entity.project_root;
     this.enabled = entity.enabled;
   }
 
@@ -87,28 +90,21 @@ export class Journey extends APIEntity<Journey> implements IJourney {
   async loadSteps(): Promise<JourneyGraph> {
     const folder = this.doc;
     if (!folder) return new JourneyGraph();
-    this.stepsPromise ??= folder
-      .child(GRAPH_FILE)
-      .read()
-      .then((text) => JourneyGraph.parse(text))
-      .catch((e: unknown) => {
-        console.error('[Journey] graph.json read failed', e);
-        this.stepsPromise = null;
-        return new JourneyGraph();
-      });
+    this.stepsPromise ??= (async () => {
+      const expanded = await dataManager.getByTypeId<Journey>(this.typeId, new ExpansionRequest({ expand: ['blobs'] }));
+      this.project_root = expanded?.project_root ?? null;
+      return JourneyGraph.parse(await folder.child(GRAPH_FILE).read());
+    })().catch((e: unknown) => {
+      console.error('[Journey] document read failed', e);
+      this.stepsPromise = null;
+      return new JourneyGraph();
+    });
     return this.stepsPromise;
   }
 
-  /**
-   * The project this journey SHIPS IN, derived from its asset ref.
-   *
-   * Its try-it-yourself steps must run THERE — a tour that says "the repo you
-   * are in IS syncmd" was otherwise writing files into whatever project
-   * happened to be active, and running commands outside the git repo they
-   * assume. Null for a journey that lives outside the standard folder.
-   */
+  /** The backend-resolved owner of this occurrence, including custom placements. */
   get projectRoot(): string | null {
-    return JOURNEY_ASSET_REF.exec(this.asset_ref ?? '')?.[1] ?? null;
+    return this.project_root ?? null;
   }
 
   /** The active journal, else the most recent one, else null (never launched). */

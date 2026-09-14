@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Optional
 from urllib.parse import quote
 
-from flow_sdk.core.connections.types import (
+from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum
+from flow_sdk.schema.data_spec.connection_spec import (
     ConnectionConnectError,
     ConnectionKind,
     ConnectionSpec,
@@ -14,7 +15,6 @@ from flow_sdk.core.connections.types import (
     ConnectionTokenResult,
     ConnectionTokenStatus,
 )
-from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum
 
 
 async def _connection_user():

@@ -6,8 +6,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItem
 from flow_sdk.ingest.driver import SendOutcome
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

@@ -10,11 +10,11 @@ from typing import Any
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets.frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+from flow_sdk.assets.identity_carrier import Found, Frontmatter
 from flow_sdk.assets.types.subagent_spec import AGENTS_SPEC_FIELDS, KEY_TO_JSON, SubAgentSpec
 from flow_sdk.capsules.errors import CapsuleError
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
 from flow_sdk.fs_store.record_types import RecordType
 
 logger = logging.getLogger(__name__)

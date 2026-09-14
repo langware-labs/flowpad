@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.assets.asset_publisher import CLOUD_BRANCH, publish_asset, resolve_asset_folder
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
+from flow_sdk.builtin.asset_publishing import CLOUD_BRANCH, publish_asset, resolve_asset_folder
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.utils.command_executor import _LocalCommandExecutor
 from tests.unit.conftest import git_cmd

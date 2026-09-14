@@ -361,14 +361,14 @@ export class Task extends APIEntity<Task> implements ITask {
 
   /**
    * Create a task with the given title. The `project` argument is accepted for
-   * API parity with other createInProject statics (tasks aren't file-backed per project today).
+   * Create a file-backed task in the selected scope and optional exact destination.
    */
   static async createInProject(
-    _project: unknown,
+    project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Task> {
     const task = new Task({ title: name.trim() });
-    return task.save();
+    return task.save(project?.typeId ? [project.typeId] : [], destination);
   }
 }

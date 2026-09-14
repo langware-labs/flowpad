@@ -1686,8 +1686,8 @@ msgid "All guides"
 msgstr "All guides"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "All harnesses"
-msgstr "All harnesses"
+#~ msgid "All harnesses"
+#~ msgstr "All harnesses"
 
 #: src/navigation/record-type-nav.ts
 msgid "All hooks"
@@ -2273,6 +2273,10 @@ msgstr "Asset Cleanup Report"
 msgid "Asset compare"
 msgstr "Asset compare"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "Asset folder"
+msgstr "Asset folder"
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr "Asset has changes"
@@ -2280,6 +2284,10 @@ msgstr "Asset has changes"
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr "Asset has no file on disk"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset list truncated. Narrow the selection to see more."
+msgstr "Asset list truncated. Narrow the selection to see more."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Asset must be clean-git"
@@ -3373,7 +3381,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -3885,7 +3892,6 @@ msgid "Code Ref"
 msgstr "Code Ref"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -4375,7 +4381,6 @@ msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -4912,8 +4917,8 @@ msgid "Could not save {envVar}"
 msgstr "Could not save {envVar}"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Could not save agent"
-msgstr "Could not save agent"
+#~ msgid "Could not save agent"
+#~ msgstr "Could not save agent"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Could not save inbox settings"
@@ -5054,8 +5059,8 @@ msgid "Could not update attached secrets"
 msgstr "Could not update attached secrets"
 
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
-msgid "Could not update eval flag"
-msgstr "Could not update eval flag"
+#~ msgid "Could not update eval flag"
+#~ msgstr "Could not update eval flag"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
@@ -5419,6 +5424,10 @@ msgstr "Current Directory"
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Current directory (click to refresh)"
 msgstr "Current directory (click to refresh)"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Current file on disk"
+msgstr "Current file on disk"
 
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
@@ -6304,6 +6313,10 @@ msgstr "Discard changes?"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Discard draft"
 msgstr "Discard draft"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Discard edits and reload"
+msgstr "Discard edits and reload"
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Discard failed"
@@ -7793,6 +7806,10 @@ msgstr "Field"
 msgid "File"
 msgstr "File"
 
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "File changed outside this editor. Your edits are preserved."
+msgstr "File changed outside this editor. Your edits are preserved."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
 msgstr "File mtime is newer than DB updated_date"
@@ -8688,8 +8705,8 @@ msgstr "Harness is required"
 
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "Harness path"
-msgstr "Harness path"
+#~ msgid "Harness path"
+#~ msgstr "Harness path"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness Session Details"
@@ -12622,8 +12639,8 @@ msgid "None"
 msgstr "None"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "None (project root)"
-msgstr "None (project root)"
+#~ msgid "None (project root)"
+#~ msgstr "None (project root)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -13663,6 +13680,10 @@ msgstr "OS"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "OS:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Other assets"
+msgstr "Other assets"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -16234,8 +16255,8 @@ msgid "Save failed"
 msgstr "Save failed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Save failed."
-msgstr "Save failed."
+#~ msgid "Save failed."
+#~ msgstr "Save failed."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -17815,6 +17836,10 @@ msgstr "Snoozed"
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
 msgstr "SOCKS Proxy Port"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Some assets could not be read."
+msgstr "Some assets could not be read."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
@@ -20665,6 +20690,10 @@ msgstr "View Claude Code settings across user, project, and local scopes"
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "View contact details"
 msgstr "View contact details"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "View current file"
+msgstr "View current file"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/version-popover/diagnose-modal.tsx

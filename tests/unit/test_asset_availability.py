@@ -9,10 +9,11 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.assets.catalog import AssetDescriptor, AssetSource, AssetEvidence, AssetUsageKind
-from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.assets.asset_inventory import WorkerAsset, skill_observations
+from flow_sdk.assets.catalog import AssetDescriptor, AssetEvidence, AssetSource, AssetUsageKind
 from flow_sdk.assets.inventory import reconcile_assets
-from flow_sdk.assets.asset_inventory import WorkerAsset, json_command, skill_observations
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.cli_drivers.asset_inventory import json_command
 from flow_sdk.schema.types import EntityType
 
 
@@ -94,7 +95,7 @@ async def test_large_native_inventory_is_not_truncated(tmp_path):
 
 @pytest.mark.asyncio
 async def test_opencode_inventory_commands_do_not_contend_for_native_store(tmp_path, monkeypatch):
-    from flow_sdk.assets.worker_inventory import opencode as inventory
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode import asset_inventory as inventory
 
     active = 0
     async def command(argv, **kwargs):
@@ -115,7 +116,7 @@ async def test_opencode_inventory_commands_do_not_contend_for_native_store(tmp_p
 @pytest.mark.asyncio
 async def test_copilot_does_not_report_incomplete_mount_inventory_as_verified(tmp_path):
     from flow_sdk.assets.asset_inventory import AssetInventoryError
-    from flow_sdk.assets.worker_inventory.copilot import available_assets
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.asset_inventory import available_assets
 
     agents = tmp_path / ".github/agents"
     agents.mkdir(parents=True)

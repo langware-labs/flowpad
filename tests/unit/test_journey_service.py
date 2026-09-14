@@ -432,3 +432,33 @@ async def test_25_project_manifest_selects_its_named_auto_launch_journey(
 
     assert selected is not None and selected.journey_id == preferred.id
     assert await other.progress(OTHER) is None
+
+
+@async_context
+async def test_expanded_journey_uses_actual_owning_project_with_custom_placement(tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    project = await Project(name=str(tmp_path), fs_storage_mount_path=str(tmp_path)).save()
+    journey = await Journey(name="custom", asset_ref=str(tmp_path / "custom"), project_id=project.id).save()
+    loaded = await Journey.get_one({"id": journey.id})
+    assert loaded is not None
+    assert loaded.project_root == str(tmp_path.resolve())
+    assert loaded.model_dump(mode="json")["project_root"] == str(tmp_path.resolve())
+
+
+@async_context
+async def test_expanded_journey_refuses_misattributed_or_symlinked_occurrence(tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    project = await Project(name=str(owner), fs_storage_mount_path=str(owner)).save()
+    journey = Journey(name="outside", asset_ref=str(outside), project_id=project.id)
+    await journey.expand_blobs()
+    assert journey.project_root is None
+    (owner / "alias").symlink_to(outside, target_is_directory=True)
+    journey.asset_ref = str(owner / "alias")
+    await journey.expand_blobs()
+    assert journey.project_root is None

@@ -618,11 +618,14 @@ async def test_agent_node_resolves_agent_entity_definition(tmp_path):
     """An agent node referencing a SubAgent entity (node_data.typeid) resolves
     the md definition: system prompt leads the instruction, md model applies,
     node model_size overrides it."""
+    from flow_sdk.api.api_types.identifier import mint_uuid
+    from flow_sdk.assets.frontmatter import merge_frontmatter
     from flow_sdk.builtin.subagent import SubAgent
 
     md = tmp_path / "summarizer.md"
-    md.write_text(AGENT_MD, encoding="utf-8")
-    agent = SubAgent(name="summarizer", asset_ref=str(md))
+    identity = mint_uuid()
+    md.write_text(merge_frontmatter(AGENT_MD, {"id": identity}), encoding="utf-8")
+    agent = SubAgent(id=identity, name="summarizer", asset_ref=str(md))
     await agent.save()
 
     flow = await _make_flow(tmp_path, "agentref",

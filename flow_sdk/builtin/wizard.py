@@ -52,7 +52,7 @@ class Wizard(Entity):
         """The parsed ``wizard.json`` — disk is truth, through the ONE reader
         the indexer also uses. ``None`` when the document is missing or
         malformed."""
-        from flow_sdk.fs_store.indexer.functions.wizard import read_wizard  # noqa: PLC0415
+        from flow_sdk.assets.types.wizard import read_wizard
 
         return read_wizard(Path(self.asset_ref)) if self.asset_ref else None
 
@@ -119,7 +119,7 @@ class Wizard(Entity):
         indistinguishable from "no wizard here" at every surface. This is the
         diagnostic, on the payload the viewer already has.
         """
-        from flow_sdk.fs_store.indexer.functions.wizard import wizard_document_problem  # noqa: PLC0415
+        from flow_sdk.assets.types.wizard import wizard_document_problem
 
         # Shares its read and its parse with `agent` through the reader's memo,
         # so asking both questions on every serialization costs one of each.
@@ -318,15 +318,11 @@ class Wizard(Entity):
         """
         from pydantic import ValidationError  # noqa: PLC0415
 
-        from flow_sdk.fs_store.indexer.functions.wizard import (  # noqa: PLC0415
-            WIZARD_JSON,
-            parse_wizard,
-        )
-        from flow_sdk.fs_store.indexer.functions.wizard import document_warnings  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.wizard_spec import WizardSpec  # noqa: PLC0415
+        from flow_sdk.assets.types.wizard import WIZARD_JSON, document_warnings, parse_wizard
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.schema.data_spec.wizard_spec import (  # noqa: PLC0415
             WizardIssueSpec,
+            WizardSpec,  # noqa: PLC0415
             WizardValidationSpec,
         )
 
@@ -408,7 +404,9 @@ class Wizard(Entity):
         wizard asks for them here.
         """
         from flow_sdk.core.wizard.state import (  # noqa: PLC0415
-            archived_runs, read_outputs, read_state,
+            archived_runs,
+            read_outputs,
+            read_state,
         )
         from flow_sdk.schema.data_spec.wizard_spec import WizardRunDetailSpec  # noqa: PLC0415
 

@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from flow_sdk.cli.commands import connections_cmd
 from flow_sdk.cli.flow_cli import app
-from flow_sdk.core.connections.types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionCancelled,
     ConnectionConnectError,

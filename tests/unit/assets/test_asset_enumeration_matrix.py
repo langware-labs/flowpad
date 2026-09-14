@@ -12,8 +12,8 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets import Asset, AssetFolder
 from flow_sdk.assets.folder import AssetScanError
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from tests.fixtures.asset_tree import write_asset
 
@@ -24,7 +24,6 @@ EXCLUDED_EXTRACTORS = {
     "mcp_server": "a JSON fragment needs its configuration ref",
     "plugin": "a JSON fragment needs its configuration ref",
     "claude_memory": "runtime project-memory roots have no generic mount declaration",
-    "project": "Project identity is application scope, not a declared asset mount",
     "workflow_run": "provider runtime journals have no generic mount declaration",
 }
 REGISTERED = {

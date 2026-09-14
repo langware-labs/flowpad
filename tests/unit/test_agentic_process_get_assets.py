@@ -1,14 +1,12 @@
 """Process catalog tests use filesystem truth, independently of indexed rows."""
-from pathlib import Path
 
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.assets.catalog import AssetSource, READONLY_ASSET_SOURCES, is_readonly_source, scan_path_asset_descriptors
+from flow_sdk.assets.catalog import READONLY_ASSET_SOURCES, AssetSource, is_readonly_source, scan_path_asset_descriptors
 from flow_sdk.assets.usage import AssetUsage, UsageResolution
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.instance_settings import reset_instance_settings
-
 
 
 @pytest.fixture
@@ -81,9 +79,9 @@ async def test_project_and_context_source_attribution_and_pagination(tmp_path):
     left = skill(tmp_path / 'project')
     right = skill(tmp_path / 'context')
     sources = [(str(tmp_path / 'project'), AssetSource.PROJECT_DIR), (str(tmp_path / 'context'), AssetSource.CONTEXT_DIR)]
-    rows = await scan_path_asset_descriptors(sources, 'project-id', ['skill'])
+    rows = (await scan_path_asset_descriptors(sources, 'project-id', ['skill'])).assets
     assert {r.posix_path: (r.project_id, r.source_dir) for r in rows} == {str(left): ('project-id', str(tmp_path / 'project')), str(right): (None, str(tmp_path / 'context'))}
-    assert await scan_path_asset_descriptors(sources, 'project-id', ['skill'], limit=1, offset=1) == rows[1:]
+    assert (await scan_path_asset_descriptors(sources, 'project-id', ['skill'], limit=1, offset=1)).assets == rows[1:]
 
 
 @pytest.mark.asyncio
@@ -132,24 +130,50 @@ async def test_system_root_attribution_is_explicit_and_own_project_remains_visib
     path = skill(root)
     sources = [(str(tmp_path), AssetSource.USER_DIR), (str(root), AssetSource.SYSTEM)]
     assert descriptor_from_asset(Asset.from_path(path), sources).source == AssetSource.SYSTEM
-    assert await scan_path_asset_descriptors(sources, '', ['skill']) == []
-    rows = await scan_path_asset_descriptors([(str(root), AssetSource.PROJECT_DIR)], 'assistant-project', ['skill'])
+    assert (await scan_path_asset_descriptors(sources, '', ['skill'])).assets == []
+    rows = (await scan_path_asset_descriptors([(str(root), AssetSource.PROJECT_DIR)], 'assistant-project', ['skill'])).assets
     assert rows[0].source == AssetSource.PROJECT_DIR and rows[0].project_id == 'assistant-project'
 
 
 @pytest.mark.asyncio
 async def test_folder_scan_diagnostics_do_not_erase_historical_usage(home, monkeypatch):
-    from flow_sdk.assets.folder import AssetScanError, AssetScanIssue
     from flow_sdk.assets.catalog import AssetEvidence, AssetUsageKind
+    from flow_sdk.assets.folder import AssetScanError, AssetScanIssue
     value = process(home)
     usage = AssetUsage(reference='deleted', resolution=UsageResolution.MISSING, evidence=[AssetEvidence(kind=AssetUsageKind.SKILL_INVOKED)])
     async def used(self): return [usage]
     async def descriptors(self, **kwargs): raise AssetScanError([AssetScanIssue(path=home / 'bad', message='Malformed header')])
     monkeypatch.setattr(AgenticProcess, 'get_used_assets', used)
-    monkeypatch.setattr(AgenticProcess, 'get_asset_descriptors', descriptors)
+    monkeypatch.setattr(AgenticProcess, 'get_asset_catalog', descriptors)
     result = (await value.get_assets_action()).data
     assert result['unresolved_usage'][0]['reference'] == 'deleted'
     assert 'Malformed header' in result['availability_error']
+
+
+@pytest.mark.asyncio
+async def test_catalog_keeps_valid_assets_beside_scan_diagnostics(home):
+    valid = skill(home)
+    broken = valid.parent / 'broken'
+    broken.symlink_to(home / 'missing', target_is_directory=True)
+    catalog = await process(home).get_asset_catalog()
+    assert [row.posix_path for row in catalog.assets] == [str(valid)]
+    assert any(issue.path == broken for issue in catalog.issues)
+
+
+@pytest.mark.asyncio
+async def test_inventory_failure_keeps_valid_catalog_assets(home, monkeypatch):
+    from flow_sdk.assets.asset_inventory import AssetInventoryError
+    valid = skill(home)
+    value = process(home)
+
+    async def unavailable(self, process):
+        raise AssetInventoryError('Provider inventory unavailable')
+
+    monkeypatch.setattr(type(value.driver), 'available_assets', unavailable)
+    payload = (await value.get_assets_action()).data
+    assert [row['posix_path'] for row in payload['assets']] == [str(valid)]
+    assert not payload['assets'][0]['available']
+    assert payload['availability_error'] == 'Provider inventory unavailable'
 
 
 @pytest.mark.asyncio
@@ -169,8 +193,8 @@ async def test_real_project_process_aggregates_project_and_context_folders(home,
 @pytest.mark.asyncio
 async def test_transcript_only_document_retains_project_occurrence_context(home, tmp_path):
     from flow_sdk.builtin.project import Project
-    from tests.unit.test_process_used_assets import entry, transcript
     from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+    from tests.unit.test_process_used_assets import entry, transcript
     root = tmp_path / 'project'
     doc = root / 'docs/guide.md'
     doc.parent.mkdir(parents=True)
@@ -208,7 +232,24 @@ async def test_scan_failure_retains_usage_occurrence_name_and_source(home, tmp_p
     async def used(self): return [usage]
     async def descriptors(self, **kwargs): raise AssetScanError([AssetScanIssue(path=tmp_path / 'broken', message='Malformed')])
     monkeypatch.setattr(AgenticProcess, 'get_used_assets', used)
-    monkeypatch.setattr(AgenticProcess, 'get_asset_descriptors', descriptors)
+    monkeypatch.setattr(AgenticProcess, 'get_asset_catalog', descriptors)
     result = (await value.get_assets_action()).data
+    assert 'Malformed' in result['availability_error']
     assert result['assets'][0]['source'] == AssetSource.WORKDIR.value
     assert result['assets'][0]['name'] == 'copy-two'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("header", ["tags: [unclosed", "parent_type_id: not-a-typeid"])
+async def test_bad_optional_metadata_retains_catalog_and_reports_issue(home, tmp_path, header):
+    root = tmp_path / "work"
+    healthy = skill(root, "healthy")
+    malformed = skill(root, "malformed")
+    body = malformed / "SKILL.md"
+    original = f"---\nname: malformed\n{header}\n---\nReadable body\n"
+    body.write_text(original)
+    catalog = await process(root).get_asset_catalog(usages=[])
+    assert {row.posix_path for row in catalog.assets} == {str(healthy), str(malformed)}
+    assert any(issue.path == malformed for issue in catalog.issues)
+    assert next(row for row in catalog.assets if row.posix_path == str(malformed)).parent_type_id is None
+    assert body.read_text() == original

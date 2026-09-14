@@ -99,9 +99,9 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
     the row; unpublish = drop the row. Either way the manifest is re-indexed so
     the ``published`` cache on this row follows the file. Returns the canonical
     row (re-read after the reconcile)."""
+    from flow_sdk.assets.identity_carrier import ForeignId, NotWritable  # noqa: PLC0415
     from flow_sdk.assets.project_manifest import make_entry, publish, rel_path_for  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.identity_carrier import ForeignId, NotWritable  # noqa: PLC0415
     from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.data_spec.project_manifest_spec import PUBLISHABLE_TYPES  # noqa: PLC0415
@@ -222,9 +222,9 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     ``project`` at its type's placement, index it keeping the publisher's id,
     and record it in ``deps.json``. Returns ``{installed, show, posix_path}``."""
     from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+    from flow_sdk.assets.placement import Scope  # noqa: PLC0415
     from flow_sdk.assets.project_manifest import make_dependency, record_dependency, rel_path_for  # noqa: PLC0415
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import Scope  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.schema.data_spec.project_manifest_spec import PublishedAssetSpec  # noqa: PLC0415
@@ -249,7 +249,7 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
         raise PublishRefused("same_project", "that asset already lives in this project")
 
     from flow_sdk.builtin.asset_installation import index_installed_asset
-    from flow_sdk.fs_store.placement import resolve_default_harness, resolve_destination
+    from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination
 
     asset = Asset.from_path(src)
     if asset.typeid != TypeId(entry.typeid):
@@ -455,7 +455,7 @@ async def published_view(project) -> dict:
     ``flow_sdk.assets.project_manifest``'s docstring, joined with local state."""
     from flow_sdk.assets.catalog import AssetSource, scan_path_asset_descriptors
     from flow_sdk.assets.project_manifest import MANIFEST_REL_PATH, ManifestError, read_manifest  # noqa: PLC0415
-    from flow_sdk.builtin.asset_context import collect_base_source_dirs
+    from flow_sdk.builtin.asset_context import asset_body_ref, collect_base_source_dirs
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.data_spec.project_manifest_spec import PUBLISHABLE_TYPES, split_typeid  # noqa: PLC0415
 
@@ -510,6 +510,7 @@ async def published_view(project) -> dict:
                 "state": state,
                 "origin": entry.origin.model_dump(mode="json") if entry.origin is not None else None,
                 "posix_path": str(mount / entry.rel_path) if on_disk else None,
+                "body_ref": asset_body_ref(mount / entry.rel_path, authority=project.typeid, root=mount) if on_disk else None,
                 "indexed": ent is not None,
                 "hub_body": _HUB_BODY.get(entry.typeid),
             }
@@ -523,9 +524,9 @@ async def published_view(project) -> dict:
         listed = spec.typeids if spec is not None else frozenset()
         descriptors = [
             d
-            for d in await scan_path_asset_descriptors(
+            for d in (await scan_path_asset_descriptors(
                 sources, own_project_id=str(project.id), types=list(PUBLISHABLE_TYPES), limit=2000
-            )
+            )).assets
             if d.source is AssetSource.PROJECT_DIR and d.typeid not in listed
         ]
         wanted: dict[str, list[str]] = {}
@@ -543,6 +544,7 @@ async def published_view(project) -> dict:
                     "name": d.name or (ent.name if ent is not None else ""),
                     "posix_path": d.posix_path,
                     "project_id": d.project_id,
+                    "body_ref": asset_body_ref(d.posix_path, authority=project.typeid, root=mount),
                 }
             )
 

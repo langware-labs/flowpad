@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import (
+from flow_sdk.assets.identity_carrier import (
     Derived,
     Frontmatter,
     JsonRoot,
     NotWritable,
     Sidecar,
 )
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from tests.fixtures.identity import frontmatter_id, resolve_id
 
@@ -52,6 +52,13 @@ FOLDER_NO_LEGACY = ("mcp", "project_manifest", "trigger")
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
+
+
+@pytest.fixture(autouse=True)
+def bind_application_identity_adapters():
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+
+    register_asset_runtime_bindings()
 
 
 def _info(type_name: str):

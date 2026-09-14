@@ -12,12 +12,12 @@ import json
 
 import pytest
 
+from flow_sdk.assets.types.secret_origin_identity import secret_origin_id
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_secret_env
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.secret_origin import assert_value_free
-from flow_sdk.builtin.secret_origin_identity import secret_origin_id
 from flow_sdk.cli.auth.secrets import read_secret
+from flow_sdk.schema.data_spec.secret_origin_contract import assert_value_free
 from flow_sdk.schema.type_info import register_all
 
 register_all()

@@ -102,7 +102,7 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   written by the `tagit` skill and read by `tag-context`. It is not a trace tag
   and never belongs in the toplog catalog.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
-  (`fs_store/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
+  (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
   for both is *provider*.
 - **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
@@ -198,7 +198,7 @@ of which may be absent. Say which one you mean.
 
 | Ours | One place | Notes |
 |---|---|---|
-| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `accepts` / `read` / `stamp` — validation and minting stay in `TypeInfo`. |
+| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/assets/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `accepts` / `read` / `stamp` — validation and minting stay in `TypeInfo`. |
 | `TypeInfo.mint` / `TypeInfo.stamp_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | `mint` answers a `Found` id, raises on `Foreign`, else mints and (with `write`) stamps; `stamp_id` is the create seam; `read_id` never writes. The walk orders carrier → owning row → mint in `indexer/reconcile.py`. No `observe`/`derive`/`overwrite` vocabulary. |
 | `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier: `tag` blocks in source files, and the `identity` folder capsule the `Sidecar` carrier stores. Not an identity form for markdown — a file still carrying the HTML-comment `identity` block reads as `Foreign` (`flow_sdk/migrations/migration_2026_09_identity_live_forms.py`). |

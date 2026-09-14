@@ -19,7 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from flow_sdk.schema.layout import File
+from flow_sdk.assets.layout import File
 
 router = APIRouter()
 
