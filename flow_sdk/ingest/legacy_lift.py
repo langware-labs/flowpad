@@ -137,6 +137,10 @@ def envelope_of(
         reply_to_external_id=_key_of(getattr(data, "in_reply_to", None)),
         recipients=[formataddr((p.name or "", p.address or p.origin.key)) for p in getattr(data, "recipients", ())],
         raw=getattr(data, "raw", None),
+        # Adoption hints: a record that already exists locally as a hub-mirrored row (a help-desk
+        # ticket) names the hub's own ids, so the projection lands on that row instead of a twin.
+        conversation_id=getattr(data, "hub_conversation_id", None),
+        message_id=getattr(data, "hub_message_id", None),
         origin=item.origin,
         data=data,
     )
