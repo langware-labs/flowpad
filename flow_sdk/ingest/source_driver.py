@@ -50,6 +50,7 @@ from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import Rejected, SourceError
 from flow_sdk.sources.protocols import Choosing, Identified, Messaging, Segmented, StableHandle, Verifiable
 from flow_sdk.sources.values.items import MessageData
+from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.utils.serialization import iso_to_utc
@@ -66,9 +67,9 @@ _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
 #: ``(row) -> Credentials`` — what this provider's source reads with.
 CredentialResolver = Callable[[Any], Awaitable[Credentials]]
-#: ``(source, *, thread_key, to, text, subject, in_reply_to) -> MessageData`` — the legacy send
-#: arguments in this channel's addressing.
-Outgoing = Callable[..., MessageData]
+#: ``(source, *, thread_key, to, text, subject, in_reply_to) -> (MessageData, answered origin | None)``
+#: — the legacy send arguments in this channel's addressing; an answered origin makes it a reply.
+Outgoing = Callable[..., "tuple[MessageData, Optional[CloudOrigin]]"]
 
 
 def _when(item: Any) -> Any:
@@ -78,12 +79,15 @@ def _when(item: Any) -> Any:
 
 
 def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
+    credentials = credentials or Credentials()
+    # A secret the resolver lifted out of the row never also rides in ``config``.
+    config = {k: v for k, v in (getattr(row, "config", None) or {}).items() if k not in credentials.values}
     return SourceBinding(
         source_id=str(getattr(row, "id", "") or ""),
         name=str(getattr(row, "provider", "") or ""),
         account_key=str(getattr(row, "account_key", "") or ""),
-        config=dict(getattr(row, "config", None) or {}),
-        credentials=credentials or Credentials(),
+        config=config,
+        credentials=credentials,
         persona=persona or Persona(),
     )
 
@@ -229,16 +233,34 @@ class SourceDriver(IngestDriver):
         if self._outgoing is None:
             raise NotImplementedError(f"{self.provider} cannot send")
         source = await self.open(row, persona=True)
-        data = self._outgoing(source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        data, answered = self._outgoing(source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
         try:
             async with source:
-                sent = await source.send(data)
+                sent = await (source.reply(answered, data) if answered is not None else source.send(data))
         except SourceError as exc:
             # One refused message must never park the channel's ingestion.
             raise ValueError(f"{self.provider} refused the message: {exc}") from exc
         if isinstance(source, Identified):
             await self._stamp(row, source)
-        return SendOutcome(external_id=sent.origin.key, recorded=False)
+        recorded = False if type(source).echoes_sends else await self._record(row, source, sent)
+        return SendOutcome(external_id=sent.origin.key, recorded=recorded)
+
+    async def _record(self, row: Any, source: Source, sent: Any) -> bool:
+        """Ingest a sent message the provider will never echo back — the only copy there will be,
+        and without it a conversation shows only its inbound half. After identity is stamped, so
+        the copy reads as ours."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+
+        segment = ROOT_SEGMENT
+        if isinstance(source, Segmented):
+            refs = await source.segments()
+            segment = refs[0].key if len(refs) == 1 else segment
+        try:
+            await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider, segment_key=segment)])
+        except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
+            logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
+            return False
+        return True
 
     async def _verify(self, row: Any) -> SetupVerdict:
         try:
