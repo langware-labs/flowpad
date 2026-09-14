@@ -215,7 +215,7 @@ class CollectionSource(Source, ABC):
 
     async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
         self._require_open()
-        key = self._scope.key(origin)
+        key = self._key_of(origin)
         raw = await self._lookup(key)
         return None if raw is None else self._item(key, raw)
 
@@ -247,6 +247,15 @@ class CollectionSource(Source, ABC):
                 yield item
             if (cursor := page.next_cursor) is None:
                 return
+
+    def _key_of(self, origin: object) -> str:
+        """The key of an origin this source would produce — exactly what ``origin(key)`` gives,
+        so a source that narrows its scope by default is answered like any other."""
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        if origin != self.origin(origin.key):
+            raise ValueError(f"{origin!r} is outside this source's scope")
+        return origin.key
 
     def _check_query(self, query: object) -> None:
         if query is None:
