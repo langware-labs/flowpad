@@ -404,11 +404,9 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         )
         reply = await gmail.expect_reply(sent)
 
-        stored_reply = await SourceItem.find_existing(
-            gmail.id,
-            reply.segment_key,
-            reply.external_id,
-        )
+        from flow_sdk.ingest.legacy_lift import origin_of
+
+        stored_reply = await SourceItem.find_existing(gmail.id, origin_of(gmail, reply))
         assert stored_reply is not None, "Gmail reply was returned but not ingested"
         assert stored_reply.provider == "gmail"
         assert reply.author_external_id.lower() == pirate.inbox.address.lower()

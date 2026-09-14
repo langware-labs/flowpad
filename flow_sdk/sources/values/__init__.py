@@ -3,6 +3,7 @@
 from flow_sdk.sources.values.event import ChangeHandler, DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import (
     EmailMessageData,
+    FeedItemData,
     FileData,
     FileItem,
     MessageData,
@@ -27,6 +28,7 @@ __all__ = [
     "DataQuery",
     "DataSourceEvent",
     "EmailMessageData",
+    "FeedItemData",
     "EventKind",
     "FileData",
     "FileDataPage",

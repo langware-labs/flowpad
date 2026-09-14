@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,7 @@ from flow_sdk.builtin.data_source import DataSource, SourceStatus, parse_since
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.ingest.legacy_lift import origin_of
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -186,24 +188,20 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
     reference, which is exactly why the action's docstring says so.
     """
     src = await _source()
-    item = SourceItem(
-        data_source_id=src.id, provider="rss", kind="content.feed.item",
-        segment_key="s", external_id="x1", name="hello", body="body", read=True,
-    )
+    header = dict(data_source_id=src.id, provider="rss", kind="content.feed.item", segment_key="s", external_id="x1")
+    origin = origin_of(src, SimpleNamespace(**header))
+    item = SourceItem(**header, origin=origin, name="hello", body="body", read=True)
     await item.save()
     original = item.id
 
     await src.purge_items_action()
     assert await SourceItem.get_one({"id": original}) is None
-    assert await SourceItem.find_existing(src.id, "s", "x1") is None
+    assert await SourceItem.find_existing(src.id, origin) is None
 
-    rebuilt = SourceItem(
-        data_source_id=src.id, provider="rss", kind="content.feed.item",
-        segment_key="s", external_id="x1", name="hello", body="body",
-    )
+    rebuilt = SourceItem(**header, origin=origin, name="hello", body="body")
     await rebuilt.save()
 
-    found = await SourceItem.find_existing(src.id, "s", "x1")
+    found = await SourceItem.find_existing(src.id, origin)
     assert found is not None and found.id == rebuilt.id, (
         "the natural key must resolve the rebuilt row — that lookup IS the "
         "idempotency guarantee now that ids are random"

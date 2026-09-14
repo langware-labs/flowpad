@@ -395,12 +395,22 @@ have — a live credential that refreshes mid-sync, or an in-process client. The
 ## The row a record becomes
 
 `SourceItem` is `db_only`: no `metadata.json` shadow, no walk, and FTS fed
-straight from the row (`fts_content=("body",)`). Its identity is the natural
-key declared once on the type — `natural_key=("data_source_id", "segment_key",
-"external_id")` — resolved by `DbSerializer.resolve_many` in one query per
-page, and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
+straight from the row (`fts_content=("body",)`). The row stores the contract's
+value: `origin`, the resource's `CloudOrigin(kind, namespace, key)`, and `data`,
+its typed payload tagged with a `spec_kind` (`ingest.message`,
+`ingest.message.email`, `ingest.feed.item`). Drivers still emit the flat
+envelope; `ingest/legacy_lift.py` is the one rule that lifts it — `kind` is the
+source's channel, `namespace` is `<account_key>/<segment_key>` (the segment
+alone for a source with no account), `key` is the external id — and the
+ingestor, the projection and the cutover migration all lift through it. Its
+identity is the natural key declared once on the type —
+`natural_key=("data_source_id", "origin_kind", "origin_namespace",
+"origin_key")`, the flat copy of the origin a query can reach — resolved by
+`DbSerializer.resolve_many` in one query per page (index
+`ix_entities_source_item_origin_v3`), and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
 normalized fields, never `raw`). `upsert` copies only the spec's fields onto
-the row, so `read` and `starred` survive re-delivery by not being named. A
+the row, plus the natural key it resolved by, so `read` and `starred` survive
+re-delivery by not being named. A
 blank key component is refused by the spec (`NonBlank`), because a blank
 collapses every item of a segment onto one row. Two edge normalizations live
 on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an

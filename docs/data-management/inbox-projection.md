@@ -53,7 +53,8 @@ the source is an agent's mailbox (`config.agent_id`), so an agent's replies
 are never put in the owner's mouth. Everyone else is `<channel>:<address>`.
 This is load-bearing: both unread formulas gate on the sender, so a Sent-folder
 item attributed to a stranger would count as unread mail. `reply_to_id` is
-two lookups (parent item by natural key, then its message by
+two lookups (the parent item by its origin — same kind and namespace, the
+reply's `reply_to_external_id` as key — then its message by
 `source_item_id`) and is an accepted loss when the parent has not arrived.
 
 ## Two clocks — the timestamp law

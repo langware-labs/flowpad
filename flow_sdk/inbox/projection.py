@@ -301,33 +301,26 @@ async def project_source_item(
 
 def _origins(item, source, channel: str, key: str):
     """The two halves of a projected message's provenance. `origin` travels
-    with the message (the channel chip, "open in Gmail"); `origin_local` is
-    PRIVATE and carries the row ids that only resolve here."""
-    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    with the message (the channel chip, "open in Gmail") and is the row's own
+    origin; `origin_local` is PRIVATE and carries the row ids that only resolve
+    here."""
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
 
-    origin = CloudOrigin(
-        kind=channel,
-        namespace=_origin_namespace(source, item),
-        key=item.external_id,
-        # The connector's link when it gives one; otherwise the channel's own
-        # address formula, so "Open in Gmail" works for records whose provider
-        # never supplied a URL. None when neither has one.
-        url=item.permalink or permalink_for(channel, item.external_id or "", key) or None,
-    )
+    # The connector's link when it gives one; otherwise the channel's own address
+    # formula, so "Open in Gmail" works for records whose provider never supplied
+    # a URL. None when neither has one.
+    url = item.permalink or permalink_for(channel, item.external_id or "", key) or None
+    origin = _origin_of(item, source).model_copy(update={"url": url})
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
     return origin, origin_local
 
 
-def _origin_namespace(source, item) -> str:
-    """The per-row scope of a projected origin: the account the source reads as, and the
-    segment the item came from. Interim — until each source class declares its own
-    ``namespace_for(config)``, this is the one rule every provider shares (account + segment
-    is the analysis's spelling for every channel), with the row id standing in for an
-    account the source never stamped."""
-    account = str(getattr(source, "account_key", "") or "") or str(getattr(source, "id", "") or "")
-    segment = str(getattr(item, "segment_key", "") or "")
-    return f"{account}/{segment}" if segment else account
+def _origin_of(item, source):
+    """The row's origin — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+
+    return item.origin or origin_of(source, item)
 
 
 async def _placed_message(item):
@@ -427,8 +420,9 @@ async def _place_message(
         # `reply_to_id`. Accepted loss vs the derived form: a child projected
         # before its parent keeps a null `reply_to_id` (nothing heals it
         # later); both lanes project oldest-first, which covers the normal case.
+        own = _origin_of(item, source)
         parent = await SourceItem.find_existing(
-            item.data_source_id, item.segment_key, item.reply_to_external_id
+            item.data_source_id, own.model_copy(update={"key": item.reply_to_external_id, "url": None})
         )
         if parent is not None:
             parent_fm = await FlowMessage.get_one({"source_item_id": str(parent.id)})

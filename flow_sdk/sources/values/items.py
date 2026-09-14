@@ -102,8 +102,24 @@ class MessageItem(SourceItemSpec):
     data: Tagged[MessageData]
 
 
+class FeedItemData(Payload):
+    """One entry of a feed or listing (an RSS item, a Hacker News story). ``author`` is an
+    identity when the provider names one; ``byline`` is the display text it printed, which
+    may exist without any identity behind it."""
+
+    spec_kind: ClassVar[str] = "ingest.feed.item"
+
+    title: Optional[str] = None
+    text: Optional[str] = None
+    url: Optional[str] = None
+    published_at: Optional[AwareDatetime] = None
+    author: Optional[UserProfile] = None
+    byline: Optional[str] = None
+
+
 __all__ = [
     "EmailMessageData",
+    "FeedItemData",
     "FileData",
     "FileItem",
     "MessageData",
