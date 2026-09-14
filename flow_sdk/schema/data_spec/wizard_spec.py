@@ -36,7 +36,7 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 from __future__ import annotations
 
 import sys
-from typing import Annotated, Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Optional, Union
 
 from pydantic import ConfigDict, StringConstraints, model_validator
 
@@ -147,6 +147,18 @@ class WizardProcessActionSpec(DataSpec):
     #: Display name for the spawned process. Falls back to the step label.
     name: str = ""
     timeout_seconds: float = 1800.0
+    #: The name this step's agent RETURNS a value under.
+    #:
+    #: Empty ⇒ the step declares no output: no result contract is added to the
+    #: prompt, nothing is read back, and the verdict is what it was before this
+    #: field existed — the agent reached a terminal state. Opt-in on purpose, a
+    #: contract nobody asked for cannot silently fail a wizard that ships.
+    output: str = ""
+    #: The value's shape, in the AUTHORING form — the same ``SpecType`` field
+    #: ``WizardInputActionSpec.shape`` and ``AgentSpec.input`` use, so a step
+    #: declares what it RETURNS the way a wizard declares what it is GIVEN.
+    #: Shown to the agent in the contract; not enforced (see the reader).
+    shape: Optional[SpecType] = None
 
 
 class WizardInputActionSpec(DataSpec):
@@ -221,28 +233,6 @@ class WizardStepSpec(DataSpec):
         return self.label or self.id
 
 
-class WizardTriggerSpec(DataSpec):
-    """A bus subscription the wizard declares for itself.
-
-    Reconciled into a real ``Trigger`` row (see
-    ``flow_sdk/server/builtin_triggers.py``) rather than an in-memory
-    subscription, because ``fire_once`` needs a counter that survives a restart
-    and an in-memory subscription has nowhere to keep one.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.trigger"
-
-    #: Bus tag pattern. Validated by ``tag_pattern_problem`` at reconcile time.
-    on: NonBlank
-    #: Fire at most once per machine, ever. The Trigger row's ``counter`` is
-    #: the durable record — which is why this is a trigger property and not a
-    #: property of the event that fires it.
-    fire_once: bool = False
-    #: Optional target filter (``type:id``, trailing ``*`` allowed). Unset ⇒
-    #: fire regardless of what the event is about.
-    target: str = ""
-
-
 class WizardSpec(DataSpec):
     """``wizard.json`` — the whole document."""
 
@@ -266,7 +256,6 @@ class WizardSpec(DataSpec):
     #: wizard needs no approval.
     agent: str = ""
     steps: list[WizardStepSpec] = []
-    triggers: list[WizardTriggerSpec] = []
 
     @model_validator(mode="after")
     def _conversational_or_stepped(self) -> "WizardSpec":
@@ -297,6 +286,71 @@ class WizardSpec(DataSpec):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class WizardStepProbeSpec(DataSpec):
+    """One command a step ran, and what it did.
+
+    A step runs up to THREE commands — precondition, action, verify — so the
+    record is a list, not a set of flat fields. A flat `command` would have to
+    pick one, which is the lie the outcome's `returncode` already tells: it is
+    the action's, unless verify failed, in which case verify's silently replaces
+    it. Naming the phase makes the verdict attributable to the command that
+    produced it.
+
+    Served ONLY by `Wizard.run-detail`, never on `run_state` — see the strip in
+    `flow_sdk/builtin/wizard.py`.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.probe"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: ``precondition`` | ``action`` | ``verify``.
+    phase: str
+    #: The command as RESOLVED for this machine's platform. Never recorded
+    #: before; without it a failing step cannot be reproduced by hand.
+    command: str = ""
+    returncode: Optional[int] = None
+    timed_out: bool = False
+    duration_s: float = 0.0
+    stdout: str = ""
+    stderr: str = ""
+    #: The streams are tail-capped at `PROBE_OUTPUT_CAP`; this says so, so the
+    #: UI can show that it is not the whole output rather than implying it is.
+    truncated: bool = False
+
+
+class WizardIssueSpec(DataSpec):
+    """One problem with a wizard document.
+
+    `loc` is pydantic's own — ``["steps", 3, "command", "commands"]`` addresses a
+    field the form is already rendering, which is the whole reason validation
+    goes to the backend instead of being duplicated in the frontend.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.issue"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    loc: list[Union[str, int]] = []
+    msg: str
+    type: str = ""
+    #: ``error`` blocks the write; ``warning`` is advisory. A warning is for a
+    #: document that is legal but will not do what its author expects.
+    severity: str = "error"
+
+
+class WizardValidationSpec(DataSpec):
+    """The verdict on a candidate document."""
+
+    spec_kind: ClassVar[str] = "wizard.validation"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ok: bool
+    issues: list[WizardIssueSpec] = []
+    #: A shipped wizard cannot be edited here. The frontend takes this answer
+    #: from the backend rather than deciding it itself.
+    read_only: bool = False
+    read_only_reason: str = ""
+
+
 class WizardStepOutcomeSpec(DataSpec):
     """What ONE step did."""
 
@@ -309,6 +363,18 @@ class WizardStepOutcomeSpec(DataSpec):
     returncode: Optional[int] = None
     process_id: Optional[str] = None
     duration_s: float = 0.0
+    #: Every command this step ran. Additive with a default, so a `run.json`
+    #: written before probes existed still validates under `extra="forbid"`.
+    probes: list[WizardStepProbeSpec] = []
+    #: The name this step declared as its output, when it was an agentic step.
+    output: str = ""
+    #: What the agent RETURNED under that name. Served only by ``run-detail``,
+    #: never on ``run_state`` — the same rule as `probes`, and for the same
+    #: reason: that payload rides every row of a list and every WS push.
+    result: Optional[Any] = None
+    #: Where the agent wrote it. Survives the strip, so a person reading a list
+    #: payload can still go and find the value on disk.
+    result_path: str = ""
 
 
 class WizardAwaitingInputSpec(DataSpec):
@@ -327,3 +393,29 @@ class WizardAwaitingInputSpec(DataSpec):
     label: str = ""
     description: str = ""
 
+
+
+class WizardRunDetailSpec(DataSpec):
+    """The whole run record for ONE wizard, probes included.
+
+    The counterpart of `Wizard.run_state`, which is deliberately probe-less
+    because it rides every row of a list and every WS push. This is fetched for
+    one wizard a person is actively looking at, so it can afford the output.
+    """
+
+    spec_kind: ClassVar[str] = "wizard.run_detail"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: str = ""
+    message: str = ""
+    inputs: dict[str, Any] = {}
+    awaiting: list[WizardAwaitingInputSpec] = []
+    outcomes: list[WizardStepOutcomeSpec] = []
+    #: Filenames of previous runs this wizard's resets archived, newest first.
+    #: Their presence is what tells a reader the current record is not the whole
+    #: history — the files themselves are read from disk, not served here.
+    archived: list[str] = []
+    #: What this run's agentic steps returned, by declared output name. Whole
+    #: here, stripped from `run_state` — this action is the one place they are
+    #: served, because it is fetched for ONE wizard a person is looking at.
+    outputs: dict[str, Any] = {}

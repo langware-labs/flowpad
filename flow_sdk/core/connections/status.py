@@ -35,8 +35,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.core.connections.types import ConnectionKind, ConnectionSpec, ConnectionState
 from flow_sdk.flowpad_types.vendors import vendor_or_none
+from flow_sdk.schema.data_spec.connection_spec import ConnectionKind, ConnectionSpec, ConnectionState
 from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
 
 if TYPE_CHECKING:  # pragma: no cover

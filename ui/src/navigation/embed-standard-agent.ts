@@ -32,7 +32,8 @@ const resolveStandardAgentRef = () => systemSubagentRef('standard');
 export async function embedStandardAgent(proc: AgenticProcess): Promise<void> {
   try {
     const ref = await resolveStandardAgentRef();
-    if (ref) await proc.loadEmbeddedSubagent(ref);
+    // `true` -- the standard sub-agent IS the chat's persona.
+    if (ref) await proc.loadEmbeddedSubagent(ref, true);
     else console.warn('[Standard] standard sub-agent not indexed; continuing without persona');
   } catch (e) {
     console.warn('[Standard] failed to embed standard sub-agent; continuing without persona', e);

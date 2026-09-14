@@ -31,7 +31,9 @@ export function HelpdeskAsk({ project }: { project: Project }) {
     async (proc: AgenticProcess) => {
       if (!agent?.asset_ref) return;
       try {
-        await proc.loadEmbeddedSubagent(agent.asset_ref);
+        // `true` -- the desk's support agent IS the persona of this chat;
+        // that is what "the persona can be attached" above means.
+        await proc.loadEmbeddedSubagent(agent.asset_ref, true);
       } catch (err) {
         // A persona-less session still answers, just genericly — worth a log,
         // not worth blocking the user's question.

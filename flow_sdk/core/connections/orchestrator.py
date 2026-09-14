@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from filelock import FileLock, Timeout
 
-from flow_sdk.core.connections.types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     Authorization,
     BrowserAuthorization,
     ConnectionCancelled,

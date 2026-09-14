@@ -293,7 +293,7 @@ These types are enum members for `~/.claude.json` sub-documents. There is curren
 
 ### `settings.json` Records
 
-These types are extracted from `~/.claude/settings.json` (or project-level `.claude/settings.json`) by `_extract_settings_json` in `flow_sdk/fs_store/source_file_records.py`.
+These types are extracted from `~/.claude/settings.json` (or project-level `.claude/settings.json`) by `_extract_settings_json` in `flow_sdk/assets/types/source_file_records.py`.
 
 | Constant | String value | JSON path in `settings.json` |
 |----------|-------------|------------------------------|
@@ -328,7 +328,7 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
 - `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
-- `identity_carrier` — WHERE the id lives (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/fs_store/identity_carrier.py`)
+- `identity_carrier` — WHERE the id lives (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/assets/identity_carrier.py`)
 - `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `shape`
@@ -367,7 +367,7 @@ FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, �
 
 A "source file" is a known Claude JSON config file that the system splits into multiple typed records. Each extracted record carries a `source_file` (the path to the file) and a `json_path` (an RFC 6901 JSON Pointer indicating its position within that file).
 
-The class-based `SourceFileRecordList` hierarchy and the `SourceFileRegistry` (`flow_sdk/fs_store/source_file_registry.py`) have been **dissolved**. Extraction is now done by pure functions `(data: dict, source_file: str) -> list[dict]` in `flow_sdk/fs_store/source_file_records.py`, keyed by filename in the `_EXTRACTORS` dict:
+The class-based `SourceFileRecordList` hierarchy and the `SourceFileRegistry` (`flow_sdk/fs_store/source_file_registry.py`) have been **dissolved**. Extraction is now done by pure functions `(data: dict, source_file: str) -> list[dict]` in `flow_sdk/assets/types/source_file_records.py`, keyed by filename in the `_EXTRACTORS` dict:
 
 ```python
 _EXTRACTORS = {

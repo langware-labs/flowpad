@@ -16,8 +16,10 @@ file lock, because ``set_input`` and a concurrent re-run both touch it.
 
 from __future__ import annotations
 
+import os
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
 
@@ -118,10 +120,120 @@ def set_input(wizard_id: str, name: str, value: Any) -> dict[str, Any]:
     return _mutate(wizard_id, merge)["inputs"]
 
 
-def clear_inputs(wizard_id: str) -> None:
-    """Forget every answer — the affordance behind "run it again from scratch"."""
-    if _state_path(wizard_id).exists():
-        _mutate(wizard_id, lambda _state: {"inputs": {}})
+def reset_run(wizard_id: str) -> Optional[dict[str, Any]]:
+    """Archive this wizard's run and start its record fresh. ``None`` if running.
+
+    Archive-then-fresh, never destructive — the shape `Journey.restart` uses
+    (``journeys.py``: the journal is archived, not deleted, so history stays
+    resumable). A debugger's reset button is exactly where someone will lose the
+    evidence they were about to read.
+
+    **Approval is always preserved**, and there is deliberately no flag to say
+    otherwise. It records that a person trusts THIS WIZARD to run shell on this
+    machine, which is a fact about the wizard, not about one run's answers.
+    Reset means "forget this run", not "revoke consent" — revocation is a
+    separate, separately-labelled verb, so a `keep_approval=False` here would be
+    a second behaviour nothing asks for and nobody sees.
+
+    **One lock acquisition, and it is not `_mutate`'s.** `_mutate` locks
+    ``run_dir/run.lock`` — the SAME file `execute_wizard` holds for the whole
+    run — so calling it from inside our own acquisition is a nested acquire on
+    two `FileLock` objects over one path, which deadlocks. Non-blocking for the
+    same reason the runner's is: a caller must be told "it is running" now, not
+    parked behind a run that may be waiting on a person.
+    """
+    from filelock import FileLock, Timeout  # noqa: PLC0415
+
+    path = _state_path(wizard_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(str(path.with_suffix(".lock")))
+    try:
+        lock.acquire(blocking=False)
+    except Timeout:
+        return None
+    try:
+        previous = read_json(path)
+        if path.exists():
+            history = path.parent / "history"
+            history.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+            os.replace(path, history / f"run-{stamp}.json")
+        fresh: dict[str, Any] = {}
+        if previous.get("approved"):
+            fresh["approved"] = True
+        write_json_atomic(path, fresh)
+        # `_mutate` owns the only other invalidation, and we deliberately did
+        # not go through it.
+        _CACHE.pop(wizard_id, None)
+        return fresh
+    finally:
+        lock.release()
+
+
+def archived_runs(wizard_id: str) -> list[str]:
+    """Archived run filenames, newest first. Empty when none."""
+    history = _state_path(wizard_id).parent / "history"
+    if not history.is_dir():
+        return []
+    return sorted((p.name for p in history.glob("run-*.json")), reverse=True)
+
+
+def read_outputs(wizard_id: str) -> dict[str, Any]:
+    """What this run's agentic steps returned, by declared name."""
+    values = read_state(wizard_id).get("outputs")
+    return dict(values) if isinstance(values, dict) else {}
+
+
+def record_outputs(wizard_id: str, outputs: dict[str, Any]) -> None:
+    """Persist what the agents returned.
+
+    A SEPARATE dict from `inputs`, and the separation is visible in two places:
+    the form offers stored inputs back as editable answers, and an agent's
+    return value is not the user's answer to re-edit; and a fresh run drops
+    inputs so "run it again" re-asks — outputs must go the same way.
+
+    Required, not optional: a resumed run SKIPS a satisfied step, so a value
+    that is not persisted is never re-derived.
+    """
+    if not outputs:
+        return
+
+    def merge(state: dict) -> dict:
+        return {"outputs": {**(state.get("outputs") or {}), **outputs}}
+
+    _mutate(wizard_id, merge)
+
+
+def strip_heavy(state: dict[str, Any]) -> dict[str, Any]:
+    """The run record WITHOUT per-command probes or returned values.
+
+    `Wizard.run_state` is a computed field, so it rides the payload of every row
+    of ``GET /graph/wizard`` and every WS entity push. Probes and an agent's
+    returned value are for one wizard a person is actively debugging; putting
+    them on the list payload would make every list pay for them. Both are
+    served by ``run-detail`` instead.
+
+    Named for what it does rather than for one of the two things it drops: a
+    `strip_probes` that also stripped results is exactly how the next reader
+    misses the second one.
+    """
+    state = {k: v for k, v in state.items() if k != "outputs"}
+    outcomes = state.get("outcomes")
+    if not isinstance(outcomes, list):
+        return state
+    # The overwhelmingly common case — an input-only step, or any run recorded
+    # before probes existed. A scan is free; rebuilding the whole record to
+    # produce an identical value is not, and this runs on every serialization.
+    heavy = ("probes", "result")
+    if not any(isinstance(o, dict) and any(k in o for k in heavy) for o in outcomes):
+        return state
+    return {
+        **state,
+        "outcomes": [
+            {k: v for k, v in o.items() if k not in heavy} if isinstance(o, dict) else o
+            for o in outcomes
+        ],
+    }
 
 
 def record_approval(wizard_id: str) -> None:

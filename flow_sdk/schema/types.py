@@ -57,6 +57,8 @@ class EntityType(StrEnum):
     # MCP_SERVER below, which is the read-only scan of a vendor's config files.
     MCP = "mcp"
     MCP_SERVER = "mcp_server"
+    # The per-project ledger of PUBLISHED assets (agentic-assets/project_manifest/).
+    PROJECT_MANIFEST = "project_manifest"
     # Scaffold type — .mcp.json / mcp.json files that contain server definitions.
     MCP_SERVER_SOURCE = "mcp_server_source"
     PLUGIN = "plugin"

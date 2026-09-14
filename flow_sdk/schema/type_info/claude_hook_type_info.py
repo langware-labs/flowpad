@@ -1,13 +1,10 @@
 """Type metadata for CLAUDE_HOOK."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.claude_hook import (
-    claude_hook_identity_key,
-    extract_claude_hook,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.claude_hook import claude_hook_identity_key, extract_claude_hook
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
 CLAUDE_HOOK = TypeInfo(

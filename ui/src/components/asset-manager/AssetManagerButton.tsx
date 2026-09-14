@@ -186,21 +186,18 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
 
   const additionalDirs = useMemo(() => activeProcess?.additional_dirs ?? [], [activeProcess?.additional_dirs]);
 
-  // Resolved Flowpad Assistant mount status for this process. `null`/`undefined`
-  // inherits the global default (currently ON), so only an explicit `false`
-  // reads as disabled. Toggling writes an explicit boolean. Stays `undefined`
-  // with no process, which is what hides the toggle entirely.
-  const assistantEnabled = activeProcess ? activeProcess.load_flowpad_assistant !== false : undefined;
+  // The backend resolves inheritance from its own service configuration.
+  const assistantEnabled = assets.assistantEnabled;
 
   const handleToggleAssistant = useCallback(async () => {
-    if (!activeProcess) return;
+    if (!activeProcess || assistantEnabled === undefined) return;
     try {
-      await activeProcess.setAssistantEnabled(activeProcess.load_flowpad_assistant === false);
+      await activeProcess.setAssistantEnabled(!assistantEnabled);
       await refresh();
     } catch (err) {
       console.error('[AssetManagerButton] toggle Flowpad Assistant failed', err);
     }
-  }, [activeProcess, refresh]);
+  }, [activeProcess, assistantEnabled, refresh]);
 
   // When restart_required transitions from true → false (a successful restart
   // just completed) re-fetch descriptors so the list reflects the new worker
@@ -436,7 +433,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
         additionalDirs={additionalDirs}
         improveBusyKey={busyAssetKey}
         canImprove={canImprove}
-        onToggleAssistant={activeProcess ? handleToggleAssistant : undefined}
+        onToggleAssistant={activeProcess && assistantEnabled !== undefined ? handleToggleAssistant : undefined}
         onAddFolder={activeProcess && dataCtx.computeNode ? handleAddFolder : undefined}
         onRemoveDir={activeProcess ? handleRemoveDir : undefined}
         onAddProjectDir={activeProcess ? handleAddProjectDir : undefined}

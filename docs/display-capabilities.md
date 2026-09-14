@@ -22,10 +22,10 @@ in the same viewer components:
 2. **Agent show targets** (`flow show`): `show entity|file|webapp →
    resolve_display_target (typeid | path | port | artifact_id) →
    AgenticProcess.on_show → display_stack/last_shown → VibeWorkspace routing →
-   viewer`. `DisplayTargetKind` has five members — `entity`, `vfs`, `webapp`,
+   viewer`. `DisplayTargetKind` includes `entity`, `vfs`, `webapp`,
    `app` (artifact-addressed, runtime derived per-resolve so a stale port never
-   becomes an app's identity), `shell` — but the `flow show` CLI exposes only the
-   first three; `app` and `shell` are reached through `flow app` and
+   becomes an app's identity), `shell`, `dock`, and `url` — the CLI exposes
+   entity/file/webapp and screen targets; `app` and `shell` are reached through `flow app` and
    `flow terminal`. Outside vibe the same targets mint a tab instead of pinning a
    pane (`docs/tabs/display.md` §5).
    Resolver `flow_sdk/core/display_target.py:43-98`; FSM
@@ -36,6 +36,23 @@ Viewer **dispatch is purely frontend**. The backend `TypeInfo` registry
 carries icon (`TypeInfo.icon`, consumed by `iconForType`), `browseable_by`
 view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
 — but **no viewer/editor hint**.
+
+### Terminal links
+
+Both terminal surfaces use xterm's web-link addon, OSC 8 handler, and a shared
+file-link provider. Detection examines only the hovered logical line, with a
+bounded scan for wrapped output; it makes no backend requests. Activation calls
+the source entity's `resolve-display-target` action, which interprets the link
+and reuses `resolve_display_target` for file discovery and entity resolution.
+Relative files resolve against the shell's configured workdir, then its project;
+live shell `cd` tracking and remote-machine file resolution are not supported.
+
+The resolved target passes through `dockForDisplayTarget` and `presentDockTab`,
+the same tab placement and highlight path used by agent shows. User clicks then
+navigate to focus the destination. File positions reach the existing editors;
+registered assets retain their type-specific viewers. HTTP(S) pages have durable
+URL-based pointers in the web-app viewer, with an **Open in browser** control
+available even when the destination refuses iframe embedding.
 
 ## 2. Files by extension
 

@@ -105,7 +105,9 @@ async def clear_inbox() -> None:
         # row's own record-folder removal. Its message sweep finds nothing left; the
         # suppression is what every other delete path takes, so a hub child still in
         # flight can't rematerialize the parent we just removed.
-        hub_ws_bridge.suppress_conversation_materialization(str(conversation.id))
+        # ``session_scoped``: this conversation is not deleted, only signed out of —
+        # it still exists on the hub, so the next login releases this tombstone.
+        hub_ws_bridge.suppress_conversation_materialization(str(conversation.id), session_scoped=True)
         await _hard_delete_local_conversation(conversation)
     removed += len(conversations)
 

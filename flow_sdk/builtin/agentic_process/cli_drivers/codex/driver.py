@@ -15,15 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agent_hook import HookEventType
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     render_shell_command,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgentOptions,
     AgenticContext,
     AgenticProcessContextKey,
+    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
     ProcessMcpRuntime,
@@ -32,9 +32,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     apply_worker_secret_env,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
-)
-from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
-    to_codex_overrides,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
@@ -54,6 +51,9 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_codex_overrides,
+)
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
     build_canonical_hook_data,
@@ -63,7 +63,6 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
@@ -72,6 +71,7 @@ from flow_sdk.transcript_analyzer import (
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 VENDOR = vendor_for("codex")
 
@@ -123,6 +123,11 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 
 class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions, discovery_file='AGENTS.md')
 
     name = VENDOR.key
     supports_process_hooks = True
@@ -320,6 +325,19 @@ class CodexDriver:
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Keep the worker's native store aligned with backend discovery."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return {"CODEX_HOME": str(get_instance_settings().codex_home)}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import CodexNamingAdapter
+
+        return CodexNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Codex transcript for READING (history / prompts / status).
 
@@ -340,6 +358,29 @@ class CodexDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex.asset_inventory import available_assets
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.codex_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".agents/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=Path("/etc/codex/skills"), recursive=True),
+        ]
+        roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".agents/skills", recursive=True)
+                     for directory in project_ancestors(process.workdir))
+        # --add-dir grants workspace access; it does not register skill roots
+        # or turn Claude markdown subagents into Codex agents.
+        return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Codex discovers skills only from ``$CODEX_HOME/skills`` (a global,

@@ -755,7 +755,7 @@ params:
   removeDir: "async (path) -> void"
   setGraphContext: "async (graphContextId) -> void"
   show: "async ({typeid? | path? | port?}) -> void"
-  loadEmbeddedSubagent: "async (sourcePath) -> void"
+  loadEmbeddedSubagent: "async (sourcePath, setApPersona) -> void"
   loadEmbeddedSkill: "async (sourcePath) -> void"
   getAssets: "async () -> AssetDescriptor[]"
   embeddedAssets.attach: "async (entity | TypeId | string) -> void"

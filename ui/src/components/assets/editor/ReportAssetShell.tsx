@@ -12,6 +12,8 @@ interface ReportAssetShellProps {
   error?: string | null;
   /** Rendered once the document has resolved. */
   children: ReactNode;
+  /** Right-side header controls (the Published toggle, …). */
+  actions?: ReactNode;
 }
 
 /**
@@ -23,13 +25,13 @@ interface ReportAssetShellProps {
  * The strings are document-neutral on purpose — an MCP server is not a report,
  * and this shell is named for the two editors that happened to need it first.
  */
-export function ReportAssetShell({ fsRef, name, testId, loading, error, children }: ReportAssetShellProps) {
+export function ReportAssetShell({ fsRef, name, testId, loading, error, children, actions }: ReportAssetShellProps) {
   const fileName = fsRef.path.split('/').pop() ?? '';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid={testId}>
-      <AssetEditorHeader fileName={name || fileName} dirPath={dirPath} />
+      <AssetEditorHeader fileName={name || fileName} dirPath={dirPath} actions={actions} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {loading && (

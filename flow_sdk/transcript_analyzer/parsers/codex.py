@@ -920,6 +920,7 @@ class _CodexParserBase:
                 UserMessageEntry(
                     text=text,
                     role=CodexMessageRole.USER.value,
+                    is_meta=text.startswith("# AGENTS.md instructions for ") and "\n<INSTRUCTIONS>" in text,
                     **envelope,
                     **base,
                 )

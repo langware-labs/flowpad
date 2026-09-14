@@ -73,7 +73,8 @@ def _user_scope_root() -> Path:
     ``placement.root_for_scope`` authority (shared with the create path), so the
     two can't diverge on what "user root" means. Kept as a named seam because
     tests monkeypatch it to redirect installs to a temp home."""
-    from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
+    from flow_sdk.assets.placement import Scope
+    from flow_sdk.builtin.asset_placement import root_for_scope
 
     return root_for_scope(Scope.USER)
 
@@ -533,7 +534,7 @@ async def handle_attachment_install(
     # TypeInfo, so its class comes from the filename via the same fallback the
     # staged relpath was built from — which is what lets the ONE user-scope
     # policy below (``user_scope_allowed``) govern it like every other class.
-    from flow_sdk.fs_store.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
+    from flow_sdk.assets.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
 
     if is_raw_file:
         asset_class = untyped_fallback_class(ma.name or "")
@@ -694,7 +695,6 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     checkout and is never deleted here.
     """
     from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma = await _load_ma(attachment_id)
@@ -713,35 +713,8 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
         entry_dir = _entry_dir_for(ma)
         if entry_dir is None or not entry_dir.exists():
             return _staging_gone(" to uninstall")
-        root = Path(ma.installed_root)
-        root_resolved = root.resolve()
-        removed_dirs: set[Path] = set()
-        for src in entry_dir.rglob("*"):
-            if not src.is_file():
-                continue
-            rel = src.relative_to(entry_dir)
-            if not is_safe_rel_path(rel.as_posix()):
-                continue
-            dest = root / rel
-            try:
-                dest.resolve().relative_to(root_resolved)
-            except ValueError:
-                continue
-            if dest.exists():
-                dest.unlink()
-                removed_dirs.add(dest.parent)
-        # Prune now-empty dirs up to (not including) the install root.
-        for d in sorted(removed_dirs, key=lambda p: len(p.parts), reverse=True):
-            cur = d
-            while cur != root and root_resolved in cur.resolve().parents:
-                try:
-                    # Only bundle-tracked files were unlinked above. Pruning
-                    # empty parents is safe; an untracked `.flow` metadata
-                    # tree deliberately keeps the asset folder alive.
-                    cur.rmdir()
-                except OSError:
-                    break
-                cur = cur.parent
+        from flow_sdk.assets.transfer import remove_transferred_tree
+        remove_transferred_tree(entry_dir, Path(ma.installed_root))
 
     # Drop the asset entity (row + record folder) and tell the live UI.
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)

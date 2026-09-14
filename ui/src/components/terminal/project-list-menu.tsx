@@ -6,8 +6,10 @@ import { canonicalPath } from '@src/components/project-selector';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
+import { ProjectLaunchBar } from './project-launch-bar';
+import { WikiTip } from '@src/components/wiki-tip';
 import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -318,17 +320,19 @@ export function useProjectListMenu({
   // row disappears as a CONSEQUENCE, not as a separate step: the menu is built
   // from open tabs, so a project with none is no longer listed.
   //
-  // Order matters when clearing the CURRENT scope. Navigating away first (while
-  // its tabs still exist) keeps this URL-first (CLAUDE.md) — the destination is
-  // resolved from live rows, then the loader re-scopes. Closing first would
-  // strand the URL on a tab that no longer exists and leave the resolver nothing
-  // to pick. Global is the honest landing: the project being emptied cannot be
-  // the destination, and `dockForGlobalEntry` falls back to Home on its own.
+  // Order matters when emptying the CURRENT scope. Leaving first (while its tabs
+  // still exist) keeps this URL-first (CLAUDE.md) — the destination is resolved
+  // from live rows, then the loader re-scopes. Closing first would strand the URL
+  // on a tab that no longer exists and leave the resolver nothing to pick. Global
+  // is the honest landing: the project being emptied cannot be the destination.
+  // Emptying the scope you are in is also the one close that ends your MEMBERSHIP
+  // of it, which is why this leaves via `leaveProjectScope` (it owns the context
+  // clear no loader can) rather than merely navigating.
   const handleCloseProject = async (bucket: TabProjectBucket) => {
     setClosingId(bucket.projectId);
     try {
       if (bucket.projectId === currentProjectId) {
-        navigation.openDock(await dockForGlobalEntry(currentDock));
+        navigation.openDock(await leaveProjectScope(currentDock));
       }
       await bucket.closeAll();
     } catch (error) {
@@ -554,27 +558,44 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           const selectClass = `flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-left text-sm ${
             isCurrent ? 'font-medium' : ''
           } ${isMissing ? 'text-muted-foreground' : ''}`;
+          // The row wears the SAME tip the footer's project name wears — path
+          // plus the wiki peek — so "where is this project" has one answer in
+          // both places. Its second row is this list's own: the OS-terminal
+          // launchers, which need a resolved folder, so a bucket without one
+          // (loading / missing) gets the plain one-line tip.
+          const mountPath = bucket.project?.fs_storage_mount_path ?? null;
+          const selectButton = (
+            <button
+              type="button"
+              aria-current={isCurrent ? 'true' : undefined}
+              disabled={bucket.state === 'loading' || isRecovering || isClosing}
+              onClick={() => void handleSelect(bucket)}
+              className={selectClass}
+            >
+              <RowGuides guides={guides} />
+              {leadingIcon}
+              <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+              {isMissing && !isRecovering ? (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <Trans>recover</Trans>
+                </span>
+              ) : null}
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                {bucket.tabCount}
+              </span>
+            </button>
+          );
           return (
             <li key={bucket.projectId} className={rowClass}>
-              <button
-                type="button"
-                aria-current={isCurrent ? 'true' : undefined}
-                disabled={bucket.state === 'loading' || isRecovering || isClosing}
-                onClick={() => void handleSelect(bucket)}
-                className={selectClass}
+              <WikiTip
+                wikiword="Flowpad project"  /* the page the footer's project tip opens */
+                label={mountPath ?? bucketDisplayName(bucket)}
+                buttonLabel={t`What is a Flowpad project?`}
+                side="right"
+                actions={mountPath ? <ProjectLaunchBar projectPath={mountPath} /> : undefined}
               >
-                <RowGuides guides={guides} />
-                {leadingIcon}
-                <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
-                {isMissing && !isRecovering ? (
-                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <Trans>recover</Trans>
-                  </span>
-                ) : null}
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                  {bucket.tabCount}
-                </span>
-              </button>
+                {selectButton}
+              </WikiTip>
               {/* Close-all-in-this-project. Emptying the bucket is what removes
                   the row: the menu is built from open tabs, so a project with
                   none simply stops being listed.

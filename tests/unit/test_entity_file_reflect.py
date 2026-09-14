@@ -190,6 +190,11 @@ class _Storage:
     def get_storage_path(self, vfs_path):
         return str(self.root / vfs_path)
 
+    async def upload(self, source, vfs_path='/'):
+        target = self.root / vfs_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read())
+
 
 def _patch_hub_get(monkeypatch, payload):
     import flow_sdk.utils.hub as hub
@@ -351,8 +356,8 @@ class _FolderBackedEntity(_RecordBackedEntity):
 def _register_hub_layout_probes() -> None:
     """Hub layout is ``TypeInfo``'s shape — the same facts the disk serializer
     reads — so the probes declare it there."""
+    from flow_sdk.assets.layout import Folder
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-    from flow_sdk.schema.layout import Folder
 
     SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", hub_main_file="document.md"))
     SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", shape=Folder(main="SKILL.md"), hub_main_file="SKILL.md"))

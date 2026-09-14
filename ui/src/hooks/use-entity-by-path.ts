@@ -45,6 +45,8 @@ export interface UseEntityByPathResult<T> {
   retry: () => void;
   /** The record type the BACKEND named for this path (null until resolved). */
   resolvedType: string | null;
+  /** Exact classified document available despite an invalid Entity projection. */
+  documentOnly?: { body: string; error: string };
 }
 
 /**
@@ -52,6 +54,10 @@ export interface UseEntityByPathResult<T> {
  * the path. Cached as a successful query result so React-Query doesn't loop
  * (would otherwise re-fire on every render via `enabled`).
  */
+class EntityProjectionFailure extends Error {
+  constructor(readonly type: string, readonly body: string, message: string) { super(message); }
+}
+
 const NOT_FOUND = Symbol('resolve-not-found');
 type NotFound = typeof NOT_FOUND;
 
@@ -160,13 +166,14 @@ export function useEntityByPath<T extends APIEntity<T>>(
     isLoading: resolveLoading,
     isFetching: resolveFetching,
     error: resolveError,
-  } = useQuery<T | NotFound>({
+  } = useQuery<T | NotFound | EntityProjectionFailure>({
     queryKey: resolveKey,
     queryFn: async () => {
       // `resolveByPath` maps a 404 to null; anything else throws and bubbles
       // as a transient `error`.
       const resolved = await systemTools.resolveByPath(path);
       if (!resolved) return NOT_FOUND;
+      if (resolved.entity_error && resolved.body) return new EntityProjectionFailure(resolved.type, resolved.body, resolved.entity_error);
       if (resolved.entity) {
         const row = { ...resolved.entity, type: resolved.type, id: resolved.id };
         const inst = dataManager.updateEntityFromJson<T>(row as never) as T | undefined;
@@ -181,7 +188,8 @@ export function useEntityByPath<T extends APIEntity<T>>(
     retry: false,
   });
 
-  const resolvedEntityRaw = resolveData && resolveData !== NOT_FOUND ? (resolveData as T) : null;
+  const projectionFailure = resolveData instanceof EntityProjectionFailure ? resolveData : undefined;
+  const resolvedEntityRaw = resolveData && resolveData !== NOT_FOUND && !projectionFailure ? (resolveData as T) : null;
   const resolveNotFound = resolveData === NOT_FOUND;
   const resolvedEntityIsOrphan =
     !!(resolvedEntityRaw && (resolvedEntityRaw as { orphan?: boolean }).orphan === true);
@@ -212,7 +220,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
   // The type the backend named — from whichever stage answered.
   const resolvedType =
     ((exactMatch as { type?: string } | null)?.type ??
-      (resolvedEntityRaw as { type?: string } | null)?.type) ??
+      (resolvedEntityRaw as { type?: string } | null)?.type ?? projectionFailure?.type) ??
     null;
 
   // The hint only gates whether a mismatch is REPORTED; it never overrides
@@ -254,7 +262,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
     if (resolvedEntityRaw && !resolvedEntityIsOrphan) return 'resolved';
     if (exactMatchIsOrphan) return 'missing_asset';
     if (exactLoading || exactFetching) return 'querying';
-    if (exactError) return 'error';
+    if (exactError || projectionFailure) return 'error';
     if (resolveNotFound) return 'missing_asset';
     if (resolvedEntityIsOrphan) return 'missing_asset';
     if (resolveError) return 'error';
@@ -273,6 +281,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
     exactFetching,
     exactError,
     resolveNotFound,
+    projectionFailure,
     resolveError,
     resolveLoading,
     resolveFetching,
@@ -298,7 +307,8 @@ export function useEntityByPath<T extends APIEntity<T>>(
       : null;
   const entity = state === 'missing_asset' ? orphanEntity : liveEntity;
   const isLoading = state === 'querying' || state === 'discovering';
-  const error = (exactError ?? resolveError) as Error | undefined;
+  const error = (exactError ?? projectionFailure ?? resolveError) as Error | undefined;
 
-  return { entity, isLoading, state, error, retry, resolvedType };
+  return { entity, isLoading, state, error, retry, resolvedType,
+    documentOnly: projectionFailure && !exactError && !resolveError ? { body: projectionFailure.body, error: projectionFailure.message } : undefined };
 }

@@ -48,6 +48,7 @@ async function waitHealthy(port: number, budgetMs: number): Promise<boolean> {
 }
 
 beforeAll(async () => {
+  tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-ctx-')));
   const logPath = `/tmp/project_context_dir.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
   try {
@@ -56,6 +57,10 @@ beforeAll(async () => {
       env: {
         ...process.env,
         FLOW_INSTANCE: INSTANCE,
+        HOME: tmpRoot,
+        FLOW_HOME: path.join(tmpRoot, '.flow'),
+        FLOWPAD_CLAUDE_HOME: path.join(tmpRoot, '.claude'),
+        CLAUDE_CONFIG_DIR: path.join(tmpRoot, '.claude'),
         LOCAL_SERVER_PORT: String(PORT),
         MINIHUB_RELOAD: 'False',
         FLOWPAD_SKIP_DOTENV: 'true',
@@ -72,7 +77,6 @@ beforeAll(async () => {
   // A dummy skill in a temp folder on the same machine the backend runs on.
   // realpath resolves symlinks (macOS /var → /private/var) so this matches the
   // backend's canonical_posix_path form exactly.
-  tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-ctx-')));
   contextDir = path.join(tmpRoot, 'ctx');
   const skillDir = path.join(contextDir, '.claude', 'skills', 'ctx_skill');
   await fs.mkdir(skillDir, { recursive: true });
@@ -98,7 +102,7 @@ describe('project context folders (include_dirs)', () => {
   it('addContextDir persists include_dirs and surfaces the skill as context_dir', async () => {
     // 1. Create a project.
     const project = await new sdk.Project({ name: `ctxproj-${Date.now()}` }).save();
-    const mount = (project as any).fs_storage_mount_path as string;
+    const mount = (project).fs_storage_mount_path as string;
     expect(mount).toBeTruthy();
 
     // 2. Add the context folder via the real HTTP action (persists + indexes).

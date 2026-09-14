@@ -1238,6 +1238,10 @@ from flow_sdk.cli.commands.artifact_cmd import artifact_app
 
 app.add_typer(artifact_app, name="artifact")
 
+from flow_sdk.cli.commands.asset_cmd import asset_app
+
+app.add_typer(asset_app, name="asset")
+
 from flow_sdk.cli.commands.show_cmd import show_app
 
 app.add_typer(show_app, name="show")

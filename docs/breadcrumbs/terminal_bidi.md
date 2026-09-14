@@ -188,12 +188,15 @@ per-word-correct, sentence-LTR.
   vendor effect never re-runs on a mount. Each covers what the other cannot.
 
 * **A container that mounts long after the vendor resolved.** The reachable
-  form of the above, and the 2026-09-02 bug. `useProcessSurface` only ever calls
-  `switchMode(WorkerMode.Interactive)` (`use-process-surface.ts:159`) — chat and
-  vibe render the session's stream and need no transport of their own — so a
+  form of the above, and the 2026-09-02 bug. `useProcessSurface` calls the SDK
+  method `switchMode` in both directions (`use-process-surface.ts:266`), but the
+  two directions do NOT share a backend route: only `WorkerMode.CLI` reaches the
+  `switch-mode` action, while `WorkerMode.Interactive` goes through `start()` /
+  the `open` action — and that one is the only one that mounts an xterm. So a
   session CREATED headless (`pty_mode: false`: `open-new-chat.ts`,
-  `use-start-vibe-session.ts`, `start-wizard-process.ts`) mounts its container
-  for the first time only when the user opens the Terminal view. Through the
+  `use-start-vibe-session.ts`, `start-wizard-process.ts`) — or one returned to
+  headless by leaving the terminal, which FLOWPAD-2105 made reachable — mounts
+  its container for the first time only when the user opens the Terminal view. Through the
   whole headless phase the vendor-keyed effect ran with no container to stamp,
   and `worker_type` never moves again — so that first container is bare and the
   session reads backwards until a new terminal is opened. A session started
@@ -201,13 +204,16 @@ per-word-correct, sentence-LTR.
   while `worker_type` is still undefined, so the effect fires with a container
   present.
 
-* **Assuming the round trip is reachable.** Because the switch is
-  one-directional, `pty_mode` never returns to false for a live session:
-  Terminal → Chat → Terminal does NOT unmount the container and reproduces
-  nothing. A Windows run on 0.2.150 was spent confirming that. Reproduce from
-  the headless side — start a chat/vibe session, let the turn finish (the
-  switch is refused mid-turn, `awaitingUserInput`), then open its Terminal
-  view.
+* **Assuming the round trip reproduces it.** It does not, and the reason
+  changed — check which build you are on. Through 0.2.16x the switch was
+  one-directional, so `pty_mode` never returned to false for a live session and
+  Terminal → Chat → Terminal did not unmount the container at all; a Windows run
+  on 0.2.150 was spent confirming that. FLOWPAD-2105 restored the round trip, so
+  leaving the terminal now really does go headless — but the container is still
+  not unmounted on the way back in for a session whose xterm this page load has
+  already opened, so the reproduction advice is unchanged. Reproduce from the
+  headless side — start a chat/vibe session, let the turn finish (the switch is
+  refused mid-turn), then open its Terminal view.
 
 * **A shipped build can lag the fix.** The 2026-08-03 macOS symptom reappeared
   on 2026-08-04 purely because the installed wheel (flowpad 0.2.115, spawning

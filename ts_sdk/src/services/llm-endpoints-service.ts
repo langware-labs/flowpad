@@ -122,6 +122,36 @@ export interface LLMUsageReport {
 /** One hub action call. `id` is null for a bare, type-level action (`catalog`,
  *  `token_plan/me`). Shared with the token plan service — one builder, so the
  *  subpath/method plumbing exists once. */
+/**
+ * One event in a budget's history, as the hub resolves it for reading.
+ *
+ * `*_typeid` is what to act on; `*_name` is what to print. Both travel because a name is a
+ * snapshot of a person who can be renamed, and an id is unreadable — a screen showing
+ * "user-3f2a… gave user-91b0… $3" answers nobody's question.
+ */
+export interface LLMAllowanceHistoryRow {
+  id: string;
+  /** `allocated` — a budget was handed out; `limits_changed` — a cap moved; `deleted`. */
+  event: string;
+  /** Unix seconds. */
+  ts: number;
+  endpoint_typeid: string;
+  endpoint_name: string;
+  /** The budget it draws on (`allocated` only). Null on a root: money entering, not handed down. */
+  source_typeid: string | null;
+  beneficiary_typeid: string | null;
+  beneficiary_name: string | null;
+  actor_typeid: string | null;
+  actor_name: string | null;
+  limits_before: Record<string, number | null> | null;
+  limits_after: Record<string, number | null> | null;
+  member_default_limits_before: Record<string, number | null> | null;
+  member_default_limits_after: Record<string, number | null> | null;
+  /** What the endpoint had already spent when the event happened. */
+  spent_usd: number;
+  spent_tokens: number;
+}
+
 export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
   const info = new ActionInfo(name, type, id, method);
   if (subpath) info.subpath = subpath;
@@ -209,6 +239,20 @@ export class LlmEndpointsService {
     const info = action('allocate', parentId, 'POST');
     info.bodyParameters = { ...body };
     return dataManager.callAction<undefined, LLMEndpoint>(info);
+  }
+
+  /**
+   * The budget's audit trail — every allowance created, changed or deleted on this endpoint AND
+   * everything drawing on it, newest first.
+   *
+   * Subtree-scoped by the hub, which is what makes an organization's pot answer for its teams and
+   * its people in one call. Admin on the endpoint, the same standing `allocate` takes: these rows
+   * name who was given what, and by whom.
+   */
+  getHistory(id: string, limit?: number): Promise<LLMAllowanceHistoryRow[]> {
+    const info = action('history', id, 'GET');
+    if (limit) info.queryParameters = { limit };
+    return dataManager.callAction<undefined, LLMAllowanceHistoryRow[]>(info);
   }
 
   getUsage(id: string, query: LLMUsageQuery): Promise<LLMUsageReport> {

@@ -1,3 +1,5 @@
+import { webUrlFromPointer } from '../models/web-url-pointer';
+import { ViewType } from '../utils/ui/view-types';
 import { lazyAssets, LazyAsset } from '../lazy';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
@@ -211,6 +213,13 @@ export interface Manageable {
   isExpanded(expansion: ExpansionType | ExpansionType[] | ExpansionRequest): boolean;
   isDbField(fieldName: string): boolean;
 }
+
+/**
+ * Types we have already reported as having no client entity constructor. Bounded
+ * by the number of backend types, and never reset: the answer cannot change
+ * within a session because the entity registry is populated at import.
+ */
+const loggedMissingCtorTypes = new Set<string>();
 
 export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
@@ -580,7 +589,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const ctor = EntityFactory.getEntityConstructor(typeId.type);
     if (!ctor) {
-      console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
+      // Expected, not exceptional. The backend broadcasts ops for every
+      // api-visible type, and a dozen of those are deliberately not modelled as
+      // client entities — `secret_origin` reaches the UI as a summary on
+      // Project, `helpdesk` as bare actions, and so on. `api_visible` is the
+      // only dial the backend has and it also gates the schema payload the UI
+      // needs for each type's label and icon, so these frames cannot simply be
+      // switched off.
+      //
+      // Debug, and once per type: an index sweep re-broadcasts every row, which
+      // turned this into a warn storm that buried real signal. The type name
+      // stays so a genuinely missing constructor is still findable.
+      if (!loggedMissingCtorTypes.has(typeId.type)) {
+        loggedMissingCtorTypes.add(typeId.type);
+        console.debug(`Data op ignored: no client entity for type '${typeId.type}' (expected for server-only types)`);
+      }
       return;
     }
     // Bus wake-up BEFORE the branchy cache handling below: several branches
@@ -1059,11 +1082,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === ViewType.WEB_APP) {
+      const url = webUrlFromPointer(pointer);
+      if (url) return new URL(url).host;
+    }
     if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
       return 'Asset compare';
     }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
+    if (dock?.viewType === ViewType.EDITOR) return lastSegment(pointer);
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
     //    bare entity id whose type is carried by the dock's viewType.
     if (pointer.includes('/typeid/')) {

@@ -62,15 +62,16 @@ from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
-    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
@@ -516,6 +517,11 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
+    for key, configured_root in getattr(process.driver, "session_store_env", {}).items():
+        supplied = env.get(key)
+        if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
+            raise ValueError(f"Worker {key} must match Flowpad's configured session store")
+        env[key] = configured_root
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
@@ -1431,6 +1437,32 @@ def factory(cli_json: dict, worker_type: str) -> AgentOptions:
     return _vendor_module(vendor, "cli").AGENT_OPTIONS.from_json(cli_json)
 
 
+def interactive_launch_command(worker_type: str, workdir: str | None = None) -> str:
+    """The shell line this machine WOULD run to start ``worker_type``'s
+    interactive TUI in ``workdir``.
+
+    Derived, not described: it builds the vendor's real ``AgentOptions`` through
+    :func:`factory` and renders it with ``to_shell_string()`` — the same object
+    and the same renderer the PTY spawn path uses. A vendor that changes a flag
+    changes this line with it, which is the whole point: the caller is a *debug*
+    affordance whose only value is being the command we actually run.
+
+    ``json_stream``/``print_mode`` are the one thing forced. Three vendors
+    default to their HEADLESS shape and the spawn path flips them when
+    ``process.pty_mode``; there is no process here, so the interactive shape is
+    stated instead. Each key reaches only the vendors that serialize it — the
+    rest ignore it, as they ignore any key outside their ``SERIALIZED_FIELDS``.
+
+    What it deliberately does NOT carry is everything that only exists once a
+    process does: ``--add-dir``, ``--agents``, ``--mcp-config``, the session id,
+    and the spawn-time env (``FLOWPAD_EXECUTION_SCOPE``, secrets, the pinned
+    ``flow`` on PATH). A terminal launched from this line is a FRESH session in
+    that folder, not a rehydration of a Flowpad worker.
+    """
+    options = factory({"workdir": workdir or "", "json_stream": False, "print_mode": False}, worker_type)
+    return options.to_shell_string()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Composer-ready gate — vendor-marker detection over the raw PTY stream
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1597,6 +1629,10 @@ class WorkerDriver(Protocol):
         """Return a pure semantic snapshot for persisted process-hook intent."""
         ...
 
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        """Write this harness's instruction projection and return the prompt file."""
+        ...
+
     def prepare_process_hooks(
         self,
         assets: "AssetDir",
@@ -1692,6 +1728,16 @@ class WorkerDriver(Protocol):
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Native session-store environment pinned to instance configuration."""
+        ...
+
+    @property
+    def naming_adapter(self) -> "NamingAdapter":
+        """Provider observations; shared naming runtime owns state and watching."""
+        ...
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""
         ...
@@ -1699,6 +1745,18 @@ class WorkerDriver(Protocol):
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the
         given process — or None if no session id is yet assigned."""
+        ...
+
+    async def available_assets(self, process: "AgenticProcess"):
+        """File-backed executable assets reported by this harness's native resolver."""
+        ...
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        """Filesystem locations this worker loads, shared by PTY and headless.
+
+        Unlike the indexer catalog, this excludes other harnesses' formats
+        and directories merely accessible through filesystem tools.
+        """
         ...
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:

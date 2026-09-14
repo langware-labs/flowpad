@@ -1,4 +1,4 @@
-"""Whiteboard entity — backed by a WhiteboardRecord on disk.
+"""Whiteboard entity — backed by a folder on disk.
 
 Folder layout::
 
@@ -7,14 +7,11 @@ Folder layout::
         board.json         # {kind:"excalidraw", version:1, data:<...>}
         thumbnail.svg      # generated on save (exportToSvg)
 
-Creating a Whiteboard entity via ``save()`` writes the folder + stub files.
-The Record layer (:class:`flow_sdk.fs_records.whiteboard_record.WhiteboardRecord`)
-is the source of truth; this Entity provides the graph-route interface
-(``POST /api/v1/graph/whiteboard`` → create, ``GET`` → list). Mirrors
-:class:`flow_sdk.builtin.skill.Skill` field-for-field.
+Creating a Whiteboard entity writes the folder and Markdown main document.
+The canvas editor writes board.json and thumbnail.svg. Filesystem rendering,
+parsing, and missing-document repair belong to flow_sdk.assets; this Entity
+provides the graph-route interface.
 """
-
-from typing import ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity

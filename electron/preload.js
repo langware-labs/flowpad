@@ -65,7 +65,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopNotify: ({ title, body, clickTarget }) => ipcRenderer.invoke('notify-os', { title, body, clickTarget }),
   setBadge: (n) => ipcRenderer.invoke('set-badge', n),
   notifyAttention: () => ipcRenderer.invoke('notify-attention'),
-  onNotificationClick: (callback) => ipcRenderer.on('notification-click', (_event, data) => callback(data)),
+  // Returns a disposer. The renderer mounts this from a React effect, so without
+  // one every remount left another listener on the channel — and each listener
+  // navigates, so one banner click fired the navigation once per leak.
+  onNotificationClick: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('notification-click', handler);
+    return () => ipcRenderer.removeListener('notification-click', handler);
+  },
 
   // Show/hide the application menu. The renderer calls this with the current
   // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.

@@ -4,9 +4,6 @@
   "version": 1,
   "enabled": true,
   "icon": "Wand2",
-  "triggers": [
-    { "on": "app.ready", "fire_once": true }
-  ],
   "steps": [
     {
       "id": "python3",

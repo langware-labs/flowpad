@@ -23,8 +23,8 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.source_item import SourceItemSpec
     from flow_sdk.ingest.models import IngestReport
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 logger = logging.getLogger(__name__)
 

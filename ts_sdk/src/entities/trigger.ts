@@ -10,7 +10,24 @@ import { AgentHook } from './agent-hook';
 export interface ITrigger extends IEntity {
   name: string;
   description?: string;
-  trigger_type?: 'hook' | 'schedule' | 'fsop';
+  trigger_type?: 'hook' | 'schedule' | 'fsop' | 'tag';
+  /** Stable name minted by the reconciler, e.g. `wizard_<slug>_<i>`. It is the
+   *  only join between a DECLARED trigger (in a document) and the row that
+   *  records whether it has actually fired. */
+  uname?: string;
+  // TAG trigger fields — a bus subscription. A wizard declares these in its
+  // own document and the backend reconciles them into a row at startup.
+  /** Bus tag pattern, e.g. `app.ready`. Trailing `*` matches a suffix. */
+  tag_pattern?: string;
+  /** Only fire for events about this target (`type:id`). */
+  tag_target?: string;
+  tag_scope?: string;
+  /** Fire at most once per machine, ever — `counter` is the durable record, so
+   *  a spent trigger is suppressed rather than deleted and still shows that it
+   *  ran. */
+  fire_once?: boolean;
+  max_fires_per_minute?: number;
+  confirm?: boolean;
   // Hook trigger fields
   mask: Record<string, any>;
   action: TriggerAction;
@@ -52,7 +69,14 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   name: string = '';
   description?: string;
-  trigger_type: 'hook' | 'schedule' | 'fsop' = 'hook';
+  trigger_type: 'hook' | 'schedule' | 'fsop' | 'tag' = 'hook';
+  uname?: string;
+  tag_pattern?: string;
+  tag_target?: string;
+  tag_scope?: string;
+  fire_once?: boolean;
+  max_fires_per_minute?: number;
+  confirm?: boolean;
   // Hook trigger fields
   mask: Record<string, any> = {};
   action: TriggerAction;
@@ -92,6 +116,15 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.hook_events = entity.hook_events || [];
     this.log_mode = entity.log_mode || 'activations';
     this.path = entity.path;
+    // The constructor is the ONLY place a field is adopted — a declared field
+    // that is not re-applied here is dropped from every fetched row.
+    this.uname = entity.uname;
+    this.tag_pattern = entity.tag_pattern;
+    this.tag_target = entity.tag_target;
+    this.tag_scope = entity.tag_scope;
+    this.fire_once = entity.fire_once;
+    this.max_fires_per_minute = entity.max_fires_per_minute;
+    this.confirm = entity.confirm;
     this.expr = entity.expr;
     this.sched_trigger_type = entity.sched_trigger_type;
     this.next_run = entity.next_run;

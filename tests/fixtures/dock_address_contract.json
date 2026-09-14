@@ -77,7 +77,8 @@
     "app",
     "llm-endpoints",
     "token-plan",
-    "llm-sources"
+    "llm-sources",
+    "llm-setup"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -641,6 +642,14 @@
       "addressable": true,
       "pointer": "optional",
       "folds_pointer": true,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
+    "llm-setup": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"

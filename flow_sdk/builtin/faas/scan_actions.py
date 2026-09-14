@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
@@ -53,10 +54,8 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
     if hint in (None, "copilot"):
         from types import SimpleNamespace
 
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-            find_copilot_session_jsonl,
-            read_copilot_session_meta,
-        )
+        from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import find_copilot_session_jsonl
 
         path = find_copilot_session_jsonl(session_id)
         if path is not None:
@@ -912,6 +911,7 @@ class ScanActionsMixin:
         sub-path that already located it) to skip a redundant disk scan.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
         from flow_sdk.flowpad_types.enums import WorkerType
 
         request_info = get_current_request_info()
@@ -927,7 +927,6 @@ class ScanActionsMixin:
             # Transcript cwd is the authoritative restore location; project_id is
             # derived from it so worktrees / nested checkouts don't collapse into
             # the active dock project.
-            session_name: str | None = None
             try:
                 from flow_sdk.builtin.project import Project
 
@@ -938,9 +937,6 @@ class ScanActionsMixin:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
-                    rec_name = getattr(session_rec, "name", None) or ""
-                    if rec_name and rec_name != session_id:
-                        session_name = rec_name
 
                 if workdir:
                     project = await Project.recover_by_path(workdir)
@@ -977,12 +973,10 @@ class ScanActionsMixin:
                     context_data["workdir"] = workdir
                 if project_bound and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                if session_name and not process.name:
-                    process.name = session_name
-                    changed = True
                 if changed:
                     process.context_data = context_data
                     await process.save()
+                await process.reconcile_name()
                 # Only propagate to the linked Shell for fields that actually
                 # moved on the process — otherwise the Shell would silently
                 # drift away from a frozen process binding.
@@ -1090,9 +1084,10 @@ class ScanActionsMixin:
                 project_id=project_id or None,
                 workdir=workdir or None,
                 visible=True,
-                **({"name": session_name} if session_name else {}),
+                naming_state=SessionNameState(),
             )
             await process.save(owner=owner)
+            await process.reconcile_name()
 
             logging.info(
                 f"ComputeNode {self.id} upserted AgenticProcess {process.id} for "
@@ -1252,9 +1247,14 @@ class ScanActionsMixin:
                 )
 
             cwd = getattr(rec, "cwd", None) or None
-            rec_name = getattr(rec, "name", None) or None
-            session_name = rec_name if rec_name and rec_name != session_id else None
             transcript_path = getattr(rec, "jsonl_path", None) or getattr(rec, "source_file", None) or None
+            from flow_sdk.builtin.worker_history import get_worker_session_name
+
+            session_name = await get_worker_session_name(
+                worker_type, session_id,
+                jsonl_path=Path(transcript_path) if transcript_path else None,
+                prompt_fallback=True,
+            )
 
             project_id: str | None = None
             if cwd:

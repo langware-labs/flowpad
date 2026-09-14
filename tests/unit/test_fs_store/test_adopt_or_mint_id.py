@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets import Asset
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
+from flow_sdk.capsules import AssetCapsule
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import frontmatter_id, resolve_id
 
@@ -115,7 +115,7 @@ def test_peek_adopts_v4_without_writing(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     _write(p, "body", fm=f"id: {V4}")
     mtime = p.stat().st_mtime
-    assert markdown_id(FSRef(p)) == V4
+    assert Asset.from_path(p).typeid.id == V4
     assert p.stat().st_mtime == mtime
 
 
@@ -123,7 +123,7 @@ def test_peek_on_miss_returns_derive_key_no_write(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     p.write_text("body", encoding="utf-8")
     before = p.read_text(encoding="utf-8")
-    got = markdown_id(FSRef(p))
+    got = Asset.from_path(p).typeid.id
     assert got == str(uuid.uuid5(uuid.NAMESPACE_URL, str(p.resolve())))
     assert p.read_text(encoding="utf-8") == before, "peek must never touch disk"
 

@@ -6,9 +6,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.assets.git_origin import PortableGitOrigin
-from flow_sdk.assets.projection import layout_for_origin, project_asset_tree
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.assets.git_origin import PortableGitOrigin
+from flow_sdk.assets.projection import layout_for_origin, read_asset_tree
+from flow_sdk.builtin.asset_projection import project_asset_tree
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
@@ -84,6 +85,27 @@ def test_markdown_projection_is_db_free_and_drops_local_or_unknown_fields(tmp_pa
     assert "/Users/alice/private" not in str(projection.model_dump(mode="json"))
 
 
+def test_filesystem_reader_needs_no_entity_resolution_and_does_not_write(tmp_path: Path, monkeypatch) -> None:
+    _git(tmp_path, "init", "-q")
+    asset_id = mint_uuid()
+    doc = tmp_path / "q.md"
+    content = f"---\nid: {asset_id}\ntitle: Q\n---\n\nQA manager\n"
+    doc.write_text(content, encoding="utf-8")
+    before = doc.stat().st_mtime_ns
+
+    def forbidden_entity_resolution(*args, **kwargs):
+        raise AssertionError("filesystem reading must not resolve an Entity model")
+
+    monkeypatch.setattr(SchemaRegistry, "get_entity_cls", forbidden_entity_resolution)
+    record = read_asset_tree(
+        entity_type="markdown", expected_id=asset_id, checkout_root=tmp_path, origin=_origin("q.md")
+    )
+    assert str(record.id) == asset_id
+    assert str(record.type) == "markdown"
+    assert doc.read_text(encoding="utf-8") == content
+    assert doc.stat().st_mtime_ns == before
+
+
 def test_projection_rejects_identity_mismatch_and_symlink_escape(tmp_path: Path) -> None:
     _git(tmp_path, "init", "-q")
     actual_id = mint_uuid()
@@ -91,7 +113,7 @@ def test_projection_rejects_identity_mismatch_and_symlink_escape(tmp_path: Path)
     docs.mkdir()
     (docs / "q.md").write_text(f"---\nid: {actual_id}\n---\nQ\n", encoding="utf-8")
     with pytest.raises(ValueError, match="identity"):
-        project_asset_tree(
+        read_asset_tree(
             entity_type="markdown",
             expected_id=mint_uuid(),
             checkout_root=tmp_path,
@@ -102,7 +124,7 @@ def test_projection_rejects_identity_mismatch_and_symlink_escape(tmp_path: Path)
     outside.write_text(f"---\nid: {actual_id}\n---\nQ\n", encoding="utf-8")
     (docs / "escape.md").symlink_to(outside)
     with pytest.raises(ValueError, match="escapes"):
-        project_asset_tree(
+        read_asset_tree(
             entity_type="markdown",
             expected_id=actual_id,
             checkout_root=tmp_path,

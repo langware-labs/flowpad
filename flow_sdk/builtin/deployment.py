@@ -64,7 +64,15 @@ KIND_NODE = "compute.node"
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
 #: ``external_id`` is the provider's own resource name.
-NODE_PROVIDERS = frozenset({"local", "e2b", "user_machine"})
+#:
+#: The UNION of every tier's node providers. The hub allocates ``e2b`` /
+#: ``docker`` / ``gcp_vm`` boxes; ``user_machine`` is a machine its owner
+#: enrolled with ``flow connect``, which the hub never allocates and so does not
+#: list. A hub-adopted ``gcp_vm`` placement used to resolve ``compute_node_id``
+#: to None here — unaddressable, and refused by every "provider in
+#: NODE_PROVIDERS" validation — because this set only knew the providers THIS
+#: tier could place on.
+NODE_PROVIDERS = frozenset({"local", "e2b", "docker", "gcp_vm", "user_machine"})
 
 
 class Deployment(Entity):
@@ -359,6 +367,17 @@ class Deployment(Entity):
         element = await self.element()
         return element if isinstance(element, Agent) else None
 
+    def is_agent_placement_of(self, agent) -> bool:
+        """The one rule for "may this placement open a session as ``agent``":
+        its row, an agent placement, on a machine — the hub asks the same."""
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+        return (
+            str(self.parent_type_id) == str(agent.typeid)
+            and kind_matches(KIND_AGENT, self.kind)
+            and self.target.provider in NODE_PROVIDERS
+        )
+
     async def _require_agent(self) -> "Agent":
         """The placed Agent, or a loud error — a launch site naming a missing or
         disabled agent is a bug we want to see, not a silent no-op."""
@@ -466,7 +485,7 @@ class Deployment(Entity):
             await proc.wait()
         return proc
 
-    async def use(self, **options) -> "AgenticProcess":
+    async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
         with no first turn — the human types it.
 
@@ -481,13 +500,12 @@ class Deployment(Entity):
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         # Same routing rule as ``run``: a session opens on the node the agent is
-        # placed on, and a remote placement is refused rather than quietly
-        # opened here (see ``agent_run.dispatch_agent_run``).
+        # placed on. A remote placement is opened THROUGH THE HUB, which reaches
+        # the machine and hands back a same-id process this tier adopts as a
+        # route row (see ``_use_on_hub``); ``run`` still refuses it (see
+        # ``agent_run.dispatch_agent_run``).
         if not self.is_local:
-            raise NotImplementedError(
-                f"this agent is deployed on compute node {self.compute_node_id}, "
-                "which cannot be reached from here yet."
-            )
+            return await self._use_on_hub(owner=owner)
         agent = await self._require_agent()  # ``create_process`` re-reads it from the memoized ``_element``
         # Peeked, not popped — ``create_process`` stays the one owner of the
         # caller-else-agent fallback. It is read here because the acting project
@@ -510,8 +528,22 @@ class Deployment(Entity):
             target_typeid_str=str(agent.typeid),
             **options,
         )
-        await proc.save()
+        await proc.save(owner)
         return proc
+
+    async def _use_on_hub(self, *, owner=None) -> "AgenticProcess":
+        """Open a session on this REMOTE placement through the hub, and adopt the
+        process it minted as a route row. The hub refuses a placement it never
+        made — a cloud row minted locally has no counterpart there."""
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        agent = await self._require_agent()
+        opened = await hub_http.hub_post(agent.get_type(), {"deployment_id": self.id}, agent.id, "use")
+        process_id = str((opened or {}).get("process_id") or "")
+        if not is_valid_entity_id(process_id):
+            raise RuntimeError("the hub returned an invalid process for this deployment")
+        return await AgenticProcess.adopt_route(process_id=process_id, deployment=self, agent=agent, owner=owner)
 
     async def runs(self, limit: int = 50) -> list["AgenticProcess"]:
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415

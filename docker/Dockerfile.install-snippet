@@ -1,0 +1,32 @@
+# The machine the hub's install snippet is pasted into: nothing of Flowpad on
+# it. `scripts/docker_install_snippet.sh` runs the snippet inside — `uv tool
+# install` from a wheel built off this tree, `flow start`, `flow auth login`,
+# `flow asset install <typeid>` — against the host's hub, so the whole
+# one-click-from-a-fresh-box path is exercised with no host state in reach.
+FROM python:3.12-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates git procps \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node + claude: the worker an agentic process spawns to prove it SEES the
+# installed skill. Pinned for the same reason as Dockerfile.flow-backend.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @anthropic-ai/claude-code@2.1.197 \
+ && npm cache clean --force
+
+RUN pip install --no-cache-dir uv
+
+# No keychain in a slim container; the file backend is what `flow auth login`
+# writes to (same as Dockerfile.flow-backend).
+ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
+
+# A person, not root: claude refuses `--dangerously-skip-permissions` as root,
+# and a real machine that pastes the snippet is not root either.
+RUN useradd -m -s /bin/bash flow
+USER flow
+ENV HOME=/home/flow PATH="/home/flow/.local/bin:${PATH}"
+WORKDIR /home/flow
+CMD ["bash"]

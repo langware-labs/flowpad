@@ -63,6 +63,7 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
     color?: string | null;
     groupId?: string | null;
     projectId?: string | null;
+    destination?: import('../fs/FSRef').FSRefJson;
   }): Promise<Prompt> {
     const prompt = new Prompt({
       name: opts.name,
@@ -76,16 +77,12 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
     // resolves the .md location from the request scope — an unscoped save
     // would land the file under user_home instead of <project>/prompts/.
     const { TypeId } = await import('../models/TypeId');
-    return prompt.save(opts.projectId ? new TypeId('project', opts.projectId) : []);
+    return prompt.save(opts.projectId ? new TypeId('project', opts.projectId) : [], opts.destination);
   }
 
-  /**
-   * Quick-create parity with the other asset types (`Skill.createInProject` et
-   * al.) — an empty-text prompt the user fills in later. `_folderVfsPath` is
-   * ignored: TypeInfo.main_subdir fixes the location at `<project>/prompts/`.
-   */
-  static createInProject(project: { id?: string } | null, name: string, _folderVfsPath?: string): Promise<Prompt> {
-    return Prompt.create({ name, text: '', projectId: project?.id ?? null });
+  /** Create in the selected scope, optionally at an exact authorized folder. */
+  static createInProject(project: { id?: string } | null, name: string, destination?: import('../fs/FSRef').FSRefJson): Promise<Prompt> {
+    return Prompt.create({ name, text: '', projectId: project?.id ?? null, destination });
   }
 
   /**

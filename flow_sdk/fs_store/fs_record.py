@@ -41,10 +41,24 @@ from weakref import WeakValueDictionary
 from pydantic import BaseModel
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.schema.layout import Folder
+from flow_sdk.fs_store.record_paths import (
+    data_dir_for as data_dir_for,
+)
+from flow_sdk.fs_store.record_paths import (
+    is_record_dir as is_record_dir,
+)
+from flow_sdk.fs_store.record_paths import (
+    parse_record_stem as parse_record_stem,
+)
+from flow_sdk.fs_store.record_paths import (
+    record_stem as record_stem,
+)
+from flow_sdk.fs_store.record_paths import (
+    shadow_dir_for as shadow_dir_for,
+)
 
 if TYPE_CHECKING:
-    from flow_sdk.fs_store.schema_registry import TypeInfo
+    pass
 
 
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
@@ -79,103 +93,6 @@ _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = Conte
     "_held_record_sync_keys", default=frozenset()
 )
 
-# Fresh file-backed entities are keyed by their carrier path, not their random
-# entity id.  Serializing that path closes the create race where two requests
-# compute the same slug, both observe a missing file, and the later store
-# overwrites the first.  Loop-scoped locks match ``record_sync_guard`` and are
-# weakly held so the server does not retain every path it has ever created.
-_CREATE_TARGET_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = (
-    WeakValueDictionary()
-)
-
-
-class AssetPathCollisionError(ValueError):
-    """A fresh owned asset would overwrite another entity's carrier."""
-
-
-def _carrier_identity_matches(info: "TypeInfo", asset_ref: FSRef, entity_id: str) -> bool:
-    """True when the carrier already on disk declares ``entity_id`` as its own.
-
-    Reads through ``TypeInfo.extract_id`` — the one adoption gate — so identity
-    here means exactly what it means everywhere else. A malformed or unreadable
-    capsule is never a match: it falls through to the ordinary path check and
-    the caller refuses, which is the safe direction.
-    """
-    try:
-        return info.read_id(asset_ref) == entity_id
-    except Exception:
-        return False
-
-
-def assert_create_target_available(
-    info: "TypeInfo",
-    asset_ref: FSRef,
-    *,
-    entity_type: str,
-    name: str,
-    entity_id: str | None = None,
-) -> None:
-    """Reject a fresh owned-asset target that already carries user data.
-
-    ``asset_ref`` is not always the writable file: folder-backed types point at
-    their directory and declare an inner ``main_file``.  TypeInfo owns that
-    convention, so collision detection resolves the same carrier as the writer.
-    An empty folder is adoptable; any non-empty folder or existing carrier is
-    somebody else's bundle and must remain byte-identical.
-
-    "Somebody else's" is decided by IDENTITY, not by the path being occupied.
-    A carrier whose identity capsule already holds ``entity_id`` is *this*
-    entity's own carrier — re-materializing it (the receive path re-creating a
-    row it no longer holds, a re-scan after a local delete, or two instances
-    sharing one machine's ``user_home``) must adopt it rather than refuse. The
-    capsule is the authority, so an unidentified or foreign carrier still
-    collides exactly as before.
-    """
-    carrier = info.body_path_for(asset_ref._path)
-    collision = carrier.exists() or carrier.is_symlink()
-
-    if not collision and isinstance(info.shape, Folder):
-        target_folder = info.storage_root_for(asset_ref._path)
-        if target_folder.is_symlink():
-            collision = True
-        elif target_folder.exists():
-            if not target_folder.is_dir():
-                collision = True
-            else:
-                try:
-                    collision = next(target_folder.iterdir(), None) is not None
-                except OSError:
-                    # An unreadable pre-existing folder is never safe to adopt.
-                    collision = True
-
-    if collision:
-        # Only now is the identity worth a read: an occupied path that already
-        # declares THIS entity is its own carrier, so adopt instead of refusing.
-        if entity_id and _carrier_identity_matches(info, asset_ref, entity_id):
-            return
-        raise AssetPathCollisionError(
-            f"An {entity_type} named '{name}' already exists in this scope"
-        )
-
-
-@asynccontextmanager
-async def create_target_guard(info: "TypeInfo", asset_ref: FSRef):
-    """Serialize the collision check and first carrier write for one path."""
-    loop = asyncio.get_running_loop()
-    carrier = info.body_path_for(asset_ref._path)
-    try:
-        path_key = str(carrier.resolve(strict=False))
-    except OSError:
-        path_key = str(carrier.absolute())
-    lock_key = (loop, path_key)
-    lock = _CREATE_TARGET_LOCKS.get(lock_key)
-    if lock is None:
-        lock = asyncio.Lock()
-        _CREATE_TARGET_LOCKS[lock_key] = lock
-    async with lock:
-        yield
-
-
 @asynccontextmanager
 async def record_sync_guard(record_type: str, record_id: str):
     """Serialize opposite-direction DB/disk syncs for one record.
@@ -208,13 +125,6 @@ async def record_sync_guard(record_type: str, record_id: str):
 
 # Single source of truth lives in record_paths; re-exported here for the callers
 # that import the stem / path helpers from this module.
-from flow_sdk.fs_store.record_paths import (  # noqa: E402
-    data_dir_for as data_dir_for,
-    is_record_dir as is_record_dir,
-    parse_record_stem as parse_record_stem,
-    record_stem as record_stem,
-    shadow_dir_for as shadow_dir_for,
-)
 
 
 def write_text_if_changed(path: Path, text: str) -> None:
@@ -877,7 +787,7 @@ class FSRecord(Generic[M]):
         configured asset layout. ``default_worker`` defaults to ``claude`` so
         callers that pass a bare ``scope_root`` keep today's ``.claude/*`` layout.
         """
-        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
+        from flow_sdk.assets.placement import family_subdir  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
@@ -886,25 +796,16 @@ class FSRecord(Generic[M]):
         subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
         if subdir is None:
             return None
-        safe = self._safe_name(entity)
-        base = Path(scope_root) / subdir
-        if isinstance(info.shape, Folder):
-            target = base / safe
-        else:
-            target = base / f"{safe}{info.shape.ext}"
+        from flow_sdk.assets.creation import destination_in
+
+        name = getattr(entity, "name", None) or getattr(entity, "title", None) or ""
+        target = destination_in(Path(scope_root) / subdir, info, name)
         resolved_root = Path(scope_root).resolve()
         resolved_target = target.resolve()
         if not resolved_target.is_relative_to(resolved_root):
             raise ValueError(f"Derived {self.type} asset path escapes its scope root")
         return FSRef(resolved_target)
 
-    @staticmethod
-    def _safe_name(entity) -> str:
-        # Fall back to ``title`` for types that display via title rather than
-        # name (e.g. Spec) so their owned main_ref folder isn't "untitled".
-        raw = (getattr(entity, "name", None) or getattr(entity, "title", None) or "").strip().lower()
-        out = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
-        return out or "untitled"
 
     # ── DB integration ────────────────────────────────────────────────────
 
@@ -931,6 +832,7 @@ class FSRecord(Generic[M]):
           5. type-specific ``post_sync_fn`` from ``TypeInfo``
         """
         from flow_sdk import wiki  # noqa: PLC0415
+        from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
         from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
         from flow_sdk.db import get_db_driver
         from flow_sdk.db import session as _db_session  # noqa: PLC0415
@@ -940,6 +842,7 @@ class FSRecord(Generic[M]):
         )
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
+        register_asset_runtime_bindings()
         try:
             async with _db_session():
                 entity = await Entity.from_record(self, notify=notify)

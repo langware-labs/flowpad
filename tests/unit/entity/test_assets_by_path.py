@@ -51,8 +51,6 @@ async def asset_tree(tmp_path: Path) -> dict:
     agent_x_path = agents_dir / "agent_x.md"
     doc_y_path = docs_dir / "doc_y.md"
     doc_z_path = nested_dir / "doc_z.md"
-    for f in (agent_x_path, doc_y_path, doc_z_path):
-        f.write_text("# stub\n")
 
     # Use uuid suffix so re-runs against a persistent DB don't collide on uname.
     suffix = uuid.uuid4().hex[:8]

@@ -171,6 +171,9 @@ describe('an unknown wizard name', () => {
     });
     h.getById.mockResolvedValue({ createProcess: vi.fn().mockResolvedValue(fakeProcess) });
     await expect(startWizardProcess({ wizardName: 'later' })).resolves.toBeTruthy();
-    expect(fakeProcess.loadEmbeddedSubagent).toHaveBeenCalledWith('/x/later');
+    // `true` -- the wizard's driving agent IS the process's persona. It used
+    // to get the identity directive only because it was the ONLY embed;
+    // pinning the flag here is what keeps that from silently regressing.
+    expect(fakeProcess.loadEmbeddedSubagent).toHaveBeenCalledWith('/x/later', true);
   });
 });

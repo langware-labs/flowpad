@@ -13,7 +13,8 @@ import asyncio
 import pytest
 
 from flow_sdk.builtin.tag_triggers import register_tag_trigger, unregister_tag_trigger
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
 from tests.conftest import async_context
 

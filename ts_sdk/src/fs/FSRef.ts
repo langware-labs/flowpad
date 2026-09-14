@@ -8,6 +8,7 @@
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { FileUpload } from '../services/FileUpload';
+import type { AssetDocument, DocumentPatch } from './AssetDocument';
 
 export type FSRefType = 'text' | 'json' | 'folder' | 'file';
 
@@ -104,6 +105,24 @@ export class FSRef {
     if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.writeFile(this.typeId, this.path, content);
+  }
+
+  /** Ask the backend to scaffold a missing asset document at this exact path. */
+  async ensureDocument(assetTypeId: TypeId, spec: Record<string, import('./AssetDocument').DocumentValue>): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    await fsManager.ensureDocument(this.typeId, this.path, assetTypeId, spec);
+  }
+
+  async readDocument(): Promise<AssetDocument> {
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.readDocument(this.typeId, this.path);
+  }
+
+  async updateDocument(patch: DocumentPatch): Promise<AssetDocument> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.updateDocument(this.typeId, this.path, patch);
   }
 
   /** Upload a file into this folder through the ordinary entity VFS action. */

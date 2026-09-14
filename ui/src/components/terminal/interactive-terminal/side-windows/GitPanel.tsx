@@ -420,6 +420,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
     files: data?.files.filter((f) => bucketOf(f.status) === b.key) ?? [],
   }));
 
+  // Line totals across every file, so the chips answer "how big is this
+  // change" and not just "how many files". Binary files carry null counts and
+  // contribute nothing.
+  const sloc = (data?.files ?? []).reduce(
+    (acc, f) => ({ added: acc.added + (f.insertions ?? 0), removed: acc.removed + (f.deletions ?? 0) }),
+    { added: 0, removed: 0 },
+  );
+  const net = sloc.added - sloc.removed;
+
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -512,6 +521,31 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                 <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Line totals — the size of the change, not just its file count */}
+        {data && !data.error && data.files.length > 0 && (
+          <div
+            className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5 text-[11px] tabular-nums"
+            data-testid="git-panel-sloc"
+          >
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <Trans>Lines</Trans>
+            </span>
+            <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
+              +{sloc.added}
+            </span>
+            <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
+              -{sloc.removed}
+            </span>
+            <span
+              className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+              data-testid="git-panel-sloc-net"
+            >
+              {net > 0 ? '+' : ''}
+              {net} <span className="font-normal text-muted-foreground"><Trans>net</Trans></span>
+            </span>
           </div>
         )}
 

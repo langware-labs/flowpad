@@ -336,6 +336,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: true,
     foldsPointer: true,
   },
+  // The chooser `flow llm set auto` opens when the box can fund nothing. `canAddAsTab` is
+  // false: it is a one-question screen you pass through once, not somewhere to keep open —
+  // LLM_SOURCES is the screen you come back to.
+  [ViewType.LLM_SETUP]: {
+    title: msg`Set up LLM`,
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: false,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

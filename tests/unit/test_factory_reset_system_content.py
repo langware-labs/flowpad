@@ -334,7 +334,8 @@ async def test_rearm_watches_fsop_triggers_the_reset_left_stored() -> None:
     as rows with nothing watching them. Counting restored rows cannot see that,
     which is why this asserts on the watcher's task table.
     """
-    from flow_sdk.builtin.trigger import Trigger, TriggerType
+    from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.schema.data_spec.trigger_types import TriggerType
     from flow_sdk.server.fsop_watcher import fsop_watcher
 
     trigger = Trigger(

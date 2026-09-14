@@ -1,3 +1,4 @@
+import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
   AgenticProcess,
@@ -1406,6 +1407,15 @@ export class DockPointer implements IDockPointer {
       projectId: pointer.slice(0, slash),
       assetSubPointer,
     };
+  }
+
+  /** The URL is pointer identity, so each page has its own durable tab. */
+  static forWebUrl(url: string): DockPointer {
+    return new DockPointer(ViewType.WEB_APP, pointerForWebUrl(url));
+  }
+
+  get webUrl(): string | null {
+    return this.viewType === ViewType.WEB_APP ? webUrlFromPointer(this.pointer) : null;
   }
 
   /**

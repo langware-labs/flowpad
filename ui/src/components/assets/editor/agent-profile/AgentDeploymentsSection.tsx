@@ -8,7 +8,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
@@ -48,7 +47,6 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   // button that works today. Only a prerequisite we positively know is unmet
   // does, and the backend's own error stays the backstop either way.
   const [ready, setReady] = useState<boolean | null>(null);
-  const hubMode = isHubOnly();
 
   const request = useMemo(
     () =>
@@ -165,18 +163,21 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {deployment.status.provider_state ?? deployment.target.provider}
                 </span>
-                {hubMode && (
-                  <Button
-                    size="sm"
-                    variant={chatOpen ? 'secondary' : 'ghost'}
-                    onClick={() => setChatDeploymentId(chatOpen ? null : deployment.id)}
-                    title={t`Chat with this deployed agent`}
-                    aria-expanded={chatOpen}
-                    data-testid={`deployment-chat-${deployment.id}`}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+                {/* Every tier: the backend opens the session wherever the placement is —
+                    locally for a local row, through the hub for a remote one — and hands
+                    back a same-id process, so the panel needs no idea which it got. The
+                    button used to be hub-only because the local backend dropped
+                    `deployment_id`; that was the defect, not a policy. */}
+                <Button
+                  size="sm"
+                  variant={chatOpen ? 'secondary' : 'ghost'}
+                  onClick={() => setChatDeploymentId(chatOpen ? null : deployment.id)}
+                  title={t`Chat with this deployed agent`}
+                  aria-expanded={chatOpen}
+                  data-testid={`deployment-chat-${deployment.id}`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </Button>
                 {url && (
                   <Button size="sm" variant="ghost" asChild>
                     <a href={url} target="_blank" rel="noreferrer">

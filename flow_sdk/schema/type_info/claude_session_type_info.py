@@ -2,14 +2,14 @@
 
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.claude_sessions import (
     claude_session_id_from_file,
     claude_session_identity_key,
     extract_claude_session,
 )
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
 CLAUDE_SESSION = TypeInfo(

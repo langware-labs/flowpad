@@ -6,7 +6,7 @@ import { useOAuthFlowComplete, useProject } from '@sdk/react/hooks';
 
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
-import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useGitPush } from '@src/hooks/use-git-push';
@@ -238,7 +238,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         // to cloud" chip once the project is linked — which is why it is mounted
         // only while this row is the blocker, so that chip never doubles up with
         // the row's own Done marker.
-        return project ? <ProjectPublishButton project={project} /> : undefined;
+        return project ? <ProjectCloudLinkButton project={project} /> : undefined;
       case 'repo':
         return actionButton(t`Set up`, 'agent-deploy-action-repo', setupBusy, () => void runSetup());
       case 'pushed':

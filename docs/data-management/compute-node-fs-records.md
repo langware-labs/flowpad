@@ -39,7 +39,7 @@ POST /fs-records/{type}
 - `flow_sdk/builtin/faas/compute_node.py` — the `@action.all` stub `fs_records_action`, which delegates to `_fs_records_action()` in the mixin
 - `flow_sdk/builtin/faas/fs_records_actions.py` — `FsRecordsActionsMixin`: the action handler `_fs_records_action`, plus `_parse_record_query`, `_embed_includes`, `_handle_path_based_source_file`, `_broadcast_fs_record_op`, and the scan/index/search handlers
 - `flow_sdk/fs_store/record_query.py` — `RecordQuery` dataclass
-- `flow_sdk/fs_store/source_file_records.py` — pure-function extractors (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`) for embedded JSON config files
+- `flow_sdk/assets/types/source_file_records.py` — pure-function extractors (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`) for embedded JSON config files
 - `flow_sdk/fs_store/record_list.py` — `RecordList` storage-agnostic collection over `FSRecord`
 - `flow_sdk/fs_store/fs_record.py` — `FSRecord`, the single concrete record class (discover / load / save / `sync_to_db`)
 - `flow_sdk/fs_store/schema_registry.py` — `SchemaRegistry`, the single type registry (`get`, `get_all_record_types`)
@@ -454,7 +454,7 @@ If the record has no `session_ref`, or the session cannot be found, the `"_sessi
 
 ## Path-Based Source File API
 
-The `file` sub-path variant operates on source files on disk — JSON configuration files that contain multiple embedded records at different JSON Pointer paths. This is used for files like `~/.claude/settings.json` or `.mcp.json` that are owned externally by the Claude CLI. The implementation lives in `flow_sdk/fs_store/source_file_records.py` as a set of pure functions (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`, plus the RFC-6901 helpers `_set_pointer`/`_delete_pointer`) — there is no `SourceFileRecordList` Record-subclass hierarchy on the Python side anymore (that lives only in the TS SDK).
+The `file` sub-path variant operates on source files on disk — JSON configuration files that contain multiple embedded records at different JSON Pointer paths. This is used for files like `~/.claude/settings.json` or `.mcp.json` that are owned externally by the Claude CLI. The implementation lives in `flow_sdk/assets/types/source_file_records.py` as a set of pure functions (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`, plus the RFC-6901 helpers `_set_pointer`/`_delete_pointer`) — there is no `SourceFileRecordList` Record-subclass hierarchy on the Python side anymore (that lives only in the TS SDK).
 
 ### URL Pattern
 
@@ -473,7 +473,7 @@ DELETE /api/v1/graph/compute_node/{node_id}/fs-records/file?path={source_path}&j
 
 ### Security Check: `is_allowed_source_path`
 
-Before any file operation the path is validated against a whitelist defined in `flow_sdk/fs_store/source_file_records.py`. Two conditions must both pass:
+Before any file operation the path is validated against a whitelist defined in `flow_sdk/assets/types/source_file_records.py`. Two conditions must both pass:
 
 1. The filename (basename) must be in `_ALLOWED_FILENAMES`, which is **derived from the `_EXTRACTORS` registry** so the allow-list can't drift from what can actually be extracted:
 

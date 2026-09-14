@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.assets.creation import AssetPathCollisionError
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import frontmatter_id
@@ -170,3 +170,44 @@ async def test_prepared_fresh_asset_rechecks_collision_at_save(bootstrapped_clie
 
     assert carrier.read_bytes() == original
     assert await Agent.get_by_id(agent.id) is None
+
+
+async def test_direct_asset_creation_excludes_entity_creation_before_db_write(bootstrapped_client, tmp_path):
+    from flow_sdk.assets.asset import Asset
+    from flow_sdk.assets.creation import creation_reservation
+    from flow_sdk.schema.types import EntityType
+
+    target = tmp_path / "agentic-assets/agent/reserved"
+    info = SchemaRegistry.get(EntityType.AGENT)
+    rival = Agent(name="reserved", asset_ref=str(target))
+    with creation_reservation(info, target):
+        with pytest.raises(AssetPathCollisionError):
+            await asyncio.create_task(rival.save())
+        created = Asset.create(target, type=EntityType.AGENT, spec=info.asset_spec(name="reserved"))
+    assert await Agent.get_by_id(rival.id) is None
+    assert Asset.from_path(target).typeid == created.typeid
+
+
+async def test_project_request_does_not_assign_ownership_to_outside_asset(bootstrapped_client, tmp_path):
+    project = await _create_project(bootstrapped_client, "request-scope", tmp_path / "project")
+    document = tmp_path / "outside.md"
+    response = await bootstrapped_client.post(
+        f"/api/v1/graph/project/{project['id']}/markdown",
+        json={"name": "outside", "asset_ref": str(document), "body": "# Outside\n"},
+    )
+    assert response.status_code == 200, response.text
+    assert not response.json()["data"].get("project_id")
+    assert document.read_text().endswith("# Outside\n")
+
+
+async def test_skill_create_collision_preserves_write_once_document(bootstrapped_client, tmp_path):
+    project = await _create_project(bootstrapped_client, "skill-collision", tmp_path / "project")
+    route = f"/api/v1/graph/project/{project['id']}/skill"
+    payload = {"name": "example", "description": "Original", "body": "Original skill"}
+    first = await bootstrapped_client.post(route, json=payload)
+    assert first.status_code == 200, first.text
+    path = Path(first.json()["data"]["asset_ref"]) / "SKILL.md"
+    original = path.read_bytes()
+    second = await bootstrapped_client.post(route, json={**payload, "body": "Replacement"})
+    assert second.status_code == 409, second.text
+    assert path.read_bytes() == original

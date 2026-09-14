@@ -152,7 +152,7 @@ async def reconcile_orphaned_workers() -> None:
 
     live = (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value)
     try:
-        procs = await AgenticProcess.get_all()
+        procs = await AgenticProcess.local_rows()  # a route row's worker lives elsewhere
     except Exception:
         logger.exception("reconcile: failed to enumerate processes")
         return
@@ -201,7 +201,7 @@ async def run_pty_recovery() -> None:
         return  # nothing open → nothing to recover; skip the get_all() sweeps
 
     try:
-        procs = await AgenticProcess.get_all()
+        procs = await AgenticProcess.local_rows()  # a route row is never respawned here
     except Exception:
         # Can't tell which shells are agentic-owned this tick — skip both passes
         # rather than risk bare-recovering a worker's shell (which would drop its
