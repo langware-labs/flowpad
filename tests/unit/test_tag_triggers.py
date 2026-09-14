@@ -13,6 +13,7 @@ from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
+from flow_sdk.tags.bus import _INFLIGHT
 from tests.conftest import async_context
 
 #: Drain rounds before we call it a runaway. Not a time budget — each round
@@ -34,18 +35,30 @@ async def _settle():
 
     Awaiting the tasks themselves is exact: there is no budget to outgrow, and
     it is faster, since a test that expects nothing to fire returns at once.
+    Only bus-owned tasks are drained; unrelated long-lived observers never finish.
     Handlers may emit again (``test_two_tag_triggers_cannot_ping_pong`` depends
     on it), so drain in rounds until the loop is quiet.
     """
     current = asyncio.current_task()
     for _ in range(_MAX_DRAIN_ROUNDS):
-        pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+        pending = [t for t in _INFLIGHT if t is not current and not t.done()]
         if not pending:
             return
         await asyncio.gather(*pending, return_exceptions=True)
     raise AssertionError(
         "tag handlers never went quiet — a handler is re-emitting without converging"
     )
+
+
+@async_context
+async def test_settle_ignores_unrelated_background_tasks():
+    background = asyncio.create_task(asyncio.Event().wait())
+    try:
+        await _settle()
+        assert not background.done()
+    finally:
+        background.cancel()
+        await asyncio.gather(background, return_exceptions=True)
 
 
 def _tag_trigger(**kw) -> Trigger:
