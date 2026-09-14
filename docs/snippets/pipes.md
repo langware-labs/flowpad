@@ -42,10 +42,10 @@ source = DataSource(
 The same folder as a block, with the changes as a stream you can follow:
 
 ```python
-from flow_sdk.blocks import FolderSource, workflow
+from flow_sdk.blocks import FolderChanges, workflow
 
 async with workflow("mirror"):                        # the name IS the consumer identity
-    docs = FolderSource(SRC, mirror_to=DEST)          # finds (or creates) the source above
+    docs = FolderChanges(SRC, mirror_to=DEST)          # finds (or creates) the source above
     async for change in docs.listen():                # change: FolderChange(added, changed, removed, renamed)
         change.added, change.removed                  # canonical absolute paths
         await change.ack()                            # position commits LAST — at-least-once
@@ -93,9 +93,9 @@ on `listen()`, which drives the source through the poller's slot so the two can
 never poll it at once.
 
 ```python
-from flow_sdk.blocks import FolderSource
+from flow_sdk.blocks import FolderChanges
 
-docs = FolderSource(SRC)
+docs = FolderChanges(SRC)
 async for change in docs.listen(poll_every=0.5):    # seconds between THIS loop's polls
     await change.ack()
 ```
@@ -107,12 +107,12 @@ mechanism (a viewer's lease) and `listen()` deliberately does not use it.
 ## 5. An agent on several sources
 
 ```python
-from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderSource, Inbox, listen, workflow
+from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderChanges, Inbox, listen, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("triage"):
     inbox = Inbox("me@agentmail.to", api_key=KEY)
-    docs  = FolderSource(SRC)
+    docs  = FolderChanges(SRC)
     agent = await get_agent("triager")
 
     async with agent.process_messages():
@@ -135,11 +135,11 @@ turn instead of prompting again.
 ## 6. Keep a RAG index level with a folder
 
 ```python
-from flow_sdk.blocks import FolderSource, workflow
+from flow_sdk.blocks import FolderChanges, workflow
 from flow_sdk.builtin.rag_index import RagIndex
 
 async with workflow("docs-rag"):
-    docs  = FolderSource(SRC)
+    docs  = FolderChanges(SRC)
     index = await RagIndex.named("notes")             # find-or-create, like ensure_default
     async for change in docs.listen():
         report = await index.apply(change)            # +1 present, −1 gone — inside apply
