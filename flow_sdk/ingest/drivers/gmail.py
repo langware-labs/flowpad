@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
-from email.utils import formatdate, make_msgid, parseaddr, parsedate_to_datetime
+from email.utils import formataddr, formatdate, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Optional
 
 from flow_sdk.ingest.driver import (
@@ -160,6 +160,11 @@ class GmailDriver(IngestDriver):
             author_display=sender_name or sender_address or None,
             thread_key=f"{address.casefold()}:{thread_id}" if thread_id else None,
             reply_to_external_id=in_reply_to or None,
+            recipients=[
+                formataddr(pair)
+                for pair in getaddresses([str(message.get("To") or ""), str(message.get("Cc") or "")])
+                if pair[1]
+            ],
             raw={
                 "imap_uid": fetched.uid,
                 "uid_validity": uid_validity,

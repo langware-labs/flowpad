@@ -56,6 +56,9 @@ item attributed to a stranger would count as unread mail. `reply_to_id` is
 two lookups (the parent item by its origin — same kind and namespace, the
 reply's `reply_to_external_id` as key — then its message by
 `source_item_id`) and is an accepted loss when the parent has not arrived.
+`envelope` — sender, recipients, subject and event time as `UserProfile`s — is
+read from the item's payload and stamped PRIVATE, like `sent_at`; the message
+bubble renders it and derives nothing.
 
 ## Two clocks — the timestamp law
 

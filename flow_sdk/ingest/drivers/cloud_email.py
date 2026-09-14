@@ -28,6 +28,7 @@ allocated address would orphan every row the day an inbox is re-provisioned.
 from __future__ import annotations
 
 import logging
+from email.utils import formataddr
 from typing import Any, Optional
 
 from flow_sdk.builtin.email_inbox_driver import EmailInboxError
@@ -164,6 +165,12 @@ class CloudEmailDriver(IngestDriver):
             author_display=str(sender.get("name") or "") or address,
             thread_key=self._thread_key(source, msg),
             reply_to_external_id=str(msg.get("in_reply_to") or "") or None,
+            recipients=[
+                formataddr((str(r.get("name") or ""), str(r.get("address"))))
+                for field in ("to", "cc")
+                for r in msg.get(field) or []
+                if isinstance(r, dict) and r.get("address")
+            ],
             raw=msg,
         )
 

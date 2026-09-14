@@ -320,7 +320,27 @@ def _origin_of(item, source):
     """The row's origin — lifted on read for a row the cutover migration has not reached."""
     from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
 
-    return item.origin or origin_of(source, item)
+    return getattr(item, "origin", None) or origin_of(source, item)
+
+
+def _payload_of(item, source):
+    """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+
+    return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
+
+
+def _envelope_of(item, source):
+    """The header a message-shaped payload carries, or None for anything else."""
+    from flow_sdk.builtin.flow_message import MessageEnvelope  # noqa: PLC0415
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    data = _payload_of(item, source)
+    if not isinstance(data, MessageData):
+        return None
+    return MessageEnvelope(
+        subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
+    )
 
 
 async def _placed_message(item):
@@ -360,6 +380,7 @@ async def _place_message(
     # mailbox answered each one. This is the lane-neutral "I placed it" fact, so
     # the announcement lands exactly once without either lane knowing who won.
     first_placement = existing_fm is None
+    envelope = _envelope_of(item, source)
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
@@ -381,6 +402,9 @@ async def _place_message(
             dirty = True
         if existing_fm.origin is None:
             existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
+            dirty = True
+        if existing_fm.envelope != envelope:
+            existing_fm.envelope = envelope
             dirty = True
         if dirty:
             try:
@@ -412,6 +436,7 @@ async def _place_message(
         "thread_id": thread_id,
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
+        "envelope": envelope.model_dump(mode="json") if envelope else None,
     }
     if item.reply_to_external_id:
         # Two lookups, no derivation: the parent item by its natural key, then

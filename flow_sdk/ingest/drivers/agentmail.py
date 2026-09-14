@@ -110,6 +110,7 @@ class AgentMailDriver(IngestDriver):
             author_display=sender,
             author_external_id=_address_of(sender),
             thread_key=str(msg.get("thread_id") or "") or None,
+            recipients=[str(r) for field in ("to", "cc") for r in msg.get(field) or [] if r],
         )
 
     # ── send ─────────────────────────────────────────────────────────────────

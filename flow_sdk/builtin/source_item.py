@@ -248,6 +248,7 @@ class SourceItem(Entity):
     # ── who ────────────────────────────────────────────────────────────────
     author_external_id: Optional[str] = APIField(default=None)
     author_display: Optional[str] = APIField(default=None)
+    recipients: list[str] = APIField(default_factory=list, description="Addressees as the provider printed them")
 
     # ── body ───────────────────────────────────────────────────────────────
     # `name` (declared on Entity) is the FTS title. `body` must reach FTS, which

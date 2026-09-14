@@ -10,12 +10,21 @@ from typing import Any, Awaitable, Callable, ClassVar, Optional
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
-from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
@@ -374,6 +383,17 @@ class Attachment(BaseModel):
     prompt_preview: Optional[str] = None
 
 
+
+class MessageEnvelope(DataSpec):
+    """A cached message's header, as the projection read it from the item's payload."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    subject: Optional[str] = None
+    sender: Optional[UserProfile] = None
+    recipients: tuple[UserProfile, ...] = ()
+    sent_at: Optional[AwareDatetime] = None
+
 class FlowMessage(Entity):
     # A FlowMessage owns its body/download and read state locally — see the
     # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
@@ -443,6 +463,16 @@ class FlowMessage(Entity):
         None,
         sharing=Sharing.PRIVATE,
         description="SourceItem this row references; None = Flowpad-native",
+    )
+
+    # The header the cached record arrived with — who, to whom, about what, when.
+    # Written only by the inbox projection, from the item's payload, so a viewer
+    # renders it and derives nothing. PRIVATE like ``sent_at``: re-derived here,
+    # and a hub refresh must never blank it.
+    envelope: Optional[MessageEnvelope] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="Sender, recipients, subject and event time of the cached record",
     )
 
     @model_validator(mode="before")

@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
+import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -204,6 +205,8 @@ export interface IFlowMessage extends IEntity {
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
    *  (every message that predates threading). */
   thread_id?: string | null;
@@ -249,6 +252,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
   source_item_id?: string | null;
@@ -282,6 +287,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
+    this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
