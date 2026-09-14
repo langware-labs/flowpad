@@ -40,6 +40,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec import SpecType
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -242,7 +243,33 @@ class Agent(Entity):
         "prompt queue. Empty = open the session with no first turn.",
     )
 
+    # ── places ────────────────────────────────────────────────────────────
+    # Where this agent runs is a Deployment; how it runs THERE may differ from
+    # the definition. Both choices live in agent.md, keyed by Deployment id, so
+    # they travel with the agent — see ``flow_sdk/builtin/agent_places.py``.
+    places: Optional[list[AgentPlaceSpec]] = APIField(
+        default=None,
+        description="Per-place launch overrides (model, permissions, effort, worker, MCP servers), keyed by Deployment id.",
+    )
+    email_place: Optional[str] = APIField(
+        default=None,
+        description="Deployment id of the one place that answers this agent's email. Empty = every polling machine.",
+    )
+
     _api_visible: ClassVar[bool] = True
+
+    def place_for(self, deployment_id: str | None) -> "AgentPlaceSpec | None":
+        """This agent's overrides for one place, or None when it has none."""
+        if not deployment_id:
+            return None
+        return next((p for p in self.places or [] if p.deployment_id == deployment_id), None)
+
+    def enabled_on(self, deployment_id: str | None) -> bool:
+        """Whether this agent runs on one place: the place's own switch, else the definition's."""
+        place = self.place_for(deployment_id)
+        if place is not None and place.enabled is not None:
+            return place.enabled
+        return bool(self.enabled)
 
     # ── MCP servers ───────────────────────────────────────────────────────
 
@@ -531,7 +558,7 @@ class Agent(Entity):
 
     # ── publish ───────────────────────────────────────────────────────────
 
-    async def ensure_on_hub(self, actor: TypeId) -> bool:
+    async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
         """Publish this repository-backed agent through the canonical Git path.
 
         An Agent is not a loose deployment payload. It is an asset inside its
@@ -544,7 +571,7 @@ class Agent(Entity):
         repairs the row rather than preserving a deployment that cannot load its
         files (notably ``avatar.png``).
         """
-        if self.remote and self.origin:
+        if self.remote and self.origin and not force:
             return False
 
         from flow_sdk.builtin.asset_publishing import (
@@ -568,8 +595,12 @@ class Agent(Entity):
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="publish requires an authenticated user", status_code=401)
+        body = (await request_info.get_post_data() if request_info else None) or {}
         try:
-            published = await self.ensure_on_hub(actor)
+            # ``force``: publish the current definition even when already on the
+            # hub — the header's "Publish N changes". Without it this stays the
+            # idempotent first-publish deploy relies on.
+            published = await self.ensure_on_hub(actor, force=bool(body.get("force")))
         except Exception as exc:
             return ApiFailResponse(message=f"publish failed: {exc}")
         return ApiSuccessResponse(
@@ -864,12 +895,12 @@ class Agent(Entity):
         prompt = str((body or {}).get("prompt") or "").strip()
         if not prompt:
             return ApiFailResponse(message="prompt is required")
-        if not self.enabled:
-            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
 
         # Resolved here and passed in: the response payload names it, so letting
         # ``launch`` resolve its own would be a second get-or-create round trip.
         deployment = await self.local_deployment()
+        if not self.enabled_on(deployment.id):
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled on this computer")
         try:
             process = await self.launch(prompt, deployment=deployment)
         except NotImplementedError as exc:
@@ -885,6 +916,120 @@ class Agent(Entity):
                 "compute_node_id": deployment.compute_node_id,
             }
         )
+
+    # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
+
+    @staticmethod
+    async def _body() -> dict:
+        request_info = get_current_request_info()
+        return (await request_info.get_post_data() if request_info else None) or {}
+
+    @staticmethod
+    async def _place_answer(run) -> "ApiSuccessResponse | ApiFailResponse":
+        """One envelope for the place verbs: a caller error keeps its status code."""
+        from flow_sdk.builtin.agent_schedule import ScheduleError  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await run())
+        except ScheduleError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
+    @action.get(action_name="places")
+    async def places_action(self):
+        """`GET /agent/<id>/places` — this computer first, then every cloud place, with
+        each place's overrides, whether it is enabled, schedule count and whether it answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        async def run():
+            rows = await agent_places.list_places(self)
+            return [{**row, "deployment": row["deployment"].model_dump(mode="json")} for row in rows]
+
+        return await self._place_answer(run)
+
+    @action.post(action_name="set_place_override")
+    async def set_place_override_action(self):
+        """`POST /agent/<id>/set_place_override {deployment_id, field, value}` — `value: null` resets."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_override(
+                self, str(body.get("deployment_id") or ""), str(body.get("field") or ""), body.get("value")
+            )
+        )
+
+    @action.post(action_name="set_place_enabled")
+    async def set_place_enabled_action(self):
+        """`POST /agent/<id>/set_place_enabled {deployment_id, enabled}` — `enabled: null` follows the definition."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_enabled(self, str(body.get("deployment_id") or ""), body.get("enabled"))
+        )
+
+    @action.post(action_name="set_email_place")
+    async def set_email_place_action(self):
+        """`POST /agent/<id>/set_email_place {deployment_id}` — the one place that answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_email_place(self, str(body.get("deployment_id") or ""))
+        )
+
+    async def _relay_place_action(self, body: dict):
+        """Hand one place action on a CLOUD place to the hub, which alone reaches the machine."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        deployment = await agent_places.place_of(self, str(body.get("deployment_id") or ""))
+        if deployment is None:
+            return ApiFailResponse(message="not a place this agent runs on", status_code=404)
+        if deployment.is_local:
+            return ApiFailResponse(message="this computer's place actions run here, not through the hub", status_code=409)
+        payload = {
+            "deployment_id": deployment.id,
+            "op": str(body.get("op") or ""),
+            "trigger_id": str(body.get("trigger_id") or ""),
+        }
+        try:
+            data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
+        except HubError as exc:
+            return ApiFailResponse(message=f"the hub refused: {exc}", status_code=502)
+        if data is None:
+            return ApiFailResponse(message="cloud login required to reach a cloud machine", status_code=401)
+        return ApiSuccessResponse(data=data)
+
+    @action.post(action_name="place_action")
+    async def place_action(self):
+        """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
+        on a cloud place, through the hub."""
+        return await self._relay_place_action(await self._body())
+
+    @action.post(action_name="adopt_placement")
+    async def adopt_placement_action(self):
+        """`POST /agent/<id>/adopt_placement {deployment_id}` — on a cloud machine, key this
+        machine's placement by the hub's id so the definition's place entries apply here."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            adopted = await agent_places.adopt_placement(self, str(body.get("deployment_id") or ""))
+            return adopted.model_dump(mode="json")
+
+        return await self._place_answer(run)
+
+    @action.get(action_name="version")
+    async def version_action(self):
+        """`GET /agent/<id>/version` — published commit and pending changes on this computer."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        return await self._place_answer(lambda: asyncio.to_thread(agent_places.version_state, self))
 
     # ── schedules: child trigger assets (HTTP) ────────────────────────────
 
@@ -921,6 +1066,25 @@ class Agent(Entity):
     async def remove_schedule_action(self):
         """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
         return await self._schedule_call("remove")
+
+    @action.post(action_name="run_schedule")
+    async def run_schedule_action(self):
+        """`POST /agent/<id>/run_schedule {trigger_id}` — fire one of THIS agent's schedules now.
+
+        The ownership check and the fire are one call, made where the trigger lives:
+        the hub's ``place_action`` uses it to "Run now" a cloud place's schedule on its machine.
+        """
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+        from flow_sdk.builtin.trigger import _fire_schedule_job  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            trigger = await agent_schedule._owned(self, str(body.get("trigger_id") or ""))
+            await _fire_schedule_job(trigger.id)
+            return {"status": "fired", "trigger_id": trigger.id}
+
+        return await self._place_answer(run)
 
     # ── the use verb (HTTP) ───────────────────────────────────────────────
 

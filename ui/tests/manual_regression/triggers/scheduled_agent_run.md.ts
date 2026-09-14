@@ -52,7 +52,7 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   await dismissSetupModal(page);
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
-  await page.getByTestId('agent-tab-schedule').click();
+  await page.getByTestId('agent-place-tab-schedules').first().click();
 
   // ── create: prompt defaults to the auto-launch prompt ──────────────────────
   await page.getByTestId('agent-schedule-add').click();
@@ -84,7 +84,7 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   // ── clicking the schedule opens the trigger, which links back ─────────────
   await page.goBack();
-  await page.getByTestId('agent-tab-schedule').click();
+  await page.getByTestId('agent-place-tab-schedules').first().click();
   await page.getByTestId('agent-schedule-open-0').click();
   await expect(page).toHaveURL(new RegExp(`/dock/events\\?trigger=${trigger!.id}`));
   await expect(page.getByTestId('agent-schedule-detail')).toContainText('Runs agent');
@@ -92,7 +92,7 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
 
   // ── edit keeps the trigger ─────────────────────────────────────────────────
-  await page.getByTestId('agent-tab-schedule').click();
+  await page.getByTestId('agent-place-tab-schedules').first().click();
   await page.getByTestId('agent-schedule-edit-0').click();
   await form.getByPlaceholder('Today').fill('Daily brief');
   await form.getByRole('button', { name: 'Daily', exact: true }).click();
@@ -105,7 +105,7 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   await page.getByTestId('agent-schedule-enabled-0').click();
   await expect(page.getByTestId('agent-schedule-enabled-0')).toHaveAttribute('data-state', 'unchecked');
   await page.reload();
-  await page.getByTestId('agent-tab-schedule').click();
+  await page.getByTestId('agent-place-tab-schedules').first().click();
   await expect(page.getByTestId('agent-schedule-enabled-0')).toHaveAttribute('data-state', 'unchecked');
 
   // ── delete ─────────────────────────────────────────────────────────────────

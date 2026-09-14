@@ -88,6 +88,7 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
             sched_trigger_type=spec.schedule.every,
             expr=spec.schedule.expr,
             timezone=spec.schedule.timezone or None,
+            runs_on=spec.schedule.runs_on or None,
             instruction=spec.schedule.instruction or None,
             workdir=spec.schedule.workdir or None,
         )

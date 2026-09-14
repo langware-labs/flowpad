@@ -31,6 +31,9 @@ async def arm_trigger(entity: Any) -> None:
 
     try:
         if entity.trigger_type == TriggerType.SCHEDULE:
+            if not await runs_here(entity):
+                await disarm_trigger(str(entity.id))
+                return
             await entity._register_schedule_job()
         elif entity.trigger_type == TriggerType.FSOP:
             # The watcher's startup walk covers a trigger seeded BEFORE it
@@ -47,6 +50,27 @@ async def arm_trigger(entity: Any) -> None:
         # Never fail the save (or the index) over a subscription. The row is
         # committed either way, and the next re-index re-arms.
         _log.exception("Arming failed for trigger %r", getattr(entity, "uname", entity.id))
+
+
+async def runs_here(entity: Any) -> bool:
+    """Whether a schedule belongs to a place on THIS machine.
+
+    ``runs_on`` names a Deployment. It runs here only if that Deployment is known
+    here and ``is_local`` — a teammate's clone, or the desktop for a cloud
+    machine's schedule, holds the file but never arms it. No ``runs_on`` is the
+    legacy rule: every machine that indexes it.
+    """
+    runs_on = str(getattr(entity, "runs_on", "") or "")
+    if not runs_on:
+        return True
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    try:
+        deployment = await Deployment.get_by_id(runs_on)
+    except Exception:  # noqa: BLE001 — unresolvable is "not here", never an error
+        _log.debug("runs_on %s unresolvable", runs_on, exc_info=True)
+        return False
+    return bool(deployment is not None and deployment.is_local)
 
 
 async def arm_after_index(record: Any) -> None:

@@ -56,6 +56,28 @@ _LOCAL_UNAME = "local"
 TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
+def _refresh_tree(staging: str, target: str) -> str:
+    """Lay a delivered tree over an existing project folder; the commit it lands on, or "".
+
+    With git on both sides the folder MOVES to the delivered commit (``fetch`` +
+    ``reset --hard``): files deleted upstream go, and files this node wrote that
+    git does not track stay. ``--update-shallow`` because the hub's clone may be
+    shallow. Without git, the delivered files are copied over the folder.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    def git(cwd: str, *args: str) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    if os.path.isdir(os.path.join(staging, ".git")) and os.path.isdir(os.path.join(target, ".git")):
+        git(target, "fetch", "--quiet", "--update-shallow", staging, "HEAD")
+        git(target, "reset", "--hard", "--quiet", "FETCH_HEAD")
+        return git(target, "rev-parse", "HEAD")
+    shutil.copytree(staging, target, dirs_exist_ok=True)
+    return git(target, "rev-parse", "HEAD") if os.path.isdir(os.path.join(target, ".git")) else ""
+
+
 def build_dir_zip(local_path: str) -> BytesIO:
     """Zip a local directory tree in memory, entries relative to its root.
 
@@ -1356,6 +1378,61 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             shutil.move(staging_path, target_dir)
 
         return await self._place_project(leaf, body.get("project_id"), deliver)
+
+    @action.post(action_name="refresh-project")
+    async def _refresh_project_action(self) -> ApiResponse:
+        """Bring a project already on this node to a newly delivered tree, IN PLACE.
+
+        Body: ``{ "staging_path": "<abs dir>", "project_id": "<uuid v4/v5>" }`` →
+        ``{ project, path, head_commit }``.
+
+        The update half of ``materialize-project``: the same delivery (the hub
+        clones, ``copy_folder`` stages the tree here), but the tree lands in the
+        project's EXISTING folder, so its id, path, index and every agent placed
+        from it stay what they were. Materializing again would park a second copy
+        at a suffixed folder. Indexing stays the caller's own step.
+
+        Only a project under ``AGENT_MOUNT_FOLDER`` can be refreshed — the folders
+        this node materialized — so a caller cannot aim the overwrite anywhere else.
+        """
+        import asyncio  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+        import subprocess  # noqa: PLC0415
+
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        staging_path = str(body.get("staging_path") or "")
+        if not staging_path or not os.path.isdir(staging_path):
+            return ApiFailResponse(
+                message="staging_path is required and must be an existing directory", status_code=400
+            )
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if not project_id:
+            return ApiFailResponse(message="project_id is required", status_code=400)
+        project = await Project.get_by_id(project_id)
+        path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
+        if not path or not os.path.isdir(path):
+            return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
+        mount_root = os.path.realpath(AGENT_MOUNT_FOLDER)
+        if os.path.commonpath([mount_root, os.path.realpath(path)]) != mount_root:
+            return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
+
+        try:
+            head_commit = await asyncio.to_thread(_refresh_tree, staging_path, path)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or str(exc)
+            return ApiFailResponse(message=f"could not refresh the project: {str(detail)[:300]}", status_code=500)
+        finally:
+            shutil.rmtree(staging_path, ignore_errors=True)
+        return ApiSuccessResponse(
+            data={"project": project.model_dump(mode="json"), "path": path, "head_commit": head_commit}
+        )
 
     @action.post(action_name="init-empty-project")
     async def _init_empty_project_action(self) -> ApiResponse:

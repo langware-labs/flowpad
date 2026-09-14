@@ -193,6 +193,22 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return new Deployment((await this.post('pause')) as IDeployment);
   }
 
+  /** Start a paused machine again. */
+  async resume(): Promise<Deployment> {
+    return new Deployment((await this.post('resume')) as IDeployment);
+  }
+
+  /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
+  async update(): Promise<Record<string, unknown>> {
+    return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  }
+
+  /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */
+  async runs<T = Record<string, unknown>>(limit = 8): Promise<T[]> {
+    const data = await this.get<{ runs?: T[] } | null>(`runs?limit=${encodeURIComponent(String(limit))}`);
+    return data?.runs ?? [];
+  }
+
   private validateStructure(): void {
     const errors: string[] = [];
     if (!isNonEmptyString(this.name)) errors.push('name is required');

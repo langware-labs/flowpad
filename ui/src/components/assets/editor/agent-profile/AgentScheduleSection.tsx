@@ -21,6 +21,11 @@ interface AgentScheduleSectionProps {
   agent: Agent;
   /** The agent's live auto-launch prompt — the default for a new schedule. */
   autoLaunchPrompt?: string;
+  /** The place (Deployment id) this list belongs to: shows its schedules and
+   *  creates new ones there. Omitted = every schedule of the agent. */
+  deploymentId?: string;
+  /** Whether that place is this computer — where legacy place-less schedules show. */
+  isLocal?: boolean;
 }
 
 type ScheduleKind = NonNullable<AgentScheduleFields['every']>;
@@ -41,7 +46,7 @@ function promptOf(row: Pick<Trigger, 'actions'>): string {
  * Writes go through the agent's schedule verbs, never a trigger row PATCH: the
  * document is the source of truth and a row edit would be reverted on re-index.
  */
-export function AgentScheduleSection({ agent, autoLaunchPrompt = '' }: AgentScheduleSectionProps) {
+export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentId, isLocal = false }: AgentScheduleSectionProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [editing, setEditing] = useState<Trigger | 'new' | null>(null);
@@ -62,7 +67,15 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '' }: AgentSche
     [agent.typeId],
   );
   const { data: rows = [], refetch } = useEntitiesQuery<Trigger>(request);
-  const schedules = useMemo(() => rows.filter((row) => row.trigger_type === 'schedule'), [rows]);
+  const schedules = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.trigger_type === 'schedule' &&
+          (!deploymentId || row.runs_on === deploymentId || (!row.runs_on && isLocal)),
+      ),
+    [rows, deploymentId, isLocal],
+  );
 
   const labels = useMemo<ScheduleDescribeLabels>(
     () => ({
@@ -103,6 +116,7 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '' }: AgentSche
       every: (data.trigger_type as ScheduleKind | undefined) ?? 'cron',
       expr: data.expr ?? '',
       timezone,
+      ...(deploymentId ? { runs_on: deploymentId } : {}),
       prompt: text,
       enabled: data.enabled ?? true,
     };
@@ -139,7 +153,9 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '' }: AgentSche
   const runNow = async (row: Trigger) => {
     setBusy(row.id);
     try {
-      await new Trigger(row).runNow();
+      // A cloud place's schedule fires on THAT machine, which only the hub can reach.
+      if (deploymentId && !isLocal) await agent.placeAction(deploymentId, 'run_now', row.id);
+      else await new Trigger(row).runNow();
       notify.success({ title: t`Scheduled run started`, message: row.name });
       await refetch();
     } catch (e) {
@@ -232,6 +248,11 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '' }: AgentSche
               <div key={row.id} className="rounded-md border p-2 text-sm" data-testid={`agent-schedule-${index}`}>
                 <div className="flex items-center gap-2">
                   <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {!row.runs_on && deploymentId ? (
+                    <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] text-muted-foreground" data-testid={`agent-schedule-everywhere-${index}`}>
+                      <Trans>every machine</Trans>
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     className="min-w-0 flex-1 truncate text-start font-medium hover:underline"

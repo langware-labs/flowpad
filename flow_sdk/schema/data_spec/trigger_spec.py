@@ -153,6 +153,9 @@ class ScheduleTriggerSpec(DataSpec):
     #: local zone. Carried in the document because a schedule travels with its
     #: agent: "daily at 09:00" must mean the author's 09:00 on a UTC sandbox too.
     timezone: str = ""
+    #: The place (Deployment id) this schedule runs on. Only the machine that
+    #: place runs on arms it. Empty = legacy: armed on every machine that indexes it.
+    runs_on: str = ""
     #: LEGACY: prompt for a bare agentic process. Use a ``run_agent`` action instead.
     instruction: str = ""
     workdir: str = ""
