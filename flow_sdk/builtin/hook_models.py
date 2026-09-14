@@ -346,11 +346,93 @@ class RunScriptActionHandler(TriggerActionHandler):
         return None
 
 
+class RunAgentActionHandler(TriggerActionHandler):
+    """Handler for RUN_AGENT — run an Agent headlessly with the action's prompt.
+
+    The agent comes from the action's ``target_type_id``, else the trigger's
+    own parent: a trigger nested inside an agent folder runs that agent, the
+    same containment rule ``run_wizard`` uses. The run goes through
+    ``Agent.launch``, so the agent's worker, model, system prompt and MCP
+    servers all apply, and it is born headless and tab-less.
+
+    Deliberately no unattended trust gate (``_run_wizard_trigger`` has one): an
+    enabled trigger on an indexed agent runs, on whichever machine indexed it.
+
+    Returns the started ``AgenticProcess`` so the fire can log its id.
+    """
+
+    async def execute(
+        self,
+        trigger: Any,
+        action: Optional["TriggerAction"] = None,
+        changes: Optional[list["ChangeEvent"]] = None,
+    ) -> Any:
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
+        from flow_sdk.inbox.agent_runner import _workdir_for  # noqa: PLC0415
+
+        prompt = str(getattr(action, "prompt", "") or "").strip()
+        if not prompt:
+            raise ValueError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r} has no prompt")
+
+        agent = None
+        for candidate in (getattr(action, "target_type_id", None), getattr(trigger, "parent_type_id", None)):
+            ref = str(candidate or "")
+            if ref.startswith("agent-"):
+                agent = await Agent.get_by_id(ref.split("-", 1)[1])
+                if agent is not None:
+                    break
+        if agent is None:
+            raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
+        if not agent.enabled:
+            _log.info("RUN_AGENT on %s: agent %r is disabled; not running", getattr(trigger, "name", "?"), agent.name)
+            return None
+
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        process = await agent.launch(
+            prompt,
+            name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
+            workdir=await _workdir_for(agent),
+            context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
+        )
+        # A launched run is never finished by anyone: `launch` returns at
+        # scheduling time and the lifecycle stays RUNNING forever, so the run
+        # history showed every scheduled run as still running. Supervise it to
+        # its end — detached, because a "Run now" fires inside a request whose
+        # transaction is gone by the time the turn ends.
+        create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
+        return process
+
+
+async def _finish_agent_run(process: Any) -> None:
+    """Wait for the run's turn to reach a terminal state, then end its lifecycle:
+    STOPPED when the worker completed, FAILED when it errored. The same one-shot
+    shape as the ingest agent driver (``wait`` then ``exit``)."""
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+    try:
+        await process.wait()
+        if process.status == ProcessStatus.FAILED.value:
+            return
+        errored = process.fetch_worker_status() == WorkerStatus.ERROR
+        await process.exit()
+        # `exit` only settles a process it still holds a worker or turn for; a
+        # turn that already unregistered itself is left RUNNING, so settle it here.
+        final = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
+        if process.status != final:
+            process.status = final
+            await process.save()
+    except Exception:
+        _log.exception("RUN_AGENT: could not finish run %s", getattr(process, "id", "?"))
+
+
 _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {
     ActionType.NOP: NopActionHandler(),
     ActionType.NOTIFY_ENTITY: NotifyEntityActionHandler(),
     ActionType.RUN_SCRIPT: RunScriptActionHandler(),
     ActionType.CALLBACK: CallbackActionHandler(),
+    ActionType.RUN_AGENT: RunAgentActionHandler(),
 }
 
 

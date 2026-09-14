@@ -87,6 +87,7 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type=spec.schedule.every,
             expr=spec.schedule.expr,
+            timezone=spec.schedule.timezone or None,
             instruction=spec.schedule.instruction or None,
             workdir=spec.schedule.workdir or None,
         )
@@ -137,6 +138,15 @@ def _action_row(action, *, parent_type_id: str = "") -> dict:
             action_type=ActionType.CALLBACK,
             callback_name="builtin_run_wizard",
             target_type_id=action.run_wizard or parent_type_id or None,
+        ).model_dump()
+    if verb == "run_agent":
+        # Same "empty means my parent" rule as run_wizard. The indexer stamps the
+        # parent only after extraction, so the handler also falls back to the
+        # trigger's own `parent_type_id` at fire time.
+        return TriggerAction(
+            action_type=ActionType.RUN_AGENT,
+            target_type_id=action.run_agent.agent or parent_type_id or None,
+            prompt=action.run_agent.prompt,
         ).model_dump()
     if verb == "run_script":
         return TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=action.run_script).model_dump()

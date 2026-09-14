@@ -71,10 +71,29 @@ async def disarm_trigger(trigger_id: str) -> None:
     The counterpart the index path needs and the seed path got from the orphan
     prune: deleting a trigger folder must not leave a live subscription behind,
     firing a callback whose declaration no longer exists.
+
+    Every kind, not just TAG: a schedule job left in the persistent jobstore
+    keeps waking on every tick until the next boot's orphan prune, and an FSOp
+    watch keeps its awatch task. Each step is independent — the trigger may
+    never have been armed as that kind, which is not an error.
     """
     try:
         from flow_sdk.builtin.tag_triggers import unregister_tag_trigger  # noqa: PLC0415
 
         unregister_tag_trigger(trigger_id)
     except Exception:
-        _log.exception("Disarming failed for trigger %s", trigger_id)
+        _log.exception("Disarming (tag) failed for trigger %s", trigger_id)
+    try:
+        from flow_sdk.server.scheduler import get_scheduler  # noqa: PLC0415
+
+        scheduler = get_scheduler()
+        if scheduler is not None and scheduler.get_job(trigger_id) is not None:
+            scheduler.remove_job(trigger_id)
+    except Exception:
+        _log.exception("Disarming (schedule) failed for trigger %s", trigger_id)
+    try:
+        from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
+
+        await fsop_watcher.on_trigger_deleted(trigger_id)
+    except Exception:
+        _log.exception("Disarming (watch) failed for trigger %s", trigger_id)

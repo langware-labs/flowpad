@@ -31,6 +31,9 @@ vi.mock('@src/components/graph-view/icons/iconRegistry', async () => {
   };
 });
 
+vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({
+  AgentScheduleSection: () => null,
+}));
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeploymentsSection', () => ({
   AgentDeploymentsSection: () => null,
 }));

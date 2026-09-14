@@ -886,6 +886,42 @@ class Agent(Entity):
             }
         )
 
+    # ── schedules: child trigger assets (HTTP) ────────────────────────────
+
+    async def _schedule_call(self, op: str):
+        """Shared envelope for the three schedule verbs — see ``agent_schedule``."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        try:
+            if op == "add":
+                return ApiSuccessResponse(data=await agent_schedule.add_schedule(self, body))
+            trigger_id = str(body.get("trigger_id") or "")
+            if op == "update":
+                return ApiSuccessResponse(data=await agent_schedule.update_schedule(self, trigger_id, body))
+            await agent_schedule.remove_schedule(self, trigger_id)
+            return ApiSuccessResponse(data={"deleted": True, "trigger_id": trigger_id})
+        except agent_schedule.ScheduleError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
+    @action.post(action_name="add_schedule")
+    async def add_schedule_action(self):
+        """`POST /agent/<id>/add_schedule {name, every, expr, timezone, prompt, enabled}`
+        — write a schedule under this agent; indexed and armed before returning."""
+        return await self._schedule_call("add")
+
+    @action.post(action_name="update_schedule")
+    async def update_schedule_action(self):
+        """`POST /agent/<id>/update_schedule {trigger_id, ...fields}` — only the
+        fields present change; hand-authored parts of the document survive."""
+        return await self._schedule_call("update")
+
+    @action.post(action_name="remove_schedule")
+    async def remove_schedule_action(self):
+        """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
+        return await self._schedule_call("remove")
+
     # ── the use verb (HTTP) ───────────────────────────────────────────────
 
     @action.post(action_name="use")

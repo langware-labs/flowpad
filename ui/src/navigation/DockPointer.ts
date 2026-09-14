@@ -99,6 +99,8 @@ export const PROCESS_RUN_SCOPE_KEYS = [
   // entry in each. An ingest worker has no spawning entity to browse from (the
   // whole reason this list exists), so its source is the only handle on it.
   'data_source_id',
+  // A scheduled agent run: its trigger is what spawned it.
+  'trigger_id',
 ] as const;
 
 export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[number], string>>;

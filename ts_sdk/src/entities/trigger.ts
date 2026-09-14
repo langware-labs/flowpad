@@ -31,6 +31,9 @@ export interface ITrigger extends IEntity {
   // Hook trigger fields
   mask: Record<string, any>;
   action: TriggerAction;
+  /** Every action dispatched on fire, in order. A scheduled agent run carries a
+   *  `run_agent` action with the prompt; `target_type_id` empty = parent agent. */
+  actions?: TriggerActionRow[];
   enabled?: boolean;
   last_triggered?: Date;
   counter?: number;
@@ -41,6 +44,8 @@ export interface ITrigger extends IEntity {
   // Schedule trigger fields
   expr?: string;
   sched_trigger_type?: 'cron' | 'interval' | 'date';
+  /** IANA zone the schedule is read in; empty = the backend machine's zone. */
+  timezone?: string | null;
   next_run?: Date;
   last_run?: Date;
   instruction?: string;
@@ -52,6 +57,16 @@ export interface ITrigger extends IEntity {
   watch_glob?: string;
   last_seen_mtime?: number;
   last_seen_size?: number;
+}
+
+/** One entry of a trigger row's `actions` — `flow_sdk/schema/data_spec/trigger_action.py`. */
+export interface TriggerActionRow {
+  action_type: 'nop' | 'notify_entity' | 'run_script' | 'callback' | 'run_agent' | string;
+  script_path?: string | null;
+  script_filename?: string | null;
+  callback_name?: string | null;
+  target_type_id?: string | null;
+  prompt?: string | null;
 }
 
 // `implements ITrigger` only checks the class; it contributes no members, so every
@@ -80,6 +95,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   // Hook trigger fields
   mask: Record<string, any> = {};
   action: TriggerAction;
+  actions: TriggerActionRow[] = [];
   enabled: boolean = true;
   last_triggered?: Date;
   counter: number = 0;
@@ -90,6 +106,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   // Schedule trigger fields
   expr?: string;
   sched_trigger_type?: 'cron' | 'interval' | 'date';
+  timezone?: string | null;
   next_run?: Date;
   last_run?: Date;
   instruction?: string;
@@ -109,6 +126,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.trigger_type = entity.trigger_type || 'hook';
     this.mask = entity.mask || {};
     this.action = entity.action || { action_type: 'nop' as any };
+    this.actions = entity.actions || [];
     this.enabled = entity.enabled !== undefined ? entity.enabled : true;
     this.last_triggered = entity.last_triggered;
     this.counter = entity.counter ?? 0;
@@ -127,6 +145,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.confirm = entity.confirm;
     this.expr = entity.expr;
     this.sched_trigger_type = entity.sched_trigger_type;
+    this.timezone = entity.timezone ?? null;
     this.next_run = entity.next_run;
     this.last_run = entity.last_run;
     this.instruction = entity.instruction;
@@ -137,6 +156,19 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.watch_glob = entity.watch_glob;
     this.last_seen_mtime = entity.last_seen_mtime;
     this.last_seen_size = entity.last_seen_size;
+  }
+
+  /** The `run_agent` action, when this trigger runs an agent. */
+  get runAgentAction(): TriggerActionRow | undefined {
+    return this.actions.find((a) => a.action_type === 'run_agent');
+  }
+
+  /** The agent this trigger runs — its explicit target, else its parent. */
+  get runAgentTypeId(): string | null {
+    const action = this.runAgentAction;
+    if (!action) return null;
+    const target = action.target_type_id || this.parent_type_id || '';
+    return target.startsWith('agent-') ? target : null;
   }
 
   /**
