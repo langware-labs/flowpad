@@ -60,10 +60,12 @@
     ],
     "target": [
       {
-        "target": "dmg"
+        "target": "dmg",
+        "arch": ["universal"]
       },
       {
-        "target": "zip"
+        "target": "zip",
+        "arch": ["universal"]
       }
     ]
   },
