@@ -51,7 +51,7 @@ class Spec(Entity):
             try:
                 from pathlib import Path  # noqa: PLC0415
 
-                from flow_sdk.fs_store.indexer._frontmatter import _extract_body  # noqa: PLC0415
+                from flow_sdk.assets.frontmatter import _extract_body  # noqa: PLC0415
                 from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
                 p = SchemaRegistry.get(self.get_type()).body_path_for(Path(self.asset_ref))

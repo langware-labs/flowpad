@@ -79,7 +79,7 @@ def get_entity_storage(
         # Git-publishable file assets always expose their checkout through their
         # own entity VFS. The same refs therefore address local files on desktop
         # and the bound Git driver on Hub.
-        from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+        from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 
         asset_binding = local_asset_vfs_binding(entity)
         if asset_binding is not None:

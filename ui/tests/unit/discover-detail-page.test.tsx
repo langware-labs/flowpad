@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DiscoverDetailPage from '@src/pages/discover-page/DiscoverDetailPage';
@@ -32,8 +33,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => true }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDiscoverAsset: vi.fn(), openDiscover: vi.fn() } }) }));
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
+vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
-vi.mock('@src/components/install/InstallButton', () => ({ InstallButton: () => <button data-testid="install-button">Install</button> }));
 vi.mock('@src/hooks/use-markdown-content', () => ({ useMarkdownContent: () => mocks.body }));
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
@@ -62,9 +63,24 @@ beforeEach(() => {
   mocks.getPublishedDirectory.mockReset();
   mocks.body = { fields: {}, body: '', bodyStartLine: 0, isLoading: false, loadError: null };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('DiscoverDetailPage (hub)', () => {
+  it('sends the asset-page Install click through the publisher project action', async () => {
+    directoryFor([mocks.row()]);
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ delivered: 1, request_id: 'proof' });
+    render(<DiscoverDetailPage />);
+    fireEvent.click(await screen.findByTestId('install-button'));
+    await waitFor(() => expect(call).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'install', method: 'POST',
+      targetEntity: expect.objectContaining({ type: 'project', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+      bodyParameters: { typeid: mocks.typeid },
+    })));
+  });
+
   it('renders the document body when the hub holds it, plus install command and siblings', async () => {
     mocks.body = { fields: { name: 'rca' }, body: '# rca\n\nQuote the first error line.', bodyStartLine: 4, isLoading: false, loadError: null };
     directoryFor([mocks.row(), mocks.row({ typeid: 'skill-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: 'sibling' })]);

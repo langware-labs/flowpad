@@ -222,7 +222,7 @@ class DiskSerializer:
 
     def _write_main(self, obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
+        from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
 
         if info is not None and isinstance(info.shape, Folder):
             root.mkdir(parents=True, exist_ok=True)       # the carrier target for a FolderCapsule
@@ -235,7 +235,7 @@ class DiskSerializer:
             if text is None:
                 return                                    # nothing to render: the folder is the asset
             if main.exists() and main.suffix.lower() in {".md", ".markdown"}:
-                from flow_sdk.fs_store.indexer._frontmatter import carry_capsules  # noqa: PLC0415
+                from flow_sdk.assets.frontmatter import carry_capsules  # noqa: PLC0415
 
                 text = carry_capsules(text, main.read_text(encoding="utf-8"))
             _atomic_write_text(main, text)
