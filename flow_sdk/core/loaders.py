@@ -68,6 +68,12 @@ def load_actions():
     except ImportError:
         pass  # LM keys action not available
 
+    # Import credentials action to register it
+    try:
+        from flow_sdk.app.actions import credentials_action  # noqa: F401
+    except ImportError:
+        pass  # Credentials action not available
+
     # Import token-plan read-through (desk → hub) to register it
     try:
         from flow_sdk.app.actions import token_plan_action  # noqa: F401

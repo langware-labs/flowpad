@@ -278,8 +278,8 @@
     {
       "name": "secret_share.md",
       "rel_path": "secret_share.md",
-      "title": "Secret sharing (SecretOrigin)",
-      "summary": "Secret sharing through SecretOrigin: the core invariant, locator value objects, identity, project linking, carry and materialize on share, and runtime injection.",
+      "title": "Credentials and secrets",
+      "summary": "Credentials (CredentialSpec) as the only secret declaration: user and project scope, the .env.local and vault stores, resolution and precedence, and the credentials operations.",
       "content_hash": "5a6fe198646ccf5276330f418480613987dff422e58bf2349022d64984549a0f",
       "size_bytes": 22779
     },

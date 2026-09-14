@@ -1,31 +1,30 @@
 """A credential manifest on disk becomes an entity, through the real walker.
 
-The point of making a credential a folder asset is that nothing new has to
-discover it: `repo_assets_fn` already scans `agentic-assets/<family>/` in any
-walked container. This drives that path rather than asserting it.
+A credential is a folder asset, so nothing new has to discover it:
+`repo_assets_fn` already scans `agentic-assets/<family>/` in any walked
+container. This drives that path rather than asserting it.
 """
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every type
-from flow_sdk.assets.types.credential_spec import credential_spec_identity_key
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
 
-# Only the walker tests are async, so `asyncio` is per-test rather than a
-# module mark — a module mark warns on every sync test in the file.
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 TWILIO = {
-    "schema": 1,
+    "schema": 2,
     "name": "twilio",
     "title": "Twilio",
     "description": "Twilio REST credentials.",
@@ -36,9 +35,8 @@ TWILIO = {
     },
 }
 
-SHIPPED_GMAIL = (
-    Path(__file__).resolve().parents[3]
-    / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/credential/gmail/credential.json"
+SHIPPED_ROOT = (
+    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/credential"
 )
 
 
@@ -65,17 +63,28 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
     assert ent.type == "credential_spec"
-    assert (ent.name, ent.title) == ("twilio", "Twilio")
-    # The members survive the round trip — this is what the whole feature reads.
+    assert (ent.name, ent.title, ent.value_store) == ("twilio", "Twilio", "env")
     assert sorted(ent.vars) == ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]
     assert ent.vars["TWILIO_AUTH_TOKEN"].secret is True
     assert ent.vars["TWILIO_ACCOUNT_SID"].secret is False
 
 
 @pytest.mark.asyncio
+async def test_an_indexed_credential_gets_a_v4_id_written_beside_it(folder_db, tmp_path):
+    """Identity is a writable capsule: minted once, kept with the folder, not in
+    credential.json (a definition carries no id of its own)."""
+    folder = _seed(tmp_path, "twilio", TWILIO)
+
+    await _index(tmp_path)
+
+    ent = await Entity.get_by_asset_ref(str(folder))
+    assert uuid.UUID(str(ent.id)).version == 4
+    assert "id" not in json.loads((folder / "credential.json").read_text())
+
+
+@pytest.mark.asyncio
 async def test_a_manifest_carrying_a_value_yields_no_entity(folder_db, tmp_path):
-    """The guard that makes this family safe to ship in git and safe to let an
-    agent author: a definition names variables, it never carries one's value."""
+    """A definition names variables, it never carries one's value."""
     folder = _seed(
         tmp_path,
         "leaky",
@@ -87,61 +96,80 @@ async def test_a_manifest_carrying_a_value_yields_no_entity(folder_db, tmp_path)
     assert await Entity.get_by_asset_ref(str(folder)) is None
 
 
-def test_identity_is_the_name_not_the_install_path(tmp_path):
-    """A shipped spec's path names the INSTALL, not the asset — it differs per
-    install method and moves on every upgrade. Keying identity on it forked one
-    shipped definition into a row per install location (FLOWPAD-2070)."""
-    first = _seed(tmp_path / "site-packages-a", "twilio", TWILIO)
-    second = _seed(tmp_path / "site-packages-b", "twilio", TWILIO)
+def test_a_row_stored_by_an_earlier_build_still_loads():
+    """A stored row may carry variable fields this build no longer has
+    (`sod_name`). One such row must not fail every credential query — the
+    manifest on disk stays strict, the row is read field by field."""
+    from flow_sdk.builtin.credential_spec import CredentialSpec
 
-    assert credential_spec_identity_key(first) == "twilio"
-    assert credential_spec_identity_key(first) == credential_spec_identity_key(second)
+    row = CredentialSpec.model_validate(
+        {
+            "name": "anthropic-key",
+            "vars": {"ANTHROPIC_API_KEY": {"label": "API key", "sod_name": "lm_api.anthropic", "secret": True}},
+        }
+    )
+
+    assert row.var_names() == ["ANTHROPIC_API_KEY"]
+    assert row.vars["ANTHROPIC_API_KEY"].label == "API key"
+    with pytest.raises(Exception):
+        CredentialManifestSpec.model_validate(
+            {**TWILIO, "vars": {"K": {"label": "x", "sod_name": "legacy"}}}
+        )
 
 
-def test_identity_falls_back_to_the_folder_name(tmp_path):
-    folder = tmp_path / "agentic-assets" / "credential" / "orphan"
-    folder.mkdir(parents=True)
-    assert credential_spec_identity_key(folder) == "orphan"
+def test_the_type_is_a_creatable_asset_with_a_writable_id():
+    info = SchemaRegistry.get("credential_spec")
+
+    assert info.creatable is True
+    assert info.identity_carrier.writable is True
+    assert info.owns_main_ref is True
+
+
+@pytest.mark.parametrize("folder", sorted(p.name for p in SHIPPED_ROOT.iterdir() if p.is_dir()))
+def test_every_shipped_template_commits_a_unique_v4_id(folder):
+    """One template is one row on every install — the id travels in the wheel."""
+    capsule = SHIPPED_ROOT / folder / ".flow" / "capsules" / "identity.json"
+    ids = {
+        json.loads((p / ".flow/capsules/identity.json").read_text())["data"]["id"]
+        for p in SHIPPED_ROOT.iterdir()
+        if p.is_dir()
+    }
+
+    entity_id = json.loads(capsule.read_text())["data"]["id"]
+    assert uuid.UUID(entity_id).version == 4
+    assert len(ids) == len([p for p in SHIPPED_ROOT.iterdir() if p.is_dir()]), "shipped ids must be unique"
 
 
 def test_the_shipped_gmail_definition_is_valid():
-    """It ships in the wheel, so a broken one is only found by a user."""
-    manifest = CredentialManifestSpec.model_validate(json.loads(SHIPPED_GMAIL.read_text()))
+    manifest = CredentialManifestSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/credential.json").read_text()))
 
     assert manifest.name == "gmail"
     assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    # The address is not a secret and the password is — the distinction that
-    # decides masking, and the reason a credential is a GROUP rather than a key.
     assert manifest.vars["GMAIL_ADDRESS"].secret is False
     assert manifest.vars["GMAIL_APP_PASSWORD"].secret is True
-    assert manifest.default_store == "env-local"
+    assert manifest.value_store == "env"
+
+
+def test_the_store_defaults_to_the_env_file():
+    assert CredentialManifestSpec.model_validate({**TWILIO}).value_store == "env"
+    assert CredentialManifestSpec.model_validate({**TWILIO, "value_store": "vault"}).value_store == "vault"
 
 
 @pytest.mark.parametrize(
     "override, why",
     [
-        ({"schema": 2}, "unsupported schema"),
+        ({"schema": 1}, "unsupported schema"),
         ({"vars": {}}, "no variables"),
         ({"vars": {"9BAD": {"label": "x"}}}, "invalid env var name"),
-        ({"default_store": "s3"}, "unknown store"),
+        ({"value_store": "s3"}, "unknown store"),
+        ({"name": "has space"}, "a name is a folder name"),
         ({"unknown_key": 1}, "unknown key"),
     ],
 )
 def test_authoring_rules_are_load_errors(override, why):
-    """Every rule is an ERROR, never a best-effort parse: a definition that
-    silently loaded with a dropped field is worse than one visibly absent."""
     with pytest.raises(Exception):
         CredentialManifestSpec.model_validate({**TWILIO, **override})
 
-
-# --- lm_provider: the LLM half ------------------------------------------------
-#
-# Naming a provider is the whole declaration. The store and the secret's name
-# follow from it, and they have to follow CORRECTLY: `_key_sources`
-# (agentic_process/cli_drivers/llm_source.py) decides a provider is funded by
-# testing for a stored secret named `lm_api.<provider>`, so a manifest that
-# derived anything else would declare a credential the funding resolver cannot
-# see — the exact dead end this feature exists to remove.
 
 SHIPPED_LM = {
     "openrouter": ("openrouter", "OPENROUTER_API_KEY"),
@@ -153,60 +181,23 @@ SHIPPED_LM = {
 @pytest.mark.parametrize("folder, expected", sorted(SHIPPED_LM.items()))
 def test_the_shipped_llm_definitions_are_valid(folder, expected):
     provider, env_var = expected
-    path = SHIPPED_GMAIL.parent.parent / folder / "credential.json"
-    manifest = CredentialManifestSpec.model_validate(json.loads(path.read_text()))
+    manifest = CredentialManifestSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "credential.json").read_text()))
 
     assert manifest.lm_provider == provider
-    # One key, and it is the one the provider's dialect names in the environment
-    # (external_apis/llm/dialects.py) — so a value already exported under that
-    # name is recognisably the same credential.
     assert list(manifest.vars) == [env_var]
     assert manifest.vars[env_var].secret is True
-    # Derived, not authored. This pair is what makes the key visible to funding.
-    assert manifest.default_store == "sodot"
-    assert manifest.vars[env_var].sod_name == f"lm_api.{provider}"
+    # A provider key funds the machine: it lives in the vault, always.
+    assert manifest.value_store == "vault"
 
 
-def test_the_derived_sod_name_is_what_the_funding_resolver_reads():
-    """Pin the two spellings together rather than trusting them to match.
-
-    `LM_SECRET_PREFIX` is the resolver's, `sod_name` is the manifest's. They are
-    computed in different modules, and the whole feature is the claim that they
-    agree."""
+def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
+    """Pin the two spellings together: the resolver tests for `lm_api.<provider>`."""
     from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX
+    from flow_sdk.schema.data_spec.credential_contract import vault_name
 
-    manifest = CredentialManifestSpec.model_validate(
-        {"schema": 1, "name": "openrouter", "lm_provider": "openrouter",
-         "vars": {"OPENROUTER_API_KEY": {"label": "API key"}}}
+    assert vault_name(scope="user", project_id=None, env_var="OPENROUTER_API_KEY", lm_provider="openrouter") == (
+        f"{LM_SECRET_PREFIX}openrouter"
     )
-
-    assert manifest.vars["OPENROUTER_API_KEY"].sod_name == f"{LM_SECRET_PREFIX}openrouter"
-
-
-def test_a_plain_sodot_credential_is_named_by_its_variable():
-    """No provider to derive from, so the variable's own name is the coordinate."""
-    manifest = CredentialManifestSpec.model_validate(
-        {**TWILIO, "default_store": "sodot"}
-    )
-
-    assert manifest.vars["TWILIO_AUTH_TOKEN"].sod_name == "TWILIO_AUTH_TOKEN"
-
-
-def test_an_authored_sod_name_is_left_alone():
-    manifest = CredentialManifestSpec.model_validate(
-        {"schema": 1, "name": "custom", "default_store": "sodot",
-         "vars": {"MY_TOKEN": {"sod_name": "legacy.name"}}}
-    )
-
-    assert manifest.vars["MY_TOKEN"].sod_name == "legacy.name"
-
-
-def test_an_env_local_credential_derives_no_sod_name():
-    """`.env.local` addresses a value by its key; a sodot name would be a second
-    coordinate for the same value, free to disagree with the first."""
-    manifest = CredentialManifestSpec.model_validate(TWILIO)
-
-    assert all(v.sod_name == "" for v in manifest.vars.values())
 
 
 @pytest.mark.parametrize(
@@ -215,6 +206,10 @@ def test_an_env_local_credential_derives_no_sod_name():
         ({"lm_provider": "flowpad"}, "the hub login is the key; there is nothing to store"),
         ({"lm_provider": "cohere"}, "not a provider this box can hold a key for"),
         ({"lm_provider": "openai"}, "a provider names ONE key, and TWILIO declares two"),
+        (
+            {"lm_provider": "openai", "value_store": "env", "vars": {"OPENAI_API_KEY": {}}},
+            "a provider key is never written to a file",
+        ),
     ],
 )
 def test_lm_provider_authoring_rules_are_load_errors(override, why):

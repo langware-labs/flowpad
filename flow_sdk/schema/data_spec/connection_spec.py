@@ -89,8 +89,8 @@ class ConnectionSpec(DataSpec):
     #: guess here would be a claim about someone's billing.
     account: str = ""
     icon: str = ""
-    #: ``machine`` or ``project`` — which of the two scopes this row belongs to.
-    #: Only API-key credentials are project-scoped.
+    #: ``machine`` for sign-ins and harnesses; a credential row carries its own
+    #: scope, ``user`` or ``project``.
     scope: str = "machine"
     credential_ref: str = ""
     scopes: tuple[str, ...] = ()

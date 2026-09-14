@@ -15,7 +15,7 @@ What lives here is what has no other home:
 * the namespace policy per type — a type gaining or losing an `id_namespace`
   override silently moves every v5 it owns;
 * the formulas that live OUTSIDE the seam (`Project.derive_id_for_path`,
-  `Tag`, `content_fingerprint`, `markdown_id`, `secret_origin_id`) — the ones a
+  `Tag`, `content_fingerprint`, `markdown_id`) — the ones a
   consolidation is most likely to "tidy" into a different value;
 * the deliberate DIVERGENCES, pinned so a future cleanup cannot quietly merge
   two key spaces that must stay separate.
@@ -204,12 +204,3 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
     assert peek == str(uuid.uuid5(uuid.NAMESPACE_DNS, "subagent:helper"))
     assert peek != resolve_id(_info("subagent"), FSRef(ref._path, read_only=True))
     assert path.read_bytes() == b"# Helper\n\nbody\n", "the peek never writes"
-
-
-def test_golden_secret_origin_id_matches_the_seam_key() -> None:
-    """Two files must produce byte-identical output, today by convention only."""
-    from flow_sdk.assets.types.secret_origin_identity import secret_origin_id, stable_key
-
-    assert secret_origin_id("proj-1", "API_KEY") == str(
-        uuid.uuid5(uuid.NAMESPACE_URL, stable_key("proj-1", "API_KEY"))
-    )

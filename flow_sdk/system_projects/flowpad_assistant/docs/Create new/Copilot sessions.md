@@ -12,7 +12,7 @@ there is no form to fill in first.
 Everything about how a session is homed works the same as a
 [[Claude Code sessions|Claude Code session]]: it runs in the active
 [[Flowpad project]]'s folder, it can see the project's
-[[Context folders|context folders]], and [[Project secrets]] bound to the
+[[Context folders|context folders]], and [[Secrets]] declared for the
 project arrive as environment variables. Without an active project the session
 still starts, unhomed, in the Global scope.
 

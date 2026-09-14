@@ -2,7 +2,7 @@
 
 Offline by construction — the hub seam is monkeypatched, so this runs with no
 network, no hub and no credentials. The mechanism is the one
-``test_hub_secret_driver.py`` uses (patch the module-qualified symbol the driver
+the hub drivers' tests use (patch the module-qualified symbol the driver
 imports lazily) applied to the source/cursor fakes ``test_agentmail_driver.py``
 uses.
 

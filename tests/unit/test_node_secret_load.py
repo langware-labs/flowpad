@@ -1,20 +1,20 @@
 """One resolver, every consumer.
 
-A project's declared secrets reach workers, the connector's commands, and
+A project's declared credentials reach workers, the connector's commands, and
 terminals through a single implementation with two transports — a process env
 dict here, a `list[FlowEnv]` for a compute node. Two resolutions would mean a
-change to how a secret resolves could apply to one path and miss the other.
+change to how a value resolves could apply to one path and miss the other.
 
-Node attachment gates all of them. The back-compat rule does the heavy lifting:
-an uncurated node reports None (no restriction), so nothing changes for anyone
-who has never opened the attach UI.
+Node attachment gates all of them. An uncurated node reports None (no
+restriction), so nothing changes for anyone who has never opened the attach UI.
 """
 
 import pytest
 
+from flow_sdk.builtin.credential_resolver import resolve_project_secrets
+from flow_sdk.builtin.credential_service import save_credential
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.secret_origin_resolver import resolve_project_secrets
 from flow_sdk.core.flow.models.execution.env_context import resolve_node_secret_env
 from flow_sdk.schema.type_info import register_all
 
@@ -25,12 +25,13 @@ async def _project_with_values(tmp_path, **secrets):
     project = Project(name=str(tmp_path / "load-proj"))
     project.fs_storage_mount_path = str(tmp_path)
     await project.save()
-    for env_var, value in secrets.items():
-        await project.add_secret_pointer(
-            name=env_var, env_var=env_var, scope="private",
-            locator={"kind": "env-local", "env_key": env_var},
+    if secrets:
+        await save_credential(
+            scope="project",
+            project_id=str(project.id),
+            manifest={"name": "pack", "vars": {k: {"label": k} for k in secrets}},
+            values=secrets,
         )
-        await project.provide_secret(env_var=env_var, value=value)
     return project
 
 
@@ -60,12 +61,13 @@ async def test_none_means_no_restriction(tmp_path, sod_env):
 
 
 @pytest.mark.asyncio
-async def test_an_unresolvable_secret_is_skipped_not_fatal(tmp_path, sod_env):
+async def test_an_unfilled_variable_is_skipped_not_fatal(tmp_path, sod_env):
     """A missing value must never take down a spawn."""
     project = await _project_with_values(tmp_path, A_KEY="a-val")
-    await project.add_secret_pointer(
-        name="NEVER_PROVIDED", env_var="NEVER_PROVIDED", scope="private",
-        locator={"kind": "env-local", "env_key": "NEVER_PROVIDED"},
+    await save_credential(
+        scope="project",
+        project_id=str(project.id),
+        manifest={"name": "empty", "vars": {"NEVER_PROVIDED": {"label": "x"}}},
     )
 
     resolved = await resolve_project_secrets(project)
@@ -74,15 +76,26 @@ async def test_an_unresolvable_secret_is_skipped_not_fatal(tmp_path, sod_env):
 
 
 @pytest.mark.asyncio
-async def test_a_raising_driver_is_skipped(tmp_path, sod_env, monkeypatch):
+async def test_an_undeclared_env_local_key_is_not_injected(tmp_path, sod_env):
+    """Only declared variables reach a process; the file also holds ports and flags."""
+    project = await _project_with_values(tmp_path, A_KEY="a-val")
+    with open(tmp_path / ".env.local", "a", encoding="utf-8") as f:
+        f.write('VITE_PORT="5173"\n')
+
+    assert list(await resolve_project_secrets(project)) == ["A_KEY"]
+
+
+@pytest.mark.asyncio
+async def test_a_raising_store_is_skipped(tmp_path, sod_env, monkeypatch):
     project = await _project_with_values(tmp_path, A_KEY="a-val")
 
-    from flow_sdk.builtin.drivers import env_local_secret_driver as mod
+    from flow_sdk.builtin import credential_store
 
-    async def boom(*a, **k):
-        raise RuntimeError("driver exploded")
+    def boom(*a, **k):
+        raise RuntimeError("store exploded")
 
-    monkeypatch.setattr(mod.EnvLocalSecretDriver, "resolve", boom)
+    monkeypatch.setattr(credential_store, "_load_vault", boom)
+    monkeypatch.setattr("flow_sdk.builtin.env_local_store.read_env_local_values", boom)
 
     assert await resolve_project_secrets(project) == {}
 

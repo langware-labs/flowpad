@@ -101,7 +101,6 @@ for _root in (USER_HOME_FOLDER, REAL_PROJECT_CWD, SYSTEM_ROOT, CWD_ROOT):
 idx.add_function(RecordType.FOLDER, markdown_in_folder_fn,      RecordType.MARKDOWN)
 idx.add_function(RecordType.FOLDER, skill_in_folder_fn,         RecordType.SKILL)
 idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn,   RecordType.SPREADSHEET)
-idx.add_function(RecordType.FOLDER, secret_origin_in_folder_fn, RecordType.SECRET_ORIGIN)
 # Stage-2 into-file walks
 idx.add_function(RecordType.CLAUDE_HOOK_SOURCE, hooks_in_settings_fn,  RecordType.CLAUDE_HOOK)
 idx.add_function(RecordType.MCP_SERVER_SOURCE,  mcp_servers_in_file_fn, RecordType.MCP_SERVER)
@@ -227,7 +226,7 @@ A record is an orphan iff its Layer-1 source is gone. `OrphanAction` controls th
 | `IGNORE` | Remove the DB row + FTS entry; keep the on-disk record dir (tombstone). |
 | `DELETE` | Remove DB row + FTS entry **and** `rmtree` the record dir. |
 
-Orphan detection is constrained to `indexable_types()` (`_resolve_orphan_filter_types`) — derived from the walker graph, so every walked type (including the repo-asset types `agent_trace`, `data_source_spec`, `graph_workflow`, `helpdesk`, `journey`, `mcp`, `prompt`, `secret_origin`, `workflow_run`) is swept — so runtime-only types with DB rows but no walker (e.g. `conversation`, `flow_message`, `annotation`, `compute_node`, `invitation`) are never flagged as orphan en masse. A destructive action on a *narrowed* walk (`opts.roots` set) without a `scope_filter` is refused and falls back to `INDEX` — cross-scope references would otherwise be misclassified.
+Orphan detection is constrained to `indexable_types()` (`_resolve_orphan_filter_types`) — derived from the walker graph, so every walked type (including the repo-asset types `agent_trace`, `data_source_spec`, `graph_workflow`, `credential_spec`, `helpdesk`, `journey`, `mcp`, `prompt`, `workflow_run`) is swept — so runtime-only types with DB rows but no walker (e.g. `conversation`, `flow_message`, `annotation`, `compute_node`, `invitation`) are never flagged as orphan en masse. A destructive action on a *narrowed* walk (`opts.roots` set) without a `scope_filter` is refused and falls back to `INDEX` — cross-scope references would otherwise be misclassified.
 
 ---
 

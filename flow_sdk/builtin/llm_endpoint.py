@@ -33,7 +33,7 @@ from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
-from flow_sdk.schema.data_spec.secret_origin_contract import LM_SECRET_PREFIX
+from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.client import LLMClient, ProbeResult

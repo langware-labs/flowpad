@@ -1,4 +1,4 @@
-"""Read-only primitives over a project's ``.env.local``.
+"""Primitives over a scope root's ``.env.local`` (a project mount or the home folder).
 
 Two contracts are pinned here, both load-bearing for the secrets UI:
 
@@ -29,14 +29,11 @@ from flow_sdk.builtin.env_local_store import (
     list_env_local,
     write_env_local,
 )
-from flow_sdk.builtin.project import Project
 
 
 def _project(tmp_path):
-    """A Project pointed at ``tmp_path``. Never saved — these are pure reads."""
-    project = Project(name=str(tmp_path / "env-local-proj"))
-    project.fs_storage_mount_path = str(tmp_path)
-    return project
+    """The scope root under test."""
+    return tmp_path
 
 
 def _git(tmp_path, *args: str) -> subprocess.CompletedProcess:
@@ -97,10 +94,8 @@ def test_list_env_local_duplicate_key_reports_the_effective_line(tmp_path):
 def test_list_env_local_empty_when_no_file_or_no_mount(tmp_path):
     assert list_env_local(_project(tmp_path)) == []
 
-    unmounted = Project(name="no-mount")
-    unmounted.fs_storage_mount_path = ""
-    assert list_env_local(unmounted) == []
-    assert env_local_path(unmounted) is None
+    assert list_env_local(None) == []
+    assert env_local_path(None) is None
 
 
 def test_env_local_path_points_at_the_file_even_when_absent(tmp_path):
@@ -123,10 +118,7 @@ def test_gitignore_status_outside_a_repo_is_not_blocked(tmp_path):
 
 
 def test_gitignore_status_no_project_dir(tmp_path):
-    project = Project(name="no-mount")
-    project.fs_storage_mount_path = str(tmp_path / "does-not-exist")
-
-    status = gitignore_status(project)
+    status = gitignore_status(tmp_path / "does-not-exist")
 
     assert status["code"] == GITIGNORE_NO_DIR
     assert status["ignored"] is True
@@ -311,3 +303,17 @@ def test_env_local_block_reports_a_code(tmp_path):
     assert block is not None
     assert block["code"] == GITIGNORE_NOT_IGNORED
     assert "NOT excluded" in block["reason"]
+
+
+def test_writing_outside_a_repo_adds_no_gitignore(tmp_path):
+    """A user-scope root is the home folder: nothing is dropped into it."""
+    write_env_local(tmp_path, "TOKEN", "sk-fine")
+
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_a_missing_folder_is_a_block_not_a_pass(tmp_path):
+    """Nothing can be written where there is no folder, so status must say so."""
+    block = env_local_block(gitignore_status(tmp_path / "missing"))
+
+    assert block is not None and block["code"] == GITIGNORE_NO_DIR

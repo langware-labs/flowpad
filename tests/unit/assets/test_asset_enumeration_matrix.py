@@ -54,8 +54,6 @@ def _write(root: Path, type_name: str, *, mount: str | None = None, name: str = 
         body = f"export const meta = {{id: '{identity}', name: '{name}'}};\n"
     elif main.suffix == ".csv":
         body = "name,value\nfixture,1\n"
-    elif type_name == "secret_origin":
-        body = json.dumps({"data": {"project_id": identity, "env_var": "FIXTURE_TOKEN", "locator": {"kind": "local", "sod_name": "fixture"}}})
     elif type_name == "claude_session":
         body = json.dumps({"sessionId": identity}) + "\n"
     elif type_name == "codex_session":

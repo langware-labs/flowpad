@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, KeySquare } from 'lucide-react';
 import type { CredentialSpec, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { getIconPacks, resolveIcon } from '@sdk/icons';
@@ -28,6 +28,8 @@ export interface AddConnectionDialogProps {
   specs: CredentialSpec[];
   onPickProvider: (providerName: string) => void;
   onPickCredential: (spec: CredentialSpec) => void;
+  /** Declare your own set of environment variables. */
+  onPickCustom: () => void;
   /** Set while a pick is in flight, so the tile can spell "working". */
   busyKey?: string | null;
 }
@@ -72,10 +74,10 @@ export function AddConnectionDialog({
   specs,
   onPickProvider,
   onPickCredential,
+  onPickCustom,
   busyKey,
 }: AddConnectionDialogProps) {
   const { t } = useLingui();
-  const nothingLeft = providers.length === 0 && specs.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,7 +87,7 @@ export function AddConnectionDialog({
             <Trans>Add connection</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>Values stay on this machine. Nothing is sent anywhere by adding one.</Trans>
+            <Trans>Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -108,26 +110,24 @@ export function AddConnectionDialog({
             </TileSection>
           )}
 
-          {specs.length > 0 && (
-            <TileSection title={<Trans>Use an API key</Trans>}>
-              {specs.map((spec) => (
-                <DesktopTile
-                  key={spec.name}
-                  Icon={credentialIcon(spec)}
-                  label={spec.title || String(spec.name ?? '')}
-                  loading={busyKey === spec.name}
-                  data-testid={`add-connection-${spec.name}`}
-                  onClick={() => onPickCredential(spec)}
-                />
-              ))}
-            </TileSection>
-          )}
-
-          {nothingLeft && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              <Trans>Everything available is already connected.</Trans>
-            </p>
-          )}
+          <TileSection title={<Trans>Use an API key</Trans>}>
+            {specs.map((spec) => (
+              <DesktopTile
+                key={spec.name}
+                Icon={credentialIcon(spec)}
+                label={spec.title || String(spec.name ?? '')}
+                loading={busyKey === spec.name}
+                data-testid={`add-connection-${spec.name}`}
+                onClick={() => onPickCredential(spec)}
+              />
+            ))}
+            <DesktopTile
+              Icon={KeySquare}
+              label={t`Custom API key`}
+              data-testid="add-connection-custom"
+              onClick={onPickCustom}
+            />
+          </TileSection>
         </div>
       </DialogContent>
     </Dialog>

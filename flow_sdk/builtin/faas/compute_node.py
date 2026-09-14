@@ -741,7 +741,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return []
         if project is None:
             return []
-        return [row.get("env_var") for row in project.secret_origins if row.get("env_var")]
+        from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+
+        return sorted(await declared_vars(project))
 
     async def _recurate(self, project_id: str, env_var: str, *, add: bool) -> "ApiResponse":
         """Attach or detach one secret. Both verbs are the same operation over a
@@ -1248,7 +1250,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         membership_entity`` is the one seam that already mirrors a hub
         membership container locally (idempotent upsert, hub ``created_by`` and
         dates preserved through ``remote_reflection`` rather than stamped with
-        the local sync user, plus context-folder and secret-origin
+        the local sync user, plus context-folder
         materialization). This is the same adopt the invitation-accept path
         performs — a sandbox handover is the same event reached a different way,
         so it must not grow a second, subtly different copy. Which fields cross

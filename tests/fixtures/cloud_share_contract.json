@@ -19,8 +19,7 @@
       "presence",
       "session_code",
       "session_count",
-      "shared_context_origins",
-      "shared_secret_origins"
+      "shared_context_origins"
     ],
     "withheld_by_declaration": [
       "asset_occurrences",
@@ -68,23 +67,10 @@
   },
   "stripped_names_that_are_not_fields": [
     "include_dirs",
-    "context_dir_infos",
-    "secret_origins"
+    "context_dir_infos"
   ],
   "readded_by_share": [
-    "shared_context_origins",
-    "shared_secret_origins"
-  ],
-  "secret_entry_fields": [
-    "env_var",
-    "kind",
-    "locator",
-    "name",
-    "project_id",
-    "sod_store"
-  ],
-  "secret_locator_stripped_for_local": [
-    "sod_name"
+    "shared_context_origins"
   ],
   "portable_asset_projection_fields": [
     "contract_version",

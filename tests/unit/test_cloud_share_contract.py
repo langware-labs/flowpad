@@ -79,7 +79,7 @@ def test_the_dead_pops_are_still_dead():
 
     `model_dump()` never emits them, so the pops have always been no-ops. They
     are harmless, but pinned here so nobody reads them as evidence that a field
-    called `secret_origins` is being stripped — and so that if one of them ever
+    called `include_dirs` is being stripped — and so that if one of them ever
     becomes a real field, this fails and forces a real decision.
     """
     for name in CONTRACT["stripped_names_that_are_not_fields"]:
@@ -99,19 +99,6 @@ def test_share_puts_three_stripped_fields_back(project):
         assert f'body["{field}"]' in share_src, f"share() no longer re-adds {field}"
 
 
-def test_a_secret_declaration_carries_no_value():
-    entry_fields = set(CONTRACT["secret_entry_fields"])
-    payload_src = inspect.getsource(Project._shared_secret_origin_payload)
-    # The assertion the test's name promises: no value in the CODE, not merely
-    # absent from a fixture two files away.
-    assert '"value"' not in payload_src
-    for field in entry_fields:
-        assert f'"{field}"' in payload_src, f"secret payload no longer carries {field}"
-    # The machine-specific coordinate is stripped from a local locator.
-    for stripped in CONTRACT["secret_locator_stripped_for_local"]:
-        assert f'locator.pop("{stripped}"' in payload_src
-
-
 def test_a_git_published_asset_sends_metadata_and_coordinates_only():
     assert sorted(PortableAssetProjection.model_fields) == CONTRACT["portable_asset_projection_fields"]
     assert sorted(_LOCAL_OR_RUNTIME_FIELDS) == CONTRACT["portable_asset_local_or_runtime_fields"]
@@ -128,7 +115,6 @@ def test_the_doc_lists_exactly_what_the_fixture_says():
         "when-set": BUCKETS["hub_when_set"],
         "withheld": BUCKETS["withheld_by_declaration"] + BUCKETS["stripped_by_hub_body"],
         "readded": CONTRACT["readded_by_share"],
-        "secret-entry": CONTRACT["secret_entry_fields"],
     }
     for name, fields in expected.items():
         match = re.search(rf"<!-- pinned:{name} -->(.*?)<!-- pinned:/{name} -->", doc, re.S)

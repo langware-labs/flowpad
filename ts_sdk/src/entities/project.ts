@@ -133,118 +133,6 @@ export interface AddContextDirFromGitResult {
   scope_changed: boolean;
 }
 
-export type SecretPointerScope = 'private' | 'shared';
-
-export interface LocalSecretRef {
-  kind: 'local';
-  sod_name: string;
-}
-
-export interface EnvLocalSecretRef {
-  kind: 'env-local';
-  env_key: string;
-}
-
-export interface HubSecretRef {
-  kind: 'flowpad-hub';
-  secret_id: string;
-}
-
-export interface GcpSecretRef {
-  kind: 'gcp';
-  gcp_project: string;
-  secret: string;
-  version?: string;
-}
-
-export interface OnePasswordSecretRef {
-  kind: '1password';
-  vault: string;
-  item: string;
-  field?: string;
-}
-
-export type SecretOriginLocator =
-  | LocalSecretRef
-  | EnvLocalSecretRef
-  | HubSecretRef
-  | GcpSecretRef
-  | OnePasswordSecretRef;
-
-/** Which local SOD store the wizard caches a provided value into. */
-export type SodStore = 'sodot' | 'env-local';
-
-export interface ProjectSecretOriginSummary {
-  typeid: string;
-  name: string;
-  /** Half of the identity — `(project_id, env_var)` is what names a secret. */
-  project_id?: string;
-  env_var: string;
-  /** Where to FETCH from. Declaration detail, not identity: it may change
-   *  without the secret becoming a different secret. */
-  kind: SecretOriginLocator['kind'] | string;
-  locator: Partial<SecretOriginLocator>;
-  scope: SecretPointerScope | string;
-  /** Which local store the wizard caches a provided value into. The backend has
-   *  always emitted this; the type omitted it. */
-  sod_store?: SodStore | string;
-  /** What the secret is for, in the declarer's words. Lives on the declaration
-   *  rather than the EnvVar row because a declaration may have no value yet, and
-   *  an EnvVar cannot exist without one. */
-  description?: string;
-}
-
-/** One row of the value-free resolve-status the Secrets card / wizard reads. */
-export interface SecretResolveStatus {
-  typeid: string;
-  name: string;
-  env_var: string;
-  kind: string;
-  scope: string;
-  sod_store: SodStore | string;
-  description?: string;
-  status: 'available' | 'missing';
-  /** Which store on THIS machine can satisfy the declaration, if any. */
-  found_in?: 'env-local' | 'sodot' | 'provider' | null;
-  /** `missing-value` when nothing here can satisfy it — what a receiver of a
-   *  shared project sees for every secret they have not provided. */
-  warning?: 'missing-value' | null;
-  setup_hint: {
-    kind: string;
-    sod_store: SodStore | string;
-    provider_label: string;
-    prompt: string;
-    coming_soon?: boolean;
-    coord_fields?: string[];
-  };
-}
-
-/** One `.env.local` key. Names and line numbers only — never a value. */
-export interface EnvLocalKey {
-  key: string;
-  /** 1-indexed line of the effective (last) definition, for the editor jump. */
-  line: number;
-  declared: boolean;
-}
-
-export interface EnvLocalStatus {
-  path: string | null;
-  exists: boolean;
-  gitignore: { in_repo: boolean; ignored: boolean; tracked?: boolean; code: string; reason: string };
-  /** A hard block: the file is committable, so no value may be written to it. */
-  blocked: boolean;
-  block_code: string | null;
-  block_reason: string | null;
-  keys: EnvLocalKey[];
-}
-
-/** One row of the opt-in drift check. */
-export interface SecretDriftStatus {
-  typeid: string;
-  env_var: string;
-  warning: 'value-changed' | null;
-}
-
 export interface ProjectContextFolderResolveResult {
   typeid: string;
   kind: string;
@@ -430,9 +318,6 @@ export class Project extends APIEntity<Project> {
   /** Per-context-folder info (path + origin_kind). Mirrors the backend
    *  computed Project.context_dir_infos — same paths/order as include_dirs. */
   context_dir_infos: ProjectContextDirInfo[] = [];
-  /** Project secret pointers. Value-free metadata only; values are never
-   *  exposed through the SDK and resolve only inside worker launch. */
-  secret_origins: ProjectSecretOriginSummary[] = [];
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
   customization: ProjectCustomization = {};
@@ -452,7 +337,6 @@ export class Project extends APIEntity<Project> {
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
     this.context_roots = (entity.context_roots as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
-    this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
   }
 
@@ -692,15 +576,6 @@ export class Project extends APIEntity<Project> {
     }
   }
 
-  private adoptSecretOrigins(response: unknown): void {
-    const origins = (response as { secret_origins?: unknown } | null)?.secret_origins;
-    if (Array.isArray(origins)) {
-      this.secret_origins = origins.filter((item): item is ProjectSecretOriginSummary => (
-        !!item && typeof item === 'object' && typeof (item as ProjectSecretOriginSummary).typeid === 'string'
-      ));
-    }
-  }
-
   /** Attach a context folder (auto-added to every agentic worker's --add-dir
    *  set). Idempotent; the backend mints the Folder entity, links it into the
    *  requested context bucket — `private` (default, never leaves this machine)
@@ -764,139 +639,6 @@ export class Project extends APIEntity<Project> {
   /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     this.adoptContextDirs(await this.post('remove-context-dir', { path }));
-  }
-
-  async addSecretPointer(
-    name: string,
-    envVar: string,
-    options: {
-      locator: SecretOriginLocator;
-      scope?: SecretPointerScope;
-      sodStore?: SodStore;
-      /** Omit to leave an existing description untouched — re-declaring from a
-       *  surface that carries none must not wipe one someone already wrote. */
-      description?: string;
-    },
-  ): Promise<void> {
-    const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
-    // The backend builds the value-free locator from the generic ``locator`` dict
-    // (any provider kind); ``sod_store`` is where the wizard caches a value.
-    actionInfo.bodyParameters = {
-      name,
-      env_var: envVar,
-      scope: options.scope ?? 'private',
-      kind: options.locator.kind,
-      locator: options.locator,
-      ...(options.sodStore ? { sod_store: options.sodStore } : {}),
-      ...(options.description !== undefined ? { description: options.description } : {}),
-    };
-    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
-  }
-
-  /**
-   * Declare several secrets in one act.
-   *
-   * A credential bundles env vars, so adding one is inherently plural. Calling
-   * `addSecretPointer` per variable does NOT work: each call mutates the
-   * project's context buckets and saves the whole entity, so the second write
-   * can land from a copy that predates the first and silently drop its link —
-   * the declarations survive as rows while the project forgets them. One call,
-   * one save.
-   */
-  async addSecretPointers(
-    pointers: Array<{
-      name?: string;
-      envVar: string;
-      locator: SecretOriginLocator;
-      scope?: SecretPointerScope;
-      sodStore?: SodStore;
-      description?: string;
-    }>,
-  ): Promise<void> {
-    const actionInfo = new ActionInfo('add-secret-pointers', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = {
-      pointers: pointers.map((p) => ({
-        name: p.name ?? p.envVar,
-        env_var: p.envVar,
-        scope: p.scope ?? 'private',
-        kind: p.locator.kind,
-        locator: p.locator,
-        ...(p.sodStore ? { sod_store: p.sodStore } : {}),
-        ...(p.description !== undefined ? { description: p.description } : {}),
-      })),
-    };
-    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
-  }
-
-  async removeSecretPointer(typeid: string): Promise<void> {
-    this.adoptSecretOrigins(await this.post('remove-secret-pointer', { typeid }));
-  }
-
-  /**
-   * Delete credentials: the declarations, and every value it is ours to delete.
-   *
-   * A batch, because a credential is several variables and removing them one
-   * request at a time can fail half-way and leave a row that is neither there
-   * nor gone.
-   *
-   * The answer names what actually happened. `kept` is not a failure — it is the
-   * variables whose values live in the user's own `.env.local`, which Flowpad
-   * never removes from; the caller says so rather than claiming a deletion that
-   * did not happen.
-   */
-  async deleteSecrets(typeids: string[]): Promise<{ deleted: string[]; kept: string[] }> {
-    const res = await this.post<{ deleted?: string[]; kept?: string[] }>('delete-secrets', {
-      typeids,
-    });
-    return { deleted: res?.deleted ?? [], kept: res?.kept ?? [] };
-  }
-
-  /** Value-free per-secret resolve status (available/missing) for the Secrets
-   *  card + setup wizard. Never fetches a value. */
-  async secretResolveStatus(): Promise<SecretResolveStatus[]> {
-    const res = await this.post<{ secrets?: SecretResolveStatus[] }>('secret-resolve-status');
-    return Array.isArray(res?.secrets) ? res!.secrets : [];
-  }
-
-  /** What is in the project's `.env.local`, and may we write to it?
-   *  Names and line numbers only — a value cannot cross this boundary. */
-  async envLocalStatus(): Promise<EnvLocalStatus | null> {
-    return (await this.post<EnvLocalStatus>('env-local-status')) ?? null;
-  }
-
-  /** Which declared secrets hold a different value than when last provided.
-   *  Separate from resolveStatus because answering it requires fetching values,
-   *  so it runs only when someone is looking at the Secrets tab. */
-  async secretDriftStatus(): Promise<SecretDriftStatus[]> {
-    const res = await this.post<{ secrets?: SecretDriftStatus[] }>('secret-drift-status');
-    return Array.isArray(res?.secrets) ? res!.secrets : [];
-  }
-
-  /** Store a secret on the hub, which is the system of record.
-   *
-   *  Fails with `project_not_published` when the project has no hub row yet —
-   *  the caller offers to publish rather than parsing the message. */
-  async pushSecretToCloud(envVar: string, value: string): Promise<void> {
-    await this.post('push-secret-to-cloud', { env_var: envVar, value });
-  }
-
-  /** Delete a secret from the hub — CLOUD ONLY. The local declaration, the
-   *  sodot entry and `.env.local` are all deliberately left alone. */
-  async deleteSecretFromCloud(envVar: string): Promise<void> {
-    await this.post('delete-secret-from-cloud', { env_var: envVar });
-  }
-
-  /** Setup wizard: store a user-provided value in the secret's designated SOD
-   *  store (sodot or the project .env.local). The value never touches the
-   *  reference json or any hub payload. */
-  async provideSecret(params: { typeid?: string; envVar?: string; value: string }): Promise<void> {
-    const actionInfo = new ActionInfo('provide-secret', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = {
-      ...(params.typeid ? { typeid: params.typeid } : {}),
-      ...(params.envVar ? { env_var: params.envVar } : {}),
-      value: params.value,
-    };
-    await dataManager.callAction(actionInfo);
   }
 
   /** Resolve received shared context folders into receiver-local paths. */
