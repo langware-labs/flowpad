@@ -1,4 +1,4 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, ComputeNodeSizeLabels, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useRef, useState } from 'react';
 import { Loader2, Mail, Sparkles } from 'lucide-react';
@@ -26,6 +26,7 @@ import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import {
   AGENT_DEFAULT_MACHINE_SIZE,
   AGENT_EFFORTS,
+  AGENT_MACHINE_SIZE_LABELS,
   AGENT_MACHINE_SIZES,
   AGENT_MODEL_TIERS,
   AGENT_PERMISSION_MODES,
@@ -422,7 +423,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   label={t`Machine size`}
                   value={profile.machine_size}
                   options={AGENT_MACHINE_SIZES}
-                  labels={ComputeNodeSizeLabels}
+                  labels={AGENT_MACHINE_SIZE_LABELS}
                   defaultValue={AGENT_DEFAULT_MACHINE_SIZE}
                   onCommit={(v) => void save({ machine_size: v })}
                 />

@@ -1,4 +1,4 @@
-import { ComputeNodeSize, WorkerModelTier } from '@sdk';
+import { ComputeNodeSize, ComputeNodeSizeLabels, WorkerModelTier } from '@sdk';
 import { WORKER_TYPES } from '@src/hooks/useWorkerHistory';
 
 /**
@@ -52,3 +52,26 @@ export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
  *  `DEFAULT_NODE_SIZE`. Shown as the selection so absent never reads as a
  *  different state from `sm`. */
 export const AGENT_DEFAULT_MACHINE_SIZE = ComputeNodeSize.SMALL;
+
+/**
+ * The Deploy tab's own display text — `ComputeNodeSizeLabels` plus an
+ * indicative hourly price. Owned HERE, not in the shared SDK entity: that
+ * label is mirrored verbatim into the hub's own vendored SDK copy
+ * (`flowpad/ui/sdk/src/entities/compute-node/machine-status.ts`) and read by
+ * an unrelated hub surface, so a price baked in there ships stale the moment
+ * E2B's rate changes, with no build step to catch it. This component is the
+ * only place that wants a price at all.
+ *
+ * Prices are E2B usage rates ($0.000014/vCPU-s, $0.0000045/GiB-s —
+ * $0.0504/vCPU-hr, $0.0162/GiB-hr) x1.7, precomputed: sm $0.1332 -> $0.2264,
+ * md $0.2340 -> $0.3978, lg $0.4680 -> $0.7956 per hour.
+ */
+const MACHINE_SIZE_HOURLY_PRICE: Record<ComputeNodeSize, string> = {
+  [ComputeNodeSize.SMALL]: '$0.226/hr',
+  [ComputeNodeSize.MEDIUM]: '$0.398/hr',
+  [ComputeNodeSize.LARGE]: '$0.796/hr',
+};
+
+export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
+  AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_HOURLY_PRICE[size]}`]),
+) as Record<ComputeNodeSize, string>;
