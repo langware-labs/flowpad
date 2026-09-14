@@ -22,6 +22,7 @@ import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfi
 import { AgentMcpField } from './AgentMcpField';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
+import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import {
   AGENT_DEFAULT_MACHINE_SIZE,
   AGENT_EFFORTS,
@@ -94,7 +95,14 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
     const operation = writeQueueRef.current.then(async () => {
       const saved = await contentRef.current.save();
-      if (saved) agentRef.current.markEdit();
+      if (saved) {
+        agentRef.current.markEdit();
+        // A saved agent.md in a git checkout is auto-committed server-side
+        // (`asset_versioning`), which moves the branch ahead of its remote with
+        // no event of its own. Say so on the preflight channel, so the deploy
+        // checklist re-asks and offers Push instead of claiming nothing is pending.
+        invalidateGitPreflight(agentRef.current.typeId);
+      }
       return saved;
     });
     writeQueueRef.current = operation;
