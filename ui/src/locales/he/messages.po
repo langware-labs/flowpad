@@ -540,6 +540,10 @@ msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדל
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "{day} at {time}"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "{displayName} connection failed"
 msgstr ""
@@ -568,6 +572,10 @@ msgstr ""
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
+
+#: src/components/web-url-display/WebUrlDisplay.tsx
+msgid "{host} can't be shown inside Flowpad."
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{host} paused the session"
@@ -1001,6 +1009,10 @@ msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במ
 msgid "A root talks to a provider with its own key."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "A schedule needs a prompt"
+msgstr ""
+
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "a server already on this machine"
 msgstr ""
@@ -1363,6 +1375,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Add schedule"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -3232,6 +3248,10 @@ msgstr "בדוק שוב"
 msgid "Check for new messages"
 msgstr "בדוק הודעות חדשות"
 
+#: src/components/web-url-display/WebUrlDisplay.tsx
+msgid "Check the address, or try opening it in your browser."
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "יש לבדוק את החיבור ולנסות שוב."
@@ -3648,6 +3668,10 @@ msgstr "לחץ כדי לצפות בפרומפט המלא"
 #: src/components/image-annotator/image-annotator-store.tsx
 msgid "Clipboard not updated"
 msgstr "הלוח לא עודכן"
+
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Clipboard unavailable"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone"
@@ -4401,6 +4425,7 @@ msgstr "כרטיסיית Copilot"
 #: src/components/markdown-view.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Copy"
 msgstr "העתק"
@@ -4626,6 +4651,10 @@ msgstr "לא ניתן להתחבר ל-GitHub"
 
 #: src/components/connections-manager.tsx
 msgid "Could not connect to {displayName}."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Could not copy link"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -4904,6 +4933,10 @@ msgstr ""
 msgid "Could not resolve this folder"
 msgstr "לא ניתן לפתור את התיקייה"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Could not run schedule"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
 msgstr "לא ניתן להריץ בדיקת חיבור."
@@ -4922,6 +4955,10 @@ msgstr ""
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Could not save inbox settings"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Could not save schedule"
 msgstr ""
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
@@ -5062,6 +5099,10 @@ msgstr "לא ניתן היה לעדכן את הסודות המצורפים"
 #~ msgid "Could not update eval flag"
 #~ msgstr "לא ניתן היה לעדכן את דגל ההערכה"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Could not update schedule"
+msgstr ""
+
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
 msgstr ""
@@ -5130,6 +5171,10 @@ msgstr "לא ניתן לפתוח את מרכז העזרה"
 #: src/lib/publish-state.ts
 msgid "Couldn't publish"
 msgstr "הפרסום נכשל"
+
+#: src/components/web-url-display/WebUrlDisplay.tsx
+msgid "Couldn't reach {host}."
+msgstr ""
 
 #: src/routes/loaders/load-next-process.ts
 msgid "Couldn’t reach backend"
@@ -5400,6 +5445,10 @@ msgstr ""
 msgid "Credentials"
 msgstr "פרטי גישה"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Cron {expr}"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Cron Event"
 msgstr "אירוע Cron"
@@ -5483,6 +5532,10 @@ msgstr "התאמה אישית"
 msgid "Cut"
 msgstr "גזור"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Daily at {time}"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
@@ -5531,6 +5584,10 @@ msgstr "מערך נתונים"
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
 msgstr "יום {d}"
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Day {day} of each month at {time}"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Days before old sessions are cleaned up"
@@ -5875,6 +5932,10 @@ msgstr "מחוק פרויקט"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Delete sandbox"
 msgstr "מחיקת סנדבוקס"
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Delete schedule"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Delete secret"
@@ -6282,6 +6343,7 @@ msgstr "מכובה"
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Disabled"
 msgstr "מבוטל"
 
@@ -6711,6 +6773,10 @@ msgstr "עריכת חוק"
 msgid "Edit Hook"
 msgstr "ערוך Hook"
 
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "Edit in agent"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Edit link"
@@ -6724,6 +6790,10 @@ msgstr "ערוך שם"
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
 msgstr "ערוך פרומפט"
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Edit schedule"
+msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
@@ -6877,6 +6947,10 @@ msgstr "הפעל סודות"
 msgid "Enable sniffer"
 msgstr "הפעל סניפר"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Enable the schedule to run it"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Enable Weaker Nested Sandbox"
 msgstr "הפעלת סביבה מבודדת מקוננת חלשה יותר"
@@ -6894,6 +6968,7 @@ msgstr "הפעלה או השבתה של הוק"
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Enabled"
 msgstr "מופעל"
 
@@ -7128,6 +7203,10 @@ msgstr "אירוע: "
 #: src/types/ViewType.ts
 msgid "Events"
 msgstr "אירועים"
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Every {interval}"
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
@@ -9906,6 +9985,10 @@ msgid "Large"
 msgstr "גדול"
 
 #. placeholder {0}: new Date(lastTriggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+#. placeholder {0}: new Date(row.last_run).toLocaleString()
+#. placeholder {0}: new Date(trigger.last_run).toLocaleString()
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "last {0}"
 msgstr "הפעלה אחרונה {0}"
@@ -10157,6 +10240,7 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 msgid "Link copied"
 msgstr "הקישור הועתק"
 
@@ -11622,6 +11706,11 @@ msgstr ""
 msgid "Next"
 msgstr "הבא"
 
+#. placeholder {0}: new Date(row.next_run).toLocaleString()
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "next {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
@@ -12416,6 +12505,10 @@ msgstr "אין תכניות שמורות"
 msgid "No schedule triggers yet. <0>Create one</0>"
 msgstr "אין טריגרים מתוזמנים עדיין. <0>צור אחד</0>"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "No schedules yet."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr "אין סודות עדיין. לחץ על \"הוסף סוד\" כדי ליצור אחד."
@@ -12720,6 +12813,11 @@ msgstr "עדיין לא מוכן"
 msgid "not respected"
 msgstr "לא מוערך"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "not run yet"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
@@ -12999,6 +13097,10 @@ msgstr "הכנה ראשונית"
 msgid "Onboarding reset"
 msgstr "איפוס הכנה ראשונית"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Once at {when}"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "once per machine"
 msgstr ""
@@ -13230,6 +13332,8 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Open in browser"
@@ -13263,6 +13367,10 @@ msgstr "פתח בטרמינל חיצוני"
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Open in Files"
 msgstr "פתחו בקבצים"
+
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Open in Flowpad"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
@@ -13511,6 +13619,8 @@ msgstr "פתח את התוכנית מהסשן שלה כדי לעדכן אותה"
 msgid "Open transcript"
 msgstr "פתח תמליל"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr ""
@@ -14534,8 +14644,10 @@ msgstr "משוער"
 msgid "Projects"
 msgstr "פרויקטים"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr "פרומפט"
@@ -14869,6 +14981,13 @@ msgstr "RAM (MB)"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM:"
 msgstr "זיכרון RAM:"
+
+#. placeholder {0}: row.counter
+#. placeholder {0}: trigger.counter
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "ran {0}×"
+msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 #~ msgid "Re-check"
@@ -16030,6 +16149,10 @@ msgstr "הרץ ניתוח"
 msgid "Run analysis to investigate this session."
 msgstr "הרץ ניתוח כדי לחקור את הסשן הזה."
 
+#: src/components/cron-view/CronForm.tsx
+msgid "Run at"
+msgstr ""
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 #: src/components/graph-context/RunAutomationPanel.tsx
 #: src/components/graph-context/RunAutomationPanel.tsx
@@ -16060,6 +16183,7 @@ msgstr "הפעל מהטרמינל שלך:"
 msgid "Run it"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr "הפעל כעת"
@@ -16096,6 +16220,10 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 msgid "Run the walk in"
 msgstr "היכן להריץ את סריקת הקבצים"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Run this agent on its own, at a time you pick. Runs are headless and show up in the run history."
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Run this as a prompt on {hostName}'s machine"
 msgstr ""
@@ -16130,12 +16258,18 @@ msgstr "פועל על מחשב המארח · מצב: {0}"
 msgid "Running…"
 msgstr "הפעלה..."
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
 msgid "Runs"
 msgstr "הרצות"
+
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "Runs agent"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Runs as an AgenticProcess — see per-row status + transcript."
@@ -16395,6 +16529,22 @@ msgstr "סורק את כל משאבי הווקים מפרופיל המערכת �
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "schedule"
 msgstr "תיזמון"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Schedule"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Schedule enabled"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Scheduled run"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Scheduled run started"
+msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -19049,6 +19199,10 @@ msgstr "הסשן עדיין מתחבר — יש לנסות שוב בעוד רג�
 msgid "The session transcript could not be read."
 msgstr "לא ניתן לקרוא את תמליל הסשן."
 
+#: src/components/web-url-display/WebUrlDisplay.tsx
+msgid "The site doesn't allow being embedded in other apps. Open it in your browser instead."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "The skill matches HEAD."
 msgstr "המיומנות תואמת ל-HEAD."
@@ -19458,6 +19612,10 @@ msgstr "מרכז העזרה של הפרויקט הזה"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
 msgstr "פעולה זו מסירה מהמחשב הזה את תיקיית העזרה המורדת ואת רשומות האינדקס שלה. שום דבר בשרת לא משתנה, והכול יורד שוב בפעם הבאה שהעזרה תיפתח."
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "This removes the schedule from the agent. Past runs stay in the run history."
+msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
@@ -20035,6 +20193,7 @@ msgstr "טריגרים"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
@@ -20174,6 +20333,7 @@ msgstr "לא ידוע"
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/hooks-manager/index.tsx
+#: src/navigation/NavigationActions.ts
 msgid "Unknown error"
 msgstr "שגיאה לא ידועה"
 
@@ -20949,6 +21109,10 @@ msgstr ""
 msgid "What should issue your LLM calls?"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "What should the agent do each time it runs?"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
@@ -20992,6 +21156,7 @@ msgstr "על מה היית רוצה לעבוד?"
 
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "When"
 msgstr "מתי"
 
@@ -21157,6 +21322,10 @@ msgstr "תצוגת עולם"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+msgid "Write what the agent should do when it runs."
 msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx

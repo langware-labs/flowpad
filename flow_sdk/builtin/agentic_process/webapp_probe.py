@@ -20,11 +20,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-# Response budget for the probe's single GET. This is the probe's SEMANTICS --
-# a dev server that has not answered by now is a finding we want to REPORT
-# ("nav_error: timeout"), not a flake to ride past -- so it must not be widened
-# to make anything pass.
-HTTP_PROBE_TIMEOUT_S = 5.0
+from flow_sdk.core.webpage_status import HTTP_PROBE_TIMEOUT_S, nav_error_for
 
 # Every signal we extract (first text node, first visual element, first script)
 # appears in the head or early body. Capping the parse keeps a single-file build
@@ -80,26 +76,11 @@ async def probe_webapp(url: str, port: int) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=HTTP_PROBE_TIMEOUT_S, follow_redirects=True) as client:
             response = await client.get(url)
-    except httpx.TooManyRedirects:
-        result["reachable"] = True
-        result["is_http"] = True
-        result["nav_error"] = "redirect_loop"
-        return result
-    except httpx.ConnectError:
-        # Nothing accepted the connection: the app is not running. This is the
-        # case the browser reports as a successful `onload`.
-        result["nav_error"] = "connection_refused"
-        return result
-    except httpx.TimeoutException:
-        # The port accepted a connection but never answered -- a hung dev server.
-        result["reachable"] = True
-        result["nav_error"] = "timeout"
-        return result
-    except httpx.HTTPError:
-        # Past the connect stage, so something IS listening -- it just is not
-        # speaking HTTP (a raw TCP listener, another protocol on a reused port).
-        result["reachable"] = True
-        result["nav_error"] = "not_http"
+    except httpx.HTTPError as e:
+        # A refused connection is the case the browser reports as a successful
+        # `onload`; a timeout is a hung dev server.
+        result["nav_error"], result["reachable"] = nav_error_for(e)
+        result["is_http"] = result["nav_error"] == "redirect_loop"
         return result
     except Exception as e:  # noqa: BLE001 - a broken probe must not break the display
         result["probe_error"] = f"{type(e).__name__}: {e}"
