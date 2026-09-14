@@ -314,14 +314,19 @@ class SourceDriver(IngestDriver):
         previous = dict((view.state or {}).get("manifest") or {})
         observed = {key: [item.data.stable_dump(), handle_of(item)] for key, item in by_key.items()}
         changed = [key for key, entry in observed.items() if previous.get(key) != entry]
+        # A moved-from key is neither live nor gone: identity travels to where it moved.
+        moved_from = {move.previous.key for move in moved}
         if complete:
             current = observed
             live = {entry[1] for entry in current.values() if entry[1]}
-            gone = [key for key, entry in previous.items() if key not in current and not (entry[1] and entry[1] in live)]
+            gone = [
+                key for key, entry in previous.items()
+                if key not in current and key not in moved_from and not (entry[1] and entry[1] in live)
+            ]
         else:
             current, gone = {**previous, **observed}, []
         gone.extend(origin.key for origin in removed)
-        for key in gone:
+        for key in (*gone, *moved_from):
             current.pop(key, None)
         renames = {ref(move.origin.key): ref(move.previous.key) for move in moved}
         tombstones = [r for key in dict.fromkeys(gone) if (r := ref(key))]
