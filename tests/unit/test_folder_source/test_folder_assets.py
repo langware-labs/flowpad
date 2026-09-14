@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.ingest.reflect import ReflectMode
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 
 from ._harness import entity_at, id_at, poll, write_skill
 

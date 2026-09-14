@@ -31,7 +31,6 @@ import logging
 from typing import Any, Optional
 
 from flow_sdk.builtin.email_inbox_driver import EmailInboxError
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
     FetchResult,
     IngestDriver,
@@ -42,6 +41,7 @@ from flow_sdk.ingest.driver import (
 )
 from flow_sdk.ingest.drivers._watermark import Watermark
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 logger = logging.getLogger(__name__)
 

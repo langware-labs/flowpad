@@ -1025,6 +1025,39 @@ class Project(Entity):
         await self.save()
         return True
 
+    async def _assert_hub_row_is_reachable(self, client) -> None:
+        """Check that the row a 409 collided with is one this account can reach.
+
+        Treating the conflict as a no-op is right when the row is OURS — a Project
+        published from another instance, or one whose local publication markers
+        were lost while the hub kept the row. It is wrong when the id came from
+        someone else's checkout: a Project id lives in the folder's ``.flow/id``,
+        so cloning a repo carries the ORIGINAL author's id, and silently adopting
+        that row would mark this Project published against an entity we cannot
+        write — every later push would fail with no hint why.
+
+        A GET settles it without leaking anything, because the hub answers it only
+        for a caller holding a role on the row. Note what a refusal does and does
+        not prove: the hub deliberately does not distinguish "no such row" from
+        "not yours", so this reports only what is certain — publishing from here
+        cannot work — and does not diagnose which.
+        """
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        try:
+            await client.get(build_hub_url(self))
+        # ``get`` reports any non-200 as ValueError (``FlowpadClient._unwrap``).
+        # Narrow on purpose: a transport failure raises httpx's own error and an
+        # expired session raises ``HubAuthExpiredError``, and both must propagate
+        # as themselves — answering a hub outage with "it isn't yours" would be a
+        # fabricated diagnosis.
+        except ValueError as unreachable:
+            raise RuntimeError(
+                f"A project already exists in the cloud at id {self.id}, and this account "
+                "cannot reach it, so this folder cannot be linked from here. Link it from "
+                "the account that owns it, or give this folder a new project id."
+            ) from unreachable
+
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
 
@@ -1078,7 +1111,15 @@ class Project(Entity):
         body["shared_secret_origins"] = await self._shared_secret_origin_payload()
 
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(build_hub_url(self.get_type()), body)
+            # Idempotent, restoring the contract of the ``Entity.share`` this
+            # overrides (``entity_model.py`` passes the same flag): a 409 means the
+            # hub already holds a row at this id, so the create's post-condition is
+            # already satisfied. Without it the publish DEAD-ENDS — the flip below
+            # never runs, the local row never learns it is published, and the only
+            # remediation the UI offers is the same POST that just 409'd.
+            created = await client.post(build_hub_url(self.get_type()), body, idempotent=True)
+            if created is None:
+                await self._assert_hub_row_is_reachable(client)
             if "remote" in type(self).model_fields:
                 self.remote = True
             # Publication marker. Receiver materialization also sets ``remote``,
@@ -1358,6 +1399,49 @@ class Project(Entity):
         compute_node = await self.get_compute_node()
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
+    @action.get(action_name="published")
+    async def published_action(self):
+        """What this project has PUBLISHED, joined with local state — the read
+        model of the Discover page. Contract and hub equivalence in
+        ``flow_sdk.assets.project_manifest``. Read-only: no mint, no write."""
+        from flow_sdk.builtin.project_manifest import published_view  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await published_view(self))
+
+    @action.post(action_name="unpublish")
+    async def unpublish_action(self, typeid: str = ""):
+        """Drop one row from the manifest by ``typeid`` — for a row whose
+        asset has no local entity to toggle (``missing``). The manifest is
+        re-indexed so every ``published`` cache follows the file."""
+        from flow_sdk.builtin.project_manifest import PublishRefused, drop_row  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            spec = await drop_row(self, typeid)
+        except PublishRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
+        return ApiSuccessResponse(data={"typeids": sorted(spec.typeids)})
+
+    @action.post(action_name="install-published")
+    async def install_published_action(self, request: dict | None = None, typeid: str = "", overwrite: bool = False):
+        """Install one published row (as the hub's ``install_request`` relays
+        it) into THIS project: copy from its origin, index keeping the
+        publisher's id, record in ``deps.json``. A bare ``typeid`` (the CLI's
+        ``flow asset install``) is resolved on the hub first. Refusals are 400
+        with a code."""
+        from flow_sdk.builtin.project_manifest import (  # noqa: PLC0415
+            PublishRefused,
+            install_published,
+            resolve_published_row,
+        )
+
+        try:
+            row = request or await resolve_published_row(str(typeid or ""))
+            return ApiSuccessResponse(data=await install_published(self, row, overwrite=bool(overwrite)))
+        except PublishRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=400, data={"code": exc.code})
+
     @action.get(action_name="get-assets")
     async def get_assets_action(
         self,
@@ -1371,8 +1455,7 @@ class Project(Entity):
         what a NEW process started in this project would see, before any
         process exists. Same path-scan + longest-prefix attribution
         (``scan_path_asset_descriptors``) over user-home / project-mount /
-        context dirs; ``spec`` (not file-backed) comes from a bounded scoped
-        DB list instead. Response shape matches the process action, plus
+        context dirs for every requested filesystem type. Response shape matches the process action, plus
         ``project_id`` per row and a top-level ``truncated`` flag — the seam
         for FTS-backed long-tail search. Never unbounded: ``limit`` is
         clamped; callers wanting more should search, not list.
@@ -1386,13 +1469,8 @@ class Project(Entity):
 
         Read-only throughout — no mint, no write, no indexer walk.
         """
-        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
-            AssetDescriptor,
-            AssetSource,
-            collect_base_source_dirs,
-            hydrate_asset_descriptor_remote,
-            scan_path_asset_descriptors,
-        )
+        from flow_sdk.assets.catalog import scan_path_asset_descriptors
+        from flow_sdk.builtin.asset_context import collect_base_source_dirs, hydrate_asset_descriptor_remote
 
         requested = (
             [t.strip() for t in types.split(",") if t.strip()]
@@ -1409,57 +1487,19 @@ class Project(Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        file_backed = [t for t in requested if t != "spec"] if want_assets else []
-        descriptors: list[AssetDescriptor] = []
-        if file_backed:
-            descriptors = await scan_path_asset_descriptors(
-                sources,
-                own_project_id=str(self.id),
-                types=file_backed,
-                limit=limit,
-            )
+        catalog = await scan_path_asset_descriptors(
+            sources,
+            own_project_id=str(self.id),
+            types=requested,
+            limit=limit,
+        ) if want_assets else None
 
-        if want_assets and "spec" in requested and len(descriptors) < limit:
-            from flow_sdk.builtin.spec import Spec  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-
-            # Own-project OR global (project_id unset) — one query; $IS_NULL is
-            # unary, single-operand [field] shape.
-            spec_rows = await Spec.get_all(
-                QueryFilter.parse(
-                    {
-                        "match": {
-                            "op": "$OR",
-                            "operands": [
-                                {"project_id": str(self.id)},
-                                {"op": "$IS_NULL", "operands": ["project_id"]},
-                            ],
-                        },
-                        "limit": limit - len(descriptors),
-                    },
-                    "spec",
-                )
-            )
-            for spec_entity in spec_rows:
-                spec_project_id = getattr(spec_entity, "project_id", None)
-                descriptors.append(
-                    AssetDescriptor(
-                        typeid=f"spec-{spec_entity.id}",
-                        source=(
-                            AssetSource.PROJECT_DIR
-                            if str(spec_project_id or "") == str(self.id)
-                            else AssetSource.USER_DIR
-                        ),
-                        posix_path=None,
-                        project_id=str(spec_project_id) if spec_project_id else None,
-                        remote=bool(getattr(spec_entity, "remote", False)),
-                    )
-                )
-
-        await hydrate_asset_descriptor_remote(descriptors)
+        descriptors = catalog.assets if catalog else []
+        descriptors = await hydrate_asset_descriptor_remote(descriptors)
         data = {
             "assets": [d.to_row() for d in descriptors],
             "truncated": len(descriptors) >= limit,
+            "scan_issues": catalog.model_dump(mode="json")["issues"] if catalog else [],
         }
         if browsing is not None and browsing.menu:
             from flow_sdk.builtin.asset_menu import build_asset_menu  # noqa: PLC0415
@@ -1580,15 +1620,13 @@ class Project(Entity):
 
         One mint loop, one save, so there is no window to lose a link in.
         """
-        from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
-            SecretOrigin,
-            is_valid_secret_origin_env_var,
-        )
+        from flow_sdk.builtin.secret_origin import SecretOrigin
         from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
             get_secret_origin_driver,
             normalize_secret_origin_kind,
         )
         from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
 
         entries = pointers or []
         if not entries:
@@ -1904,9 +1942,9 @@ class Project(Entity):
         the project exists there. The failure carries ``project_not_published``
         so the UI can offer to publish rather than parse prose.
         """
-        from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
         from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
 
         env_var = (env_var or "").strip()
         if not is_valid_secret_origin_env_var(env_var):

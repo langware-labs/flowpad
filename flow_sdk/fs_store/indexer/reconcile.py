@@ -26,9 +26,9 @@ import logging
 from collections.abc import Container
 from typing import Any
 
-from flow_sdk.fs_store.identity_carrier import Foreign, Found, Unstamped, foreign_detail
+from flow_sdk.assets.identity_carrier import Foreign, Found, Unstamped, foreign_detail
+from flow_sdk.assets.layout import Layout
 from flow_sdk.fs_store.indexer.index_log import FOREIGN_ID, ScanIssue, append_scan_issue
-from flow_sdk.schema.layout import Layout
 
 
 def reconcile(

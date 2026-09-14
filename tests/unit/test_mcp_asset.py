@@ -166,7 +166,7 @@ async def test_the_declaration_and_the_folder_are_two_layers():
     ``attach_declared_mcp_servers`` turns it into the folder form, and nothing
     else in a launch consults the list.
     """
-    from flow_sdk.builtin.agent import AgentSpec
+    from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 
     assert "mcp_servers" in Agent.model_fields
     assert "mcp_servers" in AgentSpec.model_fields

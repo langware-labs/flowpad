@@ -233,12 +233,19 @@ class HubWsBridge:
         # detached inbound materializer may already be in flight when DELETE
         # lands; this set lets it abort before write or roll its write back.
         self._deleted_conv_ids: set[str] = set()
+        # The subset of the above owned by the CURRENT cloud session rather than
+        # by a real delete: logout's bulk wipe tombstones every hub conversation
+        # to protect its purge, but those conversations still exist on the hub.
+        # Tracked separately so the next login can release exactly these and
+        # leave a genuine delete's tombstone standing.
+        self._session_deleted_conv_ids: set[str] = set()
 
     def install(self) -> None:
         """Register inbound handlers on the manager. Idempotent."""
         if self._installed:
             return
         self.manager.register_handler("data_op_msg", self._on_data_op)
+        self.manager.register_handler("install_request", self._on_install_request)
         self._installed = True
 
     def is_hub_conversation(self, conversation_id: str) -> bool:
@@ -250,14 +257,37 @@ class HubWsBridge:
         if conversation_id:
             self._hub_conv_ids.add(conversation_id)
 
-    def suppress_conversation_materialization(self, conversation_id: str) -> None:
-        """Prevent queued Hub children from recreating a locally deleted parent."""
+    def suppress_conversation_materialization(self, conversation_id: str, *, session_scoped: bool = False) -> None:
+        """Prevent queued Hub children from recreating a locally deleted parent.
+
+        ``session_scoped`` marks a tombstone that belongs to the current cloud
+        session instead of to a real delete — logout's wipe sets it, and the next
+        login releases exactly those. Default False: a genuine delete's tombstone
+        outlives any number of logins, as it must.
+        """
         if conversation_id:
             self._deleted_conv_ids.add(conversation_id)
             self._hub_conv_ids.discard(conversation_id)
+            if session_scoped:
+                self._session_deleted_conv_ids.add(conversation_id)
 
     def conversation_materialization_suppressed(self, conversation_id: str) -> bool:
         return conversation_id in self._deleted_conv_ids
+
+    def release_session_conversation_suppressions(self) -> None:
+        """Release the tombstones logout's wipe set — call when a cloud session begins.
+
+        The tombstone is an in-flight guard, not an account-scoped one: it stops a
+        queued hub materializer from recreating a parent a delete just removed.
+        Logout's bulk wipe (``clear_inbox``) borrows the same guard, but logout is
+        not delete — those conversations still exist on the hub and the next login's
+        catch-up pulls them back. The tombstones are memory-only and nothing else
+        clears them, so a stale one silently drops every future inbound frame for
+        that conversation, the catch-up's own backlog included, for the rest of the
+        process. Only the session-scoped ids go: a genuine delete keeps its guard.
+        """
+        self._deleted_conv_ids -= self._session_deleted_conv_ids
+        self._session_deleted_conv_ids.clear()
 
     def _dispatch_event(
         self,
@@ -287,6 +317,30 @@ class HubWsBridge:
             parent_id,
             str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None,
         )
+
+    async def _on_install_request(self, message: dict) -> None:
+        """Hub → this desktop: "install this published asset". The hub only
+        relays the row (typeid + origin + provenance); nothing is fetched or
+        written here. Every open window gets a ``ui_command`` that opens the
+        Add-asset dialog — the person picks the project and confirms there —
+        plus a desktop notification for a window that is not in front."""
+        from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+        from flow_sdk.notifications.ui_command import broadcast_ui_command  # noqa: PLC0415
+
+        envelope = {"message_type", "message_id", "instance_id"}
+        request = {k: v for k, v in (message or {}).items() if k not in envelope}
+        if not request.get("typeid"):
+            logger.warning("[hub-bridge] install_request without a typeid: %s", message)
+            return
+        await broadcast_ui_command("install_request", request=request)
+        try:
+            await notify_desktop(
+                "install",
+                title=f"Install {request.get('name') or request.get('typeid')}",
+                body=f"from {request.get('source_project_name') or 'a project'} — open Flowpad to add it",
+            )
+        except Exception:  # noqa: BLE001 — the dialog is the real surface
+            logger.debug("[hub-bridge] desktop notification skipped", exc_info=True)
 
     async def _on_data_op(self, message: dict) -> None:
         """Inbound data_op_msg dispatcher.
@@ -702,6 +756,8 @@ class HubWsBridge:
             # is_read=False; copying it here clobbered the local read state
             # (e.g. re-marked the sender's own just-sent message unread). Only
             # sync the delivery/body fields the hub actually owns.
+            persisted = None
+            last_field = ""
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -719,8 +775,34 @@ class HubWsBridge:
                     # carries a stale "created", or an out-of-order frame, must
                     # not knock "sent"/"delivered" backward.
                     continue
-                setattr(existing, field, data[field])
-            await existing.save(someone_typeid, notify=True)
+                # ONE TARGETED UPDATE PER FIELD, never a whole-row save. ``existing``
+                # was read at the top of this handler, and the handler is slow (a hub
+                # round-trip); a ``save()`` here round-trips that stale copy and
+                # silently rolls back whatever another task wrote to the row in the
+                # meantime. That is not hypothetical: it un-consumed a prompt's
+                # ``prompt_auto_handled`` marker mid-turn, so the turn ran twice and
+                # the guest got two replies. ``is_read`` / ``is_archived`` / ``is_draft``
+                # are per-machine state sitting behind the same race — the "don't copy
+                # the hub's value" note above only stops the hub supplying a wrong
+                # value, not this handler overwriting a local one.
+                row, patched = await existing._db.update_existing_data_field(
+                    existing.id, existing.get_type(), field, data[field]
+                )
+                if patched and row is not None:
+                    persisted, last_field = row, field
+                    # Keep the in-memory copy current for the code below WITHOUT
+                    # dirtying it — nothing may save this stale object again.
+                    was_dirty = existing._dirty
+                    setattr(existing, field, getattr(row, field))
+                    existing._dirty = was_dirty
+            if persisted is not None:
+                from flow_sdk.core.entity.entity_model import (  # noqa: PLC0415
+                    _publish_server_managed_field_update,
+                )
+
+                # Publish the freshly persisted row, the way every other
+                # server-managed field write does (``mark-edit`` is the precedent).
+                await _publish_server_managed_field_update(existing, persisted, last_field)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
             # no-op when the FM carries no asset TYPE_ID attachments.

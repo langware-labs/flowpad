@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import (
+from flow_sdk.assets.identity_carrier import (
     Derived,
     Frontmatter,
     JsonRoot,
     NotWritable,
     Sidecar,
 )
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from tests.fixtures.identity import frontmatter_id, resolve_id
 
@@ -32,8 +32,8 @@ INDEXED_TYPES = {
     "credential_spec", "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
-    "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "usage_report", "whiteboard", "wizard", "workflow_run",
+    "project", "project_manifest", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
+    "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
@@ -44,13 +44,21 @@ FOLDER_PORTABLE = (
     "whiteboard", "wizard",
 )
 #: Folder-capsule types introduced after the json capsule; they mint +
-#: persist + adopt like the rest.
-FOLDER_NO_LEGACY = ("mcp",)
+#: persist + adopt like the rest. ``project_manifest`` is the per-project
+#: published-asset ledger: a singleton folder whose main is JSON.
+FOLDER_NO_LEGACY = ("mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
+
+
+@pytest.fixture(autouse=True)
+def bind_application_identity_adapters():
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+
+    register_asset_runtime_bindings()
 
 
 def _info(type_name: str):
@@ -99,7 +107,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # 20 capsule: base's 17 + `agent` + `mcp` + `wizard` (an MCP we AUTHOR carries its own
+    # 21 capsule: base's 17 + `agent` + `mcp` + `wizard` + `project_manifest` (an MCP we AUTHOR carries its own
     # v4; the sibling `mcp_server` SCAN is derived, because its source is a
     # vendor config file we cannot write an id into). 17 derived: + `micro_app`,
     # whose webapp.json carries no id, and + `credential_spec`, whose
@@ -108,7 +116,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # carrier says the id is NOT in the file, so the type still owes an
     # install-independent key. See
     # `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (20, 3, 17)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 3, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)

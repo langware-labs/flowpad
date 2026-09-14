@@ -90,7 +90,7 @@ questions from the docs — it only (re)generates indexes. If you were asked to
      verbatim. Do NOT re-summarise the child; never parse the child's `.md`.
    - Render `prompts/folder_index.prompt.md` to produce a **single JSON object**
      conforming to `IndexMdJson` (schema in
-     `flow_sdk/fs_store/operations/markdown_index_render.py`). Required fields:
+     `flow_sdk/assets/types/markdown_index_render.py`). Required fields:
      `typeid`, `parent_ref`, `vault_root`, `folder_rel_path`, `folder_name`,
      `inputs_hash` (use the planner's value verbatim), `self_summary` (≤ 60 words),
      `files[]` (each with `name`, `rel_path`, `title`, `summary`, `content_hash`),
@@ -100,7 +100,7 @@ questions from the docs — it only (re)generates indexes. If you were asked to
    - Run the deterministic renderer to materialize `<folder>/index.md`:
 
      ```bash
-     uv run python -m flow_sdk.fs_store.operations.markdown_index_render \
+     uv run python -m flow_sdk.assets.types.markdown_index_render \
        "<folder>/index.md.json" "<folder>/index.md"
      ```
 

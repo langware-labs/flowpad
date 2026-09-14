@@ -62,6 +62,13 @@ async def cloud_login() -> dict[str, Any]:
         kind = _classify_hub(hub_url)
 
         if kind == "cloud":
+            from flow_sdk.instance_settings.runtime import own_sandbox_id
+
+            sandbox_id = own_sandbox_id()
+            if sandbox_id:
+                from flow_sdk.cli.auth.sandbox_login import start_sandbox_login
+
+                return start_sandbox_login(sandbox_id)
             # Browser-mode: success/failure arrives later via the OAuth WS
             # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
             # (_finalize_login on success, _broadcast_oauth_error on error).
@@ -253,6 +260,15 @@ async def _finalize_login(login_data: LoginData) -> None:
     from flow_sdk.cloud_client.auth_status import HubLoginStatus
 
     await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
+
+    # Logout tombstoned every hub conversation via ``clear_inbox``. Release those
+    # now, before the pipe reopens and the catch-up below runs, so nothing this
+    # session pulls back is dropped against a tombstone the last session left.
+    # See ``HubWsBridge.release_session_conversation_suppressions`` for why that
+    # is safe, and why a genuine delete's tombstone survives it.
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+
+    hub_ws_bridge.release_session_conversation_suppressions()
 
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager

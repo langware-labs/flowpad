@@ -90,6 +90,35 @@ async def test_a_cloud_placement_with_no_node_is_never_local():
 
 
 @pytest.mark.asyncio
+async def test_runs_are_the_placements_processes_newest_first():
+    """`runs()` is a query on `deployment_id`, bounded and ordered server-side —
+    a long-lived placement must not hydrate everything it ever produced."""
+    a = await _agent(name="runs-agent")
+    here = await a.local_deployment()
+    first = await here.create_process("first", pty_mode=False)
+    await first.save()
+    second = await here.create_process("second", pty_mode=False)
+    await second.save()
+
+    runs = await here.runs(limit=10)
+    assert [p.id for p in runs] == [second.id, first.id]
+    assert {p.deployment_id for p in runs} == {here.id}
+    assert [p.id for p in await here.runs(limit=1)] == [second.id]
+
+
+@pytest.mark.asyncio
+async def test_pause_without_a_machine_is_a_no_op_that_says_so():
+    """Terminate is a pause, never a delete: the row survives. A cloud row with no
+    node has nothing to stop, and reports False rather than pretending."""
+    from flow_sdk.builtin.deployment import Deployment
+
+    a = await _agent(name="pause-agent")
+    there = await a.deploy("e2b")
+    assert await there.pause() is False
+    assert (await Deployment.get_by_id(there.id)) is not None
+
+
+@pytest.mark.asyncio
 async def test_resolution_accepts_name_and_typeid():
     a = await _agent(name="resolve-agent")
     assert (await get_agent("resolve-agent")).id == a.id
@@ -110,8 +139,13 @@ def test_the_placement_vocabulary_is_pinned_on_this_side_too():
     The hub has the mirror of this assertion. Both sides assert the LITERALS, so
     a change to either one fails a test rather than silently making a placement
     unaddressable on the tier that wasn't updated.
+
+    This tier holds the UNION: the hub's set (`local`, `e2b`, `docker`,
+    `gcp_vm`) plus `user_machine`, which the hub never allocates. A placement the
+    hub made on `gcp_vm` is adopted here at the hub's id and must resolve its
+    node — it used to read as not node-backed on this side.
     """
     from flow_sdk.builtin.deployment import KIND_AGENT, KIND_NODE, KIND_WEB, NODE_PROVIDERS
 
     assert (KIND_AGENT, KIND_WEB, KIND_NODE) == ("runtime.agent", "runtime.web", "compute.node")
-    assert NODE_PROVIDERS == frozenset({"local", "e2b", "user_machine"})
+    assert NODE_PROVIDERS == frozenset({"local", "e2b", "docker", "gcp_vm", "user_machine"})

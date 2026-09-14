@@ -4,7 +4,10 @@ toggle) calls. Mirrors the vitest ``agentic-process-switch-mode.test.ts``.
 
 Transport switch over ONE logical session; routing stays ``headless == !visible``:
   - ``cli``         → headless (kill PTY, visible=False, pty_mode=False)
-  - ``interactive`` → PTY (the canonical ``_perform_open`` path, visible=True)
+  - ``interactive`` → PTY (the canonical ``start_pty`` path, visible=True)
+
+Both directions arrive here, and only here: ``→terminal`` used to call the
+unguarded ``open`` instead (FLOWPAD-2130).
 
 Request-body is supplied via the same ``get_current_request_info`` mock the
 existing fork-action tests use — the HTTP transport boundary, not the logic.
@@ -40,9 +43,11 @@ def _proc(**kwargs) -> AgenticProcess:
     return AgenticProcess(id=str(uuid.uuid4()), **kwargs)
 
 
-def _req(mode: str) -> MagicMock:
+def _req(mode: str, **body) -> MagicMock:
     req = MagicMock()
-    req.get_post_data = AsyncMock(return_value={"mode": mode})
+    req.get_post_data = AsyncMock(return_value={"mode": mode, **body})
+    # Explicit: a bare MagicMock would be assigned onto the entity field.
+    req.request_connection_id = None
     return req
 
 
@@ -64,19 +69,47 @@ async def test_switch_mode_cli_flips_to_headless():
 
 @pytest.mark.asyncio
 async def test_switch_mode_interactive_routes_to_open():
-    """mode=interactive dispatches to the canonical PTY open path with visible=True."""
+    """mode=interactive dispatches to the canonical PTY open path with visible=True.
+    ``terminal_theme`` rides along because this is now the only route the UI takes
+    to a PTY — the launch must match ``open``'s, palette included.
+    """
     proc = _proc(visible=False, pty_mode=False)
     sentinel = ApiSuccessResponse(data={"opened": True})
 
     with patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock) as mock_open, patch(
         "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
-        return_value=_req("interactive"),
+        return_value=_req("interactive", theme="dark"),
     ):
         mock_open.return_value = sentinel
         resp = await proc.switch_mode()
 
-    mock_open.assert_called_once_with(instruction=None, visible=True, retry=True)
+    mock_open.assert_called_once_with(
+        instruction=None, visible=True, retry=True, terminal_theme="dark"
+    )
     assert resp is sentinel
+
+
+@pytest.mark.asyncio
+async def test_switch_mode_rejects_a_body_the_union_does_not_allow():
+    """The tagged union is the contract: a theme that is not a palette, a field
+    the other arm owns, and a dropped field are all refusals now — not silent
+    coercion (the old handler mapped an unknown theme to None)."""
+    proc = _proc(visible=False, pty_mode=False)
+
+    for body, needle in (
+        ({"mode": "interactive", "theme": "solarized"}, "theme"),
+        ({"mode": "cli", "theme": "dark"}, "theme"),
+        ({"mode": "interactive", "cols": 200}, "cols"),
+    ):
+        with patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock) as mock_open, patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+            return_value=_req(body.pop("mode"), **body),
+        ):
+            resp = await proc.switch_mode()
+
+        assert isinstance(resp, ApiFailResponse), body
+        assert needle in resp.message, (needle, resp.message)
+        mock_open.assert_not_called()
 
 
 @pytest.mark.asyncio

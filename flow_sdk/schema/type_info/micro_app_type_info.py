@@ -14,11 +14,11 @@ Not every MicroApp is an asset. ``flow app serve`` registers a row for a folder
 somewhere in the user's checkout, which has no ``webapp.json`` and no
 ``asset_ref``; such a row is DB-only and the orphan sweep never considers it.
 """
-from flow_sdk.builtin.faas.webapp_spec import WebappManifestSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.webapp import derive_webapp
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.webapp import derive_webapp
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
 from flow_sdk.schema.types import EntityType
 
 # MicroApp is an Entity but had no TypeInfo, so the registry could not see

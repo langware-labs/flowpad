@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.drivers.agent import accepted_fields
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 _AGENTS = Path(__file__).parents[2] / "flow_sdk/system_projects/flowpad_assistant/.claude/agents"
 CONTRACTS = (

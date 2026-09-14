@@ -14,11 +14,11 @@ from flow_sdk.responses.response import ApiResponse
 
 
 async def _get_compute_node_id(client) -> str:
-    resp = await client.get("/api/v1/graph/compute_node")
+    resp = await client.get("/api/v1/graph/compute_node/@local")
     assert resp.status_code == 200
-    nodes = ApiResponse(**resp.json()).data
-    assert nodes and len(nodes) >= 1, "No compute nodes found after bootstrap"
-    return nodes[0]["id"]
+    node = ApiResponse(**resp.json()).data
+    assert node and node["node_provider_id"], "No configured local compute node after bootstrap"
+    return node["id"]
 
 
 @pytest.mark.asyncio

@@ -39,7 +39,7 @@ from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
+from flow_sdk.schema.data_spec import SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -107,40 +107,7 @@ class AutoLaunchOutcome:
         return {"agent_id": None, "process_id": None, "process_typeid": None, "prompt_queued": False, "cancelled": []}
 
 
-class AgentSpec(FrontMatter):
-    """``agent.md`` — the shape of the document. ``name`` is deliberately NOT
-    here: it comes from the folder (``TypeInfo.name_from_path``), so a rename
-    can never desync the two. ``system_prompt`` is the markdown ``Body``.
 
-    ``input`` / ``output`` are the agent's I/O contract — shapes authored
-    in YAML. They are declaration only and never enter ``to_agent_options``:
-    that bundle is md5'd into ``last_started_hash``, and a new key there would
-    flip ``restart_required`` on every running process.
-    """
-
-    title: Optional[str] = None
-    description: Optional[str] = None
-    avatar: Optional[str] = None
-    worker_type: Optional[str] = None
-    model: Optional[str] = None
-    permission_mode: Optional[str] = None
-    effort: Optional[str] = None
-    max_turns: Optional[int] = None
-    tools: Optional[list[str]] = None
-    disallowed_tools: Optional[list[str]] = None
-    skills: Optional[list[str]] = None
-    mcp_servers: Optional[list[str]] = None
-    subagents: Optional[list[str]] = None
-    additional_dirs: Optional[list[str]] = None
-    load_flowpad_assistant: Optional[bool] = None
-    cli_options: Optional[dict] = None
-    enabled: Optional[bool] = None
-    intro: Optional[str] = None
-    auto_launch: Optional[bool] = None
-    auto_launch_prompt: Optional[str] = None
-    input: Optional[SpecType] = None
-    output: Optional[SpecType] = None
-    system_prompt: Body = ""
 
 
 def _inbox_failures(verb: str):
@@ -430,11 +397,15 @@ class Agent(Entity):
         return await dispatch_agent_run(target, prompt, wait=wait, **options)
 
     async def use(
-        self, project_id: str | None = None, *, deployment: "Deployment | None" = None
+        self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
     ) -> "AgenticProcess":
-        """Open a session AS this agent — saved, visible, no first turn."""
+        """Open a session AS this agent — saved, visible, no first turn.
+
+        ``owner`` is the human opening it, recorded on the process row; a
+        remote ``deployment`` opens through the hub (``Deployment.use``).
+        """
         target = deployment or await self.local_deployment()
-        return await target.use(project_id=project_id)
+        return await target.use(project_id=project_id, owner=owner)
 
     @staticmethod
     def auto_launched_ids(project_id: str) -> list[str]:
@@ -576,8 +547,10 @@ class Agent(Entity):
         if self.remote and self.origin:
             return False
 
-        from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
-        from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import (
+            owning_project,  # noqa: PLC0415
+            publish_git_asset,  # noqa: PLC0415
+        )
 
         project = await owning_project(self)
         if project is not None:
@@ -925,17 +898,34 @@ class Agent(Entity):
         The optional body ``project_id`` names the project the session ACTS IN,
         which is not always the project the agent lives in — see ``Agent.use``
         in the TS SDK for why. Omitted, it falls back to the agent's own project.
+
+        The optional body ``deployment_id`` names ONE exact placement of this
+        agent (``Agent.useDeployment`` in the TS SDK). Validated the way the hub
+        validates it — this agent's, an agent placement, node-backed — and
+        opened through the hub when it is not on this machine. Omitted, the
+        local placement is used, as before.
         """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         project_id = str((body or {}).get("project_id") or "").strip() or None
+        deployment_id = str((body or {}).get("deployment_id") or "").strip()
 
-        deployment = await self.local_deployment()
+        if deployment_id:
+            if not is_valid_entity_id(deployment_id):
+                return ApiFailResponse(message="deployment_id must be a UUID v4 or v5", status_code=400)
+            deployment = await Deployment.get_by_id(deployment_id)
+            if deployment is None or not deployment.is_agent_placement_of(self):
+                return ApiFailResponse(message="agent deployment not found", status_code=404)
+            deployment = deployment.with_element(self)
+        else:
+            deployment = await self.local_deployment()
+        owner = request_info.someone_typeid if request_info else None
         try:
-            process = await self.use(project_id=project_id, deployment=deployment)
+            process = await self.use(project_id=project_id, deployment=deployment, owner=owner)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()

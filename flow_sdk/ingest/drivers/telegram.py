@@ -27,7 +27,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import (
     FetchResult,
@@ -38,6 +37,7 @@ from flow_sdk.ingest.driver import (
     SendStatus,
 )
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.source_item import MessageSpec

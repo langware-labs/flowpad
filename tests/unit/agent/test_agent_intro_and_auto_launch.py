@@ -2,7 +2,7 @@
 that round-trips through ``AgentSpec`` and NEVER enters the launch bundle."""
 from __future__ import annotations
 
-from flow_sdk.builtin.agent import Agent, AgentSpec
+from flow_sdk.builtin.agent import Agent
 from tests.unit.agent._parse import agent_default_body, parse_agent_markdown
 
 AGENT_MD = """---

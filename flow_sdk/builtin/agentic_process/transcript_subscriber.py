@@ -42,7 +42,7 @@ async def _route_to_ap(
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
     try:
-        aps = await AgenticProcess.get_all(
+        aps = await AgenticProcess.local_rows(
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
     except Exception:

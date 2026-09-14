@@ -318,6 +318,10 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
             self.visible = kwargs.get("visible", False)
             self.worker_type = kwargs.get("worker_type")
 
+        async def reconcile_name(self):
+            captured["__name_reconciled"] = True
+            return self
+
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
@@ -366,6 +370,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     existing.visible = True
     existing.worker_type = "claude"
     existing.pty_pid = None
+    existing.reconcile_name = AsyncMock(return_value=existing)
     # ``_scan_upsert_session_process`` returns ``process.model_dump(mode="json")``
     # to the caller; configure the mock to produce a real dict so the response
     # has ``data["id"] == "existing-id"`` instead of a recursive MagicMock.

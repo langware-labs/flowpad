@@ -26,7 +26,7 @@ from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.source_item import MessageSpec, SourceItemSpec
+from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
@@ -34,9 +34,10 @@ from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.serialization import iso_to_utc
 
@@ -823,7 +824,7 @@ class DataSource(Entity):
     async def _spec(self) -> "Optional[object]":
         """The provider's definition row, or None when it cannot be resolved —
         an unresolvable spec changes nothing about any of the three rules."""
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec
 
         try:
             return await DataSourceSpec.get_one({"name": self.provider})
@@ -965,7 +966,7 @@ class DataSource(Entity):
         the person filling the form: type it instead. That is why this catches
         ``SourceError`` centrally rather than asking each driver to.
         """
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec
         from flow_sdk.ingest.driver import DRIVERS, get_driver  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
         from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415

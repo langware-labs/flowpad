@@ -5,10 +5,10 @@
  * strip makes, POST /graph/tab/<id>/rename) flows into the entity that backs the
  * tab, so ``tab.name == entity.name`` whenever an entity exists.
  *
- * Backend mechanism (flow_sdk/builtin/tab.py): ``Tab.rename`` sets ``Tab.name``
- * then calls ``target.rename(name)`` — the generic ``Entity.rename`` adopts the
- * name onto ANY backing entity; ``shell``/``agentic_process`` override it to also
- * pin ``auto_rename=false`` so a PTY/worker title can't clobber the user choice.
+ * Process tabs delegate to the shared naming service, which atomically updates
+ * the canonical process name and all linked tabs and pins the user choice.
+ * Other entity tabs retain the generic target.rename flow; shells also pin
+ * auto_rename so terminal titles cannot replace the user choice.
  *
  * Coverage:
  *   - shell            (override: name mirrored + auto_rename pinned)
@@ -49,7 +49,7 @@ async function renameViaTab(
   expect(tab).toBeTruthy();
   const updated = await Tab.renameById(tab!.id, name);
   const renamed = updated.find((t) => t.id === tab!.id);
-  expect(renamed?.name).toBe(name); // Tab.name is the source of truth
+  expect(renamed?.name).toBe(name); // The tab reflects the backing entity name
 }
 
 describe('api: tab rename flows into the backing entity', () => {
@@ -88,6 +88,19 @@ describe('api: tab rename flows into the backing entity', () => {
     expect(reloaded).toBeTruthy();
     expect(reloaded!.name).toBe('pinned process');
     expect(reloaded!.auto_rename).toBe(false); // override pins it
+  }, 15000);
+
+  it('agentic_process: confirming the existing name pins it against later OSC observations', async () => {
+    const id = uuidv4();
+    const name = '123';
+    await new AgenticProcess({ id, name, auto_rename: true, worker_type: 'claude_code' }).save();
+    await renameViaTab(AgenticProcess.type, id, name);
+    const process = await AgenticProcess.getById(id);
+    await process!.observeTitle('A later terminal title');
+    await dataManager.clearCache();
+    const reloaded = await AgenticProcess.getById(id);
+    expect(reloaded!.name).toBe(name);
+    expect(reloaded!.auto_rename).toBe(false);
   }, 15000);
 
   it('conversation (generic entity): rename mirrors name via base Entity.rename', async () => {

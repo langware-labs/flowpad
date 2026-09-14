@@ -268,7 +268,10 @@ async def test_share_sends_empty_shared_secret_origins_after_removal(tmp_path, m
         async def __aexit__(self, *_args):
             return None
 
-        async def post(self, path, body):
+        # Mirrors the real ``FlowpadClient.post``, which takes ``idempotent``.
+        # A non-None return means the create succeeded, so ``share`` takes the
+        # ordinary path and makes no ownership probe.
+        async def post(self, path, body, *, idempotent: bool = False, **_kwargs):
             posts.append((path, body))
             return {"ok": True}
 

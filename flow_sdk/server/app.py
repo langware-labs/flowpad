@@ -245,6 +245,9 @@ async def _on_server_startup():
     await _prune_orphan_scheduler_jobs()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
+    from flow_sdk.builtin.agentic_process.naming.runtime import restore_name_observation
+
+    await restore_name_observation()
     await _start_system_content_index()
     # Startup imports (notably the trigger callbacks) bind additional entity
     # types and invalidate schema memos. Warming earlier made the first cache
@@ -541,6 +544,14 @@ async def _start_inbox_catchup() -> None:
 
         await ensure_secret_recovery()
         start_hub_catchup("startup")
+        # Prompts already delivered and approved whose turn never ran (or died
+        # mid-run) — the catch-up cannot see those, they are already local.
+        from flow_sdk.app.actions.execute_prompt import recover_interrupted_sessions
+
+        try:
+            await recover_interrupted_sessions()
+        except Exception as e:  # noqa: BLE001 — never block startup
+            logging.warning("[session] startup recovery sweep failed: %s", e)
 
     asyncio.create_task(_run(), name="inbox-catchup-startup")
 
@@ -570,6 +581,9 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
+    from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
+
+    await shutdown_name_observation()
 
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks

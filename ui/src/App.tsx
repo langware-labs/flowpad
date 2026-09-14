@@ -18,6 +18,7 @@ import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
+import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
@@ -39,6 +40,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 
 import { queryClient } from '@sdk/lazy';
 import { PrimaryContentProvider } from '@sdk/react/primary-content';
+import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -51,35 +53,46 @@ import { PrimaryContentProvider } from '@sdk/react/primary-content';
 // reads them via `useHarnessCapabilities`. Launch/setup actions perform the
 // definitive on-demand check.
 
+/**
+ * The app's global listener mount: WS commands, presence, `flow show`, the OS
+ * badge, hotkeys. Renders nothing.
+ *
+ * MODULE SCOPE ON PURPOSE. Declared inside `AppContent` it was a NEW component
+ * identity on every render, so React unmounted and remounted the whole subtree
+ * each time `AppContent` re-rendered (auth / SDK-init state). Every remount
+ * re-ran these hooks' mount effects — which is how the notification-click
+ * bridge reached 11 stacked listeners, and how the WS/presence subscriptions
+ * were being torn down and rebuilt for no reason.
+ */
+const GlobalEvents = () => {
+  void useGlobalEvents();
+  usePresenceReporter();
+  useUiCommandListener();
+  // `flow show` outside vibe — mints the shown target as a tab beside the
+  // calling process (never navigates). Vibe's own display surfaces own the
+  // vibe branch, so this no-ops there.
+  useShowTargetListener();
+  // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
+  // not a notification event) — mounted once, next to the WS listeners.
+  useSyncOsBadge();
+  useDockViewModeOverrideSync();
+  useSpotlightHotkey();
+  // Re-report browser_context (incl. the current URL) on every navigation.
+  // The reporter's mobx autorun only fires on context-slot changes, so a
+  // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
+  // refresh the pathname the backend reads to tell what page is open.
+  const { pathname } = useLocation();
+  useEffect(() => {
+    dataContext.resendBrowserContext();
+  }, [pathname]);
+  return null;
+};
+
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   useAsyncSdkInit();
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
-
-  const GlobalEvents = () => {
-    void useGlobalEvents();
-    usePresenceReporter();
-    useUiCommandListener();
-    // `flow show` outside vibe — mints the shown target as a tab beside the
-    // calling process (never navigates). Vibe's own display surfaces own the
-    // vibe branch, so this no-ops there.
-    useShowTargetListener();
-    // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
-    // not a notification event) — mounted once, next to the WS listeners.
-    useSyncOsBadge();
-    useDockViewModeOverrideSync();
-    useSpotlightHotkey();
-    // Re-report browser_context (incl. the current URL) on every navigation.
-    // The reporter's mobx autorun only fires on context-slot changes, so a
-    // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
-    // refresh the pathname the backend reads to tell what page is open.
-    const { pathname } = useLocation();
-    useEffect(() => {
-      dataContext.resendBrowserContext();
-    }, [pathname]);
-    return null;
-  };
 
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
   useEffect(() => {
@@ -135,7 +148,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <RunPreviewRoot />
         <FilePreviewRoot />
         <GlobalEvents />
+        {/* One-click install from the hub lands here — desktop only (it writes files). */}
+        {!isHubOnly() && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
+        <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
@@ -155,7 +171,11 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
 
 const App = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  return <PrimaryContentProvider navigationKey={location.key}><AppContent>{children}</AppContent></PrimaryContentProvider>;
+  return (
+    <PrimaryContentProvider navigationKey={location.key}>
+      <AppContent>{children}</AppContent>
+    </PrimaryContentProvider>
+  );
 };
 
 export default App;

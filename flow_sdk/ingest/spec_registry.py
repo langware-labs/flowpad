@@ -115,10 +115,8 @@ async def _all_specs(name: Optional[str] = None) -> list:
     warm, and an unfiltered enumeration of a type is the shape this repo bans
     for anything user-facing. `builtin` specs need no driver anyway.
     """
-    from flow_sdk.builtin.data_source_spec import (
-        DataSourceSpec,  # noqa: PLC0415
-        Runtime,  # noqa: PLC0415
-    )
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import Runtime
 
     query = {"runtime": Runtime.SCRIPT.value}
     if name:

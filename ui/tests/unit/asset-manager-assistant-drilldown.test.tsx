@@ -79,7 +79,66 @@ afterEach(() => {
   h.projectIds = [];
 });
 
+describe('Asset evidence presentation', () => {
+  it('renders unresolved historical usage alongside verification failure', () => {
+    renderManager({ assets: { ...processAssets, descriptors: [], workerScoped: true, error: true,
+      unresolvedUsage: [{asset: null, reference: 'plugin:deleted', resolution: 'missing', evidence: [{kind: 'skill_invoked'}]}],
+    } });
+    expect(screen.getByTestId('asset-unresolved-usage')).toHaveTextContent('plugin:deleted');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('retains catalog rows without claiming failed worker verification as availability', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true, error: true,
+      descriptors: [{ ...processAssets.descriptors[0], available: false, present: true }],
+    } });
+    expect(screen.getByTestId('asset-manager-section-other')).toHaveTextContent('Other assets');
+    expect(screen.getByTestId(`asset-manager-row-${PROCESS_SKILL}-embedded`)).toBeInTheDocument();
+    expect(screen.queryByTestId('asset-manager-section-available')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not verify available assets');
+  });
+
+  it('labels only positively verified unused assets as available', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true,
+      descriptors: [
+        { ...processAssets.descriptors[0], available: true },
+        { typeid: ASSISTANT_SKILL, source: 'user_dir', posix_path: '/not-verified' },
+      ],
+    } });
+    expect(screen.getByTestId('asset-manager-section-available')).toHaveTextContent('Available assets');
+    expect(screen.getByTestId('asset-manager-section-other')).toHaveTextContent('Other assets');
+  });
+
+  it('keeps an attached-only asset separate from observed usage', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true,
+      descriptors: [
+        {...processAssets.descriptors[0], attached: true, usage: []},
+        {typeid: ASSISTANT_SKILL, source: 'user_dir', posix_path: '/used', usage: [{kind: 'skill_invoked'}]},
+      ],
+    } });
+    expect(screen.getByTestId('asset-manager-section-selected')).toHaveTextContent('Attached assets');
+    expect(screen.getByTestId('asset-manager-section-used')).toHaveTextContent('Used assets');
+  });
+});
+
 describe('Flowpad Assistant drill-down — same modal, same rows, one level down', () => {
+  it('shows only assistant assets present in the worker inventory', async () => {
+    renderManager({ assets: {
+      ...processAssets,
+      workerScoped: true,
+      descriptors: [h.assistant[0] as AssetDescriptor],
+    } });
+    fireEvent.click(screen.getByTestId('asset-manager-flowpad-location'));
+    expect(await screen.findByTestId(`asset-manager-row-${ASSISTANT_SKILL}-project_dir`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`asset-manager-row-${ASSISTANT_AGENT}-project_dir`)).not.toBeInTheDocument();
+  });
+
+  it('shows an inventory failure instead of reporting an empty available list', () => {
+    renderManager({ assets: { ...processAssets, workerScoped: true, descriptors: [], error: true } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not verify available assets');
+    expect(screen.queryByText('No assets available')).not.toBeInTheDocument();
+  });
+
   it('descends into the assistant and comes back, without leaving the surface', async () => {
     renderManager();
 

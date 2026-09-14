@@ -1,5 +1,6 @@
 """Route modules for the flow_sdk server."""
 
+from .activity import router as activity_router
 from .agent_records import router as agent_records_router
 from .agents import router as agents_router
 from .asset_share import router as asset_share_router
@@ -14,7 +15,6 @@ from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
 from .directory import router as directory_router
 from .display import router as display_router
-from .activity import router as activity_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -29,7 +29,6 @@ from .navigate import router as navigate_router
 from .privacy import router as privacy_router
 from .project import router as project_router
 from .pty_stream import router as pty_stream_router
-from .rules import router as rules_router
 from .runs import router as runs_router
 from .search import router as search_router
 from .semantic_checker import router as semantic_checker_router
@@ -42,8 +41,8 @@ from .ui import router as ui_router
 from .version import router as version_router
 from .watch import router as watch_router
 from .webhook import webhook_router as webhook_api_router
-from .whatsapp import router as whatsapp_router
 from .websocket import websocket_router
+from .whatsapp import router as whatsapp_router
 from .wiki import router as wiki_router
 from .worldview import router as worldview_router
 
@@ -64,7 +63,6 @@ __all__ = [
     "websocket_router",
     "webhook_api_router",
     "whatsapp_router",
-    "rules_router",
     "watch_router",
     "assets_router",
     "project_router",

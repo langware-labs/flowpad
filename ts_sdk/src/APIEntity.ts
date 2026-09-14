@@ -1,3 +1,4 @@
+import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
 import type { IWorkspace } from './entities/workspace';
@@ -5,8 +6,6 @@ import type { IWorkspace } from './entities/workspace';
 // this entire file, so every `Record<string, unknown>` in it resolved to the
 // FS record class and failed as a non-generic type.
 import { Record as FsRecord, RecordRefs } from './fs/Record';
-import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
-import { Frontmatter } from './fs/Frontmatter';
 import { EntityFactory, type EntityConstructor } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
@@ -655,18 +654,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
-   * Generic read/write access to this asset's YAML frontmatter, or null when the
-   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
-   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
-   * the body and all keys — the home of frontmatter-persisted fields like
-   * `version`. Caller must `await frontmatter.load()` before get/set.
-   */
-  public get frontmatter(): Frontmatter | null {
-    const doc = (this as unknown as { doc?: unknown }).doc;
-    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
-  }
-
-  /**
    * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
    * optional JSON body and return the envelope's `data`. The one helper every
    * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
@@ -956,7 +943,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.expand = { ...this.expand, expansions: [...loadingExpansions.expand] };
   }
 
-  public async save(scope: TypeId[] | TypeId = []): Promise<T> {
+  public async save(scope: TypeId[] | TypeId = [], destination?: FSRefJson): Promise<T> {
     const isNew = !this.saved;
     if (!Array.isArray(scope)) {
       scope = [scope];
@@ -967,6 +954,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // DataOp. A JSON round-trip is also the exact wire normalization Axios
     // would perform (Dates -> strings, undefined fields omitted).
     const entityJson = JSON.parse(JSON.stringify(this.toJSON())) as IEntity;
+    if (destination) {
+      if (!isNew) throw new Error('A creation destination cannot relocate an existing entity');
+      Object.assign(entityJson, { destination });
+    }
     const entity = await dataManager.save<T>(this.typeId, scope, entityJson);
     if (isNew) {
       this.markAsExpanded();
@@ -1202,6 +1193,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   remote?: boolean;
 
   /**
+   * True when this asset is listed in its project's manifest
+   * (`agentic-assets/project_manifest/project_manifest.json`). Mirrors the
+   * Python `Entity.published` cache; the manifest FILE is the truth, and the
+   * flag is flipped only by adopting the canonical row `setPublished()` returns.
+   */
+  published?: boolean;
+
+  /**
    * Canonical parent reference ("<type>-<id>"). Single source of truth for
    * parentage; supersedes the legacy per-type ``data.parent_id``.
    */
@@ -1224,6 +1223,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { group_id: groupId };
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** Resolve a reference relative to this entity through the shared backend resolver. */
+  public async resolveDisplayTarget(link: string): Promise<ShowTarget | null> {
+    const info = new ActionInfo('resolve-display-target', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { link };
+    return (await dataManager.callAction<unknown, ShowTarget>(info)) ?? null;
   }
 
   /**
@@ -1718,6 +1724,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const actionInfo = new ActionInfo('set_public_access', this.typeId.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { is_public: isPublic };
     await dataManager.callAction<{ is_public: boolean }, { public: boolean }>(actionInfo);
+  }
+
+  /**
+   * Publish / unpublish this asset into its project's manifest
+   * (`POST /graph/<type>/<id>/set-published`). Resolves to the canonical row the
+   * backend returns after the manifest was re-indexed — adopted into the cache,
+   * which is what flips `published`; this method never writes the flag itself.
+   * Refusals (not publishable, outside the project, …) reject with the backend
+   * message; `code` rides on the error's `data`.
+   */
+  public async setPublished(published: boolean, projectId?: string | null): Promise<T> {
+    const body: Record<string, unknown> = { published };
+    if (projectId) body.project_id = projectId;
+    const json = await this.post<Record<string, unknown>>('set-published', body);
+    return dataManager.updateEntityFromJson<T>(json);
   }
 
   static getLoadingExpansions() {

@@ -7,11 +7,17 @@ interface SwitchModeInternals {
 
 /**
  * `AgenticProcess.switchMode(mode)` — the single, standardized transport switch
- * the ribbon chat⇄terminal toggle drives. Frontend → backend:
- *   - WorkerMode.CLI         → one `switch-mode` action {mode:'cli'}; flips
- *                              visible=false, pty_mode=false (kill PTY, headless).
- *   - WorkerMode.Interactive → the canonical `open` path (start()) for the live
- *                              PTY attach; pty_mode=true.
+ * the footer ViewToggle drives. Frontend → backend, ONE action both ways:
+ *   - WorkerMode.CLI         → `switch-mode` {mode:'cli'}; flips visible=false,
+ *                              pty_mode=false (kill PTY, headless).
+ *   - WorkerMode.Interactive → `switch-mode` {mode:'interactive'}; the response
+ *                              is the same open payload `open` returns, so the
+ *                              live PTY attach happens off it; pty_mode=true.
+ *
+ * Interactive used to call `start()` → the unguarded `open`, which is what let
+ * a mid-turn switch put a second worker on the live turn's transcript
+ * (FLOWPAD-2130) — so the assertions pin the route, not just the flags.
+ *
  * Routing stays headless == !visible. Asserts at the AgenticProcess boundary
  * (which action + body, and the resulting durable flags) — the same level the
  * backend pytest (`test_agentic_process_switch_mode.py`) asserts the action.
@@ -100,7 +106,7 @@ describe('AgenticProcess.switchMode', () => {
     expect(internals._pendingTransport).toEqual({ pty_mode: true, visible: true });
   });
 
-  it('Interactive → routes through the open path and flips to PTY', async () => {
+  it('Interactive → routes through switch-mode (never `open`) and flips to PTY', async () => {
     const p = new AgenticProcess({
       id: '00000000-0000-4000-8000-000000000001',
       status: 'idle',
@@ -111,9 +117,14 @@ describe('AgenticProcess.switchMode', () => {
 
     await p.switchMode(WorkerMode.Interactive);
 
-    // PTY direction goes through start() → the `open` action (live attach).
-    const names = callActionSpy.mock.calls.map((c) => (c[0] as any).name);
-    expect(names).toContain('open');
+    // ONE guarded round-trip, and NOT `open`: a switch routed there is an
+    // unguarded switch (FLOWPAD-2130).
+    expect(callActionSpy).toHaveBeenCalledTimes(1);
+    const action = callActionSpy.mock.calls[0][0] as any;
+    expect(action.name).toBe('switch-mode');
+    expect(action.bodyParameters.mode).toBe(WorkerMode.Interactive); // 'interactive'
+    // …and the live attach still happens, off that action's open payload.
+    expect(fakeShell.attachPty).toHaveBeenCalledTimes(1);
     expect(p.pty_mode).toBe(true);
     // 'restarted' tells the terminal to clear + re-attach the fresh PTY.
     expect(emitSpy).toHaveBeenCalledWith('restarted', expect.anything());
@@ -144,7 +155,7 @@ describe('AgenticProcess.switchMode', () => {
     expect(emitSpy).not.toHaveBeenCalledWith('restarted', expect.anything());
   });
 
-  it('Interactive can retry once after a rejected open without duplicate attach or restart events', async () => {
+  it('Interactive can retry once after a rejected switch without duplicate attach or restart events', async () => {
     const error = new Error('Failed to create PTY session: embedded null byte');
     callActionSpy.mockRejectedValueOnce(error).mockResolvedValueOnce(fakeOpenResult as never);
     const p = new AgenticProcess({
@@ -159,8 +170,9 @@ describe('AgenticProcess.switchMode', () => {
     await expect(p.switchMode(WorkerMode.Interactive)).rejects.toBe(error);
     await expect(p.switchMode(WorkerMode.Interactive)).resolves.toBeUndefined();
 
-    const openActions = callActionSpy.mock.calls.filter((call) => call[0].name === 'open');
-    expect(openActions).toHaveLength(2);
+    const switchActions = callActionSpy.mock.calls.filter((call) => call[0].name === 'switch-mode');
+    expect(switchActions).toHaveLength(2);
+    expect(callActionSpy.mock.calls.some((call) => call[0].name === 'open')).toBe(false);
     expect(fakeShell.attachPty).toHaveBeenCalledTimes(1);
     expect(emitSpy.mock.calls.filter(([event]) => event === 'restarted')).toHaveLength(1);
     expect(p.pty_mode).toBe(true);

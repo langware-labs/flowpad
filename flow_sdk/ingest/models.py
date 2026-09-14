@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.runtime_limits import STORM_CAP_PER_MINUTE
 
 IngestStatus = Literal["created", "updated", "unchanged"]
 
@@ -16,7 +17,6 @@ IngestStatus = Literal["created", "updated", "unchanged"]
 #: excess — ``max_entries_per_minute`` on flow subscriptions and
 #: ``max_fires_per_minute`` on TAG triggers. A run that would exceed it reports
 #: once instead of per item; raising the caps is not available to us.
-STORM_CAP_PER_MINUTE = 30
 
 
 class IngestMode(StrEnum):

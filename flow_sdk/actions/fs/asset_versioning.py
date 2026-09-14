@@ -1,32 +1,48 @@
-"""Auto-versioning of asset files on save (local instances).
-
-Hooked from the ``fs`` ``write`` action — the client file-write seam — so a save
-that actually changes an asset's content bumps the frontmatter ``version`` and
-records a file-scoped git commit. Indexer/system writes go straight to disk
-(never through the ``write`` action), so this path is not re-entered by indexing.
-
-Local-first: only ``LocalStorageDriver`` resolves to a real on-disk path that git
-can operate on; on remote/sandbox storage this is a no-op. Everything here is
-best-effort — a failure must never break the underlying save.
-"""
-
-from __future__ import annotations
-
+"""Storage-action adapter for filesystem asset versioning."""
 import asyncio
 import logging
 import os
 from pathlib import Path
 
-from flow_sdk.actions.fs.asset_scope import _folder_backed_types, folder_asset_for
-from flow_sdk.fs_store.fs_record import write_text_if_changed
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_frontmatter,
-    _yaml_load,
-    merge_frontmatter,
-)
+from flow_sdk.assets.document import DocumentPatch, read_document, update_document
+from flow_sdk.assets.versioning import _asset_scope, _strip_version
 from flow_sdk.utils.git import _run_git, find_project_root, git_commit_file
 
 logger = logging.getLogger(__name__)
+
+
+async def prepare_document_version(real_path: str):
+    """Obtain Git evidence before the filesystem write critical section."""
+    try:
+        repo = await asyncio.to_thread(find_project_root, real_path)
+        if not repo:
+            return None
+        text = await asyncio.to_thread(Path(real_path).read_text, encoding="utf-8")
+        scope = _asset_scope(real_path, repo, text)
+        if scope is None:
+            return None
+        pathspec, main_rel, main_abs = scope
+        head = await asyncio.to_thread(_run_git, ["git", "show", f"HEAD:./{main_rel}"], repo)
+        return (repo, pathspec, main_rel, main_abs, head.stdout if head.returncode == 0 else "")
+    except (OSError, ValueError):
+        logger.warning("[asset-version] version preparation skipped", exc_info=True)
+        return None
+
+
+async def finish_document_version(real_path: str, document, context) -> None:
+    """Commit an already-versioned main document; support files bump their owner."""
+    if context is None:
+        return
+    repo, pathspec, main_rel, main_abs, _base = context
+    try:
+        if Path(main_abs).resolve() != Path(real_path).resolve():
+            await _bump_version_and_commit(real_path, document.raw_text)
+        elif await _scope_changed_excluding_version(repo, pathspec, main_rel):
+            name = document.fields.get("name") or Path(main_rel).stem
+            version = document.fields.get("version", 1)
+            await git_commit_file(repo, pathspec, f"Flowpad: {name} v{version}")
+    except Exception:
+        logger.warning("[asset-version] auto-commit skipped", exc_info=True)
 
 
 def _real_path(storage, vfs_abs_path: str) -> str | None:
@@ -40,14 +56,20 @@ def _real_path(storage, vfs_abs_path: str) -> str | None:
         return None
 
 
-def _strip_version(text: str) -> str:
-    """Asset text with the auto-managed ``version`` frontmatter field removed and
-    frontmatter re-rendered canonically — the comparison key for "did the asset
-    actually change?". Two saves differing only by the version bump (or by benign
-    frontmatter formatting the YAML writer normalizes) collapse to the same key."""
-    if _extract_frontmatter(text) is None:
-        return text
-    return merge_frontmatter(text, {}, drop_keys=("version",))
+async def autoversion_commit_local(storage, vfs_abs_path: str, content: str, *, real_path: str | None = None) -> None:
+    """Bump frontmatter ``version`` and commit on save, for frontmatter-bearing
+    files in a git repo on local storage. The bump is written directly to the real
+    path (not back through the ``write`` action), so it never re-enters this hook.
+    """
+    try:
+        if not isinstance(content, str):
+            return
+        real = real_path if real_path is not None else _real_path(storage, vfs_abs_path)
+        if not real:
+            return  # remote/sandbox storage — no local git tree
+        await _bump_version_and_commit(real, content)
+    except Exception as e:  # noqa: BLE001 — auto-versioning must never break a save
+        logger.warning("[asset-version] auto-commit skipped (non-fatal): %s", e)
 
 
 def _porcelain_path(line: str) -> str:
@@ -90,64 +112,6 @@ async def _scope_changed_excluding_version(
     return _strip_version(head_text) != _strip_version(work_text)
 
 
-def _versionable_folder_types() -> list:
-    """``asset_scope``'s folder-backed types narrowed to those whose main file can
-    CARRY the frontmatter ``version:`` this module writes — skill, task, whiteboard.
-    The test is the type's ``identity_carrier``: ``Frontmatter`` already means
-    "my id lives in this document's header", the gate the identity seam uses too.
-    Which folders are assets is shape (there); which may be STAMPED is policy (here).
-    """
-    from flow_sdk.fs_store.identity_carrier import Frontmatter
-
-    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter)]
-
-
-def _versionable_main_files() -> set[str]:
-    """Lower-cased main-file names this module may stamp, or ``set()`` if the
-    registry is momentarily unavailable — an unresolvable type must never be
-    stamped blind, so the empty set correctly refuses every folder asset."""
-    try:
-        return {t.shape.main.lower() for t in _versionable_folder_types()}
-    except Exception:  # noqa: BLE001
-        logger.debug("versionable-type resolve: registry unavailable", exc_info=True)
-        return set()
-
-
-def _asset_scope(real_path: str, repo_root: str, content: str) -> tuple[str, str, str] | None:
-    """Resolve the git scope of the asset the written ``real_path`` belongs to.
-
-    Returns ``(commit_pathspec, main_rel, main_abs)`` — repo-root-relative except
-    ``main_abs`` — or ``None`` when ``real_path`` is not (part of) an asset.
-
-    * Folder-backed asset (skill): scope is the whole folder; the version lives in
-      the inner main file (SKILL.md), so an internal-file edit still bumps the
-      asset's version and records a folder-scoped revision. The main file must be
-      able to CARRY that version — see ``_versionable_folder_types``.
-    * Single-file / inner-file asset (agent, markdown, spec): scope is the file
-      itself, which must carry frontmatter to be an asset.
-
-    Both branches therefore ask the same question — "can the thing I am about to
-    stamp hold a YAML header?" — and the two guards below are that one rule.
-    """
-    folder = folder_asset_for(real_path)
-    if folder is not None:
-        asset_folder, main_abs = folder
-        if Path(main_abs).name.lower() not in _versionable_main_files():
-            # A folder asset whose main file cannot hold a YAML header (mcp.json,
-            # deck.json …). It is still a folder asset for git scoping — only the
-            # STAMP is refused. Symmetric with the single-file guard below.
-            return None
-        return (
-            os.path.relpath(asset_folder, repo_root),
-            os.path.relpath(main_abs, repo_root),
-            str(main_abs),
-        )
-    if _extract_frontmatter(content) is None:
-        return None  # only assets (files carrying YAML frontmatter)
-    rel = os.path.relpath(real_path, repo_root)
-    return rel, rel, real_path
-
-
 async def _bump_version_and_commit(real_path: str, content: str) -> dict | None:
     """Bump the asset's frontmatter ``version`` and record a scoped git commit iff
     the asset actually changed (ignoring the auto-managed version field). Returns
@@ -169,17 +133,18 @@ async def _bump_version_and_commit(real_path: str, content: str) -> dict | None:
     if not await _scope_changed_excluding_version(repo_root, pathspec, main_rel):
         return None  # no real change (identical to HEAD, or version/formatting only)
     try:
-        main_text = Path(main_abs).read_text(encoding="utf-8")
+        before = await asyncio.to_thread(read_document, main_abs)
     except OSError:
         return None
-    fields = _yaml_load(_extract_frontmatter(main_text) or "") or {}
+    fields = before.fields
     try:
         current = int(fields.get("version", 1))
     except (TypeError, ValueError):
         current = 1
     new_version = current + 1
     name = fields.get("name") or Path(main_rel).stem
-    write_text_if_changed(Path(main_abs), merge_frontmatter(main_text, {"version": new_version}))
+    await asyncio.to_thread(update_document, Path(main_abs), DocumentPatch(set_fields={"version": new_version}),
+                            expected_revision=before.revision)
     await git_commit_file(repo_root, pathspec, f"Flowpad: {name} v{new_version}")
     head = await asyncio.to_thread(
         _run_git, ["git", "log", "-1", "--format=%H", "--", pathspec], repo_root
@@ -200,19 +165,3 @@ async def commit_asset_change(real_path: str) -> dict | None:
     # find_project_root's realpath output — else relpath lands "outside repo".
     real_path = os.path.realpath(real_path)
     return await _bump_version_and_commit(real_path, Path(real_path).read_text(encoding="utf-8"))
-
-
-async def autoversion_commit_local(storage, vfs_abs_path: str, content: str, *, real_path: str | None = None) -> None:
-    """Bump frontmatter ``version`` and commit on save, for frontmatter-bearing
-    files in a git repo on local storage. The bump is written directly to the real
-    path (not back through the ``write`` action), so it never re-enters this hook.
-    """
-    try:
-        if not isinstance(content, str):
-            return
-        real = real_path if real_path is not None else _real_path(storage, vfs_abs_path)
-        if not real:
-            return  # remote/sandbox storage — no local git tree
-        await _bump_version_and_commit(real, content)
-    except Exception as e:  # noqa: BLE001 — auto-versioning must never break a save
-        logger.warning("[asset-version] auto-commit skipped (non-fatal): %s", e)

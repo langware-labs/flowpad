@@ -158,7 +158,11 @@ export async function loadAgentApp(args: LoaderArgs) {
   // run their own loaders and stay reachable anonymously.
   if (isHubOnly() && !dataContext.bootstrapInfo?.user) {
     t.done(slowThresholdSeconds);
-    void cloudManager.login();
+    // `popup: false` — this load is being HALTED on the promise below, so the
+    // page has nothing left to show. A popup would leave that dead load on
+    // screen behind a window the user did not ask for; the navigation is what
+    // the comment below promises and what this caller is committed to.
+    void cloudManager.login({ popup: false });
     // Halt this load — the browser is navigating away.
     return await new Promise<never>(() => {});
   }
@@ -287,7 +291,19 @@ export async function loadAgentApp(args: LoaderArgs) {
     const runSetup = async (setupContent: () => Promise<string>) => {
       setupHandled = true;
       let label = 'loadDockPointer';
+      // Two spans, not one. `t.time()` records elapsed-since-the-last-mark, so
+      // stamping only at the end attributed the WHOLE of `setupTabAndAdopt` —
+      // three serial tab round-trips — to a bucket named after the loader that
+      // runs inside it. A 4816ms cold open was reported as
+      // `loadDockPointer:data-sources` when that switch has no case for
+      // data-sources at all and awaits nothing. Close the materialization span
+      // as the content callback opens, so each name means what it says.
+      let materializationTimed = false;
       const wrappedSetup = async () => {
+        if (dockForSetup) {
+          t.time('setupTabAndAdopt');
+          materializationTimed = true;
+        }
         label = await setupContent();
       };
       // Timed: tab materialization gates the URL commit, so a slow ensure-tab
@@ -295,6 +311,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       if (dockForSetup)
         await perfTime('setupTabAndAdopt', () => setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup }));
       else await wrappedSetup();
+      // A throw before the callback ran would otherwise leave the slow table
+      // empty — the one case where you most want to see where the time went.
+      if (dockForSetup && !materializationTimed) t.time('setupTabAndAdopt (failed)');
       t.time(label);
     };
 

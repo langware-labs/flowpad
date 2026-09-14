@@ -2,9 +2,12 @@ import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
-import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
+import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
+import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
+import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import apiClient from '@sdk/client';
 import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
@@ -19,7 +22,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
@@ -131,6 +134,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitGateOpen, setGitGateOpen] = useState(false);
+  const [gitSetupOpen, setGitSetupOpen] = useState(false);
   const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
   const [gitGateReason, setGitGateReason] = useState<string | null>(null);
   const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
@@ -148,26 +152,52 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
       return false;
     };
   }, [cloudMode, projectId]);
+  // Setting up Git needs an answer the old flow never asked for — WHICH remote
+  // and WHICH branch — so `runSetup` opens the chooser and the wizard launches
+  // from its submit, rather than the wizard inventing a public repo on `main`.
+  const runGitSetup = useCallback(
+    async (target: GitTarget) => {
+      if (!project?.fs_storage_mount_path) return;
+      const path = project.fs_storage_mount_path;
+      await launchWizard('git-context-folder', {
+        title: t`Set up Git for project sharing`,
+        targetTypeId: project.typeId.toString(),
+        // The payload is the contract — the prompt does not restate it, so the
+        // two cannot disagree about which remote or branch was chosen.
+        payload: {
+          projectId: project.id,
+          scope: 'private',
+          mode: 'adopt',
+          path,
+          // Names a NEW repo only; an existing one is named by its own URL, and
+          // sending the project name alongside would invite a second repo.
+          ...(target.mode === 'new'
+            ? { name: target.name }
+            : { url: target.url, ...(target.branch ? { branch: target.branch } : {}) }),
+        },
+        prompt: `Set up Git in the exact project folder ${path} for sharing, as the wizard data specifies.`,
+      });
+      // The wizard just changed this folder's git state, and nothing announces
+      // filesystem changes — tell every mounted preflight to ask again.
+      invalidateGitPreflight(project.typeId);
+    },
+    [project],
+  );
   const gitGate = useMemo<GitShareGate>(
     () => ({
       state: gitGateState,
       reason: gitGateReason,
       busy: false,
-      runSetup: async () => {
-        if (!project?.fs_storage_mount_path) return;
-        await launchWizard('git-context-folder', {
-          title: t`Set up Git for project sharing`,
-          targetTypeId: project.typeId.toString(),
-          payload: {
-            projectId: project.id,
-            scope: 'private',
-            mode: 'adopt',
-            path: project.fs_storage_mount_path,
-            name: project.name,
-          },
-          prompt: `Set up Git in the exact project folder ${project.fs_storage_mount_path}, create or configure its origin remote, and report when it is ready for sharing.`,
-        });
-        setGitGateOpen(false);
+      // The gate's contract is a promise; this step is now just "open the
+      // chooser", and the wizard it used to await is launched from its submit.
+      // Hand off to the chooser: the gate has asked its question, and the
+      // wizard is launched from the chooser's submit.
+      runSetup: () => {
+        if (project?.fs_storage_mount_path) {
+          setGitGateOpen(false);
+          setGitSetupOpen(true);
+        }
+        return Promise.resolve();
       },
       runCommit: async () => {},
     }),
@@ -198,11 +228,15 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         >
           <div className="flex min-w-0 items-center gap-3">
             {cloudMode ? (
-              <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+              <>
+                <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+                <ProjectPublishedButton projectId={projectTypeId.id} />
+              </>
             ) : (
               <>
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
-                {project && <ProjectPublishButton project={project} />}
+                {project && <ProjectCloudLinkButton project={project} />}
+                <ProjectPublishedButton projectId={projectTypeId.id} />
               </>
             )}
           </div>
@@ -220,6 +254,31 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           onOpenChange={(next) => !next && setGitChecks(null)}
           checks={gitChecks}
           onSetupRepo={gitGate.runSetup}
+        />
+      )}
+      {!cloudMode && project && (
+        <GitTargetDialog
+          open={gitSetupOpen}
+          onOpenChange={setGitSetupOpen}
+          title={<Trans>Set up Git</Trans>}
+          description={
+            // Name the folder: this pushes its contents, which is not a
+            // reversible thing to discover afterwards.
+            project.fs_storage_mount_path ? (
+              <Trans>
+                Give <span className="font-mono text-xs">{project.fs_storage_mount_path}</span> a Git remote so this
+                project can be shared.
+              </Trans>
+            ) : (
+              <Trans>Give this project a Git remote so it can be shared.</Trans>
+            )
+          }
+          submitLabel={<Trans>Set up Git</Trans>}
+          nameSeed={project.name ?? undefined}
+          urlLabel={t`Remote repository`}
+          testIdPrefix="project-git-setup"
+          awaitSubmit
+          onSubmit={runGitSetup}
         />
       )}
       {!cloudMode && gitGateState === 'blocked' && gitGateReason && (

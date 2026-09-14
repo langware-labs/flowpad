@@ -9,6 +9,7 @@
  */
 
 import { isNetworkErrorMessage } from '../client';
+import type { ComputeNode } from '../entities/compute-node/compute-node';
 import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
@@ -33,7 +34,7 @@ function parseFsRef(value: FSRef | FSRefJson | null | undefined): FSRef | null {
   if (!value) return null;
   return value instanceof FSRef ? value : FSRef.fromJson(value);
 }
-import type { AssetDescriptor } from './asset-descriptor';
+import type { AssetDescriptor, ProcessAssetInventory } from './asset-descriptor';
 import { DockPointerData, TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
@@ -45,6 +46,7 @@ import {
   ProcessIconKey,
   ProcessStatus,
   WorkerMode,
+  type SwitchModeBody,
   WorkerStatus,
   isBusy,
   isProcessRunning,
@@ -61,6 +63,18 @@ import {
   type ProcessHookCallback,
 } from './process-hooks';
 import type { HookEventType } from '../claude_hook_events/event-types';
+
+/** Read-only projection of the backend session naming FSM. */
+export interface SessionNameState {
+  readonly phase: 'unnamed' | 'prompt_fallback' | 'harness' | 'user_pinned' | 'protected_unknown';
+  readonly title: string | null;
+  readonly revision: number;
+  readonly session_id: string | null;
+  readonly source: string | null;
+  readonly fallback: string | null;
+  readonly cursors: Readonly<Record<string, { readonly revision: string; readonly sequence: number | null }>>;
+  readonly legacy_candidates: Readonly<Record<string, string>>;
+}
 
 // Connection membership and PTY recovery are now fully backend-owned:
 //   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
@@ -324,8 +338,9 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
   connection_id?: string | null;
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename?: boolean;
+  readonly naming_state?: SessionNameState | null;
   /** Last view mode this session was viewed in (`vibe|standard|advanced|dev`).
    *  Per-session memory: opening the session applies it, changing mode while it
    *  is open records the new one. See `applyProcessViewMode`. */
@@ -584,7 +599,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   static async launch(opts: {
     workerType?: WorkerType;
-    workdir: string;
+    /** Omit to use the compute node’s default working directory. */
+    workdir?: string;
+    /** Host of the asset being opened; defaults to the active compute node. */
+    computeNode?: ComputeNode;
     projectId?: string | null;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
@@ -603,7 +621,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
      *  JSON-stream (no PTY/xterm). */
     ptyMode?: boolean;
   }): Promise<AgenticProcess> {
-    const computeNode = dataContext.computeNode;
+    const computeNode = opts.computeNode ?? dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
     const ptyMode = opts.ptyMode !== false;
     const process = await computeNode.createProcess(
@@ -836,6 +854,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
   }
 
+  /** Report an OSC frame; the backend driver validates it and reconciles names. */
+  async observeTitle(title: string, sessionId = this.session_id): Promise<void> {
+    const info = new ActionInfo('observe-title', AgenticProcess.type, this.id, 'POST');
+    info.bodyParameters = { title, session_id: sessionId ?? null };
+    await dataManager.callAction(info);
+  }
+
   /**
    * Headless transport (`pty_mode === false`): the chat streams over
    * flowDataStream and the process legitimately has NO shell/xterm — a null
@@ -983,8 +1008,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename: boolean = true;
+  readonly naming_state: SessionNameState | null;
 
   /**
    * The view mode this session was last seen in — per-SESSION mode memory.
@@ -1627,6 +1653,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.connection_id = entity.connection_id;
     this.auto_rename = entity.auto_rename ?? true;
+    this.naming_state = entity.naming_state ?? null;
     this.last_mode = entity.last_mode ?? null;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
@@ -2226,9 +2253,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Load a sub-agent from a VFS path and embed it into this process.
    * Mirrors the Python `process.load_embedded_subagent()` API.
    * The sub-agent spec is merged into cli_config on the backend and persisted.
+   *
+   * `setApPersona` declares this sub-agent to BE the process's persona: the
+   * backend stores its materialized path as `process_persona_path` and renders
+   * it with the "you are this agent" directive, with every other embedded
+   * sub-agent nested beneath it. Pass `true` for a base persona (`vibe`,
+   * `standard`, a wizard's driving agent, a help-desk support agent, a picked
+   * automation) and `false` for a layered one, which must not claim the
+   * identity. It overwrites any persona already set. With `false` everywhere a
+   * process has no persona and the worker keeps its own identity -- the normal
+   * case for a terminal process.
+   *
+   * REQUIRED, deliberately: a defaulted flag is a decision a caller can skip
+   * without noticing, and skipping it silently drops the identity directive.
+   * That is exactly how three call sites (wizard, help desk, automation) were
+   * left inheriting the old count-based persona and regressed when it was
+   * removed. Making it required moves "which one is the persona?" from
+   * something a call site may forget to something tsc makes it answer.
    */
-  async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
-    await this.post('load-embedded-subagent', { asset_ref: sourcePath });
+  async loadEmbeddedSubagent(sourcePath: string, setApPersona: boolean): Promise<void> {
+    await this.post('load-embedded-subagent', { asset_ref: sourcePath, set_ap_persona: setApPersona });
   }
 
   /**
@@ -2254,8 +2298,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
-    const response = await this.get<{ assets?: AssetDescriptor[] }>('get-assets');
+    const response = await this.getAssetInventory();
+    if (response?.availability_error) throw new Error(response.availability_error);
     return response?.assets ?? [];
+  }
+
+  async getAssetInventory(): Promise<ProcessAssetInventory> {
+    return await this.get<ProcessAssetInventory>('get-assets') ?? { assets: [] };
   }
 
   /**
@@ -2960,6 +3009,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       'process_load',
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
+    return this.adoptOpenPayload(result, options);
+  }
+
+  /**
+   * Client half of a PTY launch: adopt the server's open payload and attach.
+   * Shared by {@link start} (`open`) and {@link switchMode}'s Interactive
+   * direction (`switch-mode`), which return the same `_build_open_payload`.
+   * That parity is what lets the toggle avoid `open`, which has no mid-turn
+   * guard and so let a switch put two workers on one transcript (FLOWPAD-2130).
+   */
+  private async adoptOpenPayload(
+    result: {
+      shell_id: string;
+      pty_id: string;
+      session_id: string | null;
+      status?: string;
+      shell: Record<string, unknown>;
+    } | null,
+    options?: { cols?: number; rows?: number; ptyTimeout?: number },
+  ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
       this.status = result.status as ProcessStatus;
@@ -3068,55 +3137,56 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
-   * Standardized transport switch — the single way to flip a session between the
-   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
-   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
-   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
-   * intent is persisted so a reload keeps the chosen transport.
-   *
-   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
-   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
-   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
-   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
-   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
-   * (backend 409); the caller disables the toggle while a turn is in flight.
+   * Flip a session between PTY terminal and headless CLI — one logical session,
+   * durable `pty_mode`, ONE route both ways (`switch-mode`, which 409s
+   * mid-turn). Interactive used to take the unguarded `open` (FLOWPAD-2130).
+   * Only pre/post work differs: Interactive attaches via {@link adoptOpenPayload}
+   * and emits `restarted`; CLI must NOT (it would re-attach a dead PTY).
    */
-  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
-    if (mode === WorkerMode.Interactive) {
-      const restoreTransport = this.stageTransportIntent({ pty_mode: true, visible: true });
-      try {
-        await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-        this.emit('restarted', { process: this });
-      } catch (error) {
-        // The open action rejected, so the optimistic transport intent never
-        // became durable. Restore the durable fields and their stale-wire
-        // latch in one scoped step; otherwise later headless broadcasts are
-        // discarded and the UI stays pinned to a terminal that never started.
-        restoreTransport();
-        throw error;
+  async switchMode(
+    mode: WorkerMode,
+    /** Client-only xterm grid, NOT wire data: it seeds `attachPty` so the
+     *  worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+    opts?: { cols?: number; rows?: number },
+  ): Promise<void> {
+    const wantPty = mode === WorkerMode.Interactive;
+    if (!wantPty) {
+      this._userInitiatedStop = true;
+      const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+      if (shell) {
+        shell.status = ShellStatus.CLOSING;
+        dataManager.notifyEntityChanged(shell);
       }
-      return;
     }
-    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
-    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
-    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
-    this._userInitiatedStop = true;
-    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
-    if (shell) {
-      shell.status = ShellStatus.CLOSING;
-      dataManager.notifyEntityChanged(shell);
-    }
-    // Stage the desired CLI transport BEFORE the request, symmetric with the
-    // Interactive branch above. Backend exit/final-save broadcasts happen
-    // before the HTTP response; keeping the prior PTY latch during that window
-    // can discard the authoritative false frame as stale. Roll back both the
-    // fields and latch if the action is rejected.
-    const restoreTransport = this.stageTransportIntent({ pty_mode: false, visible: false });
+    // Staged BEFORE the request: backend broadcasts land before the response,
+    // and the prior latch would discard the authoritative frame as stale.
+    const restoreTransport = this.stageTransportIntent({ pty_mode: wantPty, visible: wantPty });
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { mode };
+    // Theme is sampled per launch (the CLI reads it at startup) and belongs to
+    // the Interactive arm only — the union makes putting it on CLI a type error.
+    const theme = wantPty ? hostTerminalTheme() : undefined;
+    const body: SwitchModeBody = wantPty
+      ? { mode: WorkerMode.Interactive, ...(theme ? { theme } : {}) }
+      : { mode: WorkerMode.CLI };
+    actionInfo.bodyParameters = body;
     try {
-      await dataManager.callAction(actionInfo);
+      const result = await dataManager.callAction<
+        unknown,
+        {
+          shell_id: string;
+          pty_id: string;
+          session_id: string | null;
+          status?: string;
+          shell: Record<string, unknown>;
+        } | null
+      >(actionInfo);
+      if (wantPty) {
+        await this.adoptOpenPayload(result, { cols: opts?.cols, rows: opts?.rows });
+        this.emit('restarted', { process: this });
+      }
     } catch (error) {
+      // Rejected (409 mid-turn, or a launch failure) — the intent never became
+      // durable, so roll fields and latch back or the UI stays pinned to it.
       restoreTransport();
       throw error;
     }

@@ -1,7 +1,7 @@
 """Cross-language parity for the config-form field vocabulary.
 
 `FieldType` decides what a manifest's config field renders as, and it is declared twice:
-`flow_sdk/builtin/data_source_spec.py` validates a manifest against it at load, and
+`flow_sdk/schema/data_spec/data_source_manifest_spec.py` validates a manifest against it at load, and
 `ts_sdk/src/entities/data-source-spec.ts` is what the form switches on to draw the input.
 
 Nothing generates one from the other, and TypeScript cannot catch the drift: the value
@@ -24,7 +24,7 @@ import pytest
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 _REPO = Path(__file__).resolve().parents[2]
-_PY_FILE = _REPO / "flow_sdk" / "builtin" / "data_source_spec.py"
+_PY_FILE = _REPO / "flow_sdk" / "schema" / "data_spec" / "data_source_manifest_spec.py"
 _TS_FILE = _REPO / "ts_sdk" / "src" / "entities" / "data-source-spec.ts"
 
 #: Python:  class FieldType(StrEnum): \n TEXT = "text" ...
@@ -52,7 +52,7 @@ def test_python_and_typescript_declare_the_same_field_types():
 
 def test_the_parsed_python_members_match_the_live_enum():
     """A regex that stopped matching would make the test above vacuously true."""
-    from flow_sdk.builtin.data_source_spec import FieldType
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import FieldType
 
     assert _values(_PY_FILE, _PY_ENUM, "Python") == {member.value for member in FieldType}
 
@@ -60,7 +60,7 @@ def test_the_parsed_python_members_match_the_live_enum():
 @pytest.mark.parametrize("flag", ["required", "advanced", "account_key", "choices"])
 def test_every_config_field_flag_exists_on_both_sides(flag: str):
     """A flag the form never receives is a feature that silently does not exist."""
-    from flow_sdk.builtin.data_source_spec import ConfigFieldSpec
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import ConfigFieldSpec
 
     assert flag in ConfigFieldSpec.model_fields, f"{flag} is not a ConfigFieldSpec field"
     interface = re.search(

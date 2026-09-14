@@ -119,7 +119,8 @@ async def _gcs_spec():
     """
     import json
 
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec, ManifestSpec
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
     path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gcs/data_source.json"
     manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
