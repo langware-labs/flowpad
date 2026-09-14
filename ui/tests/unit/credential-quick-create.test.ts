@@ -1,6 +1,6 @@
 /**
- * The quick-create "Secret" tile uses the same form and the same save as
- * Connections → Custom API key. The name-only `+` on the assets page declares
+ * The quick-create "Credentials" tile uses the same form and the same save as
+ * Connections → Custom credentials. The name-only `+` on the assets page declares
  * one variable, in the scope the chips chose.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +25,7 @@ import { CredentialSpec, Project } from '@sdk';
 import { getDescriptor } from '@src/components/quick-create/registry';
 import { CredentialQuickCreateDialog } from '@src/components/credentials/CredentialQuickCreateDialog';
 
-describe('the Secret quick-create entry', () => {
+describe('the Credentials quick-create entry', () => {
   beforeEach(() => h.save.mockClear());
 
   it('opens the one credential dialog, in user or project scope', () => {

@@ -38,7 +38,7 @@ import { EnvLocalBlockedNotice } from './EnvLocalBlockedNotice';
 import { SecretValueInput } from './SecretValueInput';
 
 /** The wiki page the scope and storage info icons open, one section each. */
-const SECRETS_WIKI = 'Secrets';
+const CREDENTIALS_WIKI = 'Credentials';
 
 export interface CredentialDialogProps {
   /** The draft the form starts from. Render a fresh dialog (a new `key`) per draft. */
@@ -55,7 +55,7 @@ export interface CredentialDialogProps {
 /**
  * The one form for declaring secrets.
  *
- * In its basic form a secret is a pack name and name + value pairs. Everything
+ * In its basic form credentials are a name and name + value pairs. Everything
  * else — where it applies, where values are stored, descriptions, masking —
  * sits behind Advanced, with defaults that fit most packs: this project, the
  * `.env.local` file.
@@ -89,7 +89,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
       'no-vars': t`Add at least one variable`,
       'bad-env-var': t`Letters, digits and _ only`,
       duplicate: t`Listed twice`,
-      taken: t`Already in another pack here`,
+      taken: t`Already in other credentials here`,
       'required-value': t`Required`,
       'too-long': t`Too long`,
       pattern: t`Does not look right`,
@@ -98,9 +98,9 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
   const title = (() => {
     switch (d.mode) {
       case 'custom':
-        return t`New secret`;
+        return t`New credentials`;
       case 'pack':
-        return t`Pack keys into a secret`;
+        return t`Pack keys into credentials`;
       case 'edit':
         return t`Edit ${d.title}`;
       case 'values':
@@ -122,7 +122,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
           : await credentialsService.save(toSaveRequest(d, projectId));
       await onSaved(saved);
     } catch (error) {
-      const { code, message } = describeApiError(error, t`The secret could not be saved.`);
+      const { code, message } = describeApiError(error, t`The credentials could not be saved.`);
       setFailure(code === 'vault-disabled' ? t`The encrypted vault is not enabled on this machine yet.` : message);
     } finally {
       setBusy(false);
@@ -154,7 +154,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
           {editsDefinition && (
             <div className="space-y-1">
               <Label htmlFor="credential-title" className="text-xs">
-                <Trans>Pack name</Trans>
+                <Trans>Credentials name</Trans>
               </Label>
               <Input
                 id="credential-title"
@@ -422,7 +422,7 @@ function FieldSelect<T extends string>({
           {label}
         </Label>
         <WikiButton
-          wikiword={SECRETS_WIKI}
+          wikiword={CREDENTIALS_WIKI}
           fragment={fragment}
           label={t`About ${label}`}
           className="flex items-center text-muted-foreground/70 hover:text-primary"

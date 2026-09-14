@@ -85,7 +85,7 @@ Call sites: worker spawn (`apply_worker_secret_env`), terminals
 | `POST delete` | delete vault values and the folder; `.env.local` lines stay |
 
 Every entry point uses `save`: Connections → Add connection (catalogue templates
-and **Custom API key**), packing detected `.env.local` keys into one credential,
+and **Custom credentials**), packing detected `.env.local` keys into one credential,
 and the quick-create **Secret** tile.
 
 ## Status vocabulary

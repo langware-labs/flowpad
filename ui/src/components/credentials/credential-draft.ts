@@ -5,7 +5,7 @@
  * Every way of declaring a secret builds a draft and saves it through the same
  * `credentialsService.save`:
  *
- * - `custom`   — a Custom API key: the user names the variables.
+ * - `custom`   — Custom credentials: the user names the variables.
  * - `template` — a catalogue entry (Gmail, OpenRouter): names are fixed.
  * - `pack`     — keys already in a `.env.local`: names are fixed, no values asked.
  * - `edit`     — change an existing credential's description and variables.

@@ -30,7 +30,7 @@ context.
 - [[Markdown documents]] — a plain document.
 - [[Whiteboard assets]] — an Excalidraw drawing.
 - [[Prompt library]] — reusable prompt text you can queue into a session.
-- [[Secrets]] — a named set of environment variables (an API key) that agents and terminals receive.
+- [[Credentials]] — a named set of environment variables (an API key) that agents and terminals receive.
 
 **New folder** — extra directories agents can see:
 

@@ -1,9 +1,9 @@
 ---
 id: d0adf7f1-c472-466d-8ac1-b05272da8e02
-title: Secrets
+title: Credentials
 ---
 
-# Secrets
+# Credentials
 
 A **secret** is a named pack of environment variables — an API key, or an
 address plus a password. Agents and terminals receive every variable in it;
@@ -23,7 +23,7 @@ the values never appear in a prompt or in your project's history.
 
 ## Adding one
 
-**Connections → Add connection** offers known providers and **Custom API key**;
+**Connections → Add connection** offers known providers and **Custom credentials**;
 **Create new → Secret** opens the same form. Keys already in a `.env.local` are
 listed under Connections — select them and **Pack** them into one secret.
 Only variables in a pack reach agents and terminals.
