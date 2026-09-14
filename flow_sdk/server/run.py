@@ -6,10 +6,13 @@ Usage:
     python -m flow_sdk.server.run
 """
 
+import faulthandler
 import logging
 import os
+import signal
 import sys
 import time
+from pathlib import Path
 
 # Ensure the repo root and SDK path are on sys.path so "server" and "flow_sdk"
 # are importable even when this script is run directly (e.g. `python run.py`).
@@ -138,6 +141,26 @@ reset_instance_settings()
 get_instance_settings()
 
 
+def _register_stack_dump(target: Path) -> None:
+    """Dump every thread's stack to ``target`` on SIGUSR1.
+
+    A hung request shows up as a live server that answers everything except
+    the one route, and on macOS py-spy needs root, so without this the only
+    way to see where the loop or a thread-pool worker sits is to infer it.
+    ``kill -USR1 <server_pid>`` appends one dump per signal.
+    """
+    if not hasattr(signal, "SIGUSR1") or not hasattr(faulthandler, "register"):
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        stream = open(target, "a", encoding="utf-8")  # noqa: SIM115 - lives as long as the process
+    except OSError as exc:
+        logging.warning("[startup] Stack-dump signal not registered: %s", exc)
+        return
+    faulthandler.register(signal.SIGUSR1, file=stream, all_threads=True)
+    logging.info("[startup] SIGUSR1 dumps all thread stacks to %s", target)
+
+
 def main():
     """Start the minihub server."""
     startup_start = time.time()
@@ -151,6 +174,7 @@ def main():
     host = settings.host
     port = settings.port
     reload_enabled = settings.reload_enabled
+    _register_stack_dump(settings.logs_dir / "server" / "stacks.log")
 
     print(f"Starting Flowpad server at http://{host}:{port}")
     print(f"Bootstrap endpoint: http://{host}:{port}/api/v1/graph/bootstrap")
