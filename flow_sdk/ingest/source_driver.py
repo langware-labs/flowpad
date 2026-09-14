@@ -10,8 +10,9 @@ What it translates, and nothing else:
 
 * a ``DataSource`` row → the ``SourceBinding`` the class is constructed from;
 * ``segments`` → the source's own segments (``Segmented``), else one ``root`` segment;
-* ``fetch`` → one full traversal of the segment's query. Records lower to the flat envelope
-  (``legacy_lift.envelope_of``); a reflecting source's files become refs, diffed against the
+* ``fetch`` → one full traversal of the segment's query. Records older than the row's window
+  are dropped — the window is the application's, never the source's — and the rest lower to
+  the flat envelope (``legacy_lift.envelope_of``); a reflecting source's files become refs, diffed against the
   manifest the cursor carries — an observed stamp per key (``Payload.stable_dump``) and, when
   the source can say, a handle that survives a rename (``StableHandle``), so a moved file is
   never reported as removed;
@@ -31,6 +32,7 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.sources.protocols import Choosing, Segmented, StableHandle, Verifiable
 from flow_sdk.sources.values.page import ChangePage
+from flow_sdk.utils.serialization import iso_to_utc
 
 DELETE_AT = "D1"
 
@@ -38,6 +40,11 @@ DELETE_AT = "D1"
 ROOT_SEGMENT = "root"
 
 _TRAITS = ("stamps_identity", "open_inbound", "identity_config_key", "connection", "attention_poll_seconds", "segment_budget")
+
+
+def _when(item: Any) -> Any:
+    """The event time an item's payload reports, if any — the window and the high-water read it."""
+    return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
 
 
 def binding_of(row: Any) -> SourceBinding:
@@ -110,11 +117,19 @@ class SourceDriver(IngestDriver):
             if type(source).reflects:
                 return self._files(source, view, items, removed, moved, state)
             label = segment.label if segment else ""
+            floor = iso_to_utc(view.window_start) if view.window_start else None
+            kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
             envelopes = [
                 envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=view.segment_key, segment_label=label)
-                for item in items
+                for item in kept
             ]
-            return FetchResult(items=envelopes, next_state=state, unchanged=not envelopes and not removed)
+            stamps = [when for when in map(_when, kept) if when is not None]
+            return FetchResult(
+                items=envelopes,
+                next_state=state,
+                high_water=max(stamps).isoformat() if stamps else None,
+                unchanged=not envelopes and not removed,
+            )
 
     def _files(self, source: Source, view: SegmentCursorView, items, removed, moved, state: dict) -> FetchResult:
         assert self._ref_for is not None, f"{self.provider} reflects but names no ref_for"

@@ -17,7 +17,7 @@ not having it is at most one heartbeat, and the create path already refreshes on
 demand, which is the case a person actually feels.
 
 **Builtins always win.** `register_driver` is a bare dict assignment, so a user
-folder named `rss` carrying a `fetch.py` would otherwise replace `RssDriver` for
+folder named `rss` carrying a `fetch.py` would otherwise replace the shipped `RssSource` for
 every existing RSS source on the machine. A collision is refused and logged.
 """
 from __future__ import annotations

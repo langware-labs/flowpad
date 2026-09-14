@@ -19,17 +19,18 @@ from pathlib import Path
 
 import pytest
 
+import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.ingest.digest import content_digest
-from flow_sdk.ingest.driver import SegmentCursorView
-from flow_sdk.ingest.drivers.rss import RssDriver
+from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.drivers.script import driver_for_spec
+from flow_sdk.ingest.legacy_lift import FEED_KIND
 from tests.unit._ingest_helpers import local_http_server, make_data_source, serve_fixture
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 #: A `fetch.py` that reads an RSS feed with the standard library only and emits
-#: the same fields `RssDriver` does. This is what the skill authors, written by
+#: the same fields the shipped rss source does. This is what the skill authors, written by
 #: hand here so the equivalence claim does not depend on a model.
 RSS_MODULE = '''
 import json, sys, urllib.request
@@ -82,7 +83,7 @@ class _Spec:
         self.asset_ref = FSRef(folder)
         # `emits` must match what the builtin stamps, or the digest differs on
         # `kind` alone and the comparison would be vacuous.
-        self.traits = {"emits": RssDriver.record_kind}
+        self.traits = {"emits": FEED_KIND}
         self.auth = {}
         self.setup_wiki = ""
         self.id = "spec-rss-authored"
@@ -98,7 +99,7 @@ async def test_an_authored_rss_source_produces_the_same_records_as_the_builtin(t
 
         # ── the shipped driver ──
         builtin_source = make_data_source("rss", config={"feed_urls": [feed]})
-        builtin = await RssDriver().fetch(
+        builtin = await get_driver("rss").fetch(
             builtin_source, SegmentCursorView(segment_key=feed, state={}, first_run=True)
         )
 
@@ -122,6 +123,6 @@ async def test_the_authored_source_enumerates_the_same_segments(tmp_path):
         source = make_data_source("rss_authored", config={"feed_urls": [feed]})
 
         authored = await driver_for_spec(_Spec(tmp_path / "rss_authored", "rss_authored")).segments(source)
-        builtin = await RssDriver().segments(make_data_source("rss", config={"feed_urls": [feed]}))
+        builtin = await get_driver("rss").segments(make_data_source("rss", config={"feed_urls": [feed]}))
 
     assert [s.key for s in authored] == [s.key for s in builtin] == [feed]

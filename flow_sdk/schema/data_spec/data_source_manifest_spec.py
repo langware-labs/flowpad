@@ -169,7 +169,7 @@ class ManifestSpec(DataSpec):
 
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
 
-    #: The registry key AND the folder name. One noun: `rss` resolves RssDriver.
+    #: The registry key AND the folder name. One noun: `rss` resolves the shipped RssSource.
     name: str
     title: str = ""
     description: str = ""
