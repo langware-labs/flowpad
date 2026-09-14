@@ -47,7 +47,7 @@ except ImportError:  # Python 3.10 — the repo's floor
     import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
 
 from flow_sdk.config import agent_workspace_root
-from flow_sdk.fs_store.indexer.gitignore import is_denylisted
+from flow_sdk.fs_store.gitignore import is_denylisted
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
     is_path_under,

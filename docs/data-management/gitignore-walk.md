@@ -4,7 +4,7 @@ id: 7c3884f1-0581-5d94-9a65-7b2ed6b155a3
 
 # Gitignore-Aware Filesystem Walk
 
-Every tree walker in `flow_sdk` that recurses a real project directory shares one function: `gitignore_walk()` (`flow_sdk/fs_store/indexer/walk.py`). It is a generic pre-order DFS that yields one `(dir_path, subdirs, files)` tuple per surviving directory, applying a single skip policy so that the "what do we descend into" decision lives in exactly one place (`flow_sdk/fs_store/indexer/gitignore.py`) rather than being re-implemented by each consumer.
+Every tree walker in `flow_sdk` that recurses a real project directory shares one function: `gitignore_walk()` (`flow_sdk/fs_store/indexer/walk.py`). It is a generic pre-order DFS that yields one `(dir_path, subdirs, files)` tuple per surviving directory, applying a single skip policy so that the "what do we descend into" decision lives in exactly one place (`flow_sdk/fs_store/gitignore.py`) rather than being re-implemented by each consumer.
 
 > **This is a discovery walk, not the indexer DFS.** `gitignore_walk()` walks raw directories on disk. The `FSIndexer` DFS (`docs/data-management/scan-and-discovery.md`) walks typed `FSRef` nodes and dispatches per-type parsers. The folder walker that bridges them (`project_folder_walker_fn`) is one consumer of `gitignore_walk()`.
 
@@ -36,7 +36,7 @@ The three keyword flags select how much of the skip policy applies:
 
 ## Two-stage skip
 
-**Source:** `flow_sdk/fs_store/indexer/gitignore.py`
+**Source:** `flow_sdk/fs_store/gitignore.py`
 
 When `gitignore=True`, each entry passes through `is_ignored(path, is_dir, stack, root)`, which applies the policy in a fixed order.
 
@@ -70,7 +70,7 @@ Matching walks the stack outermost→innermost. Each spec matches the path **rel
 
 ### Force-include of `.claude/`
 
-**Source:** `_is_force_include` / `_is_claude_worktree` in `flow_sdk/fs_store/indexer/gitignore.py`
+**Source:** `_is_force_include` / `_is_claude_worktree` in `flow_sdk/fs_store/gitignore.py`
 
 Paths whose ancestor chain (up to `root`) contains a basename in `_FORCE_INCLUDE` — currently just `.claude` — are **never ignored**, even when `.claude/` is gitignored at the project root. This exists so project-level skills, agents, and commands under `.claude/` stay discoverable regardless of a repo's `.gitignore`.
 

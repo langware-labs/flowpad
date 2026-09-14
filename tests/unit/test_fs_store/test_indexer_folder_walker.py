@@ -26,16 +26,16 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.gitignore import (
+    is_ignored,
+    load_gitignore_stack,
+    push_gitignore,
+)
 from flow_sdk.fs_store.indexer import (
     IndexerOptions,
     build_default_indexer,
 )
 from flow_sdk.fs_store.indexer.functions.markdown import _has_typed_ancestor
-from flow_sdk.fs_store.indexer.gitignore import (
-    is_ignored,
-    load_gitignore_stack,
-    push_gitignore,
-)
 from flow_sdk.fs_store.record_types import RecordType
 
 # Project root = the flowpad-oss working tree (this file lives under

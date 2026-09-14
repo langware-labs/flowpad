@@ -5,7 +5,7 @@ Composition order (each layer can drop the event before later layers run):
 1. `pathspec.GitIgnoreSpec` over `trigger.ignore_patterns` — extra patterns
    declared on the trigger config. Applied even when respect_gitignore=False.
 2. Nested `.gitignore` stack — only when `trigger.respect_gitignore=True`.
-   Reuses `flow_sdk/fs_store/indexer/gitignore.py` (_WALK_IGNORED fast-path +
+   Reuses `flow_sdk/fs_store/gitignore.py` (_WALK_IGNORED fast-path +
    GitIgnoreSpec stack with last-match-wins semantics).
 3. Path-shape gate: relative_to(watched), single-segment for non-recursive
    folder mode, `watch_glob` fnmatch — preserves the previous behavior so
@@ -35,7 +35,7 @@ from typing import Any
 
 from pathspec import GitIgnoreSpec
 
-from flow_sdk.fs_store.indexer.gitignore import (
+from flow_sdk.fs_store.gitignore import (
     GitignoreStack,
     is_ignored,
     load_gitignore_stack,
@@ -98,7 +98,7 @@ class CompositeFsopFilter:
         to find a .gitignore inside it."""
         import os
 
-        from flow_sdk.fs_store.indexer.gitignore import _WALK_IGNORED
+        from flow_sdk.fs_store.gitignore import _WALK_IGNORED
 
         stack = load_gitignore_stack(root)
         seen = 1

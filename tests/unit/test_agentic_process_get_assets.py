@@ -253,3 +253,20 @@ async def test_bad_optional_metadata_retains_catalog_and_reports_issue(home, tmp
     assert any(issue.path == malformed for issue in catalog.issues)
     assert next(row for row in catalog.assets if row.posix_path == str(malformed)).parent_type_id is None
     assert body.read_text() == original
+
+
+@pytest.mark.asyncio
+async def test_project_dir_scan_skips_gitignored_and_vendor_trees(tmp_path):
+    # A live worker's workdir is scanned as a recursive PROJECT_DIR; a real
+    # checkout puts most of its files under ignored build/vendor trees.
+    def bare_skill(path):
+        path.mkdir(parents=True)
+        (path / 'SKILL.md').write_text(f'---\nid: {mint_uuid()}\nname: {path.name}\ndescription: Probe\n---\nInstructions.')
+        return path
+    project = tmp_path / 'project'
+    kept = bare_skill(project / 'src' / 'kept')
+    (project / '.gitignore').write_text('generated/\n')
+    bare_skill(project / 'generated' / 'ignored')
+    bare_skill(project / 'ui' / 'node_modules' / 'pkg' / 'vendored')
+    rows = (await scan_path_asset_descriptors([(str(project), AssetSource.PROJECT_DIR)], 'project-id', ['skill'])).assets
+    assert [r.posix_path for r in rows] == [str(kept)]
