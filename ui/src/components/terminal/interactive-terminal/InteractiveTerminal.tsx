@@ -1,4 +1,5 @@
-import { registerTerminalLinks, useTerminalLinkHandler } from './terminal-links';
+import { registerTerminalLinks } from './terminal-links';
+import { useTerminalLinks } from './TerminalLinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -214,7 +215,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
-  const activateLink = useTerminalLinkHandler(shellRef);
+  const terminalLinks = useTerminalLinks(shellRef);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
@@ -801,8 +802,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      registerTerminalLinks(term, activateLink);
-
       const fit = new FitAddon();
       term.loadAddon(fit);
 
@@ -832,6 +831,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
+        registerTerminalLinks(term, terminalLinks.handlers);
         // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
         // effect below re-decides when worker_type resolves, but it cannot be
         // the only writer: the container is conditionally mounted
@@ -1744,6 +1744,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     </div>
                   )}
                 </div>
+                {terminalLinks.menu}
                 {/* Gutters — absolutely positioned over padded areas */}
                 {showGutter && (
                   <div
