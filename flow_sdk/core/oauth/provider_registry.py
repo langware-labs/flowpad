@@ -250,7 +250,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # the browser, redirect to a loopback port, exchange with PKCE.
         kind=OAuthFlowKind.LOOPBACK,
         # Read-only Drive and read-only Storage — what `GoogleDriveDriver` and
-        # `GoogleCloudStorageDriver` ask for. Listed here AND in each source manifest
+        # the `gcs` source ask for. Listed here AND in each source manifest
         # because this is what the consent screen requests while the manifest is what
         # the source declares it needs; the verify path asserts the granted set covers
         # the requested one.

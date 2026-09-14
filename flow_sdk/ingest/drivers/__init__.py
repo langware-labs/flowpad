@@ -8,17 +8,17 @@ Importing this package registers every shipped driver. Nothing outside
 import os
 from pathlib import Path
 
+from flow_sdk.ingest.agent_transport import HarnessWorker
 from flow_sdk.ingest.driver import register_driver
-from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
-from flow_sdk.ingest.agent_transport import HarnessWorker
 from flow_sdk.ingest.source_driver import SourceDriver
-from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agent import AgentSendData, AgentSource
+from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agentmail import AgentMailSource
 from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
+from flow_sdk.sources.providers.gcs import GcsSource
 from flow_sdk.sources.providers.gmail import GmailSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
@@ -48,6 +48,33 @@ def _folder_origin_id(row, ref: str) -> str:
     st = Path(ref).stat()  # OSError → reflection falls back to the path
     return f"folder:{row.id}:ino:{st.st_dev}:{st.st_ino}"
 
+
+
+def _cache_root(row) -> Path:
+    """Where a remote source's bytes land: under this instance, not a project, so deleting the
+    source can take its cache without touching anything a person wrote."""
+    override = (row.config or {}).get("cache_root")
+    if override:
+        return Path(str(override)).expanduser().resolve()
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return (get_instance_settings().instance_dir / str(row.provider) / str(row.id)).resolve()
+
+
+def _cache_origin(row):
+    """The cache, as the origin — a local tree whose bytes the source refreshes."""
+    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
+    return local_origin_for_path(_cache_root(row))
+
+
+def _gcs_origin_id(row, ref: str) -> str:
+    """``gcs:<bucket>/<object>`` — an object's name IS its identity and the cache mirrors it,
+    so the handle falls out of the path with no sidecar."""
+    from flow_sdk.sources.binding import SourceBinding  # noqa: PLC0415
+
+    rel = Path(ref).resolve().relative_to(_cache_root(row))
+    return f"gcs:{GcsSource.namespace_for(SourceBinding(config=row.config or {}))}/{rel.as_posix()}"
 
 
 def _connection_token(provider: str):
@@ -454,7 +481,16 @@ register_driver(
     )
 )
 register_driver(GoogleDriveDriver())
-register_driver(GoogleCloudStorageDriver())
+register_driver(
+    SourceDriver(
+        GcsSource,
+        kind="datasource.fs.gcs",
+        credentials=_connection_token("google"),
+        cache_root=_cache_root,
+        origin_for=_cache_origin,
+        origin_id_for=_gcs_origin_id,
+    )
+)
 register_driver(GitDriver())
 register_driver(
     SourceDriver(

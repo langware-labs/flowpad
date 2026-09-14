@@ -14,7 +14,7 @@ import pytest
 import flow_sdk.ingest.drivers  # noqa: F401 — the page's own first fence
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
-from tests.unit._ingest_helpers import fixture_bytes, local_http_server, with_token
+from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -142,12 +142,19 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     """
     import json
 
-    from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
+    from pydantic import SecretStr
+
+    from flow_sdk.ingest.driver import get_driver
+    from flow_sdk.sources.credentials import AuthShape, Credentials
 
     await _gcs_spec()
+
     # The one thing a loopback server cannot supply: the credential comes from the
     # machine's connection store, not over the wire.
-    with_token(monkeypatch, GoogleCloudStorageDriver)
+    async def _token(_row):
+        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+
+    monkeypatch.setattr(get_driver("gcs"), "_credentials", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
