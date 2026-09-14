@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.identity_carrier import (
+from flow_sdk.assets.identity_carrier import (
     Absent,
     Derived,
     ForeignId,
@@ -28,8 +28,7 @@ from flow_sdk.fs_store.identity_carrier import (
     UnclaimedPath,
     Unstamped,
 )
-from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.schema.layout import (  # noqa: F401 — Layout/LayoutKind re-exported
+from flow_sdk.assets.layout import (  # noqa: F401 — Layout/LayoutKind re-exported
     File,
     Folder,
     Layout,
@@ -37,6 +36,7 @@ from flow_sdk.schema.layout import (  # noqa: F401 — Layout/LayoutKind re-expo
     Walk,
     shape_from_dict,
 )
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
 
 # ---------------------------------------------------------------------------
@@ -217,12 +217,17 @@ class TypeInfo:
     # mutates the entity kwargs after the main doc and fields are read, before
     # the class is constructed.
     derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    row_derive_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Optional async projection for process attachment/reveal/detach.
     process_projection: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
     # dataset). Tells the disk serializer this type has layout-written rows,
     # without the serializer ever naming the type.
     rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    rows_field: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    scaffold_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    scaffold_spec: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    render_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The canonical filename the asset's main doc is published under on the hub
     # (``document.md`` for a markdown doc, ``SKILL.md`` for a skill folder).
     # Also the opt-in: ``None`` keeps the generic embedded-VFS push.
@@ -243,7 +248,7 @@ class TypeInfo:
     # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / REPO / …);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
     # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Resolved
-    # through ``flow_sdk.fs_store.placement``; ``main_subdir`` below is the
+    # through ``flow_sdk.assets.placement``; ``main_subdir`` below is the
     # claude-default view. Not hashed.
     asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
     harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
@@ -253,12 +258,12 @@ class TypeInfo:
     # ``compute_asset_ref`` and ``main_file_owners`` each carry the one branch.
     singleton: bool = field(default=False, metadata=_MERGE)
     # --- THE shape declaration: ``File(ext)`` | ``Folder(main)``. Not hashed. ---
-    shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.schema.layout.Shape
+    shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.assets.layout.Shape
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
     # shipped in the bootstrap so the frontend derives its editor tables from
     # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
     editor: str | None = field(default=None, metadata=_MERGE)
-    # The declarative SCAN(s) for this type (``flow_sdk.schema.layout.Walk``):
+    # The declarative SCAN(s) for this type (``flow_sdk.assets.layout.Walk``):
     # which root nodes each hangs on and which mounts it looks in. A single
     # ``Walk`` is accepted and stored as a 1-tuple; ``()`` ⇒ the type is walked
     # by a bespoke function (or not walked at all).
@@ -393,7 +398,7 @@ class TypeInfo:
     def scan_mounts(self) -> tuple[str, ...]:
         """Every root-relative directory a copy of this type may BE in: the
         declared walk mounts plus placement's (``placement.scan_mounts``)."""
-        from flow_sdk.fs_store.placement import scan_mounts  # noqa: PLC0415
+        from flow_sdk.assets.placement import scan_mounts  # noqa: PLC0415
 
         declared = (m for walk in self.walk if not walk.anywhere for m in walk.mounts)
         return tuple(dict.fromkeys((*declared, *scan_mounts(*self._resolved_layout))))
@@ -537,7 +542,7 @@ class TypeInfo:
     def main_subdir(self) -> str | None:
         """The claude-default family subdir (``.claude/skills``, ``docs``,
         ``assets/datasets``); ``None`` for non-file-backed types."""
-        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
+        from flow_sdk.assets.placement import family_subdir  # noqa: PLC0415
 
         return family_subdir(self.asset_class, self.harness, self.family, default_worker="claude")
 
@@ -597,6 +602,7 @@ class TypeInfo:
             "parent_type": self.parent_type,
             "locations": self.locations,
             "main_subdir": self.main_subdir,
+            "scan_mounts": list(self.scan_mounts),
             # The placement axis itself, so the client never re-derives a mount
             # from a hand-written table. ``main_subdir`` above is only the
             # claude-default VIEW of these three; the FE needs the class to know
@@ -727,7 +733,7 @@ def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
         if kinds[name] is FieldKind.SUB_ASSET_LIST:
             # A list of assets is a directory of FILES, one per element — a
             # class-shape fact, refused here rather than on the first save.
-            sub_cls, _ = asset_class(spec_field.annotation)
+            sub_cls, _ = asset_class(spec_field.rebuild_annotation())
             if not isinstance(asset_info(sub_cls).shape, File):
                 raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
 
@@ -810,6 +816,7 @@ class SchemaRegistry:
     _entity_bound_hooks: ClassVar[list[Callable[[], None]]] = []
     # Whether the declarative type-info registrations have run in this process.
     _loaded: ClassVar[bool] = False
+    _loading: ClassVar[bool] = False
 
     # Backward compat: direct class attribute access for default_index_types
     default_index_types: ClassVar[list[str]] = _BUILTIN_DEFAULT_TYPES
@@ -829,20 +836,20 @@ class SchemaRegistry:
         once per process. ``register_all()`` is idempotent, so a later explicit
         call (e.g. at server startup) is harmless.
         """
-        if cls._loaded:
+        if cls._loaded or cls._loading:
             return
         # Set the flag BEFORE running register_all: it calls register() many
         # times, which must not re-enter this loader.
-        cls._loaded = True
+        cls._loading = True
         try:
             from flow_sdk.schema.data_spec._kinds import register_builtin_kinds  # lazy: avoid import cycle
             from flow_sdk.schema.type_info import register_all  # lazy: avoid import cycle
 
             register_all()
             register_builtin_kinds()
-        except Exception:
-            cls._loaded = False  # let the next access retry rather than wedge
-            raise
+            cls._loaded = True
+        finally:
+            cls._loading = False
 
     # ---------------------------------------------------------------------------
     # Registration
@@ -1026,7 +1033,7 @@ class SchemaRegistry:
         (``agentic-assets/spec/<x>/spec.md`` is a spec, a loose ``SPEC.md`` is
         a document; a ``SKILL.md`` is a skill wherever it sits). Two types may
         share a name at one placement; the set carries that."""
-        from flow_sdk.fs_store.placement import mount_matches  # noqa: PLC0415
+        from flow_sdk.assets.placement import mount_matches  # noqa: PLC0415
 
         p = Path(path)
         candidates = cls._shape_tables().by_main.get(p.name.lower())
@@ -1051,7 +1058,7 @@ class SchemaRegistry:
         """The file types whose declared mount is the NEAREST ancestor of ``p``
         that is any type's mount, for ``p``'s extension. ``.claude/commands/x.md``
         → command; ``docs/guide/index.md`` → the docs family; a loose ``x.md`` → ()."""
-        from flow_sdk.fs_store.placement import mount_matches  # noqa: PLC0415
+        from flow_sdk.assets.placement import mount_matches  # noqa: PLC0415
 
         tables = cls._shape_tables()
         parts = tuple(part.lower() for part in p.parent.parts)
@@ -1243,7 +1250,7 @@ class SchemaRegistry:
         ``asset_class="repo"`` (and a ``family``). The indexer walker reads this
         directly (it needs each type's layout + marker), and the name/type-only
         views below derive from it so the predicate lives in one place."""
-        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+        from flow_sdk.assets.placement import AssetClass  # noqa: PLC0415
 
         cls._ensure_loaded()
         return {v.family: v for v in cls._types.values() if v.asset_class == AssetClass.REPO and v.family}
@@ -1270,7 +1277,7 @@ class SchemaRegistry:
         rather than hand-listing directory names — a type enrolls by declaring
         its ``asset_class``, so the answer cannot drift behind the registry.
         """
-        from flow_sdk.fs_store.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+        from flow_sdk.assets.placement import LAYOUT_REGISTRY  # noqa: PLC0415
 
         cls._ensure_loaded()
         return frozenset(

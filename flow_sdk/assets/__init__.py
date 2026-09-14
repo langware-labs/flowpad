@@ -4,6 +4,13 @@ from importlib import import_module
 _EXPORTS = {
     "Asset": "asset",
     "AssetFolder": "folder",
+    "AssetDocument": "document",
+    "DocumentPatch": "document",
+    "DocumentConflict": "document",
+    "collect_assets": "folder",
+    "collect_asset_scan": "folder",
+    "AssetScanResult": "folder",
+    "AssetScanError": "folder",
     "PORTABLE_ASSET_CONTRACT_VERSION": "projection",
     "PortableAssetLayout": "projection",
     "PortableAssetProjection": "projection",

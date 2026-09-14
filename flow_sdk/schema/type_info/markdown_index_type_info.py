@@ -1,11 +1,8 @@
 """Type metadata for MARKDOWN_INDEX."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.markdown_index import (
-    extract_markdown_index,
-    markdown_index_identity_key,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.markdown_index import extract_markdown_index, markdown_index_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
 MARKDOWN_INDEX = TypeInfo(

@@ -21,16 +21,17 @@ import json
 import pytest
 
 from flow_sdk.builtin import tag_triggers
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.builtin.wizard import Wizard
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.server.builtin_triggers import (
-    WIZARD_TRIGGER_UNAME_PREFIX,
     _run_wizard_trigger,
     _upsert_one,
     reconcile_wizard_triggers,
 )
 from tests.conftest import async_context
+from tests.fixtures.identity import index_path
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -50,9 +51,8 @@ def _wizard_folder(tmp_path, doc=None, name="dev-toolchain"):
 
 async def _save_wizard(tmp_path, doc=None, name="dev-toolchain") -> Wizard:
     root = _wizard_folder(tmp_path, doc, name)
-    wizard = Wizard(name=name, asset_ref=str(root))
-    await wizard.save()
-    return wizard
+    record = await index_path("wizard", root)
+    return await Wizard.get_by_id(record.id)
 
 
 async def _trigger_for(wizard: Wizard, *, uname: str = "wizard_test_0") -> Trigger:
@@ -171,8 +171,8 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
         system_projects_root() / "flowpad_assistant"
         / "agentic-assets" / "wizard" / "dev-toolchain"
     )
-    wizard = Wizard(name="dev-toolchain", asset_ref=str(shipped))
-    await wizard.save()
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
     trigger = await _trigger_for(wizard)
     try:
         await _run_wizard_trigger(trigger, [])

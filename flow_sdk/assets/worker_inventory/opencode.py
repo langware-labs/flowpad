@@ -1,23 +1,16 @@
 """OpenCode inventory uses the same mount projection as worker launches."""
 
-import asyncio
-import json
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from flow_sdk.assets.asset_inventory import (
     AssetInventoryError,
     InventoryInputs,
     WorkerAsset,
-    inventory_spawn,
-    json_command,
     skill_observations,
 )
 from flow_sdk.schema.types import EntityType
-
-_inventory_lock = asyncio.Lock()
 
 
 def permitted(config: dict, agent: dict, tool: str, name: str) -> bool:
@@ -41,27 +34,7 @@ def permitted(config: dict, agent: dict, tool: str, name: str) -> bool:
     return action != "deny"
 
 
-async def available_assets(inputs: InventoryInputs):
-    # Native discovery initializes the same user store for every inputs.
-    async with _inventory_lock:
-        return await _available_assets(inputs)
-
-
-async def _available_assets(inputs):
-    argv, env = inventory_spawn(inputs, ["opencode", "debug", "skill"])
-    paths = inputs.skill_paths
-    # The read must never regenerate the live inputs's config: doing that
-    # without its MCP/provider fragments would erase launch configuration.
-    with TemporaryDirectory(prefix="flowpad-inventory-") as directory:
-        if paths:
-            config = Path(directory) / "opencode.json"
-            config.write_text(json.dumps({"skills": {"paths": paths}}), encoding="utf-8")
-            env["OPENCODE_CONFIG"] = str(config)
-        # Both debug commands initialize OpenCode's SQLite store. Concurrent
-        # startup demonstrably fails with "database is locked"; one probe must
-        # finish initialization before the next opens that same store.
-        response = await json_command(argv, cwd=inputs.workdir, env=env)
-        config = await json_command([argv[0], "debug", "config"], cwd=inputs.workdir, env=env)
+def resolve_inventory(inputs: InventoryInputs, response: list, config: dict) -> list[WorkerAsset]:
     if not isinstance(response, list):
         raise AssetInventoryError("OpenCode did not return a skill inventory")
     selected = inputs.agent or config.get("default_agent") or "build"
@@ -106,8 +79,8 @@ def add_dir_contributions(add_dirs: "Sequence[str | Path] | None") -> tuple[list
     Results are de-duplicated in order: callers pass the process assets dir
     alongside ``resolved_add_dirs``, which already contains it.
     """
+    from flow_sdk.assets.placement import WORKER_PREFIX  # noqa: PLC0415
     from flow_sdk.assets.types.skill import folder_is_skill  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import WORKER_PREFIX  # noqa: PLC0415
 
     # Where a harness keeps skills inside a mounted root. Derived from the ONE
     # harness->dot-dir map so a fifth vendor (or a moved prefix) is picked up

@@ -15,17 +15,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from types import SimpleNamespace
-
+from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
 from flow_sdk.fs_store.indexer.functions import claude_sessions as _claude_sessions
-from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-    extract_claude_session_from_path,
-    get_claude_session,
-)
-from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
+from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 
 _CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
 _NEEDLE = "hello world unit test needle"

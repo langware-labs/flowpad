@@ -20,6 +20,8 @@ interface EntityResolutionGateProps<T extends APIEntity<T>> {
   render: (entity: T) => ReactNode;
   /** Entity already resolved by a TypeId route; skips path discovery. */
   resolvedEntity?: T;
+  /** Exact document renderer, only for explicit backend projection errors. */
+  renderDocument?: (ref: FSRef) => ReactNode;
 }
 
 /**
@@ -42,12 +44,14 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
   typeLabel,
   render,
   resolvedEntity,
+  renderDocument,
 }: EntityResolutionGateProps<T>) {
   const { t } = useLingui();
   const {
     entity: pathEntity,
     state,
     error,
+    documentOnly,
     retry,
   } = useEntityByPath<T>(
     resolvedEntity ? null : type ?? null,
@@ -67,6 +71,16 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
       >
         <Loader2 className="h-4 w-4 animate-spin" />
         {label}
+      </div>
+    );
+  }
+
+  if (documentOnly && renderDocument) {
+    const document = FSRef.fromJson({ ...fsRef.toJSON(), path: documentOnly.body, ref_type: 'file' });
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div role="alert" className="border-b p-3 text-sm text-destructive">{documentOnly.error}</div>
+        <div className="min-h-0 flex-1">{renderDocument(document)}</div>
       </div>
     );
   }

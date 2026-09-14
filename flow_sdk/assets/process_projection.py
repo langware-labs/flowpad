@@ -75,7 +75,8 @@ def remove_projection(receipt: ProjectionReceipt) -> None:
 
 
 async def _skill(ref: TypeId, root: Path, skills_root: Path, source: Asset | None) -> EmbeddedAsset:
-    source = source or Asset.from_typeid(ref)
+    if source is None:
+        raise ValueError("A filesystem source is required for embedding")
     return EmbeddedAsset(name=source.path.name, path=skills_root / source.path.name, source=source.path)
 
 
@@ -116,13 +117,15 @@ def import_subagent(path: Path, root: Path, *, existing_id: str | None = None) -
 
 
 async def _subagent(ref: TypeId, root: Path, skills_root: Path, source: Asset | None) -> EmbeddedAsset:
-    source = source or Asset.from_typeid(ref)
+    if source is None:
+        raise ValueError("A filesystem source is required for embedding")
     return EmbeddedAsset(name=source.path.stem, path=root / ".claude" / "agents" / source.path.name,
                          source=source.path)
 
 
 async def _mcp(ref: TypeId, root: Path, skills_root: Path, source: Asset | None) -> EmbeddedAsset:
-    source = source or Asset.from_typeid(ref)
+    if source is None:
+        raise ValueError("A filesystem source is required for embedding")
     return EmbeddedAsset(name=source.path.name, path=root / source.info.main_subdir / source.path.name,
                          source=source.path)
 

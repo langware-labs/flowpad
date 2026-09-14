@@ -7,16 +7,12 @@ from pathlib import Path
 from pydantic import field_validator
 
 from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
-from flow_sdk.fs_store.identity_carrier import Absent
-from flow_sdk.fs_store.placement import mount_matches
+from flow_sdk.assets.identity_carrier import Absent
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.placement import mount_matches
+from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.layout import Folder
-
-
-class AssetScanIssue(DataSpec):
-    path: Path
-    message: str
 
 
 class AssetScanError(ValueError):
@@ -73,7 +69,7 @@ class AssetFolder(DataSpec):
                     mounts[candidate] = (previous_recursive or recursive, previous_types | {str(info.type_name)})
         return mounts
 
-    def assets(self) -> list[Asset]:
+    def scan(self) -> AssetScanResult:
         """List distinct occurrences; malformed candidates are explicit errors.
 
         Optional missing roots are empty. Ordinary unclaimed files are ignored;
@@ -182,15 +178,23 @@ class AssetFolder(DataSpec):
         if not self.path.exists():
             broken = _broken_link(self.path)
             if broken is not None:
-                raise AssetScanError([AssetScanIssue(path=broken, message="Broken asset folder link")])
-            return []
+                return AssetScanResult(issues=[AssetScanIssue(path=broken, message="Broken asset folder link")])
+            return AssetScanResult()
         if not self.path.is_dir():
             collect(self.path)
         else:
             scan_mounts(self.path, frozenset())
-        if issues:
-            raise AssetScanError(issues)
-        return [found[path] for path in sorted(found)]
+        return AssetScanResult(
+            candidates=[AssetCandidate(asset.path, str(asset.typeid.type), asset.layout, asset=asset)
+                        for path in sorted(found) for asset in [found[path]]],
+            issues=issues,
+        )
+
+    def assets(self) -> list[Asset]:
+        result = self.scan()
+        if result.issues:
+            raise AssetScanError(result.issues)
+        return result.assets
 
     def destination_for(self, asset: Asset) -> Path:
         """Place by the folder's declared layout; no user/project lookup."""
@@ -219,12 +223,26 @@ class AssetFolder(DataSpec):
         return folder if info.singleton else folder / asset.path.name
 
 
-def collect_assets(folders: list[AssetFolder]) -> list[Asset]:
-    """Deduplicate overlapping scans by entry path, retaining separate copies."""
-    found: dict[Path, Asset] = {}
+def collect_asset_scan(folders: list[AssetFolder]) -> AssetScanResult:
+    """Aggregate occurrences and diagnostics without losing caller attribution."""
+    found: dict[Path, AssetCandidate] = {}
+    issues: dict[tuple[Path, str, str | None], AssetScanIssue] = {}
     for folder in folders:
-        for asset in folder.assets():
-            previous = found.get(asset.path)
-            if previous is None or (previous.project_id is None and asset.project_id is not None):
-                found[asset.path] = asset
-    return [found[path] for path in sorted(found)]
+        result = folder.scan()
+        for candidate in result.candidates:
+            previous = found.get(candidate.path)
+            if previous is None or (
+                candidate.asset is not None and candidate.asset.project_id is not None
+                and (previous.asset is None or previous.asset.project_id is None)
+            ):
+                found[candidate.path] = candidate
+        for issue in result.issues:
+            issues.setdefault((issue.path, issue.message, issue.type_name), issue)
+    return AssetScanResult([found[path] for path in sorted(found)], list(issues.values()))
+
+
+def collect_assets(folders: list[AssetFolder]) -> list[Asset]:
+    result = collect_asset_scan(folders)
+    if result.issues:
+        raise AssetScanError(result.issues)
+    return result.assets

@@ -1,7 +1,7 @@
 """Filesystem asset boundaries shared by editors and versioning callers."""
 from pathlib import Path
 
-from flow_sdk.schema.layout import Folder
+from flow_sdk.assets.layout import Folder
 
 
 def _folder_backed_types() -> list:

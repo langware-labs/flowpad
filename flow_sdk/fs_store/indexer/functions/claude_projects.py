@@ -21,34 +21,19 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 
-logger = logging.getLogger(__name__)
-
 # ── Helpers (moved from ProjectFsRecord) ─────────────────────────────────────
 
 
-def _claude_projects_dir() -> Path:
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
-    return get_instance_settings().claude_projects_dir
 
 
-def _decode_claude_encoded(d: Path) -> str | None:
-    from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir  # noqa: PLC0415
-
-    real = decode_claude_project_dir(d)
-    if real is None:
-        return None
-    return str(real)
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
-def _is_claude_encoded_ref(ref_path: Path) -> bool:
-    """Detect Claude provenance by FSRef path structure."""
-    parent = ref_path.parent
-    return parent.name == "projects" and parent.parent.name == ".claude"
+
+
+
+
 
 
 # ── Walker ───────────────────────────────────────────────────────────────────
@@ -58,8 +43,8 @@ def claude_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir  # noqa: PLC0415
     from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
 
     out: list[FSRef] = []
@@ -93,6 +78,75 @@ def claude_projects_fn(
 
 #: ``(corpus stamp, {canonical cwd: record})`` — one tuple so the index and the
 #: stamp it was built from cannot drift apart.
+
+
+
+
+
+
+
+
+
+
+
+
+def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
+    """Record owning ``cwd``, or None. Canonicalizes first."""
+    return _find_project_record_by_canonical(canonical_posix_path(cwd)) if cwd else None
+
+
+
+
+
+
+
+
+
+
+
+# ── Identity reader/key + async parser_fn ────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+logger = logging.getLogger(__name__)
+
+
+def _claude_projects_dir() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().claude_projects_dir
+
+
+def _decode_claude_encoded(d: Path) -> str | None:
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
+
+    real = decode_claude_project_dir(d)
+    if real is None:
+        return None
+    return str(real)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _is_claude_encoded_ref(ref_path: Path) -> bool:
+    """Detect Claude provenance by FSRef path structure."""
+    parent = ref_path.parent
+    return parent.name == "projects" and parent.parent.name == ".claude"
+
+
 _PROJECT_CWD_CACHE: "tuple[tuple, dict[str, FSRecord]] | None" = None
 
 
@@ -162,11 +216,6 @@ def _project_cwd_index() -> "dict[str, FSRecord]":
 def _find_project_record_by_canonical(canonical: str) -> FSRecord | None:
     """Record owning an ALREADY-canonical path, or None."""
     return _project_cwd_index().get(canonical) if canonical else None
-
-
-def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
-    """Record owning ``cwd``, or None. Canonicalizes first."""
-    return _find_project_record_by_canonical(canonical_posix_path(cwd)) if cwd else None
 
 
 def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
@@ -313,9 +362,6 @@ async def _upsert_project_for_cwd(
         kwargs["encoded_path"] = encoded_path
     rec = FSRecord(**kwargs)
     return await _refresh_session_stats_and_save(rec)
-
-
-# ── Identity reader/key + async parser_fn ────────────────────────────────────
 
 
 def _canonical_project_cwd(ref: FSRef | Path) -> str:

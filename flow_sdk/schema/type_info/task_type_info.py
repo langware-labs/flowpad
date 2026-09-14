@@ -9,16 +9,13 @@ generic reindex reads it back — no bespoke JSON manifest, no bespoke share pac
 """
 from __future__ import annotations
 
-from flow_sdk.builtin.task import TaskSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     frontmatter_identity,
 )
-from flow_sdk.fs_store.indexer.functions.task import (
-    derive_task,
-    task_asset_hash,
-)
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.task import derive_task, task_asset_hash
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.task_spec import TaskSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

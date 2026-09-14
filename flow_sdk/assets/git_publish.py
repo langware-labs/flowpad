@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -138,3 +138,20 @@ __all__ = [
     "AssetPublishResult",
     "GitAuthor",
 ]
+
+
+def asset_relative_path(repo_root: Path, asset_root: Path) -> str:
+    lexical = Path(asset_root).absolute()
+    try:
+        relative = lexical.relative_to(repo_root)
+    except ValueError as exc:
+        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its Git checkout") from exc
+    rel = PurePosixPath(*relative.parts).as_posix()
+    if not rel or rel == "." or ".git" in PurePosixPath(rel).parts:
+        raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Asset path is not publishable")
+    probe = lexical if lexical.exists() else lexical.parent
+    try:
+        probe.resolve(strict=True).relative_to(repo_root.resolve())
+    except (OSError, ValueError) as exc:
+        raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Asset path escapes its Git checkout") from exc
+    return rel

@@ -1487,17 +1487,19 @@ class Project(Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        descriptors = await scan_path_asset_descriptors(
+        catalog = await scan_path_asset_descriptors(
             sources,
             own_project_id=str(self.id),
             types=requested,
             limit=limit,
-        ) if want_assets else []
+        ) if want_assets else None
 
+        descriptors = catalog.assets if catalog else []
         descriptors = await hydrate_asset_descriptor_remote(descriptors)
         data = {
             "assets": [d.to_row() for d in descriptors],
             "truncated": len(descriptors) >= limit,
+            "scan_issues": catalog.model_dump(mode="json")["issues"] if catalog else [],
         }
         if browsing is not None and browsing.menu:
             from flow_sdk.builtin.asset_menu import build_asset_menu  # noqa: PLC0415
@@ -1618,15 +1620,13 @@ class Project(Entity):
 
         One mint loop, one save, so there is no window to lose a link in.
         """
-        from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
-            SecretOrigin,
-            is_valid_secret_origin_env_var,
-        )
+        from flow_sdk.builtin.secret_origin import SecretOrigin
         from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
             get_secret_origin_driver,
             normalize_secret_origin_kind,
         )
         from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
 
         entries = pointers or []
         if not entries:
@@ -1942,9 +1942,9 @@ class Project(Entity):
         the project exists there. The failure carries ``project_not_published``
         so the UI can offer to publish rather than parse prose.
         """
-        from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
         from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.secret_origin_contract import is_valid_secret_origin_env_var
 
         env_var = (env_var or "").strip()
         if not is_valid_secret_origin_env_var(env_var):

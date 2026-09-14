@@ -24,9 +24,10 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.naming.runtime import refresh_process_name
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -44,6 +45,8 @@ async def _make_ap(status: WorkerStatus, monkeypatch) -> AgenticProcess:
     )
     ap.status = ProcessStatus.RUNNING.value
     await ap.save(notify=False)
+    # Settle initial naming migration before measuring status-only broadcasts.
+    await refresh_process_name(ap, watch=False)
     monkeypatch.setattr(
         type(ap),
         "_discover_status_from_transcript",

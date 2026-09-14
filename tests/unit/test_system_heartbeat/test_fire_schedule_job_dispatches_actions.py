@@ -7,9 +7,9 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
-from flow_sdk.builtin.trigger import Trigger, TriggerType, _fire_schedule_job
-
+from flow_sdk.builtin.trigger import Trigger, _fire_schedule_job
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 pytestmark = pytest.mark.timeout(30)
 

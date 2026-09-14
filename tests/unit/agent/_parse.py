@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from flow_sdk.builtin.agent import AgentSpec
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 
 
 def parse_agent_markdown(text: str, name: str) -> dict[str, Any]:
-    from flow_sdk.capsules import strip_capsule_blocks
     from flow_sdk.assets.frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+    from flow_sdk.capsules import strip_capsule_blocks
 
     fm = _extract_frontmatter(text)
     fields = (_yaml_load(fm) if fm else None) or {}

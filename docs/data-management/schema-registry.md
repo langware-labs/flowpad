@@ -54,7 +54,7 @@ class TypeInfo:
     id_namespace: UUID = NAMESPACE_URL
     owns_main_ref / parent_share_on_default / shared_child / db_only: bool
     cloud_file_transport: "embedded" | "git"
-    shape: File | Folder               # THE on-disk shape (flow_sdk/schema/layout.py)
+    shape: File | Folder               # THE on-disk shape (flow_sdk/assets/layout.py)
     editor: str | None                 # asset editor key ("markdown", "skill", …)
     declared: bool                     # True for a schema/type_info declaration
     meta_model: Any                    # per-type pydantic FS↔DB schema model
@@ -85,7 +85,7 @@ class TypeInfo:
 
 There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `identity_carrier`, etc.) attached to the `TypeInfo`, not on a subclass.
 
-Identity has three seams on `TypeInfo`: `read_id(ref)` is the pure read (never writes); `mint(layout, *, write, ref=None, found=None)` answers a `Found` id, raises `ForeignId` on a `Foreign` one, and otherwise mints (v5 when the type has a stable key, else v4) and — with `write` — stamps it through the carrier; `stamp_id(ref, entity_id)` is the create-flow seam. The walk settles an id through `reconcile(info, layout, owner_row, live_ids, *, write)` (`flow_sdk/fs_store/indexer/reconcile.py`); the single-path interactive entry is `resolve_asset` (`flow_sdk/fs_store/resolve.py`), which runs the same `reconcile` with the owner looked up through `Entity.get_by_asset_ref` and `write` decided by the caller. The type's `identity_carrier` (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/fs_store/identity_carrier.py`) says where the id lives and only locates, reads and stamps; TypeInfo applies the UUID v4/v5 adoption policy.
+Identity has three seams on `TypeInfo`: `read_id(ref)` is the pure read (never writes); `mint(layout, *, write, ref=None, found=None)` answers a `Found` id, raises `ForeignId` on a `Foreign` one, and otherwise mints (v5 when the type has a stable key, else v4) and — with `write` — stamps it through the carrier; `stamp_id(ref, entity_id)` is the create-flow seam. The walk settles an id through `reconcile(info, layout, owner_row, live_ids, *, write)` (`flow_sdk/fs_store/indexer/reconcile.py`); the single-path interactive entry is `resolve_asset` (`flow_sdk/fs_store/resolve.py`), which runs the same `reconcile` with the owner looked up through `Entity.get_by_asset_ref` and `write` decided by the caller. The type's `identity_carrier` (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/assets/identity_carrier.py`) says where the id lives and only locates, reads and stamps; TypeInfo applies the UUID v4/v5 adoption policy.
 
 Resolution order is **carrier → owning row → mint**, by carrier LIVENESS: the carrier wins unless a row owns this path (`owner_row`) AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk — which holds the complete per-type id set — may conclude a carrier is a fossil). There are no `derive`/`overwrite` flags: `write` is the one gate, passed explicitly by every caller (`write=False` for a read-only root or a git-tracked source), and the carrier refuses (`NotWritable`) a path that is not its own format.
 
@@ -108,7 +108,7 @@ A type's `TypeInfo` is assembled from up to two sources that merge into one entr
 
 ### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/schema/layout.py`) — and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
+Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/assets/layout.py`) — and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
 
 ```python
 SKILL = TypeInfo(

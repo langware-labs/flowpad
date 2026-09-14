@@ -43,7 +43,7 @@ describe('useProcessAssets — staging (null process)', () => {
   });
 
   it('resolves descriptors via Project.getAssetsById, @local fallback when projectless', async () => {
-    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue(DESCRIPTORS);
+    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue({ assets: DESCRIPTORS, scan_issues: [{path: '/broken', message: 'Malformed metadata'}], truncated: true });
     // dataContext.project is a non-configurable MobX computed — can't be
     // stubbed. Derive the id the hook must pass from the same expression
     // (null in this bootstrap-less unit env → '@local' fallback).
@@ -51,12 +51,14 @@ describe('useProcessAssets — staging (null process)', () => {
     const { result } = renderHook(() => useProcessAssets(null));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.descriptors).toEqual(DESCRIPTORS);
+    expect(result.current.scanIssues?.[0].path).toBe('/broken');
+    expect(result.current.truncated).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(expectedProjectId, { limit: 1000 });
   });
 
   it('disabled hook fetches nothing', async () => {
-    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue(DESCRIPTORS);
+    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue({ assets: DESCRIPTORS, scan_issues: [{path: '/broken', message: 'Malformed metadata'}], truncated: true });
     const { result } = renderHook(() => useProcessAssets(null, { enabled: false }));
     expect(result.current.descriptors).toEqual([]);
     expect(spy).not.toHaveBeenCalled();

@@ -1686,8 +1686,8 @@ msgid "All guides"
 msgstr "כל המדריכים"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "All harnesses"
-msgstr "כל הרתמות"
+#~ msgid "All harnesses"
+#~ msgstr "כל הרתמות"
 
 #: src/navigation/record-type-nav.ts
 msgid "All hooks"
@@ -2273,6 +2273,10 @@ msgstr "דוח ניקוי נכסים"
 msgid "Asset compare"
 msgstr "השוואת נכסים"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "Asset folder"
+msgstr "תיקיית נכסים"
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr "שינויים לא שמורים בנכס"
@@ -2280,6 +2284,10 @@ msgstr "שינויים לא שמורים בנכס"
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr "אין קובץ בדיסק לנכס זה"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset list truncated. Narrow the selection to see more."
+msgstr "רשימת הנכסים קוצרה. צמצמו את הבחירה כדי לראות עוד."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Asset must be clean-git"
@@ -3373,7 +3381,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -3885,7 +3892,6 @@ msgid "Code Ref"
 msgstr "הפניית קוד"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -4375,7 +4381,6 @@ msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -4912,8 +4917,8 @@ msgid "Could not save {envVar}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Could not save agent"
-msgstr "לא ניתן היה לשמור את הסוכן"
+#~ msgid "Could not save agent"
+#~ msgstr "לא ניתן היה לשמור את הסוכן"
 
 #: src/components/inbox-view/AgentInboxView.tsx
 msgid "Could not save inbox settings"
@@ -5054,8 +5059,8 @@ msgid "Could not update attached secrets"
 msgstr "לא ניתן היה לעדכן את הסודות המצורפים"
 
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
-msgid "Could not update eval flag"
-msgstr "לא ניתן היה לעדכן את דגל ההערכה"
+#~ msgid "Could not update eval flag"
+#~ msgstr "לא ניתן היה לעדכן את דגל ההערכה"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
@@ -5419,6 +5424,10 @@ msgstr "תיקייה נוכחית"
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Current directory (click to refresh)"
 msgstr "תיקייה נוכחית (לחץ לרענון)"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Current file on disk"
+msgstr "הקובץ הנוכחי בדיסק"
 
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
@@ -6304,6 +6313,10 @@ msgstr "לזרוק את השינויים?"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Discard draft"
 msgstr "השלך טיוטה"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "Discard edits and reload"
+msgstr "ביטול העריכות וטעינה מחדש"
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Discard failed"
@@ -7793,6 +7806,10 @@ msgstr "שדה"
 msgid "File"
 msgstr "קובץ"
 
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "File changed outside this editor. Your edits are preserved."
+msgstr "הקובץ השתנה מחוץ לעורך הזה. העריכות שלכם נשמרו בטיוטה."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
 msgstr "זמן שינוי קובץ חדש יותר מ-DB updated_date"
@@ -8688,8 +8705,8 @@ msgstr "נדרשת רתמה"
 
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "Harness path"
-msgstr "נתיב הרתמה"
+#~ msgid "Harness path"
+#~ msgstr "נתיב הרתמה"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness Session Details"
@@ -12622,8 +12639,8 @@ msgid "None"
 msgstr "אף אחד"
 
 #: src/components/quick-create/ScopeSelection.tsx
-msgid "None (project root)"
-msgstr "ללא (שורש הפרויקט)"
+#~ msgid "None (project root)"
+#~ msgstr "ללא (שורש הפרויקט)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -13663,6 +13680,10 @@ msgstr "מערכת הפעלה"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "מערכת הפעלה:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Other assets"
+msgstr "נכסים אחרים"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -16234,8 +16255,8 @@ msgid "Save failed"
 msgstr "השמירה נכשלה"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Save failed."
-msgstr "השמירה נכשלה."
+#~ msgid "Save failed."
+#~ msgstr "השמירה נכשלה."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -17815,6 +17836,10 @@ msgstr "במתן"
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
 msgstr "פורט ה-Proxy של SOCKS"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Some assets could not be read."
+msgstr "לא ניתן היה לקרוא חלק מהנכסים."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
@@ -20665,6 +20690,10 @@ msgstr "צפה בהגדרות Claude Code בין ההיקפים של משתמש,
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "View contact details"
 msgstr "הצגת פרטי איש קשר"
+
+#: src/components/assets/editor/DocumentSaveNotice.tsx
+msgid "View current file"
+msgstr "הצגת הקובץ הנוכחי"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/version-popover/diagnose-modal.tsx

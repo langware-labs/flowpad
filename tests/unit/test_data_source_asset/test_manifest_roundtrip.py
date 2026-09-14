@@ -6,9 +6,10 @@ import json
 
 import pytest
 
-from flow_sdk.builtin.data_source_spec import AuthSpec, ConfigFieldSpec, DataSourceSpec, ManifestSpec
+from flow_sdk.builtin.data_source_spec import DataSourceSpec
 from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.data_source_manifest_spec import AuthSpec, ConfigFieldSpec, ManifestSpec
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.timeout(5)

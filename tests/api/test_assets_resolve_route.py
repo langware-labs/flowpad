@@ -1,8 +1,8 @@
 """``GET /api/v1/assets/resolve?path=`` — THE path → asset resolver the
 asset loader calls with a path and nothing else.
 
-The client never names a type: the registry classifies the path, the id is
-settled by the indexer's reconcile, and the row is indexed on a miss so a
+The client never names a type: the asset library classifies the path and reads
+its identity. The row is indexed on a miss so a
 ``(type, id)`` fetch always succeeds afterwards. Real FastAPI app, real
 filesystem, real DB; no mocks.
 """
@@ -48,6 +48,7 @@ async def test_skill_folder_and_main_file_resolve_to_one_id(bootstrapped_client,
     """A folder asset is one asset whichever spelling arrives; the first
     resolve indexes the row so the second answers the same entity."""
     folder = _skill(tmp_path, "api_skill")
+    original = (folder / 'SKILL.md').read_bytes()
 
     by_folder = (await _resolve(bootstrapped_client, folder)).json()["data"]
     by_main = (await _resolve(bootstrapped_client, folder / "SKILL.md")).json()["data"]
@@ -61,6 +62,33 @@ async def test_skill_folder_and_main_file_resolve_to_one_id(bootstrapped_client,
     assert by_main["type"] == "skill"
     assert by_folder["entity"] is not None and by_folder["entity"]["id"] == by_folder["id"]
     assert by_main["entity"]["id"] == by_folder["id"]
+    assert (folder / 'SKILL.md').read_bytes() == original
+
+
+async def test_malformed_metadata_retains_document_address_without_writing(bootstrapped_client, tmp_path):
+    folder = _skill(tmp_path, 'malformed')
+    document = folder / 'SKILL.md'
+    original = b'---\nname: malformed\ntags: [unclosed\n---\nReadable body.\n'
+    document.write_bytes(original)
+    response = await _resolve(bootstrapped_client, folder)
+    assert response.status_code == 200, response.text
+    data = response.json()['data']
+    assert data['type'] == 'skill'
+    assert Path(data['body']) == document.resolve()
+    assert document.read_bytes() == original
+
+
+async def test_invalid_spec_keeps_document_address_with_projection_error(bootstrapped_client, tmp_path):
+    folder = _skill(tmp_path, 'invalid-spec')
+    document = folder / 'SKILL.md'
+    original = b'---\nname: invalid-spec\ndescription: [invalid]\n---\nReadable body.\n'
+    document.write_bytes(original)
+    response = await _resolve(bootstrapped_client, folder)
+    assert response.status_code == 200, response.text
+    data = response.json()['data']
+    assert data['entity'] is None and data['entity_error']
+    assert Path(data['body']) == document.resolve()
+    assert document.read_bytes() == original
 
 
 async def test_one_typeid_per_path_across_calls(bootstrapped_client, tmp_path: Path):

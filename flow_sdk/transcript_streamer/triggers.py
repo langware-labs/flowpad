@@ -16,8 +16,8 @@ from typing import Any
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
-from flow_sdk.builtin.trigger import TriggerType
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
 
 _log = logging.getLogger(__name__)

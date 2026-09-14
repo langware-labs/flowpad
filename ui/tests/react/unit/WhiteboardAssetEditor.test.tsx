@@ -5,7 +5,7 @@
  *   1. Lazy Suspense mounts → Excalidraw appears after promise resolution.
  *   2. onChange → debounced 750ms → exactly one PUT to board.json with the
  *      wrapped {kind:"excalidraw",version:1,data:...} payload.
- *   3. WHITE_BOARD.md PUT splices the mermaid block between the auto-markers
+ *   3. WHITE_BOARD.md document patch splices the mermaid block between the auto-markers
  *      AND preserves prose written outside the markers.
  *   4. thumbnail.svg PUT fires after board.json.
  *   5. "Import mermaid → board" dialog flow: opens, accepts text, calls
@@ -147,7 +147,19 @@ function makeFsRef(name: string, files: Record<string, string>, writeLog: Array<
         async readIfExists(): Promise<string | null> {
           return full in files ? files[full] : null;
         },
+        async readDocument() {
+          if (!(full in files)) throw new Error('not found');
+          return { body: files[full], fields: { name: 't' }, revision: files[full] };
+        },
+        async updateDocument(patch: import('@sdk').DocumentPatch) {
+          expect(patch.expected_revision).toBe(files[full]);
+          expect(patch.body).toBeDefined();
+          files[full] = patch.body!;
+          writeLog.push({ path: full, body: patch.body! });
+          return { body: files[full], fields: { name: 't' }, revision: files[full] };
+        },
         async write(body: string): Promise<void> {
+          expect(childName).not.toBe('WHITE_BOARD.md');
           files[full] = body;
           writeLog.push({ path: full, body });
         },
@@ -227,10 +239,10 @@ describe('WhiteboardAssetEditor', () => {
     expect(writeLog).toHaveLength(0);
   });
 
-  it('debounces onChange → one PUT each to board.json, WHITE_BOARD.md, thumbnail.svg', async () => {
+  it('debounces onChange → board and thumbnail writes plus one revision-checked document patch', async () => {
     files['root/board.json'] = INITIAL_BOARD;
     files['root/WHITE_BOARD.md'] =
-      '---\nname: t\n---\n\n# t\n\n<!-- BEGIN whiteboard:auto -->\n```mermaid\nold\n```\n<!-- END whiteboard:auto -->\n\n## Human notes\n\nKept verbatim with [[a link]].\n';
+      '# t\n\n<!-- BEGIN whiteboard:auto -->\n```mermaid\nold\n```\n<!-- END whiteboard:auto -->\n\n## Human notes\n\nKept verbatim with [[a link]].\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -276,7 +288,7 @@ describe('WhiteboardAssetEditor', () => {
 
   it('appends the mermaid block when WHITE_BOARD.md has no markers yet', async () => {
     files['root/board.json'] = INITIAL_BOARD;
-    files['root/WHITE_BOARD.md'] = '---\nname: t\n---\n\n# t\n\nNo markers here.\n';
+    files['root/WHITE_BOARD.md'] = '# t\n\nNo markers here.\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -300,7 +312,7 @@ describe('WhiteboardAssetEditor', () => {
 
   it('Import mermaid dialog → parseMermaidToExcalidraw → save', async () => {
     files['root/board.json'] = INITIAL_BOARD;
-    files['root/WHITE_BOARD.md'] = '---\nname: t\n---\n\n# t\n';
+    files['root/WHITE_BOARD.md'] = '# t\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

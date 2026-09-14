@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.assets.layout import File, Folder
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-from flow_sdk.schema.layout import File, Folder
 from flow_sdk.schema.type_info import register_all
 
 
