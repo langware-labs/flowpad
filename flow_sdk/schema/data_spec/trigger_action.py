@@ -13,6 +13,7 @@ class ActionType(StrEnum):
     NOTIFY_ENTITY = "notify_entity"
     RUN_SCRIPT = "run_script"
     CALLBACK = "callback"
+    RUN_AGENT = "run_agent"
 
 
 class TriggerAction(BaseModel):
@@ -35,3 +36,5 @@ class TriggerAction(BaseModel):
     # lost its target entirely. An action that cannot say what it acts on cannot
     # be validated, cannot be searched for, and reads as "callback" in the UI.
     target_type_id: Optional[str] = None
+    # RUN_AGENT delivery: the prompt the agent runs with.
+    prompt: Optional[str] = None

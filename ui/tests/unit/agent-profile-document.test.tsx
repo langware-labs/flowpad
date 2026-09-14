@@ -6,6 +6,7 @@ import { Agent, FSRef, TypeId, type AssetDocument } from '@sdk';
 import { AgentProfileEditor } from '@src/components/assets/editor/agent-profile/AgentProfileEditor';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeploymentsSection', () => ({ AgentDeploymentsSection: () => null }));
+vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({ AgentMcpField: () => null }));
 vi.mock('@src/components/agents/use-agent-launcher', () => ({ useAgentLauncher: () => ({ launch: vi.fn(), busyId: null }) }));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));

@@ -18,6 +18,7 @@ import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
+import { AgentScheduleSection } from './AgentScheduleSection';
 import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
 import { AgentMcpField } from './AgentMcpField';
 import { useProject } from '@sdk/react/hooks';
@@ -305,9 +306,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
         <aside className="min-h-0 overflow-y-auto border-t border-border px-4 py-4 lg:border-s lg:border-t-0">
           <Tabs defaultValue="runtime">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="runtime">
                 <Trans>Runtime</Trans>
+              </TabsTrigger>
+              <TabsTrigger value="schedule" data-testid="agent-tab-schedule">
+                <Trans>Schedule</Trans>
               </TabsTrigger>
               <TabsTrigger value="deploy">
                 <Trans>Deploy</Trans>
@@ -396,6 +400,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   onCommit={(ids) => void save({ mcp_servers: ids })}
                 />
               </div>
+            </TabsContent>
+
+            <TabsContent value="schedule" className="mt-4">
+              <AgentScheduleSection agent={agent} autoLaunchPrompt={autoLaunchPrompt} />
             </TabsContent>
 
             <TabsContent value="deploy" className="mt-4">

@@ -77,19 +77,25 @@ def _get_scheduler():
         return None
 
 
-def _parse_trigger(sched_trigger_type: str, expr: str):
-    """Parse sched_trigger_type + expr into an APScheduler trigger object."""
+def _parse_trigger(sched_trigger_type: str, expr: str, tz: Optional[str] = None):
+    """Parse sched_trigger_type + expr into an APScheduler trigger object.
+
+    ``tz`` is an IANA zone; None reads the clock in the machine's local zone.
+    A ``date`` expr that carries its own offset keeps it — ``tz`` only applies
+    to a naive wall-clock time.
+    """
+    tz = tz or None
     if sched_trigger_type == "interval":
         from apscheduler.triggers.interval import IntervalTrigger
         seconds = _parse_interval_expr(expr)
-        return IntervalTrigger(seconds=seconds)
+        return IntervalTrigger(seconds=seconds, timezone=tz)
     elif sched_trigger_type == "date":
         from apscheduler.triggers.date import DateTrigger
         run_date = datetime.fromisoformat(expr)
-        return DateTrigger(run_date=run_date)
+        return DateTrigger(run_date=run_date, timezone=tz)
     else:
         from apscheduler.triggers.cron import CronTrigger
-        return CronTrigger.from_crontab(expr)
+        return CronTrigger.from_crontab(expr, timezone=tz)
 
 
 def _parse_interval_expr(expr: str) -> int:
@@ -104,6 +110,17 @@ def _parse_interval_expr(expr: str) -> int:
     elif expr.endswith("d"):
         return int(expr[:-1]) * 86400
     return int(expr)
+
+
+def _scheduled_next_run(trigger_id: str) -> Optional[datetime]:
+    """The scheduler's next run for this trigger's job, or None when it has none."""
+    try:
+        scheduler = _get_scheduler()
+        job = scheduler.get_job(trigger_id) if scheduler else None
+        return getattr(job, "next_run_time", None) if job is not None else None
+    except Exception:  # noqa: BLE001 — display state only; never fail a fire over it
+        logger.debug("next_run lookup failed for %s", trigger_id, exc_info=True)
+        return None
 
 
 async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
@@ -130,12 +147,16 @@ async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
         )
 
 
-async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> None:
+async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> list[Any]:
     """Action dispatch on any trigger fire — THE shared loop for every trigger
     kind. Per-action try/except so one bad handler can't skip the rest.
-    ``changes`` is empty for schedule/tag fires; FSOp passes its batch."""
+    ``changes`` is empty for schedule/tag fires; FSOp passes its batch.
+
+    Returns what each handler returned (None for most) — how a fire learns the
+    process a RUN_AGENT action started, for its log entry."""
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_failed
 
+    results: list[Any] = []
     for action in trigger.actions:
         try:
             handler = get_action_handler(action.action_type)
@@ -143,7 +164,7 @@ async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> None:
                 logger.warning("Trigger %s: no handler for action_type=%s",
                                trigger.name, action.action_type)
                 continue
-            await handler.execute(trigger, action=action, changes=changes)
+            results.append(await handler.execute(trigger, action=action, changes=changes))
         except Exception as exc:
             logger.exception("Trigger %s: action %s raised during dispatch",
                              trigger.name, action.action_type)
@@ -152,6 +173,7 @@ async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> None:
                 stage="action", error=str(exc), action_type=str(action.action_type),
                 project_id=trigger.project_id,
             )
+    return results
 
 
 async def _fire_schedule_job(trigger_id: str) -> None:
@@ -175,6 +197,10 @@ async def _fire_schedule_job(trigger_id: str) -> None:
             return
         entity.counter += 1
         entity.last_run = datetime.now(timezone.utc)
+        # APScheduler has already advanced the job when it runs it: a cron's next
+        # time is known, a fired one-shot's job is gone (None). Without this the
+        # row kept the next_run it was armed with, stale after the first fire.
+        entity.next_run = _scheduled_next_run(trigger_id)
         await entity.update()
 
         # Emit BEFORE the work — `fired` means the schedule came due and
@@ -192,12 +218,17 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
         # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
         await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
-        await dispatch_trigger_actions(entity, changes=[])
+        results = await dispatch_trigger_actions(entity, changes=[])
+
+        # A RUN_AGENT action hands back the process it started — the log entry's
+        # handle on the run, same field the legacy spawn below fills.
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess as _Process
+
+        process_id: Optional[str] = next((r.id for r in results if isinstance(r, _Process)), None)
 
         # Legacy back-compat: schedule triggers with ``instruction`` set spawn
         # an AgenticProcess. Pre-dates the actions list; kept so existing
         # user-created schedules keep working.
-        process_id: Optional[str] = None
         if entity.instruction:
             try:
                 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -275,6 +306,7 @@ class Trigger(Entity):
     # Schedule trigger fields
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")
     sched_trigger_type: Optional[str] = APIField(None, description="APScheduler type: cron, interval, date")
+    timezone: Optional[str] = APIField(None, description="IANA zone the schedule is read in (schedule triggers only). Empty = machine local.")
     next_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Next scheduled run (schedule triggers only)")
     last_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
@@ -394,13 +426,20 @@ class Trigger(Entity):
         """
         if not self.id or not self.expr:
             return
+        if self._spent_one_shot():
+            # Re-arming is idempotent for a cron — the job is replaced and its
+            # next run recomputed. For a `date` job it is NOT: the run time is
+            # still inside the misfire grace window right after it fires, so
+            # re-adding it runs it AGAIN. Any re-index does that — the first GET
+            # of a just-written schedule re-syncs its record, which re-arms.
+            return
         try:
             from flow_sdk.server.scheduler import _job_registration_lock
 
             scheduler = _get_scheduler()
             if scheduler:
                 async with _job_registration_lock:
-                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
+                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr, self.timezone)
                     job = scheduler.add_job(
                         _fire_schedule_job,
                         trigger=trigger,
@@ -417,6 +456,19 @@ class Trigger(Entity):
         except Exception as e:
             logger.warning(f"Failed to schedule trigger job {self.id}: {e}")
 
+    def _spent_one_shot(self) -> bool:
+        """A `date` schedule that has already fired at (or after) its run time."""
+        if (self.sched_trigger_type or "cron") != "date" or not self.last_run or not self.expr:
+            return False
+        try:
+            run_date = datetime.fromisoformat(self.expr)
+        except ValueError:
+            return False
+        last_run = self.last_run
+        if run_date.tzinfo is None or last_run.tzinfo is None:
+            run_date, last_run = run_date.replace(tzinfo=None), last_run.replace(tzinfo=None)
+        return last_run >= run_date
+
     async def _reschedule_job(self) -> None:
         """Reschedule an existing APScheduler job after update."""
         if not self.id or not self.expr:
@@ -427,7 +479,7 @@ class Trigger(Entity):
             scheduler = _get_scheduler()
             if scheduler:
                 async with _job_registration_lock:
-                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
+                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr, self.timezone)
                     job = scheduler.reschedule_job(self.id, trigger=trigger)
                     if job:
                         if self.enabled:
@@ -639,22 +691,10 @@ class Trigger(Entity):
     @core_action.delete(action_name="delete")
     async def delete_action(self, request: Request) -> ApiResponse:
         """DELETE /api/v1/graph/trigger/{id}"""
-        if self.trigger_type == "schedule" and self.id:
-            try:
-                scheduler = _get_scheduler()
-                if scheduler:
-                    scheduler.remove_job(self.id)
-            except Exception as e:
-                logger.debug(f"APScheduler remove_job error (may not exist): {e}")
-        elif self.trigger_type == "tag" and self.id:
-            from flow_sdk.builtin.tag_triggers import unregister_tag_trigger
-            unregister_tag_trigger(self.id)
-        elif self.trigger_type == "fsop" and self.id:
-            try:
-                from flow_sdk.server.fsop_watcher import fsop_watcher
-                await fsop_watcher.on_trigger_deleted(self.id)
-            except Exception as e:
-                logger.debug(f"FSOpWatcher on_trigger_deleted error (may not be running): {e}")
+        if self.id:
+            from flow_sdk.builtin.trigger_arming import disarm_trigger
+
+            await disarm_trigger(self.id)
 
         await self.delete()
         return ApiSuccessResponse(data={"deleted": True})

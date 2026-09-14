@@ -182,3 +182,45 @@ def test_reindexing_never_writes_runtime_state(tmp_path):
                     "last_seen_mtime", "last_seen_size"):
         assert runtime not in produced, f"{runtime} must never come off disk"
         assert runtime not in nested, f"{runtime} must never come off disk"
+
+
+# ── run_agent: the scheduled-agent-run verb ─────────────────────────────────
+
+AGENT_SCHEDULE_DOC = {
+    "name": "Morning triage",
+    "schedule": {"every": "cron", "expr": "0 9 * * 1-5", "timezone": "Asia/Jerusalem"},
+    "actions": [{"run_agent": {"prompt": "Triage yesterday's tickets"}}],
+}
+
+
+def test_run_agent_is_a_verb_and_it_needs_a_prompt():
+    """The verb is WHO and WHAT TO ASK. An agent run with nothing to ask is not
+    a run, so the document refuses it rather than the fire failing later."""
+    assert TriggerActionSpec.model_validate({"run_agent": {"prompt": "go"}}).verb == "run_agent"
+    for bad in ({"run_agent": {}}, {"run_agent": {"prompt": "   "}}, {"run_agent": {"prompt": "x", "model": "lg"}}):
+        with pytest.raises(ValueError):
+            TriggerActionSpec.model_validate(bad)
+
+
+def test_an_empty_run_agent_means_my_parent():
+    """Same containment rule as run_wizard: a schedule nested in an agent folder
+    runs that agent; an explicit TypeId runs another one."""
+    spec = TriggerSpec.model_validate(AGENT_SCHEDULE_DOC)
+    implied = row_fields(spec, parent_type_id="agent-abc")["actions"][0]
+    assert implied["action_type"] == "run_agent"
+    assert implied["target_type_id"] == "agent-abc"
+    assert implied["prompt"] == "Triage yesterday's tickets"
+
+    named = row_fields(TriggerSpec.model_validate(
+        {**AGENT_SCHEDULE_DOC, "actions": [{"run_agent": {"agent": "agent-xyz", "prompt": "p"}}]}
+    ), parent_type_id="agent-abc")["actions"][0]
+    assert named["target_type_id"] == "agent-xyz"
+
+
+def test_the_schedule_timezone_rides_the_row():
+    """A schedule travels with its agent to a sandbox that runs in UTC; the zone
+    is how "daily at 09:00" keeps meaning the author's 09:00 there."""
+    fields = row_fields(TriggerSpec.model_validate(AGENT_SCHEDULE_DOC))
+    assert fields["trigger_type"] == TriggerType.SCHEDULE
+    assert fields["timezone"] == "Asia/Jerusalem"
+    assert fields["instruction"] is None, "a run_agent schedule must not also spawn the legacy bare process"

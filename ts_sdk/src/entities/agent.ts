@@ -8,6 +8,7 @@ import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
 import { EmailInbox, type IEmailInbox } from './email-inbox';
+import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -200,6 +201,25 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Add a scheduled run: a child trigger asset under this agent's folder that
+   * runs the agent headlessly with `prompt`. Indexed and armed before it
+   * returns, so the row it hands back is already live.
+   */
+  async addSchedule(fields: AgentScheduleFields & { name: string; expr: string; prompt: string }): Promise<Trigger> {
+    return new Trigger((await this.post('add_schedule', { ...fields })) as Partial<Trigger>);
+  }
+
+  /** Change one of this agent's schedules. Only the fields given change. */
+  async updateSchedule(triggerId: string, fields: AgentScheduleFields): Promise<Trigger> {
+    return new Trigger((await this.post('update_schedule', { trigger_id: triggerId, ...fields })) as Partial<Trigger>);
+  }
+
+  /** Remove one of this agent's schedules — its folder, row and job. */
+  async removeSchedule(triggerId: string): Promise<void> {
+    await this.post('remove_schedule', { trigger_id: triggerId });
+  }
+
+  /**
    * Open a session AS this agent: a new, visible, headless Chat process built
    * from the agent's local deployment, with no first turn — the human types it.
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
@@ -378,6 +398,20 @@ export interface AgentDeployResult {
 export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
 
 /** What `POST /agent/<id>/run` hands back. */
+/** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
+ *  (`flow_sdk/builtin/agent_schedule.py`). Omitted fields are left as they are. */
+export interface AgentScheduleFields {
+  name?: string;
+  description?: string;
+  /** How `expr` is read: a crontab, an interval (`30s`/`5m`), or an ISO date. */
+  every?: 'cron' | 'interval' | 'date';
+  expr?: string;
+  /** IANA zone, e.g. `Asia/Jerusalem`. Empty = the backend machine's zone. */
+  timezone?: string;
+  prompt?: string;
+  enabled?: boolean;
+}
+
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;

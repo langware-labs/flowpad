@@ -3,12 +3,96 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { CronForm } from '@src/components/cron-view/CronForm';
 import { useProject } from '@src/hooks/useProject';
-import { dataManager, Trigger, type ITrigger } from '@sdk';
+import { Agent, dataManager, QueryRequest, Trigger, TypeId, type ITrigger } from '@sdk';
 import { ActionInfo } from '@sdk';
-import { Play } from 'lucide-react';
-import { useState } from 'react';
+import { useEntitiesQuery } from '@sdk/react/hooks';
+import { Bot, History, Pencil, Play } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { describeSchedule } from '@src/components/cron-view/describe-schedule';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { scopeColor } from './scope-colors';
+
+/** The agent a trigger runs, when it is a scheduled agent run: its `run_agent`
+ *  action's target, else the agent it lives inside. */
+function runAgentTypeId(trigger: Trigger | null): string | null {
+  const action = (trigger?.actions ?? []).find((a) => a.action_type === 'run_agent');
+  if (!action) return null;
+  const target = action.target_type_id || trigger?.parent_type_id || '';
+  return target.startsWith('agent-') ? target : null;
+}
+
+/**
+ * A scheduled agent run, read-only. Its source of truth is the trigger.json
+ * under the agent's folder, which the agent's Schedule tab writes; a row PATCH
+ * from here would be reverted on the next re-index, so editing goes there.
+ */
+function AgentScheduleDetail({ trigger, agentTypeId }: { trigger: Trigger; agentTypeId: string }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const agentId = agentTypeId.slice('agent-'.length);
+  const request = useMemo(
+    () => new QueryRequest({ type: Agent.type, scope: [], query: { id: agentId }, name: 'scheduleAgent' }),
+    [agentId],
+  );
+  const { data: agents = [] } = useEntitiesQuery<Agent>(request);
+  const agentName = agents[0]?.name ?? agentId.slice(0, 8);
+  const prompt = (trigger.actions ?? []).find((a) => a.action_type === 'run_agent')?.prompt ?? '';
+  const openAgent = () => navigation.openDock(DockPointer.forAssetEditorByTypeId('agent', new TypeId(agentTypeId)));
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3 text-sm" data-testid="agent-schedule-detail">
+      <div className="flex items-center gap-2">
+        <Bot className="h-4 w-4 text-muted-foreground" />
+        <span className="text-muted-foreground">
+          <Trans>Runs agent</Trans>
+        </span>
+        <button type="button" className="font-medium hover:underline" onClick={openAgent} data-testid="trigger-runs-agent">
+          {agentName}
+        </button>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium text-muted-foreground">
+          <Trans>When</Trans>
+        </div>
+        <div data-testid="agent-schedule-detail-when">
+          {describeSchedule(trigger.expr, trigger.sched_trigger_type, trigger.timezone)}
+        </div>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium text-muted-foreground">
+          <Trans>Prompt</Trans>
+        </div>
+        <div className="whitespace-pre-wrap" data-testid="agent-schedule-detail-prompt">
+          {prompt}
+        </div>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {trigger.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
+        {' · '}
+        {trigger.counter ? t`ran ${trigger.counter}×` : t`not run yet`}
+        {trigger.last_run ? ` · ${t`last ${new Date(trigger.last_run).toLocaleString()}`}` : ''}
+      </div>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={openAgent} data-testid="trigger-edit-in-agent">
+          <Pencil className="h-3 w-3" />
+          <Trans>Edit in agent</Trans>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={() => navigation.openDock(DockPointer.forProcessRuns({ trigger_id: trigger.id }))}
+          data-testid="trigger-runs"
+        >
+          <History className="h-3 w-3" />
+          <Trans>Runs</Trans>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   /** null = create mode */
@@ -25,6 +109,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [instruction, setInstruction] = useState(trigger?.instruction ?? '');
   const [workdir, setWorkdir] = useState(trigger?.workdir ?? project?.fs_storage_mount_path ?? '');
+  const agentTypeId = runAgentTypeId(trigger);
 
   const handleSubmit = async (formData: {
     name?: string;
@@ -110,7 +195,8 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
             <Badge variant="outline" className="h-4 px-1 text-[9px]">
               <Trans>schedule</Trans>
             </Badge>
-            {trigger.next_run && (
+            {/* A spent one-shot keeps its old next_run; only a future run is "next". */}
+            {trigger.next_run && new Date(trigger.next_run).getTime() > Date.now() && (
               <span className="text-[10px] text-muted-foreground">
                 <Trans>next: {new Date(trigger.next_run).toLocaleString()}</Trans>
               </span>
@@ -143,6 +229,11 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
       </div>
 
       {/* Body */}
+      {trigger && agentTypeId ? (
+        <div className="flex-1 overflow-auto">
+          <AgentScheduleDetail trigger={trigger} agentTypeId={agentTypeId} />
+        </div>
+      ) : (
       <div className="flex-1 overflow-auto">
         {/* Instruction + workdir */}
         <div className="flex flex-col gap-2 border-b px-4 py-3">
@@ -185,6 +276,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           submitting={saving}
         />
       </div>
+      )}
     </div>
   );
 }
