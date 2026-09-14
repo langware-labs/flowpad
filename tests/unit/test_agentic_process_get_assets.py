@@ -270,3 +270,44 @@ async def test_project_dir_scan_skips_gitignored_and_vendor_trees(tmp_path):
     bare_skill(project / 'ui' / 'node_modules' / 'pkg' / 'vendored')
     rows = (await scan_path_asset_descriptors([(str(project), AssetSource.PROJECT_DIR)], 'project-id', ['skill'])).assets
     assert [r.posix_path for r in rows] == [str(kept)]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_scans_of_one_folder_set_share_a_single_walk(tmp_path):
+    import asyncio
+
+    from flow_sdk.assets.catalog import folders_for_sources, scan_catalog
+    skill(tmp_path / 'project')
+    sources = [(str(tmp_path / 'project'), AssetSource.PROJECT_DIR)]
+    folders = folders_for_sources(sources, 'project-id')
+    first, second = await asyncio.gather(scan_catalog(folders, sources, ['skill']), scan_catalog(folders, sources, ['skill']))
+    assert first is second and len(first.assets) == 1
+    # Nothing is cached past completion: a later call walks the disk again.
+    later = await scan_catalog(folders, sources, ['skill'])
+    assert later is not first and later.assets == first.assets
+
+
+@pytest.mark.asyncio
+async def test_live_worker_snapshot_scan_of_a_checkout_prunes_ignored_trees(home, tmp_path):
+    # The live-worker branch: inventory_process_view freezes the launched
+    # workdir as a RECURSIVE project source. On a checkout-shaped tree that is
+    # where an unpruned walker turns a poll into a node_modules scan.
+    from flow_sdk.builtin.agentic_process.asset_availability import inventory_process_view
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.builtin.project import Project
+    from tests.fixtures.checkout_tree import build_checkout_tree
+
+    tree = build_checkout_tree(tmp_path / 'checkout')
+    project = Project(id=Project.derive_id_for_path(str(tree.root)), name='checkout', fs_storage_mount_path=str(tree.root))
+    await project.save()
+    try:
+        value = process(tree.root, project_id=str(project.id), pty_mode=True, shell_id=mint_uuid(), status=ProcessStatus.RUNNING.value)
+        value.last_started_snapshot = value._restart_snapshot_payload()
+        inspection = await inventory_process_view(value)
+        assert inspection.__dict__.get('_asset_inventory_snapshot')
+        catalog = await inspection.get_asset_catalog()
+        found = {row.posix_path for row in catalog.assets}
+        assert found == {str(path) for path in tree.visible}
+        assert not found & {str(path) for path in tree.hidden}
+    finally:
+        await project.delete()
