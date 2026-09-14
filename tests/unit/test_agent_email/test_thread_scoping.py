@@ -14,23 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
+from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-class _Source:
-    """The two config keys the driver reads. Not a DataSource — this is about
-    key derivation, and a real row would only add a database to the test."""
-
-    def __init__(self, agent_id: str):
-        self.config = {"agent_id": agent_id, "address": f"{agent_id}@agentmail.to"}
-        self.channel = "email"
-        self.provider = "cloud_email"
-
-
 def _key(agent_id: str, thread_id: str):
-    return CloudEmailDriver._thread_key(_Source(agent_id), {"thread_id": thread_id})
+    return CloudEmailSource.thread_key(agent_id, thread_id)
 
 
 def test_two_agents_sharing_a_provider_thread_id_do_not_collide():

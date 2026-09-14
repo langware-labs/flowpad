@@ -75,7 +75,9 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     """
     import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+    CloudEmailDriver = get_driver("cloud_email")  # noqa: N806 — the registered source
 
     return await DataSource.find_for_account(
         CloudEmailDriver.provider,
@@ -561,7 +563,9 @@ class EmailInbox(Entity):
         """
         import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
         from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-        from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        CloudEmailDriver = get_driver("cloud_email")  # noqa: N806 — the registered source
 
         config = {
             CloudEmailDriver.identity_config_key: self.agent_id,

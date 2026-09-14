@@ -114,6 +114,7 @@ class SourceDriver(IngestDriver):
         outbound_spec: Optional[Callable[[Any], type]] = None,
         lift_cursor: Optional[Callable[[dict], Optional[str]]] = None,
         choices: Optional[Callable[[Any, str], Awaitable[list]]] = None,
+        configure: Optional[Callable[[Any], dict]] = None,
     ) -> None:
         self.source_cls = cls
         self.provider = cls.provider
@@ -123,6 +124,7 @@ class SourceDriver(IngestDriver):
         self._credentials = credentials
         self._outgoing = outgoing
         self._lift_cursor = lift_cursor
+        self._configure = configure
         for trait in _TRAITS:
             setattr(self, trait, getattr(cls, trait))
         self.origin_for = origin_for
@@ -141,6 +143,9 @@ class SourceDriver(IngestDriver):
         """The configured source. A configuration the class refuses is a person's to fix."""
         credentials = await self._credentials(row) if self._credentials else None
         binding = binding_of(row, credentials=credentials, persona=await _persona_of(row) if persona else None)
+        if self._configure is not None:
+            # Configuration only the application can resolve (the agent that owns a mailbox row).
+            binding = binding.model_copy(update={"config": {**binding.config, **self._configure(row)}})
         try:
             return self._build(binding)
         except ValueError as exc:
