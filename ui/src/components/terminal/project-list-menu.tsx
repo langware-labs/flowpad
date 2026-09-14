@@ -1,5 +1,6 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Project } from '@sdk';
+import { FSRef, Project, TypeId } from '@sdk';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
@@ -19,6 +20,40 @@ import React, { useMemo, useState } from 'react';
  * {@link RuntimeChip} wears it: the chip owns its trigger, Popover and testids;
  * the buckets, ordering, counts and URL-first selection live here, once.
  */
+
+/**
+ * The project row tip's path affordances: reveal the folder in the OS file
+ * manager and copy its path. Reveal goes through the compute node the path
+ * belongs to — `localComputeNodeId` is null for a remote one, which hides it.
+ */
+function ProjectPathActions({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+  const { t } = useLingui();
+  const fsRef = new FSRef(projectPath, new TypeId('compute_node', '@local'));
+  return (
+    <>
+      {fsRef.localComputeNodeId && (
+        <button
+          type="button"
+          onClick={() => void fsRef.open()}
+          title={t`Open in Finder/Explorer`}
+          aria-label={t`Open in Finder/Explorer`}
+          data-testid={`project-reveal-${projectId}`}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      )}
+      <CopyButton
+        value={projectPath}
+        title={t`Copy project path`}
+        testId={`project-copy-path-${projectId}`}
+        iconClassName="h-3.5 w-3.5"
+        copiedIconClassName="text-green-500"
+        className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      />
+    </>
+  );
+}
 
 function bucketDisplayName(bucket: TabProjectBucket): string {
   return bucket.project?.displayName ?? bucket.projectId;
@@ -592,7 +627,14 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                 label={mountPath ?? bucketDisplayName(bucket)}
                 buttonLabel={t`What is a Flowpad project?`}
                 side="right"
-                actions={mountPath ? <ProjectLaunchBar projectPath={mountPath} /> : undefined}
+                actions={
+                  mountPath ? (
+                    <div className="flex items-center gap-0.5">
+                      <ProjectLaunchBar projectPath={mountPath} />
+                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                    </div>
+                  ) : undefined
+                }
               >
                 {selectButton}
               </WikiTip>
