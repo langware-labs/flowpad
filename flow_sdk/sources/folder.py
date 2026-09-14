@@ -2,14 +2,19 @@
 
 The generic local source, and the one that runs in-process: it reads this machine's own
 tree and holds no provider credential. Origins are ``CloudOrigin("local", <root>, <key>)``,
-built with ``origin(path)`` and no I/O; a rename is a new identity.
+built with ``origin(path)`` and no I/O; a rename is a new identity. Each file also reports what
+the filesystem observed — its modification time and a ``<device>:<inode>`` handle — so an
+application can notice an edit that kept the size and a rename within one volume.
 """
 
 from __future__ import annotations
 
 import os
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, BinaryIO, Optional
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, AsyncIterator, BinaryIO, Callable, ClassVar, Optional
+
+from pydantic import AwareDatetime
 
 from flow_sdk.sources._paths import Folder, Upload, real_directory, relative_key
 from flow_sdk.sources.base import Altitude, CollectionSource, positive_int
@@ -26,6 +31,16 @@ MAX_CHUNK_SIZE = 64 << 20
 WRITE_BUFFER = 1 << 20
 
 
+class LocalFileData(FileData):
+    """A file as this machine's filesystem reported it. Observations, never a revision."""
+
+    spec_kind: ClassVar[str] = "ingest.file.local"
+
+    modified_at: Optional[AwareDatetime] = None
+    #: ``<device>:<inode>`` — the same file across a rename within one volume.
+    handle: Optional[str] = None
+
+
 class FolderSource(CollectionSource):
     provider = "folder"
     origin_kind = "local"
@@ -33,6 +48,8 @@ class FolderSource(CollectionSource):
     reflects = True
     supported_queries = (ObjectQuery,)
     page_type = FileDataPage
+    #: Refuses a bare directory or file name; refused directories are never descended.
+    skip: ClassVar[Optional[Callable[[str], bool]]] = None
 
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
@@ -76,16 +93,27 @@ class FolderSource(CollectionSource):
         self._folder = None
 
     # ── read path ───────────────────────────────────────────────────────────
-    async def _lookup(self, key: str) -> Optional[int]:
+    async def _lookup(self, key: str) -> Optional[os.stat_result]:
         assert self._folder is not None
-        return await self._blocking(self._folder.size, key, origin=self._scope.origin(key))
+        return await self._blocking(self._folder.stat, key, origin=self._scope.origin(key))
 
-    async def _scan(self, query: Optional[ObjectQuery]) -> list[tuple[str, int]]:
+    async def _scan(self, query: Optional[ObjectQuery]) -> list[tuple[str, os.stat_result]]:
         assert self._folder is not None
-        return await self._blocking(self._folder.scan, "" if query is None else query.prefix)
+        return await self._blocking(self._folder.scan, "" if query is None else query.prefix, type(self).skip)
 
-    def _item(self, key: str, size: int) -> FileItem:
-        return FileItem(origin=self._scope.origin(key), data=FileData(name=key.rpartition("/")[2], path=key, size=size))
+    def _item(self, key: str, st: os.stat_result) -> FileItem:
+        data = LocalFileData(
+            name=key.rpartition("/")[2],
+            path=key,
+            size=st.st_size,
+            modified_at=datetime.fromtimestamp(st.st_mtime_ns / 1e9, timezone.utc),
+            handle=f"{st.st_dev}:{st.st_ino}",
+        )
+        return FileItem(origin=self._scope.origin(key), data=data)
+
+    def handle_of(self, item: FileItem) -> str:
+        """The identity that survives a rename within one volume (``StableHandle``)."""
+        return getattr(item.data, "handle", None) or ""
 
     # ── bytes ───────────────────────────────────────────────────────────────
     def open(self, file: FileItem, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
@@ -139,11 +167,11 @@ class FolderSource(CollectionSource):
         try:
             async for chunk in chunks:
                 await self._blocking(upload.handle.write, _bytes(chunk), origin=origin)
-            size = await self._blocking(upload.commit, origin=origin)
+            st = await self._blocking(upload.commit, origin=origin)
         except BaseException:
             upload.discard()
             raise
-        return self._item(key, size)
+        return self._item(key, st)
 
     async def delete(self, origin: CloudOrigin) -> None:
         self._require_open()
@@ -176,4 +204,4 @@ def _bytes(chunk: object) -> bytes:
     return chunk
 
 
-__all__ = ["DEFAULT_CHUNK_SIZE", "MAX_CHUNK_SIZE", "FolderSource"]
+__all__ = ["DEFAULT_CHUNK_SIZE", "MAX_CHUNK_SIZE", "FolderSource", "LocalFileData"]

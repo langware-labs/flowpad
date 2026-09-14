@@ -37,7 +37,7 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/transcript_analyzer/transcript.py": "entry-tree walk, not a filesystem",
     "flow_sdk/schema/data_spec/activity_spec.py": "spec node walk, not a filesystem",
     "flow_sdk/activity/activity.py": "spec node walk, not a filesystem",
-    "flow_sdk/ingest/drivers/folder.py": "TODO: user folder source; should prune via gitignore_walk",
+    "flow_sdk/sources/_paths.py": "one source root, symlinks never followed; a watched folder prunes hidden and dependency dirs as it walks",
     "flow_sdk/builtin/faas/compute_node.py": "TODO: walks a node root; review pruning",
     "flow_sdk/fs_store/indexer/functions/claude_hook.py": "hooks.json under a claude cache dir",
     "flow_sdk/fs_store/indexer/functions/claude_projects.py": "rollout jsonl under ~/.codex/sessions",
