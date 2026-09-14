@@ -18,14 +18,24 @@ plain namespace over a stored blob all lift the same way. No I/O.
 from __future__ import annotations
 
 from datetime import datetime
-from email.utils import getaddresses
+from email.utils import formataddr, getaddresses
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 
 MESSAGE_KIND = "content.message"
 EMAIL_KIND = "content.message.email"
+CHAT_KIND = "content.message.chat"
+FEED_KIND = "content.feed.item"
+
+#: The record kind each payload family is stored under, most specific first.
+_KIND_OF: tuple[tuple[type[Payload], str], ...] = (
+    (EmailMessageData, EMAIL_KIND),
+    (MessageData, CHAT_KIND),
+    (FeedItemData, FEED_KIND),
+)
 
 
 def _text(obj: Any, name: str) -> str:
@@ -92,6 +102,50 @@ def lift(source: Any, item: Any) -> Any:
     return item.model_copy(update={"origin": origin, "data": item.data or data_of(source, item, origin)})
 
 
+def kind_of(data: Payload) -> str:
+    for family, kind in _KIND_OF:
+        if isinstance(data, family):
+            return kind
+    raise TypeError(f"{type(data).__name__} has no record kind; a record source emits a message or feed payload")
+
+
+def envelope_of(
+    item: Any, *, data_source_id: str, provider: str, segment_key: str, segment_label: str = ""
+) -> SourceItemSpec:
+    """The inverse of ``lift``: a contract item as the flat envelope the ingestor stores.
+
+    ``origin`` and ``data`` ride along, so lifting the result is the identity — the header is
+    only the flat, queryable copy of what the payload already says.
+    """
+    data = item.data
+    person = getattr(data, "sender", None) or getattr(data, "author", None)
+    when = getattr(data, "sent_at", None) or getattr(data, "published_at", None)
+    return SourceItemSpec(
+        data_source_id=data_source_id,
+        provider=provider,
+        kind=kind_of(data),
+        segment_key=segment_key,
+        segment_label=segment_label,
+        external_id=item.origin.key,
+        name=getattr(data, "subject", None) or getattr(data, "title", None) or "",
+        body=getattr(data, "text", None) or "",
+        occurred_at=when.isoformat() if when else None,
+        author_external_id=person.origin.key if person else None,
+        author_display=(person.name if person else None) or getattr(data, "byline", None),
+        permalink=item.origin.url or getattr(data, "url", None),
+        thread_key=_key_of(getattr(data, "conversation", None)),
+        reply_to_external_id=_key_of(getattr(data, "in_reply_to", None)),
+        recipients=[formataddr((p.name or "", p.address or p.origin.key)) for p in getattr(data, "recipients", ())],
+        raw=getattr(data, "raw", None),
+        origin=item.origin,
+        data=data,
+    )
+
+
+def _key_of(origin: Optional[CloudOrigin]) -> Optional[str]:
+    return origin.key if origin is not None else None
+
+
 def _beside(origin: CloudOrigin, key: str) -> Optional[CloudOrigin]:
     """Another resource in the same scope — a thread, a replied-to message."""
     return CloudOrigin(kind=origin.kind, namespace=origin.namespace, key=key) if key else None
@@ -104,4 +158,4 @@ def _when(item: Any) -> Optional[datetime]:
     return iso_to_utc(value) if value else None
 
 
-__all__ = ["EMAIL_KIND", "MESSAGE_KIND", "data_of", "lift", "origin_kind_of", "origin_of"]
+__all__ = ["CHAT_KIND", "EMAIL_KIND", "FEED_KIND", "MESSAGE_KIND", "data_of", "envelope_of", "kind_of", "lift", "origin_kind_of", "origin_of"]

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, BinaryIO, Mapping, Optional
+from typing import Any, AsyncGenerator, AsyncIterator, BinaryIO, Optional
 
 from flow_sdk.sources._paths import Folder, Upload, real_directory, relative_key
 from flow_sdk.sources.base import Altitude, CollectionSource, positive_int
@@ -30,17 +30,21 @@ class FolderSource(CollectionSource):
     provider = "folder"
     origin_kind = "local"
     altitude = Altitude.IN_PROCESS
+    reflects = True
     supported_queries = (ObjectQuery,)
     page_type = FileDataPage
 
     @classmethod
-    def namespace_for(cls, config: Mapping[str, Any]) -> str:
-        root = config.get("root")
+    def namespace_for(cls, binding: SourceBinding) -> str:
+        """The root, canonical: ``~`` expanded and symlinks resolved, so every origin and every
+        path this source hands out has one spelling (``/var`` is ``/private/var`` on macOS)."""
+        root = binding.config.get("root")
         if not isinstance(root, str) or not root:
             raise ValueError("a folder source needs a 'root'")
+        root = os.path.expanduser(root)
         if not os.path.isabs(root):
             raise ValueError(f"root must be an absolute path: {root!r}")
-        return os.path.normpath(root)
+        return os.path.realpath(root)
 
     @classmethod
     def at(cls, root: str, **binding: Any) -> "FolderSource":

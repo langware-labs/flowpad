@@ -37,8 +37,8 @@ class MemoryStore(CollectionSource):
         return str(config.get("kind") or cls.origin_kind or cls.provider)
 
     @classmethod
-    def namespace_for(cls, config: Mapping[str, Any]) -> str:
-        return str(config.get("namespace") or "memory")
+    def namespace_for(cls, binding: SourceBinding) -> str:
+        return str(binding.config.get("namespace") or "memory")
 
     @classmethod
     def of(cls, schema: Optional[type[DataSpec]] = None, *, namespace: str = "memory", kind: str = "memory", **binding: Any):

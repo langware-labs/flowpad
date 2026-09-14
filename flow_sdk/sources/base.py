@@ -74,7 +74,7 @@ class Source:
             raise TypeError(f"expected SourceBinding, got {type(binding).__name__}")
         cls = type(self)
         self.binding = binding
-        self._scope = Scope(cls.origin_kind_for(binding.config), cls.namespace_for(binding.config))
+        self._scope = Scope(cls.origin_kind_for(binding.config), cls.namespace_for(binding))
         self._session: Optional[object] = None
         self._handler: Optional[ChangeHandler] = None
         self._notify_lock: Optional[asyncio.Lock] = None
@@ -85,9 +85,11 @@ class Source:
         return cls.origin_kind or cls.provider
 
     @classmethod
-    def namespace_for(cls, config: Mapping[str, Any]) -> str:
-        """The per-row scope of every origin this source produces. Declared per class."""
-        raise NotImplementedError(f"{cls.__name__} must declare namespace_for(config)")
+    def namespace_for(cls, binding: SourceBinding) -> str:
+        """The per-row scope prefix of every origin this source produces: the account it reads
+        as. A source whose resources live in segments joins the segment on per origin
+        (``origin(key, segment)``); one with no account at all scopes by segment alone."""
+        return binding.account_key
 
     @property
     def config(self) -> Mapping[str, Any]:
@@ -101,9 +103,10 @@ class Source:
     def effective_page_size(self) -> int:
         return self.binding.page_size or type(self).page_size
 
-    def origin(self, key: str) -> CloudOrigin:
-        """The identity of ``key`` within this source's scope. No I/O."""
-        return self._scope.origin(key)
+    def origin(self, key: str, *within: str) -> CloudOrigin:
+        """The identity of ``key`` within this source's scope, narrowed by ``within`` (a
+        segment). No I/O."""
+        return self._scope.origin(key, *within)
 
     # ── session ─────────────────────────────────────────────────────────────
     async def __aenter__(self) -> "Source":
@@ -272,12 +275,14 @@ class Scope:
     __slots__ = ("kind", "namespace")
 
     def __init__(self, kind: str, namespace: str) -> None:
-        CloudOrigin(kind=kind, namespace=namespace, key="-")  # validate eagerly
+        CloudOrigin(kind=kind, namespace="-", key="-")  # validate the kind eagerly
         self.kind = kind
         self.namespace = namespace
 
-    def origin(self, key: str) -> CloudOrigin:
-        return CloudOrigin(kind=self.kind, namespace=self.namespace, key=key)
+    def origin(self, key: str, *within: str) -> CloudOrigin:
+        """``namespace`` joined with ``within`` — ``<account>/<segment>``, or whichever exists."""
+        namespace = "/".join(part for part in (self.namespace, *within) if part)
+        return CloudOrigin(kind=self.kind, namespace=namespace, key=key)
 
     def key(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):

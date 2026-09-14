@@ -12,6 +12,8 @@ have not seen before would silently stop a working source.
 """
 from __future__ import annotations
 
+import re
+
 from flow_sdk._compat import StrEnum
 
 #: How much of a failure's detail a row keeps. The cursor row and the source
@@ -110,4 +112,20 @@ def classify(exc: BaseException) -> tuple[SourceHealth, str, str]:
     """
     if isinstance(exc, SourceError):
         return exc.health, exc.code, exc.detail
+    family = _contract_health(exc)
+    if family is not None:
+        return family, re.sub(r"(?<!^)(?=[A-Z])", "_", type(exc).__name__).lower(), str(exc)
     return SourceHealth.TRANSIENT_ERROR, type(exc).__name__, str(exc)
+
+
+def _contract_health(exc: BaseException) -> "SourceHealth | None":
+    """The contract's error family (``flow_sdk.sources.errors``), by what fixes it: refused
+    access, a missing resource, an unsupported operation and a rejected input need a person;
+    an unavailable service, an unknown outcome and a stale cursor retry on the next tick."""
+    from flow_sdk.sources import errors  # noqa: PLC0415
+
+    if isinstance(exc, (errors.AccessDenied, errors.NotFound, errors.Unsupported, errors.Rejected)):
+        return SourceHealth.CONFIG_ERROR
+    if isinstance(exc, errors.SourceError):
+        return SourceHealth.TRANSIENT_ERROR
+    return None
