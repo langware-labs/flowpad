@@ -83,6 +83,19 @@ export interface LLMSource {
   /** Position in the preference order; lower is preferred. */
   rank: number;
   origin: LLMSourceOrigin;
+  /** This verdict rests on a device login NOBODY HAS PROBED — so it is not evidence the box
+   *  can issue a call. Computed by the backend (`Candidate.unverified` in
+   *  `cli_drivers/llm_source.py`) because it needs the endpoint's KIND, which no consumer has
+   *  from the source alone; published so `flow llm set auto` and the setup popup read one
+   *  verdict instead of each re-deriving the rule and drifting.
+   *
+   *  Deliberately NOT the inverse of `eligible`: `eligible` says the row itself is usable,
+   *  this says whether there is any evidence for that claim. An un-probed device login is
+   *  `eligible: true, unverified: true` — right to TRY when there is nothing better, wrong to
+   *  count as "you are set up".
+   *
+   *  Optional: absent from an older backend means verified, the answer it always gave. */
+  unverified?: boolean;
 }
 
 /** Identity is the endpoint it names. Compare sources with this rather than by whole value:

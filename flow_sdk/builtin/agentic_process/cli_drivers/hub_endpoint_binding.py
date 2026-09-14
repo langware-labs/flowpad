@@ -93,8 +93,12 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
         view = await picker_view_for(worker, constraint)
-        sources[kind] = [c.source.model_dump(mode="json") for c in view.offers]
-        resolved[kind] = view.chosen.source.model_dump(mode="json") if view.chosen else None
+        # ``to_wire`` rather than a bare ``model_dump``: it carries ``unverified`` alongside the
+        # source, which is the one thing a client cannot derive from the source on its own (it
+        # needs the endpoint's kind). Both the CLI and the setup screen read that flag instead
+        # of each re-implementing the rule -- see ``Candidate.unverified``.
+        sources[kind] = [c.to_wire() for c in view.offers]
+        resolved[kind] = view.chosen.to_wire() if view.chosen else None
         blocked[kind] = view.blocked
         notes[kind] = view.note
         for candidate in view.offers:
@@ -390,6 +394,25 @@ async def select_llm_source(payload: dict) -> dict:
 
     await cap.save(notify=True)
     logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
+    # Announce the change on the channel that means "this box's LLM config changed". The
+    # Capability row's own notify reaches entity WATCHERS, which is the UI and nobody else;
+    # ``flow llm set auto`` is a separate PROCESS holding a socket open with nothing watched,
+    # waiting to learn that the box can now fund a call. This is that frame -- and it is why
+    # the command needs no poll interval and no timeout.
+    from flow_sdk.app.actions.desktop_oauth import broadcast_llm_config_msg  # noqa: PLC0415
+
+    await broadcast_llm_config_msg(
+        True,
+        # NOT the provider name: `oauth-service.ts` reads `auth_method` as "the flow for this
+        # provider finished", so a real provider id here could complete an unrelated in-flight
+        # grant. The detail rides in auth_data instead.
+        "llm_source",
+        auth_data={
+            "harness": kind_key,
+            "kind": source_kind.value,
+            "provider": cap.api_provider or "",
+        },
+    )
     return await _status(hub_key)
 
 
@@ -561,6 +584,8 @@ async def llm_binding(payload: dict) -> dict:
             "name": candidate.source.name,
         }
     return {"endpoint_typeid": typeid, "harnesses": out}
+
+
 #: The cheapest model each provider will answer a one-token completion with. A test that
 #: spends is only honest if it spends the least it can: the question is "can this key buy
 #: tokens", and the smallest model answers it for the smallest amount.
