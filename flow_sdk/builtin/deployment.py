@@ -69,11 +69,12 @@ KIND_NODE = "compute.node"
 #: The UNION of every tier's node providers. The hub allocates ``e2b`` /
 #: ``docker`` / ``gcp_vm`` boxes; ``user_machine`` is a machine its owner
 #: enrolled with ``flow connect``, which the hub never allocates and so does not
-#: list. A hub-adopted ``gcp_vm`` placement used to resolve ``compute_node_id``
+#: list. ``local_machine`` is a hub's own host running a node's isolated instance --
+#: a local hub (``DEPLOY_ENV=local``) only. A hub-adopted ``gcp_vm`` placement used to resolve ``compute_node_id``
 #: to None here — unaddressable, and refused by every "provider in
 #: NODE_PROVIDERS" validation — because this set only knew the providers THIS
 #: tier could place on.
-NODE_PROVIDERS = frozenset({"local", "e2b", "docker", "gcp_vm", "user_machine"})
+NODE_PROVIDERS = frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})
 
 logger = logging.getLogger(__name__)
 

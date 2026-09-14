@@ -148,4 +148,4 @@ def test_the_placement_vocabulary_is_pinned_on_this_side_too():
     from flow_sdk.builtin.deployment import KIND_AGENT, KIND_NODE, KIND_WEB, NODE_PROVIDERS
 
     assert (KIND_AGENT, KIND_WEB, KIND_NODE) == ("runtime.agent", "runtime.web", "compute.node")
-    assert NODE_PROVIDERS == frozenset({"local", "e2b", "docker", "gcp_vm", "user_machine"})
+    assert NODE_PROVIDERS == frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})
