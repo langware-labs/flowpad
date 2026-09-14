@@ -10,7 +10,6 @@ from pathlib import Path
 
 from flow_sdk.ingest.driver import register_driver
 from flow_sdk.ingest.drivers.agent import AgentDriver
-from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
@@ -18,6 +17,7 @@ from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agentmail import AgentMailSource
+from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
@@ -302,7 +302,7 @@ def _machine_secret(secret_name: str, *, config_key: str):
     return resolve
 
 
-def _agentmail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+def _mail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
     """A reply to a known message keeps the exchange one thread on the recipient's side; a bare send
     to ``to`` starts a new one, and only then does ``subject`` mean anything."""
     from flow_sdk.sources import UserProfile  # noqa: PLC0415
@@ -313,8 +313,61 @@ def _agentmail_outgoing(source, *, thread_key, to, text, subject="", in_reply_to
         return EmailMessageData(text=text), source.origin(answered)
     address = str(to or "").strip()
     if not address:
-        raise ValueError("an agentmail send needs a recipient address in `to`")
+        raise ValueError(f"a {source.provider} send needs a recipient address in `to`")
     return EmailMessageData(text=text, subject=subject or None, recipients=(UserProfile(origin=source.origin(address), address=address),)), None
+
+
+
+class AppMailbox:
+    """An agent's hub mailbox as this process reaches it — the email-inbox driver family, the
+    ordinary cloud login — with its failures as the contract errors that decide polling."""
+
+    async def list_messages(self, agent_id, **filters):
+        return await self._call("list_messages", agent_id, **filters)
+
+    async def get_message(self, agent_id, message_id):
+        return await self._call("get_message", agent_id, message_id)
+
+    async def send(self, agent_id, body):
+        return await self._call("send", agent_id, body)
+
+    async def reply(self, agent_id, message_id, body):
+        return await self._call("reply", agent_id, message_id, body)
+
+    @staticmethod
+    async def _call(verb, *args, **kwargs):
+        from flow_sdk.builtin.email_inbox_driver import EmailInboxError, get_email_inbox_driver  # noqa: PLC0415
+
+        try:
+            return await getattr(get_email_inbox_driver(), verb)(*args, **kwargs) or {}
+        except EmailInboxError as exc:
+            raise mailbox_refusal(exc) from exc
+
+
+def mailbox_refusal(exc):
+    """A mailbox failure as the contract error. Two cases the status table cannot know: no status at
+    all (a backend not configured needs a person; a transport failure needs the next tick), and a
+    404, which on this route means the agent has no mailbox — re-provisioning is a human act."""
+    from flow_sdk.sources import http  # noqa: PLC0415
+    from flow_sdk.sources.errors import NotFound, Rejected, SourceUnavailable  # noqa: PLC0415
+
+    reason = str(getattr(exc, "reason", "") or "")
+    status = int(getattr(exc, "status_code", 0) or 0)
+    if status == 0:
+        if "not configured" in reason:
+            return Rejected(f"The email inbox backend is not configured on this instance ({reason}).")
+        return SourceUnavailable(f"the mailbox could not be reached: {reason}")
+    if status == 404:
+        return NotFound(reason or "This agent has no mailbox.")
+    return http.error_for_status(status, reason)
+
+
+def _cloud_email_config(row):
+    """The agent a mailbox row serves: its config, else the Agent that owns it."""
+    from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+
+    agent = agent_id_of(row)
+    return {"agent_id": agent} if agent else {}
 
 
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
@@ -338,11 +391,23 @@ register_driver(
         AgentMailSource,
         kind="datasource.api.agentmail",
         credentials=_machine_secret(AGENTMAIL_SECRET, config_key="api_key"),
-        outgoing=_agentmail_outgoing,
+        outgoing=_mail_outgoing,
         lift_cursor=lambda state: AgentMailSource.resume_after(state["high_water"]) if state.get("high_water") else None,
     )
 )
-register_driver(CloudEmailDriver())
+register_driver(
+    SourceDriver(
+        CloudEmailSource,
+        kind="datasource.cloud.email",
+        build=lambda binding: CloudEmailSource(binding, mailbox=AppMailbox()),
+        configure=_cloud_email_config,
+        outgoing=_mail_outgoing,
+        lift_cursor=lambda state: (
+            CloudEmailSource.resume_at(state["high_water"], state.get("boundary_ids") or [])
+            if state.get("high_water") and state.get("boundary_ids") else None
+        ),
+    )
+)
 register_driver(
     SourceDriver(
         WatchedFolderSource,
@@ -398,7 +463,6 @@ register_driver(
 
 __all__ = [
     "AgentDriver",
-    "CloudEmailDriver",
     "GitDriver",
     "GmailDriver",
     "GoogleDriveDriver",

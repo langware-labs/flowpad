@@ -14,7 +14,7 @@ from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.cli.auth.hub_login import is_logged_in
-from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
+from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
 
@@ -47,8 +47,8 @@ async def test_agent_enables_email_once():
         assert inbox.newly_allocated is True, "the first call allocates the address"
 
         source = await DataSource.find_for_account(
-            CloudEmailDriver.provider,
-            CloudEmailDriver.identity_config_key,
+            CloudEmailSource.provider,
+            CloudEmailSource.identity_config_key,
             agent.id,
         )
         assert source is not None
@@ -64,8 +64,8 @@ async def test_agent_enables_email_once():
         assert same_inbox.provider_inbox_id == inbox.provider_inbox_id
         assert same_inbox.address == inbox.address
         same_source = await DataSource.find_for_account(
-            CloudEmailDriver.provider,
-            CloudEmailDriver.identity_config_key,
+            CloudEmailSource.provider,
+            CloudEmailSource.identity_config_key,
             agent.id,
         )
         assert same_source is not None and same_source.id == source.id
@@ -78,8 +78,8 @@ async def test_agent_enables_email_once():
         assert agent.inbox is disabled_inbox
         assert disabled_inbox.is_active is False
         paused_source = await DataSource.find_for_account(
-            CloudEmailDriver.provider,
-            CloudEmailDriver.identity_config_key,
+            CloudEmailSource.provider,
+            CloudEmailSource.identity_config_key,
             agent.id,
         )
         assert paused_source is not None
@@ -92,8 +92,8 @@ async def test_agent_enables_email_once():
         assert resumed_inbox.address == inbox.address
         assert resumed_inbox.status == "active"
         resumed_source = await DataSource.find_for_account(
-            CloudEmailDriver.provider,
-            CloudEmailDriver.identity_config_key,
+            CloudEmailSource.provider,
+            CloudEmailSource.identity_config_key,
             agent.id,
         )
         assert resumed_source is not None
