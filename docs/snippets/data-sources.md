@@ -1,3 +1,7 @@
+---
+id: 08b85341-aaf3-47d3-bf5e-8c09b794205c
+version: 2
+---
 # Data sources — snippets
 
 A data source is one remote account or tree Flowpad syncs from. The row is a
@@ -42,20 +46,20 @@ fires. That silence is the contract the whole subsystem rests on.
 
 The config keys are the manifest's, one dict per provider:
 
-| provider | config | account key |
-| --- | --- | --- |
-| `rss` | `feed_urls: list[str]` | — |
-| `hackernews` | `types`, `min_score`, `base_url` (all optional) | — |
-| `folder` | `root: str` | `root` |
-| `git` | `repo: str`, `branch` | `repo` |
-| `agentmail` | `inbox`, `api_key`, `base_url` | `inbox` |
-| `telegram` | `bot_token`, `base_url` | `bot_token` |
-| `slack` | `channels: list[str]` | `channels` (membership) |
-| `gdrive` | `drives`, `cache_root`, `base_url` | — |
-| `gcs` | `bucket`, `project`, `prefixes`, `cache_root`, `base_url` | `bucket` |
-| `gmail` | `address` | `address` |
-| `cloud_email` | `agent_id`, `address` | `agent_id` |
-| `agent` | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector` |
+| provider      | config                                                               | account key             |
+| ------------- | -------------------------------------------------------------------- | ----------------------- |
+| `rss`         | `feed_urls: list[str]`                                               | —                       |
+| `hackernews`  | `types`, `min_score`, `base_url` (all optional)                      | —                       |
+| `folder`      | `root: str`                                                          | `root`                  |
+| `git`         | `repo: str`, `branch`                                                | `repo`                  |
+| `agentmail`   | `inbox`, `api_key`, `base_url`                                       | `inbox`                 |
+| `telegram`    | `bot_token`, `base_url`                                              | `bot_token`             |
+| `slack`       | `channels: list[str]`                                                | `channels` (membership) |
+| `gdrive`      | `drives`, `cache_root`, `base_url`                                   | —                       |
+| `gcs`         | `bucket`, `project`, `prefixes`, `cache_root`, `base_url`            | `bucket`                |
+| `gmail`       | `address`                                                            | `address`               |
+| `cloud_email` | `agent_id`, `address`                                                | `agent_id`              |
+| `agent`       | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector`             |
 
 Values are coerced on `save()` (`"5"` becomes `5` for a `number` field), but
 `required` and `pattern` are enforced only by the UI form. Check them yourself
@@ -247,7 +251,7 @@ picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base
 picks.detail                            # why the list is empty, when it is
 ```
 
-A refusal is an **empty `items` and a sentence**, never an exception: no connection, a
+A refusal is an **empty** **`items`** **and a sentence**, never an exception: no connection, a
 scope the consent screen never asked for, a project id nobody set — all of them mean the
 same thing to the person filling the form, which is *type it instead*. So the field falls
 back to a plain text input carrying `picks.detail`, and never blocks a save.
@@ -257,8 +261,9 @@ never marked — that is the form asking about something it had no business aski
 and it is a caller bug rather than a refusal. `type` still decides the shape: `text` picks
 one, `lines` picks many.
 
-| provider | field | what it lists |
-| --- | --- | --- |
-| `gcs` | `bucket` | buckets in `config.project` — the project is read for THIS call only |
-| `gdrive` | `drives` | the shared drives the Google account can see |
-| `slack` | `channels` | every channel the token can see, joined or not |
+| provider | field      | what it lists                                                        |
+| -------- | ---------- | -------------------------------------------------------------------- |
+| `gcs`    | `bucket`   | buckets in `config.project` — the project is read for THIS call only |
+| `gdrive` | `drives`   | the shared drives the Google account can see                         |
+| `slack`  | `channels` | every channel the token can see, joined or not                       |
+
