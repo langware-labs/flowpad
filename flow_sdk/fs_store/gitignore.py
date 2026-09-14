@@ -5,6 +5,9 @@ the shared :mod:`flow_sdk.fs_store.indexer.walk`; the fsop watcher filter
 (:mod:`flow_sdk.server.fsop_filters`) reuses these matching primitives directly
 over its own bounded discovery walk.
 
+Lives outside ``flow_sdk.fs_store.indexer`` so the asset SDK walker
+(:mod:`flow_sdk.assets.folder`) can share it without importing index services.
+
 Two-stage matching:
 
 1. ``_WALK_IGNORED`` — hardcoded basename denylist (``.git``, ``node_modules``,

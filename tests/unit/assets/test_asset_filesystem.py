@@ -166,3 +166,17 @@ def test_malformed_declared_carrier_is_reported_without_modifying_it(tmp_path):
     assert len(error.value.issues) == 1
     assert error.value.issues[0].path == path.resolve()
     assert capsule.read_text() == '{broken'
+
+
+def test_recursive_scan_skips_gitignored_and_vendor_dirs_but_keeps_claude(tmp_path):
+    (tmp_path / ".gitignore").write_text("vendor/\n.claude/\n")
+    kept = skill(tmp_path / "src" / "kept", mint_uuid())
+    forced = skill(tmp_path / ".claude" / "skills" / "forced", mint_uuid())
+    skill(tmp_path / "vendor" / "ignored", mint_uuid())
+    skill(tmp_path / "node_modules" / "pkg" / "denylisted", mint_uuid())
+    nested = tmp_path / "src" / "nested"
+    nested.mkdir()
+    (nested / ".gitignore").write_text("generated/\n")
+    skill(nested / "generated" / "ignored_by_nested", mint_uuid())
+    found = {asset.path for asset in collect_assets([AssetFolder(path=tmp_path, recursive=True)])}
+    assert found == {kept, forced}

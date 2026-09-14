@@ -9,7 +9,7 @@ import functools
 import os
 from pathlib import Path
 
-from flow_sdk.fs_store.indexer.gitignore import _WALK_IGNORED
+from flow_sdk.fs_store.gitignore import _WALK_IGNORED
 from flow_sdk.instance_settings import get_instance_settings
 
 _DOCS_WALK_MAX_DEPTH = 3
