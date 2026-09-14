@@ -214,8 +214,11 @@ def test_entity_origin_tolerates_legacy_and_fails_soft():
     ent = Entity(type="task", origin={"provider": "github", "owner": "a", "name": "b", "rel_path": "x"})
     assert isinstance(ent.origin, GitOrigin)
     assert Entity(type="task", origin={"kind": "git", "rel_path": ["not", "a", "path"]}).origin is None
-    cloud = Entity(type="task", origin={"kind": "gmail", "provider": "agent", "url": "https://x"}).origin
-    assert type(cloud).__name__ == "CloudOrigin" and cloud.kind == "gmail"
+    # An unregistered kind is the cloud arm; a pre-triple dict lifts (external_id → key).
+    cloud = Entity(type="task", origin={"kind": "gmail", "provider": "agent", "external_id": "m1", "url": "https://x"}).origin
+    assert type(cloud).__name__ == "CloudOrigin" and (cloud.kind, cloud.key) == ("gmail", "m1")
+    # A cloud origin with no key is no identity: absent, not a broken entity.
+    assert Entity(type="task", origin={"kind": "gmail", "url": "https://x"}).origin is None
     # The hub's wire name comes back through the hub seam, not the model.
     from flow_sdk.fs_store.serializer.hub import HubSerializer
 

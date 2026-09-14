@@ -308,15 +308,26 @@ def _origins(item, source, channel: str, key: str):
 
     origin = CloudOrigin(
         kind=channel,
-        provider=str(getattr(source, "provider", "") or ""),
-        external_id=item.external_id or "",
+        namespace=_origin_namespace(source, item),
+        key=item.external_id,
         # The connector's link when it gives one; otherwise the channel's own
         # address formula, so "Open in Gmail" works for records whose provider
-        # never supplied a URL.
-        url=item.permalink or permalink_for(channel, item.external_id or "", key),
+        # never supplied a URL. None when neither has one.
+        url=item.permalink or permalink_for(channel, item.external_id or "", key) or None,
     )
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
     return origin, origin_local
+
+
+def _origin_namespace(source, item) -> str:
+    """The per-row scope of a projected origin: the account the source reads as, and the
+    segment the item came from. Interim — until each source class declares its own
+    ``namespace_for(config)``, this is the one rule every provider shares (account + segment
+    is the analysis's spelling for every channel), with the row id standing in for an
+    account the source never stamped."""
+    account = str(getattr(source, "account_key", "") or "") or str(getattr(source, "id", "") or "")
+    segment = str(getattr(item, "segment_key", "") or "")
+    return f"{account}/{segment}" if segment else account
 
 
 async def _placed_message(item):

@@ -1,60 +1,19 @@
-"""CloudOrigin — a pointer to the cloud record a local row is a cache of.
+"""The cloud arm of ``OriginField``: ``CloudOrigin`` names where a record's TRUTH lives.
 
-The sibling of ``FSOrigin`` (``fs_origin.py``), which answers "here is where
-this asset's BYTES live". This one answers "here is where this record's TRUTH
-lives" — a secret-free, serializable value object naming a mutable object in
-someone else's system: a Gmail message, a Slack post, a Jira comment.
-
-Same shape as its sibling on purpose: a ``kind`` discriminant plus locator
-fields, no behaviour and no credentials. Fetching, sending and refreshing live
-in the ingest driver registry (``flow_sdk/ingest/driver.py``), keyed by
-``provider`` — never on this object.
-
-**``kind`` and ``provider`` are different axes and both are load-bearing.**
-
-* ``kind`` is the CHANNEL — what a human calls it, and what the badge shows.
-  ``gmail``, ``slack``, ``jira``.
-* ``provider`` is the TRANSPORT — the ingest driver that carried it.
-
-They are not redundant. The shipped Gmail source's driver key is literally
-``"agent"`` (``ingest/drivers/agent.py``), so nothing on the record says
-"gmail" today. And one channel can have several transports: a harness-backed
-Gmail source and an API-backed one are two providers reaching the same mailbox.
-Threading and the badge key on ``kind`` precisely so a thread ingested through
-the harness today and the API tomorrow stays ONE thread.
+The sibling of ``FSOrigin`` (``fs_origin.py``), which answers "here is where this asset's
+BYTES live". The value itself is the source contract's ``CloudOrigin``
+(``flow_sdk/sources/values/origin.py``): identity is the ``(kind, namespace, key)`` triple,
+``url`` is browser metadata, and a pre-triple dict (``external_id``, ``provider``) lifts on
+read. This module registers it as the open arm — any origin ``kind`` that is not a filesystem
+kind is a cloud origin — and keeps the local half beside it.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel
 
 from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS
-
-
-class CloudOrigin(BaseModel):
-    """Where the real record lives. ``None`` on a message means "ours".
-
-    **Transportable half only.** Every member here means the same thing on any
-    machine, which is what lets the carrying field stay ``Sharing.SHARED`` — a
-    received message still renders its channel badge and its "Open in ..." link.
-    The local row pointers live in :class:`CloudOriginLocal`, which is carried by
-    a separate PRIVATE field; see that class for why they cannot ride along.
-    """
-
-    @property
-    def transportable(self) -> bool:
-        return True   # a cloud pointer names a remote resource — it travels
-
-    # The channel — the badge axis, and half of the thread key. See the module
-    # docstring for why this is not `provider`.
-    kind: str = ""
-    # The ingest driver that carried it: `agent`, `gmail_api`, `slack_api`.
-    provider: str = ""
-    # The provider's own id for the record. Stable across re-polls; the third
-    # component of the natural key `SourceItem.find_existing` resolves.
-    external_id: str = ""
-    # Permalink into the origin system — what "Open in Gmail" opens. Empty when
-    # the provider gives no addressable URL.
-    url: str = ""
+from flow_sdk.sources.values.origin import CloudOrigin
 
 
 class CloudOriginLocal(BaseModel):
@@ -65,11 +24,6 @@ class CloudOriginLocal(BaseModel):
     were worse than useless: a receiver dereferencing them misses, and
     ``inbox/outbound`` then reports the record as *deleted* when the truth is
     that it is *foreign*.
-
-    Same resolution the ``Sharing`` docstring already prescribes for
-    ``shared_context_entities`` vs ``private_context_entities_`` — one
-    conceptual thing whose halves have different answers becomes two fields,
-    one policy each.
     """
 
     # The configured DataSource this arrived through — the way back to
@@ -80,3 +34,5 @@ class CloudOriginLocal(BaseModel):
 
 
 ORIGIN_MODELS.register(CloudOrigin, CLOUD_ORIGIN_KIND)
+
+__all__ = ["CloudOrigin", "CloudOriginLocal"]

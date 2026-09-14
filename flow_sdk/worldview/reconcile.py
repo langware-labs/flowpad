@@ -20,8 +20,7 @@ thing, and once minted it never changes.
 from __future__ import annotations
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
-from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.builtin.deployment import Deployment, PlacementOrigin
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
     DeploymentStatus,
@@ -47,14 +46,10 @@ _MUTABLE_FIELDS = (
 )
 
 
-def _origin(provider: str, resource: InventoryResource) -> CloudOrigin:
-    """Where this record's truth lives — the provider's own resource name.
-
-    Same value object the ingest side uses for a Gmail message or a Slack post,
-    for the same reason: a secret-free, serializable pointer at a mutable object
-    in someone else's system.
-    """
-    return CloudOrigin(
+def _origin(provider: str, resource: InventoryResource) -> PlacementOrigin:
+    """Where this placement lives — the provider's own resource name. A secret-free,
+    serializable pointer at a resource in someone else's system."""
+    return PlacementOrigin(
         kind=provider,
         provider=provider,
         external_id=resource.full_resource_name,

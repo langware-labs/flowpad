@@ -34,13 +34,12 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from pydantic import PrivateAttr, field_validator
+from pydantic import BaseModel, PrivateAttr, field_validator
 
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -125,6 +124,21 @@ async def _place_mcp_specs(agent, names: "list[str] | None") -> list:
     return chosen
 
 
+class PlacementOrigin(BaseModel):
+    """Where a placement lives: the ComputeNode it runs on, or the provider's own resource.
+
+    Not a ``CloudOrigin``. A record identity has a key from birth; a placement is created
+    before it is placed (``external_id`` stays empty until a node is allocated) and its
+    ``provider`` is the tier that placed it, which is load-bearing here and not identity
+    there. The hub's ``Deployment.origin`` has this exact shape.
+    """
+
+    kind: str = ""
+    provider: str = ""
+    external_id: str = ""
+    url: str = ""
+
+
 class Deployment(Entity):
     """A provider-neutral placement and observation record."""
 
@@ -139,7 +153,7 @@ class Deployment(Entity):
     # per-field policy cannot say "sometimes". Nothing reads it on a receiver
     # (the only consumer is the local WorldView projection), so the safe answer
     # is also the free one.
-    origin: CloudOrigin | None = APIField(
+    origin: PlacementOrigin | None = APIField(
         default=None,
         sharing=Sharing.PRIVATE,
         description="The cloud resource this places: the ComputeNode it runs on, or the provider's own resource",
