@@ -15,12 +15,15 @@ export enum ComputeNodeSize {
 }
 
 /**
- * Display labels for compute node sizes.
+ * Display labels for compute node sizes. Prices are E2B usage rates
+ * ($0.000014/vCPU-s, $0.0000045/GiB-s — $0.0504/vCPU-hr, $0.0162/GiB-hr)
+ * x1.7, precomputed: sm $0.1332 -> $0.2264, md $0.2340 -> $0.3978,
+ * lg $0.4680 -> $0.7956 per hour.
  */
 export const ComputeNodeSizeLabels: Record<ComputeNodeSize, string> = {
-  [ComputeNodeSize.SMALL]: 'Small (2 CPU, 2GB)',
-  [ComputeNodeSize.MEDIUM]: 'Medium (4 CPU, 2GB)',
-  [ComputeNodeSize.LARGE]: 'Large (8 CPU, 4GB)',
+  [ComputeNodeSize.SMALL]: 'Small (2 CPU, 2GB) · $0.226/hr',
+  [ComputeNodeSize.MEDIUM]: 'Medium (4 CPU, 2GB) · $0.398/hr',
+  [ComputeNodeSize.LARGE]: 'Large (8 CPU, 4GB) · $0.796/hr',
 };
 
 /**
