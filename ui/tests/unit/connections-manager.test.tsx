@@ -433,7 +433,7 @@ describe('ConnectionsManager — adding a credential', () => {
     expect(h.save.mock.calls[0][0]).toMatchObject({ scope: 'project', project_id: 'p1' });
   });
 
-  it('Custom API key opens a pack name and name + value pairs, the rest behind Advanced', async () => {
+  it('Custom credentials opens a name and name + value pairs, the rest behind Advanced', async () => {
     render(<ConnectionsManager projectTypeId={PROJECT} project={{ id: 'p1', typeId: PROJECT } as never} />);
     await userEvent.click(screen.getByTestId('add-connection-open'));
     await userEvent.click(screen.getByTestId('add-connection-custom'));

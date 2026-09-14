@@ -217,8 +217,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: CredentialSpec.type,
-    label: msg`Secret`,
-    wikiword: 'Secrets',
+    label: msg`Credentials`,
+    wikiword: 'Credentials',
     allowedScopes: ['user', 'project'],
     Dialog: CredentialQuickCreateDialog,
     // The assets-list `+` is name-only: declare one variable named after it,

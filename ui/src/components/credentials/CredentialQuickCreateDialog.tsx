@@ -8,8 +8,8 @@ import { customDraft } from './credential-draft';
 import { useCredentials } from './use-credentials';
 
 /**
- * The quick-create "Secret" tile: the same dialog, the same save as
- * Connections → Add connection → Custom API key.
+ * The quick-create "Credentials" tile: the same dialog, the same save as
+ * Connections → Add connection → Custom credentials.
  */
 export const CredentialQuickCreateDialog: React.FC<{
   open: boolean;

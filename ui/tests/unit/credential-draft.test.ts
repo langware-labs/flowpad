@@ -1,5 +1,5 @@
 /**
- * The one credential form's rules. Every entry point — a Custom API key, a
+ * The one credential form's rules. Every entry point — Custom credentials, a
  * catalogue template, packed `.env.local` keys, the quick-create Secret tile —
  * builds one of these drafts and saves it the same way.
  */
