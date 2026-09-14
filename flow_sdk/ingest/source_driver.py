@@ -28,6 +28,7 @@ from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView,
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.errors import Rejected
 from flow_sdk.sources.protocols import Choosing, Segmented, StableHandle, Verifiable
 from flow_sdk.sources.values.page import ChangePage
 
@@ -74,7 +75,11 @@ class SourceDriver(IngestDriver):
         self.choices = self._choices if issubclass(cls, Choosing) else None
 
     def open(self, row: Any) -> Source:
-        return self._build(binding_of(row))
+        """The configured source. A configuration the class refuses is a person's to fix."""
+        try:
+            return self._build(binding_of(row))
+        except ValueError as exc:
+            raise Rejected(str(exc)) from exc
 
     async def segments(self, row: Any) -> list[SegmentRef]:
         source = self.open(row)
@@ -131,7 +136,11 @@ class SourceDriver(IngestDriver):
         )
 
     async def _verify(self, row: Any) -> SetupVerdict:
-        verdict = await self.open(row).verify()
+        try:
+            source = self.open(row)
+        except Rejected as exc:
+            return SetupVerdict.waiting(str(exc))
+        verdict = await source.verify()
         return SetupVerdict(ready=verdict.ready, detail=verdict.detail, pending=tuple(verdict.pending))
 
     async def _choices(self, row: Any, field: str) -> list:

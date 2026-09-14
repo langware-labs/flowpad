@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import stat
 import tempfile
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Callable, Optional
 
 from flow_sdk.sources.errors import Unsupported
 
@@ -52,11 +52,10 @@ class Upload:
         self.tmp_path = tmp_path
         self.final_path = final_path
 
-    def commit(self) -> int:
+    def commit(self) -> os.stat_result:
         self.handle.close()
-        size = os.stat(self.tmp_path).st_size
         os.replace(self.tmp_path, self.final_path)
-        return size
+        return os.stat(self.final_path)
 
     def discard(self) -> None:
         try:
@@ -91,8 +90,8 @@ class Folder:
         return os.path.join(current, parts[-1])
 
     # ── reads ───────────────────────────────────────────────────────────────
-    def size(self, key: str) -> Optional[int]:
-        """The byte length of the regular file at ``key``; ``None`` when confirmed absent."""
+    def stat(self, key: str) -> Optional[os.stat_result]:
+        """The status of the regular file at ``key``; ``None`` when confirmed absent."""
         path = self._path(key)
         try:
             st = os.lstat(path)
@@ -104,17 +103,20 @@ class Folder:
             raise IsADirectoryError(path)
         if not stat.S_ISREG(st.st_mode):
             raise Unsupported(f"not a regular file: {key!r}")
-        return st.st_size
+        return st
 
-    def scan(self, prefix: str) -> list[tuple[str, int]]:
+    def scan(self, prefix: str, skip: Optional[Callable[[str], bool]] = None) -> list[tuple[str, os.stat_result]]:
         """Every regular file beneath the root whose key starts with ``prefix``, sorted by key.
-        Symlinks are never followed; in-progress writes and vanished entries are skipped."""
-        found: list[tuple[str, int]] = []
+        Symlinks are never followed; in-progress writes and vanished entries are skipped, and so
+        is any directory or file whose bare name ``skip`` refuses — pruned, never descended."""
+        found: list[tuple[str, os.stat_result]] = []
         for dirpath, dirnames, filenames in os.walk(self.root, followlinks=False):
-            dirnames[:] = sorted(d for d in dirnames if not os.path.islink(os.path.join(dirpath, d)))
+            dirnames[:] = sorted(
+                d for d in dirnames if not os.path.islink(os.path.join(dirpath, d)) and not (skip and skip(d))
+            )
             rel_dir = os.path.relpath(dirpath, self.root)
             for name in filenames:
-                if name.startswith(TMP_PREFIX) and name.endswith(TMP_SUFFIX):
+                if (name.startswith(TMP_PREFIX) and name.endswith(TMP_SUFFIX)) or (skip and skip(name)):
                     continue
                 key = name if rel_dir == "." else f"{rel_dir}/{name}".replace(os.sep, "/")
                 if not key.startswith(prefix):
@@ -124,7 +126,7 @@ class Folder:
                 except FileNotFoundError:
                     continue
                 if stat.S_ISREG(st.st_mode):
-                    found.append((key, st.st_size))
+                    found.append((key, st))
         found.sort()
         return found
 
@@ -163,7 +165,7 @@ class Folder:
             raise
         return Upload(handle, tmp, final)
 
-    def write(self, key: str, head: list[bytes]) -> int:
+    def write(self, key: str, head: list[bytes]) -> os.stat_result:
         """Write a stream that fit in memory in one step."""
         upload = self.begin_write(key, head)
         try:
