@@ -452,7 +452,10 @@ async def send_to_an_unknown_conversation_is_not_found(subject: Subject) -> None
 async def send_to_recipients_reports_the_conversation_it_landed_in(subject: Subject) -> None:
     assert subject.recipient is not None
     async with await _closing(subject) as s:
-        sent = await s.send(MessageData(text="hello", recipients=(subject.recipient,)))  # type: ignore[attr-defined]
+        try:
+            sent = await s.send(MessageData(text="hello", recipients=(subject.recipient,)))  # type: ignore[attr-defined]
+        except Unsupported:
+            return  # an addressing mode the source cannot perform is declared, never faked
         assert sent.data.conversation is not None
 
 

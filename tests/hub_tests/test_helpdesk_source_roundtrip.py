@@ -185,14 +185,15 @@ async def test_a_stranger_is_refused_by_the_pool_in_a_sentence(hub_session, bob_
     membership sentence, not a generic error. Exercised through the driver's
     hub seam with bob's token, since this instance is logged in as alice."""
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.ingest.drivers.helpdesk import _as_source_error
+    from flow_sdk.ingest.drivers import hub_refusal
+    from flow_sdk.ingest.health import SourceHealth, classify
 
     base = hub_session["base_url"]
     async with httpx.AsyncClient(timeout=10) as h:
         r = await h.get(f"{base}/api/v1/graph/project/{desk}/helpdesk_conversations", headers=_auth(bob_token))
     assert r.status_code in (401, 403), r.text
-    err = _as_source_error(HubError(r.status_code, r.json().get("message") or ""))
-    assert err.code == "not_a_member" and "member" in err.detail
+    err = hub_refusal(HubError(r.status_code, r.json().get("message") or ""), signed_in=True)
+    assert classify(err)[0] is SourceHealth.CONFIG_ERROR and "member" in str(err)
 
 
 # ── an Agent owns the desk ───────────────────────────────────────────────────

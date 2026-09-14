@@ -113,6 +113,7 @@ class SourceDriver(IngestDriver):
         outgoing: Optional[Outgoing] = None,
         outbound_spec: Optional[Callable[[Any], type]] = None,
         lift_cursor: Optional[Callable[[dict], Optional[str]]] = None,
+        choices: Optional[Callable[[Any, str], Awaitable[list]]] = None,
     ) -> None:
         self.source_cls = cls
         self.provider = cls.provider
@@ -132,7 +133,9 @@ class SourceDriver(IngestDriver):
         if not cls.reflects:
             self.channel_for = lambda row: cls.origin_kind_for(getattr(row, "config", None) or {})
         self.verify = self._verify if issubclass(cls, Verifiable) else None
-        self.choices = self._choices if issubclass(cls, Choosing) else None
+        # A field whose offer is APPLICATION state (the desks this instance adopted) is answered
+        # by the application; one the provider can list is answered by the source.
+        self.choices = choices or (self._choices if issubclass(cls, Choosing) else None)
 
     async def open(self, row: Any, *, persona: bool = False) -> Source:
         """The configured source. A configuration the class refuses is a person's to fix."""
@@ -282,12 +285,11 @@ class SourceDriver(IngestDriver):
             return
         try:
             profiles = await source.whoami()  # type: ignore[attr-defined]
+            if profiles:
+                identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
+                await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
         except Exception:  # noqa: BLE001 — identity is a nicety; it never fails what asked for it
-            logger.debug("[ingest] %s whoami failed", self.provider, exc_info=True)
-            return
-        if profiles:
-            identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
-            await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            logger.debug("[ingest] %s identity stamp failed", self.provider, exc_info=True)
 
     async def _choices(self, row: Any, field: str) -> list:
         from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415

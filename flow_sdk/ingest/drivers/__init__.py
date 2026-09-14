@@ -16,10 +16,10 @@ from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
-from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
+from flow_sdk.sources.providers.helpdesk import HelpdeskSource
 from flow_sdk.sources.providers.rss import RssSource
 from flow_sdk.sources.providers.slack import SlackSource
 from flow_sdk.sources.providers.teams import TeamsSource
@@ -175,9 +175,123 @@ def _teams_outbound_spec(_source):
     return TeamsMessageSpec
 
 
+
+class AppHub:
+    """The Flowpad hub as this process reaches it — the shared client's bearer, refresh and
+    local-privacy gate — with its failures in the contract's words a person can act on."""
+
+    async def get(self, entity_type, entity_id, action):
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+
+        try:
+            return await hub_get_or_raise(entity_type, entity_id, action)
+        except HubError as exc:
+            raise hub_refusal(exc, signed_in=bool(self.me())) from exc
+
+    async def post(self, entity_type, payload, entity_id, action):
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.sources.errors import Rejected  # noqa: PLC0415
+
+        try:
+            answer = await hub_post(entity_type, payload, entity_id, action)
+        except HubError as exc:
+            raise hub_refusal(exc, signed_in=bool(self.me())) from exc
+        if answer is None:
+            raise Rejected("Flowpad Cloud is not configured on this instance.")
+        return answer
+
+    def me(self) -> str:
+        """The logged-in hub user, or "" when signed out — the instance config's user pointer."""
+        try:
+            from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+            return str((get_user() or {}).get("id") or "")
+        except Exception:  # noqa: BLE001
+            return ""
+
+
+def hub_refusal(exc, *, signed_in: bool):
+    """A hub failure as the contract error that decides whether a desk keeps polling.
+
+    The hub answers 401 "Forbidden access" to a caller with no role on the target, deliberately
+    not distinguishing "no such desk" from "not a member" so existence does not leak: with a login
+    in hand that is the membership answer, without one it is the login.
+    """
+    from flow_sdk.sources.errors import AccessDenied, NotFound, Rejected, SourceUnavailable  # noqa: PLC0415
+
+    reason = str(getattr(exc, "reason", "") or "")
+    status = int(getattr(exc, "status_code", 0) or 0)
+    if status == 0:
+        if "not configured" in reason:
+            return Rejected(f"Flowpad Cloud is not configured on this instance ({reason}).")
+        return SourceUnavailable(f"the hub could not be reached: {reason}")
+    if status in (401, 403):
+        return AccessDenied("You are not a member of this desk, or it does not exist." if signed_in else "Log in to Flowpad Cloud to read this desk.")
+    if status == 404:
+        return NotFound("This desk no longer exists on the hub.")
+    if status == 429 or status >= 500:
+        return SourceUnavailable(f"the hub answered {status}: {reason}")
+    return Rejected(f"the hub refused the request ({status}): {reason}")
+
+
+def _helpdesk_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """A reply goes to the TICKET — the hub conversation id — which the hub threads by."""
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    ticket = str(to or "").strip() or str(thread_key or "").strip()
+    if not ticket:
+        raise ValueError("a help-desk reply needs the ticket's conversation id")
+    return MessageData(text=text, conversation=source.ticket_origin(ticket)), None
+
+
+def _helpdesk_outbound_spec(_source):
+    from flow_sdk.builtin.source_item import HelpdeskMessageSpec  # noqa: PLC0415
+
+    return HelpdeskMessageSpec
+
+
+async def _helpdesk_choices(_row, field):
+    """The desks this login can reach: the deployment's default desk and every desk adopted into a
+    local project. Application state, not the hub's — so the application answers. Typing an id
+    still works."""
+    from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
+    from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
+
+    if field != "desk_project_id":
+        return []
+    out: list = []
+    default = await resolve_helpdesk()
+    if default is not None:
+        out.append(Choice(id=default.project_id, name="Flowpad Support", detail="the deployment's default desk"))
+    try:
+        desks = await Helpdesk.get_all({})
+    except Exception:  # noqa: BLE001 — no adopted desks is not a failure
+        desks = []
+    for desk in desks or []:
+        queue = str(getattr(desk, "desk_project_id", "") or "").strip()
+        if queue and all(c.id != queue for c in out):
+            out.append(Choice(id=queue, name=str(getattr(desk, "display_name", "") or queue), detail="adopted desk"))
+    return out
+
+
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
 register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
-register_driver(HelpdeskDriver())
+register_driver(
+    SourceDriver(
+        HelpdeskSource,
+        kind="datasource.hub.helpdesk",
+        build=lambda binding: HelpdeskSource(binding, hub=AppHub()),
+        outgoing=_helpdesk_outgoing,
+        outbound_spec=_helpdesk_outbound_spec,
+        choices=_helpdesk_choices,
+        lift_cursor=lambda state: (
+            HelpdeskSource.resume_at(state["high_water"], state.get("boundary_ids") or []) if state.get("high_water") else None
+        ),
+    )
+)
 register_driver(AgentDriver())
 register_driver(AgentMailDriver())
 register_driver(CloudEmailDriver())
@@ -241,5 +355,4 @@ __all__ = [
     "GitDriver",
     "GmailDriver",
     "GoogleDriveDriver",
-    "HelpdeskDriver",
 ]
