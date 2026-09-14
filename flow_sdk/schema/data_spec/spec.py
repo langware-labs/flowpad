@@ -170,6 +170,38 @@ def to_authoring_form(t: Any) -> Any:
     raise ValueError(f"no authoring form for {t!r}")
 
 
+class Tagged:
+    """``Tagged[T]`` — a field holding a VALUE whose concrete class is restored by kind.
+
+    A dump adds ``spec_kind`` beside the value's fields; a load pops it, resolves the class
+    through the registry and validates the rest as that class, then Pydantic checks it against
+    ``T``. A dict without ``spec_kind`` validates as ``T`` itself, so ``Item(data={...})`` keeps
+    reading naturally. An unregistered class dumps without a tag and cannot be restored — that
+    is the point of registering.
+    """
+
+    def __class_getitem__(cls, item: Any) -> Any:
+        return Annotated[item, BeforeValidator(_by_kind), PlainSerializer(_with_kind, return_type=dict)]
+
+
+def _by_kind(value: Any) -> Any:
+    if not isinstance(value, dict) or "spec_kind" not in value:
+        return value
+    from flow_sdk.schema.data_spec._kinds import resolve_kind  # noqa: PLC0415 — registry import
+
+    rest = dict(value)
+    kind = rest.pop("spec_kind")
+    shape = resolve_kind(kind)
+    if shape is Any:
+        raise ValueError(f"unknown spec_kind {kind!r}: the class must be registered before its values are read")
+    return shape.model_validate(rest)
+
+
+def _with_kind(value: DataSpec, info: Any) -> dict:
+    dumped = value.model_dump(mode=info.mode)
+    return {"spec_kind": value.spec_kind, **dumped} if value.spec_kind else dumped
+
+
 #: A field that HOLDS a shape (a class). The validator reads the authoring
 #: form; the serializer emits it back, so JSON/YAML dumps stay compact. Declare
 #: it ``Optional[SpecType]`` — Pydantic short-circuits ``None`` OUTSIDE the
