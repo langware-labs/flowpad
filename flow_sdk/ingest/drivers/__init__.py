@@ -17,7 +17,6 @@ from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.drivers.helpdesk import HelpdeskDriver
-from flow_sdk.ingest.drivers.slack import SlackDriver
 from flow_sdk.ingest.drivers.teams import TeamsDriver
 from flow_sdk.ingest.drivers.telegram import TelegramDriver
 from flow_sdk.ingest.drivers.whatsapp import WhatsAppDriver
@@ -25,6 +24,7 @@ from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.rss import RssSource
+from flow_sdk.sources.providers.slack import SlackSource
 
 
 def _folder_origin(row):
@@ -47,6 +47,46 @@ def _folder_origin_id(row, ref: str) -> str:
     return f"folder:{row.id}:ino:{st.st_dev}:{st.st_ino}"
 
 
+
+async def _slack_credentials(row):
+    """This machine's Slack token — the BOT's, when we hold it.
+
+    The bot is who a Slack source should be: it posts as whoever the token is, and an inbound
+    message from the human reads as a stranger's — the thing that makes a reply addressable —
+    only when we are NOT that human. Falls back to the user token so an instance that connected
+    before the bot half was adopted keeps working, degraded rather than broken.
+    """
+    from pydantic import SecretStr  # noqa: PLC0415
+
+    from flow_sdk.core.oauth.provider_registry import SLACK, app_credentials_name, token_for  # noqa: PLC0415
+    from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+    bot = app_credentials_name(SLACK)
+    token = (await token_for(SLACK, name=bot) if bot else None) or await token_for(SLACK)
+    return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else Credentials()
+
+
+def _slack_outgoing(source, *, thread_key, to, text, subject="", in_reply_to=""):
+    """The legacy send arguments as a Slack message: ``to`` is the channel (a Slack thread key
+    is a bare ``ts`` and names none), and the thread it lands in is ``thread_key``. A subject has
+    no Slack equivalent."""
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    channel = str(to or "").strip()
+    if not channel:
+        raise ValueError("a slack send needs the channel id in `to`")
+    if not (text or "").strip():
+        raise ValueError("a slack send needs text")
+    thread = str(thread_key or "").strip() or str(in_reply_to or "").strip()
+    return MessageData(text=text, conversation=source.origin(thread, channel) if thread else source.channel_origin(channel))
+
+
+def _slack_outbound_spec(_source):
+    from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
+
+    return SlackMessageSpec
+
+
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
 register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
 register_driver(HelpdeskDriver())
@@ -66,7 +106,16 @@ register_driver(GoogleDriveDriver())
 register_driver(GoogleCloudStorageDriver())
 register_driver(GitDriver())
 register_driver(GmailDriver())
-register_driver(SlackDriver())
+register_driver(
+    SourceDriver(
+        SlackSource,
+        kind="datasource.api.slack",
+        credentials=_slack_credentials,
+        outgoing=_slack_outgoing,
+        outbound_spec=_slack_outbound_spec,
+        lift_cursor=lambda state: SlackSource.resume_after(state["last_ts"]) if state.get("last_ts") else None,
+    )
+)
 register_driver(TeamsDriver())
 register_driver(TelegramDriver())
 register_driver(WhatsAppDriver())
@@ -79,7 +128,6 @@ __all__ = [
     "GmailDriver",
     "GoogleDriveDriver",
     "HelpdeskDriver",
-    "SlackDriver",
     "TeamsDriver",
     "TelegramDriver",
     "WhatsAppDriver",

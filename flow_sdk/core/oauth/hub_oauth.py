@@ -205,7 +205,7 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
 
     Needed for providers with LOCAL consumers of the raw token: `git push`, the
     `gh` capability and the repo actions read `github_credentials` out of local
-    SOD, and `SlackDriver._token()` reads Slack's on every poll from the
+    SOD, and the slack source's credential resolver (`_slack_credentials`) reads Slack's on every poll from the
     request-less ingest poller. A token that exists only on the hub would leave
     all of those broken while the Connections tab claimed success.
 

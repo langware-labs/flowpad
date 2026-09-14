@@ -240,7 +240,7 @@ async def test_an_adopted_token_resolves_with_no_request_context(
 ):
     """`token_for` must answer for the BACKGROUND poller, not just a request.
 
-    Every consumer that matters runs outside a request: `SlackDriver._token()`
+    Every consumer that matters runs outside a request: the slack source's credential resolver (`_slack_credentials`)
     is called from the ingest poller on every tick, and `credential_for`'s first
     tier (`get_current_request_user_fresh`) is None there. Adoption writes under
     the REQUEST user, so a provider whose token is only reachable through that
