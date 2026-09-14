@@ -17,6 +17,29 @@ from flow_sdk.inbox.projection import (
 )
 
 
+class TestEnvelope:
+    """The bubble renders a message's header from `FlowMessage.envelope`; the projection
+    reads it from the item's payload, lifting a row the migration has not reached."""
+
+    def test_an_unmigrated_email_row_yields_its_header(self):
+        from flow_sdk.inbox.projection import _envelope_of
+
+        row = SimpleNamespace(
+            origin=None, data=None, provider="gmail", kind="content.message.email", segment_key="INBOX",
+            external_id="m1", name="Hi", author_external_id="ada@x.test", author_display="Ada",
+            recipients=["Bo <bo@x.test>"], occurred_at="2026-07-30T10:00:00+00:00",
+        )
+        envelope = _envelope_of(row, SimpleNamespace(channel="gmail", account_key="me@x.test"))
+        assert envelope.subject == "Hi" and envelope.sender.address == "ada@x.test"
+        assert [p.name for p in envelope.recipients] == ["Bo"] and envelope.sent_at.year == 2026
+
+    def test_a_feed_item_has_no_envelope(self):
+        from flow_sdk.inbox.projection import _envelope_of
+
+        row = SimpleNamespace(origin=None, data=None, provider="rss", kind="content.feed.item", segment_key="f", external_id="e")
+        assert _envelope_of(row, None) is None
+
+
 class TestNormalizeSubject:
     @pytest.mark.parametrize("raw", [
         "Q3 planning",

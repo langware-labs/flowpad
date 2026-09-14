@@ -117,6 +117,9 @@ class SourceItemSpec(DataSpec):
     conversation_id: Optional[str] = None
     message_id: Optional[str] = None
     segment_label: str = ""
+    #: Who else the message was addressed to, as the provider printed each one
+    #: (``"Ada <ada@x.io>"`` or a bare address). Not digested.
+    recipients: list[str] = []
     raw: Optional[dict] = None
 
     # ── the contract's value, lifted from the header above (``ingest/legacy_lift.py``) ──

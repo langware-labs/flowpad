@@ -18,6 +18,7 @@ plain namespace over a stored blob all lift the same way. No I/O.
 from __future__ import annotations
 
 from datetime import datetime
+from email.utils import getaddresses
 from typing import Any, Optional
 
 from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, UserProfile
@@ -49,11 +50,18 @@ def origin_of(source: Any, item: Any) -> CloudOrigin:
 def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
     """The typed payload the envelope's flat fields describe — nothing guessed, nothing added."""
     kind = _text(item, "kind")
+    email = kind.startswith(EMAIL_KIND)
+    people = _text(source, "account_key") or origin.namespace
+
+    def person(address: str, name: Optional[str]) -> UserProfile:
+        return UserProfile(
+            origin=CloudOrigin(kind=origin.kind, namespace=people, key=address),
+            name=name or None,
+            address=address if email else None,
+        )
+
     author = _text(item, "author_external_id")
-    sender = None
-    if author:
-        people = CloudOrigin(kind=origin.kind, namespace=_text(source, "account_key") or origin.namespace, key=author)
-        sender = UserProfile(origin=people, name=_verbatim(item, "author_display"))
+    sender = person(author, _verbatim(item, "author_display")) if author else None
     if not kind.startswith(MESSAGE_KIND):
         return FeedItemData(
             title=_verbatim(item, "name"),
@@ -69,8 +77,9 @@ def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
         sender=sender,
         sent_at=_when(item),
         in_reply_to=_beside(origin, _text(item, "reply_to_external_id")),
+        recipients=tuple(person(addr, name) for name, addr in getaddresses(getattr(item, "recipients", None) or ()) if addr),
     )
-    if kind.startswith(EMAIL_KIND):
+    if email:
         return EmailMessageData(subject=_verbatim(item, "name"), **fields)
     return MessageData(**fields)
 
