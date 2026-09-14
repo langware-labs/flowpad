@@ -134,4 +134,11 @@ describe('deployBlocker', () => {
 
     expect(deployBlocker(states)).toBe('repo');
   });
+
+  it('offers repo setup before the project link, which needs a repository to link', () => {
+    const states = deployReadiness({ ...ALL_GOOD, projectPublished: false, preflight: answered('not-in-repo') });
+
+    expect(deployBlocker(states)).toBe('repo');
+    expect(DEPLOY_STEP_IDS.indexOf('repo')).toBeLessThan(DEPLOY_STEP_IDS.indexOf('project'));
+  });
 });

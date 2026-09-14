@@ -6,21 +6,25 @@ import {
 /**
  * What has to be true before an agent can be deployed to the cloud, as data.
  *
- * The order and the membership of this list are not a UI choice — they mirror
- * the gates the backend actually runs, so a green checklist means the deploy
- * will get past them:
+ * The membership of this list is not a UI choice — it mirrors the gates the
+ * backend actually runs, so a green checklist means the deploy will get past
+ * them:
  *
  *   `cloud_deploy.py`         load_credentials().api_key  → "Cloud login required"
- *   `_publish_service.py:61`  project.remote is True      → PROJECT_NOT_PUBLISHED
  *   `_publish_service.py:80`  get_github_token(actor)     → GITHUB_NOT_CONNECTED
  *   `asset_publisher.py:39`   git repo + GitHub origin    → NOT_GIT_BACKED / ORIGIN_INVALID
+ *   `_publish_service.py:61`  project.remote is True      → PROJECT_NOT_PUBLISHED
  *   `asset_publisher.py:48`   branch aligned with remote  → BRANCH_AHEAD / BRANCH_DIVERGED
+ *
+ * The order is the order they can be FIXED in: the repo row comes before the
+ * project row because linking the project to the cloud needs a Git repository
+ * to link — offered first, "Link to cloud" is a button that cannot work.
  *
  * Pure and React-free on purpose: the mapping is the part worth pinning in a
  * test, and it stays pinnable only while it takes plain values in.
  */
 
-export type DeployStepId = 'cloud-login' | 'github' | 'project' | 'repo' | 'pushed';
+export type DeployStepId = 'cloud-login' | 'github' | 'repo' | 'project' | 'pushed';
 
 /**
  * `done`     — satisfied.
@@ -33,7 +37,7 @@ export type DeployStepId = 'cloud-login' | 'github' | 'project' | 'repo' | 'push
 export type DeployStepState = 'done' | 'todo' | 'pending' | 'checking' | 'blocked';
 
 /** Gate order. `deployBlocker` walks this, so it defines "the next thing to do". */
-export const DEPLOY_STEP_IDS = ['cloud-login', 'github', 'project', 'repo', 'pushed'] as const;
+export const DEPLOY_STEP_IDS = ['cloud-login', 'github', 'repo', 'project', 'pushed'] as const;
 
 export type DeployReadiness = Record<DeployStepId, DeployStepState>;
 
