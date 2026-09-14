@@ -30,6 +30,7 @@ traversal from the beginning, as the engine expects.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,6 +94,39 @@ def cached_path(root: Path, key: str) -> Optional[Path]:
     if not parts or ".." in parts:
         return None
     return root.joinpath(*(part.replace("\\", "_") for part in parts))
+
+
+#: Each cache index as last read, keyed by path and stamped ``(mtime, size)``: reflection asks
+#: for an origin twice per ref, and re-parsing an index of the whole drive per call is quadratic.
+_INDEX_CACHE: dict[Path, tuple[tuple[int, int], dict[str, str]]] = {}
+
+
+def cache_index_path(root: Path, provider: str) -> Path:
+    return root / f".{provider}-index.json"
+
+
+def read_cache_index(root: Path, provider: str) -> dict[str, str]:
+    """The cache's ``{path: key}`` index — empty when absent or unreadable. The atomic write moves
+    the stamp whenever the contents move, so the cached read cannot go stale."""
+    path = cache_index_path(root, provider)
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _INDEX_CACHE.get(path)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    try:
+        loaded = {str(rel): str(key) for rel, key in json.loads(path.read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    _INDEX_CACHE[path] = (stamp, loaded)
+    return loaded
+
+
+def write_cache_index(root: Path, provider: str, index: dict[str, str]) -> None:
+    atomic_write(cache_index_path(root, provider), json.dumps(index, indent=2, sort_keys=True).encode("utf-8"))
 
 
 def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
@@ -206,6 +240,7 @@ class SourceDriver(IngestDriver):
             cursor = None
             if cls.durable_cursor:
                 cursor = state.get("cursor") or (self._lift_cursor(state) if self._lift_cursor else None)
+            complete = cursor is None
             floor = iso_to_utc(view.window_start) if view.window_start else None
             if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
                 query = query.model_copy(update={"since": floor})
@@ -223,7 +258,7 @@ class SourceDriver(IngestDriver):
                     break
             carried = {"cursor": resume} if cls.durable_cursor and resume else {}
             if cls.reflects:
-                return await self._files(row, source, view, items, removed, moved, carried)
+                return await self._files(row, source, view, items, removed, moved, carried, complete=complete)
             return self._records(row, view, segment, items, removed, carried, floor)
 
     def _records(self, row: Any, view: SegmentCursorView, segment, items, removed, state: dict, floor) -> FetchResult:
@@ -244,39 +279,70 @@ class SourceDriver(IngestDriver):
             unchanged=not envelopes and not removed,
         )
 
-    async def _files(self, row: Any, source: Source, view: SegmentCursorView, items, removed, moved, state: dict) -> FetchResult:
-        """A reflecting source's files as refs. A local tree's refs are its own paths
-        (``ref_for``); a remote one's bytes are pulled through ``open`` into the row's cache first
-        (``cache_root``), and only what changed since the manifest is fetched."""
+    async def _files(self, row: Any, source: Source, view: SegmentCursorView, items, removed, moved, state: dict, *, complete: bool) -> FetchResult:
+        """A reflecting source's files as refs, diffed against the manifest the cursor carries.
+
+        A traversal from the beginning is ``complete``: a key it no longer lists is gone. A delta
+        traversal (resumed from a durable cursor) reports only what changed, so it merges into the
+        manifest and only what the source says it removed is gone. A local tree's refs are its own
+        paths (``ref_for``). A remote one's bytes are pulled through ``open`` into the row's cache
+        (``cache_root``), laid out along each file's ``path`` and indexed ``{path: key}`` beside
+        them — reflection is handed a ref, never a cursor, and names identity from that index.
+        """
         handle_of = source.handle_of if isinstance(source, StableHandle) else (lambda _item: "")
         by_key = {item.origin.key: item for item in items}
-        if self._cache_root is not None:
-            root = self._cache_root(row)
-            refused = [key for key in by_key if cached_path(root, key) is None]
+        root = self._cache_root(row) if self._cache_root is not None else None
+        placed: dict[str, str] = {}
+        known: dict[str, str] = {}
+        if root is not None:
+            placed = {key: getattr(item.data, "path", None) or key for key, item in by_key.items()}
+            refused = [key for key, rel in placed.items() if cached_path(root, rel) is None]
             if refused:
                 # Never a silent drop: a source that quietly reflected 40 of 45 objects reads as complete.
                 logger.info("[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused))
             for key in refused:
-                del by_key[key]
-            ref: Callable[[str], Optional[str]] = lambda key: str(path) if (path := cached_path(root, key)) else None  # noqa: E731
-        else:
-            assert self._ref_for is not None, f"{self.provider} reflects but names neither ref_for nor cache_root"
-            ref = lambda key: self._ref_for(source, key)  # noqa: E731
-        current = {key: [item.data.stable_dump(), handle_of(item)] for key, item in by_key.items()}
+                del by_key[key], placed[key]
+            known = {key: rel for rel, key in read_cache_index(root, self.provider).items()}
+
+        def ref(key: str, rel: Optional[str] = None) -> Optional[str]:
+            if root is None:
+                assert self._ref_for is not None, f"{self.provider} reflects but names neither ref_for nor cache_root"
+                return self._ref_for(source, key)
+            path = cached_path(root, rel if rel is not None else known.get(key, key))
+            return str(path) if path is not None else None
+
         previous = dict((view.state or {}).get("manifest") or {})
-        changed = [key for key, entry in current.items() if previous.get(key) != entry]
-        live = {entry[1] for entry in current.values() if entry[1]}
-        gone = [key for key, entry in previous.items() if key not in current and not (entry[1] and entry[1] in live)]
+        observed = {key: [item.data.stable_dump(), handle_of(item)] for key, item in by_key.items()}
+        changed = [key for key, entry in observed.items() if previous.get(key) != entry]
+        if complete:
+            current = observed
+            live = {entry[1] for entry in current.values() if entry[1]}
+            gone = [key for key, entry in previous.items() if key not in current and not (entry[1] and entry[1] in live)]
+        else:
+            current, gone = {**previous, **observed}, []
         gone.extend(origin.key for origin in removed)
-        if self._cache_root is not None:
-            await _pull(source, [(by_key[key], Path(ref(key))) for key in changed])
+        for key in gone:
+            current.pop(key, None)
+        renames = {ref(move.origin.key): ref(move.previous.key) for move in moved}
+        tombstones = [r for key in dict.fromkeys(gone) if (r := ref(key))]
+        if root is not None:
+            # The same key under a new path is a rename the source reported by name alone (a Drive
+            # rename keeps its fileId): identity travels, and the stale bytes leave the cache.
+            relocated = {key: known[key] for key in changed if key in known and known[key] != placed[key]}
+            renames.update({ref(key, placed[key]): ref(key) for key in relocated})
+            await _pull(source, [(by_key[key], Path(ref(key, placed[key]))) for key in changed])
+            for old in relocated.values():
+                if (stale := cached_path(root, old)) is not None:
+                    stale.unlink(missing_ok=True)
+            kept = {key: rel for key, rel in known.items() if key in current}
+            write_cache_index(root, self.provider, {rel: key for key, rel in {**kept, **placed}.items()})
         return FetchResult(
-            refs=[r for key in changed if (r := ref(key))],
-            tombstones=[r for key in dict.fromkeys(gone) if (r := ref(key))],
-            renames={ref(move.origin.key): ref(move.previous.key) for move in moved},
+            refs=[r for key in changed if (r := ref(key, placed.get(key)))],
+            tombstones=tombstones,
+            renames=renames,
             next_state={**state, "manifest": current},
             high_water=str(len(current)),
-            unchanged=not changed and not gone and not moved,
+            unchanged=not changed and not gone and not renames,
         )
 
     async def send(
@@ -392,4 +458,14 @@ async def _pull(source: Source, wanted: list) -> None:
     await asyncio.gather(*(one(item, path) for item, path in wanted))
 
 
-__all__ = ["DELETE_AT", "DOWNLOAD_CONCURRENCY", "ROOT_SEGMENT", "SourceDriver", "binding_of", "cached_path"]
+__all__ = [
+    "DELETE_AT",
+    "DOWNLOAD_CONCURRENCY",
+    "ROOT_SEGMENT",
+    "SourceDriver",
+    "binding_of",
+    "cache_index_path",
+    "cached_path",
+    "read_cache_index",
+    "write_cache_index",
+]

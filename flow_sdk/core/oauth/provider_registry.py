@@ -249,8 +249,8 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # Google's "Desktop app" client type is exactly this grant: authorize in
         # the browser, redirect to a loopback port, exchange with PKCE.
         kind=OAuthFlowKind.LOOPBACK,
-        # Read-only Drive and read-only Storage — what `GoogleDriveDriver` and
-        # the `gcs` source ask for. Listed here AND in each source manifest
+        # Read-only Drive and read-only Storage — what the `gdrive` and
+        # `gcs` sources ask for. Listed here AND in each source manifest
         # because this is what the consent screen requests while the manifest is what
         # the source declares it needs; the verify path asserts the granted set covers
         # the requested one.

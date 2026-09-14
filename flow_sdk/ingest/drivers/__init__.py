@@ -10,15 +10,15 @@ from pathlib import Path
 
 from flow_sdk.ingest.agent_transport import HarnessWorker
 from flow_sdk.ingest.driver import register_driver
-from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
-from flow_sdk.ingest.source_driver import SourceDriver
+from flow_sdk.ingest.source_driver import SourceDriver, read_cache_index
 from flow_sdk.sources.providers.agent import AgentSendData, AgentSource
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agentmail import AgentMailSource
 from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.providers.gcs import GcsSource
+from flow_sdk.sources.providers.gdrive import DriveSource
 from flow_sdk.sources.providers.gmail import GmailSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
@@ -75,6 +75,22 @@ def _gcs_origin_id(row, ref: str) -> str:
 
     rel = Path(ref).resolve().relative_to(_cache_root(row))
     return f"gcs:{GcsSource.namespace_for(SourceBinding(config=row.config or {}))}/{rel.as_posix()}"
+
+
+def _indexed_origin_id(prefix: str):
+    """``<prefix>:<key>`` for a cached file, read out of the index the bridge keeps beside the
+    cache — a key the provider assigns (Drive's ``fileId``) survives rename, move and content
+    replacement, which neither a path nor an inode can promise."""
+
+    def origin_id(row, ref: str) -> str:
+        root = _cache_root(row)
+        rel = Path(ref).resolve().relative_to(root).as_posix()
+        key = read_cache_index(root, str(row.provider)).get(rel)
+        if not key:
+            raise KeyError(rel)  # reflection falls back to the path
+        return f"{prefix}:{key}"
+
+    return origin_id
 
 
 def _connection_token(provider: str):
@@ -480,7 +496,17 @@ register_driver(
         origin_id_for=_folder_origin_id,
     )
 )
-register_driver(GoogleDriveDriver())
+register_driver(
+    SourceDriver(
+        DriveSource,
+        kind="datasource.fs.gdrive",
+        credentials=_connection_token("google"),
+        cache_root=_cache_root,
+        origin_for=_cache_origin,
+        origin_id_for=_indexed_origin_id("gdrive"),
+        lift_cursor=lambda state: DriveSource.changes_from(state["page_token"]) if state.get("page_token") else None,
+    )
+)
 register_driver(
     SourceDriver(
         GcsSource,
@@ -546,5 +572,4 @@ register_driver(
 
 __all__ = [
     "GitDriver",
-    "GoogleDriveDriver",
 ]
