@@ -92,6 +92,15 @@ def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: 
     )
 
 
+async def _single_segment(source: Source) -> str:
+    """The key of a source's one segment, else ``root``."""
+    if isinstance(source, Segmented):
+        refs = await source.segments()
+        if len(refs) == 1:
+            return refs[0].key
+    return ROOT_SEGMENT
+
+
 async def _persona_of(row: Any) -> Persona:
     from flow_sdk.inbox.sender_identity import sender_identity  # noqa: PLC0415
 
@@ -134,6 +143,11 @@ class SourceDriver(IngestDriver):
             self.outbound_spec = outbound_spec
         if not cls.reflects:
             self.channel_for = lambda row: cls.origin_kind_for(getattr(row, "config", None) or {})
+        if hasattr(cls, "find_reply"):
+            # A transport that can look one response up by what it answers (Gmail's In-Reply-To
+            # scan): the caller of a send waits on it instead of backfilling the whole mailbox.
+            self.find_reply = self._find_reply
+            self.wait_for_reply = self._wait_for_reply
         self.verify = self._verify if issubclass(cls, Verifiable) else None
         # A field whose offer is APPLICATION state (the desks this instance adopted) is answered
         # by the application; one the provider can list is answered by the source.
@@ -262,16 +276,28 @@ class SourceDriver(IngestDriver):
         the copy reads as ours."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
 
-        segment = ROOT_SEGMENT
-        if isinstance(source, Segmented):
-            refs = await source.segments()
-            segment = refs[0].key if len(refs) == 1 else segment
+        segment = await _single_segment(source)
         try:
             await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider, segment_key=segment)])
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
             return False
         return True
+
+    async def _find_reply(self, row: Any, external_id: str) -> Any:
+        source = await self.open(row)
+        item = await source.find_reply(external_id)  # type: ignore[attr-defined]
+        if item is None:
+            return None
+        return envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=await _single_segment(source))
+
+    async def _wait_for_reply(self, row: Any, external_id: str) -> Any:
+        """Look again until the response exists. Each look opens a fresh mailbox snapshot; the
+        caller owns the deadline, so there is no second timeout or sleep here to disagree with it."""
+        while True:
+            reply = await self._find_reply(row, external_id)
+            if reply is not None:
+                return reply
 
     async def _verify(self, row: Any) -> SetupVerdict:
         try:

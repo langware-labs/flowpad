@@ -13,12 +13,12 @@ from flow_sdk.ingest.drivers.agent import AgentDriver
 from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.drivers.git import GitDriver
-from flow_sdk.ingest.drivers.gmail import GmailDriver
 from flow_sdk.ingest.source_driver import SourceDriver
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agentmail import AgentMailSource
 from flow_sdk.sources.providers.cloud_email import CloudEmailSource
 from flow_sdk.sources.providers.folder import WatchedFolderSource
+from flow_sdk.sources.providers.gmail import GmailSource
 from flow_sdk.sources.providers.hackernews import HackerNewsSource
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
 from flow_sdk.sources.providers.rss import RssSource
@@ -370,6 +370,30 @@ def _cloud_email_config(row):
     return {"agent_id": agent} if agent else {}
 
 
+
+def _env_secret(env_name: str, *, value_key: str, compact: bool = False):
+    """A resolver for a secret the operator keeps in the environment (``GMAIL_APP_PASSWORD``). The
+    APPLICATION reads the environment; the source only ever sees the credential. ``compact`` drops
+    presentation whitespace — Google shows app passwords in four spaced groups."""
+
+    async def resolve(_row):
+        from pydantic import SecretStr  # noqa: PLC0415
+
+        from flow_sdk.sources.credentials import AuthShape, Credentials  # noqa: PLC0415
+
+        raw = str(os.environ.get(env_name) or "")
+        value = "".join(raw.split()) if compact else raw.strip()
+        return Credentials(shape=AuthShape.ENV, values={value_key: SecretStr(value)}) if value else Credentials()
+
+    return resolve
+
+
+def _gmail_config(row):
+    """The mailbox address: the row's config wins (so aliases are explicit), else ``GMAIL_ADDRESS``."""
+    address = str((row.config or {}).get("address") or os.environ.get("GMAIL_ADDRESS") or "").strip()
+    return {"address": address} if address else {}
+
+
 register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
 register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
 register_driver(
@@ -420,7 +444,18 @@ register_driver(
 register_driver(GoogleDriveDriver())
 register_driver(GoogleCloudStorageDriver())
 register_driver(GitDriver())
-register_driver(GmailDriver())
+register_driver(
+    SourceDriver(
+        GmailSource,
+        kind="datasource.api.gmail",
+        credentials=_env_secret("GMAIL_APP_PASSWORD", value_key="app_password", compact=True),
+        configure=_gmail_config,
+        outgoing=_mail_outgoing,
+        lift_cursor=lambda state: (
+            GmailSource.resume_at(state["uid_validity"], state.get("last_uid") or 0) if state.get("uid_validity") else None
+        ),
+    )
+)
 register_driver(
     SourceDriver(
         SlackSource,
@@ -464,6 +499,5 @@ register_driver(
 __all__ = [
     "AgentDriver",
     "GitDriver",
-    "GmailDriver",
     "GoogleDriveDriver",
 ]
