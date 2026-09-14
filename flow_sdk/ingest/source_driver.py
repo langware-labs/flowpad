@@ -29,10 +29,13 @@ traversal from the beginning, as the engine expects.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest.driver import (
     FetchResult,
     IngestDriver,
@@ -65,6 +68,9 @@ ROOT_SEGMENT = "root"
 
 _TRAITS = ("stamps_identity", "open_inbound", "identity_config_key", "connection", "attention_poll_seconds", "segment_budget")
 _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
+#: Remote objects pulled at once into a cache. Small on purpose: each is held whole in memory
+#: before its atomic write, so the gate bounds peak RSS as much as sockets.
+DOWNLOAD_CONCURRENCY = 4
 
 #: ``(row) -> Credentials`` — what this provider's source reads with.
 CredentialResolver = Callable[[Any], Awaitable[Credentials]]
@@ -77,6 +83,16 @@ def _when(item: Any) -> Any:
     """The event time an item's payload reports, if any — the window, the order and the
     high-water read it."""
     return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
+
+
+def cached_path(root: Path, key: str) -> Optional[Path]:
+    """Where a remote object's bytes land under ``root``, or ``None`` when its key cannot be a
+    path. A key is provider input and may hold ``..`` or only separators: refused where it
+    meets the local filesystem, never coerced into a guess."""
+    parts = [part for part in key.split("/") if part not in ("", ".")]
+    if not parts or ".." in parts:
+        return None
+    return root.joinpath(*(part.replace("\\", "_") for part in parts))
 
 
 def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
@@ -125,6 +141,7 @@ class SourceDriver(IngestDriver):
         lift_cursor: Optional[Callable[[dict], Optional[str]]] = None,
         choices: Optional[Callable[[Any, str], Awaitable[list]]] = None,
         configure: Optional[Callable[[Any], dict]] = None,
+        cache_root: Optional[Callable[[Any], Path]] = None,
     ) -> None:
         self.source_cls = cls
         self.provider = cls.provider
@@ -135,6 +152,7 @@ class SourceDriver(IngestDriver):
         self._outgoing = outgoing
         self._lift_cursor = lift_cursor
         self._configure = configure
+        self._cache_root = cache_root
         for trait in _TRAITS:
             setattr(self, trait, getattr(cls, trait))
         self.origin_for = origin_for
@@ -205,7 +223,7 @@ class SourceDriver(IngestDriver):
                     break
             carried = {"cursor": resume} if cls.durable_cursor and resume else {}
             if cls.reflects:
-                return self._files(source, view, items, removed, moved, carried)
+                return await self._files(row, source, view, items, removed, moved, carried)
             return self._records(row, view, segment, items, removed, carried, floor)
 
     def _records(self, row: Any, view: SegmentCursorView, segment, items, removed, state: dict, floor) -> FetchResult:
@@ -226,19 +244,35 @@ class SourceDriver(IngestDriver):
             unchanged=not envelopes and not removed,
         )
 
-    def _files(self, source: Source, view: SegmentCursorView, items, removed, moved, state: dict) -> FetchResult:
-        assert self._ref_for is not None, f"{self.provider} reflects but names no ref_for"
+    async def _files(self, row: Any, source: Source, view: SegmentCursorView, items, removed, moved, state: dict) -> FetchResult:
+        """A reflecting source's files as refs. A local tree's refs are its own paths
+        (``ref_for``); a remote one's bytes are pulled through ``open`` into the row's cache first
+        (``cache_root``), and only what changed since the manifest is fetched."""
         handle_of = source.handle_of if isinstance(source, StableHandle) else (lambda _item: "")
-        current = {item.origin.key: [item.data.stable_dump(), handle_of(item)] for item in items}
+        by_key = {item.origin.key: item for item in items}
+        if self._cache_root is not None:
+            root = self._cache_root(row)
+            refused = [key for key in by_key if cached_path(root, key) is None]
+            if refused:
+                # Never a silent drop: a source that quietly reflected 40 of 45 objects reads as complete.
+                logger.info("[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused))
+            for key in refused:
+                del by_key[key]
+            ref: Callable[[str], Optional[str]] = lambda key: str(path) if (path := cached_path(root, key)) else None  # noqa: E731
+        else:
+            assert self._ref_for is not None, f"{self.provider} reflects but names neither ref_for nor cache_root"
+            ref = lambda key: self._ref_for(source, key)  # noqa: E731
+        current = {key: [item.data.stable_dump(), handle_of(item)] for key, item in by_key.items()}
         previous = dict((view.state or {}).get("manifest") or {})
         changed = [key for key, entry in current.items() if previous.get(key) != entry]
         live = {entry[1] for entry in current.values() if entry[1]}
         gone = [key for key, entry in previous.items() if key not in current and not (entry[1] and entry[1] in live)]
         gone.extend(origin.key for origin in removed)
-        ref = lambda key: self._ref_for(source, key)  # noqa: E731
+        if self._cache_root is not None:
+            await _pull(source, [(by_key[key], Path(ref(key))) for key in changed])
         return FetchResult(
-            refs=[ref(key) for key in changed],
-            tombstones=[ref(key) for key in dict.fromkeys(gone)],
+            refs=[r for key in changed if (r := ref(key))],
+            tombstones=[r for key in dict.fromkeys(gone) if (r := ref(key))],
             renames={ref(move.origin.key): ref(move.previous.key) for move in moved},
             next_state={**state, "manifest": current},
             high_water=str(len(current)),
@@ -344,4 +378,18 @@ class SourceDriver(IngestDriver):
         return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
 
 
-__all__ = ["DELETE_AT", "ROOT_SEGMENT", "SourceDriver", "binding_of"]
+async def _pull(source: Source, wanted: list) -> None:
+    """Each ``(item, path)``'s bytes, through the source's ``open``, atomically into place — a
+    pass that dies mid-download never leaves a half file for the indexer to type."""
+    gate = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+
+    async def one(item: Any, path: Path) -> None:
+        async with gate:
+            async with source.open(item) as chunks:  # type: ignore[attr-defined]
+                content = b"".join([chunk async for chunk in chunks])
+            atomic_write(path, content)
+
+    await asyncio.gather(*(one(item, path) for item, path in wanted))
+
+
+__all__ = ["DELETE_AT", "DOWNLOAD_CONCURRENCY", "ROOT_SEGMENT", "SourceDriver", "binding_of", "cached_path"]
