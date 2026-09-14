@@ -48,12 +48,13 @@ export interface DeploymentTarget {
 /**
  * Where this record's truth lives — the cloud resource being placed.
  *
- * The same value object the ingest side uses (`flow_sdk/builtin/cloud_origin.py`):
- * secret-free, no behaviour, just a pointer at a mutable object in someone
- * else's system. `external_id` is the ComputeNode typeid for a node-backed
- * placement, or the provider's own resource name for an inventoried one.
+ * Not a `CloudOrigin` (a record identity has a key from birth): a placement exists
+ * before it is placed, so `external_id` stays empty until a node is allocated. Twin of
+ * `PlacementOrigin` in `flow_sdk/builtin/deployment.py`. `external_id` is the ComputeNode
+ * typeid for a node-backed placement, or the provider's own resource name for an
+ * inventoried one.
  */
-export interface CloudOrigin {
+export interface PlacementOrigin {
   kind: string;
   provider: string;
   external_id: string;
@@ -73,7 +74,7 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  origin?: CloudOrigin | null;
+  origin?: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
@@ -104,7 +105,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  origin: CloudOrigin | null;
+  origin: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
