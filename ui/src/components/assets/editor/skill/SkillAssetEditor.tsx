@@ -61,18 +61,11 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
   // Scalar so it's stable across identity-only skill ref churn; dirty-guarded.
   const reloadKey = entityReloadKey((skill as { updated_date?: unknown } | undefined)?.updated_date);
 
-  // Stable across metadata updates (same skillKey ⇒ same SKILL.md path) so the
-  // editor doesn't re-download the file on every eval flip.
-  // Keyed on the STABLE skillKey only — `skill.doc` mints a fresh FrontMatterFsRef
-  // on every access, so including the (also per-render) `fsRef` here would churn
-  // editorRef's identity every render and reload the MarkdownEditor. skillRef
-  // holds the live skill; fsRef is stable for a given SKILL.md path anyway.
+  // The URL-selected occurrence owns the bytes. An Entity may describe another
+  // same-ID occurrence, so its primary doc must never replace this route ref.
   const editorRef = useMemo(
-    // Same guard as Skill.doc: a file-valued ref (already .../SKILL.md) must not
-    // get the main file appended again, or the download 404s on SKILL.md/SKILL.md.
-    () => skillRef.current?.doc ?? (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [skillKey],
+    () => fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md'),
+    [fsRef],
   );
 
   const onDelete = useCallback(async () => {
@@ -165,12 +158,9 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
         ),
       },
     ];
-    // Depend on the stable skillKey ONLY (not editorRef/skill) — the host can
-    // hand a fresh fsRef each render, and including it here would rebuild the tab
-    // array and remount the panels on every render. skillRef/editorRef are
-    // snapshotted at first build; both are stable for a given SKILL.md.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skillKey]);
+    // Rebuild for a new identity or selected occurrence so Usage keeps the
+    // route-selected file even when two copies share an entity ID.
+  }, [skillKey, editorRef]);
 
   return (
     <MarkdownEditor

@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )

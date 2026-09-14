@@ -1835,6 +1835,10 @@ msgstr "already running"
 #~ msgid "Already signed in elsewhere? Check again"
 #~ msgstr "Already signed in elsewhere? Check again"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Already signed in, launch sandbox"
+msgstr "Already signed in, launch sandbox"
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -2376,6 +2380,10 @@ msgstr "Attach this session's transcript"
 msgid "Attached asset types"
 msgstr "Attached asset types"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Attached assets"
+msgstr "Attached assets"
+
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr "Attached channels"
@@ -2421,6 +2429,10 @@ msgstr "Authentication"
 msgid "authored"
 msgstr "authored"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorization code"
+msgstr "Authorization code"
+
 #: src/components/connections-manager.tsx
 msgid "Authorization code — you approve in the browser and come back"
 msgstr "Authorization code — you approve in the browser and come back"
@@ -2432,6 +2444,10 @@ msgstr "Authorization code with PKCE, redirected back to this machine"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "Authorization failed or was denied. Click Retry to try again."
+
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Authorize connection"
+msgstr "Authorize connection"
 
 #: src/i18n/pref-labels.ts
 msgid "Auto Index"
@@ -2994,6 +3010,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -3695,6 +3712,10 @@ msgstr "Close"
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
 
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all"
+msgstr "Close all"
+
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All"
 msgstr "Close All"
@@ -3714,6 +3735,10 @@ msgstr "Close all {0} tabs in this project"
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
 msgstr "Close All But This"
+
+#: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
+msgid "Close all side tabs"
+msgstr "Close all side tabs"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
@@ -4102,6 +4127,7 @@ msgstr "Confirm"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
@@ -4178,6 +4204,7 @@ msgstr "Connecting"
 
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -4759,6 +4786,10 @@ msgstr "Could not load your token plan."
 msgid "Could not open {0}"
 msgstr "Could not open {0}"
 
+#: src/navigation/NavigationActions.ts
+msgid "Could not open link"
+msgstr "Could not open link"
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "Could not open skill"
@@ -5045,6 +5076,10 @@ msgstr "Could not use {0}"
 msgid "Could not verify {0}"
 msgstr "Could not verify {0}"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Could not verify available assets."
+msgstr "Could not verify available assets."
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
@@ -5054,8 +5089,12 @@ msgid "Couldn't close the project's tabs"
 msgstr "Couldn't close the project's tabs"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Couldn't finish preparing your sandbox"
-msgstr "Couldn't finish preparing your sandbox"
+#~ msgid "Couldn't finish preparing your sandbox"
+#~ msgstr "Couldn't finish preparing your sandbox"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox."
+msgstr "Couldn't finish preparing your sandbox."
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
@@ -8022,12 +8061,20 @@ msgid "Flowpad Assistant"
 msgstr "Flowpad Assistant"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
-msgstr "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+msgid "Flowpad Assistant — click to browse the assets available to this worker."
+msgstr "Flowpad Assistant — click to browse the assets available to this worker."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
-msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+#~ msgstr "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+msgstr "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
+#~ msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Flowpad Assistant project not available."
@@ -9939,7 +9986,6 @@ msgstr "Launch {0}?"
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
-#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
@@ -9947,6 +9993,10 @@ msgstr "Launch sandbox"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Launch workspace"
 msgstr "Launch workspace"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launching runs the steps below against your account."
+msgstr "Launching runs the steps below against your account."
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -13055,6 +13105,10 @@ msgstr "Open analysis"
 msgid "Open as a tab"
 msgstr "Open as a tab"
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open authorization page"
+msgstr "Open authorization page"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
@@ -13159,6 +13213,11 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Open in browser"
+msgstr "Open in browser"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Open in Data sources"
 msgstr "Open in Data sources"
@@ -13189,7 +13248,6 @@ msgid "Open in Files"
 msgstr "Open in Files"
 
 #: src/components/conversation/AttachmentChip.tsx
-#: src/components/webapp-viewer.tsx
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
@@ -13369,6 +13427,10 @@ msgstr "Open the project"
 msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 msgstr "Open the project and use \"Link to cloud\" to finish setting it up."
 
+#: src/components/oauth/OAuthCodeFlowModal.tsx
+msgid "Open the provider, approve access, then paste the authorization code shown there."
+msgstr "Open the provider, approve access, then paste the authorization code shown there."
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "Open the rendered index.md."
@@ -13377,6 +13439,7 @@ msgstr "Open the rendered index.md."
 msgid "Open the repository"
 msgstr "Open the repository"
 
+#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "Open the sandbox"
@@ -14178,8 +14241,8 @@ msgid "Preparing your workspace…"
 msgstr "Preparing your workspace…"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Preparing…"
-msgstr "Preparing…"
+#~ msgid "Preparing…"
+#~ msgstr "Preparing…"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
@@ -14336,6 +14399,7 @@ msgstr "Project Agents (.claude/agents/)"
 msgid "Project Artifacts"
 msgstr "Project Artifacts"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 msgid "Project assets"
@@ -15040,6 +15104,7 @@ msgstr "referenced but not in entities table"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Refresh"
@@ -17447,6 +17512,14 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Sign In"
+msgstr "Sign In"
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in & launch"
+#~ msgstr "Sign in & launch"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "Sign in first, then this source can fund a run."
@@ -17474,6 +17547,10 @@ msgstr "Sign in to Flowpad"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr "Sign in to FlowPad Hub first — approving a machine binds it to your account."
+
+#: src/pages/entry/LaunchLanding.tsx
+#~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
+#~ msgstr "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -17570,6 +17647,10 @@ msgstr "Signed out"
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
 msgstr "Signing in"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
+msgstr "Signing in opens a window on top of this page — you stay right here — then runs the steps below."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
@@ -18963,6 +19044,10 @@ msgstr "The stored API key for this provider is removed from this machine. You c
 msgid "The tab content could not be prepared."
 msgstr "The tab content could not be prepared."
 
+#: src/navigation/NavigationActions.ts
+msgid "The terminal is not ready yet"
+msgstr "The terminal is not ready yet"
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -19196,6 +19281,10 @@ msgstr "This link does not point at a sandbox."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no available viewer"
+msgstr "This link has no available viewer"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -20387,6 +20476,10 @@ msgstr "Used assets"
 msgid "Used by"
 msgstr "Used by"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used in transcript"
+msgstr "Used in transcript"
+
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -21030,8 +21123,8 @@ msgid "WorldView"
 msgstr "WorldView"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Would you like to launch a sandbox for this repository?"
-msgstr "Would you like to launch a sandbox for this repository?"
+#~ msgid "Would you like to launch a sandbox for this repository?"
+#~ msgstr "Would you like to launch a sandbox for this repository?"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
@@ -21247,8 +21340,12 @@ msgid "Your questions"
 msgstr "Your questions"
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "Your sandbox is ready"
-msgstr "Your sandbox is ready"
+#~ msgid "Your sandbox is ready"
+#~ msgstr "Your sandbox is ready"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready."
+msgstr "Your sandbox is ready."
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"

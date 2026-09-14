@@ -27,17 +27,13 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
+from flow_sdk.assets.worker_inventory.opencode import SKILLS_SUBDIR as SKILLS_SUBDIR
+from flow_sdk.assets.worker_inventory.opencode import add_dir_contributions
+
 logger = logging.getLogger(__name__)
 
 CONFIG_SCHEMA_URL = "https://opencode.ai/config.json"
 CONFIG_FILENAME = "opencode.json"
-
-# opencode discovers skills from any directory listed in ``skills.paths`` by
-# scanning recursively for ``**/SKILL.md``. Laying them under ``.opencode/skills``
-# inside the process assets dir keeps the on-disk shape recognisable to a human
-# reading the process folder.
-SKILLS_SUBDIR = Path(".opencode") / "skills"
-
 
 def opencode_config_path_for_process(process_id: str) -> Path:
     """Where this process's generated config lives."""
@@ -81,68 +77,6 @@ def build_config(
     return config
 
 
-def add_dir_contributions(add_dirs: "Sequence[str | Path] | None") -> tuple[list[str], list[str]]:
-    """``(instruction_files, skill_paths)`` contributed by mounted roots.
-
-    Every other vendor receives these roots as ``--add-dir``; opencode has no
-    such flag, so without this they are carried to the argv builder and dropped
-    — which is why ``load_flowpad_assistant`` and a project's context folders
-    never reached an opencode worker.
-
-    What goes on ``skills.paths`` is each CONTAINER of skill folders, never the
-    root — measured against opencode 1.18.25: a config listing a root whose
-    skills live in ``<root>/.claude/skills/<name>/`` finds NOTHING, while
-    listing ``<root>/.claude/skills`` finds all of them. Its recursive scan does
-    not descend into dot-directories, which is exactly where every harness keeps
-    its skills. A root that holds skill folders directly is listed as-is.
-
-    ``AGENTS.md`` at a root is added when it exists — opencode reads
-    ``instructions`` entries eagerly and a missing file aborts the whole turn
-    with ``BadResource`` before any model call.
-
-    Results are de-duplicated in order: callers pass the process assets dir
-    alongside ``resolved_add_dirs``, which already contains it.
-    """
-    from flow_sdk.fs_store.indexer.functions.skill import folder_is_skill  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import WORKER_PREFIX  # noqa: PLC0415
-
-    # Where a harness keeps skills inside a mounted root. Derived from the ONE
-    # harness->dot-dir map so a fifth vendor (or a moved prefix) is picked up
-    # here automatically; one mount may serve several vendors.
-    containers = [
-        SKILLS_SUBDIR,
-        *(Path(prefix) / "skills" for prefix in sorted(set(WORKER_PREFIX.values()))),
-        Path("skills"),
-    ]
-    instructions: list[str] = []
-    skills: list[str] = []
-    for raw in add_dirs or []:
-        if not raw:
-            continue
-        directory = Path(raw)
-        try:
-            if not directory.is_dir():
-                continue
-            found_container = False
-            for relative in containers:
-                container = directory / relative
-                if container.is_dir():
-                    skills.append(str(container))
-                    found_container = True
-            # A root that IS a skills container rather than one that holds a
-            # harness dot-dir. Checked only when no container matched: a root
-            # with ``.claude/skills`` practically never also holds bare skills,
-            # and this scan is the expensive one.
-            if not found_container and any(
-                folder_is_skill(child) for child in directory.iterdir() if child.is_dir()
-            ):
-                skills.append(str(directory))
-            agents_md = directory / "AGENTS.md"
-            if agents_md.is_file():
-                instructions.append(str(agents_md))
-        except OSError:
-            continue
-    return list(dict.fromkeys(instructions)), list(dict.fromkeys(skills))
 
 
 def write_process_config(

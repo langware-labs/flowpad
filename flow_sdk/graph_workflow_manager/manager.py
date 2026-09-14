@@ -931,8 +931,8 @@ class GraphWorkflowManager:
         agent_id = agent_ref(node)
         if not agent_id:
             return {}
+        from flow_sdk.assets.types.subagent import parse_subagent_markdown
         from flow_sdk.builtin.subagent import SubAgent
-        from flow_sdk.fs_store.indexer.functions.subagent import parse_subagent_markdown
 
         entity = await SubAgent.get_by_id(agent_id)
         if entity is None or not entity.asset_ref:

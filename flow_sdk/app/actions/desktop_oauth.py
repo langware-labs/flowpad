@@ -82,6 +82,8 @@ class DesktopOAuthSession:
         self.redirect_uri = redirect_uri
         self.user_id = user_id
         self.provider = provider
+        self.client_id: Optional[str] = None
+        self.exchange_started = False
         # Loopback flow fields (Anthropic)
         self.callback_code: Optional[str] = None
         self.callback_state: Optional[str] = None
@@ -337,8 +339,20 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
         )
 
     state = secrets.token_urlsafe(32)
-    callback_port = DesktopOAuthSession._find_free_port()
-    redirect_uri = f"http://localhost:{callback_port}/callback"
+    from flow_sdk.compute.providers.compute_provider import sandbox_public_url
+    from flow_sdk.instance_settings.runtime import own_sandbox_id
+
+    sandbox_id = own_sandbox_id() if (provider.sandbox_client_id or provider.manual_redirect_uri) else None
+    manual = bool(sandbox_id and provider.manual_redirect_uri)
+    callback_port = None if sandbox_id else DesktopOAuthSession._find_free_port()
+    redirect_uri = (
+        sandbox_public_url(9007, sandbox_id) + "/auth/oauth_callback"
+        if sandbox_id else f"http://localhost:{callback_port}/callback"
+    )
+    if manual:
+        redirect_uri = provider.manual_redirect_uri
+    elif sandbox_id:
+        client_id = provider.sandbox_client_id
 
     session = DesktopOAuthSession(
         state=state,
@@ -347,14 +361,18 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
         user_id=user_id,
         provider=provider.name,
     )
+    session.client_id = client_id
+    if manual:
+        session.expires_at_monotonic = time.monotonic() + OAUTH_CALLBACK_TIMEOUT
     session.callback_port = callback_port
-    session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
+    if callback_port is not None:
+        session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
     _desktop_oauth_sessions[state] = session
 
     auth_url = _build_authorize_url(provider, client_id, redirect_uri, state, code_challenge)
     logger.info("Desktop OAuth auth URL generated for %s, port=%s", provider.name, callback_port)
 
-    return ApiSuccessResponse(data={"kind": "loopback", "url": auth_url, "port": callback_port, "state": state})
+    return ApiSuccessResponse(data={"kind": "manual" if manual else "loopback", "url": auth_url, "port": callback_port, "state": state})
 
 
 async def _start_device_flow(provider: LocalOAuthProvider, user_id: str) -> ApiResponse:
@@ -913,17 +931,25 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
     if not session:
         return ApiFailResponse(message="OAuth session not found")
 
+    if session.exchange_started:
+        return ApiFailResponse(message="Authorization code is already being exchanged")
+    if session.expires_at_monotonic is not None and time.monotonic() >= session.expires_at_monotonic:
+        _desktop_oauth_sessions.pop(state, None)
+        return ApiFailResponse(message="Authorization expired. Start the connection again.")
+    session.exchange_started = True
     try:
         # Handle CODE#STATE format (Anthropic sometimes returns code as "CODE#STATE")
         code_parts = code.split("#", 1)
         actual_code = code_parts[0]
         code_state = code_parts[1] if len(code_parts) > 1 else None
-        final_state = code_state if code_state else state
+        if code_state and code_state != state:
+            return ApiFailResponse(message="Authorization state mismatch")
+        final_state = state
 
         provider = get_local_provider(session.provider)
         if provider is None or provider.endpoints is None:
             return ApiFailResponse(message=f"Unknown provider on session: {session.provider}")
-        client_id = client_id_for(provider.name)
+        client_id = session.client_id or client_id_for(provider.name)
 
         # Prepare token exchange request
         token_data = {

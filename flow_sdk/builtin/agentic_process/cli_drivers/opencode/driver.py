@@ -74,7 +74,7 @@ VENDOR = vendor_for("opencode")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
@@ -98,6 +98,11 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 
 class OpenCodeDriver:
     """Vendor glue for the OpenCode CLI."""
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions, discovery_file='AGENTS.md')
 
     name = VENDOR.key
 
@@ -326,6 +331,37 @@ class OpenCodeDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.assets.worker_inventory.opencode import available_assets
+
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import add_dir_contributions
+
+        return await available_assets(inventory_inputs(process, skill_paths=add_dir_contributions(process.resolved_add_dirs)[1]))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import add_dir_contributions
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.opencode_config_dir / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".claude/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".agents/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.opencode_config_dir / "agents", recursive=True),
+        ]
+        for directory in project_ancestors(process.workdir):
+            roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / prefix / "skills", recursive=True)
+                         for prefix in (".opencode", ".claude", ".agents"))
+            roots.append(AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".opencode/agents", recursive=True))
+        # Consume the same mount projection used by both launch transports.
+        _, skill_paths = add_dir_contributions(process.resolved_add_dirs)
+        roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(path), recursive=True) for path in skill_paths)
+        return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """OpenCode discovers skills from any dir listed in ``skills.paths``.

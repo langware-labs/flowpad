@@ -39,6 +39,25 @@ TAG_DOC = {
 }
 
 
+@pytest.mark.asyncio
+async def test_seed_trigger_does_not_create_an_incomplete_asset(tmp_path):
+    from flow_sdk.assets.folder import AssetFolder
+    from flow_sdk.builtin.trigger import Trigger
+
+    trigger = Trigger(name="Service trigger", trigger_type=TriggerType.SCHEDULE, expr="* * * * *")
+    await trigger._prepare_for_storage(scope_root=tmp_path)
+    assert trigger.asset_ref == ""
+    assert AssetFolder(path=tmp_path).assets() == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_document_trigger_is_file_backed(tmp_path):
+    from flow_sdk.builtin.trigger import Trigger
+
+    trigger = Trigger(name="Document trigger", asset_ref=str(_write(tmp_path, TAG_DOC)))
+    assert trigger.is_file_backed()
+
+
 # ── the spec ────────────────────────────────────────────────────────────────
 
 def test_exactly_one_kind_and_exactly_one_verb():

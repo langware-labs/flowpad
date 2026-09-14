@@ -39,7 +39,7 @@ from flow_sdk.capsules import (
     UnsupportedCapsuleVersionError,
 )
 from flow_sdk.capsules.folder import FolderCapsule
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets.frontmatter import (
     StaleWrite,
     _atomic_write_text,
     _extract_frontmatter,

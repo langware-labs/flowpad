@@ -476,7 +476,7 @@ class AgentDriver(IngestDriver):
         is fenced rather than inlined so the model can see exactly where the
         user's words start and stop — it must send them verbatim.
         """
-        from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
+        from flow_sdk.builtin.subagent_loading import load_subagent  # noqa: PLC0415
 
         body = ""
         try:
@@ -570,7 +570,7 @@ class AgentDriver(IngestDriver):
     def _instruction(self, source, cursor: SegmentCursorView, config: dict, receipt_path: Path) -> str:
         """The agent md leads; only the runtime addendum is built here — the
         shipped convention (see `asset_cleanup`)."""
-        from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
+        from flow_sdk.builtin.subagent_loading import load_subagent  # noqa: PLC0415
 
         body = ""
         try:

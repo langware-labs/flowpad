@@ -67,6 +67,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     return Number.isFinite(line) && line > 0 ? line : null;
   }, [currentDock]);
 
+  const deepLinkColumn = Number.parseInt(currentDock?.options?.column ?? '', 10) || null;
+
   // Dialog state for file/folder creation
 
 
@@ -394,6 +396,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                   readOnly={readOnly}
                   file={file}
                   revealLine={tab.path === activeTab ? deepLink : null}
+                  revealColumn={tab.path === activeTab ? deepLinkColumn : null}
                   onExecuteScript={expandTerminal}
                   onShellCmd={(command) => {
                     handleShellCommand(command).catch((error) => {

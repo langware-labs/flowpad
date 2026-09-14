@@ -1,8 +1,8 @@
 """Unit tests for ``Project.get_assets_action`` (project/{id}/get-assets).
 
 The pre-process (staging) counterpart of the AgenticProcess asset view:
-path-scan attribution over user-home / project-mount dirs plus a bounded
-scoped list for ``spec`` (not file-backed). Fixture style mirrors
+filesystem enumeration and attribution over user-home / project-mount dirs,
+including folder-backed specs. Fixture style mirrors
 ``tests/unit/test_agentic_process_get_assets.py``.
 """
 
@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+from flow_sdk.assets.catalog import AssetSource
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
@@ -44,6 +44,8 @@ async def staging(tmp_path: Path, monkeypatch):
         "doc_note": user_home / "docs" / "note.md",
         "other_agent": user_home / "other_project" / ".claude" / "agents" / "o.md",
         "p_skill": project_root / ".claude" / "skills" / "p_skill",
+        "spec_project": project_root / "agentic-assets" / "spec" / "project-spec",
+        "spec_user": user_home / "agentic-assets" / "spec" / "user-spec",
     }
     for p in paths.values():
         if p.suffix == ".md":
@@ -111,6 +113,7 @@ async def staging(tmp_path: Path, monkeypatch):
             Spec(
                 id=mint_uuid(),
                 title=f"spec_project_{suffix}",
+                asset_ref=str(paths["spec_project"]),
                 project_id=str(project.id),
             )
         ),
@@ -118,11 +121,12 @@ async def staging(tmp_path: Path, monkeypatch):
             Spec(
                 id=mint_uuid(),
                 title=f"spec_user_{suffix}",
+                asset_ref=str(paths["spec_user"]),
             )
         ),
     }
 
-    yield {"project": project, "ents": ents, "user_home": user_home, "project_root": project_root}
+    yield {"project": project, "ents": ents, "paths": paths, "user_home": user_home, "project_root": project_root}
 
     for e in [project, *ents.values()]:
         try:
@@ -170,13 +174,16 @@ async def test_spec_rows(staging):
 
     spec_project = _row_for(resp, staging["ents"]["spec_project"])
     assert spec_project is not None
-    assert spec_project["posix_path"] is None
+    assert spec_project["posix_path"] == str(staging["paths"]["spec_project"])
+    assert (Path(spec_project["posix_path"]) / "spec.md").is_file()
     assert spec_project["source"] == AssetSource.PROJECT_DIR.value
     assert spec_project["project_id"] == str(staging["project"].id)
 
     spec_user = _row_for(resp, staging["ents"]["spec_user"])
     assert spec_user is not None
     assert spec_user["source"] == AssetSource.USER_DIR.value
+    assert spec_user["posix_path"] == str(staging["paths"]["spec_user"])
+    assert (Path(spec_user["posix_path"]) / "spec.md").is_file()
     assert spec_user["project_id"] is None
 
 
@@ -216,13 +223,17 @@ async def test_response_row_shape_matches_process_action(staging):
             "remote",
             "name",
             "usage",
+            "invocation_name",
+            "attached",
+            "available",
+            "present",
         }
         assert row["usage"] == []
 
 
 @pytest.mark.asyncio
 async def test_ref_only_remote_hydration_batches_once_per_type(staging):
-    from flow_sdk.builtin.agentic_process.agentic_process import AssetDescriptor
+    from flow_sdk.assets.catalog import AssetDescriptor
 
     skill = staging["ents"]["u_skill"]
     agent = staging["ents"]["other_agent"]
@@ -243,7 +254,7 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
 
     with (
         patch(
-            "flow_sdk.builtin.agentic_process.agentic_process.scan_path_asset_descriptors",
+            "flow_sdk.assets.catalog.scan_path_asset_descriptors",
             new=AsyncMock(return_value=descriptors),
         ),
         patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
@@ -266,3 +277,33 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
     by_typeid = {row["typeid"]: row for row in response.data["assets"]}
     assert by_typeid[f"skill-{skill.id}"]["remote"] is True
     assert by_typeid[f"subagent-{agent.id}"]["remote"] is False
+
+
+@pytest.mark.asyncio
+async def test_unindexed_spec_is_enumerated_from_its_real_folder(staging):
+    identity = mint_uuid()
+    path = staging["project_root"] / "agentic-assets/spec/unindexed"
+    path.mkdir(parents=True)
+    (path / "spec.md").write_text(f"---\nid: {identity}\ntitle: Unindexed specification\nspec_type: plan\n---\n# Plan\n")
+    assert await Spec.get_one({"id": identity}) is None
+
+    response = await staging["project"].get_assets_action(types="spec")
+
+    row = next(row for row in _rows(response) if row["typeid"] == f"spec-{identity}")
+    assert row["posix_path"] == str(path)
+    assert row["source"] == AssetSource.PROJECT_DIR.value
+    assert row["project_id"] == str(staging["project"].id)
+    assert await Spec.get_one({"id": identity}) is None
+
+
+@pytest.mark.asyncio
+async def test_indexed_spec_outside_scope_is_not_catalog_membership(staging, tmp_path):
+    path = tmp_path / "outside/agentic-assets/spec/private"
+    path.mkdir(parents=True)
+    spec = await Spec(id=mint_uuid(), title="Outside scope", asset_ref=str(path)).save()
+    try:
+        assert (path / "spec.md").is_file()
+        response = await staging["project"].get_assets_action(types="spec")
+        assert _row_for(response, spec) is None
+    finally:
+        await spec.delete()

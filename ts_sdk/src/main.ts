@@ -5,10 +5,10 @@ import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
-import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
+import { SubAgent, ComputeNode, Project, User, Visitor } from './entities';
 import { loadIconPacks } from './icons/registry';
 import type { IconPackSpec } from './icons/types';
-import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
+import { dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
 import { markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
 import { RuntimeKind } from './utils/runtime';
@@ -17,11 +17,11 @@ import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
-import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
 import type { BootstrapInfo } from './models/BootstrapInfo';
+import { applyBootstrapUser } from './session-refresh';
 
 declare global {
   interface Window {
@@ -37,7 +37,16 @@ let asyncInitPromise: Promise<void> | null = null;
 let initialized: BootstrapInfo | undefined;
 let setupWorkspace = false;
 
-export async function initSdk(params?: { agentId?: string; setupWorkspace?: boolean }): Promise<void> {
+export async function initSdk(params?: {
+  agentId?: string;
+  setupWorkspace?: boolean;
+  /** Hub mode: render this load signed-out instead of redirecting to the
+   *  provider. Only the root loader passes it, and only for the entry routes in
+   *  `routes/anonymous-entry.ts`. Memoised with the rest of init, which is
+   *  correct — the first load of a session decides, and every later caller is
+   *  already past the point where the redirect could have fired. */
+  allowAnonymous?: boolean;
+}): Promise<void> {
   if (initPromise) {
     return initPromise;
   }
@@ -91,7 +100,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
 
       // Known identity and privacy are required for the first render. No probes
       // or subscriptions run here; asyncSdkInit owns those after UI paint.
-      await cloudManager.seedBootstrap(bootstrapInfo);
+      await cloudManager.seedBootstrap(bootstrapInfo, { allowAnonymous: params?.allowAnonymous === true });
       privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
 
       // Set domain in context if present
@@ -142,23 +151,10 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         );
       }
 
-      // Create User instance from bootstrap data FIRST (before workspace)
-      // This ensures user is set when refreshWorkspace() is called
-      let user: User | null = null;
-      if (bootstrapInfo.user) {
-        user = new User(bootstrapInfo.user);
-        user.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-      }
-
-      // Set default workspace in context if present (after user is set)
-      if (bootstrapInfo.default_workspace) {
-        const workspace = new Workspace(bootstrapInfo.default_workspace);
-        workspace.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId, workspace.typeId);
-      }
-      await authManager.init(user);
-      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
+      // User, workspace, auth and capabilities — the user-dependent context. Shared
+      // with `refreshSession`, which applies the same block after a sign-in that
+      // happens without a reload, so the two paths cannot drift.
+      await applyBootstrapUser(bootstrapInfo);
       await dataContext.initContext();
       //await acceptInvitation(url); // TODO Handle this
       // Expose introspection hooks for manual_regression specs (and for

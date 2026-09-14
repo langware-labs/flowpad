@@ -18,13 +18,13 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.functions.skill import read_frontmatter_id_from_yaml
+from flow_sdk.assets.types.skill import read_frontmatter_id_from_yaml
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
 # Canonical Task fields that round-trip through ``task.md`` frontmatter, besides

@@ -7,16 +7,17 @@ import uuid
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.utils.git_identity import canonical_git_origin_repo_key
 
 _GITHUB_COMPONENT_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-class PortableGitOrigin(BaseModel):
+class PortableGitOrigin(DataSpec):
     """Strict, credential-free coordinates for one released Git asset."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

@@ -137,10 +137,8 @@ async def share_entity() -> ApiResponse:
             )
         if not request_info.someone_typeid:
             raise HTTPException(status_code=401, detail="share: authenticated user required")
-        from flow_sdk.assets.git_publish import (  # noqa: PLC0415
-            AssetPublishError,
-            publish_git_asset,
-        )
+        from flow_sdk.assets.git_publish import AssetPublishError
+        from flow_sdk.builtin.asset_publishing import publish_git_asset
 
         try:
             result = await publish_git_asset(entity, request_info.someone_typeid)

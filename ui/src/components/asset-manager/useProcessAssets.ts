@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk';
+import { AgenticProcess, Project, dataContext, type AssetDescriptor, type ProcessAssetUsage } from '@sdk';
 
 /**
  * Read-side hook over `process.getAssets()`.
@@ -16,7 +16,11 @@ import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk
  */
 export interface UseProcessAssetsResult {
   descriptors: AssetDescriptor[];
+  unresolvedUsage?: ProcessAssetUsage[];
   isLoading: boolean;
+  error?: boolean;
+  workerScoped?: boolean;
+  assistantEnabled?: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -39,17 +43,29 @@ export function useProcessAssets(
 
   const [descriptors, setDescriptors] = useState<AssetDescriptor[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
+  const [error, setError] = useState(false);
+  const [unresolvedUsage, setUnresolvedUsage] = useState<ProcessAssetUsage[]>([]);
+  const [assistantEnabled, setAssistantEnabled] = useState<boolean | undefined>();
   const tickRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const tick = ++tickRef.current;
     setIsLoading(true);
+    setError(false);
+    setDescriptors([]);
+    setUnresolvedUsage([]);
+    setAssistantEnabled(undefined);
 
     try {
       if (process) {
-        const result = await process.getAssets();
-        if (tickRef.current === tick) setDescriptors(result);
+        const result = await process.getAssetInventory();
+        if (tickRef.current === tick) {
+          setAssistantEnabled(result.assistant_enabled);
+          setDescriptors(result.assets);
+          setUnresolvedUsage(result.unresolved_usage ?? []);
+          setError(!!result.availability_error);
+        }
       } else {
         // Staging: the active project's discoverable assets, computed
         // server-side; projectless surfaces fall back to the local project.
@@ -62,7 +78,10 @@ export function useProcessAssets(
       }
     } catch (err) {
       console.error('[useProcessAssets] failed', err);
-      if (tickRef.current === tick) setDescriptors([]);
+      if (tickRef.current === tick) {
+        setDescriptors([]);
+        setError(true);
+      }
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
     }
@@ -73,8 +92,10 @@ export function useProcessAssets(
   // before its first await, and a passive effect can run after paint — which
   // would flash the "no assets" empty state for a frame on first open.
   useLayoutEffect(() => {
+    const pendingRequests = tickRef;
     void refresh();
+    return () => { ++pendingRequests.current; };
   }, [refresh]);
 
-  return { descriptors, isLoading, refresh };
+  return { descriptors, unresolvedUsage, isLoading, error, workerScoped: !!process, assistantEnabled, refresh };
 }

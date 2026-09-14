@@ -41,6 +41,7 @@ class DisplayTargetKind(StrEnum):
     APP = "app"
     SHELL = "shell"
     DOCK = "dock"
+    URL = "url"
 
 
 class InvalidDisplayTarget(ValueError):
@@ -58,6 +59,9 @@ async def resolve_display_target(
     artifact_id: str | None = None,
     dock: str | None = None,
     discover: bool = False,
+    *,
+    link: str | None = None,
+    source: Entity | None = None,
 ) -> dict:
     """Resolve one display address to its payload dict.
 
@@ -75,6 +79,11 @@ async def resolve_display_target(
     Without it, an unindexed path answers VFS and the caller can say
     "index it first".
     """
+    if link is not None:
+        from flow_sdk.core.display_link import resolve_display_link
+
+        return await resolve_display_link(link, source=source, discover=discover)
+
     if typeid:
         try:
             tid = TypeId(typeid)

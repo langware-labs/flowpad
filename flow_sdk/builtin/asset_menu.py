@@ -1,25 +1,7 @@
-"""Asset menu — the Assets navigator's structure, computed server-side.
+"""Project/context navigation over the shared filesystem asset catalog.
 
-The Assets menu used to be assembled client-side: the bootstrap type registry
-said which types *could* show, ``fs-records/asset-stats`` said which of them
-*did* (a count of 0 removes the row), and one ``/search`` per type on expand
-supplied the leaves. Context folders were invisible to all of that — their
-assets index as ``scope="user"`` with no project id, so a project-scoped menu
-never listed them.
-
-This module computes the same menu on the backend and extends it *through*
-context folders: a context folder that is itself a Project has its own context
-folders, so the walk is DFS and handles arbitrary depth. Counts accumulate up
-the tree, so a collapsed row already tells the truth about what is under it.
-
-**Strictly read-only.** Nothing here mints a Project or a Folder, saves a row,
-or triggers an indexer walk — a folder whose assets were never indexed simply
-counts zero. ``Project.recover_by_path`` (find-*or-create*) is deliberately not
-used; resolution goes through ``Project.index_by_mount`` (a pure lookup).
-
-Leaves are NOT part of this payload. Type rows still load their entities lazily
-from ``/search`` on expand, and the filesystem subtree under a folder row stays
-lazy DFS browsing. This module supplies structure and counts, nothing more.
+Project relationships and navigator shape belong here. Asset enumeration and
+occurrence attribution come from SDK utilities, including unindexed files.
 """
 
 from __future__ import annotations
@@ -27,14 +9,19 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.assets.menu import asset_counts, menu_count_types
+
+
+def _native_path(value: str) -> str:
+    return str(Path(value).expanduser().resolve()) if value else ""
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+    from flow_sdk.assets.catalog import AssetSource
     from flow_sdk.builtin.project import Project
 
 log = logging.getLogger(__name__)
@@ -144,21 +131,6 @@ class AssetMenu:
         return {"root": self.root.to_row(), "truncated": self.truncated}
 
 
-def menu_count_types(requested: list[str] | None = None) -> list[str]:
-    """The types a menu counts: browseable AND filesystem-scannable.
-
-    Counting is path-attributed (an asset belongs to the deepest node directory
-    that contains it), so a type with no ``asset_ref`` — ``spec`` is the live
-    example — cannot be counted this way and is excluded rather than reported as
-    zero. ``get_default_index_types()`` is exactly the filesystem-scannable set,
-    and ``browseable_by is not None`` is the registry's own "shows in the Assets
-    browser" declaration, so neither list is restated here.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    scannable = SchemaRegistry.get_default_index_types()
-    wanted = [t for t in requested if t in set(scannable)] if requested else list(scannable)
-    return [t for t in wanted if getattr(SchemaRegistry.get(t), "browseable_by", None) is not None]
 
 
 def _basename(path: str) -> str:
@@ -175,17 +147,11 @@ async def build_asset_menu(
 ) -> AssetMenu:
     """Build the menu for ``project`` and, recursively, its context folders.
 
-    Total I/O regardless of tree depth: ONE ``Project.get_all()`` (hoisted into
-    ``index_by_mount``), ONE ``Entity.assets_by_path`` over every node directory
-    at once, and one filesystem ``stat`` per project node for its index
-    sentinel. No writes.
+    Resolve Project relationships once, then enumerate the resulting folders
+    through the filesystem catalog. No writes or asset-index queries.
     """
-    from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
-        AgenticProcess,
-        AssetSource,
-    )
+    from flow_sdk.assets.catalog import AssetSource, scan_path_asset_descriptors
     from flow_sdk.builtin.project import Project, mount_key  # noqa: PLC0415
-    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
     from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
     count_types = menu_count_types(types)
@@ -211,7 +177,7 @@ async def build_asset_menu(
         )
 
     def walk(raw_path: str, source: AssetSource, depth: int, proj: "Project | None", info: dict | None) -> MenuNode | None:
-        path = canonical_posix_path(raw_path)
+        path = _native_path(raw_path)
         if not path or path in visited:
             # Cycle (C→…→P) and diamond (two parents, one folder) guard. First
             # visit wins, mirroring add_source_dir's canonical-path dedup.
@@ -223,7 +189,7 @@ async def build_asset_menu(
             # so the walk stops — but the node still gets counts below.
             return node
         for child_info in getattr(proj, "context_dir_infos", None) or []:
-            child_path = canonical_posix_path(child_info.get("path") or "")
+            child_path = _native_path(child_info.get("path") or "")
             if not child_path:
                 continue
             child = walk(
@@ -241,7 +207,7 @@ async def build_asset_menu(
                 node.children.append(child)
         return node
 
-    mount = canonical_posix_path(getattr(project, "fs_storage_mount_path", "") or "")
+    mount = _native_path(getattr(project, "fs_storage_mount_path", "") or "")
     root = walk(mount, AssetSource.PROJECT_DIR, 0, project, None)
     if root is None:  # no mount path — an empty menu, not an error
         root = MenuNode(path="", name=getattr(project, "name", "") or "", source=AssetSource.PROJECT_DIR, depth=0)
@@ -258,34 +224,12 @@ async def build_asset_menu(
     flatten(root)
     by_dir = {n.path: n for n in nodes}
 
-    entities = await Entity.assets_by_path(
-        PathQueryOptions(search_dirs=list(by_dir), types=count_types, limit=MENU_SCAN_CAP)
+    descriptors = await scan_path_asset_descriptors(
+        [(node.path, node.source) for node in nodes], own_project_id=str(project.id),
+        types=count_types, limit=MENU_SCAN_CAP,
     )
-    truncated = len(entities) >= MENU_SCAN_CAP
-    if truncated:
-        log.warning(
-            "[asset-menu] scan hit MENU_SCAN_CAP (%d) for project %s — counts are a floor",
-            MENU_SCAN_CAP,
-            getattr(project, "id", "?"),
-        )
-
-    # Longest-prefix first, so an asset is attributed to the DEEPEST node that
-    # contains it — the same ranking scan_path_asset_descriptors uses.
-    ranked = sorted(((n.path, n.source) for n in nodes), key=lambda s: -len(s[0]))
-    own: dict[str, Counter] = {n.path: Counter() for n in nodes}
-    own_project_id = str(getattr(project, "id", "") or "")
-    for ent in entities:
-        asset_ref = canonical_posix_path(getattr(ent, "asset_ref", None) or "")
-        if not asset_ref:
-            continue
-        # Reused verbatim so the SYSTEM redirect and the cross-project rule stay
-        # in one place rather than being re-derived here.
-        match = AgenticProcess._source_match_for_asset(asset_ref, ranked, ent, own_project_id)
-        if match is None:
-            continue
-        src_dir, _src = match
-        if src_dir in own:
-            own[src_dir][ent.type or ent.get_type()] += 1
+    truncated = len(descriptors) >= MENU_SCAN_CAP
+    own = asset_counts(descriptors, by_dir)
 
     # ── Phase 3: post-order accumulation ────────────────────────────────────
     def roll_up(node: MenuNode) -> Counter:

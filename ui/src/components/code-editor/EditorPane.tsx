@@ -58,6 +58,7 @@ interface EditorPaneProps {
    * link into a file (e.g. an interface block's "Open in editor") lands here.
    */
   revealLine?: number | null;
+  revealColumn?: number | null;
   onExecuteScript?: () => void;
   onShellCmd?: (command: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -69,6 +70,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   file,
   readOnly,
   revealLine,
+  revealColumn,
   onExecuteScript,
   onShellCmd,
   onDirtyChange,
@@ -224,11 +226,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     // `revealLine(getLineCount())` call would scroll a deep link straight to
     // the bottom of the file the moment content settled.
     if (revealLine && revealLine > 0) {
-      const key = `${file?.path ?? ''}#${revealLine}`;
+      const key = `${file?.path ?? ''}#${revealLine}:${revealColumn ?? 1}`;
       if (revealedRef.current === key) return;
       const line = Math.min(revealLine, model.getLineCount());
       editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column: 1 });
+      const column = Math.max(1, Math.min(revealColumn ?? 1, model.getLineMaxColumn(line)));
+      editor.setPosition({ lineNumber: line, column });
       // Scrolling there isn't enough to SEE it in a wall of code — mark the
       // line until the next deep link replaces the decoration.
       decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [
@@ -250,7 +253,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
      * — the first run happens before Monaco mounts and bails on the null ref.
      * Missing either one is why a deep link silently landed on line 1.
      */
-  }, [file?.path, fileContent, isUserScrolling, revealLine, editorReady]);
+  }, [file?.path, fileContent, isUserScrolling, revealLine, revealColumn, editorReady]);
 
   const clearSaveTimeout = useCallback(() => {
     if (!saveTimeoutRef.current) return;
