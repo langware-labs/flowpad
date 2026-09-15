@@ -161,6 +161,10 @@ class Agent(Entity):
     model: Optional[str] = APIField(default=None, description="Tier (sm/md/lg) or a concrete model id.")
     permission_mode: Optional[str] = APIField(default=None)
     effort: Optional[str] = APIField(default=None)
+    # Read by the HUB's deploy path, not by a launch: publish mirrors it onto the
+    # hub Agent's `machine_size`, which sizes the box `deploy` creates. A local
+    # launch has no box to size, so it is never projected into AgentOptions.
+    machine_size: Optional[str] = APIField(default=None, description="Cloud box size: sm | md | lg.")
     # ── DECLARED ONLY, not yet enforced ───────────────────────────────────
     # These round-trip through agent.md and are visible on the agent's card,
     # but `to_agent_options` cannot project them: no AgentOptions subclass has

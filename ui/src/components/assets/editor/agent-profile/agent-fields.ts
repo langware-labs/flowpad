@@ -11,6 +11,7 @@ export type AgentDocumentPatch = Partial<
     | 'model'
     | 'permission_mode'
     | 'effort'
+    | 'machine_size'
     | 'max_turns'
     | 'tools'
     | 'disallowed_tools'

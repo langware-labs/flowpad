@@ -22,6 +22,7 @@ class AgentSpec(FrontMatter):
     model: Optional[str] = None
     permission_mode: Optional[str] = None
     effort: Optional[str] = None
+    machine_size: Optional[str] = None
     max_turns: Optional[int] = None
     tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
