@@ -1,7 +1,7 @@
 import { Agent, Deployment, type AgentPlace } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useRef, useState } from 'react';
-import { Cloud, Laptop, Loader2, MessageSquare, MoreHorizontal } from 'lucide-react';
+import { Loader2, MessageSquare, MoreHorizontal } from 'lucide-react';
 
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -19,47 +19,38 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { AgentPlaceActivity } from './AgentPlaceActivity';
 import { AgentPlaceConfig } from './AgentPlaceConfig';
-import { AgentPlaceEmail } from './AgentPlaceEmail';
+import { AgentPlaceChannels } from './AgentPlaceChannels';
 import { AgentScheduleSection } from './AgentScheduleSection';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
+import { usePlaceDisplay } from './use-place-display';
 
-const PLACE_TABS = ['activity', 'schedules', 'config', 'email'] as const;
+const PLACE_TABS = ['activity', 'channels', 'schedules', 'config'] as const;
 type PlaceTab = (typeof PLACE_TABS)[number];
 
-/** Dock option holding one place card's selected tab. Per card, so two cards keep their own tab. */
-export function placeTabOption(deploymentId: string): string {
-  return `tab-${deploymentId}`;
-}
+/** Dock option holding the selected environment's tab. */
+export const PLACE_TAB_OPTION = 'tab';
 /** Dock option naming the place whose chat is open. */
 const PLACE_CHAT_OPTION = 'chat';
 
 interface AgentPlaceCardProps {
   agent: Agent;
   place: AgentPlace;
-  places: AgentPlace[];
   autoLaunchPrompt?: string;
   pendingChanges?: number;
   onChanged: () => void | Promise<void>;
 }
 
 /**
- * One place this agent runs on: this computer, or a cloud machine.
+ * The selected environment: Development · local, or a cloud machine.
  *
  * The selected tab and the open chat live in the URL (dock options) — a click
  * only navigates, per the URL-first rule.
  */
-export function AgentPlaceCard({
-  agent,
-  place,
-  places,
-  autoLaunchPrompt,
-  pendingChanges = 0,
-  onChanged,
-}: AgentPlaceCardProps) {
+export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges = 0, onChanged }: AgentPlaceCardProps) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   // Keyed by identity, not by the row object: every places reload hands back fresh
-  // objects, and a new Deployment here would refetch this card's runs each time.
+  // objects, and a new Deployment here would refetch its runs each time.
   const row = useRef(place.deployment);
   row.current = place.deployment;
   const updated = typeof place.deployment.updated_date === 'string' ? place.deployment.updated_date : '';
@@ -70,25 +61,23 @@ export function AgentPlaceCard({
   }, [deploymentKey]);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const tabKey = placeTabOption(deployment.id);
-  const rawTab = currentDock?.options?.[tabKey];
+  const rawTab = currentDock?.options?.[PLACE_TAB_OPTION];
   const tab: PlaceTab = (PLACE_TABS as readonly string[]).includes(rawTab ?? '') ? (rawTab as PlaceTab) : 'activity';
   const chatOpen = currentDock?.options?.[PLACE_CHAT_OPTION] === deployment.id;
 
   const openTab = (next: string) => {
-    if (currentDock) navigation.openDock(currentDock.withOption(tabKey, next === 'activity' ? null : next));
+    if (currentDock) navigation.openDock(currentDock.withOption(PLACE_TAB_OPTION, next === 'activity' ? null : next));
   };
   const toggleChat = () => {
     if (currentDock) navigation.openDock(currentDock.withOption(PLACE_CHAT_OPTION, chatOpen ? null : deployment.id));
   };
 
   const paused = deployment.status?.provider_state === 'paused';
-  const name = place.is_local ? t`This computer` : t`Cloud · ${deployment.name}`;
+  const { label: name } = usePlaceDisplay()(place);
   const meta = place.is_local ? t`Runs only while this computer is awake` : paused ? t`Paused` : t`Always on`;
   const overrideCount = Object.keys(place.overrides ?? {}).length;
   const setEnabledHere = (value: boolean) =>
     act('enabled', () => agent.setPlaceEnabled(deployment.id, value), t`Could not change where the agent runs`);
-  const Icon = place.is_local ? Laptop : Cloud;
 
   const act = async (label: string, run: () => Promise<unknown>, failure: string) => {
     setBusy(label);
@@ -111,22 +100,9 @@ export function AgentPlaceCard({
 
   return (
     <article className="overflow-hidden rounded-lg border bg-background" data-testid={`agent-place-${deployment.id}`}>
-      <div className="flex items-center gap-2.5 px-3.5 py-3">
-        <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-            place.is_local
-              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-              : 'bg-teal-500/10 text-teal-700 dark:text-teal-400'
-          }`}
-          aria-hidden="true"
-        >
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold" data-testid="agent-place-name">
-            {name}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">{meta}</div>
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+        <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground" data-testid="agent-place-meta">
+          {meta}
         </div>
         {place.is_local ? (
           <span
@@ -218,6 +194,9 @@ export function AgentPlaceCard({
           <TabsTrigger value="activity" data-testid="agent-place-tab-activity">
             <Trans>Activity</Trans>
           </TabsTrigger>
+          <TabsTrigger value="channels" data-testid="agent-place-tab-channels">
+            <Trans>Channels</Trans>
+          </TabsTrigger>
           <TabsTrigger value="schedules" data-testid="agent-place-tab-schedules">
             <Trans>Schedules</Trans>
             {place.schedule_count > 0 && (
@@ -232,13 +211,13 @@ export function AgentPlaceCard({
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="email" data-testid="agent-place-tab-email">
-            <Trans>Email</Trans>
-          </TabsTrigger>
         </TabsList>
         <div className="px-3.5 py-3">
           <TabsContent value="activity" className="mt-0">
             <AgentPlaceActivity deployment={deployment} isLocal={place.is_local} />
+          </TabsContent>
+          <TabsContent value="channels" className="mt-0">
+            <AgentPlaceChannels agent={agent} />
           </TabsContent>
           <TabsContent value="schedules" className="mt-0">
             <AgentScheduleSection
@@ -255,9 +234,6 @@ export function AgentPlaceCard({
               overrides={place.overrides ?? {}}
               onChanged={onChanged}
             />
-          </TabsContent>
-          <TabsContent value="email" className="mt-0">
-            <AgentPlaceEmail agent={agent} place={place} places={places} onChanged={onChanged} />
           </TabsContent>
         </div>
       </Tabs>
