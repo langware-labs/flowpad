@@ -1002,6 +1002,15 @@ class Entity(DBEntity):
             return mint_uuid(f"{type_str}:{data['id']}", namespace=uuid.NAMESPACE_DNS)
         return mint_uuid()
 
+    async def find_existing_for_create(self) -> "Entity | None":
+        """The stored row this not-yet-saved entity would duplicate, or None.
+
+        The generic create route asks before minting a fresh id, so a type with
+        a natural key (a Project's mount folder) answers a repeat create with the
+        row it already has instead of a second one. Default: no natural key.
+        """
+        return None
+
     @classmethod
     async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
         """Create or update an Entity from a Record's meta_dict()."""
