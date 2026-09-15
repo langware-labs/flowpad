@@ -3,38 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
 from flow_sdk.app.actions.oauth_templates import landing_page
 from flow_sdk.core.oauth import flows
 from flow_sdk.core.oauth.flows import AuthFlowKind, AuthFlowResult, AuthFlowStatus
+from tests.utils.oauth_flow_doubles import connect_tab, reset_flow_registry
 
 pytestmark = pytest.mark.asyncio
 
 
-class _Socket:
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send_text(self, message: str) -> None:
-        self.sent.append(json.loads(message))
-
-
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
-    import flow_sdk.server.routes.websocket as websocket
-
-    monkeypatch.setattr(flows, "_flows", flows.OrderedDict())
-    monkeypatch.setattr(websocket, "_active_connections", {})
-    return websocket
+    return reset_flow_registry(monkeypatch)
 
 
-def _connect(websocket, connection_id: str) -> _Socket:
-    socket = _Socket()
-    websocket._active_connections[connection_id] = websocket.ConnectionInfo(ws=socket, is_tab=True)
-    return socket
+_connect = connect_tab
 
 
 def _ok(provider="slack", identity="me"):

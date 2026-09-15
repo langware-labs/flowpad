@@ -49,6 +49,18 @@ class LiveE2EInstance:
     backend_port: int
     backend_pid: int
     hub_url: str
+    flow_home: str
+
+    def subprocess_env(self) -> dict[str, str]:
+        """The environment a CLI / SDK process needs to reach THIS instance.
+
+        Pytest's sandbox HOME, DB and records root are dropped; the process sees the
+        real flow root the instance was launched under, pinned to its name.
+        """
+        sandbox_only = ("SQLITE_DATABASE_PATH", "FS_RECORD_PATH", "LOCAL_SERVER_PORT", "TESTING")
+        env = {key: value for key, value in os.environ.items() if key not in sandbox_only}
+        env.update(HOME=_REAL_HOME, USERPROFILE=_REAL_HOME, FLOW_HOME=self.flow_home, FLOW_INSTANCE=self.name)
+        return env
 
 
 def _normalized_url(value: str) -> str:
@@ -161,6 +173,7 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
             backend_port=backend.port,
             backend_pid=backend.pid,
             hub_url=_normalized_url(record.hub_url),
+            flow_home=flow_home,
         )
 
     return _resolve
