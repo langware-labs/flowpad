@@ -108,7 +108,7 @@ function CloseRowButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
     >
       {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
     </button>
@@ -591,7 +591,10 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         {isGlobalScope ? (
           // The Global scope row — violet-accented so it never reads as a
           // regular project, and always the current scope when shown.
-          <li key={GLOBAL_ROW_ID} className="group flex w-full items-center gap-2 rounded bg-violet-500/10 pe-1 hover:bg-violet-500/15">
+          <li
+            key={GLOBAL_ROW_ID}
+            className="group flex w-full items-center gap-2 rounded bg-violet-500/10 pe-1 hover:bg-violet-500/15"
+          >
             <button
               type="button"
               aria-current="true"
@@ -677,25 +680,27 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               </span>
             </button>
           );
+          // The tip anchors on the whole ROW, not the select button: opening to
+          // the right of the button would lay the card over the close-all X.
           return (
-            <li key={bucket.projectId} className={rowClass}>
-              <WikiTip
-                wikiword="Flowpad project"  /* the page the footer's project tip opens */
-                label={mountPath ?? bucketDisplayName(bucket)}
-                buttonLabel={t`What is a Flowpad project?`}
-                side="right"
-                actions={
-                  mountPath ? (
-                    <div className="flex items-center gap-0.5">
-                      <ProjectLaunchBar projectPath={mountPath} />
-                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
-                    </div>
-                  ) : undefined
-                }
-              >
+            <WikiTip
+              key={bucket.projectId}
+              wikiword="Flowpad project" /* the page the footer's project tip opens */
+              label={mountPath ?? bucketDisplayName(bucket)}
+              buttonLabel={t`What is a Flowpad project?`}
+              side="right"
+              actions={
+                mountPath ? (
+                  <div className="flex items-center gap-0.5">
+                    <ProjectLaunchBar projectPath={mountPath} />
+                    <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                  </div>
+                ) : undefined
+              }
+            >
+              <li className={rowClass}>
                 {selectButton}
-              </WikiTip>
-              {/* Close-all-in-this-project. Emptying the bucket is what removes
+                {/* Close-all-in-this-project. Emptying the bucket is what removes
                   the row: the menu is built from open tabs, so a project with
                   none simply stops being listed.
                   Reachable on a MISSING row too — not as the only way out (the
@@ -705,14 +710,15 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                   transiently, and the reaper deliberately fails open on a
                   lookup error. A user who wants those rows gone should not have
                   to wait on a sweep that may correctly decline to run. */}
-              <CloseRowButton
-                closing={isClosing}
-                disabled={isRecovering}
-                label={t`Close all ${bucket.tabCount} tabs in this project`}
-                testId={`projects-counter-close-${bucket.projectId}`}
-                onClick={() => void handleCloseProject(bucket)}
-              />
-            </li>
+                <CloseRowButton
+                  closing={isClosing}
+                  disabled={isRecovering}
+                  label={t`Close all ${bucket.tabCount} tabs in this project`}
+                  testId={`projects-counter-close-${bucket.projectId}`}
+                  onClick={() => void handleCloseProject(bucket)}
+                />
+              </li>
+            </WikiTip>
           );
         })}
       </ul>
