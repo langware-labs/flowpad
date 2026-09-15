@@ -7,22 +7,19 @@ scope; the source classes' session hooks and the provider calls are faked, nothi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
 
 import pytest
-from pydantic import ConfigDict, SecretStr
 
 from flow_sdk import connections
 from flow_sdk.builtin.credential_service import save_credential
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.auth.secrets import read_secret
-from flow_sdk.connections import ConnectionRequirements
 from flow_sdk.ingest.source_registry import resolve_source_type
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.connection_spec import ConnectionResult, ConnectionSpec, ConnectionTestResult
-from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets import SecretStore
-from flow_sdk.secrets import store as store_module
+from tests.utils.connection_rows import fake_connections
+from tests.utils.fake_gcp_secret_manager import serving_gcp_store
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -72,9 +69,6 @@ def _catalogue(monkeypatch, *, connected: bool, scopes: tuple[str, ...]) -> list
     rows = {"google": ConnectionSpec(provider="google", display_name="Google", connected=connected, scopes=scopes)}
     reauthorized: list[bool] = []
 
-    async def resolve(provider):
-        return rows.get(provider)
-
     async def connect(provider, presenter, *, reauthorize=False):
         reauthorized.append(reauthorize)
         rows[provider] = ConnectionSpec(provider=provider, display_name="Google", connected=True, scopes=(DRIVE_SCOPE,))
@@ -83,7 +77,7 @@ def _catalogue(monkeypatch, *, connected: bool, scopes: tuple[str, ...]) -> list
     async def token_for(provider, name=None):
         return f"token-for-{provider}"
 
-    monkeypatch.setattr(connections, "resolve_connection_spec", resolve)
+    fake_connections(monkeypatch, rows)
     monkeypatch.setattr(connections, "_connect", connect)
     monkeypatch.setattr("flow_sdk.core.oauth.provider_registry.token_for", token_for)
     return reauthorized
@@ -199,38 +193,19 @@ async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, conne
     assert ns["live"].credentials.token.get_secret_value() == "token-for-google"
 
 
-class _RemoteConfig(DataSpec):
-    model_config = ConfigDict(frozen=True)
-
-    gcp_project: str
-    prefix: str = ""
-
-
-class _RemoteStore(SecretStore):
-    """An in-memory stand-in for a GCP Secret Manager type: a store that acts as an account."""
-
-    type_name: ClassVar[str] = "gcp_secret_manager"
-    config_spec: ClassVar[type[DataSpec]] = _RemoteConfig
-    held: ClassVar[dict[str, str]] = {"agentmail-production-api_key": "am-key"}
-
-    @property
-    def connections(self) -> ConnectionRequirements:
-        return ConnectionRequirements({"google": ["https://www.googleapis.com/auth/cloud-platform"]})
-
-    async def set_connection(self, connection) -> None:
-        self.account = connection.provider
-
-    async def load(self, names):
-        return {n: SecretStr(v) for n in names if (v := self.held.get(f"{self.config.prefix}{n}")) is not None}
-
-
 async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monkeypatch):
-    monkeypatch.setitem(store_module._TYPES, _RemoteStore.type_name, _RemoteStore)
+    """The real ``gcp_secret_manager`` store, against a loopback Secret Manager v1."""
+    await _session_free("agentmail", monkeypatch)
     _catalogue(monkeypatch, connected=True, scopes=("https://www.googleapis.com/auth/cloud-platform",))
     await _saved("agentmail", "agent inbox")
 
-    ns = await _run("6. Connections", nth=1)
+    with serving_gcp_store(monkeypatch, tokens={"token-for-google"}) as gcp:
+        gcp.put("acme-prod", "agentmail-production-api_key", "am-key")
 
-    assert ns["remote"].account == "google"
-    bound = (await DataSource.get("agent inbox")).secret_store
-    assert (bound.type, bound.config["gcp_project"]) == ("gcp_secret_manager", "acme-prod")
+        ns = await _run("6. Connections", nth=1)
+
+        assert ns["remote"].connection == "google"
+        bound = (await DataSource.get("agent inbox")).secret_store
+        assert (bound.type, bound.config["gcp_project"], bound.connection) == ("gcp_secret_manager", "acme-prod", "google")
+        live = await (await DataSource.get("agent inbox")).open()  # the row alone: what the heartbeat's sync has
+        assert live.credentials.values["api_key"].get_secret_value() == "am-key"

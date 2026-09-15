@@ -12,12 +12,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, ClassVar, Iterable, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Mapping, Optional, Union
 
 from pydantic import ConfigDict, Field, SecretStr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets.errors import MissingSecrets, NoCurrentProject, UnknownSecretStore
+
+if TYPE_CHECKING:
+    from flow_sdk.connections import ConnectionRequirements
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,11 @@ class SecretStoreRef(DataSpec):
 
     type: str
     config: dict[str, Any] = Field(default_factory=dict)
+    #: The provider of the connection a store that acts as an account is bound to (``""``: none).
+    #: Not config: the account comes from the connection, and a restart re-binds it from here.
+    #: Omitted when empty, so an unbound store — every local store's ref, and every row saved
+    #: before a store could act as an account — dumps byte-identical as ``{type, config}``.
+    connection: str = Field(default="", exclude_if=lambda v: not v)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -52,9 +60,31 @@ class SecretStore:
 
     type_name: ClassVar[str] = ""
     config_spec: ClassVar[type[DataSpec]]
+    #: ``{provider: scopes}`` a store that acts as an account needs; a local store declares none.
+    connection_scopes: ClassVar[Mapping[str, tuple[str, ...]]] = {}
 
-    def __init__(self, config: DataSpec) -> None:
+    def __init__(self, config: DataSpec, *, connection: str = "") -> None:
         self.config = config
+        self._bind(connection)
+
+    # ── the account a store acts as (`connections` → `set_connection`) ──────
+    @property
+    def connections(self) -> "ConnectionRequirements":
+        """The providers this store acts as, and the scopes it needs from each — empty for a local store."""
+        from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
+
+        return ConnectionRequirements(self.connection_scopes)
+
+    async def set_connection(self, connection: Any) -> None:
+        """Bind the account this store acts as (a ``Connection`` or its provider); ``None`` unbinds.
+        Refuses a provider the store does not declare. The binding travels in :attr:`ref`."""
+        self._bind("" if connection is None else str(getattr(connection, "provider", connection)))
+
+    def _bind(self, provider: str) -> None:
+        wanted = list(self.connection_scopes)
+        if provider and provider not in wanted:
+            raise ValueError(f"a {self.type_name} store acts as {', '.join(wanted) or 'no account'}, not {provider}")
+        self.connection = provider
 
     # ── lookup ──────────────────────────────────────────────────────────────
     @classmethod
@@ -76,11 +106,15 @@ class SecretStore:
         store_cls = _TYPES.get(ref.type)
         if store_cls is None:
             raise UnknownSecretStore(ref.type, sorted(_TYPES))
-        return store_cls(store_cls.config_spec.model_validate(ref.config))
+        return store_cls(store_cls.config_spec.model_validate(ref.config), connection=ref.connection)
 
     @property
     def ref(self) -> SecretStoreRef:
-        return SecretStoreRef(type=self.type_name, config=self.config.model_dump(mode="json", exclude_defaults=True))
+        return SecretStoreRef(
+            type=self.type_name,
+            config=self.config.model_dump(mode="json", exclude_defaults=True),
+            connection=self.connection,
+        )
 
     # ── the verbs ───────────────────────────────────────────────────────────
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
