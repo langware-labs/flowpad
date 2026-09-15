@@ -86,6 +86,19 @@ async def oauth_complete(state: str = Query(""), provider: str = Query("")):
     return landing_page(result, delivered=delivered)
 
 
+@router.get("/oauth/callback", response_class=HTMLResponse)
+async def oauth_loopback_callback(state: str = Query(""), code: str = Query(""), error: str = Query("")):
+    """Where a grant this instance runs itself lands — the loopback listener forwards here.
+
+    Exchanges the code once, tells the initiator, and renders the one landing page.
+    """
+    from flow_sdk.app.actions.desktop_oauth import complete_loopback_flow
+    from flow_sdk.app.actions.oauth_templates import landing_page
+
+    result, delivered = await complete_loopback_flow(state, code, error)
+    return landing_page(result, delivered=delivered)
+
+
 @router.get("/gate")
 async def gate(
     cookie_gate: str = Query(None, alias="cookie-gate"),
@@ -275,18 +288,16 @@ async def login_callback(
 @router.get("/oauth_callback", response_class=HTMLResponse)
 async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     """Redeem a sandbox sign-in code only against its server-held PKCE state."""
-    from flow_sdk.app.actions.desktop_oauth import _desktop_oauth_sessions
+    from flow_sdk.app.actions.desktop_oauth import _desktop_oauth_sessions, complete_loopback_flow
+    from flow_sdk.app.actions.oauth_templates import landing_page
     from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
     from flow_sdk.cli.auth.sandbox_login import complete_sandbox_login
 
-    provider_session = _desktop_oauth_sessions.get(state)
-    if provider_session is not None:
-        provider_session.callback_code = code or None
-        provider_session.callback_state = state
-        provider_session.callback_error = "Authorization was declined" if error else None
-        provider_session.callback_event.set()
-        return HTMLResponse("<p>Authorization received. You can close this window.</p>",
-                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    if _desktop_oauth_sessions.get(state) is not None:
+        # A provider grant redirected to this sandbox's public URL: the same one
+        # completion and landing as a desktop loopback grant.
+        result, delivered = await complete_loopback_flow(state, code, error)
+        return landing_page(result, delivered=delivered)
     try:
         if error:
             raise ValueError("Sign-in was not authorized")

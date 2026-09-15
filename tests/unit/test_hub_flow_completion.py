@@ -7,32 +7,25 @@ The hub's return to `/auth/oauth/complete`, its `oauth_msg` push and the
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
 from flow_sdk.app.actions import oauth_action
 from flow_sdk.core.oauth import flows
 from flow_sdk.core.oauth.flows import AuthFlowKind, AuthFlowStatus
+from tests.utils.oauth_flow_doubles import FakeSocket, reset_flow_registry
 
 pytestmark = pytest.mark.asyncio
 
 
-class _Socket:
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send_text(self, message: str) -> None:
-        self.sent.append(json.loads(message))
+_Socket = FakeSocket
 
 
 @pytest.fixture(autouse=True)
 def hub(monkeypatch):
     import flow_sdk.core.oauth.hub_oauth as hub_oauth
-    import flow_sdk.server.routes.websocket as websocket
 
-    monkeypatch.setattr(flows, "_flows", flows.OrderedDict())
-    monkeypatch.setattr(websocket, "_active_connections", {})
+    websocket = reset_flow_registry(monkeypatch)
     state = {"status": "success", "waits": 0, "adopted": [], "adopt_error": None}
 
     async def wait(provider, flow_id):

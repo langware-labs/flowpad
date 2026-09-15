@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -224,6 +225,26 @@ def flow_lock(flow_id: str) -> asyncio.Lock:
     """The lock racing finishers share; a fresh one for a flow this instance never started."""
     slot = _flows.get(flow_id)
     return slot.lock if slot is not None else asyncio.Lock()
+
+
+async def complete_once(
+    flow_id: str, produce: Callable[[], Awaitable[Optional[AuthFlowResult]]]
+) -> tuple[Optional[AuthFlowResult], bool]:
+    """Do a flow's completing work at most once, however many finishers race.
+
+    Under the flow's lock, a flow that already ended hands back its stored result;
+    otherwise ``produce`` does the kind's work (exchange a code, read the hub) and
+    returns the result, or ``None`` when there is nothing to record yet. Returns
+    ``(result, delivered)``, ``(None, False)`` when nothing was recorded.
+    """
+    async with flow_lock(flow_id):
+        known = get_flow(flow_id)
+        if known is not None and known.result is not None:
+            return known.result, await finish_flow(flow_id, known.result)
+        result = await produce()
+        if result is None:
+            return None, False
+        return result, await finish_flow(flow_id, result)
 
 
 def _message_for(flow_id: str, result: AuthFlowResult) -> str:

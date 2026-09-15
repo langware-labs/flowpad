@@ -376,6 +376,7 @@ export class OAuthService {
     provider: string,
     targetEntity?: TypeId,
     sharedEntityVarName?: string,
+    options: { reauthorize?: boolean } = {},
   ): Promise<OauthFlow | null> {
     try {
       // FlowpadCloud is owned by cloudManager — route there instead of going through
@@ -392,9 +393,12 @@ export class OAuthService {
       if (targetEntity) actionInfo.targetEntity = targetEntity;
       actionInfo.subpath = [provider, 'auth'];
       actionInfo.carriesInitiator = true;
-      if (sharedEntityVarName) {
-        actionInfo.queryParameters = { shared_entity_var_name: sharedEntityVarName };
-      }
+      const query: Record<string, string> = {};
+      if (sharedEntityVarName) query.shared_entity_var_name = sharedEntityVarName;
+      // Re-authorize runs the provider's consent even when the hub already
+      // holds a valid grant it could simply hand back.
+      if (options.reauthorize) query.reauthorize = 'true';
+      if (Object.keys(query).length) actionInfo.queryParameters = query;
       const raw = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
       if (!raw) {
         throw new Error(`Empty OAuth /auth response for ${provider}`);

@@ -11,7 +11,7 @@ import {
   type Project,
   credentialsService,
 } from '@sdk';
-import { Check, CircleHelp, Loader2, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Check, CircleHelp, Loader2, MoreHorizontal, RefreshCw, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
@@ -436,7 +436,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
    *  user-scoped on BOTH backends — neither `auth` handler reads a target
    *  entity — and only the attach that follows needs a project. On the hub,
    *  where a user can hold zero projects, that guard made every row a dead end. */
-  const handleConnect = async (connectionId: string) => {
+  const handleConnect = async (connectionId: string, options: { reauthorize?: boolean } = {}) => {
     // From the CATALOGUE, not the rendered rows: the table no longer holds
     // unconnected providers, so the everyday first-time connect is exactly the
     // case `allConnections` does not contain.
@@ -445,7 +445,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     const displayName = provider.display_name || provider.name;
 
     try {
-      await connect(connectionId, provider.name);
+      await connect(connectionId, provider.name, undefined, options);
     } catch (error) {
       // Surfaced, not just logged: every failure here (a provider this instance
       // cannot complete a flow for, a backend refusal) used to land in the
@@ -839,6 +839,16 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {/* Re-authorize in place: the add dialog lists only
+                                providers not yet held, so without this a stale or
+                                revoked grant could only be renewed by deleting it. */}
+                            <DropdownMenuItem
+                              onSelect={() => void handleConnect(connection.id, { reauthorize: true })}
+                              data-testid={`connection-reconnect-${connection.id}`}
+                            >
+                              <RefreshCw className="me-2 h-3.5 w-3.5" />
+                              <Trans>Reconnect</Trans>
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onSelect={() => {

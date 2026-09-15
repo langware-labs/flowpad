@@ -325,7 +325,7 @@ describe('ConnectionsManager — a credential that is held but dead', () => {
   it('runs the full flow, not attach — attaching would re-share the refused token', async () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
     await userEvent.click(screen.getByRole('button', { name: /reconnect/i }));
-    expect(h.connect).toHaveBeenCalledWith('googledrive', 'googledrive');
+    expect(h.connect).toHaveBeenCalledWith('googledrive', 'googledrive', undefined, {});
     expect(h.attach).not.toHaveBeenCalled();
   });
 });

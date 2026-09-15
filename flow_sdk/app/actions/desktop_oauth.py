@@ -4,11 +4,13 @@ Ported from FlowPad: flowpad/hub/app/actions/oauth/desktop_oauth.py
 Implements the full desktop PKCE OAuth flow with localhost callback server.
 
 Flow:
-1. get_desktop_oauth_auth_url() -> generates auth URL, starts localhost callback server
+1. get_desktop_oauth_auth_url() -> generates auth URL, registers the flow and its
+   initiator, starts a localhost listener
 2. User opens auth URL in browser, authenticates
-3. Provider redirects to localhost callback server
-4. wait_for_desktop_oauth_callback() -> waits for callback, exchanges code for token
-5. handle_desktop_oauth_callback() -> stores credentials, broadcasts WebSocket notification
+3. Provider redirects to the listener, which forwards to /auth/oauth/callback
+4. complete_loopback_flow() -> exchanges the code once (handle_desktop_oauth_callback),
+   finishes the flow, tells its initiator; the browser gets the one landing page
+5. wait_for_desktop_oauth_callback() -> a CLI / SDK waiter reads that same result
 """
 
 import asyncio
@@ -19,16 +21,15 @@ import logging
 import secrets
 import socket
 import time
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlencode
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 
 from flow_sdk.api.messages import LlmConfigMessage, OAuthMessageStatus
-from flow_sdk.app.actions.oauth_templates import OAUTH_ERROR_HTML, OAUTH_SUCCESS_HTML
 from flow_sdk.core.oauth.provider_registry import (
     ANTHROPIC,
     LocalOAuthProvider,
@@ -39,6 +40,9 @@ from flow_sdk.core.oauth.provider_registry import (
     user_credentials_name,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.core.oauth.flows import AuthFlowResult
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +88,10 @@ class DesktopOAuthSession:
         self.provider = provider
         self.client_id: Optional[str] = None
         self.exchange_started = False
-        # Loopback flow fields (Anthropic)
-        self.callback_code: Optional[str] = None
-        self.callback_state: Optional[str] = None
-        self.callback_error: Optional[str] = None
+        # Loopback flow fields: the forwarding listener. The flow's outcome lives in
+        # the flow registry (flow_sdk/core/oauth/flows.py), keyed by ``state``.
         self.callback_server: Optional[asyncio.Task] = None
         self.callback_port: Optional[int] = None
-        self.callback_event: asyncio.Event = asyncio.Event()
         # Device flow fields (GitHub) — set only on the github branch
         self.device_code: Optional[str] = None
         self.user_code: Optional[str] = None
@@ -113,25 +114,22 @@ class DesktopOAuthSession:
             port = s.getsockname()[1]
         return port
 
-    async def _start_callback_server(self, port: int, expected_state: str) -> None:
-        """Start a temporary FastAPI server to receive OAuth callback."""
+    async def _start_callback_server(self, port: int) -> None:
+        """A loopback listener that only forwards the provider's redirect to this instance.
+
+        The provider redirects to ``localhost:<port>/callback`` — the redirect a desktop
+        client registers. The one completion lives on the main backend, so the browser is
+        sent on to ``/auth/oauth/callback`` with the same query, lands on the one landing
+        page, and the listener closes itself once it has forwarded.
+        """
+        from flow_sdk.cli.auth.cloud_urls import _desktop_base_url  # noqa: PLC0415
+
         app = FastAPI()
 
         @app.get("/callback")
         async def callback(request: Request):
-            code = request.query_params.get("code")
-            received_state = request.query_params.get("state")
-
-            if code and received_state == expected_state:
-                self.callback_code = code
-                self.callback_state = received_state
-                self.callback_event.set()
-                return HTMLResponse(OAUTH_SUCCESS_HTML)
-            else:
-                error_msg = "State mismatch" if received_state != expected_state else "Missing authorization code"
-                self.callback_error = error_msg
-                self.callback_event.set()
-                return HTMLResponse(OAUTH_ERROR_HTML, status_code=400)
+            server.should_exit = True
+            return RedirectResponse(f"{_desktop_base_url()}/auth/oauth/callback?{request.url.query}", status_code=302)
 
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
         server = uvicorn.Server(config)
@@ -164,57 +162,6 @@ class DesktopOAuthSession:
             await task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
-
-    async def wait_for_callback(self, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> Optional[Tuple[str, str]]:
-        """Wait for OAuth callback to be received using asyncio Event."""
-        try:
-            await asyncio.wait_for(self.callback_event.wait(), timeout=timeout)
-
-            if self.callback_error:
-                error_msg = self.callback_error
-                self.callback_error = None
-
-                await self.stop_callback_server()
-
-                # Send error notification via WebSocket
-                try:
-                    await broadcast_llm_config_msg(
-                        is_configured=False,
-                        auth_method="none",
-                        oauth_request_id=self.state,
-                        status=OAuthMessageStatus.ERROR,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send WebSocket error notification: {e}")
-
-                raise ValueError(f"OAuth callback error: {error_msg}")
-
-            if self.callback_code and self.callback_state:
-                code = self.callback_code
-                state = self.callback_state
-                self.callback_code = None
-                self.callback_state = None
-
-                await self.stop_callback_server()
-
-                return (code, state)
-
-            return None
-        except asyncio.TimeoutError:
-            await self.stop_callback_server()
-
-            # Send timeout notification via WebSocket
-            try:
-                await broadcast_llm_config_msg(
-                    is_configured=False,
-                    auth_method="none",
-                    oauth_request_id=self.state,
-                    status=OAuthMessageStatus.ERROR,
-                )
-            except Exception as e:
-                logger.error(f"Failed to send WebSocket timeout notification: {e}")
-
-            raise ValueError("OAuth callback timeout")
 
 
 # Store active desktop OAuth sessions
@@ -257,24 +204,6 @@ async def broadcast_llm_config_msg(
         logger.error(f"Failed to broadcast LlmConfigMessage: {e}")
 
 
-async def _broadcast_oauth_msg(oauth_request_id: str, status: OAuthMessageStatus) -> None:
-    """Announce that an OAuth FLOW ended, on the channel built for exactly that.
-
-    ``LlmConfigMessage`` says "this user's LLM config changed" and grew
-    ``oauth_request_id``/``status`` only because nobody was emitting this. The
-    client's ``OAuthService.onOAuthMessage`` is the completion state machine —
-    it closes the popup AND runs the auto-attach to the flow's target entity.
-    Without this broadcast a desktop popup flow never reached it, so its token
-    was stored and then never attached to the project that asked for it.
-    """
-    try:
-        from flow_sdk.api.messages import OAuthMessage  # noqa: PLC0415
-        from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
-
-        msg = OAuthMessage(oauth_request_id=oauth_request_id, status=status)
-        await broadcast(json.dumps(msg.model_dump(mode="json"), default=str))
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Failed to broadcast OAuthMessage: {e}")
 
 
 def _build_authorize_url(
@@ -309,7 +238,7 @@ def _build_authorize_url(
     return f"{provider.endpoints.authorize_url}?{urlencode(params)}"
 
 
-async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse:
+async def get_desktop_oauth_auth_url(provider: str, user_id: str, initiator_connection_id: str = "") -> ApiResponse:
     """Start a desktop OAuth flow for ``provider``, driven by its descriptor.
 
     Which grant runs comes from ``LocalOAuthProvider.kind``; where it goes comes
@@ -324,10 +253,12 @@ async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
     if p.kind is OAuthFlowKind.DEVICE:
         return await _start_device_flow(p, user_id)
-    return await _start_loopback_flow(p, user_id)
+    return await _start_loopback_flow(p, user_id, initiator_connection_id)
 
 
-async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> ApiResponse:
+async def _start_loopback_flow(
+    provider: LocalOAuthProvider, user_id: str, initiator_connection_id: str = ""
+) -> ApiResponse:
     """Authorization code (+ PKCE when the descriptor asks) against a loopback port.
 
     The redirect target is a port on THIS machine, which is what makes it a real
@@ -373,8 +304,17 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
         session.expires_at_monotonic = time.monotonic() + OAUTH_CALLBACK_TIMEOUT
     session.callback_port = callback_port
     if callback_port is not None:
-        session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
+        session.callback_server = asyncio.create_task(session._start_callback_server(callback_port))
     _desktop_oauth_sessions[state] = session
+
+    from flow_sdk.core.oauth.flows import AuthFlowKind, start_flow  # noqa: PLC0415
+
+    start_flow(
+        AuthFlowKind.MANUAL if manual else AuthFlowKind.LOOPBACK,
+        provider.name,
+        flow_id=state,
+        initiator_connection_id=initiator_connection_id,
+    )
 
     auth_url = _build_authorize_url(provider, client_id, redirect_uri, state, code_challenge)
     logger.info("Desktop OAuth auth URL generated for %s, port=%s", provider.name, callback_port)
@@ -905,22 +845,69 @@ async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLB
     if descriptor is not None and descriptor.kind is OAuthFlowKind.DEVICE:
         return await _poll_device_until_done(session, http_timeout=timeout)
 
+    from flow_sdk.core.oauth import flows  # noqa: PLC0415
+
+    # The flow finishes wherever the browser lands (``complete_loopback_flow``);
+    # this caller waits for that result within the same callback budget as before.
     try:
-        result = await session.wait_for_callback(timeout)
-        if not result:
-            if state in _desktop_oauth_sessions:
-                del _desktop_oauth_sessions[state]
-            return ApiFailResponse(message="OAuth callback failed - no code received")
+        result = await asyncio.wait_for(flows.wait_flow(state), timeout=timeout)
+    except asyncio.TimeoutError:
+        _desktop_oauth_sessions.pop(state, None)
+        await session.stop_callback_server()
+        result = flows.AuthFlowResult(
+            status=flows.AuthFlowStatus.ERROR,
+            provider=session.provider,
+            code="timeout",
+            detail="OAuth callback timeout",
+        )
+        await flows.finish_flow(state, result)
+    return flow_result_response(result)
 
-        code, received_state = result
 
-        # Exchange code for token and save credentials
-        return await handle_desktop_oauth_callback(code, received_state)
-    except ValueError as e:
-        error_msg = str(e)
-        if state in _desktop_oauth_sessions:
-            del _desktop_oauth_sessions[state]
-        return ApiFailResponse(message=error_msg)
+def flow_result_response(result: Optional["AuthFlowResult"]) -> ApiResponse:
+    """The HTTP answer for how a grant this instance runs ended (``None``: never issued)."""
+    from flow_sdk.core.oauth.flows import AuthFlowStatus  # noqa: PLC0415
+
+    if result is None:
+        return ApiFailResponse(message="OAuth session not found")
+    if result.status is AuthFlowStatus.SUCCESS:
+        return ApiSuccessResponse(message="OAuth authentication completed successfully")
+    return ApiFailResponse(message=result.detail or f"Authorization {result.status.value}")
+
+
+async def complete_loopback_flow(state: str, code: str = "", error: str = "") -> tuple[Optional["AuthFlowResult"], bool]:
+    """Finish a grant this instance runs itself: loopback, pasted manual code, sandbox callback.
+
+    The ONE completion for them — ``/auth/oauth/callback`` (the loopback listener forwards
+    there), the sandbox ``/auth/oauth_callback`` and a pasted code all call it. The code is
+    exchanged once however many land; the result is recorded and the initiator told.
+    Returns ``(result, delivered)``; ``(None, False)`` for a state this instance never issued.
+    """
+    from flow_sdk.core.oauth import flows  # noqa: PLC0415
+
+    async def produce() -> Optional["AuthFlowResult"]:
+        session = _desktop_oauth_sessions.get(state)
+        if session is None:
+            return None
+        if error or not code:
+            _desktop_oauth_sessions.pop(state, None)
+            status, reason, detail = (
+                (flows.AuthFlowStatus.CANCELLED, error, "Authorization was denied.")
+                if error
+                else (flows.AuthFlowStatus.ERROR, "missing_code", "The provider returned no authorization code.")
+            )
+        else:
+            exchanged = await handle_desktop_oauth_callback(code, state)
+            status, reason, detail = (
+                (flows.AuthFlowStatus.SUCCESS, "", "")
+                if isinstance(exchanged, ApiSuccessResponse)
+                else (flows.AuthFlowStatus.ERROR, "exchange_failed", exchanged.message or "The code exchange failed.")
+            )
+        # The listener exits by itself once it forwards; this stops one the browser never reached.
+        await session.stop_callback_server()
+        return flows.AuthFlowResult(status=status, provider=session.provider, code=reason, detail=detail)
+
+    return await flows.complete_once(state, produce)
 
 
 async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
@@ -1016,18 +1003,12 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
                     )
                 )
 
-            # Two messages, two meanings: the config change, and the flow ending.
-            # The second is what closes the popup and triggers the attach.
+            # The config change is news for every screen. The flow ENDING is not: it is
+            # delivered to its initiator alone by the flow registry (complete_loopback_flow).
             try:
-                await broadcast_llm_config_msg(
-                    is_configured=True,
-                    auth_method="anthropic",
-                    oauth_request_id=state,
-                    status=OAuthMessageStatus.SUCCESS,
-                )
-                await _broadcast_oauth_msg(state, OAuthMessageStatus.SUCCESS)
+                await broadcast_llm_config_msg(is_configured=True, auth_method="anthropic")
             except Exception as e:
-                logger.error(f"Failed to send WebSocket success notification: {e}")
+                logger.error(f"Failed to send WebSocket config notification: {e}")
 
             # Clean up session
             if state in _desktop_oauth_sessions:

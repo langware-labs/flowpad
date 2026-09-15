@@ -284,7 +284,12 @@ export const useOAuthConnection = ({
   );
 
   const connect = useCallback(
-    async (connectionId: string, provider: string, sharedEntityVarName?: string) => {
+    async (
+      connectionId: string,
+      provider: string,
+      sharedEntityVarName?: string,
+      options: { reauthorize?: boolean } = {},
+    ) => {
       try {
         setConnectingConnectionId(connectionId);
 
@@ -295,7 +300,7 @@ export const useOAuthConnection = ({
         setCurrentOAuthFlow({ connectionId, provider });
 
         // Use OAuth service to connect - this starts the OAuth flow
-        await oauthService.connect(providerName, projectTypeId, sharedEntityVarName);
+        await oauthService.connect(providerName, projectTypeId, sharedEntityVarName, options);
 
         // Note: Don't call onConnectionConnect here - it will be called when OAuth completes
       } catch (error) {

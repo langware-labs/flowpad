@@ -18,7 +18,6 @@ from flow_sdk.app.actions.desktop_oauth import (
     delete_anthropic_token_for_current_user,
     get_anthropic_token_for_current_user,
     get_desktop_oauth_auth_url,
-    handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
@@ -406,8 +405,11 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
 
         # Connecting this machine can reuse the owner's existing valid grant.
         # Only an actual provider probe permits adoption; a catalogue row alone
-        # must never bypass reauthorization for a revoked credential.
-        verification = await hub_test_provider(provider)
+        # must never bypass reauthorization for a revoked credential. An explicit
+        # reauthorize (the row's Reconnect) always runs the provider's consent.
+        params = getattr(request_info, "request_parameters", None) or {}
+        reauthorize = str(params.get("reauthorize", "")).lower() in {"1", "true", "yes"}
+        verification = None if reauthorize else await hub_test_provider(provider)
         if verification and verification.get("ok") is True:
             hub_name = await hub_credentials_ref(provider)
             local_name = await resolve_user_credentials_name(provider) or hub_name
@@ -482,7 +484,9 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
                 data={"error_code": code},
             )
 
-    return await get_desktop_oauth_auth_url(provider, user_id)
+    return await get_desktop_oauth_auth_url(
+        provider, user_id, getattr(request_info, "initiator_connection_id", "") or ""
+    )
 
 
 async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
@@ -521,7 +525,10 @@ async def _handle_callback(provider: str, request_info) -> ApiResponse:
     if code and state and state in _desktop_oauth_sessions:
         if _desktop_oauth_sessions[state].provider != provider:
             return ApiFailResponse(message="Authorization provider mismatch")
-        return await handle_desktop_oauth_callback(code, state)
+        from flow_sdk.app.actions.desktop_oauth import complete_loopback_flow, flow_result_response  # noqa: PLC0415
+
+        result, _delivered = await complete_loopback_flow(state, code)
+        return flow_result_response(result)
 
     return ApiFailResponse(
         message=f"OAuth callback for {provider}: session not found. "
@@ -578,15 +585,11 @@ async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["Auth
     from flow_sdk.core.oauth import flows  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_wait_auth  # noqa: PLC0415
 
-    async with flows.flow_lock(flow_id):
-        known = flows.get_flow(flow_id)
-        if known is not None and known.result is not None:
-            return known.result, await flows.finish_flow(flow_id, known.result)
-
+    async def produce() -> Optional["AuthFlowResult"]:
         hub = await hub_wait_auth(provider, flow_id)
         status = str(hub.get("status") or "error").lower()
         if status in {"pending", "polling"}:
-            return None, False
+            return None
         if status == "success":
             local_name = await resolve_user_credentials_name(provider)
             hub_name = await hub_credentials_ref(provider)
@@ -595,13 +598,14 @@ async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["Auth
             flow_status = flows.AuthFlowStatus(status)
         except ValueError:
             flow_status = flows.AuthFlowStatus.ERROR
-        result = flows.AuthFlowResult(
+        return flows.AuthFlowResult(
             status=flow_status,
             provider=provider,
             code=str(hub.get("code") or ""),
             detail=str(hub.get("message") or ""),
         )
-        return result, await flows.finish_flow(flow_id, result)
+
+    return await flows.complete_once(flow_id, produce)
 
 
 async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:

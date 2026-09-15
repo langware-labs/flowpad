@@ -580,15 +580,75 @@ def _with_hub_endpoints(provider: LocalOAuthProvider) -> LocalOAuthProvider:
     return replace(provider, endpoints=endpoints, probe=probe)
 
 
+#: The end-to-end test providers' names. Distinct from the hub plugin's ``dummyauth``,
+#: so a local row never shadows the hub one (local wins a name collision).
+TEST_LOOPBACK = "dummyloop"
+TEST_DEVICE = "dummydevice"
+
+
+def _test_providers() -> dict[str, LocalOAuthProvider]:
+    """A loopback provider for unattended end-to-end runs, only under ``FLOWPAD_ENABLE_TEST_OAUTH``.
+
+    The same flag the hub's ``dummyauth`` plugin reads. It targets
+    ``tests/utils/dummy_oauth_server.py`` (``DUMMY_OAUTH_BASE_URL``), which approves
+    without a person, so the CLI, SDK and browser can each run a real PKCE loopback
+    grant against a real backend. Read at lookup time, like the hub URL, so a spawned
+    test backend picks it up from its own environment.
+    """
+    import os  # noqa: PLC0415
+
+    from flow_sdk.utils.environment import get_bool_env_var  # noqa: PLC0415
+
+    if not get_bool_env_var("FLOWPAD_ENABLE_TEST_OAUTH", False):
+        return {}
+    base = os.getenv("DUMMY_OAUTH_BASE_URL", "http://127.0.0.1:6787").rstrip("/")
+    probe = OAuthProbeSpec(
+        method="GET",
+        url=f"{base}/userinfo",
+        success_field="ok",
+        identity_fields=("login",),
+        account_key_fields=("id",),
+    )
+    common = dict(icon="Cloud", client_id_env="DUMMYAUTH_CLIENT_ID", client_id_default="dummy-client", probe=probe)
+    return {
+        TEST_LOOPBACK: LocalOAuthProvider(
+            name=TEST_LOOPBACK,
+            display_name="Dummy (loopback)",
+            user_credentials_name=f"{TEST_LOOPBACK}_credentials",
+            kind=OAuthFlowKind.LOOPBACK,
+            endpoints=OAuthEndpoints(token_url=f"{base}/token", authorize_url=f"{base}/authorize"),
+            pkce=True,
+            **common,
+        ),
+        TEST_DEVICE: LocalOAuthProvider(
+            name=TEST_DEVICE,
+            display_name="Dummy (device)",
+            user_credentials_name=f"{TEST_DEVICE}_credentials",
+            kind=OAuthFlowKind.DEVICE,
+            endpoints=OAuthEndpoints(
+                token_url=f"{base}/token",
+                device_code_url=f"{base}/device/code",
+                device_grant="urn:ietf:params:oauth:grant-type:device_code",
+            ),
+            **common,
+        ),
+    }
+
+
+def _all_providers() -> dict[str, LocalOAuthProvider]:
+    return {**_PROVIDERS, **_test_providers()}
+
+
 def get_local_provider(name: str) -> Optional[LocalOAuthProvider]:
     """Look up a provider by name, case-insensitively. ``None`` when unknown."""
-    provider = _PROVIDERS.get((name or "").strip().lower())
+    provider = _all_providers().get((name or "").strip().lower())
     return _with_hub_endpoints(provider) if provider is not None else None
 
 
 def local_providers() -> list[LocalOAuthProvider]:
     """Every locally-known provider, in a stable order."""
-    return [_with_hub_endpoints(_PROVIDERS[name]) for name in sorted(_PROVIDERS)]
+    providers = _all_providers()
+    return [_with_hub_endpoints(providers[name]) for name in sorted(providers)]
 
 
 def publishable_local_providers() -> list[LocalOAuthProvider]:
