@@ -223,6 +223,16 @@ Two flavors, one base:
 
 * **The authoring form has no map type.** `"string"` / `{field: shape}` / `[shape]` are the only three forms an annotation can take. A `dict[...]` field is therefore expressible ONLY on a class carrying a `spec_kind`, because `to_authoring_form` short-circuits on it before it would fail. `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
 
+## Data sources are self-contained assets (non-negotiable)
+
+**A data source is an asset with its DataSourceSpec, and EVERYTHING one source needs lives in its asset folder** — `agentic-assets/data_source/<name>/`: `data_source.json` (the spec), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own classmethods for send addressing, cursor lifts, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp and its `README.md`. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
+
+* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks.
+
+* **Asset code may import the public SDK** (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`, the hub client, `instance_settings`). It never imports another asset.
+
+* **Exceptions need the user's explicit approval, every time.** An approved exception is recorded with its date and reason in `EXCEPTIONS` in `tests/unit/test_data_sources_are_self_contained.py` — that test is the gate, and it fails on any trace not listed. Don't add an entry yourself; ask.
+
 ## Naming — check the glossary before inventing a noun
 
 **[`docs/glossary.md`](docs/glossary.md)** **is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
