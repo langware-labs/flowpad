@@ -39,7 +39,7 @@ export function AgentPlacesColumn({ agent, autoLaunchPrompt, pendingChanges = 0 
 
   // Re-read when this agent's place settings change (an override, a switch, an email move) —
   // not on every save of the definition, which also rewrites agent.md.
-  const placesKey = JSON.stringify([agent.id, agent.places ?? null, agent.email_place ?? null]);
+  const placesKey = JSON.stringify([agent.id, agent.enabled ?? null, agent.places ?? null, agent.email_place ?? null]);
   useEffect(() => {
     void load();
   }, [load, placesKey]);
