@@ -6,8 +6,9 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { canonicalPath } from '@src/components/project-selector';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
+import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
 import { ProjectLaunchBar } from './project-launch-bar';
 import { WikiTip } from '@src/components/wiki-tip';
@@ -73,6 +74,45 @@ export function resolveProjectChipName(
   if (currentProjectName?.trim()) return currentProjectName.trim();
   const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
   return bucket ? bucketDisplayName(bucket) : null;
+}
+
+/** The `closingId` value while the Global row's close-all is in flight — a
+ *  pseudo-scope, so it needs a key no project id can collide with. */
+const GLOBAL_ROW_ID = '__global__';
+
+/**
+ * A row's close-all X — a SIBLING of the row's select button, never a child: a
+ * button inside a button is invalid HTML, and browsers recover by dropping the
+ * inner one, so the row would swallow every close. Kept mounted (not
+ * hover-gated in the DOM) so it stays keyboard-reachable and testable; only
+ * opacity changes, revealed by the row's `group` hover.
+ */
+function CloseRowButton({
+  closing,
+  disabled,
+  label,
+  testId,
+  onClick,
+}: {
+  closing: boolean;
+  disabled?: boolean;
+  label: string;
+  testId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={closing || disabled}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+    >
+      {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+    </button>
+  );
 }
 
 /**
@@ -262,6 +302,8 @@ export interface ProjectListMenu {
   handleSelectGlobal: () => Promise<void>;
   /** Close every tab of `bucket`, which is what empties it out of the menu. */
   handleCloseProject: (bucket: TabProjectBucket) => Promise<void>;
+  /** Close every global tab, which is what takes the Global row out of the menu. */
+  handleCloseGlobal: () => Promise<void>;
   /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
   projectDialogOpen: boolean;
   setProjectDialogOpen: (open: boolean) => void;
@@ -280,7 +322,7 @@ export function useProjectListMenu({
   const [closingId, setClosingId] = useState<string | null>(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
-  const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
+  const { buckets: allBuckets, globalTabCount, closeGlobal } = useTabProjectBuckets();
 
   // System projects (e.g. the shipped "Flowpad Assistant") are kept out of the
   // chip entirely — they stay reachable via Preferences → UI → "Show system
@@ -363,23 +405,32 @@ export function useProjectListMenu({
   // Emptying the scope you are in is also the one close that ends your MEMBERSHIP
   // of it, which is why this leaves via `leaveProjectScope` (it owns the context
   // clear no loader can) rather than merely navigating.
-  const handleCloseProject = async (bucket: TabProjectBucket) => {
-    setClosingId(bucket.projectId);
+  //
+  // The Global row's X is the same verb: Global is always the CURRENT scope when
+  // its row shows, so it always leaves first — onto the all-scoped Home (see
+  // `globalHomeDock` for why not a bare one).
+  const closeScope = async (rowId: string, leave: DockPointer | null, close: () => Promise<void>) => {
+    setClosingId(rowId);
     try {
-      if (bucket.projectId === currentProjectId) {
-        navigation.openDock(await leaveProjectScope(currentDock));
-      }
-      await bucket.closeAll();
+      if (leave) navigation.openDock(leave);
+      await close();
     } catch (error) {
       notify.error({
-        title: t`Couldn't close the project's tabs`,
+        title: t`Couldn't close the tabs`,
         message: error instanceof Error ? error.message : String(error),
-        id: `project-close-all:${bucket.projectId}`,
+        id: `project-close-all:${rowId}`,
       });
     } finally {
       setClosingId(null);
     }
   };
+  const handleCloseProject = async (bucket: TabProjectBucket) =>
+    closeScope(
+      bucket.projectId,
+      bucket.projectId === currentProjectId ? await leaveProjectScope(currentDock) : null,
+      bucket.closeAll,
+    );
+  const handleCloseGlobal = () => closeScope(GLOBAL_ROW_ID, globalHomeDock(), closeGlobal);
 
   // Selecting the Global row re-focuses the Global scope (it's only shown while
   // Global is already current). URL-first: resolve the most-recently-active
@@ -416,6 +467,7 @@ export function useProjectListMenu({
     handleSelect,
     handleSelectGlobal,
     handleCloseProject,
+    handleCloseGlobal,
     projectDialogOpen,
     setProjectDialogOpen,
     handleOpenProject,
@@ -501,6 +553,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
     closingId,
     handleSelect,
     handleSelectGlobal,
+    handleCloseGlobal,
     handleCloseProject,
   } = menu;
   const { t } = useLingui();
@@ -538,12 +591,13 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         {isGlobalScope ? (
           // The Global scope row — violet-accented so it never reads as a
           // regular project, and always the current scope when shown.
-          <li key="__global__">
+          <li key={GLOBAL_ROW_ID} className="group flex w-full items-center gap-2 rounded bg-violet-500/10 pe-1 hover:bg-violet-500/15">
             <button
               type="button"
               aria-current="true"
+              disabled={closingId === GLOBAL_ROW_ID}
               onClick={() => void handleSelectGlobal()}
-              className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-start text-sm font-medium hover:bg-violet-500/15"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-start text-sm font-medium"
               data-testid="projects-counter-global"
             >
               <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
@@ -554,6 +608,12 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                 {globalTabCount}
               </span>
             </button>
+            <CloseRowButton
+              closing={closingId === GLOBAL_ROW_ID}
+              label={t`Close all ${globalTabCount} global tabs`}
+              testId="projects-counter-close-global"
+              onClick={() => void handleCloseGlobal()}
+            />
           </li>
         ) : null}
         {isGlobalScope && treeRows.length > 0 ? (
@@ -583,9 +643,6 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
             );
           }
           const isClosing = closingId === bucket.projectId;
-          // The close control is a SIBLING of the select button, not a child:
-          // a button inside a button is invalid HTML, and browsers recover from
-          // it by dropping the inner one — the row would swallow every close.
           // The `<li>` is the flex row; `group` lets the X reveal on row hover.
           const rowClass = `group flex w-full items-center gap-2 rounded pe-1 hover:bg-muted ${
             isCurrent ? 'bg-muted/60' : ''
@@ -647,24 +704,14 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                   only ever junk: it also latches when `Project.getById` fails
                   transiently, and the reaper deliberately fails open on a
                   lookup error. A user who wants those rows gone should not have
-                  to wait on a sweep that may correctly decline to run.
-                  Kept mounted (not hover-gated in the DOM) so it stays
-                  keyboard-reachable and testable; only opacity changes. */}
-              <button
-                type="button"
-                disabled={isClosing || isRecovering}
+                  to wait on a sweep that may correctly decline to run. */}
+              <CloseRowButton
+                closing={isClosing}
+                disabled={isRecovering}
+                label={t`Close all ${bucket.tabCount} tabs in this project`}
+                testId={`projects-counter-close-${bucket.projectId}`}
                 onClick={() => void handleCloseProject(bucket)}
-                title={t`Close all ${bucket.tabCount} tabs in this project`}
-                aria-label={t`Close all ${bucket.tabCount} tabs in this project`}
-                data-testid={`projects-counter-close-${bucket.projectId}`}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-              >
-                {isClosing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <X className="h-3.5 w-3.5" />
-                )}
-              </button>
+              />
             </li>
           );
         })}
