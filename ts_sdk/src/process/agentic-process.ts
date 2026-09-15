@@ -342,8 +342,8 @@ export interface IAgenticProcess extends IEntity {
   auto_rename?: boolean;
   readonly naming_state?: SessionNameState | null;
   /** Last view mode this session was viewed in (`vibe|standard|advanced|dev`).
-   *  Per-session memory: opening the session applies it, changing mode while it
-   *  is open records the new one. See `applyProcessViewMode`. */
+   *  Per-session memory: opening the session applies it. Written only through
+   *  `viewModeMemory` under `VIEW_MODE_STORE` (default: on a mode switch). */
   last_mode?: string | null;
   /**
    * Derived: true when the worker is ready for a new user prompt.
@@ -1018,10 +1018,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Mode used to be one global preference (plus a per-project `last_mode`), so
    * switching to Terminal repainted every open session, not the one in hand.
    * The mode is a property of the session you are looking at: opening a session
-   * applies this, and switching mode while it is open writes it back. Null on a
-   * session that has never been opened under a mode — it adopts (and records)
-   * the current one on first open. Written only through
-   * `applyProcessViewMode` / `stampProcessViewMode` in `view-mode-context`.
+   * applies this. Null until the policy mints it — written only through
+   * `viewModeMemory` (`ts_sdk/src/tabs/view-mode-memory.ts`) under
+   * `VIEW_MODE_STORE`, whose default is: on a mode switch, never on an open.
    */
   last_mode: string | null = null;
 

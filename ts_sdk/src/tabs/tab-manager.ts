@@ -2,9 +2,10 @@ import type { IEntity } from '../IEntity';
 import type { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
-import { Tab, type INewTabOpts, type ITab } from '../entities/tab';
+import { Tab, type INewTabOpts, type ITab, type TabEnsureResult } from '../entities/tab';
 import { ConnectionManager, type BroadcastMessage, type DataOpType } from '../websocket';
 import { TabLifecycleRegistry } from './tab-lifecycle-registry';
+import { ViewModeEvent, viewModeMemory } from './view-mode-memory';
 import { computeReorder } from './tab-order';
 import { resolveNextTabPure } from './tab-selection';
 import {
@@ -26,7 +27,7 @@ export interface TabGateway {
   getFromDockPointer(
     dock: IDockPointer,
     options?: { parentTabId?: string | null; afterTabId?: string | null },
-  ): Promise<Tab[]>;
+  ): Promise<TabEnsureResult>;
   resolveDockTarget(dock: IDockPointer): ReturnType<typeof Tab.resolveDockTarget>;
   activateById(tabId: string): Promise<void>;
   closeById(tabId: string): Promise<Tab[]>;
@@ -248,11 +249,32 @@ export class TabManager {
     return this.gateway.newTab(pointer, options);
   }
 
-  ensureDock(
+  /** Get-or-create the dock's tab. `viewMode` is the mode the dock is shown in;
+   *  a minted row reports it to view-mode memory as `TabCreate`. */
+  async ensureDock(
     dock: IDockPointer,
-    options?: { parentTabId?: string | null; afterTabId?: string | null },
-  ): Promise<Tab[]> {
-    return this.gateway.getFromDockPointer(dock, options);
+    options: { parentTabId?: string | null; afterTabId?: string | null; viewMode?: string | null } = {},
+  ): Promise<TabEnsureResult> {
+    const { viewMode, ...placement } = options;
+    const result = await this.gateway.getFromDockPointer(dock, placement);
+    if (result.created) {
+      const tab = tabForDockKey(result.tabs, dock.tabHash);
+      if (tab) this.recordViewModeEvent(tab, ViewModeEvent.TabCreate, viewMode);
+    }
+    return result;
+  }
+
+  /** Report a tab event to view-mode memory, against the tab's target and project. */
+  recordViewModeEvent(tab: Tab, event: ViewModeEvent, mode: string | null | undefined): void {
+    if (!mode || !viewModeMemory.wants(event)) return;
+    viewModeMemory.record(
+      event,
+      {
+        tab: viewModeMemory.targetFor(this.typeIdOrNull(tab.target_type, tab.target_id)),
+        project: viewModeMemory.targetFor(this.typeIdOrNull(EntityTypes.Project, tab.project_id)),
+      },
+      mode,
+    );
   }
 
   resolveDockTarget(dock: IDockPointer): ReturnType<typeof Tab.resolveDockTarget> {
@@ -369,6 +391,15 @@ export class TabManager {
     this.attachedConnection = null;
     this.pendingIntentKey = null;
     this.lifecycle.resetForTests();
+  }
+
+  private typeIdOrNull(type: string | null | undefined, id: string | null | undefined): TypeId | null {
+    if (!type || !id) return null;
+    try {
+      return new TypeId(type, id);
+    } catch {
+      return null;
+    }
   }
 
   private parseTarget(target: TypeId | string): string | null {

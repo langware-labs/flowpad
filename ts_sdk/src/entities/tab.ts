@@ -174,6 +174,12 @@ export interface IEnsureTabOpts {
   parentTabId?: string | null;
 }
 
+/** A get-or-create's render list, and whether the call minted the tab's row. */
+export interface TabEnsureResult {
+  tabs: Tab[];
+  created: boolean;
+}
+
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
   afterTabId?: string | null;
@@ -257,6 +263,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  right after `opts.afterTabId` (the opener); reopen keeps its slot. Returns
    *  the updated list. */
   static async newTab(pointer: string, opts: INewTabOpts = {}): Promise<Tab[]> {
+    return (await Tab.ensure(pointer, opts)).tabs;
+  }
+
+  /** `newTab`, plus whether the call minted the row (`created`). */
+  static async ensure(pointer: string, opts: INewTabOpts = {}): Promise<TabEnsureResult> {
     const info = new ActionInfo('new_tab', Tab.type, null, 'POST');
     info.bodyParameters = {
       pointer,
@@ -269,8 +280,8 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
-    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
-    return Tab.fromResponse(res?.tabs ?? []);
+    const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
+    return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
   }
 
   /**
@@ -350,15 +361,15 @@ export class Tab extends APIEntity<Tab> implements ITab {
   static async getFromDockPointer(
     dock: IDockPointer,
     opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
-  ): Promise<Tab[]> {
+  ): Promise<TabEnsureResult> {
     const pointerJson = dock.toJSON?.();
-    if (!pointerJson) return [];
+    if (!pointerJson) return { tabs: [], created: false };
 
     const { targetTypeId, target, projectId } = await Tab.resolveDockTarget(dock);
 
     const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
 
-    return Tab.newTab(pointerJson, {
+    return Tab.ensure(pointerJson, {
       targetType: targetTypeId?.type ?? null,
       targetId: targetTypeId?.id ?? null,
       projectId,
