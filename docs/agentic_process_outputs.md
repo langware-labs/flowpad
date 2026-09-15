@@ -181,7 +181,7 @@ that is the direct product of what they asked for.
 
 The counter-example worth keeping in mind is the **run receipt**: the small JSON
 a worker leaves in `execution/output/` so its caller can read a structured
-result (`ingest/agent_transport.py`'s `sent.json`). That is a *return value*, not
+result (the `agent` data source's `transport.py` reads its `sent.json`). That is a *return value*, not
 a deliverable — nobody asked for it, and registering it would put a file nobody
 wants to open in the run's output list. The email send registers the
 `source_item` it created, and leaves its receipt alone. The platform has no
