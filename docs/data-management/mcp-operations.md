@@ -21,6 +21,7 @@ python -m flow_sdk.mcp_server
 ```python
 # flow_sdk/mcp_server/__init__.py
 from fastmcp import FastMCP
+from flow_sdk.mcp_server.context_store import ContextStore
 from flow_sdk.mcp_server.mcp_api import flow_ping, flow_entity_crud, flow_tag, flow_context, session_analysis
 
 session_store = ContextStore()
@@ -338,7 +339,7 @@ store = stores.get(key, session_store)
 
 **Returns:**
 
-- `index == -1`: Returns `worker_summary_log(jsonl_path, "claude")` — an extractive, search-indexable text rendering of the whole transcript: only entries whose kind carries real text are kept, and their per-entry `to_string()` renderings are joined. It is capped at the analyzer's default `max_chars` (a longer transcript is truncated with a logged warning) and best-effort — any parse/IO failure yields `""`.
+- `index == -1`: Returns `worker_summary_log(jsonl_path, "claude", number_entries=True)` — an extractive, search-indexable text rendering of the whole transcript: only entries whose kind carries real text are kept, and their per-entry `to_string()` renderings are joined. It is capped at the analyzer's default `max_chars` (a longer transcript is truncated with a logged warning) and best-effort — any parse/IO failure yields `""`.
 - `index >= 0`: Returns `AgentTranscriptFile("claude", jsonl_path).entries[index].to_string()` — the full rich rendering of that one entry.
 - If `claude_session_id` is empty: `"Error: session_id is required"`.
 - If `index` is not an `int`: `"Error: index must be an integer"`.
@@ -358,13 +359,16 @@ from flow_sdk.instance_settings import get_instance_settings
 projects_dir = get_instance_settings().claude_projects_dir
 # scan each project subdir for "{claude_session_id}.jsonl"; first match wins
 if index == -1:
-    result = worker_summary_log(jsonl_path, "claude")
+    result = worker_summary_log(jsonl_path, "claude", number_entries=True)
 else:
     entries = AgentTranscriptFile("claude", jsonl_path).entries
-    result = entries[index].to_string()
+    if 0 <= index < len(entries):
+        result = entries[index].to_string()
+    else:
+        result = f"Error: index {index} out of range for session with {len(entries)} entries"
 ```
 
-`get_instance_settings().claude_projects_dir` resolves to the Claude projects directory (`~/.claude/projects/` by default). The tool iterates every project subdirectory looking for a file named `{session_id}.jsonl`; the first match is used. Index values refer to positions in `AgentTranscriptFile(...).entries` — the analyzer's full parsed entry list for that file. The `-1` summary is unnumbered and covers only the text-bearing subset of those entries (joined with blank lines), so it does not tell the caller which index a given entry has; the caller must count entries itself. There is no `ClaudeRootFsRecord` / `ClaudeSessionFsRecord` class and no `_EXCLUDED_ENTRY_TYPES` filter involved.
+`get_instance_settings().claude_projects_dir` resolves to the Claude projects directory (`~/.claude/projects/` by default). The tool iterates every project subdirectory looking for a file named `{session_id}.jsonl`; the first match is used. Index values refer to positions in `AgentTranscriptFile(...).entries` — the analyzer's full parsed entry list for that file. The `-1` summary covers only the text-bearing subset of those entries, but `number_entries=True` prefixes each rendered entry with `[<index>]` — its position in `.entries` — so the caller can pass that number straight back as `index`. There is no `ClaudeRootFsRecord` / `ClaudeSessionFsRecord` class and no `_EXCLUDED_ENTRY_TYPES` filter involved.
 
 **Example call:**
 
