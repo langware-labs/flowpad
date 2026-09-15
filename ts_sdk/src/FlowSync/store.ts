@@ -1172,8 +1172,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return p;
   }
 
-  private resolvePendingRequests() {
-    for (const ref of this.entities.values()) {
+  /**
+   * Settle every parked waiter whose ref has reached READY/ERROR. `ownRef` is
+   * the ref the finishing request holds: it may already be gone from the map
+   * (clearCache on a read-scope switch, invalidate, remove), and a waiter
+   * parked on a dropped ref is otherwise never settled — its promise hangs
+   * forever, as the project menu's "Loading…" rows did.
+   */
+  private resolvePendingRequests(ownRef?: EntityRef<T>) {
+    const refs = new Set(this.entities.values());
+    if (ownRef) refs.add(ownRef);
+    for (const ref of refs) {
       if (ref.status === EntityStatus.READY) {
         ref.entityPendingPromises.forEach((p) => {
           p.resolve(ref.entity);
@@ -1254,7 +1263,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1328,7 +1337,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ref.status = EntityStatus.ERROR;
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1467,7 +1476,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       throw error;
     } finally {
       ref.saveInFlight = false;
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
