@@ -258,3 +258,19 @@ def test_linears_probe_is_graphql_over_get():
     assert ln.probe.method == "GET"
     assert dict(ln.probe.query) == {"query": "{ viewer { id name email } }"}
     assert dict(ln.probe.headers) == {"Content-Type": "application/json"}
+
+
+def test_a_loopback_provider_without_a_client_id_runs_on_the_hub(monkeypatch):
+    """Google's desktop entry has endpoints but no default client id. Without
+    GOOGLE_CLIENT_ID the loopback flow cannot even build an authorize URL, so
+    the router hands the connection to the hub's `google` plugin — which asks
+    for the same scopes and whose grant is adopted under `google_credentials`.
+    With a client id set, the loopback grant is the real thing and stays local.
+    """
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    assert registry.get_local_provider("google").endpoints is not None
+    assert registry.client_id_for("google") is None
+    assert registry.prefers_hub_flow("google") is True
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "desktop-client.apps.googleusercontent.com")
+    assert registry.prefers_hub_flow("google") is False

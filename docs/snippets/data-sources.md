@@ -266,3 +266,42 @@ one, `lines` picks many.
 | `gdrive` | `drives`   | the shared drives the Google account can see                         |
 | `slack`  | `channels` | every channel the token can see, joined or not                       |
 
+## 10. A source behind a connection: Google Drive
+
+Pinned by `tests/unit/test_data_sources_snippets.py` (the source itself by
+`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gdrive/tests/`).
+
+A Drive source carries no secret in its `config`. Its manifest declares
+`auth.connector: google`, and the token comes from the machine's **Google
+connection**, made on the Connections screen. The scopes it grants,
+`drive.readonly` and `devstorage.read_only`, are what `gdrive` and `gcs` ask for.
+
+```python
+from pathlib import Path
+
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.ingest.reflect import ReflectMode
+
+src = DataSource(
+    name="My Drive",
+    provider="gdrive",
+    config={"cache_root": CACHE_ROOT, "base_url": BASE_URL},   # `drives: [...]` for shared drives; empty = My Drive
+    reflect=ReflectMode.COPY.value,
+    reflect_into=DESTINATION,
+)
+await src.save()
+
+verdict = await src.verify()        # layer 1: the `google` connection; layer 2: Drive answers /about
+verdict["ready"], verdict["layer"], verdict["detail"]
+
+outcome = await src.sync()          # first pass enumerates the drive and takes a change token
+sorted(p.name for p in Path(DESTINATION).rglob("*") if p.is_file())
+```
+
+Until Google is connected, `verify()` answers `ready: False` with a sentence
+that says so (`No Google credential on this machine…`); the row parks in
+`setup` and nothing is fetched. Once it is, files land in `cache_root` under
+Drive's own folder names and are reflected into `reflect_into` like a folder
+source's. The report's `created`/`updated` count *records*, so they stay 0 for
+a file source: look at the tree. Leave `base_url` out in real use; it exists so
+a test can point the source at a loopback Drive.

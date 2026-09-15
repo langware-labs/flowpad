@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:  # pragma: no cover
     import httpx
 
+from flow_sdk.core.oauth.provider_registry import hub_provider_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ async def hub_start_auth(provider: str, *, return_to: str = "") -> Optional[dict
         BuiltinEntityType.USER,
         user_id,
         action="oauth",
-        sub_path=f"{provider}/auth",
+        sub_path=f"{hub_provider_name(provider)}/auth",
         params={"return_to": return_to} if return_to else None,
     )
     if not data.get("auth_url"):
@@ -117,7 +118,7 @@ async def hub_test_provider(provider: str) -> Optional[dict[str, Any]]:
     return await _hub_data(
         user_id,
         action="oauth",
-        sub_path=f"{provider}/test",
+        sub_path=f"{hub_provider_name(provider)}/test",
         on_error=f"[oauth] hub verification failed for {provider!r}",
     )
 
@@ -136,7 +137,7 @@ async def hub_wait_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
         BuiltinEntityType.USER,
         user_id,
         action="oauth",
-        sub_path=f"{provider}/wait-callback",
+        sub_path=f"{hub_provider_name(provider)}/wait-callback",
         params={"oauth_request_id": oauth_request_id},
     )
 
@@ -154,7 +155,7 @@ async def hub_cancel_auth(provider: str, oauth_request_id: str) -> dict[str, Any
         {},
         user_id,
         action="oauth",
-        sub_path=f"{provider}/cancel",
+        sub_path=f"{hub_provider_name(provider)}/cancel",
         params={"oauth_request_id": oauth_request_id},
     ) or {"oauth_request_id": oauth_request_id, "status": "not_found"}
 
@@ -163,7 +164,7 @@ async def hub_credentials_ref(provider: str) -> str:
     """The Hub catalogue's credential ref, including dynamic providers."""
     from flow_sdk.core.oauth.hub_providers import hub_provider_rows  # noqa: PLC0415
 
-    wanted = (provider or "").strip().lower()
+    wanted = hub_provider_name(provider).lower()
     for row in (await hub_provider_rows()).values:
         if row.name.strip().lower() == wanted and row.ref_name:
             return row.ref_name
@@ -256,7 +257,7 @@ def hub_credentials_name_for(provider: str) -> str:
     ``github_credentials`` locally and ``GITHUB_OAUTH_USER_TOKEN`` on the hub —
     and the poll has to watch the hub's name while the local row keeps ours.
     """
-    return f"{(provider or '').strip().upper()}_OAUTH_USER_TOKEN"
+    return f"{hub_provider_name(provider).upper()}_OAUTH_USER_TOKEN"
 
 
 def hub_app_credentials_name_for(provider: str) -> str:
@@ -270,7 +271,7 @@ def hub_app_credentials_name_for(provider: str) -> str:
     (one row per provider, pointing at the user token), so a caller must read it
     with ``hub_credential_value(..., verify_held=False)``.
     """
-    return f"{(provider or '').strip().upper()}_OAUTH_APP_TOKEN"
+    return f"{hub_provider_name(provider).upper()}_OAUTH_APP_TOKEN"
 
 
 #: Ceiling on the redirect-reachability preflight. Not a retry or backoff budget:

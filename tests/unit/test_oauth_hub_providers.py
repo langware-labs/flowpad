@@ -61,11 +61,43 @@ def test_union_keeps_the_local_row_on_a_collision():
 
 def test_union_adds_providers_the_local_registry_lacks():
     local = oauth_provider_rows()
-    hub = EntityEnvVars(values=[hp._row_from_hub(_hub_payload("googledrive")["data"]["values"][0])])
+    hub = EntityEnvVars(values=[hp._row_from_hub(_hub_payload("notion")["data"]["values"][0])])
 
     merged = hp.union_providers(local, hub)
 
-    assert "googledrive" in {r.name for r in merged.values}
+    assert "notion" in {r.name for r in merged.values}
+
+
+def test_a_hub_row_named_by_an_alias_is_our_provider(monkeypatch):
+    """The hub publishes Google as `googledrive`; the desktop's sources bind to
+    `google`. The row is parsed as the hub sent it, and the union folds it onto
+    OUR row — our name, our credential entry (the one `_adopt_hub_credential`
+    stores into), the hub's grant and scopes — so the table shows one Google
+    that reads AVAILABLE after a connect. Out-bound, the hub is still asked by
+    its own name.
+    """
+    from flow_sdk.core.oauth import hub_oauth
+    from flow_sdk.core.oauth.provider_registry import hub_provider_name, local_provider_name
+
+    # With a desktop client id the loopback flow would win and shadow the hub row.
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    row = hp._row_from_hub(_hub_payload("googledrive")["data"]["values"][0])
+    assert row.name == "googledrive", "the parser reports what the hub said"
+
+    merged = hp.union_providers(oauth_provider_rows(), EntityEnvVars(values=[row]))
+    names = [r.name for r in merged.values]
+    assert names.count("google") == 1
+    assert "googledrive" not in names
+    google = next(r for r in merged.values if r.name == "google")
+    assert google.ref_name == "google_credentials"
+    assert google.oauth_kind == row.oauth_kind
+    assert google.oauth_scopes == row.oauth_scopes
+
+    assert hub_provider_name("google") == "googledrive"
+    assert local_provider_name("googledrive") == "google"
+    assert hub_provider_name("slack") == "slack"
+    assert local_provider_name("slack") == "slack"
+    assert hub_oauth.hub_credentials_name_for("google") == "GOOGLEDRIVE_OAUTH_USER_TOKEN"
 
 
 @pytest.mark.asyncio

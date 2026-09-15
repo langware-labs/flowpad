@@ -180,6 +180,11 @@ class LocalOAuthProvider:
     #: `_ensure_identity` was written to stamp. None means the provider has no
     #: second identity, which is every other provider we ship.
     app_credentials_name: Optional[str] = None
+    #: OPTIONAL. The name the hub publishes this provider under when it is not
+    #: ours (Google: ``googledrive``). Out-bound hub calls go through
+    #: ``hub_provider_name``, in-bound rows through ``local_provider_name``.
+    #: None means both sides agree, which is every other provider we ship.
+    hub_name: Optional[str] = None
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -269,10 +274,15 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         ),
         # No default: unlike GitHub and Anthropic, this repo has no registered
         # Google client to fall back on. Set GOOGLE_CLIENT_ID from a Google Cloud
-        # OAuth client of type "Desktop app". Until then `client_id_for` returns
-        # None and the flow reports a missing client instead of half-running.
+        # OAuth client of type "Desktop app" to run the flow here. Without one,
+        # `prefers_hub_flow` routes the connection to the hub's plugin, which asks
+        # for the same scopes; the grant is adopted into `google_credentials` and
+        # refreshed through the hub mirror.
         client_id_env="GOOGLE_CLIENT_ID",
         client_id_default=None,
+        # The hub's plugin keeps this name: the Google web client registers its
+        # callback URL by it on every hub host.
+        hub_name="googledrive",
         pkce=True,
         # Google returns access_token + refresh_token + expiry, and the refresh
         # token is the half that matters — an access token lasts an hour.
@@ -511,6 +521,19 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
     ),
 }
 
+#: The hub-name aliases, both ways, read off the static table once. Test
+#: providers declare none, so neither map needs the dynamic set.
+_HUB_NAME_OF: dict[str, str] = {name: p.hub_name for name, p in _PROVIDERS.items() if p.hub_name}
+_LOCAL_NAME_OF: dict[str, str] = {hub.lower(): name for name, hub in _HUB_NAME_OF.items()}
+
+
+def _client_id(provider: LocalOAuthProvider) -> Optional[str]:
+    """The descriptor's client id: env override, else its default."""
+    import os  # noqa: PLC0415
+
+    override = os.getenv(provider.client_id_env) if provider.client_id_env else None
+    return override or provider.client_id_default
+
 
 def client_id_for(name: str) -> Optional[str]:
     """A provider's OAuth client id: env override, else the registry default.
@@ -518,16 +541,22 @@ def client_id_for(name: str) -> Optional[str]:
     One function instead of `_get_<provider>_client_id` per provider, so a new
     provider's client id is a data change like everything else about it.
     """
-    import os  # noqa: PLC0415
-
     provider = get_local_provider(name)
-    if provider is None:
-        return None
-    if provider.client_id_env:
-        override = os.getenv(provider.client_id_env)
-        if override:
-            return override
-    return provider.client_id_default
+    return _client_id(provider) if provider is not None else None
+
+
+def local_flow_executable(provider: LocalOAuthProvider) -> bool:
+    """Whether this machine can run the provider's grant by itself: the
+    endpoints the grant needs, and a client id to present to them. The ONE
+    encoding of that fact — `publishable_local_providers` and `prefers_hub_flow`
+    both read it, so a row never advertises a flow the button cannot start."""
+    endpoints = provider.endpoints
+    return (
+        endpoints is not None
+        and bool(endpoints.token_url)
+        and (provider.kind == OAuthFlowKind.DEVICE or bool(endpoints.authorize_url))
+        and bool(_client_id(provider))
+    )
 
 
 def _with_hub_endpoints(provider: LocalOAuthProvider) -> LocalOAuthProvider:
@@ -652,21 +681,16 @@ def local_providers() -> list[LocalOAuthProvider]:
 
 
 def publishable_local_providers() -> list[LocalOAuthProvider]:
-    """Providers whose complete local connection contract is executable."""
+    """Providers with a complete connection contract: a probe, a credential
+    name, and a flow that can run — here, or on the hub. An entry that declares
+    a ``hub_name`` is hub-run by construction: the hub's row merges onto it in
+    ``union_providers`` under OUR name and credential entry."""
     return [
         provider
         for provider in local_providers()
         if provider.probe is not None
         and bool(provider.user_credentials_name)
-        and (
-            provider.hub_required
-            or (
-                provider.endpoints is not None
-                and bool(provider.endpoints.token_url)
-                and (provider.kind == OAuthFlowKind.DEVICE or bool(provider.endpoints.authorize_url))
-                and bool(client_id_for(provider.name))
-            )
-        )
+        and (provider.hub_required or bool(provider.hub_name) or local_flow_executable(provider))
     ]
 
 
@@ -691,6 +715,20 @@ def app_credentials_name(name: str) -> Optional[str]:
     return provider.app_credentials_name if provider else None
 
 
+def hub_provider_name(name: str) -> str:
+    """The name the hub knows ``name`` by — ``name`` itself unless the registry
+    entry declares a ``hub_name``. Applied wherever a provider name is put into
+    a hub URL or a hub credential name."""
+    key = (name or "").strip()
+    return _HUB_NAME_OF.get(key.lower(), key)
+
+
+def local_provider_name(hub_name: str) -> str:
+    """The inverse: what a hub row is called here."""
+    key = (hub_name or "").strip()
+    return _LOCAL_NAME_OF.get(key.lower(), key)
+
+
 def prefers_hub_flow(name: str) -> bool:
     """Whether this provider should run its flow on the hub when one is available.
 
@@ -711,7 +749,9 @@ def prefers_hub_flow(name: str) -> bool:
     local = get_local_provider(name)
     if local is None:
         return True
-    return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
+    # A grant this machine cannot run (no endpoints, or no client id to present
+    # to them) can only run on the hub.
+    return local.kind == OAuthFlowKind.DEVICE or not local_flow_executable(local)
 
 
 async def credential_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Any:
