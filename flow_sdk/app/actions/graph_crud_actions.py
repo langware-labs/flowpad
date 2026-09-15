@@ -425,19 +425,6 @@ async def handle_create_entity(request: Request):
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
 
-    # A type with a natural key answers a repeat create with the row it already
-    # has. Only for an id-less, parentless (or user-parented, which dispatches the
-    # same) create: a caller-supplied id is an identity minted elsewhere, and a
-    # parented create must still attach to its parent.
-    target_typeid = request_info.target_entity_typeid
-    if (
-        not incoming_id
-        and destination is None
-        and (not target_typeid or target_typeid.type == User.get_type())
-        and (existing := await entity.find_existing_for_create()) is not None
-    ):
-        return ApiSuccessResponse[Entity](data=existing)
-
     # Reject agent creation without a name
     if request_info.direct_resource_type == "subagent" and not getattr(entity, "name", None):
         raise HTTPException(status_code=400, detail="Agent must have a name")
@@ -456,7 +443,11 @@ async def handle_create_entity(request: Request):
             parent = await prepare_destination(entity, destination, request_info)
             entity = await _dispatch_create_save(entity, request_info, someone_typeid, destination_parent=parent)
         else:
-            entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+            # A caller-supplied id is an identity minted elsewhere — never swap it
+            # for a natural-key match.
+            entity = await _dispatch_create_save(
+                entity, request_info, someone_typeid, find_existing=not incoming_id
+            )
     except AssetPathCollisionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
@@ -470,12 +461,19 @@ async def handle_create_entity(request: Request):
 _DEFAULT_CREATE_PARENT = object()
 
 
-async def _dispatch_create_save(entity: Entity, request_info, someone_typeid, *, destination_parent=_DEFAULT_CREATE_PARENT) -> Entity:
+async def _dispatch_create_save(
+    entity: Entity, request_info, someone_typeid, *, destination_parent=_DEFAULT_CREATE_PARENT, find_existing: bool = False
+) -> Entity:
     """The three create arms (standalone / visitor / parented), extracted so
-    handle_create_entity can wrap them under one ValueError→400 mapping."""
+    handle_create_entity can wrap them under one ValueError→400 mapping.
+
+    ``find_existing``: a standalone create answers with the row that already
+    holds its natural key (``Entity.find_existing_for_create``) instead of a twin."""
     target_typeid = (request_info.target_entity_typeid if destination_parent is _DEFAULT_CREATE_PARENT
                      else destination_parent.typeid if destination_parent is not None else None)
     if not target_typeid or target_typeid.type == User.get_type():
+        if find_existing and (existing := await entity.find_existing_for_create()) is not None:
+            return existing
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()
