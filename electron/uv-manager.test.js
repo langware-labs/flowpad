@@ -428,5 +428,38 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     }
   }
 
+  {
+    // Package dialog supersession: while the "Update Available" dialog for X is open,
+    // supersedePackageDialog() closes it as "Later" (X deferred), and a fresh check
+    // offers the newer version.
+    const electronId = require.resolve('electron');
+    const savedElectron = require.cache[electronId];
+    require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
+      exports: { dialog: { showMessageBox: (_w, opts) => new Promise((resolve) => {
+        opts.signal.addEventListener('abort', () => resolve({ response: opts.cancelId }));
+      }) } } };
+    try {
+      const m = new UvManager(silentLog);
+      let latest = '0.2.160';
+      m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: latest, required: true });
+      const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
+      eq(m.openPackageDialogVersion(), null, 'no package dialog open initially');
+      const first = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
+      await new Promise((r) => setTimeout(r, 0));
+      eq(m.openPackageDialogVersion(), '0.2.160', 'dialog for 0.2.160 is open');
+      latest = '0.2.161';
+      m.supersedePackageDialog();
+      eq(await first, false, 'superseded dialog resolves as Later');
+      eq(m.openPackageDialogVersion(), null, 'dialog closed');
+      eq(m._deferredPackageVersion, '0.2.160', 'old version recorded as deferred');
+      const second = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
+      await new Promise((r) => setTimeout(r, 0));
+      eq(m.openPackageDialogVersion(), '0.2.161', 'fresh check offers the newer version');
+      m.supersedePackageDialog(); await second;
+    } finally {
+      if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
+    }
+  }
+
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

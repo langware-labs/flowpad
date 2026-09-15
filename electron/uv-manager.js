@@ -1325,6 +1325,16 @@ class UvManager {
     if (version) this._deferredPackageVersion = version;
   }
 
+  /** Version offered by the package dialog currently on screen, or null. */
+  openPackageDialogVersion() {
+    return this._packageDialog ? this._packageDialog.version : null;
+  }
+
+  /** Close the open package dialog as if the user chose "Later" (a newer release supersedes it). */
+  supersedePackageDialog() {
+    if (this._packageDialog) this._packageDialog.abort.abort();
+  }
+
   async checkForUpdatesInBackground(
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
@@ -1355,17 +1365,27 @@ class UvManager {
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Available',
-        message: `A new version of FlowPad is available (${latest}).`,
-        detail: status.currentVersion
-          ? `You are running version ${status.currentVersion}.`
-          : 'Your current installation could not be verified and may be incomplete.',
-        buttons: ['Upgrade', 'Later'],
-        defaultId: 0,
-        cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-      });
+      // Abortable: a newer release found while this is on screen closes it (as
+      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
+      // version, is ever shown.
+      this._packageDialog = { version: latest, abort: new AbortController() };
+      let response;
+      try {
+        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Update Available',
+          message: `A new version of FlowPad is available (${latest}).`,
+          detail: status.currentVersion
+            ? `You are running version ${status.currentVersion}.`
+            : 'Your current installation could not be verified and may be incomplete.',
+          buttons: ['Upgrade', 'Later'],
+          defaultId: 0,
+          cancelId: 1, // Esc / close = Later, never an implicit Upgrade
+          signal: this._packageDialog.abort.signal,
+        }));
+      } finally {
+        this._packageDialog = null;
+      }
       if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
