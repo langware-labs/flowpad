@@ -121,6 +121,14 @@ def asset_module(name: str, module: str = "source") -> ModuleType:
     return load_module(SHIPPED_ROOT / name, module)
 
 
+def load_source_value_kinds() -> None:
+    """Load the shipped source folders, which registers the payload kinds their classes define. The
+    registry builds once; every later call is a dict hit."""
+    from flow_sdk.ingest.sources import SOURCES  # noqa: PLC0415
+
+    SOURCES.kinds()
+
+
 def register_shipped(registry: "KindRegistry[SourceType]") -> None:
     """Every shipped folder, into ``registry``; a name already registered (a test's) is left alone.
     A folder that fails is logged and recorded, never raised: one broken source must not take the

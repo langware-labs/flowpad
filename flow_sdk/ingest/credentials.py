@@ -15,6 +15,9 @@ bound is what it uses, and the binding is saved on the row so every background p
 * ``secrets`` — ``{value key: machine secret name}``, loaded by value key from the bound (or
   default) store; otherwise the named machine secret, then the row's own ``config[value key]``.
   Either way the value reaches the source as a credential, never as configuration.
+* ``credential`` + ``vars`` — ``{value key: env var}`` of a named CredentialSpec, resolved for the
+  row's owner the way a worker process resolves its secrets (the owning agent's project over the
+  user scope); a key it cannot supply falls back to the row's ``config``.
 """
 from __future__ import annotations
 
@@ -35,6 +38,8 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials
         return Credentials()
     if auth.connector:
         return await _connector(str(getattr(row, "connection", "") or "") or auth.connector)
+    if auth.credential:
+        return await _declared(auth, row)
     stored = await _stored_values(row, list(auth.env) if auth.env else list(auth.secrets))
     if auth.env:
         values = {
@@ -50,6 +55,31 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials
         if value := value or str(config.get(key) or "").strip():
             values[key] = SecretStr(value)
     return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
+
+
+async def _declared(auth: AuthSpec, row: Any) -> Credentials:
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare, resolve_project_secrets  # noqa: PLC0415
+
+    project = await _owner_project(row)
+    # Only the named credential's specs: another spec declaring the same variable must not win it.
+    pairs = [(spec, scope) for spec, scope in await credentials_in_scope(project) if spec.name == auth.credential]
+    loaded = await resolve_project_secrets(project, only=auth.vars.values(), declared=declare(pairs)) if pairs else {}
+    config = getattr(row, "config", None) or {}
+    values = {}
+    for key, var in auth.vars.items():
+        stored = loaded[var].get_secret_value().strip() if var in loaded else ""
+        if value := stored or str(config.get(key) or "").strip():
+            values[key] = SecretStr(value)
+    return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
+
+
+async def _owner_project(row: Any) -> Any:
+    """The owning agent's project; None (the user scope alone) for a user-owned row."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.inbox.projection import owning_agent  # noqa: PLC0415
+
+    project_id = str(getattr(await owning_agent(row), "project_id", "") or "")
+    return await Project.get_by_id(project_id) if project_id else None
 
 
 async def _stored_values(row: Any, names: list[str]) -> dict[str, str]:

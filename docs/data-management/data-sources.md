@@ -143,7 +143,11 @@ application transport; `message_for` reads a send's arguments; `lift_cursor` ado
 older cursor; `local_tree_key` / `origin_id_for` place and name reflected files;
 `permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
 `events_from_webhook` take push delivery through the one generic route,
-`/api/v1/data_source/webhook/<name>`. The shipped folders load on the first
+`/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
+must accept the delivery's raw body and headers before anything is ingested. The check is
+`SourceType.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
+with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
+secret). The shipped folders load on the first
 `source_type(provider)` call; an authored folder loads on first use
 (`resolve_source_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.

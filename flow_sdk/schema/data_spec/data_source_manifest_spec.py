@@ -134,14 +134,22 @@ class AuthSpec(DataSpec):
     env: list[str] = Field(default_factory=list)
     #: ``{value key: machine secret name}`` — ``""`` when only the row supplies it.
     secrets: dict[str, str] = Field(default_factory=dict)
+    #: A CredentialSpec NAME, declared in the owner's project or the user scope — its values come
+    #: from that scope's ``.env.local`` or vault, exactly as a worker process reads them.
+    credential: str = ""
+    #: ``{value key: env var of that credential}`` — required with ``credential``.
+    vars: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _one_shape(self) -> "AuthSpec":
-        shapes = [name for name, present in (("connector", self.connector), ("env", self.env), ("secrets", self.secrets)) if present]
+        present = (("connector", self.connector), ("env", self.env), ("secrets", self.secrets), ("credential", self.credential))
+        shapes = [name for name, value in present if value]
         if len(shapes) > 1:
             raise ValueError(f"auth declares {' and '.join(shapes)}; a source has one credential lifetime")
         if not shapes:
-            raise ValueError("auth must declare one of connector, env or secrets")
+            raise ValueError("auth must declare one of connector, env, secrets or credential")
+        if bool(self.credential) != bool(self.vars):
+            raise ValueError("auth `credential` and `vars` go together: which credential, and which of its variables")
         return self
 
 

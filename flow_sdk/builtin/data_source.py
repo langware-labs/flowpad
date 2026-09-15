@@ -350,11 +350,12 @@ class DataSource(Entity):
 
     @property
     def credentials(self) -> "SecretRequirements":
-        """The names this source loads from a store — its manifest's ``auth.env`` or ``auth.secrets`` keys."""
+        """The names this source loads from a store — its manifest's ``auth.env``, ``auth.secrets`` keys, or
+        the ``auth.vars`` of the credential it reads."""
         from flow_sdk.secrets.requirements import SecretRequirements  # noqa: PLC0415
 
         auth = self._auth()
-        return SecretRequirements((list(auth.env) or list(auth.secrets)) if auth is not None else [])
+        return SecretRequirements((list(auth.env) or list(auth.secrets) or list(auth.vars.values())) if auth is not None else [])
 
     @property
     def connections(self) -> "ConnectionRequirements":

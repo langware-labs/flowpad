@@ -131,7 +131,10 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
             answer = await client.get(f"/api/v1/data_source/webhook/{name}", params=case["handshake"])
             assert answer.status_code == 200 and answer.text == case["handshake"]["hub.challenge"], answer.text
         if case.get("push"):
-            pushed = _data(await client.post(f"/api/v1/data_source/webhook/{name}", json=case["push"]))
+            # Sent as the exact bytes the case signs, since a provider's signature covers the raw body.
+            raw = json.dumps(case["push"]).encode()
+            headers = {"Content-Type": "application/json", **(case["sign"](raw) if case.get("sign") else {})}
+            pushed = _data(await client.post(f"/api/v1/data_source/webhook/{name}", content=raw, headers=headers))
             assert pushed.get("ingested", 0) >= 1, pushed
 
         report = await driver.sync(source_id)

@@ -83,7 +83,8 @@ class Source:
     # table outside its asset folder ever names it. Optional capabilities are methods a class
     # defines when it has them, discovered with ``hasattr``: ``message_for`` (how the application's
     # send arguments address this channel), ``choices_for`` (a field whose options are application
-    # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery).
+    # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery),
+    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required).
 
     @classmethod
     def build(cls, binding: SourceBinding) -> "Source":

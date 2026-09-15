@@ -2,7 +2,8 @@
 
 A source whose provider can only push (Meta's WhatsApp Cloud API lists nothing) declares it on its
 class — ``webhook_challenge`` for the provider's one-time handshake, ``webhook_account`` and
-``events_from_webhook`` for each delivery — and this route asks. It knows no provider.
+``events_from_webhook`` for each delivery, ``webhook_authentic`` when the provider signs its
+deliveries — and this route asks. It knows no provider.
 
 **Two verbs, and they are different requests.** A provider calls ``GET`` once, when the webhook is
 saved, and compares the echoed challenge byte for byte — so the answer is bare ``text/plain``, never
@@ -15,12 +16,14 @@ the poller uses, so the digest gate and the ``ingest.*`` events apply exactly as
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.sources.errors import Rejected
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +62,11 @@ async def webhook_delivery(name: str, request: Request):
     stype = await _pushing_type(name, "events_from_webhook")
     if stype is None:
         return ApiFailResponse(message=f"{name} takes no webhook deliveries")
+    # The raw bytes, not a re-serialisation: a provider signs exactly what it sent.
+    raw = await request.body()
     try:
-        payload = await request.json()
-    except Exception:  # noqa: BLE001 — a body that is not JSON is the caller's
+        payload = json.loads(raw)
+    except ValueError:
         return ApiFailResponse(message="Expected a JSON object body")
     if not isinstance(payload, dict):
         return ApiFailResponse(message="Expected a JSON object body")
@@ -73,7 +78,13 @@ async def webhook_delivery(name: str, request: Request):
         # No amount of retrying makes a source exist; the log is where a person finds out.
         logger.warning("[webhook] %s delivery for %r matches no source on this instance", name, account)
         return ApiSuccessResponse(data={"ingested": 0, "reason": "no source for this account"})
-    return ApiSuccessResponse(data=await stype.ingest_pushed(row, payload))
+    # The URL is public: an unverified body would put words in an allowed sender's mouth and drive
+    # an agent. The source type refuses one its class cannot authenticate.
+    try:
+        return ApiSuccessResponse(data=await stype.ingest_pushed(row, payload, headers=request.headers, raw=raw))
+    except Rejected:
+        logger.warning("[webhook] %s delivery for %r refused: the signature did not verify", name, account)
+        return PlainTextResponse("signature did not verify", status_code=401)
 
 
 __all__ = ["router", "webhook_delivery", "webhook_handshake"]

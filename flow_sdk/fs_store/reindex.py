@@ -83,6 +83,28 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
+async def reparse_entity(entity, *, fallback: str = "", write: bool = True):
+    """Force-reparse ``entity``'s OWN asset from disk and sync its row; the record, or None when the
+    path no longer resolves (or the type has no parser).
+
+    The entity's asset_ref (folder path for folder types), not a raw touched path — extract_skill et
+    al. would mis-name a raw inner path. The row's id, scope and project_id are authoritative: the id
+    keeps a portable asset whose carrier was wiped on the SAME entity, and the labels keep an asset in
+    a workspace project from being relabelled ``user``.
+    """
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    target = str(getattr(entity, "asset_ref", None) or fallback)
+    if not target:
+        return None
+    try:
+        resolved = await resolve_asset(target, write=write, type_name=entity.type, owner_id=str(entity.id) if entity.id else None)
+    except NotAnAsset as reason:
+        logger.debug("reparse %s: %s", target, reason)
+        return None
+    return await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=getattr(entity, "project_id", None))
+
+
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
@@ -112,21 +134,8 @@ async def reindex_paths(
 
     result = ReindexResult()
 
-    # Force-reparse an entity's OWN asset_ref (folder path for folder types), not
-    # the raw touched path — extract_skill et al. would mis-name a raw inner path.
-    # The row's id, scope and project_id are authoritative: the id keeps a
-    # portable asset whose carrier was wiped on the SAME entity, and the labels
-    # keep an asset in a workspace project from being relabelled ``user``.
     async def _resync(entity, fallback: str):
-        target = str(getattr(entity, "asset_ref", None) or fallback)
-        try:
-            resolved = await resolve_asset(
-                target, write=write, type_name=entity.type, owner_id=str(entity.id) if entity.id else None
-            )
-        except NotAnAsset as reason:
-            logger.debug("reindex resync %s: %s", target, reason)
-            return None
-        return await index_one(resolved, notify=True, scope=entity.scope, project_id=entity.project_id)
+        return await reparse_entity(entity, fallback=fallback, write=write)
 
     # A brand-new file with no owning entity: the registry names its type (an
     # ambiguous ``.json`` is never guessed at) and the asset is indexed. The

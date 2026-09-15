@@ -367,10 +367,10 @@ class SourceType:
 
         return await resolve_credentials(self.manifest.auth if self.manifest is not None else None, row)
 
-    async def open(self, row: Any, *, persona: bool = False) -> Source:
+    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[Credentials] = None) -> Source:
         """The configured source (not yet in a session). A configuration the class refuses is a
-        person's to fix."""
-        credentials = await self.credentials_for(row)
+        person's to fix. ``credentials`` already resolved for this row skip the second resolve."""
+        credentials = credentials if credentials is not None else await self.credentials_for(row)
         binding = binding_of(row, credentials=credentials, persona=await _persona_of(row) if persona else None)
         derived = dict(self.cls.configure(row) or {})
         if derived:
@@ -615,12 +615,19 @@ class SourceType:
             return False
         return True
 
-    async def ingest_pushed(self, row: Any, payload: Any) -> dict:
+    async def ingest_pushed(self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"") -> dict:
         """A provider's push delivery (a webhook body), as the records it carries, through the one
-        ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing."""
+        ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing.
+
+        A class that can prove a delivery came from its provider (``webhook_authentic``) must: the
+        delivery is refused with ``Rejected`` before anything is read, whoever calls this."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
 
-        source = await self.open(row)
+        credentials = await self.credentials_for(row)
+        authentic = getattr(self.cls, "webhook_authentic", None)
+        if authentic is not None and not authentic(headers or {}, raw, credentials):
+            raise Rejected("the delivery's signature did not verify")
+        source = await self.open(row, credentials=credentials)
         async with source:
             events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
             segment = await _single_segment(source)
