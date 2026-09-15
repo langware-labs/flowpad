@@ -376,21 +376,19 @@ class Deployment(Entity):
         bridge like any other hub update, so this doesn't write the status
         locally in that case; doing both would race the push.
         """
-        if self.remote:
-            await self._hub_action("pause")
-            return True
         return await self._set_node_state("pause", "paused")
 
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
-        if self.remote:
-            await self._hub_action("resume")
-            return True
         return await self._set_node_state("resume", "running")
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
+        """Pause or resume the machine: through the hub for a remote placement, else on the node here."""
         from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
+        if self.remote:
+            await self._hub_action(verb)
+            return True
         node_id = self.compute_node_id
         if node_id is None:
             return False
@@ -398,11 +396,8 @@ class Deployment(Entity):
         if node is None:
             return False
         await getattr(node, verb)()
-        self.status = DeploymentStatus(
-            sync_state=self.status.sync_state,
-            provider_state=provider_state,
-            observed_at=datetime.now(UTC).isoformat(),
-            message=self.status.message,
+        self.status = self.status.model_copy(
+            update={"provider_state": provider_state, "observed_at": datetime.now(UTC).isoformat()}
         )
         await self.save()
         return True
@@ -418,7 +413,7 @@ class Deployment(Entity):
             raise DeploymentActionError("this computer already runs the definition on disk", status_code=409)
         return await self._hub_action("update")
 
-    async def remote_runs(self, limit: int = 8) -> list[dict[str, Any]]:
+    async def remote_runs(self, limit: int) -> list[dict[str, Any]]:
         """The latest runs ON a cloud machine, read through the hub.
 
         Local runs are the local ``/runs`` list; a box's runs live in the box's
@@ -431,8 +426,8 @@ class Deployment(Entity):
         data = await hub_http.hub_get(self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
         if not isinstance(data, dict):
             raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
-        runs = data.get("runs")
-        return [run for run in runs if isinstance(run, dict)] if isinstance(runs, list) else []
+        # The hub already drops anything that is not a run.
+        return list(data.get("runs") or [])
 
     async def _hub_action(self, verb: str) -> dict[str, Any]:
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""

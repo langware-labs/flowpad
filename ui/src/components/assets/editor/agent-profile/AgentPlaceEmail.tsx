@@ -1,6 +1,6 @@
 import { Agent, Deployment, type AgentInboxState, type AgentPlace } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -25,16 +25,20 @@ export function AgentPlaceEmail({ agent, place, places, onChanged }: AgentPlaceE
   const [inbox, setInbox] = useState<AgentInboxState | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+  // Only when the agent or its answering place changes: reading the inbox state
+  // reconciles the email source, so it must not run on every row refresh.
   useEffect(() => {
     let alive = true;
-    agent
+    agentRef.current
       .inboxState()
       .then((state) => alive && setInbox(state))
       .catch(() => alive && setInbox(null));
     return () => {
       alive = false;
     };
-  }, [agent]);
+  }, [agent.id, agent.email_place]);
 
   const answering = useMemo(() => places.find((p) => p.answers_email), [places]);
   const answeringName = useMemo(() => {
@@ -51,7 +55,11 @@ export function AgentPlaceEmail({ agent, place, places, onChanged }: AgentPlaceE
       await onChanged();
       notify.success({ title: t`Email is now answered here` });
     } catch (e) {
-      notify.error({ title: t`Could not move email here`, message: errorMessage(e, t`Email not moved.`), forceToast: true });
+      notify.error({
+        title: t`Could not move email here`,
+        message: errorMessage(e, t`Email not moved.`),
+        forceToast: true,
+      });
     } finally {
       setBusy(false);
     }
@@ -82,7 +90,13 @@ export function AgentPlaceEmail({ agent, place, places, onChanged }: AgentPlaceE
           <span className="text-xs text-muted-foreground" data-testid="agent-place-email-elsewhere">
             <Trans>Answered by {answeringName}</Trans>
           </span>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void moveHere()} data-testid="agent-place-email-move">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void moveHere()}
+            data-testid="agent-place-email-move"
+          >
             <Trans>Answer here instead</Trans>
           </Button>
         </div>

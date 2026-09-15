@@ -19,7 +19,7 @@ const RECENT = 8;
  * This computer's runs are the local run list; a cloud machine's live in its own
  * database, read through the hub.
  */
-export function AgentPlaceActivity({ deployment, isLocal = true }: { deployment: Deployment; isLocal?: boolean }) {
+export function AgentPlaceActivity({ deployment, isLocal }: { deployment: Deployment; isLocal: boolean }) {
   const { navigation } = useDockNavigation();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [unreachable, setUnreachable] = useState(false);

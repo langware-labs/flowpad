@@ -595,7 +595,7 @@ class Agent(Entity):
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="publish requires an authenticated user", status_code=401)
-        body = (await request_info.get_post_data() if request_info else None) or {}
+        body = await self._body()
         try:
             # ``force``: publish the current definition even when already on the
             # hub — the header's "Publish N changes". Without it this stays the
@@ -977,12 +977,15 @@ class Agent(Entity):
             lambda: agent_places.set_email_place(self, str(body.get("deployment_id") or ""))
         )
 
-    async def _relay_place_action(self, body: dict):
-        """Hand one place action on a CLOUD place to the hub, which alone reaches the machine."""
+    @action.post(action_name="place_action")
+    async def place_action(self):
+        """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
+        on a CLOUD place, through the hub, which alone reaches the machine."""
         from flow_sdk.builtin import agent_places  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
+        body = await self._body()
         deployment = await agent_places.place_of(self, str(body.get("deployment_id") or ""))
         if deployment is None:
             return ApiFailResponse(message="not a place this agent runs on", status_code=404)
@@ -1000,12 +1003,6 @@ class Agent(Entity):
         if data is None:
             return ApiFailResponse(message="cloud login required to reach a cloud machine", status_code=401)
         return ApiSuccessResponse(data=data)
-
-    @action.post(action_name="place_action")
-    async def place_action(self):
-        """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
-        on a cloud place, through the hub."""
-        return await self._relay_place_action(await self._body())
 
     @action.post(action_name="adopt_placement")
     async def adopt_placement_action(self):
@@ -1036,18 +1033,18 @@ class Agent(Entity):
         """Shared envelope for the three schedule verbs — see ``agent_schedule``."""
         from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
 
-        request_info = get_current_request_info()
-        body = (await request_info.get_post_data() if request_info else None) or {}
-        try:
-            if op == "add":
-                return ApiSuccessResponse(data=await agent_schedule.add_schedule(self, body))
-            trigger_id = str(body.get("trigger_id") or "")
-            if op == "update":
-                return ApiSuccessResponse(data=await agent_schedule.update_schedule(self, trigger_id, body))
+        body = await self._body()
+        trigger_id = str(body.get("trigger_id") or "")
+        if op == "add":
+            return await self._place_answer(lambda: agent_schedule.add_schedule(self, body))
+        if op == "update":
+            return await self._place_answer(lambda: agent_schedule.update_schedule(self, trigger_id, body))
+
+        async def remove():
             await agent_schedule.remove_schedule(self, trigger_id)
-            return ApiSuccessResponse(data={"deleted": True, "trigger_id": trigger_id})
-        except agent_schedule.ScheduleError as exc:
-            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+            return {"deleted": True, "trigger_id": trigger_id}
+
+        return await self._place_answer(remove)
 
     @action.post(action_name="add_schedule")
     async def add_schedule_action(self):

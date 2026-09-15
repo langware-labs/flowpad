@@ -1317,6 +1317,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             raise ValueError(f"project_id must be a UUID v4 or v5 entity id: {candidate}")
         return candidate
 
+    @staticmethod
+    def _staging_error(staging_path: str) -> ApiFailResponse | None:
+        """Why a delivered tree cannot be used, or None: it must be an existing directory on this node."""
+        if staging_path and os.path.isdir(staging_path):
+            return None
+        return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
+
     async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
         """Put a project at a free slot under ``AGENT_MOUNT_FOLDER`` and mint it.
 
@@ -1364,11 +1371,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        staging_path = body.get("staging_path")
-        if not staging_path or not os.path.isdir(staging_path):
-            return ApiFailResponse(
-                message="staging_path is required and must be an existing directory", status_code=400
-            )
+        staging_path = str(body.get("staging_path") or "")
+        if error := self._staging_error(staging_path):
+            return error
         leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
@@ -1405,10 +1410,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
         staging_path = str(body.get("staging_path") or "")
-        if not staging_path or not os.path.isdir(staging_path):
-            return ApiFailResponse(
-                message="staging_path is required and must be an existing directory", status_code=400
-            )
+        if error := self._staging_error(staging_path):
+            return error
         try:
             project_id = self._adopted_project_id(body.get("project_id"))
         except ValueError as exc:

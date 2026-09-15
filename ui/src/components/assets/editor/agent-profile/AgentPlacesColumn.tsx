@@ -1,7 +1,7 @@
 import { Agent, type AgentPlace } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans } from '@lingui/react/macro';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { AgentAddCloudMachine } from './AgentAddCloudMachine';
@@ -26,18 +26,23 @@ export function AgentPlacesColumn({ agent, autoLaunchPrompt, pendingChanges = 0 
   const [places, setPlaces] = useState<AgentPlace[] | null>(null);
   const hub = isHubOnly();
 
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+
   const load = useCallback(async () => {
     try {
-      setPlaces(await agent.listPlaces());
+      setPlaces(await agentRef.current.listPlaces());
     } catch {
       setPlaces([]);
     }
-  }, [agent]);
+  }, []);
 
-  // Re-read when the agent row changes: an override or email move rewrites agent.md.
+  // Re-read when this agent's place settings change (an override, a switch, an email move) —
+  // not on every save of the definition, which also rewrites agent.md.
+  const placesKey = JSON.stringify([agent.id, agent.places ?? null, agent.email_place ?? null]);
   useEffect(() => {
     void load();
-  }, [load, agent.updated_date]);
+  }, [load, placesKey]);
 
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
 

@@ -205,7 +205,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */
-  async runs<T = Record<string, unknown>>(limit = 8): Promise<T[]> {
+  async runs<T = Record<string, unknown>>(limit: number): Promise<T[]> {
     const data = await this.get<{ runs?: T[] } | null>(`runs?limit=${encodeURIComponent(String(limit))}`);
     return data?.runs ?? [];
   }

@@ -165,10 +165,9 @@ async def _check_place(agent: "Agent", body: dict[str, Any]) -> None:
     runs_on = str(body.get("runs_on") or "").strip()
     if not runs_on:
         return
-    from flow_sdk.builtin.agent_places import place_of  # noqa: PLC0415
+    from flow_sdk.builtin.agent_places import _require_place  # noqa: PLC0415
 
-    if await place_of(agent, runs_on) is None:
-        raise ScheduleError(f"{runs_on} is not a place this agent runs on", status_code=404)
+    await _require_place(agent, runs_on)
 
 
 async def add_schedule(agent: "Agent", body: dict[str, Any]) -> "Trigger":
