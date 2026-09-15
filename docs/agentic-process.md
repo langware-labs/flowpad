@@ -290,12 +290,21 @@ any -> failed
 - `error`
 - `unknown`
 
-`ready_for_input` is true only when:
+`ready_for_input` is true only when no turn is in flight and the process is up,
+freshly headless, or headless-idle (`is_ready_for_input` in
+`flow_sdk/builtin/agentic_process/status_predicates.py`):
 
 ```text
-status == running
-and worker_status in { idle, complete, interrupted }
+not is_turn_busy(p)
+and (
+  status == running
+  or (status == new and not pty_mode)
+  or (status == stopped and not pty_mode and session_id)
+)
 ```
+
+`is_turn_busy` counts a mid-turn `worker_status` only for PTY processes; headless
+turns are tracked by the prompt lock, the registered worker, or `_turn_in_flight`.
 
 The transcript parser lives in `flow_sdk/fs_records/agent_status.py`. The
 TypeScript mirror lives in `ts_sdk/src/process/agentic-types.ts`.
