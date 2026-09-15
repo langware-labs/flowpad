@@ -281,7 +281,14 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
 
                 await _ensure_secrets(spec.provider, client)
                 initial = await _test_with_client(spec.provider, client)
-                if initial.ok is True:
+                # A passing probe is not a held connection: for a hub provider the
+                # test is delegated to the hub, so it passes on the owner's hub
+                # grant before this machine has adopted anything. Returning here
+                # reported "connected" while nothing landed in local SOD — the row
+                # stayed disconnected and `require()` failed right after. Only a
+                # row the catalogue already calls connected may skip `/auth`, which
+                # is where a valid hub grant is adopted without a browser.
+                if initial.ok is True and spec.connected:
                     return ConnectionResult(spec=spec, test=initial)
                 if initial.ok is None:
                     raise _error(
@@ -313,19 +320,24 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         auth_response.error_code or "authorization_failed",
                         auth_response.message,
                     )
-                authorization = _authorization(spec.provider, auth_response.data)
-                try:
-                    await presenter.present(authorization)
-                    await _wait_exact(client, authorization)
-                except asyncio.CancelledError:
-                    await asyncio.shield(_cancel_exact(client, authorization))
-                    raise
-                except ConnectionCancelled:
-                    await _cancel_exact(client, authorization)
-                    raise
-                except BaseException:
-                    await _cancel_exact(client, authorization)
-                    raise
+                auth_data = auth_response.data if isinstance(auth_response.data, dict) else {}
+                # `/auth` completes synchronously when it adopted an existing,
+                # provider-verified hub grant: there is no URL to present and
+                # nothing to wait for.
+                if str(auth_data.get("status") or "").lower() != "success":
+                    authorization = _authorization(spec.provider, auth_response.data)
+                    try:
+                        await presenter.present(authorization)
+                        await _wait_exact(client, authorization)
+                    except asyncio.CancelledError:
+                        await asyncio.shield(_cancel_exact(client, authorization))
+                        raise
+                    except ConnectionCancelled:
+                        await _cancel_exact(client, authorization)
+                        raise
+                    except BaseException:
+                        await _cancel_exact(client, authorization)
+                        raise
 
                 refreshed_specs = await _list_connection_specs_with_client(client)
                 refreshed = next(
@@ -341,6 +353,16 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         ConnectionStage.VERIFICATION,
                         final.code or ("verification_unreachable" if final.ok is None else "verification_failed"),
                         final.detail,
+                    )
+                if not refreshed.connected:
+                    # The provider accepts the token, yet this machine still holds
+                    # none — the exact false success this state machine exists to
+                    # prevent. Say so instead of returning "connected".
+                    raise _error(
+                        refreshed.provider,
+                        ConnectionStage.SECRETS,
+                        "credential_not_held",
+                        "Authorization finished but no credential is held on this instance",
                     )
                 return ConnectionResult(spec=refreshed, test=final)
         except FlowServiceError as exc:

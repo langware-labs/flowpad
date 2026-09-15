@@ -135,7 +135,35 @@ class DesktopOAuthSession:
 
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
         server = uvicorn.Server(config)
+        self._uvicorn_server = server
         await server.serve()
+
+    async def stop_callback_server(self) -> None:
+        """Close the loopback listener for real.
+
+        Cancelling the ``serve()`` task skips uvicorn's ``shutdown()``, which is
+        what closes the socket: every finished, timed-out or cancelled flow left
+        its port LISTENing for the life of the backend. ``should_exit`` lets the
+        main loop return through ``shutdown()``; cancel stays only as a fallback
+        for a server that never got that far.
+        """
+        task = self.callback_server
+        self.callback_server = None
+        if task is None:
+            return
+        server = getattr(self, "_uvicorn_server", None)
+        if server is not None and not task.done():
+            server.should_exit = True
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=5)
+                return
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — fall back to cancel
+                pass
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
 
     async def wait_for_callback(self, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> Optional[Tuple[str, str]]:
         """Wait for OAuth callback to be received using asyncio Event."""
@@ -146,14 +174,7 @@ class DesktopOAuthSession:
                 error_msg = self.callback_error
                 self.callback_error = None
 
-                # Stop callback server
-                if self.callback_server:
-                    self.callback_server.cancel()
-                    try:
-                        await self.callback_server
-                    except asyncio.CancelledError:
-                        pass
-                    self.callback_server = None
+                await self.stop_callback_server()
 
                 # Send error notification via WebSocket
                 try:
@@ -174,27 +195,13 @@ class DesktopOAuthSession:
                 self.callback_code = None
                 self.callback_state = None
 
-                # Stop callback server
-                if self.callback_server:
-                    self.callback_server.cancel()
-                    try:
-                        await self.callback_server
-                    except asyncio.CancelledError:
-                        pass
-                    self.callback_server = None
+                await self.stop_callback_server()
 
                 return (code, state)
 
             return None
         except asyncio.TimeoutError:
-            # Timeout - stop callback server
-            if self.callback_server:
-                self.callback_server.cancel()
-                try:
-                    await self.callback_server
-                except asyncio.CancelledError:
-                    pass
-                self.callback_server = None
+            await self.stop_callback_server()
 
             # Send timeout notification via WebSocket
             try:
@@ -878,13 +885,7 @@ async def cancel_desktop_oauth_flow(state: str) -> bool:
         session.cancel_event.set()
         return True
     _desktop_oauth_sessions.pop(state, None)
-    if session.callback_server is not None:
-        session.callback_server.cancel()
-        try:
-            await session.callback_server
-        except asyncio.CancelledError:
-            pass
-        session.callback_server = None
+    await session.stop_callback_server()
     return True
 
 

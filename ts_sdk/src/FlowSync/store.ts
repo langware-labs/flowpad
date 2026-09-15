@@ -1543,6 +1543,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    // Name this tab as the initiator, so the server answers back to it alone
+    // (flow_sdk/core/oauth/flows.py). Scoped to the calls that ask for it: a
+    // custom header on every request would cost a CORS preflight each time.
+    if (actionInfo.carriesInitiator) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'X-Flow-Connection-Id': ConnectionManager.getInstance().id },
+      };
+    }
+
     // In-flight dedup for GETs: share a pending request with concurrent callers
     // (e.g. StrictMode double-invoke, or multiple components mounting at once).
     // Safe because GETs are idempotent. Mutations (POST/PUT/PATCH/DELETE) are never deduped.
@@ -1620,6 +1630,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
       hub_reflect: actionInfo.hubReflect && !isHubOnly(),
+      carries_initiator: actionInfo.carriesInitiator,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

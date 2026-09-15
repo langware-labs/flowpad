@@ -125,11 +125,9 @@ class Connection:
         """Complete the standard auth flow and return a freshly verified row."""
 
         result = await _connect(self.provider, _SdkPresenter())
-        return _from_spec(
-            result.spec,
-            connected=True,
-            identity=result.test.identity or result.spec.identity,
-        )
+        # The refreshed row's own state, not a forced ``connected=True`` over a
+        # stale one: that produced rows reading connected=True, state="disconnected".
+        return _from_spec(result.spec, identity=result.test.identity or result.spec.identity)
 
     async def test(self) -> ConnectionTestResult:
         """Ask the provider to validate the held credential right now."""

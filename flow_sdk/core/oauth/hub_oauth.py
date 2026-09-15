@@ -18,9 +18,11 @@ What comes back is already the shape the client wants: the hub returns
 ``{oauth_request_id, provider, auth_url}`` (``OauthClientRequestInfo``), which is
 exactly what ``oauthService.connect`` opens a popup for.
 
-The one thing the desktop does NOT get for free is the completion signal: the
-hub broadcasts it on its own websocket, which this process is not on. The
-desktop therefore reads the exact correlated session through ``hub_wait_auth``.
+Completion: the desktop passes ``return_to`` so the hub, after storing the
+grant, sends the browser back to this instance's ``/auth/oauth/complete`` —
+which stores the local copy and confirms in the screen that asked. The hub's
+``oauth_msg`` push and ``hub_wait_auth`` reach the same completion
+(``oauth_action.complete_hub_flow``) when that return never arrives.
 """
 
 from __future__ import annotations
@@ -68,8 +70,11 @@ async def _hub_data(
     return data if isinstance(data, dict) else payload
 
 
-async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
+async def hub_start_auth(provider: str, *, return_to: str = "") -> Optional[dict[str, Any]]:
     """Ask the hub to open an OAuth session for ``provider``.
+
+    ``return_to`` is where the hub sends the browser once it has stored the grant.
+    A hub that predates it ignores the parameter and shows its own page.
 
     Returns the hub's ``OauthClientRequestInfo`` payload, or ``None`` when the
     hub is unreachable / not logged in / does not know the provider — callers
@@ -92,6 +97,7 @@ async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
         user_id,
         action="oauth",
         sub_path=f"{provider}/auth",
+        params={"return_to": return_to} if return_to else None,
     )
     if not data.get("auth_url"):
         logger.warning("[oauth] hub returned no auth_url for %r", provider)
