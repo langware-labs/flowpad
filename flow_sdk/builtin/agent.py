@@ -986,23 +986,27 @@ class Agent(Entity):
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         body = await self._body()
-        deployment = await agent_places.place_of(self, str(body.get("deployment_id") or ""))
-        if deployment is None:
-            return ApiFailResponse(message="not a place this agent runs on", status_code=404)
-        if deployment.is_local:
-            return ApiFailResponse(message="this computer's place actions run here, not through the hub", status_code=409)
-        payload = {
-            "deployment_id": deployment.id,
-            "op": str(body.get("op") or ""),
-            "trigger_id": str(body.get("trigger_id") or ""),
-        }
-        try:
-            data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
-        except HubError as exc:
-            return ApiFailResponse(message=f"the hub refused: {exc}", status_code=502)
-        if data is None:
-            return ApiFailResponse(message="cloud login required to reach a cloud machine", status_code=401)
-        return ApiSuccessResponse(data=data)
+
+        async def relay():
+            deployment = await agent_places._require_place(self, str(body.get("deployment_id") or ""))
+            if deployment.is_local:
+                raise agent_places.PlaceError(
+                    "this computer's place actions run here, not through the hub", status_code=409
+                )
+            payload = {
+                "deployment_id": deployment.id,
+                "op": str(body.get("op") or ""),
+                "trigger_id": str(body.get("trigger_id") or ""),
+            }
+            try:
+                data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
+            except HubError as exc:
+                raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
+            if data is None:
+                raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401)
+            return data
+
+        return await self._place_answer(relay)
 
     @action.post(action_name="adopt_placement")
     async def adopt_placement_action(self):
@@ -1029,39 +1033,37 @@ class Agent(Entity):
 
     # ── schedules: child trigger assets (HTTP) ────────────────────────────
 
-    async def _schedule_call(self, op: str):
-        """Shared envelope for the three schedule verbs — see ``agent_schedule``."""
+    @action.post(action_name="add_schedule")
+    async def add_schedule_action(self):
+        """`POST /agent/<id>/add_schedule {name, every, expr, timezone, prompt, enabled}`
+        — write a schedule under this agent; indexed and armed before returning."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(lambda: agent_schedule.add_schedule(self, body))
+
+    @action.post(action_name="update_schedule")
+    async def update_schedule_action(self):
+        """`POST /agent/<id>/update_schedule {trigger_id, ...fields}` — only the
+        fields present change; hand-authored parts of the document survive."""
         from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
 
         body = await self._body()
         trigger_id = str(body.get("trigger_id") or "")
-        if op == "add":
-            return await self._place_answer(lambda: agent_schedule.add_schedule(self, body))
-        if op == "update":
-            return await self._place_answer(lambda: agent_schedule.update_schedule(self, trigger_id, body))
+        return await self._place_answer(lambda: agent_schedule.update_schedule(self, trigger_id, body))
+
+    @action.post(action_name="remove_schedule")
+    async def remove_schedule_action(self):
+        """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        trigger_id = str((await self._body()).get("trigger_id") or "")
 
         async def remove():
             await agent_schedule.remove_schedule(self, trigger_id)
             return {"deleted": True, "trigger_id": trigger_id}
 
         return await self._place_answer(remove)
-
-    @action.post(action_name="add_schedule")
-    async def add_schedule_action(self):
-        """`POST /agent/<id>/add_schedule {name, every, expr, timezone, prompt, enabled}`
-        — write a schedule under this agent; indexed and armed before returning."""
-        return await self._schedule_call("add")
-
-    @action.post(action_name="update_schedule")
-    async def update_schedule_action(self):
-        """`POST /agent/<id>/update_schedule {trigger_id, ...fields}` — only the
-        fields present change; hand-authored parts of the document survive."""
-        return await self._schedule_call("update")
-
-    @action.post(action_name="remove_schedule")
-    async def remove_schedule_action(self):
-        """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
-        return await self._schedule_call("remove")
 
     @action.post(action_name="run_schedule")
     async def run_schedule_action(self):
