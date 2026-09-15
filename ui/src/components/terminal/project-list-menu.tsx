@@ -777,28 +777,35 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                   />
                 </li>
               </HoverCardTrigger>
-              {/* pointer-events-auto: the card portals to <body>, which a modal
-                  Radix layer marks pointer-events:none. */}
+              {/* Top-aligned to the row, with the toolbar as a row-high (h-8)
+                  first line: the launchers sit on the row's own horizontal
+                  center, so reaching them is a straight move right. The side
+                  offset clears the popover's padding + border; the align offset
+                  its top border. pointer-events-auto: the card portals to
+                  <body>, which a modal Radix layer marks pointer-events:none. */}
               <HoverCardContent
                 side="right"
-                align="center"
-                className="pointer-events-auto flex w-auto max-w-md flex-col gap-1.5 px-3 py-1.5"
+                align="start"
+                sideOffset={6}
+                alignOffset={-1}
+                className="pointer-events-auto flex w-auto max-w-md flex-col gap-1 px-2 pb-1.5 pt-0"
               >
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-xs text-muted-foreground">
-                    {mountPath ?? bucketDisplayName(bucket)}
-                  </span>
+                <div className="flex h-8 shrink-0 items-center gap-0.5">
+                  {mountPath ? (
+                    <>
+                      <ProjectLaunchBar projectPath={mountPath} />
+                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                    </>
+                  ) : (
+                    <span className="truncate text-xs text-muted-foreground">{bucketDisplayName(bucket)}</span>
+                  )}
                   <WikiButton
                     wikiword="Flowpad project" /* the page the footer's project tip opens */
                     label={t`What is a Flowpad project?`}
+                    className="ms-auto ps-1.5"
                   />
                 </div>
-                {mountPath ? (
-                  <div className="flex items-center gap-0.5">
-                    <ProjectLaunchBar projectPath={mountPath} />
-                    <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
-                  </div>
-                ) : null}
+                {mountPath ? <span className="truncate px-1 text-xs text-muted-foreground">{mountPath}</span> : null}
                 <ProjectTabsSubmenu projectId={bucket.projectId} onSelectTab={handleSelectTab} />
               </HoverCardContent>
             </HoverCard>
