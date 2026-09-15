@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "whatsapp",
   "title": "WhatsApp",
-  "icon_name": "MessageCircle",
+  "icon_name": "WhatsApp",
   "description": "A WhatsApp business number on Meta's Cloud API — people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
   "setup_wiki": "WhatsApp business number",
   "config": {
