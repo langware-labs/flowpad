@@ -17,7 +17,8 @@ from tests.utils.snippets import SHELF
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 REPO = SHELF.parents[1]
-_TEST_REF = re.compile(r"`(tests/[\w/.-]+\.py)`")
+#: A test lives under the repo's tests/ tree, or in an asset folder's own tests/ dir.
+_TEST_REF = re.compile(r"`((?:tests/|flow_sdk/[\w/.-]*/tests/)[\w/.-]+\.py)`")
 #: Sections start at H2 and deeper. The H1 is the page title, and what sits under it
 #: before the first H2 is the preamble — a "Pinned by" there applies to the whole page.
 _HEADING = re.compile(r"^#{2,6}\s", re.MULTILINE)
