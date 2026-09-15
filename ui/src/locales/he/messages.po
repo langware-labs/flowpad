@@ -5111,6 +5111,10 @@ msgstr "לא הצלחנו להשלים את הכנת סביבת העבודה"
 msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "לא ניתן היה לטעון את {0}… ({1}) — נפתח {fallbackPointer} במקומו."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't load this agent."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
@@ -5172,6 +5176,11 @@ msgstr "לא ניתן היה לזהות את התהליך הזה."
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "הגדרת הפרויקט נכשלה"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't set up the sandbox."
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -10538,6 +10547,10 @@ msgstr "טוען הקשר משימה…"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Loading tasks..."
 msgstr "טוען משימות..."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Loading the agent…"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
@@ -17154,6 +17167,10 @@ msgstr ""
 msgid "Set{0}"
 msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Setting up your {agentName} on a new sandbox…"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "הכנת הפרויקט שלך…"
@@ -17537,6 +17554,7 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Sign In"
 msgstr ""
@@ -17645,6 +17663,7 @@ msgstr "ההתחברות לא אושרה"
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
@@ -19159,9 +19178,17 @@ msgstr "כתובת ה-{0} אינה תקינה או אינה זמינה."
 msgid "This action cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This agent doesn't exist, or you don't have access to it."
+msgstr ""
+
 #: src/routes/loaders/load-agent-inbox.ts
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent inbox URL is malformed."
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This agent isn't published from a git repository, so there's nothing to launch."
 msgstr ""
 
 #: src/routes/loaders/load-agent-inbox.ts
@@ -19313,6 +19340,10 @@ msgstr "הקישור הזה אינו מפנה ל-Sandbox."
 msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't point at an agent."
+msgstr ""
+
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr ""
@@ -19320,6 +19351,10 @@ msgstr ""
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
 msgstr "לקישור הזה חסר ה-Sandbox שהוא אמור לפתוח."
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link names both a repository and an agent. Ask for a link that names just one."
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -21380,6 +21415,10 @@ msgstr "השאלות שלך"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Your session has expired. Sign in again to open this agent."
 msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
