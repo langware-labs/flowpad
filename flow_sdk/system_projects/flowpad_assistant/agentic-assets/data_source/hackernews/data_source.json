@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "hackernews",
   "title": "Hacker News",
-  "icon_name": "Newspaper",
+  "icon_name": "HackerNews",
   "description": "The public firehose, filtered. No credentials.",
   "config": {
     "types": {

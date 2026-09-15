@@ -2,9 +2,9 @@
   "schema": 1,
   "name": "agent",
   "title": "Agent transport",
-  "icon_name": "Bot",
+  "icon_name": "AgentTransport",
   "channel_icon_names": {
-    "gmail": "Mail",
+    "gmail": "Gmail",
     "slack": "Slack"
   },
   "description": "Reaches a channel through a local agent harness — how Gmail and Slack are read today.",

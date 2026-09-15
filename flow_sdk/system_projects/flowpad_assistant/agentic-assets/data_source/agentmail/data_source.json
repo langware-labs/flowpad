@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "agentmail",
   "title": "AgentMail",
-  "icon_name": "Mail",
+  "icon_name": "AgentMail",
   "description": "A hosted mailbox over its HTTP API \u2014 reads the inbox and really sends.",
   "config": {
     "inbox": {
