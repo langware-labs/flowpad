@@ -1003,12 +1003,7 @@ class Entity(DBEntity):
         return mint_uuid()
 
     async def find_existing_for_create(self) -> "Entity | None":
-        """The stored row this not-yet-saved entity would duplicate, or None.
-
-        The generic create route asks before minting a fresh id, so a type with
-        a natural key (a Project's mount folder) answers a repeat create with the
-        row it already has instead of a second one. Default: no natural key.
-        """
+        """Create-route hook: the stored row this unsaved entity duplicates by natural key, or None."""
         return None
 
     @classmethod

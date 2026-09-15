@@ -684,22 +684,8 @@ class Project(Entity):
         if not is_valid_project_cwd(cwd, include_temp=True):
             return None
         canonical = canonical_posix_path(cwd)
-
-        from flow_sdk.db.drivers.query import (  # noqa: PLC0415
-            ExpressionNode,
-            QueryFilter,
-            QueryOp,
-        )
-
-        matches = await cls.get_all(
-            QueryFilter(
-                match=ExpressionNode(op=QueryOp.EQ, operands=["fs_storage_mount_path", canonical])
-            )
-        )
-        for proj in matches:
-            mp = proj.fs_storage_mount_path
-            if mp and is_valid_project_cwd(mp, include_temp=True):
-                return proj
+        if (owner := next(iter(await cls._mount_owners(canonical)), None)) is not None:
+            return owner
 
         existing = await cls.get_all()
         for proj in existing:
@@ -708,11 +694,25 @@ class Project(Entity):
                 return proj
         return None
 
+    @classmethod
+    async def _mount_owners(cls, canonical: str) -> list["Project"]:
+        """Projects whose stored mount IS ``canonical`` — the indexed EQ query only.
+
+        The one natural-key read shared by ``find_by_cwd``, the create hook and
+        the save-time warning. Mounts are written canonical, so no scan."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        matches = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["fs_storage_mount_path", canonical]))
+        )
+        return [p for p in matches if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)]
+
     async def find_existing_for_create(self) -> "Project | None":
-        """A folder is one project: a create for an owned mount resolves to its owner."""
+        """A folder is one project: a create for an owned mount resolves to its owner.
+        The validator already canonicalized the mount, so only the indexed query runs."""
         if self.remote or not self.fs_storage_mount_path:
             return None
-        return await type(self).find_by_cwd(self.fs_storage_mount_path)
+        return next(iter(await self._mount_owners(self.fs_storage_mount_path)), None)
 
     @classmethod
     async def index_by_mount(cls) -> dict[str, "Project"]:
@@ -1527,11 +1527,7 @@ class Project(Entity):
         if not mount:
             return
         try:
-            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-
-            owners = await type(self).get_all(
-                QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["fs_storage_mount_path", mount]))
-            )
+            owners = await self._mount_owners(mount)
         except Exception:  # noqa: BLE001
             log.debug("[project] mount-ownership check skipped", exc_info=True)
             return

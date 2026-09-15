@@ -35,6 +35,7 @@ import pytest
 from flow_sdk.app.actions.graph_crud_actions import handle_create_entity
 from flow_sdk.builtin.project import Project
 from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId
 
 OWNER = TypeId("user-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -133,3 +134,34 @@ async def test_create_that_carries_the_mount_still_works(tmp_path):
 
     created = response.data
     assert Path(str(created.fs_storage_mount_path)).resolve() == real_dir.resolve()
+
+
+@pytest.mark.asyncio
+async def test_opening_the_same_folder_twice_yields_one_project(tmp_path):
+    """A repeat create for an owned folder returns its project, not a twin.
+
+    Same body ``use-open-project.ts`` sends: ``{type, name: <path>}``.
+    """
+    folder = tmp_path / "Documents" / "dev" / "flowpad-oss"
+    folder.mkdir(parents=True)
+    body = {"type": "project", "name": str(folder)}
+
+    created = []
+    for _ in range(2):
+        request = _create_request(body)
+        with patch(
+            "flow_sdk.app.actions.graph_crud_actions.get_current_request_info",
+            return_value=request,
+        ), patch(
+            "flow_sdk.request_context.methods.get_current_request_info",
+            return_value=request,
+        ):
+            created.append((await handle_create_entity(MagicMock())).data)
+
+    canonical = canonical_posix_path(str(folder))
+    owners = sorted(
+        str(p.id)
+        for p in await Project.get_all()
+        if p.fs_storage_mount_path and canonical_posix_path(p.fs_storage_mount_path) == canonical
+    )
+    assert owners == [str(created[0].id)], f"one folder, {len(owners)} projects: {[str(c.id) for c in created]}"

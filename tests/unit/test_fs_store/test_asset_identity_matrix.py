@@ -54,13 +54,6 @@ FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 
 
-@pytest.fixture(autouse=True)
-def bind_application_identity_adapters():
-    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
-
-    register_asset_runtime_bindings()
-
-
 def _info(type_name: str):
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
