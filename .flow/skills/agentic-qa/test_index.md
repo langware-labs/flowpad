@@ -1,254 +1,289 @@
-# Manual Regression Test Index
+# Test Index
 
-_Generated 2026-09-12T05:49:56.863696+00:00 by e2e-qa skill._
-**Totals: 27 categories, 141 .md specs, 167 .md.ts tests**
+> Last updated: 2026-09-15T10:31:57Z
+> Scope: every .md and .md.ts per category.
 
-## agentic-process (14 .md, 17 .md.ts)
+## agentic-process
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| agentic_process_visible_restored_on_load.md.ts (no .md) |  | yes | no |  |
+| codex_chat_terminal_full_matrix.md | 0 | yes | no |  |
+| codex_chat_terminal_switch_matrix.md | 0 | yes | no |  |
+| conversation_view_three_spawn_branches.md | 0 | yes | no |  |
+| embedded_close_preserves_process.md | 0 | yes | no |  |
+| new_claude_session_no_console_errors.md | 0 | yes | no |  |
+| observability_surfaces.md | 0 | yes | no |  |
+| open_shell_from_process_workdir.md | 0 | yes | no |  |
+| opencode_pty_composer_boots.md | 0 | yes | no |  |
+| process_restart_and_cli_flags.md | 0 | yes | no |  |
+| process_terminal_shell_tab_navigates_url.md | 0 | yes | no |  |
+| processtoolbar_fork.md | 0 | yes | no |  |
+| quick_create_session_browser_url_order.md.ts (no .md) |  | yes | no |  |
+| resume_session_from_recent.md | 0 | yes | no |  |
+| session_info_popover.md | 0 | yes | no |  |
+| shell_url_recovers_linked_process.md.ts (no .md) |  | yes | no |  |
+| worker_session_name_observers.md | 0 | yes | no |  |
+| worker_session_names.md | 0 | yes | no |  |
+| worktree_lifecycle.md | 0 | yes | no |  |
 
-- `agentic-process/codex_chat_terminal_full_matrix.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/codex_chat_terminal_switch_matrix.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/conversation_view_three_spawn_branches.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/embedded_close_preserves_process.md` — tests:1 — md.ts:yes — fast-path:no
-- `agentic-process/new_claude_session_no_console_errors.md` — tests:1 — md.ts:yes — fast-path:no
-- `agentic-process/observability_surfaces.md` — tests:3 — md.ts:yes — fast-path:no
-- `agentic-process/open_shell_from_process_workdir.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/opencode_pty_composer_boots.md` — tests:1 — md.ts:yes — fast-path:no
-- `agentic-process/process_restart_and_cli_flags.md` — tests:4 — md.ts:yes — fast-path:no
-- `agentic-process/process_terminal_shell_tab_navigates_url.md` — tests:1 — md.ts:yes — fast-path:no
-- `agentic-process/processtoolbar_fork.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/resume_session_from_recent.md` — tests:1 — md.ts:yes — fast-path:no
-- `agentic-process/session_info_popover.md` — tests:3 — md.ts:yes — fast-path:no
-- `agentic-process/worktree_lifecycle.md` — tests:2 — md.ts:yes — fast-path:no
-- `agentic-process/agentic_process_visible_restored_on_load.md.ts` — (no sibling .md)
-- `agentic-process/quick_create_session_browser_url_order.md.ts` — (no sibling .md)
-- `agentic-process/shell_url_recovers_linked_process.md.ts` — (no sibling .md)
+## assets
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| asset_id_collisions.md | 0 | yes | no |  |
+| asset_id_never_stamps_foreign_source.md.ts (no .md) |  | yes | no |  |
+| assets_list_mode.md | 6 | yes | no |  |
+| vfs_files_tree_selection.md.ts (no .md) |  | yes | no |  |
+| wiki_folder_tree.md | 0 | yes | no |  |
 
-## assets (3 .md, 5 .md.ts)
+## chat
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| 401_unauthorized_when_closing_a_chat.md | 0 | yes | no |  |
+| chat_input_controls.md | 2 | yes | no |  |
+| chat_refresh_persistence.md | 0 | yes | no |  |
+| chat_tab_switching.md | 0 | yes | no |  |
+| closing_a_chat_produces_console_error_401.md | 0 | yes | no |  |
+| doc_chat_per_type.md | 0 | yes | no |  |
+| first_chat_message_is_slow.md | 0 | yes | no |  |
+| in_chats_expanding_agent_thinking_component_is_not_retained.md | 0 | yes | no |  |
+| landing_to_new_chat.md | 0 | yes | no |  |
+| new_session_is_not_opened.md | 0 | yes | no |  |
+| new_sessions_always_opened_with_session_1_header.md | 0 | yes | no |  |
+| opening_project_in_explorer_console_error_404.md | 0 | yes | no |  |
+| prompting_from_app_homepage_does_not_start_new_session.md | 0 | yes | no |  |
+| prompting_to_start_new_session_from_app_homepage_does_not_wo.md | 0 | yes | no |  |
+| return_to_home.md | 0 | yes | no |  |
+| send_multiple_messages.md | 0 | yes | no |  |
+| sessions_disappear_after_page_refresh.md | 0 | yes | no |  |
+| switch_between_sessions.md | 0 | yes | no |  |
+| while_agent_is_executing_refresh_clears_previous_thinking_se.md | 0 | yes | no |  |
 
-- `assets/asset_id_collisions.md` — tests:2 — md.ts:yes — fast-path:no
-- `assets/assets_list_mode.md` — tests:6 — md.ts:yes — fast-path:no
-- `assets/wiki_folder_tree.md` — tests:5 — md.ts:yes — fast-path:no
-- `assets/asset_id_never_stamps_foreign_source.md.ts` — (no sibling .md)
-- `assets/vfs_files_tree_selection.md.ts` — (no sibling .md)
+## cli-log
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| cli_log_viewer.md | 0 | yes | yes |  |
 
-## chat (19 .md, 19 .md.ts)
+## collaboration
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| collaboration_room_add_process.md | 0 | yes | no |  |
+| doc_comment_author_scope.md.ts (no .md) |  | yes | no |  |
+| doc_comment_create_sync.md | 0 | yes | no |  |
+| doc_comment_delete_sync.md | 0 | yes | no |  |
+| doc_comment_update_sync.md | 0 | yes | no |  |
+| flowpad_assistant_docs_panel.md | 0 | yes | no |  |
+| project_git_invite_browser.md.ts (no .md) |  | yes | no |  |
+| project_room_new_doc.md | 0 | yes | no |  |
+| project_row_opens_collab_space.md | 0 | yes | no |  |
 
-- `chat/401_unauthorized_when_closing_a_chat.md` — tests:2 — md.ts:yes — fast-path:no
-- `chat/chat_input_controls.md` — tests:3 — md.ts:yes — fast-path:no
-- `chat/chat_refresh_persistence.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/chat_tab_switching.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/closing_a_chat_produces_console_error_401.md` — tests:3 — md.ts:yes — fast-path:no
-- `chat/doc_chat_per_type.md` — tests:4 — md.ts:yes — fast-path:no
-- `chat/first_chat_message_is_slow.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/in_chats_expanding_agent_thinking_component_is_not_retained.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/landing_to_new_chat.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/new_session_is_not_opened.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/new_sessions_always_opened_with_session_1_header.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/opening_project_in_explorer_console_error_404.md` — tests:2 — md.ts:yes — fast-path:no
-- `chat/prompting_from_app_homepage_does_not_start_new_session.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/prompting_to_start_new_session_from_app_homepage_does_not_wo.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/return_to_home.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/send_multiple_messages.md` — tests:2 — md.ts:yes — fast-path:no
-- `chat/sessions_disappear_after_page_refresh.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/switch_between_sessions.md` — tests:1 — md.ts:yes — fast-path:no
-- `chat/while_agent_is_executing_refresh_clears_previous_thinking_se.md` — tests:1 — md.ts:yes — fast-path:no
+## conversation
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| agent_email_gmail_round_trip.md.ts (no .md) |  | yes | no |  |
+| conversation_title_rename_live.md | 0 | yes | no |  |
+| helpdesk_source_round_trip.md | 0 | yes | no |  |
+| two_instance_hub_conversation.md | 0 | yes | no |  |
 
-## cli-log (1 .md, 1 .md.ts)
+## data-sources
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| agent_integrations_e2e.md | 0 | yes | no |  |
+| attached_channels.md | 0 | no | no |  |
+| backend_served_sources.md | 0 | yes | no |  |
+| credentialed_sources.md | 0 | yes | no |  |
 
-- `cli-log/cli_log_viewer.md` — tests:3 — md.ts:yes — fast-path:no
+## dock-sweep
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| dock_sweep.md | 0 | yes | no |  |
 
-## collaboration (7 .md, 9 .md.ts)
+## docs
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
 
-- `collaboration/collaboration_room_add_process.md` — tests:1 — md.ts:yes — fast-path:no
-- `collaboration/doc_comment_create_sync.md` — tests:1 — md.ts:yes — fast-path:no
-- `collaboration/doc_comment_delete_sync.md` — tests:1 — md.ts:yes — fast-path:no
-- `collaboration/doc_comment_update_sync.md` — tests:1 — md.ts:yes — fast-path:no
-- `collaboration/flowpad_assistant_docs_panel.md` — tests:11 — md.ts:yes — fast-path:no
-- `collaboration/project_room_new_doc.md` — tests:11 — md.ts:yes — fast-path:no
-- `collaboration/project_row_opens_collab_space.md` — tests:7 — md.ts:yes — fast-path:no
-- `collaboration/doc_comment_author_scope.md.ts` — (no sibling .md)
-- `collaboration/project_git_invite_browser.md.ts` — (no sibling .md)
+## editor
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | 0 | yes | no |  |
+| breadcrumb_fence.md | 0 | yes | no |  |
+| console_error_404_request_failed_with_status_code_404_when_c.md | 0 | yes | no |  |
+| console_error_500_failed_to_load_resource_tab_hooks_in_syste.md | 0 | yes | no |  |
+| editor_download_all_files_console_error.md | 0 | yes | no |  |
+| editor_tab_download_all_files_fails_to_create_zip.md | 0 | yes | no |  |
+| editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md | 0 | yes | no |  |
+| execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | 0 | yes | no |  |
+| files_tab_download_directory_does_nothing.md | 0 | yes | no |  |
+| files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | 0 | yes | no |  |
+| milkdown_no_wiki_back_button.md | 0 | yes | no |  |
+| milkdown_selection_toolbar.md | 0 | yes | no |  |
+| new_prompt_save_indefinitely.md | 0 | yes | no |  |
+| uploading_a_file_doesnt_show_up_in_the_side_bar.md | 0 | yes | no |  |
 
-## conversation (3 .md, 4 .md.ts)
+## general
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| app_slow_before_clearing_database.md | 0 | yes | no |  |
+| cloudnsite-install.md.ts (no .md) |  | yes | no |  |
+| console_error_482_failed_to_start_in_app_hompage.md | 0 | yes | no |  |
+| current_activity_recent_sessions.md | 0 | yes | no |  |
+| execute_flow_hangs_indefinitely.md | 0 | yes | no |  |
+| heartbeat_sniffer_hook_events_e2e.md | 0 | yes | no |  |
+| mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md | 0 | yes | no |  |
+| refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | 0 | yes | no |  |
+| usage_cost_failed_to_fetch_cost_overview.md | 0 | yes | no |  |
 
-- `conversation/conversation_title_rename_live.md` — tests:1 — md.ts:yes — fast-path:no
-- `conversation/helpdesk_source_round_trip.md` — tests:1 — md.ts:yes — fast-path:no
-- `conversation/two_instance_hub_conversation.md` — tests:1 — md.ts:yes — fast-path:no
-- `conversation/agent_email_gmail_round_trip.md.ts` — (no sibling .md)
+## graph-workflows
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
 
-## data-sources (4 .md, 3 .md.ts)
+## journey-sweep
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| journey_sweep.md.ts (no .md) |  | yes | no |  |
 
-- `data-sources/agent_integrations_e2e.md` — tests:6 — md.ts:yes — fast-path:no
-- `data-sources/attached_channels.md` — tests:manual — md.ts:no — fast-path:no
-- `data-sources/backend_served_sources.md` — tests:9 — md.ts:yes — fast-path:no
-- `data-sources/credentialed_sources.md` — tests:7 — md.ts:yes — fast-path:no
+## k_browser
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| atlas_status_and_diff.md | 0 | yes | no |  |
 
-## dock-sweep (1 .md, 1 .md.ts)
+## markdown_index
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| smoke.md | 0 | yes | no |  |
 
-- `dock-sweep/dock_sweep.md` — tests:3 — md.ts:yes — fast-path:no
+## mcp-ui
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| mcp_ui_vibe_form.md.ts (no .md) |  | yes | no |  |
 
-## docs (3 .md, 3 .md.ts)
+## nav-collapse
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| nav_collapse.md.ts (no .md) |  | yes | no |  |
 
-- `docs/v0.28_scenarios/LLM_comfigure.md` — tests:1 — md.ts:yes — fast-path:no
-- `docs/v0.28_scenarios/coding_agent_cli.md` — tests:1 — md.ts:yes — fast-path:no
-- `docs/v0.28_scenarios/shell_tab.md` — tests:1 — md.ts:yes — fast-path:no
+## sandbox
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| sandbox_share_link.md | 0 | no | no | manual |
 
-## editor (14 .md, 14 .md.ts)
+## search
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| mcp_index.md | 0 | yes | no |  |
+| rebuild_index_ui.md | 0 | yes | no |  |
+| record_search_from_home.md | 0 | yes | no |  |
+| record_search_view.md | 0 | yes | yes |  |
+| scan_records_viewer.md | 0 | yes | no |  |
+| search_bar.md | 0 | yes | no |  |
+| search_limit_param.md | 0 | yes | no |  |
+| search_scan_info_stats.md | 0 | yes | no |  |
 
-- `editor/ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/breadcrumb_fence.md` — tests:5 — md.ts:yes — fast-path:no
-- `editor/console_error_404_request_failed_with_status_code_404_when_c.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/console_error_500_failed_to_load_resource_tab_hooks_in_syste.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/editor_download_all_files_console_error.md` — tests:1 — md.ts:yes — fast-path:no
-- `editor/editor_tab_download_all_files_fails_to_create_zip.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/files_tab_download_directory_does_nothing.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/milkdown_no_wiki_back_button.md` — tests:2 — md.ts:yes — fast-path:no
-- `editor/milkdown_selection_toolbar.md` — tests:6 — md.ts:yes — fast-path:no
-- `editor/new_prompt_save_indefinitely.md` — tests:1 — md.ts:yes — fast-path:no
-- `editor/uploading_a_file_doesnt_show_up_in_the_side_bar.md` — tests:2 — md.ts:yes — fast-path:no
+## setup
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| llm_not_configured_shows_up_after_configuring_llm.md | 0 | yes | no |  |
+| login_with_anthropic_error_500.md | 0 | yes | no |  |
 
-## general (8 .md, 9 .md.ts)
+## skills
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| console_error_404_skill_page.md | 0 | yes | no |  |
+| full_analysis_flow.md.ts (no .md) |  | yes | no |  |
+| skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md | 0 | yes | no |  |
+| skills_failed_to_run_skill_console_error_482.md | 0 | yes | no |  |
+| skills_run_hangs_indefinitely.md | 0 | yes | no |  |
+| user_skills_failed_to_generate_plan_console_error_404.md | 0 | yes | no |  |
+| user_skills_failed_to_generate_plan_console_error_500.md | 0 | yes | no |  |
 
-- `general/app_slow_before_clearing_database.md` — tests:1 — md.ts:yes — fast-path:no
-- `general/console_error_482_failed_to_start_in_app_hompage.md` — tests:2 — md.ts:yes — fast-path:no
-- `general/current_activity_recent_sessions.md` — tests:5 — md.ts:yes — fast-path:no
-- `general/execute_flow_hangs_indefinitely.md` — tests:1 — md.ts:yes — fast-path:no
-- `general/heartbeat_sniffer_hook_events_e2e.md` — tests:2 — md.ts:yes — fast-path:no
-- `general/mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md` — tests:3 — md.ts:yes — fast-path:no
-- `general/refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md` — tests:8 — md.ts:yes — fast-path:no
-- `general/usage_cost_failed_to_fetch_cost_overview.md` — tests:2 — md.ts:yes — fast-path:no
-- `general/cloudnsite-install.md.ts` — (no sibling .md)
+## sniffer
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| sniffer_bootstrap_init_state.md | 0 | yes | no |  |
+| sniffer_event_capture.md | 0 | yes | no |  |
+| sniffer_shared_state_single_backend_call.md | 0 | yes | no |  |
+| sniffer_spa_navigation_preserves_state.md | 0 | yes | no |  |
 
-## journey-sweep (0 .md, 1 .md.ts)
+## tab_management
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| tab_lifecycle.md.ts (no .md) |  | yes | no |  |
+| tab_reorder.md.ts (no .md) |  | yes | no |  |
 
-- `journey-sweep/journey_sweep.md.ts` — (no sibling .md)
+## tags
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
 
-## k_browser (1 .md, 1 .md.ts)
+## terminal
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| ctrlc_doesnt_copy_in_shell_tab.md | 0 | yes | no |  |
+| debug_nav.md.ts (no .md) |  | yes | no |  |
+| dir_panel_scroll.md.ts (no .md) |  | yes | no |  |
+| flow_shell_tab_location.md | 0 | yes | no |  |
+| git_status_panel.md | 0 | yes | no |  |
+| in_claude_ctrlv_does_not_paste.md | 0 | yes | no |  |
+| interactive_tabs_project_filtering_matrix.md | 0 | yes | no |  |
+| multiple_terminal_tabs.md | 0 | yes | no |  |
+| navigate_to_shell.md | 1 | yes | no |  |
+| plain_shell_url_loads_silently.md.ts (no .md) |  | yes | no |  |
+| prompt_index_panel.md | 0 | yes | no |  |
+| run_basic_command.md | 0 | yes | no |  |
+| sandbox_tab_cloud_icon.md.ts (no .md) |  | yes | no |  |
+| sandbox_terminal_uname.md.ts (no .md) |  | yes | no |  |
+| sandbox_two_tabs_roundtrip.md.ts (no .md) |  | yes | no |  |
+| session_persistence_on_refresh.md | 0 | yes | no |  |
+| session_resumes_after_sleep_wake.md | 0 | yes | no |  |
+| shell_slow_to_start_powershell_only.md | 0 | yes | no |  |
+| shell_starts_in_acceptable_time.md | 0 | yes | no |  |
+| shell_tab_title_and_switch.md.ts (no .md) |  | yes | no |  |
+| shell_tabs_remain_open_after_closing.md | 0 | yes | no |  |
+| shell_terminals_looks_empty.md | 0 | yes | no |  |
+| terminal_annotation_bookmark.md | 0 | yes | no |  |
+| terminal_clear_and_scrollback.md | 1 | yes | no |  |
+| terminal_command_history.md | 0 | yes | no |  |
+| terminal_ctrl_c.md | 0 | yes | no |  |
+| terminal_links.md.ts (no .md) |  | yes | no |  |
+| terminal_persistence_on_tab_switch.md | 0 | yes | no |  |
+| terminal_pty_no_duplicates.md | 0 | yes | no |  |
+| terminal_pty_output_clean.md | 0 | yes | no |  |
+| terminal_resize.md | 0 | yes | no |  |
+| terminal_scroll_sync.md | 0 | yes | no |  |
+| terminal_tab_rename.md | 0 | yes | no |  |
+| terminal_tab_switch_no_duplicates.md.ts (no .md) |  | yes | no |  |
+| time_gutter_and_prompt_annotations.md | 0 | yes | no |  |
+| visible_process_still_pty.md | 0 | yes | no |  |
+| web_app_artifact_not_created_when_prompted.md | 0 | yes | no |  |
+| when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | 0 | yes | no |  |
 
-- `k_browser/atlas_status_and_diff.md` — tests:1 — md.ts:yes — fast-path:no
+## triggers
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| cron_view_redirects_to_triggers.md.ts (no .md) |  | yes | no |  |
+| hook_trigger_still_works.md.ts (no .md) |  | yes | no |  |
+| schedule_trigger_create_edit.md.ts (no .md) |  | yes | no |  |
+| schedule_trigger_fires_test.md.ts (no .md) |  | yes | no |  |
+| scheduled_agent_run.md.ts (no .md) |  | yes | no |  |
+| trigger_process_target_typeid_str.md | 0 | yes | no |  |
 
-## markdown_index (1 .md, 1 .md.ts)
+## vibe
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| vibe_bugs.md | 0 | yes | no |  |
+| vibe_workspace_matrix.md | 0 | yes | no |  |
 
-- `markdown_index/smoke.md` — tests:5 — md.ts:yes — fast-path:no
+## whiteboard
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| create_persist.md | 0 | yes | no |  |
+| edge_cases.md | 0 | yes | no |  |
+| mermaid_sync.md | 0 | yes | no |  |
+| multi_tab.md | 0 | yes | no |  |
+| scope.md | 0 | yes | no |  |
+| smoke.md | 0 | yes | no |  |
+| ui_ux.md | 0 | yes | no |  |
+| wiki_integration.md | 0 | yes | no |  |
 
-## mcp-ui (0 .md, 1 .md.ts)
-
-- `mcp-ui/mcp_ui_vibe_form.md.ts` — (no sibling .md)
-
-## nav-collapse (0 .md, 1 .md.ts)
-
-- `nav-collapse/nav_collapse.md.ts` — (no sibling .md)
-
-## sandbox (1 .md, 0 .md.ts)
-
-- `sandbox/sandbox_share_link.md` — tests:manual — md.ts:no — fast-path:no
-
-## search (8 .md, 8 .md.ts)
-
-- `search/mcp_index.md` — tests:3 — md.ts:yes — fast-path:no
-- `search/rebuild_index_ui.md` — tests:5 — md.ts:yes — fast-path:no
-- `search/record_search_from_home.md` — tests:3 — md.ts:yes — fast-path:no
-- `search/record_search_view.md` — tests:4 — md.ts:yes — fast-path:no
-- `search/scan_records_viewer.md` — tests:3 — md.ts:yes — fast-path:no
-- `search/search_bar.md` — tests:6 — md.ts:yes — fast-path:no
-- `search/search_limit_param.md` — tests:1 — md.ts:yes — fast-path:no
-- `search/search_scan_info_stats.md` — tests:6 — md.ts:yes — fast-path:no
-
-## setup (2 .md, 2 .md.ts)
-
-- `setup/llm_not_configured_shows_up_after_configuring_llm.md` — tests:2 — md.ts:yes — fast-path:no
-- `setup/login_with_anthropic_error_500.md` — tests:1 — md.ts:yes — fast-path:no
-
-## skills (6 .md, 7 .md.ts)
-
-- `skills/console_error_404_skill_page.md` — tests:4 — md.ts:yes — fast-path:no
-- `skills/skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md` — tests:3 — md.ts:yes — fast-path:no
-- `skills/skills_failed_to_run_skill_console_error_482.md` — tests:3 — md.ts:yes — fast-path:no
-- `skills/skills_run_hangs_indefinitely.md` — tests:1 — md.ts:yes — fast-path:no
-- `skills/user_skills_failed_to_generate_plan_console_error_404.md` — tests:4 — md.ts:yes — fast-path:no
-- `skills/user_skills_failed_to_generate_plan_console_error_500.md` — tests:2 — md.ts:yes — fast-path:no
-- `skills/full_analysis_flow.md.ts` — (no sibling .md)
-
-## sniffer (4 .md, 4 .md.ts)
-
-- `sniffer/sniffer_bootstrap_init_state.md` — tests:2 — md.ts:yes — fast-path:no
-- `sniffer/sniffer_event_capture.md` — tests:2 — md.ts:yes — fast-path:no
-- `sniffer/sniffer_shared_state_single_backend_call.md` — tests:1 — md.ts:yes — fast-path:no
-- `sniffer/sniffer_spa_navigation_preserves_state.md` — tests:2 — md.ts:yes — fast-path:no
-
-## tab_management (0 .md, 2 .md.ts)
-
-- `tab_management/tab_lifecycle.md.ts` — (no sibling .md)
-- `tab_management/tab_reorder.md.ts` — (no sibling .md)
-
-## terminal (29 .md, 38 .md.ts)
-
-- `terminal/ctrlc_doesnt_copy_in_shell_tab.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/flow_shell_tab_location.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/git_status_panel.md` — tests:8 — md.ts:yes — fast-path:no
-- `terminal/in_claude_ctrlv_does_not_paste.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/interactive_tabs_project_filtering_matrix.md` — tests:52 — md.ts:yes — fast-path:no
-- `terminal/multiple_terminal_tabs.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/navigate_to_shell.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/prompt_index_panel.md` — tests:6 — md.ts:yes — fast-path:no
-- `terminal/run_basic_command.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/session_persistence_on_refresh.md` — tests:4 — md.ts:yes — fast-path:no
-- `terminal/session_resumes_after_sleep_wake.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/shell_slow_to_start_powershell_only.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/shell_starts_in_acceptable_time.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/shell_tabs_remain_open_after_closing.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/shell_terminals_looks_empty.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_annotation_bookmark.md` — tests:3 — md.ts:yes — fast-path:no
-- `terminal/terminal_clear_and_scrollback.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_command_history.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_ctrl_c.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_persistence_on_tab_switch.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_pty_no_duplicates.md` — tests:2 — md.ts:yes — fast-path:no
-- `terminal/terminal_pty_output_clean.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_resize.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/terminal_scroll_sync.md` — tests:2 — md.ts:yes — fast-path:no
-- `terminal/terminal_tab_rename.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/time_gutter_and_prompt_annotations.md` — tests:10 — md.ts:yes — fast-path:no
-- `terminal/visible_process_still_pty.md` — tests:3 — md.ts:yes — fast-path:no
-- `terminal/web_app_artifact_not_created_when_prompted.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md` — tests:1 — md.ts:yes — fast-path:no
-- `terminal/debug_nav.md.ts` — (no sibling .md)
-- `terminal/dir_panel_scroll.md.ts` — (no sibling .md)
-- `terminal/plain_shell_url_loads_silently.md.ts` — (no sibling .md)
-- `terminal/sandbox_tab_cloud_icon.md.ts` — (no sibling .md)
-- `terminal/sandbox_terminal_uname.md.ts` — (no sibling .md)
-- `terminal/sandbox_two_tabs_roundtrip.md.ts` — (no sibling .md)
-- `terminal/shell_tab_title_and_switch.md.ts` — (no sibling .md)
-- `terminal/terminal_links.md.ts` — (no sibling .md)
-- `terminal/terminal_tab_switch_no_duplicates.md.ts` — (no sibling .md)
-
-## triggers (1 .md, 5 .md.ts)
-
-- `triggers/trigger_process_target_typeid_str.md` — tests:1 — md.ts:yes — fast-path:no
-- `triggers/cron_view_redirects_to_triggers.md.ts` — (no sibling .md)
-- `triggers/hook_trigger_still_works.md.ts` — (no sibling .md)
-- `triggers/schedule_trigger_create_edit.md.ts` — (no sibling .md)
-- `triggers/schedule_trigger_fires_test.md.ts` — (no sibling .md)
-
-## vibe (2 .md, 2 .md.ts)
-
-- `vibe/vibe_bugs.md` — tests:4 — md.ts:yes — fast-path:no
-- `vibe/vibe_workspace_matrix.md` — tests:8 — md.ts:yes — fast-path:no
-
-## whiteboard (8 .md, 8 .md.ts)
-
-- `whiteboard/create_persist.md` — tests:4 — md.ts:yes — fast-path:no
-- `whiteboard/edge_cases.md` — tests:5 — md.ts:yes — fast-path:no
-- `whiteboard/mermaid_sync.md` — tests:5 — md.ts:yes — fast-path:no
-- `whiteboard/multi_tab.md` — tests:1 — md.ts:yes — fast-path:no
-- `whiteboard/scope.md` — tests:2 — md.ts:yes — fast-path:no
-- `whiteboard/smoke.md` — tests:5 — md.ts:yes — fast-path:no
-- `whiteboard/ui_ux.md` — tests:5 — md.ts:yes — fast-path:no
-- `whiteboard/wiki_integration.md` — tests:1 — md.ts:yes — fast-path:no
-
-## wiki (1 .md, 1 .md.ts)
-
-- `wiki/wiki_link_layer.md` — tests:3 — md.ts:yes — fast-path:no
+## wiki
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| wiki_link_layer.md | 23 | yes | no |  |
