@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.sources.providers.cloud_email import CloudEmailSource
+from flow_sdk.ingest.source_registry import asset_module
+
+CloudEmailSource = asset_module("cloud_email").CloudEmailSource
+
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
 

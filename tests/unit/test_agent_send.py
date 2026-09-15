@@ -11,18 +11,18 @@ import asyncio
 import pytest
 
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+from flow_sdk.ingest.source_registry import asset_module
 from flow_sdk.ingest.sources import source_type
-from flow_sdk.sources.providers.agent import CONNECTOR_PROFILES
-from flow_sdk.sources.providers.agent import transport as agent_transport
-from flow_sdk.sources.providers.agent.transport import (
-    RECEIPT_FILENAME,
-    SEND_RECEIPT_FILENAME,
-    HarnessWorker,
-    _send_slots,
-    _slots,
-    send_instruction,
-    send_result_from,
-)
+
+CONNECTOR_PROFILES = asset_module("agent").CONNECTOR_PROFILES
+agent_transport = asset_module("agent", "transport")
+RECEIPT_FILENAME = asset_module("agent", "transport").RECEIPT_FILENAME
+SEND_RECEIPT_FILENAME = asset_module("agent", "transport").SEND_RECEIPT_FILENAME
+HarnessWorker = asset_module("agent", "transport").HarnessWorker
+_send_slots = asset_module("agent", "transport")._send_slots
+_slots = asset_module("agent", "transport")._slots
+send_instruction = asset_module("agent", "transport").send_instruction
+send_result_from = asset_module("agent", "transport").send_result_from
 
 
 class TestBudgetIsSeparate:

@@ -14,7 +14,9 @@ from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.cli.auth.hub_login import is_logged_in
-from flow_sdk.sources.providers.cloud_email import CloudEmailSource
+from flow_sdk.ingest.source_registry import asset_module
+
+CloudEmailSource = asset_module("cloud_email").CloudEmailSource
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
 

@@ -1,38 +1,17 @@
-"""Shared scaffolding for the ingestion tests.
-
-The drivers are HTTP clients, so testing them honestly means real sockets — a
-stubbed client would let the conditional-GET path pass without ever negotiating
-a 304, which is the one behaviour that makes an idle poll free. What the four
-test modules do NOT each need is their own copy of the
-``BaseHTTPRequestHandler`` / ``HTTPServer`` / daemon-thread boilerplate.
-
-A responder is just ``(path, request_headers) -> (status, body, headers)``, which
-covers every case the suite has: serving a fixture, ETag negotiation, JSON, and
-error statuses.
-"""
+"""Shared scaffolding for the ingestion tests — the SDK's source test helpers, plus the shared feed
+fixtures the engine's end-to-end tests serve."""
 
 from __future__ import annotations
 
-import threading
-import uuid
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Callable, Iterator, Mapping
+
+from flow_sdk.ingest.testing import Responder, local_http_server, make_data_source, position
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "ingest"
 
-#: ``(path, request_headers) -> (status, body, response_headers)``
-Responder = Callable[[str, Mapping[str, str]], "tuple[int, bytes, dict]"]
-
 
 def with_token(monkeypatch, driver_class, token: str = "tok"):
-    """*driver_class*, with `_token` answering *token*.
-
-    The one thing a loopback server cannot supply: the credential is fetched from the
-    machine's connection store, not over the wire. Every driver test is about what the driver
-    does WITH a token, so both Google drivers hand themselves one the same way.
-    """
+    """*driver_class*, with `_token` answering *token*."""
     async def _answer(self, source):
         return token
 
@@ -42,47 +21,6 @@ def with_token(monkeypatch, driver_class, token: str = "tok"):
 
 def fixture_bytes(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
-
-
-@contextmanager
-def local_http_server(respond: Responder) -> Iterator[str]:
-    """Serve ``respond`` on a loopback port; yields the base URL."""
-
-    class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler's contract
-            self._answer(respond(self.path, self.headers))
-
-        def do_POST(self):  # noqa: N802 — same contract; the body rides the mapping as ``_body``
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length) if length else b""
-            seen = {k: v for k, v in self.headers.items()}
-            seen["_body"] = raw.decode("utf-8", "replace")
-            self._answer(respond(self.path, seen))
-
-        def _answer(self, reply):
-            status, body, headers = reply
-            self.send_response(status)
-            for key, value in (headers or {}).items():
-                self.send_header(key, value)
-            # 304 must not carry a body or a Content-Length.
-            if status != 304:
-                self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            if status != 304 and body:
-                self.wfile.write(body)
-
-        def log_message(self, *args):  # keep test output clean
-            pass
-
-    server = HTTPServer(("127.0.0.1", 0), _Handler)
-    # A short shutdown poll: `serve_forever` checks for `shutdown()` once per interval, and the
-    # default half second was paid again by every test that stops a server.
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        server.server_close()
 
 
 def serve_fixture(name: str, *, headers: dict | None = None) -> Responder:
@@ -95,37 +33,4 @@ def serve_fixture(name: str, *, headers: dict | None = None) -> Responder:
     return respond
 
 
-def make_data_source(provider: str = "rss", **fields):
-    """A DataSource with a unique account key and the derived id already set.
-
-    Every ingestion test needs this; without a shared factory the
-    unique-key idiom gets retyped per file and one of them eventually forgets
-    the deterministic id, silently testing a different code path.
-    """
-    from flow_sdk.builtin.data_source import DataSource
-
-    resolved = {
-        "provider": provider,
-        "account_key": f"acct-{uuid.uuid4().hex[:8]}",
-        "name": "test source",
-    }
-    resolved.update(fields)
-    return DataSource(
-        **resolved,
-    )
-
-
-def position(segment_key: str = "", prior=None, window_start=None, **_ignored):
-    """Where a segment's traversal resumes: a prior pass's cursor and manifest, or the dict an older
-    build left on the cursor row (lifted by the source type)."""
-    from flow_sdk.ingest.sources import SegmentPass, SegmentPosition
-
-    if isinstance(prior, SegmentPass):
-        return SegmentPosition(segment_key=segment_key, cursor=prior.cursor, manifest=dict(prior.manifest), window_start=window_start)
-    prior = dict(prior or {})
-    if "cursor" in prior or "manifest" in prior:
-        # A position written the way the engine carries it: the cursor and the manifest themselves.
-        return SegmentPosition(
-            segment_key=segment_key, cursor=prior.get("cursor"), manifest=dict(prior.get("manifest") or {}), window_start=window_start
-        )
-    return SegmentPosition(segment_key=segment_key, legacy_state=prior, window_start=window_start)
+__all__ = ["FIXTURES", "fixture_bytes", "local_http_server", "make_data_source", "position", "serve_fixture", "with_token"]
