@@ -2,6 +2,7 @@ import {
   ConnectionKind,
   ConnectionStatus,
   type CredentialSpec,
+  FSRef,
   TypeId,
   type OAuthConnection,
   type OAuthDetachResult,
@@ -864,6 +865,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               onSetValues={(row) => openDraft(valuesDraft(row.source))}
               onEdit={(row) => openDraft(editDraft(row.source))}
               onDelete={(row) => setPendingDeleteCredential(row)}
+              onOpenEnvFile={(path) => navigation.openFile(path)}
+              onRevealEnvFile={(path) =>
+                void new FSRef(path, new TypeId('compute_node', '@local')).open({ select: true }).catch((error) =>
+                  notify.error({ title: t`Could not reveal .env.local`, message: errorMessage(error, path) }),
+                )
+              }
             />
             {/* "Nothing yet" is about what YOU added. The FlowPad row is always
                 present — it is the app's own account, not a connection you chose

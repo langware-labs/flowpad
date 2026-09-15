@@ -30,6 +30,8 @@ export interface CredentialRow {
   missing: string[];
   /** Every variable is overridden by a project credential of the same name. */
   shadowed: boolean;
+  /** The `.env.local` this credential reads, when it keeps values there and the file exists. */
+  envPath?: string;
   /** The status row the edit and set-values forms start from. */
   source: CredentialStatusRow;
 }
@@ -43,6 +45,10 @@ export interface DetectedGroup {
 
 /** One row per declared credential: project first, then the user's; by title within. */
 export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] {
+  const envFile = (row: CredentialStatusRow) =>
+    row.value_store === 'env'
+      ? status.files.find((f) => f.scope === row.scope && f.project_id === row.project_id && f.exists)?.path ?? undefined
+      : undefined;
   return status.credentials
     .map(
       (row): CredentialRow => ({
@@ -57,6 +63,7 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
         missing: row.vars.filter((v) => v.required && !v.present).map((v) => v.env_var),
         shadowed: row.vars.length > 0 && row.vars.every((v) => !!v.shadowed_by),
+        envPath: envFile(row),
         source: row,
       }),
     )
