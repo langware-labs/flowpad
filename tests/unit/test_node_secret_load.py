@@ -89,13 +89,11 @@ async def test_an_undeclared_env_local_key_is_not_injected(tmp_path, sod_env):
 async def test_a_raising_store_is_skipped(tmp_path, sod_env, monkeypatch):
     project = await _project_with_values(tmp_path, A_KEY="a-val")
 
-    from flow_sdk.builtin import credential_store
-
     def boom(*a, **k):
         raise RuntimeError("store exploded")
 
-    monkeypatch.setattr(credential_store, "_load_vault", boom)
-    monkeypatch.setattr("flow_sdk.builtin.env_local_store.read_env_local_values", boom)
+    monkeypatch.setattr("flow_sdk.secrets.vault._read_vault", boom)
+    monkeypatch.setattr("flow_sdk.builtin.env_local_store.read_env_file_values", boom)
 
     assert await resolve_project_secrets(project) == {}
 

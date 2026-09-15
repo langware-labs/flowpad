@@ -67,8 +67,8 @@ msgid "…"
 msgstr "…"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid ".env.local file"
-msgstr ".env.local file"
+#~ msgid ".env.local file"
+#~ msgstr ".env.local file"
 
 #: src/components/credentials/EnvLocalBlockedNotice.tsx
 msgid ".env.local is not ignored by git here, so a value written there would be committable. Add it to .gitignore first, or keep this credential in the encrypted vault."
@@ -400,6 +400,11 @@ msgstr "{0} is not signed in"
 msgid "{0} is now running FlowPad {1}."
 msgstr "{0} is now running FlowPad {1}."
 
+#. placeholder {0}: spec?.title
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "{0} is ready"
+msgstr "{0} is ready"
+
 #. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
 msgid "{0} is removed from {where}, and its values are deleted from the vault."
@@ -577,6 +582,10 @@ msgstr "{0}: the amount must be a number."
 msgid "{amount} left {windowText}"
 msgstr "{amount} left {windowText}"
 
+#: src/components/credentials/CredentialDialog.tsx
+msgid "{baseTitle} · {environment}"
+msgstr "{baseTitle} · {environment}"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
 msgstr "{changedCount} changed"
@@ -610,6 +619,10 @@ msgstr "{displayName} connection failed"
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
 msgstr "{earlier} earlier in this thread"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "{envFileName} file"
+msgstr "{envFileName} file"
 
 #: src/components/connections-manager.tsx
 #~ msgid "{envVar} saved"
@@ -860,8 +873,8 @@ msgid "+ Add"
 msgstr "+ Add"
 
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
-msgid "+ Add a cloud machine"
-msgstr "+ Add a cloud machine"
+#~ msgid "+ Add a cloud machine"
+#~ msgstr "+ Add a cloud machine"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "+ Add rule"
@@ -1362,9 +1375,13 @@ msgstr "Add at least one variable"
 msgid "Add Bookmark"
 msgstr "Add Bookmark"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
+msgid "Add channel"
+msgstr "Add channel"
+
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
-msgid "Add cloud machine"
-msgstr "Add cloud machine"
+#~ msgid "Add cloud machine"
+#~ msgstr "Add cloud machine"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Add Co-Authored-By to git commits"
@@ -2113,16 +2130,16 @@ msgid "another project"
 msgstr "another project"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Answer here instead"
-msgstr "Answer here instead"
+#~ msgid "Answer here instead"
+#~ msgstr "Answer here instead"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Answered by {answeringName}"
-msgstr "Answered by {answeringName}"
+#~ msgid "Answered by {answeringName}"
+#~ msgstr "Answered by {answeringName}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Answered here"
-msgstr "Answered here"
+#~ msgid "Answered here"
+#~ msgstr "Answered here"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Answered with"
@@ -3332,6 +3349,8 @@ msgstr "Changes committed and pushed"
 msgid "Channel details"
 msgstr "Channel details"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
 #: src/components/inbox-view/AttachedChannelsBar.tsx
 msgid "Channels"
 msgstr "Channels"
@@ -3553,6 +3572,10 @@ msgstr "Claude Code Status"
 #: src/tabs/provider-meta.tsx
 msgid "Claude Code tab"
 msgstr "Claude Code tab"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Claude dir"
+msgstr "Claude dir"
 
 #: src/i18n/type-labels.ts
 msgid "Claude Hook"
@@ -3892,9 +3915,12 @@ msgstr "Close all {0} tabs"
 
 #. placeholder {0}: bucket.tabCount
 #: src/components/terminal/project-list-menu.tsx
-#: src/components/terminal/project-list-menu.tsx
 msgid "Close all {0} tabs in this project"
 msgstr "Close all {0} tabs in this project"
+
+#: src/components/terminal/project-list-menu.tsx
+msgid "Close all {globalTabCount} global tabs"
+msgstr "Close all {globalTabCount} global tabs"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close All But This"
@@ -3952,10 +3978,8 @@ msgstr "Closed"
 msgid "Cloud"
 msgstr "Cloud"
 
-#. placeholder {0}: deployment.name
-#. placeholder {0}: new Deployment(answering.deployment as never).name
-#: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
-#: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
+#. placeholder {0}: place.deployment.name
+#: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "Cloud · {0}"
 msgstr "Cloud · {0}"
 
@@ -4660,6 +4684,7 @@ msgstr "Copy links"
 msgid "Copy path"
 msgstr "Copy path"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Copy project path"
 msgstr "Copy project path"
@@ -4747,7 +4772,7 @@ msgstr "Could not add a cloud machine"
 msgid "Could not add the help desk."
 msgstr "Could not add the help desk."
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/hooks/use-allocate-agent-inbox.ts
 msgid "Could not allocate an inbox"
 msgstr "Could not allocate an inbox"
 
@@ -4976,8 +5001,8 @@ msgid "Could not load your token plan."
 msgstr "Could not load your token plan."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Could not move email here"
-msgstr "Could not move email here"
+#~ msgid "Could not move email here"
+#~ msgstr "Could not move email here"
 
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
@@ -4991,6 +5016,10 @@ msgstr "Could not open link"
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "Could not open skill"
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Could not open the folder"
+msgstr "Could not open the folder"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not pause"
@@ -5109,6 +5138,10 @@ msgstr "Could not resolve this folder"
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Could not resume the cloud machine"
 msgstr "Could not resume the cloud machine"
+
+#: src/components/connections-manager.tsx
+msgid "Could not reveal .env.local"
+msgstr "Could not reveal .env.local"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
@@ -5316,8 +5349,12 @@ msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
 
 #: src/components/terminal/project-list-menu.tsx
-msgid "Couldn't close the project's tabs"
-msgstr "Couldn't close the project's tabs"
+#~ msgid "Couldn't close the project's tabs"
+#~ msgstr "Couldn't close the project's tabs"
+
+#: src/components/terminal/project-list-menu.tsx
+msgid "Couldn't close the tabs"
+msgstr "Couldn't close the tabs"
 
 #: src/pages/entry/LaunchLanding.tsx
 #~ msgid "Couldn't finish preparing your sandbox"
@@ -5461,6 +5498,11 @@ msgstr "CPU:"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Create"
 msgstr "Create"
+
+#. placeholder {0}: spec?.title
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Create {0}"
+msgstr "Create {0}"
 
 #: src/components/git/GitTargetDialog.tsx
 msgid "Create a brand-new repository"
@@ -5623,6 +5665,14 @@ msgstr "Creating…"
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Credential"
 msgstr "Credential"
+
+#: src/components/connections-manager.tsx
+msgid "Credential environment"
+msgstr "Credential environment"
+
+#: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+msgid "Credential environment this place reads"
+msgstr "Credential environment this place reads"
 
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/components/quick-create/registry.ts
@@ -6255,6 +6305,7 @@ msgid "Deny"
 msgstr "Deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Deploy"
 msgstr "Deploy"
 
@@ -6262,6 +6313,10 @@ msgstr "Deploy"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
 msgstr "Deploy failed."
+
+#: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
+msgid "Deploy to a cloud machine"
+msgstr "Deploy to a cloud machine"
 
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Deploy to cloud"
@@ -6395,6 +6450,10 @@ msgstr "Detail"
 msgid "Details"
 msgstr "Details"
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Details for {name}"
+msgstr "Details for {name}"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Dev"
 msgstr "Dev"
@@ -6410,6 +6469,14 @@ msgstr "Dev mode ON — click to disable"
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
 msgstr "Developer Tools"
+
+#: src/components/assets/editor/agent-profile/use-place-display.ts
+msgid "Development · local"
+msgstr "Development · local"
+
+#: src/components/connections-manager.tsx
+msgid "development · this computer"
+msgstr "development · this computer"
 
 #: src/components/connections-manager.tsx
 msgid "Device code"
@@ -6943,8 +7010,8 @@ msgid "Each person gets their own budget drawn from this team. Leave the amount 
 msgstr "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-msgid "Each place has its own config, schedules and email."
-msgstr "Each place has its own config, schedules and email."
+#~ msgid "Each place has its own config, schedules and email."
+#~ msgstr "Each place has its own config, schedules and email."
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Each reply lands in the session as soon as it is ready."
@@ -7086,7 +7153,6 @@ msgstr "Effective filters at this endpoint"
 msgid "Effort"
 msgstr "Effort"
 
-#: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -7103,14 +7169,14 @@ msgid "Email inbox"
 msgstr "Email inbox"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Email is now answered here"
-msgstr "Email is now answered here"
+#~ msgid "Email is now answered here"
+#~ msgstr "Email is now answered here"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Email not moved."
-msgstr "Email not moved."
+#~ msgid "Email not moved."
+#~ msgstr "Email not moved."
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/hooks/use-allocate-agent-inbox.ts
 msgid "Email settings could not be saved."
 msgstr "Email settings could not be saved."
 
@@ -7373,6 +7439,8 @@ msgstr "Env file"
 msgid "Env:"
 msgstr "Env:"
 
+#: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "Environment"
@@ -8600,12 +8668,20 @@ msgid "Forwarded from another conversation"
 msgstr "Forwarded from another conversation"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Found in .env.local in your home folder"
-msgstr "Found in .env.local in your home folder"
+#~ msgid "Found in .env.local in your home folder"
+#~ msgstr "Found in .env.local in your home folder"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Found in this project's .env.local"
-msgstr "Found in this project's .env.local"
+msgid "Found in {fileName} in your home folder"
+msgstr "Found in {fileName} in your home folder"
+
+#: src/components/credentials/DetectedKeys.tsx
+#~ msgid "Found in this project's .env.local"
+#~ msgstr "Found in this project's .env.local"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Found in this project's {fileName}"
+msgstr "Found in this project's {fileName}"
 
 #: src/i18n/pref-labels.ts
 msgid "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
@@ -9669,6 +9745,7 @@ msgstr "In-app only"
 msgid "Inactive"
 msgstr "Inactive"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -10321,6 +10398,10 @@ msgstr "Last Login:"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Last message"
 msgstr "Last message"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Last opened"
+msgstr "Last opened"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -11104,6 +11185,10 @@ msgstr "Logs"
 msgid "Looking up project…"
 msgstr "Looking up project…"
 
+#: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
+msgid "Lowercase letters, digits, - and _ (not development)."
+msgstr "Lowercase letters, digits, - and _ (not development)."
+
 #: src/components/hub/AddMachineDialog.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
@@ -11609,6 +11694,7 @@ msgid "Models Used"
 msgstr "Models Used"
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Modified"
 msgstr "Modified"
@@ -11719,6 +11805,7 @@ msgstr "N/A"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -12227,6 +12314,10 @@ msgstr "No chats yet"
 msgid "No checkpoint selected"
 msgstr "No checkpoint selected"
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "No cloud machine yet."
+msgstr "No cloud machine yet."
+
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "No collaboration open"
 msgstr "No collaboration open"
@@ -12656,8 +12747,8 @@ msgid "No people yet."
 msgstr "No people yet."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "no place"
-msgstr "no place"
+#~ msgid "no place"
+#~ msgstr "no place"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
@@ -13529,6 +13620,11 @@ msgstr "Open"
 msgid "Open {0}"
 msgstr "Open {0}"
 
+#. placeholder {0}: credentialEnvFileName(row.source.environment)
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Open {0} in editor"
+msgstr "Open {0} in editor"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
@@ -13778,8 +13874,8 @@ msgid "Open in Worktree"
 msgstr "Open in Worktree"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "Open inbox"
-msgstr "Open inbox"
+#~ msgid "Open inbox"
+#~ msgstr "Open inbox"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
@@ -13888,6 +13984,10 @@ msgstr "Open Spec"
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec Session"
 msgstr "Open Spec Session"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Open tabs"
+msgstr "Open tabs"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
@@ -14372,6 +14472,7 @@ msgstr "path"
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Path"
 msgstr "Path"
@@ -14959,6 +15060,10 @@ msgstr "Project create indexes once, as the project is created. First selection 
 msgid "Project deleted"
 msgstr "Project deleted"
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Project details"
+msgstr "Project details"
+
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Project folder"
 msgstr "Project folder"
@@ -14970,6 +15075,10 @@ msgstr "Project folder…"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Project home"
 msgstr "Project home"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Project id"
+msgstr "Project id"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
@@ -15564,6 +15673,7 @@ msgstr "Recently edited items and chat sessions"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Reconnect"
 msgstr "Reconnect"
@@ -15589,6 +15699,10 @@ msgstr "Reconnected"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Reconnected."
 msgstr "Reconnected."
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Record id"
+msgstr "Record id"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Record updated"
@@ -16039,7 +16153,7 @@ msgstr "Replies:"
 msgid "Reply awaiting your review"
 msgstr "Reply awaiting your review"
 
-#. placeholder {0}: channelLabel(channelOrigin.kind)
+#. placeholder {0}: channelLabel(channel)
 #: src/components/conversation/ConversationView.tsx
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
@@ -16397,6 +16511,11 @@ msgstr "Reveal"
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Reveal in Finder"
 msgstr "Reveal in Finder"
+
+#: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Reveal in Finder/Explorer"
+msgstr "Reveal in Finder/Explorer"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
@@ -17471,7 +17590,7 @@ msgstr "Send message"
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
 
-#. placeholder {0}: channelLabel(channelOrigin?.kind)
+#. placeholder {0}: channelLabel(channel)
 #: src/components/conversation/ConversationView.tsx
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
@@ -17641,6 +17760,7 @@ msgid "sessions"
 msgstr "sessions"
 
 #: src/components/cost-dashboard/constants.ts
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -18806,6 +18926,10 @@ msgstr "Stats"
 msgid "Status"
 msgstr "Status"
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Status & cleanup"
+msgstr "Status & cleanup"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Status Line"
 msgstr "Status Line"
@@ -18893,6 +19017,10 @@ msgstr "stopped"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Storage"
 msgstr "Storage"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Storage · {environment}"
+msgstr "Storage · {environment}"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored →"
@@ -19128,6 +19256,7 @@ msgid "system"
 msgstr "system"
 
 #: src/components/hub/AddMachineDialog.tsx
+#: src/components/open-project-component/open-project-component.tsx
 msgid "System"
 msgstr "System"
 
@@ -19593,6 +19722,10 @@ msgstr "The login did not complete."
 msgid "The logout did not complete."
 msgstr "The logout did not complete."
 
+#: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
+msgid "The machine reads this environment's credentials."
+msgstr "The machine reads this environment's credentials."
+
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "The manifest was not changed."
@@ -19787,8 +19920,8 @@ msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "This agent has no email address yet."
-msgstr "This agent has no email address yet."
+#~ msgid "This agent has no email address yet."
+#~ msgstr "This agent has no email address yet."
 
 #: src/routes/loaders/load-agent-inbox.ts
 #: src/routes/loaders/load-agent-inbox.ts
@@ -19833,12 +19966,12 @@ msgid "This collaboration room no longer exists or is unavailable."
 msgstr "This collaboration room no longer exists or is unavailable."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-msgid "this computer"
-msgstr "this computer"
+#~ msgid "this computer"
+#~ msgstr "this computer"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
-msgid "This computer"
-msgstr "This computer"
+#~ msgid "This computer"
+#~ msgstr "This computer"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
@@ -21284,24 +21417,38 @@ msgid "value name"
 msgstr "value name"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Value stays in .env.local"
-msgstr "Value stays in .env.local"
+#~ msgid "Value stays in .env.local"
+#~ msgstr "Value stays in .env.local"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Value stays in {envFileName}"
+msgstr "Value stays in {envFileName}"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "Value:"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Values are kept in .env.local in your home folder"
-msgstr "Values are kept in .env.local in your home folder"
+#~ msgid "Values are kept in .env.local in your home folder"
+#~ msgstr "Values are kept in .env.local in your home folder"
+
+#. placeholder {0}: credentialEnvFileName(row.source.environment)
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Values are kept in {0} in your home folder"
+msgstr "Values are kept in {0} in your home folder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Values are kept in this machine's encrypted vault"
 msgstr "Values are kept in this machine's encrypted vault"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Values are kept in this project's .env.local"
-msgstr "Values are kept in this project's .env.local"
+#~ msgid "Values are kept in this project's .env.local"
+#~ msgstr "Values are kept in this project's .env.local"
+
+#. placeholder {0}: credentialEnvFileName(row.source.environment)
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Values are kept in this project's {0}"
+msgstr "Values are kept in this project's {0}"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
@@ -21823,6 +21970,10 @@ msgstr "Worker"
 msgid "Worker options{0}"
 msgstr "Worker options{0}"
 
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Workers"
+msgstr "Workers"
+
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Workflow launched"
 msgstr "Workflow launched"
@@ -21916,6 +22067,10 @@ msgstr "xterm memory: <0>{0}</0> chunks ({1})"
 #: src/components/version-popover/version-popover.tsx
 msgid "yanked"
 msgstr "yanked"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Yes"
+msgstr "Yes"
 
 #: src/components/chats-navigator/useChatHistory.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx

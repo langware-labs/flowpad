@@ -44,6 +44,47 @@ def _init_repo(tmp_path) -> None:
     _git(tmp_path, "init", "-q")
 
 
+# ── per environment ───────────────────────────────────────────────────────────
+
+
+def test_a_named_environment_reads_and_writes_its_own_file(tmp_path):
+    from flow_sdk.builtin.env_local_store import read_env_local_values
+
+    (tmp_path / ".env.local").write_text("DATABASE_URL=local\n")
+    write_env_local(tmp_path, "DATABASE_URL", "hosted", "production")
+
+    assert env_local_path(tmp_path, "production") == tmp_path / ".env.production.local"
+    assert read_env_local_values(tmp_path) == {"DATABASE_URL": "local"}
+    assert read_env_local_values(tmp_path, "production") == {"DATABASE_URL": "hosted"}
+    assert [r["key"] for r in list_env_local(tmp_path, "production")] == ["DATABASE_URL"]
+
+
+def test_a_repo_ignoring_only_env_local_still_protects_a_named_environment_file(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".env.local\n")
+
+    assert gitignore_status(tmp_path)["code"] == GITIGNORE_IGNORED
+    assert gitignore_status(tmp_path, "production")["code"] == GITIGNORE_NOT_IGNORED
+
+    status = ensure_gitignored(tmp_path, "production")
+
+    assert status["code"] == GITIGNORE_IGNORED
+    assert ".env.production.local" in (tmp_path / ".gitignore").read_text().splitlines()
+    assert "production" not in gitignore_status(tmp_path)["reason"], "development still names its own file"
+
+
+def test_a_tracked_named_environment_file_refuses_a_write(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".env.staging.local").write_text("EXISTING=1\n")
+    _git(tmp_path, "add", "-f", ".env.staging.local")
+
+    with pytest.raises(EnvLocalNotWritable) as refused:
+        write_env_local(tmp_path, "TOKEN", "sk-must-not-land", "staging")
+
+    assert refused.value.code == GITIGNORE_TRACKED
+    assert "sk-must-not-land" not in (tmp_path / ".env.staging.local").read_text()
+
+
 # ── list_env_local ────────────────────────────────────────────────────────────
 
 

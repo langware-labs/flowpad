@@ -20,14 +20,20 @@ from pydantic import ValidationError
 
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
-    VaultNotEnabled,
     forget_values,
     project_scope,
     scope_of,
     user_scope,
     write_value,
 )
-from flow_sdk.schema.data_spec.credential_contract import CREDENTIAL_SCOPES, SCOPE_PROJECT, SCOPE_USER
+from flow_sdk.schema.data_spec.credential_contract import (
+    CREDENTIAL_SCOPES,
+    DEFAULT_ENVIRONMENT,
+    SCOPE_PROJECT,
+    SCOPE_USER,
+    normalize_environment,
+)
+from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential_spec import CredentialSpec
@@ -37,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "icon_name", "help_url", "setup_wiki", "value_store", "lm_provider", "vars",
+    "environments",
 )
 
 
@@ -85,16 +92,27 @@ async def _owned_credential(typeid: str) -> tuple["CredentialSpec", CredentialSc
     return spec, scope, project
 
 
-def _write_values(spec: "CredentialSpec", scope: CredentialScope, values: dict[str, Any]) -> None:
+def _environment(environment: Optional[str]) -> str:
+    try:
+        return normalize_environment(environment)
+    except ValueError as e:
+        raise CredentialError(str(e)) from e
+
+
+async def _write_values(
+    spec: "CredentialSpec", scope: CredentialScope, values: dict[str, Any], environment: str = DEFAULT_ENVIRONMENT
+) -> None:
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
+    if spec.lm_provider and environment != DEFAULT_ENVIRONMENT and any(values.values()):
+        raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     try:
         for env_var, value in values.items():
             if value is not None and str(value) != "":
-                write_value(spec, scope, env_var, str(value))
+                await write_value(spec, scope, env_var, str(value), environment)
     except (EnvLocalNotWritable, VaultNotEnabled) as e:
         raise CredentialError(str(e), code=e.code) from e
 
@@ -135,8 +153,9 @@ async def save_credential(
     project_id: Optional[str] = None,
     typeid: Optional[str] = None,
     values: Optional[dict[str, Any]] = None,
+    environment: Optional[str] = None,
 ) -> "CredentialSpec":
-    """Create a credential in a scope, or update one; then write any values."""
+    """Create a credential in a scope, or update one; then write any values into ``environment``."""
     from flow_sdk.assets.creation import destination_in  # noqa: PLC0415
     from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination  # noqa: PLC0415
     from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: PLC0415
@@ -147,6 +166,7 @@ async def save_credential(
     )
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
+    environment = _environment(environment)
     manifest_in = dict(manifest or {})
     existing = None
     if typeid:
@@ -189,27 +209,32 @@ async def save_credential(
         spec.project_id = target_scope.project_id
         spec.parent_type_id = str(project.typeid) if project is not None else None
 
-    _write_values(spec, target_scope, dict(values or {}))
+    await _write_values(spec, target_scope, dict(values or {}), environment)
     await spec.save()
     return spec
 
 
-async def set_credential_values(typeid: str, values: dict[str, Any]) -> "CredentialSpec":
-    """Set or rotate values. Empty values are skipped, never cleared."""
+async def set_credential_values(
+    typeid: str, values: dict[str, Any], environment: Optional[str] = None
+) -> "CredentialSpec":
+    """Set or rotate ``environment``'s values. Empty values are skipped, never cleared."""
+    environment = _environment(environment)
     spec, target_scope, _ = await _owned_credential(typeid)
-    _write_values(spec, target_scope, dict(values or {}))
+    await _write_values(spec, target_scope, dict(values or {}), environment)
     return spec
 
 
 async def delete_credential(typeid: str) -> dict[str, list[str]]:
-    """Remove a credential: its folder, and the vault values it owns.
+    """Remove a credential: its folder, and the vault values it owns in every environment.
 
-    ``.env.local`` lines are the user's and are always kept.
+    Env file lines are the user's and are always kept.
     """
     from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import known_environments  # noqa: PLC0415
 
     spec, target_scope, _ = await _owned_credential(typeid)
-    deleted, kept = await forget_values(spec, target_scope)
+    environments = [*await known_environments(), *(spec.environments or {})]
+    deleted, kept = await forget_values(spec, target_scope, environments)
     if spec.asset_ref and Path(spec.asset_ref).is_dir():
         Asset.from_path(spec.asset_ref).remove()
     await spec.delete()

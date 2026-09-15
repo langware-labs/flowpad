@@ -62,7 +62,7 @@ async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, caps
     _catalogue(monkeypatch, [original_spec])
     monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
 
-    async def connect(_provider, presenter):
+    async def connect(_provider, presenter, *, reauthorize=False):
         await presenter.present(BrowserAuthorization("opaque-state", "slack", "https://auth.example/connect"))
         return ConnectionResult(verified_spec, ConnectionTestResult(ok=True, identity="me"))
 

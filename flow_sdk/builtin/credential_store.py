@@ -1,45 +1,42 @@
 """Where a credential's values are read and written.
 
-A credential lives in a scope (``user`` or ``project``) and names a store
-(``env`` or ``vault``). The pair decides one location per variable:
+A credential lives in a scope (``user`` or ``project``) and names a store type
+(``env`` or ``vault``) per environment. :func:`secret_store_ref` is the ONE place
+a scope and an environment become a store config:
 
-    env   → <scope root>/.env.local, key VAR
-    vault → the encrypted per-instance store, entry ``vault_name(...)``
+    env   → env_file, <scope root>/.env.local (development) or .env.<env>.local
+    vault → vault, prefix credential.[<env>.]user. / credential.[<env>.]project.<pid>.
 
 The scope root is the asset scope root Flowpad already has
 (``asset_placement.root_for_scope``): the project's mount, or the user's home.
+Everything past the config is the store's own verbs (``flow_sdk.secrets``).
 Values only flow out through :func:`read_values`, which the injection resolver
 uses.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional
 
+from pydantic import SecretStr
+
 from flow_sdk.schema.data_spec.credential_contract import (
+    DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_SYSTEM,
     SCOPE_USER,
     VALUE_STORE_VAULT,
     vault_name,
 )
+from flow_sdk.secrets import SecretStore, SecretStoreRef, load_all
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential_spec import CredentialSpec
     from flow_sdk.builtin.project import Project
 
 logger = logging.getLogger(__name__)
-
-VAULT_DISABLED = "vault-disabled"
-
-
-class VaultNotEnabled(RuntimeError):
-    """The encrypted store has not been enabled on this machine yet."""
-
-    code = VAULT_DISABLED
 
 
 @dataclass(frozen=True)
@@ -93,98 +90,90 @@ async def scope_of(spec: "CredentialSpec") -> tuple[Optional[CredentialScope], O
     return None, None
 
 
-def location_name(spec: "CredentialSpec", scope: CredentialScope, env_var: str) -> str:
-    """Where one variable's value lives, as a name: the vault entry or the env key."""
-    if spec.value_store == VALUE_STORE_VAULT:
-        return vault_name(
-            scope=scope.scope, project_id=scope.project_id, env_var=env_var, lm_provider=spec.lm_provider or ""
-        )
-    return env_var
+def secret_store_ref(
+    spec: "CredentialSpec", scope: CredentialScope, environment: str = DEFAULT_ENVIRONMENT
+) -> SecretStoreRef:
+    """The store ``spec`` keeps ``environment``'s values in, for ``scope``. No I/O."""
+    if spec.store_for(environment) == VALUE_STORE_VAULT:
+        if spec.lm_provider:
+            # One entry per provider, whatever the variable is called.
+            entries = {
+                env_var: vault_name(
+                    scope=scope.scope,
+                    project_id=scope.project_id,
+                    env_var=env_var,
+                    lm_provider=spec.lm_provider,
+                    environment=environment,
+                )
+                for env_var in spec.var_names()
+            }
+            return SecretStoreRef(type="vault", config={"entries": entries})
+        prefix = vault_name(scope=scope.scope, project_id=scope.project_id, env_var="", environment=environment)
+        return SecretStoreRef(type="vault", config={"prefix": prefix})
+    from flow_sdk.builtin.env_local_store import env_local_path  # noqa: PLC0415
+
+    path = env_local_path(scope.root, environment)
+    return SecretStoreRef(type="env_file", config={"env_file_path": str(path) if path else ""})
 
 
-def write_value(spec: "CredentialSpec", scope: CredentialScope, env_var: str, value: str) -> None:
-    """Store one variable's value where the spec says. Raises
+async def write_value(
+    spec: "CredentialSpec",
+    scope: CredentialScope,
+    env_var: str,
+    value: str,
+    environment: str = DEFAULT_ENVIRONMENT,
+) -> None:
+    """Store one variable's value where the spec says for ``environment``. Raises
     ``EnvLocalNotWritable`` (with a code) or :class:`VaultNotEnabled`."""
-    if spec.value_store == VALUE_STORE_VAULT:
-        from flow_sdk.cli.auth.secrets import is_secrets_enabled, write_secret  # noqa: PLC0415
-
-        if not is_secrets_enabled():
-            raise VaultNotEnabled("The encrypted vault is not enabled on this machine.")
-        write_secret(location_name(spec, scope, env_var), value, f"{spec.title or spec.name}: {env_var}")
-        return
-    from flow_sdk.builtin.env_local_store import write_env_local  # noqa: PLC0415
-
-    write_env_local(scope.root, env_var, value)
+    label = f"{spec.title or spec.name}: {env_var}"
+    if environment != DEFAULT_ENVIRONMENT:
+        label = f"{label} ({environment})"
+    store = SecretStore.from_ref(secret_store_ref(spec, scope, environment))
+    await store.save({env_var: value}, description=label)
 
 
-def _load_vault() -> dict[str, str]:
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+async def read_values(
+    targets: Iterable[tuple["CredentialSpec", CredentialScope, str]],
+    environment: str = DEFAULT_ENVIRONMENT,
+) -> dict[str, SecretStr]:
+    """``environment``'s values for ``(spec, scope, env_var)`` targets, keyed by env var.
 
-    return dict(get_instance_settings().sod.load_file().sodot)
-
-
-async def read_values(targets: Iterable[tuple["CredentialSpec", CredentialScope, str]]) -> dict[str, str]:
-    """Values for ``(spec, scope, env_var)`` targets, keyed by env var.
-
-    Each store is read once: every scope root's ``.env.local`` is parsed once,
-    and the encrypted vault is decrypted once, however many variables it holds.
-    A store that cannot be read contributes nothing — a missing value must never
-    take down a spawn — and only names are ever logged.
+    Each store is read once: every env file is parsed once, and the encrypted
+    vault is decrypted once, however many variables it holds. A store that
+    cannot be read contributes nothing — a missing value must never take down a
+    spawn — and only names are ever logged.
     """
-    from flow_sdk.builtin.env_local_store import read_env_local_values  # noqa: PLC0415
-
-    targets = list(targets)
-    roots = {scope.root for spec, scope, _ in targets if spec.value_store != VALUE_STORE_VAULT}
-    wants_vault = any(spec.value_store == VALUE_STORE_VAULT for spec, _, _ in targets)
-
-    async def env_file(root: Optional[Path]) -> tuple[Optional[Path], dict[str, str]]:
-        try:
-            return root, await asyncio.to_thread(read_env_local_values, root)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("[credentials] could not read .env.local at %s: %s", root, e)
-            return root, {}
-
-    async def vault() -> dict[str, str]:
-        if not wants_vault:
-            return {}
-        try:
-            return await asyncio.to_thread(_load_vault)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("[credentials] could not read the vault: %s", type(e).__name__)
-            return {}
-
-    files, vault_values = await asyncio.gather(asyncio.gather(*(env_file(r) for r in roots)), vault())
-    env_files = dict(files)
-
-    out: dict[str, str] = {}
+    stores: dict[tuple[str, str], tuple[SecretStore, list[str]]] = {}
     for spec, scope, env_var in targets:
-        if spec.value_store == VALUE_STORE_VAULT:
-            value = vault_values.get(location_name(spec, scope, env_var))
-        else:
-            value = env_files.get(scope.root, {}).get(env_var)
-        if value is not None:
-            out[env_var] = value
+        ref = secret_store_ref(spec, scope, environment)
+        stores.setdefault(ref.key, (SecretStore.from_ref(ref), []))[1].append(env_var)
+    out: dict[str, SecretStr] = {}
+    for values in await load_all(stores.values()):
+        out.update(values)
     return out
 
 
-async def forget_values(spec: "CredentialSpec", scope: CredentialScope) -> tuple[list[str], list[str]]:
-    """Delete the values a credential owns: ``(deleted, kept)`` variable names.
+async def forget_values(
+    spec: "CredentialSpec",
+    scope: CredentialScope,
+    environments: Iterable[str] = (DEFAULT_ENVIRONMENT,),
+) -> tuple[list[str], list[str]]:
+    """Delete the values a credential owns in every given environment: ``(deleted, kept)`` names.
 
-    Vault entries are Flowpad's own and are removed. ``.env.local`` lines are the
-    user's and are always kept.
+    Vault entries are Flowpad's own and are removed. Env file lines are the
+    user's and are always kept, so a variable read from a file in any
+    environment is reported as kept.
     """
     names = spec.var_names()
-    if spec.value_store != VALUE_STORE_VAULT:
-        return [], names
-    from flow_sdk.cli.auth.secrets import delete_secret  # noqa: PLC0415
-
-    deleted: list[str] = []
-    kept: list[str] = []
-    for env_var in names:
-        try:
-            await delete_secret(location_name(spec, scope, env_var))
-            deleted.append(env_var)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[credentials] could not delete the vault value for %s: %s", env_var, e)
-            kept.append(env_var)
-    return deleted, kept
+    deleted: set[str] = set()
+    kept: set[str] = set()
+    seen: set[tuple[str, str]] = set()
+    for environment in environments:
+        ref = secret_store_ref(spec, scope, environment)
+        if ref.key in seen:
+            continue
+        seen.add(ref.key)
+        gone, stay = await SecretStore.from_ref(ref).forget(names)
+        deleted.update(gone)
+        kept.update(stay)
+    return [n for n in names if n in deleted and n not in kept], [n for n in names if n in kept]

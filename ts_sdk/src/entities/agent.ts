@@ -262,9 +262,12 @@ export class Agent extends APIEntity<Agent> {
    *
    * Slow by nature (create + boot + health on a real sandbox); callers should
    * show progress rather than assume a snappy round trip.
+   *
+   * `environment` is the placement's credential environment — `production`
+   * when omitted. One cloud machine per environment.
    */
-  async deploy(): Promise<AgentDeployResult> {
-    return (await this.post('deploy')) as AgentDeployResult;
+  async deploy(environment?: string): Promise<AgentDeployResult> {
+    return (await this.post('deploy', environment ? { environment } : undefined)) as AgentDeployResult;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */

@@ -15,6 +15,20 @@ import { isHubOnly } from '../utils/hub-runtime';
 export type CredentialScopeName = 'user' | 'project';
 export type CredentialValueStore = 'env' | 'vault';
 
+/** This computer's credential environment — every other one is a Deployment's `environment`. */
+export const DEFAULT_CREDENTIAL_ENVIRONMENT = 'development';
+
+/** The env file an environment's values live in: `.env.local`, or `.env.<env>.local`. */
+export function credentialEnvFileName(environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT): string {
+  return environment === DEFAULT_CREDENTIAL_ENVIRONMENT ? '.env.local' : `.env.${environment}.local`;
+}
+
+/** How one environment differs from a credential's defaults. */
+export interface CredentialEnvironmentSettings {
+  value_store?: CredentialValueStore | null;
+  required?: string[] | null;
+}
+
 export interface CredentialVarStatus {
   env_var: string;
   label: string;
@@ -43,7 +57,13 @@ export interface CredentialStatusRow {
   help_url: string;
   scope: CredentialScopeName;
   project_id: string | null;
+  /** The environment these presences were read for. */
+  environment: string;
+  /** This credential's store in that environment. */
   value_store: CredentialValueStore;
+  /** The manifest's own store and per-environment overrides, for an edit to send back. */
+  default_value_store: CredentialValueStore;
+  environments: Record<string, CredentialEnvironmentSettings>;
   lm_provider: string;
   state: 'connected' | 'partial' | 'missing';
   vars: CredentialVarStatus[];
@@ -57,6 +77,8 @@ export interface DetectedEnvKey {
 export interface CredentialScopeFile {
   scope: CredentialScopeName;
   project_id: string | null;
+  /** The environment this env file belongs to. */
+  environment: string;
   path: string | null;
   exists: boolean;
   /** A value cannot be written here (a committable `.env.local`, no folder). */
@@ -68,6 +90,10 @@ export interface CredentialScopeFile {
 
 export interface CredentialsStatus {
   project_id: string | null;
+  /** The environment this status was read for. */
+  environment: string;
+  /** Every environment there is: `development` plus each Deployment's. */
+  environments: string[];
   vault_enabled: boolean;
   credentials: CredentialStatusRow[];
   files: CredentialScopeFile[];
@@ -104,6 +130,8 @@ export interface CredentialManifestInput {
   value_store?: CredentialValueStore;
   lm_provider?: string;
   vars: Record<string, CredentialManifestVar>;
+  /** Per-environment overrides of the store or the required set. */
+  environments?: Record<string, CredentialEnvironmentSettings>;
 }
 
 export interface SaveCredentialRequest {
@@ -115,10 +143,14 @@ export interface SaveCredentialRequest {
   manifest: CredentialManifestInput;
   /** Written before the credential is created; empty values are skipped. */
   values?: Record<string, string>;
+  /** The environment `values` are written into; `development` when omitted. */
+  environment?: string;
 }
 
 export const EMPTY_CREDENTIALS_STATUS: CredentialsStatus = Object.freeze({
   project_id: null,
+  environment: DEFAULT_CREDENTIAL_ENVIRONMENT,
+  environments: [DEFAULT_CREDENTIAL_ENVIRONMENT],
   vault_enabled: false,
   credentials: [],
   files: [],
@@ -134,12 +166,18 @@ export class CredentialsService {
   }
 
   /** Every credential the user and (when given) the project declare, plus what
-   *  each scope's `.env.local` holds. */
-  async status(projectId?: string | null): Promise<CredentialsStatus> {
+   *  each scope's env file holds — all read for one `environment`. */
+  async status(
+    projectId?: string | null,
+    environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT,
+  ): Promise<CredentialsStatus> {
     // The hub has no `@local` node, no home folder and no vault of this machine.
     if (isHubOnly()) return EMPTY_CREDENTIALS_STATUS;
     const action = this.action('status', 'GET');
-    if (projectId) action.queryParameters = { project_id: projectId };
+    const query: Record<string, string> = {};
+    if (projectId) query.project_id = projectId;
+    if (environment !== DEFAULT_CREDENTIAL_ENVIRONMENT) query.environment = environment;
+    if (Object.keys(query).length) action.queryParameters = query;
     return (await dataManager.callAction<unknown, CredentialsStatus>(action)) ?? EMPTY_CREDENTIALS_STATUS;
   }
 
@@ -150,10 +188,15 @@ export class CredentialsService {
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 
-  /** Set or rotate values. Empty values are skipped, never cleared. */
-  async setValues(typeid: string, values: Record<string, string>): Promise<CredentialSaved> {
+  /** Set or rotate one environment's values. Empty values are skipped, never cleared. */
+  async setValues(
+    typeid: string,
+    values: Record<string, string>,
+    environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT,
+  ): Promise<CredentialSaved> {
     const action = this.action('values', 'POST');
-    action.bodyParameters = { typeid, values };
+    action.bodyParameters =
+      environment === DEFAULT_CREDENTIAL_ENVIRONMENT ? { typeid, values } : { typeid, values, environment };
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 

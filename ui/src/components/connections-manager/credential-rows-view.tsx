@@ -8,6 +8,7 @@ import { Button } from '../ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { TableCell, TableRow } from '../ui/table';
 import { MoreOnHover } from './more-on-hover';
+import { credentialEnvFileName } from '@sdk';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
 /** Same cap the OAuth scope chips use — one chip and a count. */
@@ -68,8 +69,8 @@ export function CredentialConnectionRows({
                   row.store === 'vault'
                     ? t`Values are kept in this machine's encrypted vault`
                     : row.scope === 'user'
-                      ? t`Values are kept in .env.local in your home folder`
-                      : t`Values are kept in this project's .env.local`
+                      ? t`Values are kept in ${credentialEnvFileName(row.source.environment)} in your home folder`
+                      : t`Values are kept in this project's ${credentialEnvFileName(row.source.environment)}`
                 }
                 data-testid={`connection-store-${testKey}`}
               >
@@ -167,7 +168,7 @@ export function CredentialConnectionRows({
                           data-testid={`connection-open-env-${testKey}`}
                         >
                           <FileText className="me-2 h-3.5 w-3.5" />
-                          <Trans>Open .env.local in editor</Trans>
+                          <Trans>Open {credentialEnvFileName(row.source.environment)} in editor</Trans>
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={() => onRevealEnvFile(row.envPath!)}

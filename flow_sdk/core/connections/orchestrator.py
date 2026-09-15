@@ -263,7 +263,9 @@ def _acquire_provider_lock(provider: str) -> FileLock:
     return lock
 
 
-async def connect(provider: str, presenter: AuthorizationPresenter) -> ConnectionResult:
+async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthorize: bool = False) -> ConnectionResult:
+    """Connect ``provider``. ``reauthorize`` runs the provider's consent even over a held grant
+    (the Connections row's Reconnect) — how a grant missing a scope is replaced."""
     from flow_sdk.core.connections.service import FlowServiceError, flow_service
     from flow_sdk.core.connections.specs import _list_connection_specs_with_client
 
@@ -288,7 +290,7 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                 # stayed disconnected and `require()` failed right after. Only a
                 # row the catalogue already calls connected may skip `/auth`, which
                 # is where a valid hub grant is adopted without a browser.
-                if initial.ok is True and spec.connected:
+                if initial.ok is True and spec.connected and not reauthorize:
                     return ConnectionResult(spec=spec, test=initial)
                 if initial.ok is None:
                     raise _error(
@@ -298,16 +300,14 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         initial.detail,
                     )
 
-                auth_response = await client.request(
-                    "POST", f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth", json={}
+                # A query parameter, the way the Connections screen's Reconnect sends it.
+                auth_path = f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth" + (
+                    "?reauthorize=true" if reauthorize else ""
                 )
+                auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success and auth_response.error_code == "cloud_login_required":
                     await _ensure_cloud_login(spec.provider, client, presenter)
-                    auth_response = await client.request(
-                        "POST",
-                        f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth",
-                        json={},
-                    )
+                    auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success:
                     stage = (
                         ConnectionStage.CLOUD

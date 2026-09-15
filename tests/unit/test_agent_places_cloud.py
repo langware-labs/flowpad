@@ -44,6 +44,43 @@ async def _cloud_place(agent: Agent, **fields) -> Deployment:
     return deployment
 
 
+@pytest.mark.asyncio
+async def test_adopt_placement_stamps_the_environment_and_makes_it_this_machines_default(tmp_path):
+    from unittest.mock import patch
+
+    from flow_sdk.instance_settings import environment as environment_settings
+
+    agent = await _agent(tmp_path, "adopt-env")
+    hub_id = "3c9a1f2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+    environment_settings.reset_cache()
+    with patch.object(environment_settings.app_config, "set_config") as stored:
+        adopted = await adopt_placement(agent, hub_id, "production")
+
+    assert adopted.environment == "production"
+    assert (await Deployment.get_by_id(hub_id)).environment == "production"
+    stored.assert_called_once_with("default_environment", "production")
+    environment_settings.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_adopt_placement_refuses_an_invalid_environment(tmp_path):
+    agent = await _agent(tmp_path, "adopt-bad-env")
+
+    with pytest.raises(PlaceError, match="valid environment"):
+        await adopt_placement(agent, HUB_ID, "Prod Env")
+
+
+@pytest.mark.asyncio
+async def test_one_placement_per_environment_on_a_provider(tmp_path):
+    agent = await _agent(tmp_path, "env-places")
+    staging = await _cloud_place(agent, environment="staging")
+    production = await _cloud_place(agent, environment="production")
+
+    assert (await Deployment.find_existing(str(agent.typeid), "e2b", environment="staging")).id == staging.id
+    assert (await Deployment.find_existing(str(agent.typeid), "e2b", environment="production")).id == production.id
+    assert await Deployment.find_existing(str(agent.typeid), "e2b", environment="qa") is None
+
+
 class _Hub:
     def __init__(self, configured: bool = True):
         self.calls: list[tuple] = []

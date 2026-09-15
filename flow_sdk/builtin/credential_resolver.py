@@ -9,12 +9,16 @@ in ``.env.local`` that no credential names stays out of the process.
 
 Node attachment (``ComputeNode.attached_secrets``) filters the result: ``None``
 means nothing was curated, i.e. every declared variable.
+
+Values are read for ONE environment: the Deployment the process runs under,
+else this instance's default, else ``development`` (:func:`environment_for`).
+Declarations never differ by environment — only where the values are read.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from pydantic import SecretStr
 
@@ -25,7 +29,12 @@ from flow_sdk.builtin.credential_store import (
     spec_scope_name,
     user_scope,
 )
-from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER
+from flow_sdk.schema.data_spec.credential_contract import (
+    DEFAULT_ENVIRONMENT,
+    SCOPE_PROJECT,
+    SCOPE_USER,
+    is_valid_environment,
+)
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential_spec import CredentialSpec
@@ -94,8 +103,9 @@ async def resolve_project_secrets(
     *,
     only: Optional[Iterable[str]] = None,
     declared: Optional[dict[str, DeclaredVar]] = None,
+    environment: str = DEFAULT_ENVIRONMENT,
 ) -> dict[str, SecretStr]:
-    """Resolve every declared variable that ``only`` permits.
+    """Resolve every declared variable that ``only`` permits, from ``environment``.
 
     A store that fails is skipped (see ``read_values``) — a missing value must
     never take down a spawn, and a value must never reach a log line.
@@ -107,11 +117,54 @@ async def resolve_project_secrets(
     if not targets:
         return {}
     try:
-        values = await read_values(targets)
+        return await read_values(targets, environment)
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not resolve values: %s", type(e).__name__)
         return {}
-    return {env_var: SecretStr(value) for env_var, value in values.items()}
+
+
+async def environment_for(process: Any = None) -> str:
+    """The credential environment ``process`` runs in.
+
+    The ``environment`` of the Deployment it was created under; else this
+    instance's default (a cloud box sets it when it adopts its placement); else
+    ``development``. Never raises: a process must start even when the lookup fails.
+    """
+    deployment_id = str(getattr(process, "deployment_id", "") or "").strip()
+    if deployment_id:
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        try:
+            deployment = await Deployment.get_by_id(deployment_id)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[credentials] could not read deployment %s: %s", deployment_id, e)
+            deployment = None
+        environment = str(getattr(deployment, "environment", "") or "").strip()
+        if is_valid_environment(environment):
+            return environment
+    try:
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
+
+        return get_default_environment()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[credentials] could not read the default environment: %s", e)
+        return DEFAULT_ENVIRONMENT
+
+
+async def known_environments() -> list[str]:
+    """``development`` first, then every environment a Deployment names, sorted."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    try:
+        rows = await Deployment.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["environment", DEFAULT_ENVIRONMENT]))
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[credentials] could not list deployment environments: %s", e)
+        rows = []
+    named = {str(row.environment or "").strip() for row in rows}
+    return [DEFAULT_ENVIRONMENT, *sorted(env for env in named if is_valid_environment(env) and env != DEFAULT_ENVIRONMENT)]
 
 
 async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[str]]:
@@ -129,13 +182,21 @@ async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[s
     return node.attached_env_vars(str(project.id))
 
 
-async def resolve_attached_secrets(project: Optional["Project"]) -> dict[str, SecretStr]:
+async def resolve_attached_secrets(
+    project: Optional["Project"], *, environment: Optional[str] = None
+) -> dict[str, SecretStr]:
     """The declared values the local node lets ``project``'s processes see.
 
     The one entry point for spawns (worker, terminal, node command). Nothing
-    declared — the common case — returns before the node lookup.
+    declared — the common case — returns before the node lookup. ``environment``
+    defaults to this instance's (``environment_for(None)``).
     """
     declared = await declared_vars(project)
     if not declared:
         return {}
-    return await resolve_project_secrets(project, only=await attached_env_vars_for(project), declared=declared)
+    return await resolve_project_secrets(
+        project,
+        only=await attached_env_vars_for(project),
+        declared=declared,
+        environment=environment or await environment_for(None),
+    )

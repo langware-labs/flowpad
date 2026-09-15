@@ -19,6 +19,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     VALUE_STORES,
     assert_value_free,
     is_valid_env_var,
+    normalize_environment,
 )
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -28,6 +29,9 @@ LM_PROVIDERS = tuple(p.value for p in LMApiProvider if p is not LMApiProvider.FL
 
 #: The name is the folder name, so it must be a path segment.
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+#: ``env_file`` is the SecretStore type's own name; a manifest keeps the ``env`` spelling.
+_STORE_ALIASES = {"env_file": VALUE_STORE_ENV}
 
 
 class CredentialVarSpec(DataSpec):
@@ -54,6 +58,30 @@ class CredentialVarSpec(DataSpec):
     help_url: str = ""
 
 
+class CredentialEnvironmentSpec(DataSpec):
+    """How one environment differs from the credential's defaults.
+
+    Keyed by environment name in ``CredentialManifestSpec.environments``. The
+    list of environments is never declared here — it is ``development`` plus
+    every Deployment's ``environment``; an entry only overrides.
+    """
+
+    #: This environment's store; the credential's ``value_store`` when unset.
+    value_store: str | None = None
+    #: The variables that must have a value in this environment; each
+    #: variable's own ``required`` when unset.
+    required: list[str] | None = None
+
+    @field_validator("value_store")
+    @classmethod
+    def _known_store(cls, value: str | None) -> str | None:
+        value = str(value or "").strip() or None
+        value = _STORE_ALIASES.get(value, value) if value is not None else None
+        if value is not None and value not in VALUE_STORES:
+            raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
+        return value
+
+
 class CredentialManifestSpec(DataSpec):
     """``credential.json`` — the shape, with every authoring rule as a validator."""
 
@@ -78,6 +106,23 @@ class CredentialManifestSpec(DataSpec):
     lm_provider: str = ""
     #: The variables, keyed by env var NAME.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
+    #: Per-environment overrides, keyed by environment name. Optional.
+    environments: dict[str, CredentialEnvironmentSpec] = Field(default_factory=dict)
+
+    @field_validator("environments")
+    @classmethod
+    def _named_environments(cls, value: dict[str, CredentialEnvironmentSpec]) -> dict[str, CredentialEnvironmentSpec]:
+        return {normalize_environment(name): spec for name, spec in (value or {}).items()}
+
+    @model_validator(mode="after")
+    def _environment_rules(self) -> "CredentialManifestSpec":
+        if self.environments and self.lm_provider:
+            raise ValueError("an lm_provider credential has no environments; deployments are hub-funded")
+        for name, spec in self.environments.items():
+            unknown = sorted(set(spec.required or []) - set(self.vars))
+            if unknown:
+                raise ValueError(f"environment {name!r} requires undeclared variables: {', '.join(unknown)}")
+        return self
 
     @field_validator("name")
     @classmethod
@@ -108,6 +153,7 @@ class CredentialManifestSpec(DataSpec):
     @classmethod
     def _known_store(cls, value: str) -> str:
         value = str(value or "").strip() or VALUE_STORE_ENV
+        value = _STORE_ALIASES.get(value, value)
         if value not in VALUE_STORES:
             raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
         return value

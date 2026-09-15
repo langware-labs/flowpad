@@ -168,6 +168,12 @@ class Deployment(Entity):
         description="Provider-normalized cost, size, and activity observations",
     )
     source_revision: str | None = APIField(default=None)
+    #: The credential environment processes placed here read their values from.
+    #: ``development`` is this computer; a cloud placement defaults to ``production``.
+    environment: str = APIField(
+        default="development",
+        description="Credential environment: development (this computer) or a named one (production, staging, ...)",
+    )
 
     #: The deployed element, when the caller already had it. Not just a cache: a
     #: SHIPPED agent resolved off disk on a cold instance is never persisted, so
@@ -192,8 +198,9 @@ class Deployment(Entity):
         provider: str,
         *,
         kind: str | None = None,
+        environment: str | None = None,
     ) -> Optional["Deployment"]:
-        """The placement of *parent_type_id* on *provider*, or None.
+        """The placement of *parent_type_id* on *provider* (in *environment*, when given), or None.
 
         THE idempotency seam. Re-deploying converges here rather than on a
         derived id: an id is a name, not a fact about the thing, and a key baked
@@ -216,6 +223,10 @@ class Deployment(Entity):
             # this element. Matching on equality forked a second row the moment
             # anything specialized the kind.
             if kind is not None and not kind_matches(kind, row.kind):
+                continue
+            # One placement per environment: a staging and a production machine
+            # of the same element on the same provider are two rows.
+            if environment is not None and (row.environment or "development") != environment:
                 continue
             return row
         return None

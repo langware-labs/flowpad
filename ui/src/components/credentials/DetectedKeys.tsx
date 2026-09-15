@@ -37,6 +37,8 @@ function DetectedGroupCard({
   onPack: (group: DetectedGroup, keys: string[]) => void;
 }) {
   const { t } = useLingui();
+  // `.env.local`, or `.env.<env>.local` when a named environment is shown.
+  const fileName = group.path?.split(/[\\/]/).pop() || '.env.local';
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
   const allKeys = group.keys.map((k) => k.key);
   // Derived, so a key that was packed or left the file drops out on its own.
@@ -63,9 +65,9 @@ function DetectedGroupCard({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">
             {group.scope === 'user' ? (
-              <Trans>Found in .env.local in your home folder</Trans>
+              <Trans>Found in {fileName} in your home folder</Trans>
             ) : (
-              <Trans>Found in this project's .env.local</Trans>
+              <Trans>Found in this project's {fileName}</Trans>
             )}
           </div>
           <div className="truncate text-xs text-muted-foreground" title={group.path ?? undefined}>
