@@ -36,7 +36,12 @@ import asyncio
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.flowpad_types.vendors import vendor_or_none
-from flow_sdk.schema.data_spec.connection_spec import ConnectionKind, ConnectionSpec, ConnectionState
+from flow_sdk.schema.data_spec.connection_spec import (
+    FLOWPAD_ACCOUNT_PROVIDER,
+    ConnectionKind,
+    ConnectionSpec,
+    ConnectionState,
+)
 from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -51,7 +56,7 @@ async def _flowpad_row() -> ConnectionSpec:
     user = block.get("user") or {}
     logged_in = str(block.get("status") or "") == "logged_in"
     return ConnectionSpec(
-        provider="flowpad",
+        provider=FLOWPAD_ACCOUNT_PROVIDER,
         display_name="FlowPad",
         kind=ConnectionKind.FLOWPAD,
         state=ConnectionState.CONNECTED if logged_in else ConnectionState.DISCONNECTED,
