@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 57
+version: 58
 ---
 # Secret stores — snippets (draft)
 
@@ -192,7 +192,7 @@ source = await DataSource.get("agent_email)
 cradential_names = sources.cradentials.names()
 secret_store = SecretStore.get() # by default the current project, env file
 secret_store.validate_keys(cradential_names) # Exception if not
-source.set_secret_store()
+source.set_secret_store(secret_store)
 async with await kind.open(row) as source:  # open() resolves the same credentials into the source's binding
     ...
 ```
