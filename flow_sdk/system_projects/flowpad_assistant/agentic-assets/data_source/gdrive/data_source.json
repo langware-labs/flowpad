@@ -4,6 +4,7 @@
   "title": "Google Drive",
   "icon_name": "GoogleDrive",
   "description": "Files from Drive, downloaded and indexed. Needs a Google connection.",
+  "kind": "datasource.fs.gdrive",
   "auth": {
     "connector": "google",
     "scopes": [

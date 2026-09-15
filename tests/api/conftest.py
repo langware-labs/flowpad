@@ -113,7 +113,7 @@ async def _rebind_session_db_driver():
     loop before each test keeps every read/write on the single session-owned
     driver.
     """
-    import tests.conftest as _root_cf
+    import tests.pytest_plugin as _root_cf
     driver = getattr(_root_cf, "_test_db_driver", None)
     if driver is not None:
         import flow_sdk.db.drivers.db_driver as _ddm

@@ -18,7 +18,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
-import { getViewMode, rememberedSessionViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -30,7 +30,9 @@ import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-d
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
-import { presentDockTab } from './present-dock-tab';
+import { placeDockInProject, presentDockTab } from './present-dock-tab';
+import { openExternal } from '@src/lib/open-external';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications/notify';
 import { t } from '@lingui/core/macro';
 
@@ -61,6 +63,12 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
  */
 export interface NavigationCommitOptions {
   replace?: boolean;
+  /**
+   * The user switched view mode (the footer toggle). Travels as history state so
+   * `useDockViewModeOverrideSync` can tell it from a redirect that merely adds a
+   * mode to a bare URL — only a switch saves the preference.
+   */
+  viewModeSwitch?: boolean;
 }
 
 interface PendingDockNavigation {
@@ -133,13 +141,20 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  *
  * Reading the ambient mode here is deliberate, and is NOT the thing
  * `canonicalWorkspaceDisplayPath` refuses to do. That runs in the LOADER, before
- * `applyProjectViewMode` has applied a project's own `last_mode`, so an ambient
- * read there is wrong for exactly the projects that default to vibe. This runs
+ * the mounted dock has settled the effective mode, so an ambient read there can
+ * be wrong for a dock whose own mode differs from the ambient one. This runs
  * at click time, long after mount, when the effective mode is settled.
  */
 function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
   if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
   return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+}
+
+const isWebUrl = (link: string) => /^https?:\/\//i.test(link);
+
+/** A link that cannot be opened says why — the backend's sentence, not the HTTP status. */
+function notifyLinkError(error: unknown): void {
+  notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), forceToast: true });
 }
 
 /**
@@ -150,6 +165,7 @@ function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
  *
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
+
 export class NavigationActions {
   constructor(
     private navigate: NavigateFunction,
@@ -248,6 +264,7 @@ export class NavigationActions {
       routerUrl,
       willNavigate,
       replace: opts?.replace === true,
+      viewModeSwitch: opts?.viewModeSwitch === true,
       historyLen: window.history.length,
     });
     if (willNavigate) {
@@ -255,7 +272,10 @@ export class NavigationActions {
       // A hand-written pushState/popstate updates useLocation but can bypass
       // data-router revalidation, leaving the new URL rendered against stale
       // context. Every dock transition therefore enters through navigate().
-      void this.navigate(routerUrl, opts?.replace ? { replace: true } : undefined);
+      void this.navigate(routerUrl, {
+        ...(opts?.replace ? { replace: true } : {}),
+        ...(opts?.viewModeSwitch ? { state: VIEW_MODE_SWITCH_STATE } : {}),
+      });
     }
   }
 
@@ -514,16 +534,16 @@ export class NavigationActions {
     // for a Back step to be visible, home included. The cold-load entry is
     // canonicalized in `loadHomePage`, which this cannot reach.
     //
-    // A SESSION dock is the exception, and takes its own remembered mode
-    // instead: a session opens in the mode it was last seen in, so switching to
+    // A SESSION or PROJECT dock is the exception, and takes its own remembered
+    // mode instead: it opens in the mode it was last switched to, so switching to
     // Terminal in one chat no longer repaints every other chat you click into.
-    // Inheritance is still the fallback for a session with no memory yet (a new
-    // one, or one that predates the field) — it adopts the ambient mode and
-    // records it on load. Cache-only: a cold deep link has no entity to read
-    // here, and the loader's `applyProcessViewMode` covers that path.
+    // Inheritance is still the fallback for a dock with no memory yet; it only
+    // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
+    // Cache-only: a cold deep link has no entity to read here, and the shell
+    // loader redirects a session onto its remembered mode instead.
     if (dock.viewMode === null) {
       const liveViewMode =
-        rememberedSessionViewMode(dock) ??
+        rememberedDockViewMode(dock) ??
         NavigationActions.currentBrowserViewMode() ??
         this.currentDock?.viewMode ??
         null;
@@ -703,30 +723,49 @@ export class NavigationActions {
     this.openDock(dockPointerForFile(path, options));
   }
 
+  /** Resolve a clicked terminal reference to the dock that presents it. */
+  private async resolveLinkDock(link: string, source: Shell | null): Promise<DockPointer> {
+    if (!source) throw new Error(t`The terminal is not ready yet`);
+    // An app URL copied from this browser is an internal address, not an iframe.
+    if (isWebUrl(link)) {
+      const url = new URL(link);
+      if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
+        link = url.pathname + url.search;
+      }
+    }
+    const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
+    if (!dock) throw new Error(t`This link has no available viewer`);
+    return dock;
+  }
+
   /** Resolve on activation, then open using the same presentation as an agent show. */
   async openLink(link: string, source: Shell | null): Promise<void> {
     const origin = this.here;
     try {
-      if (!source) throw new Error(t`The terminal is not ready yet`);
-      // An app URL copied from this browser is an internal address, not an iframe.
-      if (/^https?:\/\//i.test(link)) {
-        const url = new URL(link);
-        if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
-          link = url.pathname + url.search;
-        }
-      }
-      const [target, tabs] = await Promise.all([source.resolveDisplayTarget(link), tabManager.listAll()]);
-      const dock = dockForDisplayTarget(target);
-      if (!dock) throw new Error(t`This link has no available viewer`);
+      const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
       const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
       const placed = await presentDockTab(dock, {
-        projectId: source.project_id ?? anchor?.project_id,
+        projectId: source?.project_id ?? anchor?.project_id,
         afterTabId: anchor?.id ?? null,
         parentTabId: anchor?.parent_tab_id ?? null,
       });
       this.openDock(placed);
     } catch (error) {
-      notify.error({ title: t`Could not open link`, message: String(error), forceToast: true });
+      notifyLinkError(error);
+    }
+  }
+
+  /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
+  async openLinkInBrowser(link: string, source: Shell | null): Promise<void> {
+    try {
+      if (isWebUrl(link)) {
+        openExternal(link);
+        return;
+      }
+      const dock = placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id);
+      openExternal(this.getDockUrl(dock));
+    } catch (error) {
+      notifyLinkError(error);
     }
   }
 

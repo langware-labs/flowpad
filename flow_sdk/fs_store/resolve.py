@@ -168,8 +168,42 @@ async def index_one(
             project_id = None
     if project_id:
         object.__setattr__(record, "project_id", project_id)
+    if not getattr(record, "parent_type_id", None):
+        parent_type_id = _enclosing_repo_asset_typeid(resolved.root)
+        if parent_type_id:
+            object.__setattr__(record, "parent_type_id", parent_type_id)
     await record.sync_to_db(notify=notify)
     return record
+
+
+def _enclosing_repo_asset_typeid(root: Path) -> str | None:
+    """``<type>-<id>`` of the repo asset whose ``agentic-assets/`` holds ``root``.
+
+    The walk stamps this enclosure parent from its FSRef chain
+    (``index_function``); a single-path index has no chain, so without this a
+    child asset indexed on its own — a schedule just written under an agent, a
+    re-sync after an edit — lands parentless and vanishes from its parent's
+    list. Read-only: the parent's identity is looked up, never minted.
+    """
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+
+    root = Path(root)
+    if root.parent.parent.name != AGENTIC_ASSETS_DIR:
+        return None
+    container = root.parent.parent.parent
+    parent_type = SchemaRegistry.type_for(container)
+    if not parent_type or parent_type not in SchemaRegistry.get_repo_types():
+        return None
+    info = SchemaRegistry.get(parent_type)
+    try:
+        layout = info.layout_of(container, verify=True)
+        if layout.kind is LayoutKind.NONE:
+            return None
+        parent_id = reconcile(info, layout, None, None, write=False)
+    except Exception:  # noqa: BLE001 — parentage is a label; never fail the index over it
+        logging.debug("[resolve] no enclosing asset id for %s", root, exc_info=True)
+        return None
+    return f"{parent_type}-{parent_id}" if parent_id else None
 
 
 async def ensure_entity(resolved: Resolved) -> Any:

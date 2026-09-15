@@ -7,8 +7,10 @@ later projection over ingested records will need.
 
 **Identity is the natural key, looked up — not derived.** The id is an ordinary
 ``uuid4``; what makes a re-poll, a replay and a reconciliation sweep converge on
-one row is ``find_existing``, which resolves ``(data_source, stream, external
-id)`` to the row that already holds it. Same guarantee as the old v5-derived id
+one row is ``find_existing``, which resolves ``(data_source, origin)`` to the
+row that already holds it. ``origin`` is the contract's ``CloudOrigin`` — the
+resource's ``(kind, namespace, key)`` — and ``data`` its typed payload; both are
+lifted from the flat header (``flow_sdk/ingest/legacy_lift.py``). Same guarantee as the old v5-derived id
 (idempotency with no delivery ledger and no dedupe table), relocated from id
 arithmetic to a lookup — so rows written before the change still resolve, and
 nothing has to re-derive an id it does not hold.
@@ -37,8 +39,10 @@ from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-ex
     NonBlank,
     SourceItemSpec,
 )
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.schema.types import EntityType
+from flow_sdk.sources.values.items import Payload
+from flow_sdk.sources.values.origin import CloudOrigin
 
 
 class MessageSpec(DataSpec):
@@ -232,9 +236,19 @@ class SourceItem(Entity):
     permalink: Optional[str] = APIField(default=None)
     occurred_at: Optional[str] = APIField(default=None, description="ISO-8601; the ordering key")
 
+    # ── the contract's value ───────────────────────────────────────────────
+    origin: Optional[CloudOrigin] = APIField(default=None, description="The resource this row mirrors")
+    # The triple, flat: a query cannot reach inside `origin`, and the natural key
+    # (`SOURCE_ITEM.natural_key`) must be indexable. Always equal to `origin`'s.
+    origin_kind: str = APIField(default="")
+    origin_namespace: str = APIField(default="")
+    origin_key: str = APIField(default="")
+    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
+
     # ── who ────────────────────────────────────────────────────────────────
     author_external_id: Optional[str] = APIField(default=None)
     author_display: Optional[str] = APIField(default=None)
+    recipients: list[str] = APIField(default_factory=list, description="Addressees as the provider printed them")
 
     # ── body ───────────────────────────────────────────────────────────────
     # `name` (declared on Entity) is the FTS title. `body` must reach FTS, which
@@ -267,6 +281,16 @@ class SourceItem(Entity):
         of it. Same shape as ``DataSource._adopt_legacy_enabled``.
         """
         return adopt_renamed(data, {"stream_key": "segment_key", "stream_label": "segment_label"})
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_origin(cls, data):
+        """The flat triple follows ``origin``: a row built from an origin is findable by it."""
+        if not isinstance(data, dict) or not data.get("origin"):
+            return data
+        origin = data["origin"]
+        origin = origin if isinstance(origin, CloudOrigin) else CloudOrigin.model_validate(origin)
+        return {**data, "origin_kind": origin.kind, "origin_namespace": origin.namespace, "origin_key": origin.key}
 
     def as_example_input(self) -> "tuple[dict, dict]":
         """``(contents, provenance)`` for one dataset example row: this item's
@@ -338,14 +362,14 @@ class SourceItem(Entity):
         return None
 
     @classmethod
-    async def find_existing(cls, data_source_id: str, segment_key: str, external_id: str) -> Optional["SourceItem"]:
-        """THE identity lookup — the row for this natural key, or None.
+    async def find_existing(cls, data_source_id: str, origin: CloudOrigin) -> Optional["SourceItem"]:
+        """THE identity lookup — the row this source holds for *origin*, or None.
 
-        ``segment_key`` is part of the key because provider ids are frequently
-        only unique *within* a segment (a Slack ``ts`` repeats across channels),
-        and ``data_source_id`` because the same remote feed added twice must not
-        collide. The key itself is declared once, on the type
+        The origin's namespace carries the segment, because provider ids are
+        frequently only unique *within* one (a Slack ``ts`` repeats across
+        channels); ``data_source_id`` partitions it, because the same remote feed
+        added twice must not collide. The key itself is declared once, on the type
         (``TypeInfo.natural_key``); this is its named single-row entry point,
-        indexed by ``ix_entities_source_item_natural_key_v2``.
+        indexed by ``ix_entities_source_item_origin_v3``.
         """
-        return await cls.serializer().resolve_key(cls, (data_source_id, segment_key, external_id))
+        return await cls.serializer().resolve_key(cls, (data_source_id, origin.kind, origin.namespace, origin.key))

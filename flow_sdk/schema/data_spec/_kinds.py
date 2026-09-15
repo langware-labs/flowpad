@@ -41,6 +41,7 @@ def register_builtin_kinds() -> None:
 
     SchemaRegistry.register_kind("fs_ref", FSRef)
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
+    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
@@ -56,3 +57,15 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action``
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.check`` / ``wizard.action.*`` / ``wizard.outcome`` / ``wizard.awaiting`` / ``wizard.probe`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
+    import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
+    import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
+    # A data source asset defines its own payload kinds (``ingest.message.whatsapp``) in code the
+    # registry loads lazily; a row read before any source ran still restores its payload. Imported
+    # only on a miss, so registering the loader drags nothing in.
+    SchemaRegistry.add_kind_loader("ingest.", _load_source_value_kinds)
+
+
+def _load_source_value_kinds() -> None:
+    from flow_sdk.ingest.source_registry import load_source_value_kinds  # noqa: PLC0415
+
+    load_source_value_kinds()

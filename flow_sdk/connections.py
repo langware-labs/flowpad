@@ -6,23 +6,25 @@ public rows and presents authorization to a person running Python.
 
 The intended interactive surface works in ``python -m asyncio`` and IPython::
 
-    connections = await get_connections()
-    slack = next(c for c in connections if c.provider == "slack")
-    slack = await slack.connect()
-    assert (await slack.test()).ok is True
+    try:
+        google = await Connection.get("google")
+        await google.validate_scopes(source.connections.scopes("google"))
+    except NotConnected as e:
+        google = await e.connection.connect()
+    except MissingScopes:
+        google = await google.connect(reauthorize=True)
 """
 
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Mapping, Optional
 
 from flow_sdk.core.connections import (
     Authorization,
     ConnectionSpec,
     list_connections,
-    resolve_connection_spec,
     token_for_spec,
 )
 from flow_sdk.core.connections import (
@@ -32,6 +34,7 @@ from flow_sdk.core.connections import (
     test as _test,
 )
 from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
+from flow_sdk.core.connections.specs import match_provider
 from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionCancelled,
@@ -46,8 +49,10 @@ __all__ = [
     "Connection",
     "ConnectionCancelled",
     "ConnectionConnectError",
+    "ConnectionRequirements",
     "ConnectionStage",
     "ConnectionTestResult",
+    "MissingScopes",
     "NotConnected",
     "TokenUnavailable",
     "get_connection",
@@ -57,14 +62,33 @@ __all__ = [
 
 
 class NotConnected(LookupError):
-    """A provider the caller needs has no usable credential on this instance."""
+    """A provider the caller needs has no usable credential on this instance.
 
-    def __init__(self, provider: str, display_name: Optional[str] = None):
+    ``connection`` is the unconnected row when the catalogue knows the provider, so
+    ``await e.connection.connect()`` starts its flow; ``None`` for an unknown provider.
+    """
+
+    def __init__(
+        self, provider: str, display_name: Optional[str] = None, *, connection: Optional["Connection"] = None
+    ):
         self.provider = provider
+        self.connection = connection
         shown = display_name or provider
         super().__init__(
             f"{shown} is not connected on this instance. Run "
             f"`connection = await connection.connect()` or connect {shown} in the app, then run again."
+        )
+
+
+class MissingScopes(LookupError):
+    """The connection's grant does not include scopes a consumer needs. Names only."""
+
+    def __init__(self, provider: str, missing: Iterable[str]):
+        self.provider = provider
+        self.missing = list(missing)
+        super().__init__(
+            f"{provider} is connected without {', '.join(self.missing)}; "
+            "run `await connection.connect(reauthorize=True)` to consent again"
         )
 
 
@@ -74,6 +98,31 @@ class TokenUnavailable(RuntimeError):
     def __init__(self, provider: str):
         self.provider = provider
         super().__init__(f"{provider} is connected, but its access token is not exportable")
+
+
+class ConnectionRequirements:
+    """``consumer.connections`` — the providers a consumer acts as, and the scopes it needs from each."""
+
+    def __init__(self, scopes: Mapping[str, Iterable[str]] | None = None):
+        self._scopes = {provider: list(dict.fromkeys(wanted)) for provider, wanted in (scopes or {}).items()}
+
+    def names(self) -> list[str]:
+        return list(self._scopes)
+
+    def scopes(self, provider: str) -> list[str]:
+        return list(self._scopes.get(provider, []))
+
+    def bind(self, connection: object, *, who: str) -> str:
+        """The provider of ``connection`` (a ``Connection`` or its provider; ``None`` → ``""``), refusing
+        one ``who`` does not declare — the one binding rule every consumer that acts as an account uses."""
+        provider = "" if connection is None else str(getattr(connection, "provider", connection))
+        wanted = self.names()
+        if provider and provider not in wanted:
+            raise ValueError(f"{who} acts as {', '.join(wanted) or 'no account'}, not {provider}")
+        return provider
+
+    def __repr__(self) -> str:
+        return f"ConnectionRequirements({self._scopes})"
 
 
 class _SdkPresenter:
@@ -117,19 +166,41 @@ class Connection:
     #: The resolver's own sentence about this row. Rendered as given.
     detail: str = ""
     identity: Optional[str] = None
+    #: The scopes this provider's grant is configured to request — what a connect consents to.
     scopes: tuple[str, ...] = ()
     icon: Optional[str] = None
     _spec: Optional[ConnectionSpec] = field(repr=False, compare=False, hash=False, default=None)
 
-    async def connect(self) -> "Connection":
-        """Complete the standard auth flow and return a freshly verified row."""
+    @classmethod
+    async def get(cls, provider: str) -> "Connection":
+        """The held connection for ``provider``, without a live provider call.
 
-        result = await _connect(self.provider, _SdkPresenter())
-        return _from_spec(
-            result.spec,
-            connected=True,
-            identity=result.test.identity or result.spec.identity,
-        )
+        Raises :class:`NotConnected`, carrying the unconnected row when there is one.
+        """
+        row = await get_connection(provider)
+        if row is None:
+            raise NotConnected(provider)
+        if not row.connected:
+            raise NotConnected(provider, row.display_name, connection=row)
+        return row
+
+    async def validate_scopes(self, scopes: Iterable[str]) -> None:
+        """Nothing when the grant's scopes cover ``scopes``; :class:`MissingScopes` naming the rest."""
+        missing = [scope for scope in dict.fromkeys(scopes) if scope not in self.scopes]
+        if missing:
+            raise MissingScopes(self.provider, missing)
+
+    async def connect(self, *, reauthorize: bool = False) -> "Connection":
+        """Complete the standard auth flow and return a freshly verified row.
+
+        ``reauthorize`` runs the provider's consent even when a grant is held — how a grant
+        missing a scope is replaced.
+        """
+
+        result = await _connect(self.provider, _SdkPresenter(), reauthorize=reauthorize)
+        # The refreshed row's own state, not a forced ``connected=True`` over a
+        # stale one: that produced rows reading connected=True, state="disconnected".
+        return _from_spec(result.spec, identity=result.test.identity or result.spec.identity)
 
     async def test(self) -> ConnectionTestResult:
         """Ask the provider to validate the held credential right now."""
@@ -139,7 +210,8 @@ class Connection:
     async def token(self) -> str:
         """Resolve the access token now, without caching it on this object."""
 
-        spec = self._spec or await resolve_connection_spec(self.provider)
+        row = self if self._spec is not None else await get_connection(self.provider)
+        spec = row._spec if row is not None else None
         if spec is None:
             raise NotConnected(self.provider, self.display_name)
         result = await token_for_spec(spec)
@@ -171,7 +243,11 @@ def _from_spec(
 
 
 async def get_connections(project_id: str = "") -> list[Connection]:
-    """Every connection this box has, in the order the screen shows them.
+    """Every connection this box has AND every OAuth provider it could connect.
+
+    Each row's ``connected`` says which: an unconnected provider is listed with
+    ``connected=False`` so ``await row.connect()`` can start its flow. (The
+    Connections screen's table shows held rows only; its Add dialog is the rest.)
 
     Machine-level kinds always; API-key credentials only when ``project_id`` is
     given, because their identity is ``(project_id, env_var)`` and the server has
@@ -179,22 +255,16 @@ async def get_connections(project_id: str = "") -> list[Connection]:
     list rather than a guess.
     """
 
-    return [_from_spec(spec) for spec in await list_connections(project_id)]
+    return [_from_spec(spec) for spec in await list_connections(project_id, include_unconnected=True)]
 
 
-async def get_connection(provider: str) -> Optional[Connection]:
-    """Return one canonical provider row, or ``None`` when it is resolvably absent."""
+async def get_connection(provider: str, project_id: str = "") -> Optional[Connection]:
+    """The :func:`get_connections` row for ``provider``, or ``None`` when there is none."""
 
-    spec = await resolve_connection_spec(provider)
-    return _from_spec(spec) if spec is not None else None
+    return match_provider(await get_connections(project_id), provider)
 
 
 async def require(provider: str) -> Connection:
-    """Return a held connection without doing a live provider call."""
+    """``Connection.get(provider)`` — kept for callers written before it."""
 
-    row = await get_connection(provider)
-    if row is None:
-        raise NotConnected(provider)
-    if not row.connected:
-        raise NotConnected(provider, row.display_name)
-    return row
+    return await Connection.get(provider)

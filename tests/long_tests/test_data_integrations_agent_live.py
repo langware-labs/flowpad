@@ -25,7 +25,11 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("FLOWPAD_CLAUDE_HOME"), reason="needs a real Claude (FLOWPAD_CLAUDE_HOME=$HOME/.claude)"),
 ]
 
-BASE = os.environ.get("QA_API_URL") or f"http://127.0.0.1:{os.environ.get('LOCAL_SERVER_PORT', '9007')}"
+# No port fallback: pytest_plugin strips LOCAL_SERVER_PORT, so a default port only
+# ever named a person's own instance (9007 is `prod`).
+BASE = os.environ.get("QA_API_URL") or ""
+if not BASE:
+    pytest.skip("set QA_API_URL to a launcher-owned instance", allow_module_level=True)
 
 
 def _atom() -> bytes:

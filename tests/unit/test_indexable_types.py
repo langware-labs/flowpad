@@ -37,7 +37,7 @@ def test_the_types_the_literal_never_listed_are_indexable(derived):
     including a broken one."""
     formerly_missing = {
         "agent_trace", "data_source_spec", "graph_workflow", "helpdesk", "journey",
-        "mcp", "prompt", "secret_origin", "workflow_run",
+        "mcp", "prompt", "workflow_run",
     }
     assert formerly_missing <= {str(t) for t in derived}
 

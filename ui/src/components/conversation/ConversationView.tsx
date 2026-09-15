@@ -21,8 +21,7 @@ import type { ITask } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
 import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel, sourceForOrigin } from './channel-attribution';
-import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { channelLabel } from './channel-attribution';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
@@ -270,28 +269,16 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
-  // The cloud thread this conversation caches, if any — the first message that
-  // carries an `origin`. Every message in a source-backed conversation shares a
-  // channel, so the first one found answers for the conversation.
-  const channelOrigin = useMemo(() => {
-    for (const fm of messagesById.values()) {
-      if (fm.origin?.kind) return fm.origin;
-    }
-    return null;
-  }, [messagesById]);
+  // A source-backed conversation names its own channel and the source feeding
+  // it — the inbox projection stamps both when it places the first message.
+  const channel = conversation?.channel || undefined;
 
   // Attention-driven polling: while this source-backed conversation is the
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
   // new messages land fast; deselect and the requests stop on their own.
-  // Source resolution is the SAME rule the attribution chip uses.
-  const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
-  const attentionSourceId = useMemo(() => {
-    if (agentId) return agentScope?.source_id ?? undefined;
-    const withPointer = [...messagesById.values()].find((fm) => fm.origin_local?.data_source_id);
-    return sourceForOrigin(
-      attentionSources, channelOrigin, withPointer?.origin_local ?? null,
-    )?.id;
-  }, [agentId, agentScope?.source_id, channelOrigin, messagesById, attentionSources]);
+  const attentionSourceId = agentId
+    ? agentScope?.source_id ?? undefined
+    : conversation?.channel_source_id ?? undefined;
   useAttentionPolling(attentionSourceId, conversationId);
 
   // The ingest sync boundary is too early: inbox projection runs as a detached
@@ -764,18 +751,18 @@ export function ConversationView({
           ordinary ingest route once it exists. */}
       {sendingText && (
         <SessionEventLine
-          text={t`Sending in ${channelLabel(channelOrigin?.kind)}: “${sendingText}”`}
+          text={t`Sending in ${channelLabel(channel)}: “${sendingText}”`}
         />
       )}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
         // A source-backed conversation replies into its channel, not the hub.
-        channel={channelOrigin?.kind}
+        channel={channel}
         onChannelSent={setSendingText}
-        placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
+        placeholder={channel ? t`Reply in ${channelLabel(channel)}` : undefined}
         agentId={agentId ?? undefined}
-        sessionHost={channelOrigin ? null : sessionHost}
+        sessionHost={channel ? null : sessionHost}
       />
     </div>
   );

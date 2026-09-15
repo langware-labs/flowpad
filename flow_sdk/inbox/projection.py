@@ -262,13 +262,14 @@ async def project_source_item(
 
     # Defensive reads end here: `item` and `source` are typed entities.
 
-    await ensure_conversation_entity(
+    conversation = await ensure_conversation_entity(
         conversation_id,
         parent_typeid=None,
         someone_typeid=None,
         title=thread.title or subject or key,
         owner=thread.owner,
     )
+    await _stamp_channel(conversation, channel, str(source.id))
 
     sender_id, sender_name = await _sender_for(item, source, channel)
     # The message row is resolved by its reference column. FIRST placement
@@ -299,24 +300,63 @@ async def project_source_item(
     )
 
 
+async def _stamp_channel(conversation, channel: str, source_id: str) -> None:
+    """A source-backed conversation names its channel and the source feeding it.
+
+    Set once, only while empty: a twin source projecting into the same thread
+    must not make the pointer flap on every pass.
+    """
+    missing = {k: v for k, v in (("channel", channel), ("channel_source_id", source_id)) if v and not getattr(conversation, k, None)}
+    if not missing:
+        return
+    for name, value in missing.items():
+        setattr(conversation, name, value)
+    await conversation.save(notify=False)
+
+
 def _origins(item, source, channel: str, key: str):
     """The two halves of a projected message's provenance. `origin` travels
-    with the message (the channel chip, "open in Gmail"); `origin_local` is
-    PRIVATE and carries the row ids that only resolve here."""
-    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
+    with the message (the channel chip, "open in Gmail") and is the row's own
+    origin; `origin_local` is PRIVATE and carries the row ids that only resolve
+    here."""
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-    origin = CloudOrigin(
-        kind=channel,
-        provider=str(getattr(source, "provider", "") or ""),
-        external_id=item.external_id or "",
-        # The connector's link when it gives one; otherwise the channel's own
-        # address formula, so "Open in Gmail" works for records whose provider
-        # never supplied a URL.
-        url=item.permalink or permalink_for(channel, item.external_id or "", key),
-    )
+    # The connector's link when it gives one; otherwise the channel's own address
+    # formula (the channel's source class says it), so "Open in Gmail" works for records
+    # whose provider never supplied a URL. None when neither has one.
+    channel_type = source_type(channel)
+    url = item.permalink or (channel_type.cls.permalink(item.external_id or "", key) if channel_type else "") or None
+    origin = _origin_of(item, source).model_copy(update={"url": url})
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
     return origin, origin_local
+
+
+def _origin_of(item, source):
+    """The row's origin — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+
+    return getattr(item, "origin", None) or origin_of(source, item)
+
+
+def _payload_of(item, source):
+    """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+
+    return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
+
+
+def _envelope_of(item, source):
+    """The header a message-shaped payload carries, or None for anything else."""
+    from flow_sdk.builtin.flow_message import MessageEnvelope  # noqa: PLC0415
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    data = _payload_of(item, source)
+    if not isinstance(data, MessageData):
+        return None
+    return MessageEnvelope(
+        subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
+    )
 
 
 async def _placed_message(item):
@@ -356,6 +396,7 @@ async def _place_message(
     # mailbox answered each one. This is the lane-neutral "I placed it" fact, so
     # the announcement lands exactly once without either lane knowing who won.
     first_placement = existing_fm is None
+    envelope = _envelope_of(item, source)
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
@@ -377,6 +418,9 @@ async def _place_message(
             dirty = True
         if existing_fm.origin is None:
             existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
+            dirty = True
+        if existing_fm.envelope != envelope:
+            existing_fm.envelope = envelope
             dirty = True
         if dirty:
             try:
@@ -408,6 +452,7 @@ async def _place_message(
         "thread_id": thread_id,
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
+        "envelope": envelope.model_dump(mode="json") if envelope else None,
     }
     if item.reply_to_external_id:
         # Two lookups, no derivation: the parent item by its natural key, then
@@ -416,8 +461,9 @@ async def _place_message(
         # `reply_to_id`. Accepted loss vs the derived form: a child projected
         # before its parent keeps a null `reply_to_id` (nothing heals it
         # later); both lanes project oldest-first, which covers the normal case.
+        own = _origin_of(item, source)
         parent = await SourceItem.find_existing(
-            item.data_source_id, item.segment_key, item.reply_to_external_id
+            item.data_source_id, own.model_copy(update={"key": item.reply_to_external_id, "url": None})
         )
         if parent is not None:
             parent_fm = await FlowMessage.get_one({"source_item_id": str(parent.id)})
@@ -606,6 +652,14 @@ def is_agent_owner(owner) -> bool:
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     return owner is not None and str(getattr(owner, "type", "")) == EntityType.AGENT.value
+
+
+async def owning_agent(entity):
+    """The Agent that owns ``entity``, or None when its owner is a user."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    owner = await owner_of(entity)
+    return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
 
 
 def is_self_address(source, address: str) -> bool:

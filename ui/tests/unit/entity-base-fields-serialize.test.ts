@@ -21,7 +21,6 @@ const HUB_PROJECT_SCHEMA = {
     artifacts: { type: 'array' },
     helpdesk: { type: 'object' },
     shared_context_origins: { type: 'object' },
-    shared_secret_origins: { type: 'object' },
   },
 };
 

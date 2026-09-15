@@ -590,7 +590,12 @@ def _session_lock(session: "RemoteWorkerSession") -> asyncio.Lock:
     ``ap.prompt`` with the transcript capture any more than two turns of one
     session may. Keyed by conversation id; a session with no conversation
     (never on this path) falls back to its own id."""
-    key = session.conversation_id or session.id
+    return conversation_turn_lock(session.conversation_id or session.id)
+
+
+def conversation_turn_lock(key: str) -> asyncio.Lock:
+    """The one lock a conversation's worker turns take — a turn is ``prompt`` then the transcript
+    capture, and two interleaved turns each read the other's (latest) reply."""
     per_loop = _SESSION_LOCKS.setdefault(asyncio.get_running_loop(), {})
     lock = per_loop.get(key)
     if lock is None:

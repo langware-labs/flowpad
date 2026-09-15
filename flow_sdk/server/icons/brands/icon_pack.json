@@ -155,6 +155,60 @@
         "twilio-key"
       ],
       "source": "lucide `message-square` (ISC)"
+    },
+    {
+      "kind": "whatsapp",
+      "asset": "whatsapp.svg",
+      "color": "#25D366",
+      "aliases": [
+        "WhatsApp"
+      ],
+      "source": "simple-icons `whatsapp` (CC0)"
+    },
+    {
+      "kind": "hackernews",
+      "asset": "hackernews.svg",
+      "color": "#F0652F",
+      "aliases": [
+        "HackerNews"
+      ],
+      "source": "simple-icons `ycombinator` (CC0)"
+    },
+    {
+      "kind": "rss-feed",
+      "asset": "rss-feed.svg",
+      "color": "#FFA500",
+      "source": "simple-icons `rss` (CC0)",
+      "aliases": [
+        "RssFeed"
+      ]
+    },
+    {
+      "kind": "git-repository",
+      "asset": "git-repository.svg",
+      "color": "#F03C2E",
+      "source": "simple-icons `git` (CC0 collection; Git logo by Jason Long, CC BY 3.0)",
+      "aliases": [
+        "GitRepository"
+      ]
+    },
+    {
+      "kind": "teams",
+      "asset": "teams.svg",
+      "color": "#6264A7",
+      "aliases": [
+        "MicrosoftTeams"
+      ],
+      "source": "lucide `message-square` (ISC)"
+    },
+    {
+      "kind": "agentmail",
+      "asset": "agentmail.svg",
+      "color": "#3B82F6",
+      "aliases": [
+        "AgentMail"
+      ],
+      "source": "lucide `mail` (ISC)"
     }
   ]
 }

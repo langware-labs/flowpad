@@ -43,14 +43,9 @@ from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 from .delivery import Delivered
-from .folder_source import FolderChange, FolderSource
+from .folder_changes import FolderChange, FolderChanges
 from .merge import listen
 from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
-
-#: Deprecated alias, kept so scripts written against the first release keep importing.
-#: ``MessageSource`` is the domain term for a bidirectional ``DataSource``; the
-#: prompt/reply block is ``MessageBlock``. Deliberately not in ``__all__``.
-MessageSource = MessageBlock
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
@@ -59,7 +54,7 @@ __all__ = [
     "Delivered",
     "EmailMessageSpec",
     "FolderChange",
-    "FolderSource",
+    "FolderChanges",
     "FileRef",
     "MessageSpec",
     "MessageRequest",
@@ -422,9 +417,9 @@ class Inbox:
         """(config key, value) that names WHICH account this block watches —
         the driver owns the key; the value is the address unless the config
         already carries that key (a telegram bot's identity is its token)."""
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        driver = get_driver(self.provider)
+        driver = source_type(self.provider)
         key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
         return key, str(self._config.get(key) or self.address).strip()
 
@@ -439,12 +434,12 @@ class Inbox:
             return self._source
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.connections import require  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         # A provider that reads with a machine-level connection (Slack, Drive)
         # is checked HERE, before any row exists: ``NotConnected`` names the
         # fix, whereas a source created without it parks on its first poll.
-        driver = get_driver(self.provider)
+        driver = source_type(self.provider)
         if driver is not None and driver.connection:
             await require(driver.connection)
 
@@ -535,9 +530,9 @@ class Inbox:
             await asyncio.sleep(cadence)
 
     def _driver(self):
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        return get_driver(self.provider)
+        return source_type(self.provider)
 
     async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
         """The reply to ``item``, in this inbox's own channel shape — the rule

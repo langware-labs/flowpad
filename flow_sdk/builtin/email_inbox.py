@@ -73,9 +73,10 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     most — reporting state, and disabling — have to work when there is no
     mailbox at all and therefore no projection to hang it off.
     """
-    import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+
+    CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
 
     return await DataSource.find_for_account(
         CloudEmailDriver.provider,
@@ -559,9 +560,10 @@ class EmailInbox(Entity):
         Writes only when something actually changed — this runs on every read of
         the inbox state, and an unconditional save put a row write on a poll.
         """
-        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
         from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-        from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+
+        CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
 
         config = {
             CloudEmailDriver.identity_config_key: self.agent_id,
@@ -569,10 +571,16 @@ class EmailInbox(Entity):
             "inbox_typeid": str(self.typeid),
             "provider_inbox_id": self.provider_inbox_id,
         }
+        from flow_sdk.builtin.agent_places import email_answers_here  # noqa: PLC0415
+
+        # Only the place chosen to answer this mailbox polls it; every other
+        # machine keeps its source but stops (DISABLED), so replies never come twice.
+        wanted_status = SourceStatus.ACTIVE.value if await email_answers_here(self.agent_id) else SourceStatus.DISABLED.value
         source = await self.source()
         if source is None:
             source = DataSource(
                 name=f"Inbox {self.address}",
+                status=wanted_status,
                 provider=CloudEmailDriver.provider,
                 kind=CloudEmailDriver.kind,
                 config=config,
@@ -589,7 +597,7 @@ class EmailInbox(Entity):
             "kind": CloudEmailDriver.kind,
             "account_key": self.address,
             "account_identities": [self.address],
-            "status": SourceStatus.ACTIVE.value,
+            "status": wanted_status,
         }
         changed = any(getattr(source, field) != value for field, value in wanted.items())
         if changed or source.next_poll_at is not None:

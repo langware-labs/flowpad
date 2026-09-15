@@ -8,15 +8,15 @@ An **origin** answers *where does the real thing live*. It is a value object,
 never an entity: a `kind` discriminant plus locator fields, no behaviour and no
 secrets. Behaviour lives in a `kind`-keyed driver registry.
 
-Three sibling families answer three different versions of that question. They
+Two sibling families answer two different versions of that question. They
 are deliberately parallel in shape and deliberately **not** one type — their
-resolution contracts have nothing in common.
+resolution contracts have nothing in common. (Where a *secret value* lives is not
+an origin: it is a credential's `value_store` — see [credentials](../secret_share.md).)
 
 | Family | Answers | Kinds today | Resolves to |
 |---|---|---|---|
 | `FSOrigin` | where an asset's **bytes** live | `git`, `local` | a directory on disk |
-| `CloudOrigin` | where a record's **truth** lives | free string — `gmail`, `slack`, `jira`, `gcp` | a mutable remote record |
-| `SecretOrigin` | where a **value** resolves | `local`, `env-local`, `flowpad-hub`, `gcp`, `1password` | a string, at worker launch, never persisted |
+| `CloudOrigin` | where a record's **truth** lives — identity is `(kind, namespace, key)`, `url` is metadata | free string — `gmail`, `slack`, `jira`, `local` | a mutable remote record (`flow_sdk/sources/values/origin.py`) |
 
 This document covers `FSOrigin` — the data-layer carrier. Bundle *transport*
 (how origins ride a share) is [messages and attachments](../collab/messages-and-attachments.md).
@@ -119,7 +119,8 @@ like drift and is not; each answers a different question.
 | `Entity.origin` | `OriginField` | **SHARED**, `hub_name="git_origin"` | **the one origin field.** Folder, Artifact, Skill, Markdown, Project … all carry it here; pydantic types it |
 | `Task.origin`, `MessageAttachment.origin`, `DataSource.origin` | `OriginField` | PRIVATE re-declaration | a project/task origin is **cloned** by the receiver through its own action wire; an attachment's is a bundle pass-through; a data source's is re-derived by its driver's `origin_for` on every save (see [data sources](data-sources.md#the-two-destinations)) |
 | `Entity.origin_id` | `str` | PRIVATE | not an origin — the source's own **handle** for the asset (an inode, a `GitOrigin.key()`, a Drive `fileId`), looked up by `fs_store/origin_identity.py` so two placements of one source file converge on one row |
-| `FlowMessage.origin`, `Deployment.origin` | `CloudOrigin` | SHARED / PRIVATE | the sibling family — a record's truth, not bytes; `FlowMessage.origin_local` carries the private row pointers (`CloudOriginLocal`) |
+| `FlowMessage.origin` | `CloudOrigin` | HUB_WRITE | the sibling family — a record's identity, not bytes: `(kind, namespace, key)` plus a browser `url`; a pre-triple row (`external_id`, `provider`) lifts on read; `FlowMessage.origin_local` carries the private row pointers (`CloudOriginLocal`) |
+| `Deployment.origin` | `PlacementOrigin` | PRIVATE | not an origin family member — a placement pointer (`kind`, `provider`, `external_id`, `url`) whose `external_id` is empty until a node is allocated |
 
 Clone sites narrow with `as_git(entity.origin)` (`fs_store/origin/git_origin.py`;
 `builtin/git_origin.py` is a re-export kept for the hub's pinned import) —

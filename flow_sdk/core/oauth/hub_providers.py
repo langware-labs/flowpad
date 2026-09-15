@@ -195,13 +195,16 @@ def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:
     Its scopes move with it: the local list described the device app, while the
     Hub row carries the scopes its code-flow consent screen actually asks.
     """
-    from flow_sdk.core.oauth.provider_registry import prefers_hub_flow  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import local_provider_name, prefers_hub_flow  # noqa: PLC0415
 
     by_name: dict[str, EnvVar] = {}
     for row in local.values:
         by_name[row.name.lower()] = row
     for row in hub.values:
-        key = row.name.lower()
+        # Keyed by OUR name: a hub row published under a registry entry's
+        # `hub_name` (`googledrive`) is that entry (`google`), so it merges onto
+        # the local row and keeps the local credential name below.
+        key = local_provider_name(row.name).lower()
         existing = by_name.get(key)
         if existing is None:
             by_name[key] = row

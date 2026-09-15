@@ -17,6 +17,17 @@ export interface PersistentIframeHandle {
 
 type IframeOwner = symbol;
 
+// A parked frame stays mounted (so it never reloads) but must be `invisible`,
+// not just `opacity-0 pointer-events-none`. The frame is cross-origin, so
+// Chromium hit-tests wheel scrolling against its surface and ignores
+// `pointer-events: none` there: an invisible parked frame left over from a web
+// tab swallowed every wheel event over the content area it last covered, so no
+// document, list or panel under it could scroll. `visibility: hidden` takes the
+// frame out of hit-testing entirely; `visibility` is in the transition so the
+// fade-out still plays before it flips.
+const PARKED_CLASS = 'absolute invisible opacity-0 pointer-events-none transition-[opacity,visibility] duration-200';
+const SHOWN_CLASS = 'absolute visible opacity-100 pointer-events-auto transition-[opacity,visibility] duration-200';
+
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
   private static instance: IframeRegistry;
@@ -85,7 +96,7 @@ class IframeRegistry {
 
       // Create iframe wrapper
       const iframeWrapper = document.createElement('div');
-      iframeWrapper.className = 'absolute opacity-0 pointer-events-none transition-opacity duration-200';
+      iframeWrapper.className = PARKED_CLASS;
 
       // Create iframe
       const iframe = document.createElement('iframe');
@@ -179,7 +190,7 @@ class IframeRegistry {
       this.updateIframePosition(src, targetElement);
 
       // Show iframe
-      container.className = 'absolute opacity-100 pointer-events-auto transition-opacity duration-200';
+      container.className = SHOWN_CLASS;
 
       // Set up resize observer to keep position updated
       const resizeObserver = new ResizeObserver(() => {
@@ -231,7 +242,7 @@ class IframeRegistry {
   private hideContainer(src: string): void {
     const container = this.containers.get(src);
     if (container) {
-      container.className = 'absolute opacity-0 pointer-events-none transition-opacity duration-200';
+      container.className = PARKED_CLASS;
     }
     this.clearPositionTracking(src);
   }

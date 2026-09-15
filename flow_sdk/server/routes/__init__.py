@@ -10,6 +10,7 @@ from .bootstrap import router as bootstrap_router
 from .capabilities import router as capabilities_router
 from .chat import router as chat_router
 from .cloud import router as cloud_router
+from .data_source_webhook import router as data_source_webhook_router
 from .debug import router as debug_router
 from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
@@ -42,7 +43,6 @@ from .version import router as version_router
 from .watch import router as watch_router
 from .webhook import webhook_router as webhook_api_router
 from .websocket import websocket_router
-from .whatsapp import router as whatsapp_router
 from .wiki import router as wiki_router
 from .worldview import router as worldview_router
 
@@ -62,7 +62,7 @@ __all__ = [
     "ui_router",
     "websocket_router",
     "webhook_api_router",
-    "whatsapp_router",
+    "data_source_webhook_router",
     "watch_router",
     "assets_router",
     "project_router",
