@@ -8,6 +8,7 @@ snippet changes, change the test with it.
 import pytest
 
 from flow_sdk.activity import Activity, ActivityState, monitor
+from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -49,22 +50,32 @@ def test_snippet_2_children_from_anywhere():
         Activity.get("a/b/c/d").child("e")
 
 
-def test_snippet_3_end_it():
-    act = Activity.get("index")
-    act.inc_success()
-
-    act.block("waiting for hub login")
-    assert act.state is ActivityState.BLOCKED and not act.is_terminal
-    act.resume()
-
-    unfinished = act.child("pdf")
+async def test_snippet_3_end_it(capsys):
+    """Both §3 fences, run from the page as written — not a transcription."""
+    page = doc("activity.md")
+    unfinished = Activity.get("index").child("pdf")
     unfinished.inc_success()
-    act.done("indexed 5,000 · 17 orphans")
 
-    assert act.state is ActivityState.COMPLETED
+    ns = await run_fence(fence_under(page, "3. End it", nth=0), {"Activity": Activity})
+    act = ns["act"]
+    assert act.state is ActivityState.COMPLETED and act.spec().message == "indexed 5,000 · 17 orphans"
     assert unfinished.state is ActivityState.INTERRUPTED
-    act.inc_success(99)
-    assert act.spec().done == 1, "terminal is sticky"
+    assert monitor.get("index") is None, "a finished root is untracked"
+
+    await run_fence(fence_under(page, "3. End it", nth=1), ns)
+    assert act.spec().done == 0, "the late inc_success was dropped"
+    printed = capsys.readouterr().out
+    assert "'index' is completed; cannot block" in printed, printed
+
+
+async def test_snippet_3_first_fence_passes_through_blocked():
+    """The first fence's comments claim block is NOT terminal and resume goes back to
+    running. Run the fence line by line so each intermediate state is observable."""
+    lines = fence_under(doc("activity.md"), "3. End it", nth=0).splitlines()
+    ns = await run_fence("\n".join(lines[:2]), {"Activity": Activity})  # get + block
+    assert (ns["act"].state, ns["act"].is_terminal) == (ActivityState.BLOCKED, False)
+    await run_fence(lines[2], ns)  # resume
+    assert ns["act"].state is ActivityState.RUNNING
 
 
 def test_snippet_4_read_it_back():
@@ -105,7 +116,10 @@ def test_snippet_6_eviction():
     assert Activity.get("index").state == "pending"
 
 
-def test_snippet_7_scope():
+async def test_snippet_7_scope():
+    """The §7 fence as written (it must use ``subject_entity=``), then the prose's claim."""
+    await run_fence(fence_under(doc("activity.md"), "7. Scope"), {"Activity": Activity, "monitor": monitor})
+
     Activity.get("index").inc_success()
     Activity.get("run", subject_entity="agentic_process-abc").inc_success()
 
