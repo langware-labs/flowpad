@@ -50,6 +50,8 @@ export interface SpecConfigField {
 }
 
 export interface IDataSourceSpec extends IEntity {
+  /** The definition's folder on this machine. */
+  asset_ref?: string;
   title?: string;
   description?: string;
   icon_name?: string;
