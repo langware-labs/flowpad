@@ -93,6 +93,19 @@ const UpdateStatus = Object.freeze({
   NOT_REQUIRED: 'not_required',
 });
 
+/**
+ * Which `uv tool install` output lines are worth showing on the loading
+ * screen. uv (non-TTY) prints one line per step — "Downloading flowpad
+ * (34.6MiB)", "Resolved 132 packages in 23.96s", "Building pybars3==0.9.7",
+ * "Installed 132 packages in 2.1s" — plus warnings/errors that belong in the
+ * log and the failure dialog, not in a one-line status ticker.
+ */
+const INSTALL_PROGRESS_RE =
+  /^(Downloading|Downloaded|Resolved|Prepared|Building|Built|Installing|Installed|Uninstalled|Updating|Updated|Fetching|Fetched)\b/;
+function isInstallProgressLine(line) {
+  return INSTALL_PROGRESS_RE.test(String(line || '').trim());
+}
+
 class UvManager {
   constructor(log) {
     this.log = log;
@@ -263,6 +276,97 @@ class UvManager {
   }
 
   /**
+   * Run a command with NO wall-clock cap, streaming each output line to
+   * `options.onLine` as it arrives. Resolves/rejects with the same shape as
+   * `_run` ({stdout, stderr} / Error with .code/.signal/.stdout/.stderr and a
+   * "Command failed: …" message), so every caller's error classifier
+   * (isCorruptEnvError, isToolDirLockedError, main.js's details) is unchanged.
+   *
+   * This is the runner for `uv tool install`. Its duration is bounded by the
+   * user's bandwidth (a first install pulls ~60 MiB: CPython + the flowpad wheel
+   * + deps), not by any stall, so a fixed cap on our side can only kill a
+   * healthy slow install — which it did (RCA: a 120s cap SIGTERMed a first
+   * install on a slow link mid-download, after uv had already resolved and was
+   * fetching wheels; stderr showed pure progress and no error). A dead or
+   * stalled network is uv's job: it aborts a transfer itself after
+   * UV_HTTP_TIMEOUT (default 30s) of *no data* and fails with a real message,
+   * which is what we want in the dialog instead of a silent kill.
+   */
+  _runStreaming(cmd, args, options = {}) {
+    const env = {
+      ...process.env,
+      PATH: this._enrichedPath(),
+      ...options.env,
+    };
+    const useShell = needsShellOnWin(cmd);
+    const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
+    const onLine = typeof options.onLine === 'function' ? options.onLine : null;
+    this.log.info(`[uv] Running (streaming, no cap): ${cmd} ${args.join(' ')}`);
+
+    return new Promise((resolve, reject) => {
+      let child;
+      try {
+        child = spawn(cmdToRun, args, {
+          env,
+          cwd: options.cwd || os.homedir(),
+          shell: useShell,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      let stdout = '';
+      let stderr = '';
+      const feed = (isErr) => {
+        let buf = '';
+        return (chunk) => {
+          const text = chunk.toString();
+          if (isErr) stderr += text; else stdout += text;
+          buf += text;
+          let nl;
+          while ((nl = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, nl).replace(/\r$/, '').trim();
+            buf = buf.slice(nl + 1);
+            if (!line) continue;
+            if (isErr) this.log.warn(`[uv] ${line}`); else this.log.info(`[uv] ${line}`);
+            if (onLine) {
+              try { onLine(line); } catch { /* a UI hiccup must never fail the install */ }
+            }
+          }
+        };
+      };
+      child.stdout.on('data', feed(false));
+      child.stderr.on('data', feed(true));
+
+      child.on('error', (err) => {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+      });
+      child.on('close', (code, signal) => {
+        if (code === 0) {
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+          return;
+        }
+        // Mirror execFile's error shape so classifiers and the dialog see the
+        // same fields they do for `_run`.
+        const err = new Error(`Command failed: ${cmd} ${args.join(' ')}\n${stderr}`);
+        err.code = code;
+        err.signal = signal;
+        err.killed = false;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        this.log.error(`[uv] Command failed: ${cmd} ${args.join(' ')}`);
+        this.log.error(`[uv] exit code=${code} signal=${signal}`);
+        reject(err);
+      });
+    });
+  }
+
+  /**
    * Run a `uv` subcommand.
    */
   async _uv(subArgs, options = {}) {
@@ -346,6 +450,16 @@ class UvManager {
     } catch (error) {
       throw new Error(`Failed to install uv: ${error.message}`);
     }
+
+    // Put uv itself on the user's *terminal* PATH now, not only after the
+    // flowpad install succeeds. Astral's installer skips its own rc-file edit
+    // when the install dir is already on PATH — and it always is here, because
+    // _enrichedPath() prepends ~/.local/bin to every command we run. Without
+    // this, a first-time setup that dies after this point (e.g. the flowpad
+    // install is interrupted) leaves the user with a working ~/.local/bin/uv
+    // that `uv` in a fresh terminal can't find, so the recovery command we
+    // show them fails with "command not found".
+    await this._ensureShimOnPath();
   }
 
   // ---------------------------------------------------------------------------
@@ -641,13 +755,19 @@ class UvManager {
    *     RCA fad616fc). We quarantine the corrupt dir aside (renamed, not deleted,
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
-  async _uvToolInstallForce(installArgs) {
+  async _uvToolInstallForce(installArgs, { onProgress } = {}) {
     const MAX_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
       try {
-        return await this._uv(installArgs, { timeout: 120000 });
+        // No wall-clock cap — see _runStreaming. Progress lines go to the
+        // caller (the loading window) so a long slow install is visibly alive.
+        return await this._runStreaming('uv', installArgs, {
+          onLine: (line) => {
+            if (onProgress && isInstallProgressLine(line)) onProgress(line);
+          },
+        });
       } catch (err) {
         if (attempt >= MAX_RETRIES) throw err;
         if (this.isCorruptEnvError(err)) {
@@ -674,9 +794,12 @@ class UvManager {
   /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
-  async installLatest() {
+  async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force']);
+    await this._uvToolInstallForce(
+      ['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -914,10 +1037,22 @@ class UvManager {
   /**
    * Stop the backend: flow stop, then kill all processes on port 9007.
    */
-    async stop() {
-      if (this.isShuttingDown) return;
+    stop() {
+      // Re-entrant: a second caller (e.g. quit while the startup-timeout panel's
+      // fire-and-forget stop is still running) awaits the SAME in-flight stop
+      // instead of returning immediately and exiting mid-`flow stop`. Not an
+      // `async` method on purpose — that would wrap the shared promise in a new
+      // one per call.
+      if (this._stopPromise) return this._stopPromise;
+      if (this.isShuttingDown) return Promise.resolve();
       this.isShuttingDown = true;
+      this._stopPromise = this._doStop().finally(() => {
+        this._stopPromise = null;
+      });
+      return this._stopPromise;
+    }
 
+    async _doStop() {
       this.log.info('[uv] Stopping backend...');
 
       // Kill the flow start CLI process if still running
@@ -1182,6 +1317,14 @@ class UvManager {
    * Non-blocking — failures are logged and silently ignored.
    * Shows a native OS dialog if an update is required.
    */
+  /**
+   * Remember that the user answered "Later" to `version` (from any dialog), so
+   * the periodic check does not re-offer it this session.
+   */
+  deferPackageVersion(version) {
+    if (version) this._deferredPackageVersion = version;
+  }
+
   async checkForUpdatesInBackground(
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
@@ -1221,6 +1364,7 @@ class UvManager {
           : 'Your current installation could not be verified and may be incomplete.',
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
+        cancelId: 1, // Esc / close = Later, never an implicit Upgrade
       });
       if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
@@ -1252,8 +1396,12 @@ class UvManager {
       if (sendStatus) sendStatus('Waiting for server');
       // 120s window — matches the upgrade() subprocess ceiling and gives
       // the freshly-installed backend room to boot before the user sees
-      // a false "failed to start" error.
-      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+      // a false "failed to start" error. A backend that never gets healthy is
+      // a failed upgrade: fall into the recovery path below instead of loading
+      // a dead URL.
+      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
+        throw new Error('upgraded backend did not become healthy');
+      }
 
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
@@ -1321,7 +1469,9 @@ class UvManager {
         await this.reinstall();
         await this.start();
       }
-      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
+        throw new Error('restored backend did not become healthy');
+      }
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
       }
@@ -1336,9 +1486,12 @@ class UvManager {
   /**
    * Upgrade flowpad to the latest version via `uv tool install flowpad@latest`.
    */
-  async upgrade() {
+  async upgrade({ onProgress } = {}) {
     this.log.info('[uv] Upgrading flowpad...');
-    await this._uvToolInstallForce(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force']);
+    await this._uvToolInstallForce(
+      ['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
@@ -1351,9 +1504,12 @@ class UvManager {
    * `--reinstall` recreates the tool venv and reinstalls every package (not
    * just a metadata refresh), then we re-resolve the freshly written shim.
    */
-  async reinstall() {
+  async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force']);
+    await this._uvToolInstallForce(
+      ['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
@@ -1463,3 +1619,4 @@ module.exports.PYTHON_VERSION = PYTHON_VERSION;
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
 module.exports.parseNetstatPids = parseNetstatPids;
+module.exports.isInstallProgressLine = isInstallProgressLine;

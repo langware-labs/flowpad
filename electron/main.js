@@ -93,128 +93,152 @@ function setupElectronAutoUpdater() {
     return;
   }
 
-  autoUpdater.logger = log;
-  // Manual control: we CHECK (no download) at pre-start so a desktop update can
-  // be offered together with a backend update in ONE dialog, and only download
-  // once the user opts in. Download is triggered explicitly via downloadUpdate().
-  autoUpdater.autoDownload = false;
-  // A deferred ("Later") desktop download still applies on the next quit/restart
-  // without nagging — that's exactly autoInstallOnAppQuit (default true; set
-  // explicitly so the intent is clear).
-  autoUpdater.autoInstallOnAppQuit = true;
+  if (process.windowsStore) {
+    // Microsoft Store build: the Store delivers desktop updates (and electron-updater
+    // does not support AppX). The hourly PyPI package check below still runs.
+    log.info('[electron-updater] skipped: Microsoft Store build');
+  } else {
+    autoUpdater.logger = log;
+    // Manual control: we CHECK (no download) at pre-start so a desktop update can
+    // be offered together with a backend update in ONE dialog, and only download
+    // once the user opts in. Download is triggered explicitly via downloadUpdate().
+    autoUpdater.autoDownload = false;
+    // A deferred ("Later") desktop download still applies on the next quit/restart
+    // without nagging — that's exactly autoInstallOnAppQuit (default true; set
+    // explicitly so the intent is clear).
+    autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('checking-for-update', () => {
-    log.info('[electron-updater] checking for update...');
-  });
-  autoUpdater.on('update-available', (info) => {
-    log.info(`[electron-updater] update available: ${info.version}`);
-  });
-  autoUpdater.on('update-not-available', (info) => {
-    log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
-  });
-  autoUpdater.on('download-progress', (p) => {
-    log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
-  });
-  autoUpdater.on('error', (err) => {
-    log.error('[electron-updater] error:', err);
-  });
+    autoUpdater.on('checking-for-update', () => {
+      log.info('[electron-updater] checking for update...');
+    });
+    autoUpdater.on('update-available', (info) => {
+      log.info(`[electron-updater] update available: ${info.version}`);
+    });
+    autoUpdater.on('update-not-available', (info) => {
+      log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
+    });
+    autoUpdater.on('download-progress', (p) => {
+      log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+    });
+    autoUpdater.on('error', (err) => {
+      log.error('[electron-updater] error:', err);
+    });
 
-  // Fires only after an explicit downloadUpdate() completes. Restarting to
-  // apply is the one unavoidable step of a desktop self-update, so prompt for it.
-  autoUpdater.on('update-downloaded', async (info) => {
-    log.info(`[electron-updater] update downloaded: ${info.version}`);
-    if (suppressDesktopRestartPrompt) {
-      // User deferred earlier — don't nag. autoInstallOnAppQuit applies it on
-      // the next quit/restart, so the app comes back on the latest desktop.
-      suppressDesktopRestartPrompt = false;
-      log.info('[electron-updater] deferred — will install on next quit/restart');
-      return;
-    }
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      log.warn('[electron-updater] mainWindow missing; will install on quit');
-      return;
-    }
-    if (packageUpdateInFlight) {
-      // The package "Update Available" dialog (or its upgrade) is up right now.
-      // Don't stack a second dialog; the next hourly tick re-emits this event
-      // from the cached download and prompts then. Quitting meanwhile still
-      // installs it (autoInstallOnAppQuit).
-      log.info('[electron-updater] restart prompt postponed: package update in progress');
-      return;
-    }
-    desktopRestartPromptOpen = true;
-    let result;
-    try {
-      result = await dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        buttons: ['Restart now', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-        title: 'FlowPad update ready',
-        message: `FlowPad ${info.version} is ready to install.`,
-        detail: 'Restart FlowPad now to apply the update.',
-      });
-    } finally {
-      desktopRestartPromptOpen = false;
-    }
-    if (result.response === 0) {
-      log.info('[electron-updater] user accepted, quitting to install');
-      isQuitting = true;
-      autoUpdater.quitAndInstall();
-    } else {
-      log.info('[electron-updater] user deferred install');
-    }
-  });
+    // Fires only after an explicit downloadUpdate() completes. Restarting to
+    // apply is the one unavoidable step of a desktop self-update, so prompt for it.
+    autoUpdater.on('update-downloaded', async (info) => {
+      log.info(`[electron-updater] update downloaded: ${info.version}`);
+      if (suppressDesktopRestartPrompt) {
+        // User deferred earlier — don't nag. autoInstallOnAppQuit applies it on
+        // the next quit/restart, so the app comes back on the latest desktop.
+        suppressDesktopRestartPrompt = false;
+        deferredDesktopVersion = info.version;
+        log.info('[electron-updater] deferred — will install on next quit/restart');
+        return;
+      }
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        log.warn('[electron-updater] mainWindow missing; will install on quit');
+        return;
+      }
+      if (packageUpdateInFlight) {
+        // The package "Update Available" dialog (or its upgrade) is up right now.
+        // Don't stack a second dialog; the next hourly tick re-emits this event
+        // from the cached download and prompts then. Quitting meanwhile still
+        // installs it (autoInstallOnAppQuit).
+        log.info('[electron-updater] restart prompt postponed: package update in progress');
+        return;
+      }
+      desktopRestartPromptOpen = true;
+      let result;
+      try {
+        result = await dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          buttons: ['Restart now', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+          title: 'FlowPad update ready',
+          message: `FlowPad ${info.version} is ready to install.`,
+          detail: 'Restart FlowPad now to apply the update.',
+        });
+      } finally {
+        desktopRestartPromptOpen = false;
+      }
+      if (result.response === 0) {
+        log.info('[electron-updater] user accepted, quitting to install');
+        isQuitting = true;
+        autoUpdater.quitAndInstall();
+      } else {
+        deferredDesktopVersion = info.version;
+        log.info('[electron-updater] user deferred install; will install on next quit/restart');
+      }
+    });
 
-  // Long-lived sessions: re-check hourly. Desktop: if a newer build appears,
-  // download it in the background (the update-downloaded handler then prompts
-  // to restart). Package (PyPI): offer the upgrade dialog — the launch-time
-  // checks only run at launch, so without this a user who keeps the app open
-  // across a backend release never hears about it. Launch-time is handled by
-  // the pre-start flow, not here.
-  const HOUR_MS = 4 * 60 * 1000;
+  }
+
+  // Long-lived sessions: re-check periodically (UPDATE_CHECK_INTERVAL_MS).
+  // Desktop: if a newer build appears, download it in the background (the
+  // update-downloaded handler then prompts to restart). Package (PyPI): offer
+  // the upgrade dialog — the launch-time checks only run at launch, so without
+  // this a user who keeps the app open across a backend release never hears
+  // about it. Launch-time is handled by the pre-start flow, not here.
   setInterval(async () => {
-    if (await getDesktopUpdateVersion()) downloadDesktopUpdateInBackground();
+    // Desktop: skip while a download is already running (it would clobber a
+    // launch-time "Later"), while the restart prompt is up, and for a version
+    // the user already deferred — that one installs on the next quit.
+    const desktopLatest = await getDesktopUpdateVersion();
+    if (desktopLatest && !desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
+      downloadDesktopUpdateInBackground();
+    }
     await checkPackageUpdateInBackground();
-  }, HOUR_MS);
+  }, UPDATE_CHECK_INTERVAL_MS);
 }
 
-// True while the desktop "update ready" dialog is on screen (hourly package
+// How often a long-running session re-checks both update channels.
+const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
+
+// True while the desktop "update ready" dialog is on screen (the package
 // check waits for it) / while a package check, its dialog or its upgrade is in
 // progress (desktop restart prompt waits for it). One update dialog at a time.
 let desktopRestartPromptOpen = false;
 let packageUpdateInFlight = false;
+// Desktop version the user answered "Later" to (restart prompt or launch
+// dialog) — never re-offered this session; it installs on the next quit.
+let deferredDesktopVersion = null;
+// A downloadUpdate() is running: a periodic tick must not start another one
+// (electron-updater would coalesce it, but the call resets the suppress flag).
+let desktopDownloadInFlight = false;
 
 /**
- * Hourly package (PyPI) update check for long-running sessions. Same dialog and
- * upgrade path as the post-boot check, but compared against PyPI rather than
- * the cloud policy verdict, so a newer release is offered as soon as it exists.
- * Skipped in dev (would reinstall under a live dev backend), while a previous
- * check/upgrade is still running, and while the desktop restart prompt is open.
+ * Package (PyPI) update check + upgrade, behind the one-dialog-at-a-time
+ * mutex. Periodic ticks compare against PyPI so a newer release is offered as
+ * soon as it exists; the post-boot launch check passes compareWithPypi=false to
+ * keep deferring to the cloud policy verdict. Skipped in dev (would reinstall
+ * under a live dev backend), while a previous check/upgrade is still running,
+ * and while the desktop restart prompt is open.
  */
-async function checkPackageUpdateInBackground() {
+async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic' } = {}) {
   if (isDev) return;
   if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
   if (packageUpdateInFlight) {
-    log.info('[uv] hourly package check skipped: previous check/upgrade still running');
+    log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
     return;
   }
   if (desktopRestartPromptOpen) {
-    log.info('[uv] hourly package check skipped: desktop restart prompt is open');
+    log.info(`[uv] ${label} package check skipped: desktop restart prompt is open`);
     return;
   }
   packageUpdateInFlight = true;
   try {
-    log.info('[uv] hourly package check');
+    log.info(`[uv] ${label} package check`);
     await uvManager.checkForUpdatesInBackground(mainWindow, {
       sendStatus,
       waitForBackend,
       backendUrl: BACKEND_URL,
       cloudUrl: FLOWPAD_CLOUD_URL,
-      compareWithPypi: true,
+      compareWithPypi,
     });
   } catch (err) {
-    log.warn(`[uv] hourly package check failed: ${err.message}`);
+    log.warn(`[uv] ${label} package check failed: ${err.message}`);
   } finally {
     packageUpdateInFlight = false;
   }
@@ -227,7 +251,7 @@ async function checkPackageUpdateInBackground() {
  * decide whether to fold the desktop update into the pre-start prompt.
  */
 async function getDesktopUpdateVersion() {
-  if (!app.isPackaged) return null;
+  if (!app.isPackaged || process.windowsStore) return null;
   try {
     const result = await autoUpdater.checkForUpdates();
     const latest = result && result.updateInfo && result.updateInfo.version;
@@ -247,10 +271,20 @@ async function getDesktopUpdateVersion() {
  *                       (autoInstallOnAppQuit), so the user isn't nagged.
  */
 function downloadDesktopUpdateInBackground({ promptOnReady = true } = {}) {
+  if (desktopDownloadInFlight) {
+    log.info('[electron-updater] download already in progress; not restarting it');
+    return;
+  }
+  desktopDownloadInFlight = true;
   suppressDesktopRestartPrompt = !promptOnReady;
-  autoUpdater.downloadUpdate().catch((err) => {
-    log.error('[electron-updater] download failed:', err);
-  });
+  autoUpdater
+    .downloadUpdate()
+    .catch((err) => {
+      log.error('[electron-updater] download failed:', err);
+    })
+    .finally(() => {
+      desktopDownloadInFlight = false;
+    });
 }
 
 // ----------------------------------------------------------------------------
@@ -291,6 +325,16 @@ const isDev = process.env.MINIHUB_DEV === 'true';
 const BACKEND_PORT =
   isDev && process.env.FLOWPAD_BACKEND_PORT ? Number(process.env.FLOWPAD_BACKEND_PORT) : 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
+const BACKEND_ORIGIN = new URL(BACKEND_URL).origin;
+/** True only for the backend's exact origin (scheme, host AND port) — a prefix
+ *  test on the URL string would also accept ports 90070-90079. */
+function isBackendUrl(url) {
+  try {
+    return new URL(url).origin === BACKEND_ORIGIN;
+  } catch {
+    return false;
+  }
+}
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
 const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ride
@@ -601,7 +645,7 @@ function createWindow() {
   // allow them so Electron opens an in-app BrowserWindow. No teardown
   // handlers on those windows: close relies on disconnect-driven PTY detach.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(BACKEND_URL)) {
+    if (isBackendUrl(url)) {
       try {
         if (new URL(url).pathname.includes('/win/')) {
           return { action: 'allow' };
@@ -621,7 +665,7 @@ function createWindow() {
     // Allow navigation to the backend (same-origin), block everything else.
     // Same-origin /win/ URLs are covered by this allow — they are in-app
     // destinations, consistent with the window-open carve-out above.
-    if (!url.startsWith(BACKEND_URL)) {
+    if (!isBackendUrl(url)) {
       event.preventDefault();
       if (/^https?:\/\//.test(url)) {
         require('electron').shell.openExternal(url);
@@ -674,6 +718,15 @@ function sendStatus(message) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('startup-status', message);
   }
+}
+
+// Progress ticker for a `uv tool install` shown on the loading screen: uv's own
+// per-step lines ("Downloading flowpad (34.6MiB)", "Resolved 132 packages…")
+// under a fixed label, so a long install on a slow link is visibly alive
+// instead of a frozen spinner. The install itself has no wall-clock cap.
+function installProgress(label) {
+  sendStatus(label);
+  return (line) => sendStatus(`${label} — ${line}`);
 }
 
 // Render the in-app startup-timeout panel (loading.html) instead of the bland
@@ -778,15 +831,16 @@ async function startApp() {
               // background and prompts to restart once ready.
               const loadingPath = path.join(__dirname, 'loading.html');
               await mainWindow.loadFile(loadingPath);
-              sendStatus('Upgrading Flowpad');
-              await uvManager.upgrade();
+              await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
               activeBin = uvManager.getInstalledFlowBin() || flowBin;
               backendJustUpgraded = true;
               downloadDesktopUpdateInBackground();
             } else {
               // Later: still pre-download the desktop in the background so the
               // next restart comes back on the latest — but don't nag (it
-              // auto-installs on quit). The backend stays as-is (deferred).
+              // auto-installs on quit). The backend stays as-is (deferred) and
+              // is not re-offered by the periodic check this session.
+              uvManager.deferPackageVersion(backendStatus.latestVersion);
               downloadDesktopUpdateInBackground({ promptOnReady: false });
             }
           } else {
@@ -828,7 +882,7 @@ async function startApp() {
           log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
           sendStatus('Repairing Flowpad installation');
           await uvManager.ensureUv();
-          await uvManager.reinstall();
+          await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
           backendJustUpgraded = true;
           const repairedVersion = uvManager.getInstalledVersionSync();
           sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
@@ -842,8 +896,7 @@ async function startApp() {
         sendStatus('Checking Python installation');
         await uvManager.ensureUv();
 
-        sendStatus('Installing Flowpad');
-        await uvManager.installLatest();
+        await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
         backendJustUpgraded = true;
 
         const version = uvManager.getInstalledVersionSync();
@@ -963,12 +1016,10 @@ async function startApp() {
     log.info('Development mode: skipping background update check');
     return;
   }
-  uvManager.checkForUpdatesInBackground(mainWindow, {
-    sendStatus,
-    waitForBackend,
-    backendUrl: BACKEND_URL,
-    cloudUrl: FLOWPAD_CLOUD_URL,
-  });
+  // Through the same mutex as the periodic check, so this dialog cannot stack
+  // with a desktop "update ready" prompt (a desktop download may already be
+  // running from the pre-start flow).
+  checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
 // App lifecycle events
 app.whenReady().then(startApp);
@@ -1297,8 +1348,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
-    sendStatus('Upgrading Flowpad');
-    await uvManager.upgrade();
+    await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
 
     sendStatus('Starting server');
     await uvManager.start();
