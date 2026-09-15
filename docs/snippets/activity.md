@@ -170,12 +170,19 @@ Scope is part of the address, so two entities can each have an `index` row. It i
 routing key: an unscoped activity goes to every connection, a scoped one only to that
 entity's watchers.
 
+**Reserved box-wide paths.** The backend reports its own work on these unscoped addresses,
+so a producer of your own must not use them: `index`, `scan` and `clear` (this machine's
+compute node — its subject normalises to the box), `docs.scan`, `semantic.check`, and any
+`wizard-<name>` root. Reporting `done` on one ends the backend's live job and marks its
+children `interrupted`. Pick your own name — the CLI and HTTP examples below use `demo`.
+
 ## 8. Same verbs in TypeScript
 
 ```ts
 import { Activity, listActivities } from '@sdk/activity';
 
-Activity.get('index').label('Indexing').total(5000);
+Activity.get('index').label('Indexing');       // every verb returns a Promise, so one call per verb
+Activity.get('index').total(5000);
 Activity.get('index/pdf').incSuccess();
 Activity.get('index/pdf').incError('encrypted', { ref: 'a.pdf' });
 await Activity.get('index').done('indexed 5,000');
@@ -201,16 +208,16 @@ stops producing snapshots, and that is exactly when someone is staring at the ro
 ## 9. Same verbs from the CLI, which is how an agent does it
 
 ```bash
-flow progress report index label "Indexing"
-flow progress report index total 5000
-flow progress report index/pdf inc-success
-flow progress report index/pdf inc-error "encrypted" --ref a.pdf
-flow progress report index inc --counter orphans --n 17
-flow progress report index set-counter --counter tokens 4200
-flow progress report index done "indexed 5,000 · 17 orphans"
+flow progress report demo label "Indexing"
+flow progress report demo total 5000
+flow progress report demo/pdf inc-success
+flow progress report demo/pdf inc-error "encrypted" --ref a.pdf
+flow progress report demo inc --counter orphans --n 17
+flow progress report demo set-counter --counter tokens 4200
+flow progress report demo done "indexed 5,000 · 17 orphans"
 
 flow progress list                     # what is running on this box
-flow progress show index               # one tree, as the UI sees it
+flow progress show demo                # one tree, as the UI sees it
 ```
 
 Address, then verb, then argument. Inside an AgenticProcess the scope defaults to that
@@ -228,10 +235,10 @@ done | flow progress report walk --stdin
 ## 10. Over HTTP
 
 ```bash
-curl -X POST $API/api/v1/activity/index/pdf/inc_error -d '{"message":"encrypted","ref":"a.pdf"}'
-curl -X POST $API/api/v1/activity/index/done          -d '{"message":"indexed 5,000"}'
-curl      $API/api/v1/activity/index                   # one tree, children included
-curl      $API/api/v1/activity                         # every live root
+curl -X POST $API/api/v1/activity/demo/pdf/inc_error -d '{"message":"encrypted","ref":"a.pdf"}'
+curl      $API/api/v1/activity/demo                   # one tree, children included
+curl      $API/api/v1/activity                        # every live root
+curl -X POST $API/api/v1/activity/demo/done          -d '{"message":"indexed 5,000"}'
 ```
 
 The route is the same sentence as the CLI. Live ticks arrive on the `progress_report`

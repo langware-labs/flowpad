@@ -1,7 +1,8 @@
 /**
  * `Activity` in TypeScript — the same verbs, the same addressing, over the REST route.
  *
- *     Activity.get('index').label('Indexing').total(5000);
+ *     Activity.get('index').label('Indexing');
+ *     Activity.get('index').total(5000);
  *     Activity.get('index/pdf').incSuccess();
  *     Activity.get('index/pdf').incError('encrypted', { ref: 'a.pdf' });
  *     await Activity.get('index').done('indexed 5,000');
