@@ -178,7 +178,7 @@ Same thing from a worker, over the write route:
 
 ```bash
 flow record create source_item --json items.json          # array or one object
-flow record create source_item --json - --first-run < big_backfill.json
+flow record create source_item --json - < big_backfill.json
 ```
 
 ## 7. Operate a source
