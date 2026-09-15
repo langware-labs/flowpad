@@ -30,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-from flow_sdk.llm_index import LLMIndexer
+from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.core import PROMPT_VERSION, TEMPLATE_VERSION
 from flow_sdk.llm_index.index_document import INDEX_FILENAME
 
@@ -69,8 +69,15 @@ def build_plan(root: Path, summaries_dir: Path, force: bool = False) -> dict:
         subfolders_with_index = [
             s for s in item.subfolders if (s.path / INDEX_FILENAME).is_file()
         ]
+        rel = item.path.relative_to(root)
         stale_folders.append({
             "path": str(item.path),
+            # The sidecar's identity fields, emitted so the agent copies them
+            # instead of reverse-engineering flow_sdk.llm_index to compute them.
+            "typeid": item.typeid,
+            "parent_ref": item.parent_ref,
+            "folder_rel_path": "" if rel == Path(".") else rel.as_posix(),
+            "folder_name": item.path.name,
             "inputs_hash": item.inputs_hash,
             "existing_hash": item.existing_hash,
             "files": [
@@ -86,6 +93,7 @@ def build_plan(root: Path, summaries_dir: Path, force: bool = False) -> dict:
                 {
                     "name": s.path.name,
                     "index_path": str(s.path / INDEX_FILENAME),
+                    "child_typeid": typeid_for(s.path),
                 }
                 for s in subfolders_with_index
             ],

@@ -66,7 +66,9 @@ questions from the docs — it only (re)generates indexes. If you were asked to
      "summaries_dir": "...",
      "stale_files": [{"path": "...", "content_hash": "...", "summary_path": "..."}],
      "stale_folders_post_order": [
-       {"path": "...", "files": [...], "subfolders": [...], "inputs_hash": "..."}
+       {"path": "...", "typeid": "markdown_index-…", "parent_ref": "markdown_index-…",
+        "folder_rel_path": "auth/oauth", "folder_name": "oauth", "inputs_hash": "...",
+        "files": [...], "subfolders": [{"name": "...", "index_path": "...", "child_typeid": "..."}]}
      ],
      "total_folders": 7,
      "total_files": 18
@@ -96,9 +98,12 @@ questions from the docs — it only (re)generates indexes. If you were asked to
      python -c "import json; from flow_sdk.assets.types.markdown_index_render import IndexMdJson; print(json.dumps(IndexMdJson.model_json_schema()))"
      ```
 
-     Required fields:
+     Copy `typeid`, `parent_ref`, `folder_rel_path`, `folder_name` and
+     `inputs_hash` from the planner's folder entry, `vault_root` from the plan, and
+     each subfolder's `child_typeid` from its planner entry — **verbatim; never
+     compute them or search the codebase for how**. Required fields:
      `typeid`, `parent_ref`, `vault_root`, `folder_rel_path`, `folder_name`,
-     `inputs_hash` (use the planner's value verbatim), `self_summary` (≤ 60 words),
+     `inputs_hash`, `self_summary` (≤ 60 words),
      `files[]` (each with `name`, `rel_path`, `title`, `summary`, `content_hash`),
      `subfolders[]` (each with `name`, `rel_path`, `self_summary`, `child_typeid`,
      `child_inputs_hash`), `generated_at` (UTC ISO now), `latest_process_ref`.

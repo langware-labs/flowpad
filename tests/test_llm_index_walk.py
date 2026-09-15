@@ -139,6 +139,9 @@ def test_plan_py_parity_with_llm_indexer(tmp_path: Path):
     folders = plan["stale_folders_post_order"]
     assert [f["path"] for f in folders] == [str(i.path) for i in stale_items]
     assert [f["inputs_hash"] for f in folders] == [i.inputs_hash for i in stale_items]
+    # The sidecar identity fields come from the planner, so an agent never derives them.
+    assert [(f["typeid"], f["parent_ref"]) for f in folders] == [(i.typeid, i.parent_ref) for i in stale_items]
+    assert {f["folder_rel_path"]: f["folder_name"] for f in folders} == {"auth": "auth", "": "vault"}
     assert plan["total_folders"] == 2 and plan["total_files"] == 3
 
 
