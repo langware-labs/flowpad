@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 26
+version: 28
 ---
 # Secret stores — snippets (draft)
 
@@ -10,25 +10,43 @@ version: 26
 > rest of the shelf.
 
 A **`SecretStore`** is a place secret values live, the way a `DataSource` is a
-place records come from. You get one the same way: **a type and its config** —
-`SecretStore.get(type, config)`. It exposes two verbs, **`load`** and **`save`**.
+place records come from. Like a data source, a store is **a type plus its
+config**. It exposes two verbs, **`load`** and **`save`**.
 
-Two store types ship out of the box:
+## The API in one place
+
+Every snippet below uses only these calls:
+
+| call                                                 | returns                                                               |
+| ---------------------------------------------------- | --------------------------------------------------------------------- |
+| `await SecretStore.get(type, config)`                | a store of that type, configured                                      |
+| `await store.load(names)`                            | `{ENV_VAR_NAME: SecretStr}` — a missing name is absent                |
+| `await store.save(values)`                           | writes `{ENV_VAR_NAME: str}`                                          |
+| `await store.names()`                                | the names the store holds — never values                              |
+| `await CredentialSpec.get(name, project=...)`        | the credential declared under that name                               |
+| `await spec.secret_store(environment)`               | `SecretStore.get(...)` with the credential's type and resolved config |
+| `context.current_project.env_file_path(environment)` | the project's env file for an environment                             |
+
+One verb for lookups — `get` — on both classes, always awaited.
+
+## Store types
+
+Two ship out of the box:
 
 | type       | config                                   | where a value lives                                |
 | ---------- | ---------------------------------------- | -------------------------------------------------- |
 | `env_file` | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable      |
 | `vault`    | `prefix` — the entry namespace           | the per-instance encrypted store, `<prefix><NAME>` |
 
-The config says **where**; nothing is inferred from a scope or an environment
-inside the store. Whoever asks for a store — the current context, a credential,
-a deployment — resolves the path or prefix and hands it over.
+The config says **where**; a store never infers anything from a scope or an
+environment. Whoever asks for a store — a script, a credential, a deployment —
+resolves the path or prefix and hands it over.
 
 **The connecting key is the environment variable name.** Every store is keyed by
 `ENV_VAR_NAME`; how a store spells that key internally (a file line, a vault
-entry) is its own business. `load` returns `{ENV_VAR_NAME: SecretStr}` and
-`save` takes the same shape, so **env vars are the common currency**: moving
-values between stores, or into a process, is a dict.
+entry) is its own business. `load` returns a dict of names and `save` takes one,
+so **env vars are the common currency**: moving values between stores, or into
+a process, is a dict.
 
 A `CredentialSpec` uses the stores **as is**: it declares which names exist,
 names a store type per environment (`value_store`), and is the allow-list for
@@ -42,23 +60,22 @@ keeps a connection's token as one of its secrets.
 from flow_sdk import context
 from flow_sdk.secrets import SecretStore
 
-store = SecretStore.get("env_file", {"env_file_path": context.current_project.env_file})   # <mount>/.env.local
-await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
-
-values = await store.load(["DATABASE_URL", "SENTRY_DSN"])           # a missing name is simply absent
-values["DATABASE_URL"].get_secret_value()
-
-await store.names()                                                 # ["DATABASE_URL"] — names only, never values
-```
-
-The same verbs on the other store type, and on a named environment — only the
-config differs:
-
-```python
 project = context.current_project
 
-vault = SecretStore.get("vault", {"prefix": "credential.user."})                                # credential.user.<NAME>
-prod = SecretStore.get("env_file", {"env_file_path": project.env_file_for("production")})      # <mount>/.env.production.local
+store = await SecretStore.get("env_file", {"env_file_path": project.env_file_path()})   # <mount>/.env.local
+await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
+
+values = await store.load(["DATABASE_URL", "SENTRY_DSN"])      # SENTRY_DSN was never saved: absent
+values["DATABASE_URL"].get_secret_value()
+
+await store.names()                                            # ["DATABASE_URL"]
+```
+
+The other store type, and a named environment — only the config differs:
+
+```python
+vault = await SecretStore.get("vault", {"prefix": "credential.user."})                          # credential.user.<NAME>
+prod = await SecretStore.get("env_file", {"env_file_path": project.env_file_path("production")})  # <mount>/.env.production.local
 ```
 
 `save` keeps every rule the stores have today: a value lands in an env file only
@@ -70,26 +87,32 @@ are skipped, never cleared.
 ```python
 from flow_sdk.builtin.credential_spec import CredentialSpec
 
-spec = await CredentialSpec.get_by_name("database", project=context.current_project)
-store = await spec.secret_store(environment="production")   # SecretStore.get(spec's value_store, its resolved config)
+spec = await CredentialSpec.get("database", project=project)
+prod = await spec.secret_store("production")         # the credential's store for production
 
-await store.save({"DATABASE_URL": hosted_url})              # a name outside spec.var_names() is refused
-values = await store.load(spec.var_names())
+await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})   # a name outside spec.var_names() is refused
+values = await prod.load(spec.var_names())
 ```
 
 `spec.secret_store(environment)` is the only place a credential's scope and
-environment turn into a config: `env_file` gets the scope root's
-`.env.local` / `.env.<env>.local`, `vault` gets
-`credential.[<env>.]project.<pid>.` or `credential.[<env>.]user.`.
+environment become a config:
 
-`credential.json` does not change: `value_store` names a store type, and
-`environments.<env>.value_store` overrides it for one environment.
+| `value_store` | config it passes to `SecretStore.get`                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `env_file`    | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
+| `vault`       | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
+
+`value_store` names a store type, and `environments.<env>.value_store` overrides
+it for one environment:
 
 ```json
-{ "name": "database", "schema": 2, "value_store": "env",
+{ "name": "database", "schema": 2, "value_store": "env_file",
   "vars": { "DATABASE_URL": {} },
   "environments": { "production": { "value_store": "vault" } } }
 ```
+
+Today's files spell the env file store `env`; that spelling stays accepted as an
+alias of `env_file`, so no existing `credential.json` changes.
 
 ## 3. Env vars — what a process receives
 
@@ -99,27 +122,32 @@ import os
 from flow_sdk.builtin.credential_resolver import resolve_attached_secrets
 
 env = dict(os.environ)
-secrets = await resolve_attached_secrets(context.current_project, environment="production")   # each credential → spec.secret_store → load
+secrets = await resolve_attached_secrets(project, environment="production")   # each credential → spec.secret_store → load
 for name, value in secrets.items():
-    env.setdefault(name, value.get_secret_value())                                             # an explicitly set variable still wins
+    env.setdefault(name, value.get_secret_value())                             # an explicitly set variable still wins
 ```
 
 `resolve_attached_secrets` stays the one entry point for a spawn (worker,
-terminal, node command). Inside, it becomes a `store.load(names)` per credential,
-read once per store.
+terminal, node command). Inside, it becomes one `load` per store, over the names
+the credentials declare.
 
 ## 4. Moving values between stores
 
 ```python
+spec = await CredentialSpec.get("database", project=project)
 names = spec.var_names()
 
-await vault.save(await store.load(names))          # move development values from the env file into the vault
-await prod.save(await remote.load(names))          # later: fetch secrets → env file (remote is any store)
+dev_file = await SecretStore.get("env_file", {"env_file_path": project.env_file_path()})
+dev_vault = await SecretStore.get("vault", {"prefix": f"credential.project.{project.id}."})
+await dev_vault.save(await dev_file.load(names))    # development values: env file → vault
+
+prod_file = await SecretStore.get("env_file", {"env_file_path": project.env_file_path("production")})
+await prod_file.save(await remote.load(names))      # later: fetch secrets → env file (`remote` is any store, see §6)
 ```
 
-The second line is the planned "fetch secrets → env file → load env" flow: a
-named environment's env file is exactly what a fetch writes, and a spawn reads it
-with `dotenv_values` — never `load_dotenv` into the backend's own environment.
+The last line is the planned "fetch secrets → env file → load env" flow: a named
+environment's env file is exactly what a fetch writes, and a spawn reads it with
+`dotenv_values` — never `load_dotenv` into the backend's own environment.
 
 ## 5. Data sources — the same key
 
@@ -130,19 +158,22 @@ A data source names the variables it needs in its manifest:
 ```
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.credentials import resolve_credentials
-from flow_sdk.sources import SourceBinding, source_type
+from flow_sdk.ingest.sources import source_spec, source_type
+from flow_sdk.sources import SourceBinding
 
-creds = await resolve_credentials(spec.auth, row)     # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
+row = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
+creds = await resolve_credentials(source_spec(row.provider).auth, row)   # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
 async with source_type(row.provider).build(SourceBinding(config=row.config, credentials=creds)) as source:
     ...
 ```
 
-Today `resolve_credentials` reads `os.environ["AGENTMAIL_API_KEY"]`. With
-stores, the credential that declares `AGENTMAIL_API_KEY` answers first (its store,
-its environment), and `os.environ` is the fallback. `auth.secrets` — a named
-machine secret — is `SecretStore.get("vault", {"prefix": ""}).load([name])`. No
-new auth shape: a data source's variables become credential variables and get
+Today `resolve_credentials` reads `os.environ["AGENTMAIL_API_KEY"]`. With stores,
+the credential that declares `AGENTMAIL_API_KEY` answers first (its store, its
+environment), and `os.environ` is the fallback. `auth.secrets` — a named machine
+secret — is `await (await SecretStore.get("vault", {"prefix": ""})).load([name])`.
+No new auth shape: a data source's variables become credential variables and get
 environments, packing and the Connections screen for free.
 
 ## 6. Connections — accounts, not stores
@@ -161,20 +192,21 @@ manifest names a connector:
 ```
 
 ```python
-remote = SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "database-production-"})
+remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "database-production-"})
 values = await remote.load(spec.var_names())   # the account comes from the connection, never from config
 ```
 
 ## What already exists, and what it becomes
 
-| `SecretStore`                                            | today                                                                                                    |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `SecretStore.get("env_file", {env_file_path})`           | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard included)  |
-| `SecretStore.get("vault", {prefix})`                     | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
-| `spec.secret_store(environment)`                         | `CredentialScope` + `CredentialSpec.store_for(env)` + `credential_contract.env_file_name` / `vault_name` |
-| `store.forget(names)`                                    | `credential_store.forget_values` (vault entries go; env file lines stay)                                 |
-| data source `auth.env` / `auth.secrets`                  | `ingest/credentials.py`, loading through stores                                                          |
-| `context.current_project.env_file` / `env_file_for(env)` | new; today `project_scope(project).root` + `env_file_name(env)`                                          |
+| proposed                                              | today                                                                                                    |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `SecretStore.get("env_file", {"env_file_path": ...})` | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard included)  |
+| `SecretStore.get("vault", {"prefix": ...})`           | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
+| `CredentialSpec.get(name, project=...)`               | `CredentialSpec.get_all(...)` filtered by name and scope                                                 |
+| `spec.secret_store(environment)`                      | `CredentialScope` + `CredentialSpec.store_for(env)` + `credential_contract.env_file_name` / `vault_name` |
+| `project.env_file_path(environment)`                  | `project_scope(project).root` + `env_file_name(environment)`                                             |
+| `store.forget(names)`                                 | `credential_store.forget_values` (vault entries go; env file lines stay)                                 |
+| data source `auth.env` / `auth.secrets`               | `ingest/credentials.py`, loading through stores                                                          |
 
 Every guarantee carries over: values travel as `SecretStr`, only names are ever
 logged, status never reads a value, and a value is never written to a file git
@@ -182,18 +214,18 @@ would commit.
 
 ## Open questions
 
-1. **Registry or rows.** `SecretStore.get(type, config)` works without a row for
-   the two shipped types. A `SecretStore` row (like `DataSource`, with a name,
-   owner and saved config) only when a configured external store with an account
-   arrives.
+1. **Registry or rows.** `SecretStore.get(type, config)` needs no row for the two
+   shipped types. A `SecretStore` row (like `DataSource`, with a name, owner and
+   saved config) only when a configured external store with an account arrives —
+   then `get` also accepts a saved store's name.
 2. **`os.environ`** **as a store.** A third, load-only type (`env_vars`, no config)
    for CI and cloud machines, or only the destination and fallback of §3 and §5.
 3. **`flow_sdk.context`.** There is no `flow_sdk.context` module today; the
    current project is resolved per call site. Add it as the public way to ask
    "which project am I in" (worker, terminal, script), or pass the project
    explicitly.
-4. **Naming.** The glossary's *value store* becomes **SecretStore**; `value_store`
-   in `credential.json` keeps naming a store type.
+4. **Naming.** The glossary's *value store* becomes **SecretStore**; `env_file` is
+   the store type's name and `env` its accepted alias in `credential.json`.
 5. **Data source migration.** Fold `auth.env` / `auth.secrets` into credential
    variables now, or only route their loads through stores first.
 
