@@ -31,12 +31,17 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/tabs/project-entry', () => ({
   dockForGlobalEntry: vi.fn(() => Promise.resolve('GLOBAL_DOCK')),
   dockForProjectEntry: vi.fn(async () => 'PROJECT_DOCK'),
+  globalHomeDock: () => 'GLOBAL_HOME',
   leaveProjectScope: (...args: unknown[]) => leaveProjectScope(...(args as [])),
 }));
 
 let buckets: TabProjectBucket[] = [];
+const closeGlobal = vi.fn(() => {
+  calls.push('closeGlobal');
+  return Promise.resolve();
+});
 vi.mock('@src/tabs/use-tab-manager', () => ({
-  useTabProjectBuckets: () => ({ buckets, globalTabCount: 0 }),
+  useTabProjectBuckets: () => ({ buckets, globalTabCount: 2, closeGlobal }),
 }));
 
 /** A bucket whose `closeAll` records the order it ran in, against `calls`. */
@@ -153,5 +158,23 @@ describe('project row close-all', () => {
 
     // The close must not leave the row wedged in a permanent spinner.
     expect(result.current.closingId).toBeNull();
+  });
+});
+
+describe('Global row close-all', () => {
+  it('lands on the ALL-SCOPED Home BEFORE closing every global tab, touching no bucket', async () => {
+    buckets = [bucket('p1')];
+    const { result } = renderHook(() => useProjectListMenu({ currentProjectId: null }));
+    expect(result.current.isGlobalScope).toBe(true);
+
+    await act(async () => {
+      await result.current.handleCloseGlobal();
+    });
+
+    // Global is always the CURRENT scope when its row shows, so this is the
+    // same order as emptying a current project: leave first, then close. The
+    // landing carries the all-scope — a bare Home would restore the remembered
+    // project (and re-mint a scope-keyed tab under it).
+    expect(calls).toEqual(['openDock:GLOBAL_HOME', 'closeGlobal']);
   });
 });

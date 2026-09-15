@@ -22,6 +22,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { globalHomeDock } from '@src/tabs/project-entry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import {
@@ -194,7 +195,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const next = tabManager.resolveNext(remaining, new Set());
       if (next?.dockPointer) navigation.openDock(next.dockPointer);
       else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
-      else navigation.closeDock();
+      else navigation.openDock(globalHomeDock());
     },
     [allTabs, projectId, navigation],
   );

@@ -17,7 +17,7 @@ import {
 } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { closeTabsWithLifecycle } from '@src/tabs/tab-content-lifecycle';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 /** Thin React subscription to the SDK's canonical, unscoped tab snapshot. */
 export function useAllTabs(): readonly Tab[] {
@@ -131,6 +131,9 @@ export interface TabProjectBucket {
 export interface UseTabProjectBucketsResult {
   buckets: TabProjectBucket[];
   globalTabCount: number;
+  /** Close every project-less tab — a bucket's `closeAll` for the Global
+   *  scope. Callers in the Global scope must navigate away first — this only closes. */
+  closeGlobal: () => Promise<void>;
 }
 
 export function useTabProjectBuckets(): UseTabProjectBucketsResult {
@@ -177,6 +180,24 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
     };
   }, [grouped, status]);
 
+  // One close-all for every scope, project or Global. The set comes from the
+  // SAME unfiltered snapshot the counts come from, keyed on the raw
+  // `project_id` (no existence check), so a bucket whose project is missing
+  // still owns its rows and can be cleared — the only way out for an orphan
+  // the recover path cannot help. It is the SAME durable batch path the
+  // strip's "Close all" uses: it waits for one backend acknowledgement before
+  // hiding chips, because a close-all is usually followed by navigation that
+  // would otherwise abort the fan-out and resurrect every tab.
+  const closeScopeTabs = useCallback(
+    async (projectId: string | null): Promise<void> => {
+      const scopeTabs = tabsForProject(tabs, projectId);
+      if (scopeTabs.length === 0) return;
+      await closeTabsWithLifecycle(scopeTabs, projectId);
+      await tabManager.refresh();
+    },
+    [tabs],
+  );
+
   const buckets = useMemo<TabProjectBucket[]>(
     () =>
       grouped.map(([projectId, tabCount]) => {
@@ -198,26 +219,14 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
           });
           return recovered;
         };
-        // The close-all set, from the SAME unfiltered snapshot the counts come
-        // from. Keyed on the raw `project_id` (no existence check), so a bucket
-        // whose project is missing still owns its rows and can be cleared —
-        // the only way out for an orphan the recover path cannot help.
-        const bucketTabs = tabsForProject(tabs, projectId);
-        const closeAll = async (): Promise<void> => {
-          if (bucketTabs.length === 0) return;
-          // The SAME durable batch path the strip's "Close all" uses — it waits
-          // for one backend acknowledgement before hiding chips, because a
-          // close-all is usually followed by navigation that would otherwise
-          // abort the fan-out and resurrect every tab.
-          await closeTabsWithLifecycle(bucketTabs, projectId);
-          await tabManager.refresh();
-        };
-        return { projectId, project, state, tabCount, recover, closeAll };
+        return { projectId, project, state, tabCount, recover, closeAll: () => closeScopeTabs(projectId) };
       }),
-    [tabs, grouped, status],
+    [grouped, status, closeScopeTabs],
   );
 
-  return { buckets, globalTabCount };
+  const closeGlobal = useCallback(() => closeScopeTabs(null), [closeScopeTabs]);
+
+  return { buckets, globalTabCount, closeGlobal };
 }
 
 export function useSyncTranscriptTabName(
