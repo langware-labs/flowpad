@@ -29,17 +29,13 @@ values between stores, or into a process, is a dict.
 A `CredentialSpec` uses the stores **as is**: it declares which names exist,
 names a store type per environment (`value_store`), and is the allow-list for
 both verbs. Connections stay what they are — accounts. A store can *use* a
-co\_\_ov.forEach(e=>e.style.display='');\_\_w=\[];'restored '+\_\_ov.length
-
-nnection to reach an external system, exactly like a data source; it never
+connection to reach an external system, exactly like a data source; it never
 keeps a connection's token as one of its secrets.
 
 ## 1. A store: load and save by name
 
 ```python
 from flow_sdk.secrets import SecretStore
-'BEFORE FIX '+JSON.stringify(__w.map(x=>x.sc))
-__ov.forEach(c=>[...c.children].forEach(w=>{w.style.visibility='hidden'}));__w=[];'fix applied to '+__ov.length
 
 store = SecretStore.for_scope("env_file", project=project)          # <mount>/.env.local
 await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
@@ -47,8 +43,7 @@ await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
 values = await store.load(["DATABASE_URL", "SENTRY_DSN"])           # a missing name is simply absent
 values["DATABASE_URL"].get_secret_value()
 
-await store.names()                                                 # ["DATABASE_'AFTER FIX '+JSON.stringify(__w.map(x=>x.sc))+' overlaysDisplayed='+__ov.filter(e=>getComputedStyle(e).display!=='none').length
-URL"] — names only, never values
+await store.names()                                                 # ["DATABASE_URL"] — names only, never values
 ```
 
 The same verbs on the other store type, and on a named environment:
