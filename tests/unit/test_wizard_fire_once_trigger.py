@@ -16,7 +16,7 @@ from flow_sdk.builtin.tag_triggers import register_tag_trigger, unregister_tag_t
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
