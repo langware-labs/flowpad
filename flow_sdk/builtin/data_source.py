@@ -1070,7 +1070,11 @@ class DataSource(Entity):
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
-        this waits for the cycle: it is what a person or an agent runs to see a source work."""
+        this waits for the cycle: it is what a person or an agent runs to see a source work. Like
+        ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
+        credential means to try again."""
+        await self._make_due()
+        await self.save()
         report = await self.sync()
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
