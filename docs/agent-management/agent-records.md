@@ -1,8 +1,7 @@
 ---
 id: d8f7b76f-2547-4599-8d59-8125fddbecbf
-version: 3
+version: 4
 ---
-
 # Agent Records
 
 Reference for the filesystem records and entity/runtime state used by agent
@@ -103,7 +102,7 @@ location/runtime attributes such as `source_file`, `path`, `json_path`,
 | `path`              | \`str   | None\`      | Record folder path                                                 |
 | `record_dir`        | \`Path  | None\`      | `path`, or `source_file.parent`                                    |
 | `record_data_dir`   | \`Path  | None\`      | Alias for `record_dir`                                             |
-| `default_path`      | \`Path  | None\`      | `records_root / type / <id>`                               |
+| `default_path`      | \`Path  | None\`      | `records_root / type / <id>`                                       |
 | `record_folder_ref` | \`FSRef | None\`      | FSRef for the metadata folder, lazily resolved from `default_path` |
 | `asset_ref`         | \`FSRef | None\`      | External content ref, private in memory and serialized as a path   |
 
@@ -1002,3 +1001,4 @@ record lookup.
 | `ts_sdk/src/process/agentic-process.ts`                              | Client-side `AgenticProcess` entity wrapper                        |
 | `ts_sdk/src/process/agentic-types.ts`                                | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, readiness helpers   |
 | `ts_sdk/src/IEntity.ts`                                              | Base entity interface with legacy VFS fields                       |
+
